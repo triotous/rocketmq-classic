@@ -64,3 +64,23 @@ Validation
 - PASS: `cargo test -p rocketmq-classic-producer --locked` — 139 unit and 61 integration tests.
 - PASS: strict all-target/all-feature workspace Clippy.
 - PASS: formatting and `git diff --check`.
+
+Phase 18 continuation — TopicPublishInfo and ThreadLocalIndex API parity
+Session date: 2026-10-14 UTC
+Time: 16:44 UTC
+Branch: `phase/19-phase-18-compatibility-release-gate`
+Starting revision: `35edfe02`
+
+Changes
+- Pinned the exact 17-method public `TopicPublishInfo` signature inventory and the 3-method `ThreadLocalIndex` inventory, including constructor and overload signatures. Rust tests now guard their Java-to-matrix and Rust-to-Java rows.
+- Reverse comparison found a public behavior mismatch: Rust `ProducerQueueIndex::increment_and_get` returned the raw wrapped `i32`, while Java returns the incremented value masked with `0x7fffffff`. Rust now stores the wrapped value and returns the Java mask. Added a Java-fixture-backed overflow regression from `i32::MAX` (returns 0, then 1).
+- Implemented `Display` for `ProducerQueueIndex` with Java `ThreadLocalIndex.toString()` formatting, including null before first initialization.
+- First normal Maven fixture verification failed because newly recorded random cursor values made the fixture nondeterministic. Replaced those fields with deterministic Java assertions; subsequent regeneration and verification passed. The failure and correction are both retained here.
+- Latest Producer fixture SHA-256: `052dff1a2c653780e513d74d7021de4e9914ab9cae172f1d090ffc89461d532a`.
+
+Validation
+- PASS: full Producer suite — 140 unit and 63 integration tests.
+- PASS: pinned Java surface tests (15 integration and 5 unit tests selected by `pinned_java_`).
+- PASS: strict all-target/all-feature workspace Clippy, formatting and diff checks.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` — 37 scenarios, fixture drift, cross-decodes and Java runtime fixtures.
+- P18-V01 remains open for the wider Rust public API reverse export and Java overload/input/error/flow reconciliation.

@@ -361,7 +361,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   oracle-backed, and surfaced Rust-only publish-info constructors/snapshot
   helpers are crate-private. Producer publish-info queue/cursor/selector and
   live-view callback adapters now have exact Rust-to-Java matrix rows guarded
-  by a Producer test; the broad reverse-export audit remains open.
+  by Producer tests. The full 17-method `TopicPublishInfo` and 3-method
+  `ThreadLocalIndex` Java surfaces are fixture-pinned; cursor overflow and
+  `toString()` formatting are checked against Java. The broad reverse-export
+  and overload/input/error/flow audit remains open.
 - [x] **P18-V02** — Current-worktree unit, differential, race/leak, fuzz,
   shutdown, and fixture gates pass; see the run recorded above.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license

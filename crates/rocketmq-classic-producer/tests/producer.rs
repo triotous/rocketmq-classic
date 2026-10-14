@@ -94,6 +94,146 @@ fn pinned_java_default_producer_impl_public_surface_is_recorded() {
 }
 
 #[test]
+fn pinned_java_topic_publish_info_surface_has_phase_crosswalks() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let inventory = &fixture["topicPublishInfoApi"];
+    let methods = inventory["publicMethods"].as_array().unwrap();
+    let crosswalks = include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md");
+
+    assert_eq!(
+        inventory["className"],
+        "org.apache.rocketmq.client.impl.producer.TopicPublishInfo"
+    );
+    assert_eq!(inventory["publicMethodCount"].as_u64(), Some(17));
+    assert_eq!(methods.len(), 17);
+    assert_eq!(inventory["declaredPublicMethodCount"].as_u64(), Some(17));
+    let constructors = inventory["publicConstructors"].as_array().unwrap();
+    assert_eq!(constructors.len(), 1);
+    assert_eq!(
+        constructors[0].as_str(),
+        Some("org.apache.rocketmq.client.impl.producer.TopicPublishInfo()")
+    );
+    for expected_signature in [
+        "boolean org.apache.rocketmq.client.impl.producer.TopicPublishInfo.isHaveTopicRouterInfo()",
+        "boolean org.apache.rocketmq.client.impl.producer.TopicPublishInfo.isOrderTopic()",
+        "boolean org.apache.rocketmq.client.impl.producer.TopicPublishInfo.ok()",
+        "int org.apache.rocketmq.client.impl.producer.TopicPublishInfo.getWriteQueueNumsByBroker(java.lang.String)",
+        "java.lang.String org.apache.rocketmq.client.impl.producer.TopicPublishInfo.toString()",
+        "java.util.List org.apache.rocketmq.client.impl.producer.TopicPublishInfo.getMessageQueueList()",
+        "org.apache.rocketmq.client.common.ThreadLocalIndex org.apache.rocketmq.client.impl.producer.TopicPublishInfo.getSendWhichQueue()",
+        "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.client.impl.producer.TopicPublishInfo.selectOneMessageQueue()",
+        "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.client.impl.producer.TopicPublishInfo.selectOneMessageQueue([Lorg.apache.rocketmq.client.impl.producer.TopicPublishInfo$QueueFilter;)",
+        "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.client.impl.producer.TopicPublishInfo.selectOneMessageQueue(java.lang.String)",
+        "org.apache.rocketmq.remoting.protocol.route.TopicRouteData org.apache.rocketmq.client.impl.producer.TopicPublishInfo.getTopicRouteData()",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.resetIndex()",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.setHaveTopicRouterInfo(boolean)",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.setMessageQueueList(java.util.List)",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.setOrderTopic(boolean)",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.setSendWhichQueue(org.apache.rocketmq.client.common.ThreadLocalIndex)",
+        "void org.apache.rocketmq.client.impl.producer.TopicPublishInfo.setTopicRouteData(org.apache.rocketmq.remoting.protocol.route.TopicRouteData)",
+    ] {
+        assert!(
+            methods
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(expected_signature)),
+            "missing pinned Java TopicPublishInfo signature: {expected_signature}"
+        );
+    }
+    for signature in methods {
+        let signature = signature.as_str().unwrap();
+        let method_name = signature
+            .split('(')
+            .next()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap();
+        assert!(
+            crosswalks.contains(&format!("TopicPublishInfo.{method_name}")),
+            "Java TopicPublishInfo method has no Phase 7 crosswalk: {signature}"
+        );
+    }
+}
+
+#[test]
+fn pinned_java_thread_local_index_surface_and_format_match_rust() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let expected = &fixture["threadLocalIndexApi"];
+    let inventory = &expected["publicApi"];
+    let methods = inventory["publicMethods"].as_array().unwrap();
+    let matrix = include_str!("../../../docs/compatibility/PHASE_7_PRODUCER_MATRIX.md");
+
+    assert_eq!(
+        inventory["className"],
+        "org.apache.rocketmq.client.common.ThreadLocalIndex"
+    );
+    assert_eq!(inventory["publicMethodCount"].as_u64(), Some(3));
+    assert_eq!(methods.len(), 3);
+    let constructors = inventory["publicConstructors"].as_array().unwrap();
+    assert_eq!(constructors.len(), 1);
+    assert_eq!(
+        constructors[0].as_str(),
+        Some("org.apache.rocketmq.client.common.ThreadLocalIndex()")
+    );
+    for expected_signature in [
+        "int org.apache.rocketmq.client.common.ThreadLocalIndex.incrementAndGet()",
+        "java.lang.String org.apache.rocketmq.client.common.ThreadLocalIndex.toString()",
+        "void org.apache.rocketmq.client.common.ThreadLocalIndex.reset()",
+    ] {
+        assert!(
+            methods
+                .iter()
+                .any(|candidate| candidate.as_str() == Some(expected_signature)),
+            "missing pinned Java ThreadLocalIndex signature: {expected_signature}"
+        );
+    }
+    for signature in methods {
+        let signature = signature.as_str().unwrap();
+        let method_name = signature
+            .split('(')
+            .next()
+            .unwrap()
+            .rsplit('.')
+            .next()
+            .unwrap();
+        assert!(
+            matrix.contains(&format!("ThreadLocalIndex.{method_name}")),
+            "Java ThreadLocalIndex method has no Phase 7 crosswalk: {signature}"
+        );
+    }
+
+    let parse_index = |value: &str| {
+        value
+            .strip_prefix("ThreadLocalIndex{threadLocalIndex=")
+            .unwrap()
+            .strip_suffix('}')
+            .unwrap()
+            .parse::<i32>()
+            .unwrap()
+    };
+    let index = ProducerQueueIndex::default();
+    assert_eq!(
+        index.to_string(),
+        expected["initialString"].as_str().unwrap()
+    );
+    assert!(expected["incrementedNonnegative"].as_bool().unwrap());
+    assert!(expected["incrementMatchesMask"].as_bool().unwrap());
+    let incremented = index.increment_and_get();
+    assert!(incremented >= 0);
+    assert_eq!(parse_index(&index.to_string()) & i32::MAX, incremented);
+    index.reset();
+    assert!(expected["resetValueNonnegative"].as_bool().unwrap());
+    assert!(parse_index(&index.to_string()) >= 0);
+
+    assert_eq!(expected["overflowFirst"].as_i64(), Some(0));
+    assert_eq!(expected["overflowSecond"].as_i64(), Some(1));
+    let java_overflow_value = parse_index(expected["afterOverflowString"].as_str().unwrap());
+    assert_eq!(java_overflow_value & i32::MAX, 1);
+}
+
+#[test]
 fn pinned_java_producer_impl_method_names_have_phase_crosswalks() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
@@ -176,6 +316,23 @@ fn pinned_java_producer_callable_method_names_have_phase_crosswalks() {
 fn rust_publish_info_method_names_have_java_crosswalks() {
     const RUST_TO_JAVA: &[(&str, &str)] = &[
         (
+            "TopicPublishInfo::is_order_topic",
+            "TopicPublishInfo.isOrderTopic",
+        ),
+        (
+            "TopicPublishInfo::set_order_topic",
+            "TopicPublishInfo.setOrderTopic",
+        ),
+        ("TopicPublishInfo::ok", "TopicPublishInfo.ok"),
+        (
+            "TopicPublishInfo::message_queue_list",
+            "TopicPublishInfo.getMessageQueueList",
+        ),
+        (
+            "TopicPublishInfo::set_message_queue_list",
+            "TopicPublishInfo.setMessageQueueList",
+        ),
+        (
             "TopicPublishInfo::set_message_queues",
             "TopicPublishInfo.setMessageQueueList",
         ),
@@ -188,6 +345,18 @@ fn rust_publish_info_method_names_have_java_crosswalks() {
             "TopicPublishInfo.setSendWhichQueue",
         ),
         (
+            "TopicPublishInfo::have_topic_router_info",
+            "TopicPublishInfo.isHaveTopicRouterInfo",
+        ),
+        (
+            "TopicPublishInfo::set_have_topic_router_info",
+            "TopicPublishInfo.setHaveTopicRouterInfo",
+        ),
+        (
+            "TopicPublishInfo::select_one_message_queue",
+            "TopicPublishInfo.selectOneMessageQueue()",
+        ),
+        (
             "TopicPublishInfo::select_one_message_queue_with_filter",
             "TopicPublishInfo.selectOneMessageQueue(QueueFilter...)",
         ),
@@ -198,6 +367,35 @@ fn rust_publish_info_method_names_have_java_crosswalks() {
         (
             "TopicPublishInfo::select_one_message_queue_avoiding",
             "TopicPublishInfo.selectOneMessageQueue(String lastBrokerName)",
+        ),
+        (
+            "TopicPublishInfo::reset_index",
+            "TopicPublishInfo.resetIndex",
+        ),
+        (
+            "TopicPublishInfo::get_write_queue_nums_by_broker",
+            "TopicPublishInfo.getWriteQueueNumsByBroker",
+        ),
+        (
+            "Display for TopicPublishInfo",
+            "TopicPublishInfo.toString()",
+        ),
+        (
+            "TopicPublishInfo::topic_route_data",
+            "TopicPublishInfo.getTopicRouteData",
+        ),
+        (
+            "TopicPublishInfo::set_topic_route_data",
+            "TopicPublishInfo.setTopicRouteData",
+        ),
+        (
+            "ProducerQueueIndex::increment_and_get",
+            "ThreadLocalIndex.incrementAndGet()",
+        ),
+        ("ProducerQueueIndex::reset", "ThreadLocalIndex.reset()"),
+        (
+            "Display for ProducerQueueIndex",
+            "ThreadLocalIndex.toString()",
         ),
         (
             "TopicPublishInfoTable::replace_all_with_nullable_callback",

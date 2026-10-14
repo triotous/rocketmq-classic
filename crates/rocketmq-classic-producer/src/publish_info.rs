@@ -126,7 +126,7 @@ impl ProducerQueueIndex {
         let index = indexes
             .entry(thread)
             .or_insert_with(|| AtomicI32::new(random_i32()));
-        index.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
+        index.fetch_add(1, Ordering::Relaxed).wrapping_add(1) & i32::MAX
     }
 
     pub fn reset(&self) {
@@ -148,6 +148,15 @@ impl ProducerQueueIndex {
 
     pub fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Display for ProducerQueueIndex {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.current() {
+            Some(index) => write!(formatter, "ThreadLocalIndex{{threadLocalIndex={index}}}"),
+            None => write!(formatter, "ThreadLocalIndex{{threadLocalIndex=null}}"),
+        }
     }
 }
 
@@ -1528,6 +1537,33 @@ impl TopicPublishInfoEntrySetView {
 #[cfg(test)]
 mod table_tests {
     use super::*;
+
+    #[test]
+    fn producer_queue_index_overflow_matches_pinned_java_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["threadLocalIndexApi"];
+        let index = ProducerQueueIndex::default();
+        let thread = std::thread::current().id();
+        index
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(thread, AtomicI32::new(i32::MAX));
+
+        assert_eq!(
+            index.increment_and_get(),
+            expected["overflowFirst"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            index.increment_and_get(),
+            expected["overflowSecond"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            index.to_string(),
+            expected["afterOverflowString"].as_str().unwrap()
+        );
+    }
 
     #[test]
     fn remapping_callback_can_update_a_different_topic() {

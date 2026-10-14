@@ -140,6 +140,8 @@ public final class ProducerCoreFixtures {
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
+        result.put("topicPublishInfoApi", publicApiSurface(TopicPublishInfo.class));
+        result.put("threadLocalIndexApi", threadLocalIndexApi());
         result.put("producerConstructorCases", producerConstructorCases());
         result.put("runtimeAccumulatorSettings", runtimeAccumulatorSettings());
         result.put("implementationHookExecution", implementationHookExecution());
@@ -419,6 +421,38 @@ public final class ProducerCoreFixtures {
         result.put("MQProducer", publicApiSurface(MQProducer.class));
         result.put("MQAdmin", publicApiSurface(MQAdmin.class));
         return result;
+    }
+
+    private static Map<String, Object> threadLocalIndexApi() {
+        ThreadLocalIndex index = new ThreadLocalIndex();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicApi", publicApiSurface(ThreadLocalIndex.class));
+        result.put("initialString", index.toString());
+        int incremented = index.incrementAndGet();
+        result.put("incrementedNonnegative", incremented >= 0);
+        result.put("incrementMatchesMask",
+            (threadLocalIndexValue(index) & Integer.MAX_VALUE) == incremented);
+        index.reset();
+        result.put("resetValueNonnegative", threadLocalIndexValue(index) >= 0);
+
+        try {
+            java.lang.reflect.Field field = ThreadLocalIndex.class.getDeclaredField("threadLocalIndex");
+            field.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            ThreadLocal<Integer> values = (ThreadLocal<Integer>) field.get(index);
+            values.set(Integer.MAX_VALUE);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("failed to seed ThreadLocalIndex overflow", error);
+        }
+        result.put("overflowFirst", index.incrementAndGet());
+        result.put("overflowSecond", index.incrementAndGet());
+        result.put("afterOverflowString", index.toString());
+        return result;
+    }
+
+    private static int threadLocalIndexValue(ThreadLocalIndex index) {
+        String text = index.toString();
+        return Integer.parseInt(text.substring(text.indexOf('=') + 1, text.length() - 1));
     }
 
     private static Map<String, Object> producerConstructorCases() {

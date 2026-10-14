@@ -59,7 +59,7 @@ per-overload input, error and control-flow branches remain part of P18-V01.
 | `invokeMessageQueueSelector(Message, MessageQueueSelector, Object, timeout)`, `send(Message, MessageQueue[, timeout])`, `sendOneway(Message, MessageQueue)`, and selector send overloads | `Producer::invoke_message_queue_selector` plus `Producer::{send_to_queue*,send_with_selector*,send_future_with_selector*,send_oneway_with_selector}` | Rust's selector closure captures Java's `arg`. The standalone API passes unnamespaced queue/message values to the selector, returns the selected queue with the producer namespace applied, and does not send. Pinned Java `send(Message, MessageQueue, timeout)` validates the message and calls `sendKernelImpl` directly; `invokeMessageQueueSelector` does not require its selected queue to be an element of `TopicPublishInfo.messageQueueList`. Rust resolves the caller-selected Broker through the current route and preserves its queue ID. `invoke_message_queue_selector_returns_the_namespaced_queue_without_sending` covers selector inputs, the returned queue, null selection, timeout, and no send; `explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_routed_broker` covers explicit and selector sync/future/oneway sends using IDs 7–12 when the route advertises only ID 0; an unknown Broker still fails before a send attempt. Invoked Java `implementationSelectorFailure` exercises selector-only and sync send failures, including the wrapped FAQ message and cause; Rust catches selector panics as `ProducerError::SelectorPanicked` and verifies both fail before Broker I/O. Java's public method signature is pinned in `producerImplementationApi`. |
 | `registerCheckForbiddenHook`, `hasCheckForbiddenHook`, `executeCheckForbiddenHook`; `registerSendMessageHook`, `hasSendMessageHook`, `executeSendMessageHookBefore`, `executeSendMessageHookAfter` | `Producer::{register_check_forbidden_hook,has_check_forbidden_hook,execute_check_forbidden_hook,register_send_message_hook,has_send_message_hook,execute_send_message_hook_before,execute_send_message_hook_after}`; send flows share the same snapshot runners | Direct helper behavior now has invoked Java fixture and Rust integration evidence for registration order, check rejection short-circuit, context mutation, and send-hook panic isolation. `send.rs` uses the same snapshot runners; broad overload/input reconciliation remains open. |
 | `registerEndTransactionHook`, `hasEndTransactionHook`, `executeEndTransactionHook`, `doExecuteEndTransactionHook` | `Producer` end-transaction hook APIs and public context | Fixture-backed local, Broker-check, direct execution and trace cases are recorded above and in Phase 14. |
-| `getTopicPublishInfoTable` | `Producer::get_topic_publish_info_table()` returns the shared `TopicPublishInfoTable`; entries are shared `TopicPublishInfo` values whose live queue-list, route-data, order/router-info flags, and cursor feed later route snapshots and send selection | Invoked Java fixture and Rust differential cover getter/map identity, put/get/replace/remove, retained value/list/route/cursor aliases, direct queue selection, write-queue count, and a scripted default send after queue-list mutation. The table methods now include `getOrDefault`, `putIfAbsent`, `containsValue`, conditional removal/replacement, all compute/merge variants, `forEach`, `replaceAll`, and ordered `putAll`; fixtures cover nullable key/value/callback/result behavior, including Java's null-conditional-remove and values-view-remove false results, partial `putAll`, and null `replaceAll` result. Retained key/value/entry views cover single/bulk mutation, `removeIf`, nullable inputs, and `Map.Entry.setValue`. Filtered queue selection covers null/empty varargs, a null filter (NPE only when a nonempty queue list evaluates it), null/empty queue lists, and non-short-circuit filter order. Current `fixtures/producer/core.json` SHA-256 `3815a09b647c39d68ae6bb3538e3d026eb48dd9dc12135c16d50c2a1c9f04ca2`. These close bounded mapping slices only; broad P18-V01 remains open. |
+| `getTopicPublishInfoTable` | `Producer::get_topic_publish_info_table()` returns the shared `TopicPublishInfoTable`; entries are shared `TopicPublishInfo` values whose live queue-list, route-data, order/router-info flags, and cursor feed later route snapshots and send selection | Invoked Java fixture and Rust differential cover getter/map identity, put/get/replace/remove, retained value/list/route/cursor aliases, direct queue selection, write-queue count, and a scripted default send after queue-list mutation. The table methods now include `getOrDefault`, `putIfAbsent`, `containsValue`, conditional removal/replacement, all compute/merge variants, `forEach`, `replaceAll`, and ordered `putAll`; fixtures cover nullable key/value/callback/result behavior, including Java's null-conditional-remove and values-view-remove false results, partial `putAll`, and null `replaceAll` result. Retained key/value/entry views cover single/bulk mutation, `removeIf`, nullable inputs, and `Map.Entry.setValue`. Filtered queue selection covers null/empty varargs, a null filter (NPE only when a nonempty queue list evaluates it), null/empty queue lists, and non-short-circuit filter order. Current `fixtures/producer/core.json` SHA-256 `052dff1a2c653780e513d74d7021de4e9914ab9cae172f1d090ffc89461d532a`. These close bounded mapping slices only; broad P18-V01 remains open. |
 | `getServiceState`, `setServiceState(ServiceState)` | `Producer::{service_state,set_service_state}`; public `ProducerServiceState` | The invoked Java fixture and Rust tests cover initial state, all four Java names/ordinals, null assignment, start failure, duplicate-group reset, normal start and shutdown transitions. |
 | `getDefaultMQProducer`, `isUnitMode` | `Producer` itself owns the Java default-producer behavior; `Producer::config` and `Producer::is_unit_mode` expose its configuration view | Java identity/configuration and unit-mode values are captured in `implementationStateAccessors`; Rust verifies the same group and unit-mode value without adding a wrapper object. |
 | `getMqFaultStrategy` | Producer fault settings are exposed through the direct live `Producer` getters/setters; `FaultStrategy::select` applies availability, reachability and previous-broker rules inside the owner | Pinned fixture inventories `MQFaultStrategy`'s 2 constructors, 16 declared/17 Java-visible public methods (including inherited `StartAndShutdown.start` and `preShutdown`), and `BrokerFilter`'s constructor and 2 methods. Source search shows `getAvailableFilter`, `getReachableFilter`, `getThreadBrokerFilter`, and `BrokerFilter` are used only by the strategy's own queue-selection method. Rust keeps the raw strategy/filter and Java `ThreadLocal` handles inside the Producer owner. Fault-array aliasing, toggles, selection and null/length failures have fixture/unit evidence; direct Java object access is an internal-entrypoint disposition, not a Rust raw-handle promise. |
@@ -71,27 +71,50 @@ per-overload input, error and control-flow branches remain part of P18-V01.
 ## Rust publish-info reverse crosswalk
 
 The Java-side fixture guards Java method names against the phase matrices. The
-following reverse-scan findings now also have exact Rust-to-Java rows; several
-Java owners are inherited `Map`/`Collection` methods on the live table views.
-The guard `rust_publish_info_method_names_have_java_crosswalks` requires each
-listed Rust API and Java counterpart to appear on the same matrix row.
+reverse scan now has exact Rust-to-Java rows for all 17 public `TopicPublishInfo`
+methods, all 3 public `ThreadLocalIndex` methods, and the surfaced Rust
+adapters. Several Java owners are inherited `Map`/`Collection` methods on the
+live table views. The guards
+`pinned_java_topic_publish_info_surface_has_phase_crosswalks` and
+`rust_publish_info_method_names_have_java_crosswalks` pin that source inventory
+and require each listed Rust API and Java counterpart on the same matrix row.
+The Java `ThreadLocalIndex` class is signature-pinned; its increment masking,
+reset, and `toString()` behavior are compared with `ProducerQueueIndex`.
 
 | Rust public API | Java 5.5.1 API | Mapping note |
 | --- | --- | --- |
+| `TopicPublishInfo::is_order_topic` | `TopicPublishInfo.isOrderTopic()` | JavaBean getter for ordered-topic routing. |
+| `TopicPublishInfo::set_order_topic` | `TopicPublishInfo.setOrderTopic(boolean)` | Updates the ordered-topic flag. |
+| `TopicPublishInfo::ok` | `TopicPublishInfo.ok()` | True only when the queue list exists and is nonempty. |
+| `TopicPublishInfo::message_queue_list` | `TopicPublishInfo.getMessageQueueList()` | Returns the retained live queue-list handle; `None` maps to Java null. |
+| `TopicPublishInfo::set_message_queue_list` | `TopicPublishInfo.setMessageQueueList(List<MessageQueue>)` | Installs or clears the retained live queue-list handle. |
 | `TopicPublishInfo::set_message_queues` | `TopicPublishInfo.setMessageQueueList(List<MessageQueue>)` | Vec convenience adapter to the Java queue-list setter. |
 | `TopicPublishInfo::send_which_queue` | `TopicPublishInfo.getSendWhichQueue()` | Returns the retained cursor handle. |
 | `TopicPublishInfo::set_send_which_queue` | `TopicPublishInfo.setSendWhichQueue(ThreadLocalIndex)` | Replaces the retained cursor handle. |
+| `TopicPublishInfo::have_topic_router_info` | `TopicPublishInfo.isHaveTopicRouterInfo()` | JavaBean getter for route-data presence. |
+| `TopicPublishInfo::set_have_topic_router_info` | `TopicPublishInfo.setHaveTopicRouterInfo(boolean)` | Updates route-data presence. |
+| `TopicPublishInfo::select_one_message_queue` | `TopicPublishInfo.selectOneMessageQueue()` | Increment-first cursor selection; Rust returns typed errors for null/empty lists. |
 | `TopicPublishInfo::select_one_message_queue_with_filter` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Typed Rust filter slice. |
 | `TopicPublishInfo::select_one_message_queue_with_nullable_filters` | `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` | Preserves nullable varargs and nullable filter elements. |
 | `TopicPublishInfo::select_one_message_queue_avoiding` | `TopicPublishInfo.selectOneMessageQueue(String lastBrokerName)` | Avoids the previous Broker when possible. |
+| `TopicPublishInfo::reset_index` | `TopicPublishInfo.resetIndex()` | Resets the retained `ThreadLocalIndex`. |
+| `TopicPublishInfo::get_write_queue_nums_by_broker` | `TopicPublishInfo.getWriteQueueNumsByBroker(String)` | Reads the Broker write-queue count from retained route data. |
+| `Display for TopicPublishInfo` | `TopicPublishInfo.toString()` | Provides the pinned Java diagnostic string through Rust formatting. |
+| `TopicPublishInfo::topic_route_data` | `TopicPublishInfo.getTopicRouteData()` | Returns the retained route-data handle; `None` maps to Java null. |
+| `TopicPublishInfo::set_topic_route_data` | `TopicPublishInfo.setTopicRouteData(TopicRouteData)` | Installs or clears the retained route-data handle. |
+| `ProducerQueueIndex::increment_and_get` | `ThreadLocalIndex.incrementAndGet()` | Stores the wrapped `i32` value and returns `value & 0x7fffffff`; the fixture pins overflow from `i32::MAX` to `0`, then `1`. |
+| `ProducerQueueIndex::reset` | `ThreadLocalIndex.reset()` | Replaces the current thread's cursor with a nonnegative random value. |
+| `Display for ProducerQueueIndex` | `ThreadLocalIndex.toString()` | Preserves Java's `null` before the first initialization and formats the raw current `i32`. |
+| `ProducerQueueIndex::ptr_eq` | Java reference identity for `ThreadLocalIndex` (`==`) | Rust helper used to assert alias identity; Java identity comparison is a language operation, not a declared method. |
 | `TopicPublishInfoTable::replace_all_with_nullable_callback` | `Map.replaceAll(BiFunction)` | Nullable callback adapter on the live `ConcurrentMap` counterpart. |
 | `TopicPublishInfoKeySetView::remove_if_with_nullable_callback` | `Map.keySet().removeIf(Predicate)` | Nullable callback adapter on the live key view. |
 | `TopicPublishInfoValuesView::remove_if_with_nullable_callback` | `Map.values().removeIf(Predicate)` | Nullable callback adapter on the live values view. |
 | `TopicPublishInfoEntrySetView::remove_if_with_nullable_callback` | `Map.entrySet().removeIf(Predicate)` | Nullable callback adapter on the live entry view. |
 | `TopicPublishInfoValuesView::remove_all_iter` | `Map.values().removeAll(Collection)` | Iterator input adapter to the inherited collection operation. |
 
-This closes only these surfaced name crosswalks; Rust public API reverse export
-and Java overload/input/error/flow reconciliation remain open under P18-V01.
+This closes only these surfaced name crosswalks and ThreadLocalIndex overflow
+formatting; Rust public API reverse export and Java overload/input/error/flow
+reconciliation remain open under P18-V01.
 
 ## Pinned producer API and settings inventory
 
