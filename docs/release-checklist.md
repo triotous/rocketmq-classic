@@ -96,9 +96,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   for hook ordering, rejection short-circuit, context mutation and panic
   isolation. Producer service-state getters/setters now map to a nullable Rust
   enum with fixture-backed Java names/ordinals and lifecycle transitions;
-  `isUnitMode` maps to the Producer config view. The live route-table handle,
-  raw client-factory handle and some nested fault-strategy helpers still need
-  dispositions, as do per-overload branch mappings; broad P18-V01
+  `isUnitMode` maps to the Producer config view. `getTopicPublishInfoTable`
+  now returns a shared `TopicPublishInfoTable`; Java fixture/Rust tests cover
+  live map/value/list/route/cursor aliases and a later scripted send observes a
+  changed queue list. The Rust table's remapping methods and retained
+  key/value/entry views still need Java `ConcurrentMap` method-level mapping.
+  The returned client-factory surface, nested `MQFaultStrategy` helpers, and
+  per-overload input/branch mappings also remain open; broad P18-V01
   reconciliation remains open.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
   detector toggles, mutable `long[]` table aliasing/replacement, and subsequent

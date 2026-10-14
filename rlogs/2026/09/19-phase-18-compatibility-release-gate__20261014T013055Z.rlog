@@ -70,3 +70,18 @@
 - PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
 - PASS: `cargo fmt --all -- --check`; `git diff --check`.
 - P18-V01 remains PARTIAL. The live Java topic-publish table alias and returned client-factory surface still need a method-level mapping/disposition; nested `MQFaultStrategy` helper methods and per-overload branches remain under audit. Full workspace P18-V02 gates are deferred until this audit slice is complete.
+
+## P18-V01 Producer live topic-publish table slice — 2026-10-14T02:30:41Z
+
+- Added a shared `TopicPublishInfoTable` returned by `Producer::get_topic_publish_info_table`, with shared mutable `TopicPublishInfo`, queue-list, route-data and queue-cursor handles. Producer route updates and sends use those shared values; later default sends now observe queue-list mutation, and fault selection advances the live per-info cursor.
+- Added an invoked pinned Java fixture for map/value/list/route/cursor identity, setter replacement, selection, write-queue count and removal. Updated the Rust producer fixture differential and scripted-send regression. Fixture SHA-256: `685440b6a611c6ed64988dc7761623a8915d070354ea84b09ec5349d3418353d`.
+- Preserve failure history: the first full Producer test run exposed a regression where an explicit-queue future retry consulted the route table and selected a different Broker. Dynamic table refresh is now limited to default-route sends when the Java flow carries `TopicPublishInfo`; the focused retry test and subsequent complete Producer run pass.
+- Code/test/fixture commit: `aee34905` (`feat(producer): expose live publish info table`).
+
+### Verification
+
+- PASS: `mvn -q -f compat/java-reference/pom.xml -Dproducer.core.fixture.verify=false verify` (fixture generation/drift check and 37 scenarios).
+- PASS: `cargo test -p rocketmq-classic-producer --locked` (116 unit tests; all Producer integration and doc targets).
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`.
+- PASS: `cargo fmt --all -- --check`; `git diff --check`.
+- P18-V01 remains PARTIAL. The Rust live table slice covers the exercised get/put/putIfAbsent/remove/clear path and nested aliases; Java `ConcurrentMap` remapping methods and retained key/value/entry views still need method-level mapping. The returned client-factory surface, nested `MQFaultStrategy` helpers and per-overload input/branch mapping remain open. Rerun full workspace P18-V02 gates after the remaining P18-V01 audit slices.
