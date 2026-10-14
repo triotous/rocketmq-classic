@@ -1,0 +1,13 @@
+# Phase 18 current-revision verification — 2026-10-14T05:56:54Z
+
+- Branch: `phase/19-phase-18-compatibility-release-gate`.
+- Pinned Java client source reference: `efa1be59d6fc747ad220f036c86030f05f0419f9`; external checkout left untouched. It currently points at a different HEAD and has an unrelated untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java`.
+- Implemented nullable Producer group construction, setter, namespace/start validation, hook context representation, and fixture-backed behavior in code commit `281dd9e0`.
+- Latest producer fixture SHA-256: `b0a59a0c084fc24ddff5c4947e7064d20311fe0dcf38306b8ac45ee15546c4fc`.
+- PASS: `cargo test --workspace --locked` (completed before this execution on the same code tree); `cargo test --workspace --all-features --locked`.
+- PASS: `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml verify` (fixture drift, Java/Rust cross-decodes, 37 scenarios).
+- PASS: differential comparator self-test; 37-scenario manifest validation.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 deterministic cases × 3 repetitions); bounded fuzz smoke (1,824 mutations).
+- PASS: release facade example build; offline benchmark compilation; `scripts/check-workspace-metadata.py`.
+- P18-V02 server-free evidence now covers revision `281dd9e0`. P18-V01 remains open for broad bidirectional Java/Rust source/API/overload/input/branch and inherited/trait reconciliation. Current GitHub Ubuntu CI evidence and Phase 19 Docker/Broker execution remain outstanding; neither is claimed as a manual waiver.

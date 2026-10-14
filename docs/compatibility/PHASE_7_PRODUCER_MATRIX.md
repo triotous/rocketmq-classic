@@ -79,13 +79,20 @@ values, and trace settings. The Rust differential
 `pinned_java_producer_constructor_values_map_to_rust_configuration` compares
 those values with `ProducerConfig`/`ClientConfig`; an owner-level regression
 also proves the supplied Rust RPC hook is retained. Invoked nullable cases
-cover null namespace, null topic list and enabled tracing with a null trace
-topic. Java retains its caller-owned topic `List`; Rust takes ownership of its
-`Vec<String>`, so identity is replaced by value equivalence. Java also permits
-a null producer group at construction, while Rust's required `String` group
-type has no null representation; the Java observation is recorded as a
-type-level input restriction, and no Rust start behavior is claimed for that
-invalid input.
+cover null producer group in constructors and the setter, namespaced null
+groups, null namespace, null topic list, and enabled tracing with a null trace
+topic. Public send, forbidden-check and end-transaction hook contexts preserve
+their Java-null group fields as Rust `Option<String>` values. Rust preserves
+nullable group configuration through
+`ProducerConfig::new_nullable`, `producer_group() -> Option<&str>`, and
+`set_producer_group(Option<String>)`; `new` remains convenient for non-null
+construction. Java start wraps the group with the
+namespace and then rejects null as blank before creating a client factory. Rust
+matches the exact error text and `START_FAILED` state for both namespaced and
+un-namespaced null groups. Java retains its caller-owned topic `List`; Rust
+takes ownership of its `Vec<String>`, so identity is replaced by value
+equivalence. Fixture SHA-256:
+`b0a59a0c084fc24ddff5c4947e7064d20311fe0dcf38306b8ac45ee15546c4fc`.
 
 Their parameter-to-owner mapping is:
 

@@ -132,11 +132,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `autoBatch` settings. All 11 constructor signatures are individually pinned,
   and their group, RPC-hook, topic, namespace and trace-field mappings are now
   invoked against Java and differentially checked against Rust configuration,
-  including nullable namespace/topic/trace values. Java's retained topic-list
-  identity maps to Rust-owned values; Java's nullable producer group has no
-  representation in Rust's required `String` API and is recorded as a
-  type-level input restriction. This closes the valid constructor field-mapping
-  slice only; malformed-input and broad P18-V01 reconciliation remain open.
+  including nullable group, namespace, topic and trace values. `ProducerConfig`
+  preserves nullable groups with an `Option<String>` representation, and null
+  group construction/setter/start behavior matches Java's blank-group error
+  and `START_FAILED` state through the nullable `set_producer_group` API.
+  Public Producer hook contexts also preserve nullable group fields.
+  Java's retained topic-list identity maps to
+  Rust-owned values. This closes the constructor and null-group lifecycle
+  slice; malformed-input and broad P18-V01 reconciliation remain open.
   Per-overload input/branch mappings, Java reverse-export, inherited/trait API,
   and broad source/input reconciliation remain local P18-V01 work.
 - [x] Map runtime Producer fault-strategy settings: live latency-fault and
@@ -172,6 +175,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   metadata/content checks, formatting and diff checks all pass. The updated
   Producer fixture SHA-256 is
   `4b166c789a8698ac5600667e2594d7025f7c1b90dd67b2949719269cb6d8160c`.
+- [x] Re-run the server-free P18-V02 gates on revision `281dd9e0` after
+  nullable Producer group compatibility. Default and all-feature workspace
+  tests, strict workspace Clippy, formatting/diff checks, Maven fixture drift
+  and Java/Rust cross-decodes (37 scenarios), comparator self-test,
+  37-scenario manifest validation, 16 deterministic race/leak cases repeated
+  three times, 1,824-mutation fuzz smoke, release facade examples, offline
+  benchmark compilation, and workspace metadata/license/dependency checks pass.
+  The Producer fixture SHA-256 is
+  `b0a59a0c084fc24ddff5c4947e7064d20311fe0dcf38306b8ac45ee15546c4fc`.
 - [ ] Obtain a current GitHub Ubuntu CI result for the Linux-specific Java
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
