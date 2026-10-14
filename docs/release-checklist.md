@@ -95,6 +95,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   have live Producer APIs and Java/Rust regression coverage. The
   broad Java reverse-export, inherited/trait API, and source/input branch
   reconciliation remains local P18-V01 work, not manual validation. Producer
+  selector failures now have invoked Java evidence for selector-only and sync
+  send: both wrap the thrown selector failure with the Java client exception
+  and cause. Rust catches selector panics as `ProducerError::SelectorPanicked`;
+  the scripted regression compares the exact Java message and cause text and
+  confirms that neither path sends a Broker request. `fixtures/producer/core.json`
+  SHA-256: `d1b05a04ed53dde2820647bd964ea2092592b35d51de90273f5b22f77ded0fe7`.
+  This closes that selector failure branch only; broad P18-V01 reconciliation
+  remains open. Producer
   `EndTransactionHook` registration, context and direct execution now have
   fixture-backed local and Broker-check path coverage, including ordered
   execution and hook-failure isolation; this closes that API slice only and
