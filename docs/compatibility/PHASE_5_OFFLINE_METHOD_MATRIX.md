@@ -48,6 +48,18 @@ Shared branch checks are in `consumer.rs:every_consumer_rpc_rejects_unexpected_s
 - Public modules are namespace organization. There is no core runtime singleton, callback executor setting, retry count setting or separate transport abstraction. Transport configuration/lifecycle remains with the established RemotingClient, with absolute-deadline sync overload representations documented in ADR-0003.
 - Known typed inputs reuse Phase 4 headers/bodies. Notification/polling models have no MQClientAPIImpl entrypoint in pinned 5.5.1; they are not fabricated here. Public admin/runtime/consumer inventory remains owned by its later phase.
 
+## Typed command-header trait boundary
+
+Rust `rocketmq_classic_protocol::header::CommandHeader` packages typed header
+encoding and decoding as `encode_fields` / `decode_fields`. Its Java counterpart
+is `CommandCustomHeader` together with `RemotingCommand`'s reflective
+ext-field conversion: the Java interface itself only declares `checkFields`,
+while Rust keeps conversion in the trait contract and validates required or
+malformed fields in each decoder. This is the same typed RPC header boundary,
+not an additional client operation. `tests/header_inventory.rs` pins the set of
+basic Rust implementations against the Java fixture, and `tests/headers.rs`
+checks their field, default, and malformed-value behavior.
+
 ## Deadline and pending audit (P5-V03)
 
 `rpc.rs:broker_methods_use_one_attempt_and_honor_deadline` covers every Broker method, all send modes/variants, ordinary and Lite pull sync/future, and oneway update/unlock/end transaction. A silent peer checks that no second frame or connection occurs. The transport's source-confirmed GO_AWAY reconnect is an existing Phase 3 transport recovery under the original deadline, not producer retry policy.

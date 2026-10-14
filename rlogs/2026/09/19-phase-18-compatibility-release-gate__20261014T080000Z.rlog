@@ -41,3 +41,15 @@ Base revision: dd3b2b6e docs(compat): record producer lifecycle gates
 - The Phase 11 matrix incorrectly described Rust `HashFunction` as having no Java public equivalent. Pinned Java 5.5.1 `AllocateMessageQueueConsistentHash` declares `(int, HashFunction)`, and `HashFunction.hash(String)` returns Java `long`; Rust `with_hash_function(i32, Arc<dyn HashFunction>)` and `HashFunction::hash(&str) -> i64` are the corresponding API.
 - `compat.RebalanceFixtures` invokes the Java custom-hash constructor, while `crates/rocketmq-classic-consumer/tests/rebalance.rs` differentially exercises it using Java-compatible `String.hashCode`. Updated `docs/compatibility/PHASE_11_OFFLINE_METHOD_MATRIX.md` to record the correct constructor mapping. No implementation gap was found in this slice.
 - PASS: inspected the pinned Java 5.5.1 constructor/interface source and the existing invoked Java fixture plus Rust differential path; no fixture change was needed. `git diff --check` passes for the matrix/log update.
+
+## Inherited and trait API audit — runtime and protocol adapters
+
+- Confirmed the public consumer listener interfaces map to Java `MessageListenerConcurrently` / `MessageListenerOrderly` and their listener/context behavior is owned by Phase 10/12/13; `TransactionExecutor` maps Java `TransactionMQProducer.setExecutorService(ExecutorService)` in the Phase 14 matrix.
+- `ConsumerRuntime` / `MessageRequest` map the pinned `MQConsumerInner`, `MessageRequest`, `PullMessageService`, and request-mode owner flows. Added method-level crosswalks and evidence locations to `docs/compatibility/PHASE_6_API_CONFIG_MAP.md`; existing Phase 6/10/11/17 evidence covers those owner methods.
+- `CommandHeader` maps the Java `CommandCustomHeader` plus reflective `RemotingCommand` ext-field conversion; added the trait boundary and fixture/test pointers to `docs/compatibility/PHASE_5_OFFLINE_METHOD_MATRIX.md`.
+- `PrivateKeyDecryptionStrategy` is already source-mapped to `TlsHelper.DecryptionStrategy`; the per-client strategy in place of Java global registration is recorded as an accepted Rust-native difference in `PHASE_3_REMOTING_INVENTORY.md`.
+- Validation: pending documentation diff check.
+
+## Validation addendum — runtime and protocol trait crosswalk
+
+- PASS: inspected the Rust request-dispatch implementation and its FIFO/delayed/group-replacement regression, the pinned Java `MQConsumerInner` / `MessageRequest` / `PullMessageService` source, the Java `CommandCustomHeader` declaration, and existing protocol fixture inventory. `git diff --check` passes for the documentation and log changes.

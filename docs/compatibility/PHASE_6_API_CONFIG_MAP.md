@@ -725,6 +725,27 @@ refresh and transaction-dispatch state.
 | `ProducerRuntime::transaction_processor` | Java's `MQProducerInner.checkTransactionState` callback is invoked by `ClientRemotingProcessor.checkTransactionState`. Rust supplies the typed request processor when the TransactionProducer is configured. | Request code 39 routing is mapped above; actual transaction callback and state handling belong to Phase 14. |
 | `ProducerRuntime::map_value_equality_key` | No Java method with this name. This optional Rust adapter value models Java owner `equals()` for conditional producer/consumer registry operations; lifecycle ownership still uses object identity. | Registry equality and mutable-key differential cases in the Phase 6 requirement audit. |
 
+## Rust consumer owner contract
+
+`ConsumerRuntime` and `MessageRequest` are runtime-owner adapters for Java's
+internal `MQConsumerInner`, `MessageRequest`, `PullRequest` / `PopRequest`, and
+`PullMessageService` flows. They keep consumer ownership and typed request
+dispatch inside the Rust runtime rather than exposing a mutable Java
+implementation object.
+
+| Rust adapter method | Java source method / behavior | Evidence / disposition |
+| --- | --- | --- |
+| `ConsumerRuntime::heartbeat_data` | `MQClientInstance.prepareHeartbeatData` collects the consumer group, model, consume type, start-offset policy, unit mode, and subscriptions represented by the registered `MQConsumerInner`. | [Heartbeat audit](PHASE_6_HEARTBEAT_AUDIT.md) verifies Java `ConsumerData` construction, nullable subscriptions, and full/simple heartbeat branches; Push direct getters are in the Phase 10 matrix. |
+| `ConsumerRuntime::is_subscribe_topic_need_update`, `update_topic_subscribe_info`, `persist_consumer_offset`, `try_rebalance` | `MQConsumerInner.isSubscribeTopicNeedUpdate`, `updateTopicSubscribeInfo`, `persistConsumerOffset`, and `tryRebalance` | The Phase 10 Push fixture checks route-update and pause behavior; Phase 11 tests cover active Push/Pull rebalance, assignment updates, and offset persistence. |
+| `ConsumerRuntime::adjust_thread_pool` | `DefaultMQPushConsumerImpl.adjustThreadPool`; built-in Java consume services leave `incCorePoolSize` / `decCorePoolSize` as no-ops. | Phase 10 invoked fixture and Rust regression verify the built-in no-op; explicit `updateCorePoolSize` remains mapped on the Push facade. |
+| `ConsumerRuntime::pull_message`, `pop_message`; `MessageRequest::{consumer_group,mode}` | `PullMessageService` chooses `PullRequest` or `PopRequest` by `MessageRequest.getMessageRequestMode()` and invokes the registered consumer implementation; group selects the current runtime owner. | `runtime/pull.rs` maps FIFO, delayed scheduling, mode and group dispatch; `tests/pull_dispatch.rs::fifo_mode_dispatch_delay_and_group_selection_use_current_registration` checks the owner boundary. `MessageRequest::as_any` is the Rust downcast adapter for concrete request ownership, with no separate Java method. |
+| `ConsumerRuntime::inbound_processor` and `ConsumerOperation` | Consumer-group inbound operations in `ClientRemotingProcessor`, including Push reset offset, consumer status, running info, and consume-directly handlers | [Inbound matrix](PHASE_6_INBOUND_MATRIX.md) checks request-code routing and absent-handler outcomes; Phase 17 owns the active admin/query handlers. |
+| `ConsumerRuntime::map_value_equality_key` | No Java method with this name. Like the producer adapter key, it models Java owner `equals()` only for conditional registry-map operations; lifecycle registration remains identity-based. | Registry equality and mutable-key differential cases in the Phase 6 requirement audit. |
+
+`MessageRequest` carries only group/mode routing data at the runtime boundary;
+concrete Push/Pull request state and RPC work remain with their consumer owners.
+The trait methods do not add consumer configuration or a new Broker feature.
+
 ## RPC API methods consumed by the runtime
 
 | Rust public API | Pinned Java API / behavior | Evidence / boundary |
