@@ -274,6 +274,7 @@ public final class ProducerCoreFixtures {
         result.put("backpressureSettings", backpressure);
         result.put("runtimeSettings", runtimeSettings());
         result.put("perRequestTimeoutRetry", perRequestTimeoutRetry());
+        result.put("checkForbiddenRetry", checkForbiddenRetry());
 
         List<Map<String, Object>> groups = new ArrayList<>();
         for (String value : Arrays.asList(" ", "g".repeat(120), "g".repeat(121), "bad.group", "a|b_%")) {
@@ -1276,23 +1277,11 @@ public final class ProducerCoreFixtures {
         client.getScheduledExecutorService().shutdownNow();
     }
 
-    private static Map<String, Object> perRequestTimeoutRetry() throws Exception {
-        DefaultMQProducer producer = new DefaultMQProducer("producer-timeout-retry-fixture");
-        producer.setSendMsgTimeout(3_000);
-        List<Map<String, Object>> configuredValues = new ArrayList<>();
-        for (int timeoutMs : List.of(-2, -1, 0, 125, 6_000)) {
-            producer.setSendMsgMaxTimeoutPerRequest(timeoutMs);
-            Map<String, Object> value = new TreeMap<>();
-            value.put("input", timeoutMs);
-            value.put("readback", producer.getSendMsgMaxTimeoutPerRequest());
-            configuredValues.add(value);
-        }
-        producer.setSendMsgMaxTimeoutPerRequest(0);
-        producer.setRetryTimesWhenSendFailed(1);
-        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+    private static MQClientInstance installProducerSendFixtureRoute(
+        DefaultMQProducer producer, DefaultMQProducerImpl implementation, String topic, String clientId)
+        throws Exception {
         implementation.setServiceState(ServiceState.RUNNING);
-
-        MQClientInstance client = new MQClientInstance(producer, 0, "producer-timeout-retry-fixture");
+        MQClientInstance client = new MQClientInstance(producer, 0, clientId);
         Field clientFactory = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
         clientFactory.setAccessible(true);
         clientFactory.set(implementation, client);
@@ -1307,9 +1296,28 @@ public final class ProducerCoreFixtures {
 
         TopicPublishInfo topicInfo = new TopicPublishInfo();
         topicInfo.setMessageQueueList(List.of(
-            new MessageQueue("orders", "broker-a", 0),
-            new MessageQueue("orders", "broker-b", 0)));
-        implementation.updateTopicPublishInfo("orders", topicInfo);
+            new MessageQueue(topic, "broker-a", 0),
+            new MessageQueue(topic, "broker-b", 0)));
+        implementation.updateTopicPublishInfo(topic, topicInfo);
+        return client;
+    }
+
+    private static Map<String, Object> perRequestTimeoutRetry() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-timeout-retry-fixture");
+        producer.setSendMsgTimeout(3_000);
+        List<Map<String, Object>> configuredValues = new ArrayList<>();
+        for (int timeoutMs : List.of(-2, -1, 0, 125, 6_000)) {
+            producer.setSendMsgMaxTimeoutPerRequest(timeoutMs);
+            Map<String, Object> value = new TreeMap<>();
+            value.put("input", timeoutMs);
+            value.put("readback", producer.getSendMsgMaxTimeoutPerRequest());
+            configuredValues.add(value);
+        }
+        producer.setSendMsgMaxTimeoutPerRequest(0);
+        producer.setRetryTimesWhenSendFailed(1);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-timeout-retry-fixture");
 
         AtomicInteger beforeAttempts = new AtomicInteger();
         AtomicInteger afterAttempts = new AtomicInteger();
@@ -1353,6 +1361,70 @@ public final class ProducerCoreFixtures {
         result.put("beforeAttempts", beforeAttempts.get());
         result.put("afterAttempts", afterAttempts.get());
         result.put("outcome", outcome);
+        return result;
+    }
+
+    private static Map<String, Object> checkForbiddenRetry() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-check-forbidden-retry-fixture");
+        producer.setSendMsgTimeout(3_000);
+        producer.setRetryTimesWhenSendFailed(1);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "orders", "producer-check-forbidden-retry-fixture");
+
+        AtomicInteger checkCalls = new AtomicInteger();
+        AtomicInteger sendBeforeCalls = new AtomicInteger();
+        AtomicInteger sendAfterCalls = new AtomicInteger();
+        implementation.registerCheckForbiddenHook(new CheckForbiddenHook() {
+            @Override
+            public String hookName() {
+                return "check-forbidden-retry-fixture";
+            }
+
+            @Override
+            public void checkForbidden(CheckForbiddenContext context) throws MQClientException {
+                checkCalls.incrementAndGet();
+                throw new MQClientException("fixture forbidden", null);
+            }
+        });
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "send-hook-after-forbidden-retry-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                sendBeforeCalls.incrementAndGet();
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+                sendAfterCalls.incrementAndGet();
+            }
+        });
+
+        String outcome;
+        String finalMessage = "";
+        int responseCode = -1;
+        try {
+            implementation.send(new Message("orders", new byte[] {1}));
+            outcome = "success";
+        } catch (MQClientException expected) {
+            outcome = expected.getClass().getSimpleName();
+            finalMessage = expected.getMessage();
+            responseCode = expected.getResponseCode();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("retryTimesWhenSendFailed", producer.getRetryTimesWhenSendFailed());
+        result.put("checkCalls", checkCalls.get());
+        result.put("sendBeforeCalls", sendBeforeCalls.get());
+        result.put("sendAfterCalls", sendAfterCalls.get());
+        result.put("outcome", outcome);
+        result.put("responseCode", responseCode);
+        result.put("messageContainsAttemptCount", finalMessage.contains("Send [2] times"));
         return result;
     }
 
