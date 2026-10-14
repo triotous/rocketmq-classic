@@ -103,7 +103,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   value/result branches, ordered `putAll` null-row behavior, and retained
   key/value/entry view single, bulk, `removeIf`, and `setValue` mutations now
   have invoked Java fixture and Rust differential evidence. Fixture SHA-256 is
-  `410c2e3a5e18eb3cb7ed36842f7e4a889bdf1ee01ea09f8cbd41522c410750d9`.
+  `d8e0fb04555fa9e730277d2230f37b48eb0ae159f9f49610d96eff3c369de051`.
+  `TopicPublishInfo.selectOneMessageQueue(QueueFilter...)` also has direct
+  null/empty array, null filter, null/empty queue-list and non-short-circuit
+  filter-order differentials in that fixture.
   The returned client-factory surface, nested `MQFaultStrategy` helpers, and
   per-overload input/branch mappings also remain open; broad P18-V01
   reconciliation remains open.
