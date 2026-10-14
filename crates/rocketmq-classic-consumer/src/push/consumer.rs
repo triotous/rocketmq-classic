@@ -54,6 +54,7 @@ use tokio::time::Instant;
 use std::sync::Mutex;
 
 use crate::{
+    admin::{first_query_message, unique_key_lookup_begin_timestamp},
     consume::{
         ConcurrentConsumeService, ConsumeMessageContext, ConsumeMessageHook,
         ConsumeMessageHookRegistry, ConsumeRequest, ConsumeService, ConsumeSubmitError,
@@ -1174,58 +1175,54 @@ impl PushConsumer {
         Ok(spans)
     }
 
-    pub async fn query_message_by_unique_key(
-        &self,
-        topic: &str,
-        unique_key: &str,
-        max_num: i32,
-        begin_timestamp: i64,
-        end_timestamp: i64,
-    ) -> Result<QueryResult, PushConsumerError> {
-        self.query_messages(
-            topic,
-            unique_key,
-            max_num,
-            begin_timestamp,
-            end_timestamp,
-            true,
-        )
-        .await
-    }
-
-    /// Views a message by Java's physical offset message ID.
+    /// Views a message by its physical ID, falling back to Java's unique-key
+    /// query when parsing or the physical lookup fails.
     pub async fn view_message(
         &self,
         topic: &str,
         message_id: &str,
-    ) -> Result<MessageExt, PushConsumerError> {
+    ) -> Result<Option<MessageExt>, PushConsumerError> {
         let context = self
             .pull_context()
             .await
             .ok_or(PushConsumerError::NotStarted)?;
-        let decoded = decode_message_id(message_id).map_err(|_| {
-            crate::error::PushConsumerError::Rpc(rocketmq_classic_core::error::RpcError::Response {
-                request_code: request::VIEW_MESSAGE_BY_ID,
-                peer: topic.to_owned(),
-                code: response::NO_MESSAGE,
-                remark: Some("query message by id finished, but no message.".into()),
-            })
-        })?;
-        let header = ViewMessageRequestHeader {
-            topic: Some(topic.to_owned()),
-            offset: decoded.offset,
-        };
-        let timeout_millis =
-            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
-        Ok(context
-            .runtime
-            .api()
-            .view_message(
-                &decoded.address.to_string(),
-                &header,
-                Instant::now() + Duration::from_millis(timeout_millis),
+        let mut client_config = self.config.client_config().clone();
+        let namespaced_topic = client_config
+            .with_namespace(Some(topic))?
+            .filter(|topic| !topic.is_empty())
+            .ok_or(PushConsumerError::InvalidQueue)?;
+        if let Ok(decoded) = decode_message_id(message_id) {
+            let header = ViewMessageRequestHeader {
+                topic: Some(namespaced_topic),
+                offset: decoded.offset,
+            };
+            let timeout_millis =
+                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+            if let Ok(message) = context
+                .runtime
+                .api()
+                .view_message(
+                    &decoded.address.to_string(),
+                    &header,
+                    Instant::now() + Duration::from_millis(timeout_millis),
+                )
+                .await
+            {
+                return Ok(Some(message));
+            }
+        }
+
+        let result = self
+            .query_messages(
+                topic,
+                message_id,
+                32,
+                unique_key_lookup_begin_timestamp(),
+                i64::MAX,
+                true,
             )
-            .await?)
+            .await?;
+        Ok(first_query_message(result))
     }
 
     #[allow(clippy::too_many_arguments)]

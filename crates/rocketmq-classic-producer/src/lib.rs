@@ -1,3 +1,16 @@
+//! Producer facade compatibility boundary.
+//!
+//! Unique-key lookup is part of Java's `viewMessage` fallback, not a separate
+//! `DefaultMQProducer` public method.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_producer::Producer;
+//!
+//! fn extra_java_api(producer: &Producer) {
+//!     let _ = producer.query_message_by_unique_key("orders", "id", 32, 0, 1);
+//! }
+//! ```
+
 mod accumulator;
 mod admin;
 mod backpressure;

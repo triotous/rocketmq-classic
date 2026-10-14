@@ -1,3 +1,17 @@
+//! Consumer facade compatibility boundary.
+//!
+//! The Java Push and Pull facades expose unique-key lookup through
+//! `viewMessage`; they do not publish a separate query method.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_consumer::{PullConsumer, PushConsumer};
+//!
+//! fn extra_java_api(push: &PushConsumer, pull: &PullConsumer) {
+//!     let _ = push.query_message_by_unique_key("orders", "id", 32, 0, 1);
+//!     let _ = pull.query_message_by_unique_key("orders", "id", 32, 0, 1);
+//! }
+//! ```
+
 mod admin;
 pub mod config;
 mod consume;

@@ -25,7 +25,6 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::ConsumerRunningInfoBody,
-    codes::{request, response},
     header::{
         BoundaryType, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
         GetMinOffsetRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
@@ -40,6 +39,7 @@ use rocketmq_classic_remoting::client::RpcHook;
 use tokio::time::Instant;
 
 use crate::{
+    admin::{first_query_message, unique_key_lookup_begin_timestamp},
     config::PullConsumerConfig,
     consume::{ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageHookRegistry},
     error::PullConsumerError,
@@ -1283,54 +1283,45 @@ impl PullConsumer {
             .await
     }
 
-    pub async fn query_message_by_unique_key(
-        &self,
-        topic: &str,
-        unique_key: &str,
-        max_num: i32,
-        begin_timestamp: i64,
-        end_timestamp: i64,
-    ) -> Result<QueryResult, PullConsumerError> {
-        self.query_messages(
-            topic,
-            unique_key,
-            max_num,
-            begin_timestamp,
-            end_timestamp,
-            true,
-        )
-        .await
-    }
-
-    /// Views a message by Java's physical offset message ID.
+    /// Views a message by its physical ID, falling back to Java's unique-key
+    /// query when parsing or the physical lookup fails.
     pub async fn view_message(
         &self,
         topic: &str,
         message_id: &str,
-    ) -> Result<MessageExt, PullConsumerError> {
+    ) -> Result<Option<MessageExt>, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
-        let decoded = decode_message_id(message_id).map_err(|_| {
-            crate::error::PullConsumerError::Rpc(rocketmq_classic_core::error::RpcError::Response {
-                request_code: request::VIEW_MESSAGE_BY_ID,
-                peer: topic.to_owned(),
-                code: response::NO_MESSAGE,
-                remark: Some("query message by id finished, but no message.".into()),
-            })
-        })?;
-        let header = ViewMessageRequestHeader {
-            topic: Some(topic.to_owned()),
-            offset: decoded.offset,
-        };
-        let timeout_millis =
-            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
-        Ok(runtime
-            .api()
-            .view_message(
-                &decoded.address.to_string(),
-                &header,
-                Instant::now() + Duration::from_millis(timeout_millis),
+        if let Ok(decoded) = decode_message_id(message_id) {
+            let header = ViewMessageRequestHeader {
+                topic: Some(topic.to_owned()),
+                offset: decoded.offset,
+            };
+            let timeout_millis =
+                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
+            if let Ok(message) = runtime
+                .api()
+                .view_message(
+                    &decoded.address.to_string(),
+                    &header,
+                    Instant::now() + Duration::from_millis(timeout_millis),
+                )
+                .await
+            {
+                return Ok(Some(message));
+            }
+        }
+
+        let result = self
+            .query_messages(
+                topic,
+                message_id,
+                32,
+                unique_key_lookup_begin_timestamp(),
+                i64::MAX,
+                true,
             )
-            .await?)
+            .await?;
+        Ok(first_query_message(result))
     }
 
     #[allow(clippy::too_many_arguments)]

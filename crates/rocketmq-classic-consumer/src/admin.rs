@@ -1,15 +1,15 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crate::offset::OffsetStore;
 use rocketmq_classic_common::{
-    message::{DecodeOptions, MessageQueue, decode_one},
+    message::{DecodeOptions, MessageExt, MessageQueue, decode_one},
     topic::TopicValidator,
 };
 use rocketmq_classic_core::{
-    api::admin::AdminQueryError,
+    api::admin::{AdminQueryError, QueryResult},
     config::ClientConfig,
     error::RpcError,
     route::broker_vip_channel,
@@ -30,6 +30,23 @@ use std::sync::Weak;
 use tokio::time::Instant;
 
 const ADMIN_TIMEOUT: Duration = Duration::from_millis(6_000);
+const UNIQUE_KEY_LOOKBACK_MILLIS: i64 = 3 * 24 * 60 * 60 * 1_000;
+
+pub(crate) fn unique_key_lookup_begin_timestamp() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
+        .saturating_sub(UNIQUE_KEY_LOOKBACK_MILLIS)
+}
+
+pub(crate) fn first_query_message(result: QueryResult) -> Option<MessageExt> {
+    let messages = result.get_message_list()?;
+    let message = messages.snapshot().into_iter().next()?;
+    message.map(|message| message.snapshot())
+}
 
 pub(crate) fn validate_topic(topic: &str) -> Result<(), String> {
     let validation = TopicValidator::validate_topic(Some(topic));

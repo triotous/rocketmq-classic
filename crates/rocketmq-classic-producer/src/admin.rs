@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_core::{
     api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
-    error::RpcError,
     route::broker_vip_channel,
 };
-use rocketmq_classic_protocol::codes::{request, response};
 use rocketmq_classic_protocol::header::{
     BoundaryType, CreateTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader,
     GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, SearchOffsetRequestHeader,
@@ -17,6 +16,7 @@ use tokio::time::Instant;
 use crate::{Producer, ProducerError, validation};
 
 const ADMIN_TIMEOUT_MILLIS: u64 = 6_000;
+const UNIQUE_KEY_LOOKBACK_MILLIS: i64 = 3 * 24 * 60 * 60 * 1_000;
 
 impl Producer {
     pub async fn query_message(
@@ -31,53 +31,40 @@ impl Producer {
             .await
     }
 
-    pub async fn query_message_by_unique_key(
-        &self,
-        topic: &str,
-        unique_key: &str,
-        max_num: i32,
-        begin_timestamp: i64,
-        end_timestamp: i64,
-    ) -> Result<QueryResult, ProducerError> {
-        self.query_messages(
-            topic,
-            unique_key,
-            max_num,
-            begin_timestamp,
-            end_timestamp,
-            true,
-        )
-        .await
-    }
-
-    /// Views a message by Java's physical offset message ID.
+    /// Views a message by its physical ID, falling back to Java's unique-key
+    /// query when parsing or the physical lookup fails.
     pub async fn view_message(
         &self,
         topic: &str,
         message_id: &str,
-    ) -> Result<MessageExt, ProducerError> {
+    ) -> Result<Option<MessageExt>, ProducerError> {
         let runtime = self.started_runtime().await?;
-        let decoded = decode_message_id(message_id).map_err(|_| RpcError::Response {
-            request_code: request::VIEW_MESSAGE_BY_ID,
-            peer: topic.to_owned(),
-            code: response::NO_MESSAGE,
-            remark: Some("query message by id finished, but no message.".into()),
-        })?;
-        let header = ViewMessageRequestHeader {
-            topic: Some(topic.to_owned()),
-            offset: decoded.offset,
-        };
-        let timeout = std::time::Duration::from_millis(
-            i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
-        );
-        Ok(runtime
-            .api()
-            .view_message(
-                &decoded.address.to_string(),
-                &header,
-                Instant::now() + timeout,
-            )
-            .await?)
+        if let Ok(decoded) = decode_message_id(message_id) {
+            let header = ViewMessageRequestHeader {
+                topic: Some(topic.to_owned()),
+                offset: decoded.offset,
+            };
+            let timeout = std::time::Duration::from_millis(
+                i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
+            );
+            if let Ok(message) = runtime
+                .api()
+                .view_message(
+                    &decoded.address.to_string(),
+                    &header,
+                    Instant::now() + timeout,
+                )
+                .await
+            {
+                return Ok(Some(message));
+            }
+        }
+
+        let begin_timestamp = current_time_millis().saturating_sub(UNIQUE_KEY_LOOKBACK_MILLIS);
+        let result = self
+            .query_messages(topic, message_id, 32, begin_timestamp, i64::MAX, true)
+            .await?;
+        Ok(first_query_message(result))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -359,4 +346,19 @@ impl Producer {
         }
         Ok(())
     }
+}
+
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
+}
+
+fn first_query_message(result: QueryResult) -> Option<MessageExt> {
+    let messages = result.get_message_list()?;
+    let message = messages.snapshot().into_iter().next()?;
+    message.map(|message| message.snapshot())
 }

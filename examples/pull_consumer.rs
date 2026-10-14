@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.client_config_mut().set_namesrv_addr(Some(address));
     }
     let consumer = std::sync::Arc::new(PullConsumer::new(config));
-    consumer.register_topic(&topic)?;
+    consumer.register_message_queue_listener(&topic, None)?;
     consumer.start().await?;
 
     let queue = MessageQueue::new(topic, broker, queue_id);

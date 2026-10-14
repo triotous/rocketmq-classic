@@ -6,7 +6,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use base64::Engine;
@@ -39,6 +39,15 @@ async fn read_command(stream: &mut TcpStream) -> Option<RemotingCommand> {
     frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
         .ok()
         .flatten()
+}
+
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
 }
 
 async fn write_response(
@@ -429,7 +438,7 @@ async fn create_topic_sorts_brokers_and_accepts_partial_success() {
 }
 
 #[tokio::test]
-async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
+async fn view_message_unique_key_fallback_uses_java_query_defaults_and_namespaced_topic() {
     let (broker, broker_task, mut broker_requests) = query_broker_peer().await;
     let (namesrv, namesrv_task, mut namesrv_requests) =
         name_server_peer(route_body(&[("broker-a", &broker)])).await;
@@ -440,14 +449,13 @@ async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
     let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
-    let result = producer
-        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+    let before_millis = current_time_millis();
+    let message = producer
+        .view_message("orders", "producer-unique-1")
         .await
+        .unwrap()
         .unwrap();
-    assert_eq!(result.get_index_last_update_timestamp(), 200);
-    let messages = result.get_message_list().unwrap().snapshot();
-    assert_eq!(messages.len(), 1);
-    let message = messages[0].as_ref().unwrap().snapshot();
+    let after_millis = current_time_millis();
     assert_eq!(message.message().topic(), "orders");
     assert_eq!(message.message_id(), Some("producer-unique-1"));
     assert_eq!(
@@ -489,8 +497,11 @@ async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
     assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
     assert_eq!(fields.get("key"), Some(&"producer-unique-1".to_owned()));
     assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
-    assert_eq!(fields.get("beginTimestamp"), Some(&"10".to_owned()));
-    assert_eq!(fields.get("endTimestamp"), Some(&"99".to_owned()));
+    let begin_timestamp: i64 = fields.get("beginTimestamp").unwrap().parse().unwrap();
+    let expected_minimum = before_millis - 3 * 24 * 60 * 60 * 1_000;
+    let expected_maximum = after_millis - 3 * 24 * 60 * 60 * 1_000;
+    assert!((expected_minimum..=expected_maximum).contains(&begin_timestamp));
+    assert_eq!(fields.get("endTimestamp"), Some(&i64::MAX.to_string()));
     assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
     assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
 
@@ -500,16 +511,14 @@ async fn query_facade_uses_namespaced_topic_and_java_client_message_ids() {
 }
 
 #[tokio::test]
-async fn unique_key_query_facade_preserves_java_terminal_no_message_error() {
+async fn view_message_unique_key_fallback_preserves_java_terminal_no_message_error() {
     let (broker, broker_task, _) =
         query_broker_peer_with_response(response::SERVICE_NOT_AVAILABLE).await;
     let (namesrv, namesrv_task, _) = name_server_peer(route_body(&[("broker-a", &broker)])).await;
     let producer = Arc::new(Producer::new(producer_config(namesrv)));
     producer.start().await.unwrap();
 
-    let query_error = producer
-        .query_message_by_unique_key("orders", "missing-unique-key", 32, 10, 99)
-        .await;
+    let query_error = producer.view_message("orders", "missing-unique-key").await;
     assert!(
         matches!(
             &query_error,
@@ -530,7 +539,7 @@ async fn unique_key_query_facade_preserves_java_terminal_no_message_error() {
 }
 
 #[tokio::test]
-async fn view_message_matches_java_physical_lookup_and_does_not_fallback() {
+async fn view_message_falls_back_to_unique_key_query_after_physical_lookup_failure() {
     let (broker, broker_task, mut broker_requests) = query_broker_peer().await;
     let (namesrv, namesrv_task, mut namesrv_requests) =
         name_server_peer(route_body(&[("broker-a", &broker)])).await;
@@ -542,32 +551,37 @@ async fn view_message_matches_java_physical_lookup_and_does_not_fallback() {
     producer.start().await.unwrap();
 
     let invalid = producer
-        .view_message("orders", "not-a-physical-message-id")
+        .view_message("orders", "producer-unique-1")
         .await
-        .unwrap_err();
-    assert!(matches!(
-        invalid,
-        ProducerError::Rpc(RpcError::Response {
-            request_code: request::VIEW_MESSAGE_BY_ID,
-            code: response::NO_MESSAGE,
-            remark: Some(remark),
-            ..
-        }) if remark == "query message by id finished, but no message."
-    ));
+        .unwrap()
+        .unwrap();
+    assert_eq!(invalid.message_id(), Some("producer-unique-1"));
+    let invalid_query = timeout(Duration::from_secs(1), broker_requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(invalid_query.code, request::QUERY_MESSAGE);
+    assert_eq!(
+        invalid_query.ext_fields.unwrap().get("_UNIQUE_KEY_QUERY"),
+        Some(&"true".to_owned())
+    );
 
     let message_id = physical_message_id(&broker, 77);
-    let direct = producer
+    let fallback_error = producer
         .view_message("orders", &message_id)
         .await
         .unwrap_err();
     assert!(matches!(
-        direct,
-        ProducerError::Rpc(RpcError::MalformedResponse {
-            request_code: request::VIEW_MESSAGE_BY_ID,
-            ..
-        })
+        fallback_error,
+        ProducerError::AdminQuery(rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
+            RpcError::Response {
+                request_code: request::QUERY_MESSAGE,
+                code: response::NO_MESSAGE,
+                ..
+            }
+        ))
     ));
-    let request = timeout(Duration::from_secs(1), async {
+    let physical_request = timeout(Duration::from_secs(1), async {
         loop {
             let command = broker_requests.recv().await.unwrap();
             if command.code == request::VIEW_MESSAGE_BY_ID {
@@ -578,15 +592,23 @@ async fn view_message_matches_java_physical_lookup_and_does_not_fallback() {
     })
     .await
     .unwrap();
-    let fields = request.ext_fields.unwrap();
+    let fields = physical_request.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
     assert_eq!(fields.get("offset"), Some(&"77".to_owned()));
-    while let Ok(command) = broker_requests.try_recv() {
-        assert_ne!(command.code, request::QUERY_MESSAGE);
-    }
-    while let Ok(command) = namesrv_requests.try_recv() {
-        assert_ne!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
-    }
+    let unique_query = timeout(Duration::from_secs(1), broker_requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unique_query.code, request::QUERY_MESSAGE);
+    let route = timeout(Duration::from_secs(1), namesrv_requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(route.code, request::GET_ROUTEINFO_BY_TOPIC);
+    assert_eq!(
+        route.ext_fields.unwrap().get("topic"),
+        Some(&"tenant%orders".to_owned())
+    );
 
     producer.shutdown().await.unwrap();
     namesrv_task.abort();

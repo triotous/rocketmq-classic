@@ -3,7 +3,7 @@ use std::{
     fmt::Write as _,
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use base64::Engine;
@@ -39,6 +39,15 @@ async fn read_command(stream: &mut TcpStream) -> Option<RemotingCommand> {
     frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
         .ok()
         .flatten()
+}
+
+fn current_time_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(i64::MAX)
 }
 
 async fn write_response(
@@ -630,13 +639,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
     .unwrap();
     push.start().await.unwrap();
 
-    let push_result = push
-        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+    let push_before = current_time_millis();
+    let push_message = push
+        .view_message("orders", "producer-unique-1")
         .await
+        .unwrap()
         .unwrap();
-    let push_messages = push_result.get_message_list().unwrap().snapshot();
-    assert_eq!(push_messages.len(), 1);
-    let push_message = push_messages[0].as_ref().unwrap().snapshot();
+    let push_after = current_time_millis();
     assert_eq!(push_message.message().topic(), "orders");
     assert_eq!(push_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
@@ -655,6 +664,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
     .unwrap();
     let fields = push_query.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
+    let begin_timestamp: i64 = fields.get("beginTimestamp").unwrap().parse().unwrap();
+    assert!(
+        (push_before - 3 * 24 * 60 * 60 * 1_000..=push_after - 3 * 24 * 60 * 60 * 1_000)
+            .contains(&begin_timestamp)
+    );
+    assert_eq!(fields.get("endTimestamp"), Some(&i64::MAX.to_string()));
     assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
     assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
     push.shutdown().await.unwrap();
@@ -676,13 +692,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
     let pull = Arc::new(PullConsumer::new(pull_config));
     pull.start().await.unwrap();
 
-    let pull_result = pull
-        .query_message_by_unique_key("orders", "producer-unique-1", 32, 10, 99)
+    let pull_before = current_time_millis();
+    let pull_message = pull
+        .view_message("orders", "producer-unique-1")
         .await
+        .unwrap()
         .unwrap();
-    let pull_messages = pull_result.get_message_list().unwrap().snapshot();
-    assert_eq!(pull_messages.len(), 1);
-    let pull_message = pull_messages[0].as_ref().unwrap().snapshot();
+    let pull_after = current_time_millis();
     assert_eq!(pull_message.message().topic(), "orders");
     assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
@@ -701,6 +717,13 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
     .unwrap();
     let fields = pull_query.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
+    assert_eq!(fields.get("maxNum"), Some(&"32".to_owned()));
+    let begin_timestamp: i64 = fields.get("beginTimestamp").unwrap().parse().unwrap();
+    assert!(
+        (pull_before - 3 * 24 * 60 * 60 * 1_000..=pull_after - 3 * 24 * 60 * 60 * 1_000)
+            .contains(&begin_timestamp)
+    );
+    assert_eq!(fields.get("endTimestamp"), Some(&i64::MAX.to_string()));
     assert_eq!(fields.get("indexType"), Some(&"U".to_owned()));
     assert_eq!(fields.get("_UNIQUE_KEY_QUERY"), Some(&"true".to_owned()));
     pull.shutdown().await.unwrap();
@@ -709,7 +732,7 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
 }
 
 #[tokio::test]
-async fn push_and_pull_unique_key_query_facades_preserve_terminal_no_message_errors() {
+async fn push_and_pull_view_message_unique_key_fallbacks_preserve_terminal_no_message_errors() {
     let (push_broker, push_broker_task, _) =
         broker_peer_with_query_response(response::SERVICE_NOT_AVAILABLE).await;
     let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
@@ -730,8 +753,7 @@ async fn push_and_pull_unique_key_query_facades_preserve_terminal_no_message_err
     .unwrap();
     push.start().await.unwrap();
     assert!(matches!(
-        push.query_message_by_unique_key("orders", "missing-key", 16, 10, 99)
-            .await,
+        push.view_message("orders", "missing-key").await,
         Err(rocketmq_classic_consumer::PushConsumerError::AdminQuery(
             rocketmq_classic_core::api::admin::AdminQueryError::Rpc(
                 rocketmq_classic_core::error::RpcError::Response {
@@ -758,9 +780,7 @@ async fn push_and_pull_unique_key_query_facades_preserve_terminal_no_message_err
         .set_instance_name(Some("pull-admin-query-no-message".into()));
     let pull = Arc::new(PullConsumer::new(pull_config));
     pull.start().await.unwrap();
-    let pull_query_error = pull
-        .query_message_by_unique_key("orders", "missing-key", 16, 10, 99)
-        .await;
+    let pull_query_error = pull.view_message("orders", "missing-key").await;
     assert!(
         matches!(
             &pull_query_error,
@@ -782,7 +802,7 @@ async fn push_and_pull_unique_key_query_facades_preserve_terminal_no_message_err
 }
 
 #[tokio::test]
-async fn push_and_pull_view_message_use_only_the_physical_id_rpc() {
+async fn push_and_pull_view_message_match_java_unique_key_fallback_and_physical_lookup() {
     let (push_broker, push_broker_task, mut push_requests) = broker_peer().await;
     let (push_namesrv, push_namesrv_task) = nameserver_peer(route_body(&push_broker)).await;
     let mut push_config = PushConsumerConfig::new("push-admin-view").unwrap();
@@ -806,21 +826,32 @@ async fn push_and_pull_view_message_use_only_the_physical_id_rpc() {
     push.start().await.unwrap();
 
     let invalid = push
-        .view_message("orders", "not-a-physical-message-id")
+        .view_message("orders", "producer-unique-1")
         .await
-        .unwrap_err();
-    assert!(matches!(
-        invalid,
-        rocketmq_classic_consumer::PushConsumerError::Rpc(
-            rocketmq_classic_core::error::RpcError::Response {
-                request_code: request::VIEW_MESSAGE_BY_ID,
-                code: response::NO_MESSAGE,
-                ..
+        .unwrap()
+        .unwrap();
+    assert_eq!(invalid.message_id(), Some("producer-unique-1"));
+    let push_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = push_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
             }
-        )
-    ));
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(push_query.code, request::QUERY_MESSAGE);
+    assert_eq!(
+        push_query.ext_fields.unwrap().get("topic"),
+        Some(&"tenant%orders".to_owned())
+    );
     let push_id = physical_message_id(&push_broker, 71);
-    let push_message = push.view_message("orders", &push_id).await.unwrap();
+    let push_message = push
+        .view_message("orders", &push_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(push_message.message().topic(), "orders");
     assert_eq!(push_message.message_id(), Some("producer-unique-1"));
     let push_view = timeout(Duration::from_secs(1), async {
@@ -835,7 +866,7 @@ async fn push_and_pull_view_message_use_only_the_physical_id_rpc() {
     .await
     .unwrap();
     let fields = push_view.ext_fields.unwrap();
-    assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+    assert_eq!(fields.get("topic"), Some(&"tenant%orders".to_owned()));
     assert_eq!(fields.get("offset"), Some(&"71".to_owned()));
     while let Ok(command) = push_requests.try_recv() {
         assert_ne!(command.code, request::QUERY_MESSAGE);
@@ -860,21 +891,32 @@ async fn push_and_pull_view_message_use_only_the_physical_id_rpc() {
     pull.start().await.unwrap();
 
     let invalid = pull
-        .view_message("orders", "not-a-physical-message-id")
+        .view_message("orders", "producer-unique-1")
         .await
-        .unwrap_err();
-    assert!(matches!(
-        invalid,
-        rocketmq_classic_consumer::PullConsumerError::Rpc(
-            rocketmq_classic_core::error::RpcError::Response {
-                request_code: request::VIEW_MESSAGE_BY_ID,
-                code: response::NO_MESSAGE,
-                ..
+        .unwrap()
+        .unwrap();
+    assert_eq!(invalid.message_id(), Some("producer-unique-1"));
+    let pull_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = pull_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
             }
-        )
-    ));
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(pull_query.code, request::QUERY_MESSAGE);
+    assert_eq!(
+        pull_query.ext_fields.unwrap().get("topic"),
+        Some(&"tenant%orders".to_owned())
+    );
     let pull_id = physical_message_id(&pull_broker, 72);
-    let pull_message = pull.view_message("orders", &pull_id).await.unwrap();
+    let pull_message = pull
+        .view_message("orders", &pull_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(pull_message.message().topic(), "orders");
     assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
     let pull_view = timeout(Duration::from_secs(1), async {
