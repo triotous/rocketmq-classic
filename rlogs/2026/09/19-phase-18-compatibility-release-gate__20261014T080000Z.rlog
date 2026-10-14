@@ -25,3 +25,13 @@ Base revision: dd3b2b6e docs(compat): record producer lifecycle gates
 - PASS: `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, Java fixture drift checks and Rust-generated fixture cross-decodes).
 - PASS: `git diff --check`.
 - The Java reference checkout emitted existing JDK/Netty `Unsafe` and reflective-final-field warnings; Maven exited 0. The unrelated untracked Java file remains untouched.
+
+## Producer send overload follow-up
+
+- A test-source scan of the 37 public Producer send methods found seven methods with no direct test call: the direct/forced-accumulator convenience paths and three custom-timeout wrappers. Added direct scripted calls for each; assertions cover request mode, selected/default queues and batch decisions.
+- Expanded `public_queue_selector_and_batch_modes_use_the_scripted_route` to exercise all default/selected, sync/future, oneway/batch, and explicit/default-timeout variants in that route family. It asserts 16 Broker requests, seven batch frames, and three oneway requests.
+- Updated `docs/compatibility/PHASE_7_PRODUCER_MATRIX.md` with the Java overload-family to Rust method/test crosswalk. P18-V01 remains open for other source families and input/error/control-flow branches.
+- PASS: `cargo fmt --all`; `cargo test -p rocketmq-classic-producer --locked` (132 unit tests, 20 producer API tests, 10 admin tests, 3 request/reply tests, 13 scripted-send tests, 7 transaction tests, and doc tests); `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: the focused source scan finds direct test references for all 37 public send methods after the update.
+- PASS: `cargo clippy -p rocketmq-classic-producer --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- The earlier API scan also found seven future/direct/accumulator convenience methods without direct test calls; those are now directly exercised alongside the seven explicit-timeout wrappers identified by the test-target-only scan.

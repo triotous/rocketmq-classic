@@ -285,15 +285,29 @@ or ownership guards:
 | `getTopics`, `setTopics`, `getTraceDispatcher` | `Producer::{topics,set_topics,trace_dispatcher}`; topic updates after start affect the facade getter while runtime route registration retains its startup snapshot | `runtimeSettings`; `topic_setter_after_start_changes_getter_but_not_runtime_topics`; `enabled_trace_starts_and_stops_its_owned_dispatcher` |
 | `isEnableBackpressureForAsyncMode`, `setEnableBackpressureForAsyncMode` | `Producer::{enable_backpressure_for_async_mode,set_enable_backpressure_for_async_mode}` | `runtimeSettings`; `producer_runtime_backpressure_settings_update_live_limits_and_mode` |
 
-The send/request overload groups are mapped separately above: the six Java
-request overload signatures are pinned, and Rust scripted tests cover all six
-paths and compare their metadata with the Java oracle. Send, explicit queue,
-selector, oneway, collection/batch, and direct/accumulator paths have scripted
-transport or unit coverage. Java callback overloads map to Rust future methods,
-with executor submission, cancellation, rejection, and deadline behavior
-covered by the named executor and send tests. The inherited `MQAdmin` methods
-map to all three client facades in the Phase 17 matrix; transaction and
-namespace/security/trace owners are mapped in Phases 14 and 16.
+The pinned facade inventory contains 20 `send` overloads and 3 `sendOneway`
+overloads on both `DefaultMQProducer` and `MQProducer`; the six `request`
+overloads are tracked separately in the Phase 15 matrix. Their behavior groups
+map as follows:
+
+| Java overload family | Rust owner methods | Local evidence |
+| --- | --- | --- |
+| Default-route `send(Message[, timeout])`, sync and callback forms | `send`, `send_with_timeout`, `send_future`, `send_future_with_timeout`; Java callbacks are represented by future-mode sends | `default_topic_route_fallback_and_async_mode_response_policy_match_java`; `sync_send_retries_across_two_brokers_and_preserves_one_prepared_message`; callback executor submission/lifetime/rejection/deadline tests |
+| Explicit-queue `send(Message, MessageQueue[, timeout])`, sync and callback forms | `send_to_queue*`, `send_to_queue_future*` | `public_queue_selector_and_batch_modes_use_the_scripted_route`; `explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_routed_broker` |
+| Selector `send(Message, MessageQueueSelector, arg[, timeout])`, sync and callback forms | `send_with_selector*`, `send_future_with_selector*` | `public_queue_selector_and_batch_modes_use_the_scripted_route`; `invoke_message_queue_selector_returns_the_namespaced_queue_without_sending`; `explicit_and_selected_queue_ids_outside_the_route_are_sent_to_the_routed_broker` |
+| `sendOneway(Message)`, explicit-queue and selector overloads; Rust also provides timeout-taking variants | `send_oneway*`, `send_to_queue_oneway`, `send_oneway_with_selector` | `public_queue_selector_and_batch_modes_use_the_scripted_route`; `oneway_sends_once_and_unknown_explicit_broker_fails_before_io` |
+| `send(Collection<Message>[, timeout])` and explicit-queue collection overloads, sync and callback forms | `send_batch*`, `send_batch_future*`, `send_batch_to_queue*`, `send_batch_to_queue_future*`; callback forms use future mode | `public_queue_selector_and_batch_modes_use_the_scripted_route` exercises default/queue and sync/future with and without an explicit timeout; `batch_body_matches_message_decoder_record_layout_and_does_not_mutate_inputs`; `batch_checks_source_supported_rejections_and_aggregate_size` |
+| Implementation `sendDirect` and `sendByAccumulator` paths | `send_direct*`, `send_to_queue_direct*`, `send_by_accumulator*`, `send_to_queue_by_accumulator*` | `direct_and_forced_accumulator_helpers_keep_java_path_choices` directly calls all 12 public helpers, checks sync/future mode, default/selected queue and bypass/forced-batch decisions under both `autoBatch` settings |
+
+The Rust source-level reverse check found all 37 public send methods directly
+referenced by Producer crate test targets. The updated scripted tests assert
+all 16 generated route requests, including seven batch sends and three oneway
+sends; the forced/direct helper test asserts twelve attempts. Java callback
+overloads map to Rust futures, with executor submission, cancellation,
+rejection, and deadline behavior covered by the named executor tests. The
+inherited `MQAdmin` methods map to all three client facades in the Phase 17
+matrix; transaction and namespace/security/trace owners are mapped in Phases
+14 and 16.
 
 This closes the reviewed Producer facade token-scan candidates and the bounded
 name reverse scan only. It does not close per-overload input/error/control-flow

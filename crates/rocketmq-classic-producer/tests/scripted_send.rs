@@ -773,6 +773,10 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
 
     producer.send_to_queue(&message, &queue).await.unwrap();
     producer
+        .send_to_queue_future(&message, &queue)
+        .await
+        .unwrap();
+    producer
         .send_to_queue_future_with_timeout(&message, &queue, std::time::Duration::from_secs(1))
         .await
         .unwrap();
@@ -781,7 +785,15 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
         .await
         .unwrap();
     producer
+        .send_oneway_with_timeout(&message, std::time::Duration::from_secs(1))
+        .await
+        .unwrap();
+    producer
         .send_with_selector(&message, |queues, _| queues.first().cloned())
+        .await
+        .unwrap();
+    producer
+        .send_future_with_selector(&message, |queues, _| queues.first().cloned())
         .await
         .unwrap();
     producer
@@ -806,21 +818,33 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
         .await
         .unwrap();
     producer.send_batch_future(&batch).await.unwrap();
+    producer
+        .send_batch_future_with_timeout(&batch, std::time::Duration::from_secs(1))
+        .await
+        .unwrap();
     producer.send_batch_to_queue(&batch, &queue).await.unwrap();
+    producer
+        .send_batch_to_queue_with_timeout(&batch, &queue, std::time::Duration::from_secs(1))
+        .await
+        .unwrap();
+    producer
+        .send_batch_to_queue_future(&batch, &queue)
+        .await
+        .unwrap();
     producer
         .send_batch_to_queue_future_with_timeout(&batch, &queue, std::time::Duration::from_secs(1))
         .await
         .unwrap();
 
     let sent = requests.lock().unwrap().clone();
-    assert_eq!(sent.len(), 10);
+    assert_eq!(sent.len(), 16);
     assert_eq!(
         sent.iter()
             .filter(|request| request.request_code == request::SEND_BATCH_MESSAGE)
             .count(),
-        4
+        7
     );
-    assert_eq!(sent.iter().filter(|request| request.oneway).count(), 2);
+    assert_eq!(sent.iter().filter(|request| request.oneway).count(), 3);
     assert!(sent.iter().all(|request| request.body.is_some()));
 
     producer.shutdown().await.unwrap();

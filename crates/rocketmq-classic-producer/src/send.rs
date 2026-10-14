@@ -3690,15 +3690,23 @@ mod tests {
     async fn direct_and_forced_accumulator_helpers_keep_java_path_choices() {
         let mut config = crate::ProducerConfig::new("scripted-explicit-batch-paths").unwrap();
         config.set_batch_max_delay_millis(10);
-        let (producer, _) = scripted_producer(config).await;
+        let (producer, default_queues) = scripted_producer(config).await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
         {
             let mut scripted = producer.scripted_transport.lock().unwrap();
             for (msg_id, offset) in [
-                ("direct-default", 10),
-                ("direct-queue", 11),
-                ("accumulator-default", 12),
-                ("accumulator-queue", 13),
+                ("direct-default-sync", 10),
+                ("direct-default-future", 11),
+                ("direct-default-sync-timeout", 12),
+                ("direct-default-future-timeout", 13),
+                ("direct-queue-sync", 14),
+                ("direct-queue-future", 15),
+                ("direct-queue-sync-timeout", 16),
+                ("direct-queue-future-timeout", 17),
+                ("accumulator-default-sync", 18),
+                ("accumulator-default-future", 19),
+                ("accumulator-queue-sync", 20),
+                ("accumulator-queue-future", 21),
             ] {
                 scripted.responses.push_back(Ok(Some(scripted_result(
                     msg_id,
@@ -3714,13 +3722,65 @@ mod tests {
             .await
             .unwrap();
         producer
+            .send_direct_future(&Message::new("orders", b"direct future".to_vec()))
+            .await
+            .unwrap();
+        producer
+            .send_direct_with_timeout(
+                &Message::new("orders", b"direct sync timeout".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        producer
+            .send_direct_future_with_timeout(
+                &Message::new("orders", b"direct future timeout".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_direct(
+                &Message::new("orders", b"direct queue sync".to_vec()),
+                &queue,
+            )
+            .await
+            .unwrap();
+        producer
             .send_to_queue_direct_future(&Message::new("orders", b"direct queue".to_vec()), &queue)
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_direct_with_timeout(
+                &Message::new("orders", b"direct queue sync timeout".to_vec()),
+                &queue,
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_direct_future_with_timeout(
+                &Message::new("orders", b"direct queue future timeout".to_vec()),
+                &queue,
+                Duration::from_secs(1),
+            )
             .await
             .unwrap();
 
         producer.set_auto_batch(false);
         producer
             .send_by_accumulator(&Message::new("orders", b"accumulate".to_vec()))
+            .await
+            .unwrap();
+        producer
+            .send_by_accumulator_future(&Message::new("orders", b"accumulate future".to_vec()))
+            .await
+            .unwrap();
+        producer
+            .send_to_queue_by_accumulator(
+                &Message::new("orders", b"accumulate queue sync".to_vec()),
+                &queue,
+            )
             .await
             .unwrap();
         producer
@@ -3735,23 +3795,44 @@ mod tests {
             let scripted = producer.scripted_transport.lock().unwrap();
             scripted.attempts.clone()
         };
-        assert_eq!(attempts.len(), 4);
-        assert_eq!(attempts[0].mode, SendMode::Sync);
+        assert_eq!(attempts.len(), 12);
+        for (index, mode) in [
+            SendMode::Sync,
+            SendMode::Future,
+            SendMode::Sync,
+            SendMode::Future,
+            SendMode::Sync,
+            SendMode::Future,
+            SendMode::Sync,
+            SendMode::Future,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(attempts[index].mode, mode);
+            assert!(!attempts[index].batch, "direct paths bypass auto-batching");
+        }
+        assert!(default_queues.contains(&attempts[0].queue));
+        assert!(default_queues.contains(&attempts[1].queue));
+        assert!(default_queues.contains(&attempts[2].queue));
+        assert!(default_queues.contains(&attempts[3].queue));
+        assert_eq!(attempts[4].queue, queue);
+        assert_eq!(attempts[5].queue, queue);
+        assert_eq!(attempts[6].queue, queue);
+        assert_eq!(attempts[7].queue, queue);
+        assert_eq!(attempts[8].mode, SendMode::Sync);
         assert!(
-            !attempts[0].batch,
-            "direct must bypass enabled auto-batching"
-        );
-        assert_eq!(attempts[1].mode, SendMode::Future);
-        assert!(!attempts[1].batch);
-        assert_eq!(attempts[1].queue, queue);
-        assert_eq!(attempts[2].mode, SendMode::Sync);
-        assert!(
-            attempts[2].batch,
+            attempts[8].batch,
             "forced accumulation must ignore auto_batch=false"
         );
-        assert_eq!(attempts[3].mode, SendMode::Future);
-        assert!(attempts[3].batch);
-        assert_eq!(attempts[3].queue, queue);
+        assert_eq!(attempts[9].mode, SendMode::Future);
+        assert!(attempts[9].batch);
+        assert_eq!(attempts[10].mode, SendMode::Sync);
+        assert!(attempts[10].batch);
+        assert_eq!(attempts[10].queue, queue);
+        assert_eq!(attempts[11].mode, SendMode::Future);
+        assert!(attempts[11].batch);
+        assert_eq!(attempts[11].queue, queue);
 
         producer.shutdown().await.unwrap();
     }
