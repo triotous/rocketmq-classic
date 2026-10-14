@@ -114,7 +114,7 @@ async fn java_invoked_producer_requests_and_outcomes_match() {
         let deadline = Instant::now() + Duration::from_secs(3);
         let outcome = if name == "end-transaction-oneway" {
             let header = EndTransactionRequestHeader {
-                producer_group: "producer".into(),
+                producer_group: Some("producer".into()),
                 transaction_state_table_offset: 3,
                 commit_log_offset: 9,
                 commit_or_rollback: 8,
@@ -128,7 +128,7 @@ async fn java_invoked_producer_requests_and_outcomes_match() {
             "ok".to_owned()
         } else {
             let header = SendMessageRequestHeaderV1 {
-                producer_group: "producer".into(),
+                producer_group: Some("producer".into()),
                 topic: "oracle-topic".into(),
                 default_topic: "TBW102".into(),
                 default_topic_queue_nums: 4,

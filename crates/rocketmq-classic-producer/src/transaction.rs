@@ -115,18 +115,8 @@ impl TransactionProducer {
         config: ProducerConfig,
         rpc_hook: Option<Arc<dyn rocketmq_classic_remoting::client::RpcHook>>,
     ) -> Self {
-        let mut client_config = config.client_config().clone();
-        let producer_group = client_config
-            .with_namespace(config.producer_group())
-            .ok()
-            .flatten()
-            .or_else(|| config.producer_group().map(str::to_owned))
-            .unwrap_or_default();
         let producer = Arc::new(Producer::new_with_rpc_hook(config, rpc_hook));
-        let transaction = Arc::new(TransactionRuntime::new(
-            Arc::downgrade(&producer),
-            producer_group,
-        ));
+        let transaction = Arc::new(TransactionRuntime::new(Arc::downgrade(&producer)));
         let _ = producer.transaction.set(transaction.clone());
         Self {
             producer,
@@ -177,10 +167,11 @@ impl TransactionProducer {
         crate::validation::validate_message(Some(message), self.producer.config())?;
 
         let _ = message.set_system_property(PROPERTY_TRANSACTION_PREPARED, "true");
-        let _ = message.set_system_property(
-            PROPERTY_PRODUCER_GROUP,
-            self.producer.required_producer_group()?,
-        );
+        if let Some(group) = self.producer.producer_group() {
+            let _ = message.set_system_property(PROPERTY_PRODUCER_GROUP, group);
+        } else {
+            message.clear_system_property(PROPERTY_PRODUCER_GROUP);
+        }
 
         let timeout =
             Duration::from_millis(self.producer.config().send_timeout_millis().max(0) as u64);
@@ -367,7 +358,7 @@ impl TransactionProducer {
             .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()))?;
         let header = EndTransactionRequestHeader {
             topic: Some(message.topic().to_owned()),
-            producer_group: self.producer.required_producer_group()?.to_owned(),
+            producer_group: self.producer.producer_group(),
             transaction_state_table_offset: send_result.queue_offset,
             commit_log_offset,
             commit_or_rollback: transaction_flag(state),
@@ -427,7 +418,6 @@ impl Deref for TransactionProducer {
 
 pub(crate) struct TransactionRuntime {
     producer: Weak<Producer>,
-    producer_group: String,
     listener: RwLock<Option<Arc<dyn TransactionListener>>>,
     #[allow(deprecated)]
     legacy_listener: RwLock<Option<Arc<dyn TransactionCheckListener>>>,
@@ -461,10 +451,9 @@ struct TransactionRequestProcessor {
 }
 
 impl TransactionRuntime {
-    fn new(producer: Weak<Producer>, producer_group: String) -> Self {
+    fn new(producer: Weak<Producer>) -> Self {
         Self {
             producer,
-            producer_group,
             listener: RwLock::new(None),
             legacy_listener: RwLock::new(None),
             min_size: AtomicI32::new(DEFAULT_CHECK_THREAD_POOL_MIN_SIZE),
@@ -802,7 +791,7 @@ impl TransactionRuntime {
             .unwrap_or_else(|| message.message_id().unwrap_or_default().to_owned());
         let header = EndTransactionRequestHeader {
             topic: check_header.topic.clone(),
-            producer_group: self.producer_group.clone(),
+            producer_group: producer.producer_group(),
             transaction_state_table_offset: check_header.transaction_state_table_offset,
             commit_log_offset: check_header.commit_log_offset,
             commit_or_rollback: transaction_flag(state),
@@ -1258,16 +1247,9 @@ mod tests {
     }
 
     fn transaction_producer(config: ProducerConfig) -> TransactionProducer {
-        let mut client_config = config.client_config().clone();
-        let group = client_config
-            .with_namespace(config.producer_group())
-            .ok()
-            .flatten()
-            .or_else(|| config.producer_group().map(str::to_owned))
-            .unwrap_or_default();
         let manager = ClientRuntimeManager::new();
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
-        let transaction = Arc::new(TransactionRuntime::new(Arc::downgrade(&producer), group));
+        let transaction = Arc::new(TransactionRuntime::new(Arc::downgrade(&producer)));
         let _ = producer.transaction.set(transaction.clone());
         TransactionProducer {
             producer,

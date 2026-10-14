@@ -166,7 +166,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
             }
             name if name.starts_with("send-") => {
                 let header = SendMessageRequestHeaderV1 {
-                    producer_group: "producer".into(),
+                    producer_group: Some("producer".into()),
                     topic: "oracle-topic".into(),
                     default_topic: "TBW102".into(),
                     default_topic_queue_nums: 4,

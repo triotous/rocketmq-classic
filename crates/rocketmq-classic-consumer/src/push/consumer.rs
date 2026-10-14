@@ -3474,7 +3474,7 @@ impl PushConsumer {
             .cloned()
             .ok_or_else(|| "retry message has no unique id".to_owned())?;
         let header = SendMessageRequestHeaderV1 {
-            producer_group: INNER_PRODUCER_GROUP.into(),
+            producer_group: Some(INNER_PRODUCER_GROUP.into()),
             topic: topic.to_owned(),
             default_topic: DEFAULT_CREATE_TOPIC_KEY.into(),
             default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,

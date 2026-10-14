@@ -341,7 +341,7 @@ fn java_request_and_response_header_fixtures_decode() {
 fn transaction_and_reply_headers_round_trip_typed_fields() {
     let end = EndTransactionRequestHeader {
         topic: Some("orders".into()),
-        producer_group: "producers".into(),
+        producer_group: Some("producers".into()),
         transaction_state_table_offset: 3,
         commit_log_offset: 9,
         commit_or_rollback: 8,
@@ -356,6 +356,15 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     let mut fields = HeaderMap::new();
     end.encode_fields(&mut fields);
     assert_eq!(EndTransactionRequestHeader::decode_fields(&fields), Ok(end));
+
+    let null_group_end = EndTransactionRequestHeader::default();
+    fields.clear();
+    null_group_end.encode_fields(&mut fields);
+    assert!(!fields.contains_key("producerGroup"));
+    assert_eq!(
+        EndTransactionRequestHeader::decode_fields(&fields),
+        Ok(null_group_end)
+    );
 
     let check = CheckTransactionStateRequestHeader {
         topic: Some("orders".into()),
@@ -1025,19 +1034,19 @@ fn header_validation_matrix() {
         row!(
             SendMessageRequestHeaderV1,
             "send-v1",
-            "producerGroup topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag",
+            "topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag",
             "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes maxReconsumeTimes",
             "bornTimestamp",
-            "properties reconsumeTimes unitMode maxReconsumeTimes batch",
+            "producerGroup properties reconsumeTimes unitMode maxReconsumeTimes batch",
             "unitMode batch"
         ),
         row!(
             SendMessageRequestHeaderV2,
             "send-v2",
-            "a b c d e f g h",
+            "b c d e f g h",
             "d e f h j l",
             "g",
-            "i j k l m",
+            "a i j k l m",
             "k m"
         ),
         row!(
@@ -1205,10 +1214,10 @@ fn header_validation_matrix() {
         row!(
             EndTransactionRequestHeader,
             "end-transaction-request",
-            "producerGroup tranStateTableOffset commitLogOffset commitOrRollback msgId",
+            "tranStateTableOffset commitLogOffset commitOrRollback msgId",
             "commitOrRollback",
             "tranStateTableOffset commitLogOffset",
-            "topic fromTransactionCheck transactionId ns nsd bname oway",
+            "producerGroup topic fromTransactionCheck transactionId ns nsd bname oway",
             "fromTransactionCheck nsd oway"
         ),
         row!(

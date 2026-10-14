@@ -1108,6 +1108,14 @@ public final class ProducerCoreFixtures {
     private static Map<String, Object> runtimeSettings() {
         DefaultMQProducer producer = new DefaultMQProducer("producer-runtime-settings");
         Map<String, Object> result = new TreeMap<>();
+        producer.setProducerGroup("producer-runtime-group");
+        producer.setSendMessageWithVIPChannel(true);
+        producer.setTopics(new ArrayList<>(List.of("startup-topic")));
+        result.put("producerGroupAfterSetter", producer.getProducerGroup());
+        result.put("sendMessageWithVIPChannelAfterSetter", producer.isSendMessageWithVIPChannel());
+        result.put("topicsAfterSetter", new ArrayList<>(producer.getTopics()));
+        producer.setTopics(null);
+        result.put("topicsIsNullAfterSetter", producer.getTopics() == null);
         producer.setCreateTopicKey("runtime-default-topic");
         producer.setDefaultTopicQueueNums(7);
         producer.setSendMsgTimeout(6_100);

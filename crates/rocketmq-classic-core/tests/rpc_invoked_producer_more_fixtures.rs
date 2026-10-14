@@ -128,7 +128,7 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
         let deadline = Instant::now() + Duration::from_secs(3);
         let outcome = {
             let header = SendMessageRequestHeaderV1 {
-                producer_group: "producer".into(),
+                producer_group: Some("producer".into()),
                 topic: "oracle-topic".into(),
                 default_topic: "TBW102".into(),
                 default_topic_queue_nums: 4,

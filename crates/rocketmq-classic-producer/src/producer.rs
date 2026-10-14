@@ -36,6 +36,7 @@ use crate::{
 pub(crate) struct ScriptedSendAttempt {
     pub(crate) broker: String,
     pub(crate) address: String,
+    pub(crate) producer_group: Option<String>,
     pub(crate) queue: rocketmq_classic_common::message::MessageQueue,
     pub(crate) default_topic: String,
     pub(crate) default_topic_queue_nums: i32,
@@ -68,7 +69,10 @@ enum State {
 /// Java-compatible producer lifecycle and send surface.
 pub struct Producer {
     pub(crate) config: ProducerConfig,
-    namespaced_group: OnceLock<Option<String>>,
+    producer_group: RwLock<Option<String>>,
+    send_message_with_vip_channel: AtomicBool,
+    topics: RwLock<Option<Vec<String>>>,
+    started_topics: OnceLock<Option<Vec<String>>>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     state: tokio::sync::Mutex<State>,
@@ -251,7 +255,7 @@ impl Producer {
     ) {
         let transaction_id = message.transaction_id().map(str::to_owned);
         let mut context = EndTransactionContext {
-            producer_group: self.producer_group().map(str::to_owned),
+            producer_group: self.producer_group(),
             message,
             broker_addr: broker_addr.to_owned(),
             message_id: message_id.to_owned(),
@@ -293,6 +297,9 @@ impl Producer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let ids = UniqueIdGenerator::new(config.client_config().client_ip());
+        let producer_group = config.producer_group().map(str::to_owned);
+        let send_message_with_vip_channel = config.send_message_with_vip_channel();
+        let topics = config.topics().map(<[String]>::to_vec);
         let batch_max_delay_millis = config.batch_max_delay_millis().unwrap_or(-1);
         let batch_max_bytes = config.batch_max_bytes().unwrap_or(-1);
         let total_batch_max_bytes = config.total_batch_max_bytes_input().unwrap_or(-1);
@@ -313,7 +320,10 @@ impl Producer {
         Self {
             ids,
             config,
-            namespaced_group: OnceLock::new(),
+            producer_group: RwLock::new(producer_group),
+            send_message_with_vip_channel: AtomicBool::new(send_message_with_vip_channel),
+            topics: RwLock::new(topics),
+            started_topics: OnceLock::new(),
             manager,
             rpc_hook,
             state: tokio::sync::Mutex::new(State::Created),
@@ -353,6 +363,35 @@ impl Producer {
 
     pub fn config(&self) -> &ProducerConfig {
         &self.config
+    }
+
+    /// Returns the configured producer topics. Changes after start are
+    /// retained by this accessor but do not alter the runtime's topic set.
+    pub fn topics(&self) -> Option<Vec<String>> {
+        self.topics
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Sets the topics read when the producer starts, matching Java's
+    /// `DefaultMQProducer.setTopics` behavior.
+    pub fn set_topics(&self, value: Option<Vec<String>>) {
+        *self
+            .topics
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = value;
+    }
+
+    /// Returns whether this producer rewrites Broker addresses to VIP ports.
+    pub fn send_message_with_vip_channel(&self) -> bool {
+        self.send_message_with_vip_channel.load(Ordering::SeqCst)
+    }
+
+    /// Sets the per-producer VIP channel flag used by later sends.
+    pub fn set_send_message_with_vip_channel(&self, value: bool) {
+        self.send_message_with_vip_channel
+            .store(value, Ordering::SeqCst);
     }
 
     /// Returns the topic key used by later route lookups.
@@ -850,16 +889,21 @@ impl Producer {
         self.trace_dispatcher.get().cloned()
     }
 
-    /// Returns the Java-compatible producer group, namespace-wrapped after start.
-    pub fn producer_group(&self) -> Option<&str> {
-        match self.namespaced_group.get() {
-            Some(group) => group.as_deref(),
-            None => self.config.producer_group(),
-        }
+    /// Returns the Java-compatible producer group, namespace-wrapped at start.
+    pub fn producer_group(&self) -> Option<String> {
+        self.producer_group
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
-    pub(crate) fn required_producer_group(&self) -> Result<&str, ProducerError> {
-        self.producer_group().ok_or(ProducerError::BlankGroup)
+    /// Sets the producer group. As in Java, a post-start change is used by
+    /// subsequent requests without changing the group's runtime registration.
+    pub fn set_producer_group(&self, value: Option<String>) {
+        *self
+            .producer_group
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = value;
     }
 
     pub(crate) async fn started_runtime(&self) -> Result<Arc<ClientRuntime>, ProducerError> {
@@ -933,23 +977,30 @@ impl Producer {
         self.set_service_state(Some(ProducerServiceState::StartFailed));
         let _ = self.self_weak.set(Arc::downgrade(self));
         let mut client_config = self.config.client_config().clone();
-        let group = client_config.with_namespace(self.config.producer_group())?;
-        let _ = self.namespaced_group.set(group.clone());
+        let group = client_config.with_namespace(self.producer_group().as_deref())?;
+        *self
+            .producer_group
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = group.clone();
         validation::validate_group(group.as_deref().unwrap_or(""))?;
         self.configured_accumulator_settings()?;
+        let _ = self.started_topics.set(self.topics());
+
+        let mut runtime_client_config = self.config.client_config().clone();
+        runtime_client_config.set_vip_channel_enabled(self.send_message_with_vip_channel());
 
         let runtime = self
             .manager
             .get_or_create_with_hook_and_tls_config(
-                &self.config.client,
+                &runtime_client_config,
                 self.rpc_hook.clone(),
                 self.config.tls_config().cloned(),
             )
             .await?;
         self.init_produce_accumulator()?;
         let owner: Arc<dyn ProducerRuntime> = self.clone();
-        let producer_group = self.required_producer_group()?;
-        let lease = match runtime.register_producer(producer_group, owner).await {
+        let producer_group = self.producer_group().ok_or(ProducerError::BlankGroup)?;
+        let lease = match runtime.register_producer(&producer_group, owner).await {
             Ok(lease) => lease,
             Err(error) => {
                 if matches!(
@@ -970,7 +1021,7 @@ impl Producer {
             runtime: Arc::downgrade(&runtime),
             lease,
         };
-        self.start_trace_dispatcher(&runtime, producer_group).await;
+        self.start_trace_dispatcher(&runtime, &producer_group).await;
         let task = self.spawn_detector_task(Arc::downgrade(&runtime));
         *self.detector_task.lock().await = Some(task);
         self.set_service_state(Some(ProducerServiceState::Running));
@@ -1181,10 +1232,14 @@ impl Producer {
                 self.fault.remove(&broker);
                 continue;
             };
-            let Ok(address) = rocketmq_classic_core::route::broker_vip_channel(
-                self.config.client.vip_channel_enabled(),
-                address,
-            ) else {
+            let vip_enabled = runtime
+                .config()
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .vip_channel_enabled();
+            let Ok(address) =
+                rocketmq_classic_core::route::broker_vip_channel(vip_enabled, address)
+            else {
                 continue;
             };
             let deadline = tokio::time::Instant::now()
@@ -1236,9 +1291,13 @@ impl ProducerRuntime for Producer {
     fn publish_topics(&self) -> BTreeSet<String> {
         let mut topics = self.publish_info.keys();
         let mut client_config = self.config.client_config().clone();
+        let configured_topics = self
+            .started_topics
+            .get()
+            .cloned()
+            .unwrap_or_else(|| self.topics());
         topics.extend(
-            self.config
-                .topics()
+            configured_topics
                 .unwrap_or_default()
                 .iter()
                 .filter_map(|topic| {
@@ -1335,6 +1394,26 @@ mod tests {
                 "tenant%sent-before".to_owned(),
             ])
         );
+    }
+
+    #[tokio::test]
+    async fn topic_setter_after_start_changes_getter_but_not_runtime_topics() {
+        let mut config = ProducerConfig::new("topics-live-start-snapshot").unwrap();
+        config.set_topics(Some(vec!["startup-topic".into()]));
+        let producer = Arc::new(Producer::with_runtime_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        producer.start().await.unwrap();
+
+        producer.set_topics(Some(vec!["later-topic".into()]));
+
+        assert_eq!(producer.topics(), Some(vec!["later-topic".into()]));
+        assert_eq!(
+            producer.publish_topics(),
+            BTreeSet::from(["startup-topic".to_owned()])
+        );
+        producer.shutdown().await.unwrap();
     }
 
     #[tokio::test]

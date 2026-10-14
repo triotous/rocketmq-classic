@@ -1952,6 +1952,47 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
     let runtime = &fixture["runtimeSettings"];
     let producer = Producer::new(ProducerConfig::new("runtime-settings-fixture").unwrap());
     let runtime_config_snapshot = producer.config().clone();
+    producer.set_producer_group(Some(
+        runtime["producerGroupAfterSetter"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    ));
+    producer.set_send_message_with_vip_channel(
+        runtime["sendMessageWithVIPChannelAfterSetter"]
+            .as_bool()
+            .unwrap(),
+    );
+    producer.set_topics(Some(
+        runtime["topicsAfterSetter"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|topic| topic.as_str().unwrap().to_owned())
+            .collect(),
+    ));
+    assert_eq!(
+        producer.producer_group().as_deref(),
+        runtime["producerGroupAfterSetter"].as_str()
+    );
+    assert_eq!(
+        producer.send_message_with_vip_channel(),
+        runtime["sendMessageWithVIPChannelAfterSetter"]
+    );
+    assert_eq!(
+        producer.topics().unwrap(),
+        runtime["topicsAfterSetter"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|topic| topic.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    );
+    producer.set_topics(None);
+    assert_eq!(
+        producer.topics().is_none(),
+        runtime["topicsIsNullAfterSetter"]
+    );
     producer.set_create_topic_key(runtime["createTopicKey"].as_str().unwrap());
     producer
         .set_default_topic_queue_nums(runtime["defaultTopicQueueNums"].as_i64().unwrap() as i32);
@@ -2310,7 +2351,10 @@ fn send_message_context_surface_matches_pinned_java_fixture() {
             .as_bool()
             .unwrap()
     );
-    assert_eq!(context.producer.producer_group(), Some("producer-group"));
+    assert_eq!(
+        context.producer.producer_group().as_deref(),
+        Some("producer-group")
+    );
     assert_eq!(context.message.topic(), expected["messageTopic"]);
     assert_eq!(
         context.message.body(),

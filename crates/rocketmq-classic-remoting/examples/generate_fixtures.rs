@@ -281,7 +281,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-send-v1.bin",
         10,
         &SendMessageRequestHeaderV1 {
-            producer_group: "producers".into(),
+            producer_group: Some("producers".into()),
             topic: "orders".into(),
             default_topic: "TBW102".into(),
             default_topic_queue_nums: 4,
@@ -301,7 +301,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-send-v2.bin",
         310,
         &SendMessageRequestHeaderV2 {
-            a: "producers".into(),
+            a: Some("producers".into()),
             b: "orders".into(),
             c: "TBW102".into(),
             d: 4,
@@ -321,7 +321,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-send-batch-v2.bin",
         320,
         &SendMessageRequestHeaderV2 {
-            a: "producers".into(),
+            a: Some("producers".into()),
             b: "orders".into(),
             c: "TBW102".into(),
             d: 4,
@@ -383,7 +383,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         37,
         &EndTransactionRequestHeader {
             topic: Some("orders".into()),
-            producer_group: "producers".into(),
+            producer_group: Some("producers".into()),
             transaction_state_table_offset: 3,
             commit_log_offset: 9,
             commit_or_rollback: 8,
@@ -451,7 +451,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-reply-v2.bin",
         325,
         &SendMessageRequestHeaderV2 {
-            a: "producers".into(),
+            a: Some("producers".into()),
             b: "orders".into(),
             c: "TBW102".into(),
             d: 4,

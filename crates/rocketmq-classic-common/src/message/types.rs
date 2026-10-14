@@ -132,6 +132,11 @@ impl Message {
         Ok(self.properties.insert(key, value))
     }
 
+    /// Removes a system property, corresponding to Java `MessageAccessor.clearProperty`.
+    pub fn clear_system_property(&mut self, key: &str) -> Option<String> {
+        self.properties.remove(key)
+    }
+
     pub fn set_tags(
         &mut self,
         tags: impl Into<String>,

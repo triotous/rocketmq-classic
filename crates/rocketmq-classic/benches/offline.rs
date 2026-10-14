@@ -129,7 +129,7 @@ fn main() {
             message.set_property("bench-key", "bench-value").unwrap();
             let properties = encode_properties(message.properties());
             let header = SendMessageRequestHeaderV1 {
-                producer_group: "bench-producer".into(),
+                producer_group: Some("bench-producer".into()),
                 topic: message.topic().into(),
                 default_topic: "TBW102".into(),
                 default_topic_queue_nums: 4,

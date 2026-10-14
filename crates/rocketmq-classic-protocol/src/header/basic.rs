@@ -888,7 +888,7 @@ impl CommandHeader for UnregisterClientResponseHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndTransactionRequestHeader {
     pub topic: Option<String>,
-    pub producer_group: String,
+    pub producer_group: Option<String>,
     pub transaction_state_table_offset: i64,
     pub commit_log_offset: i64,
     pub commit_or_rollback: i32,
@@ -905,7 +905,7 @@ impl Default for EndTransactionRequestHeader {
     fn default() -> Self {
         Self {
             topic: None,
-            producer_group: String::new(),
+            producer_group: None,
             transaction_state_table_offset: 0,
             commit_log_offset: 0,
             commit_or_rollback: 0,
@@ -923,7 +923,7 @@ impl Default for EndTransactionRequestHeader {
 impl CommandHeader for EndTransactionRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "topic", self.topic.as_deref());
-        fields.insert("producerGroup".into(), self.producer_group.clone());
+        put_optional(fields, "producerGroup", self.producer_group.as_deref());
         fields.insert(
             "tranStateTableOffset".into(),
             self.transaction_state_table_offset.to_string(),
@@ -945,7 +945,7 @@ impl CommandHeader for EndTransactionRequestHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             topic: optional_string(fields, "topic"),
-            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            producer_group: optional_string(fields, "producerGroup"),
             transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
             commit_log_offset: required_i64(fields, "commitLogOffset")?,
             commit_or_rollback: required_i32(fields, "commitOrRollback")?,
@@ -1624,7 +1624,7 @@ impl CommandHeader for SendMessageResponseHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SendMessageRequestHeaderV2 {
-    pub a: String,
+    pub a: Option<String>,
     pub b: String,
     pub c: String,
     pub d: i32,
@@ -1641,7 +1641,7 @@ pub struct SendMessageRequestHeaderV2 {
 
 impl CommandHeader for SendMessageRequestHeaderV2 {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("a".into(), self.a.clone());
+        put_optional(fields, "a", self.a.as_deref());
         fields.insert("b".into(), self.b.clone());
         fields.insert("c".into(), self.c.clone());
         fields.insert("d".into(), self.d.to_string());
@@ -1658,7 +1658,7 @@ impl CommandHeader for SendMessageRequestHeaderV2 {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            a: required_string(fields, "a")?.to_owned(),
+            a: optional_string(fields, "a"),
             b: required_string(fields, "b")?.to_owned(),
             c: required_string(fields, "c")?.to_owned(),
             d: required_i32(fields, "d")?,
@@ -1715,7 +1715,7 @@ impl SendMessageRequestHeaderV2 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SendMessageRequestHeaderV1 {
-    pub producer_group: String,
+    pub producer_group: Option<String>,
     pub topic: String,
     pub default_topic: String,
     pub default_topic_queue_nums: i32,
@@ -1732,7 +1732,7 @@ pub struct SendMessageRequestHeaderV1 {
 
 impl CommandHeader for SendMessageRequestHeaderV1 {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("producerGroup".into(), self.producer_group.clone());
+        put_optional(fields, "producerGroup", self.producer_group.as_deref());
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("defaultTopic".into(), self.default_topic.clone());
         fields.insert(
@@ -1752,7 +1752,7 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            producer_group: optional_string(fields, "producerGroup"),
             topic: required_string(fields, "topic")?.to_owned(),
             default_topic: required_string(fields, "defaultTopic")?.to_owned(),
             default_topic_queue_nums: required_i32(fields, "defaultTopicQueueNums")?,
@@ -1795,7 +1795,7 @@ mod tests {
     #[test]
     fn send_v1_and_v2_normalize_to_the_same_fields() {
         let v1 = SendMessageRequestHeaderV1 {
-            producer_group: "producer".into(),
+            producer_group: Some("producer".into()),
             topic: "orders".into(),
             default_topic: "TBW102".into(),
             default_topic_queue_nums: 4,
@@ -1817,6 +1817,32 @@ mod tests {
         assert_eq!(decoded.normalized_v1(), v1);
         assert_eq!(v2_fields["a"], "producer");
         assert!(!v2_fields.contains_key("n"));
+    }
+
+    #[test]
+    fn nullable_producer_group_is_omitted_from_send_headers() {
+        let header = SendMessageRequestHeaderV1 {
+            producer_group: None,
+            ..SendMessageRequestHeaderV1::default()
+        };
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        assert!(!fields.contains_key("producerGroup"));
+        assert_eq!(
+            SendMessageRequestHeaderV1::decode_fields(&fields),
+            Ok(header.clone())
+        );
+
+        let compact = SendMessageRequestHeaderV2::from_v1(&header);
+        let mut compact_fields = HeaderMap::new();
+        compact.encode_fields(&mut compact_fields);
+        assert!(!compact_fields.contains_key("a"));
+        assert_eq!(
+            SendMessageRequestHeaderV2::decode_fields(&compact_fields)
+                .unwrap()
+                .normalized_v1(),
+            header
+        );
     }
 
     #[test]

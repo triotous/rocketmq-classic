@@ -1423,7 +1423,7 @@ impl Producer {
         }
         let mut context = CheckForbiddenContext {
             name_srv_addr: self.config.client_config().get_namesrv_addr(),
-            group: self.producer_group().map(str::to_owned),
+            group: self.producer_group(),
             message,
             queue,
             broker_addr: address.to_owned(),
@@ -1466,7 +1466,7 @@ impl Producer {
             SendMessageType::Normal
         };
         SendMessageContext {
-            producer_group: self.producer_group().map(str::to_owned),
+            producer_group: self.producer_group(),
             producer: self,
             message,
             queue: queue.clone(),
@@ -1490,7 +1490,7 @@ impl Producer {
             return Err(ProducerError::Timeout);
         }
         let header = SendMessageRequestHeaderV1 {
-            producer_group: self.required_producer_group()?.to_owned(),
+            producer_group: self.producer_group(),
             topic: attempt.prepared.topic.clone(),
             default_topic: self.config.create_topic_key(),
             default_topic_queue_nums: self.config.default_topic_queue_nums(),
@@ -1513,6 +1513,7 @@ impl Producer {
             scripted.attempts.push(ScriptedSendAttempt {
                 broker: attempt.broker.to_owned(),
                 address: attempt.address.to_owned(),
+                producer_group: header.producer_group.clone(),
                 queue: attempt.queue.clone(),
                 default_topic: header.default_topic.clone(),
                 default_topic_queue_nums: header.default_topic_queue_nums,
@@ -1643,8 +1644,13 @@ impl Producer {
         info: &TopicSnapshot,
         queue: &MessageQueue,
     ) -> Result<Option<String>, ProducerError> {
+        let vip_enabled = runtime
+            .config()
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .vip_channel_enabled();
         if let Some(address) = info.endpoints.get(queue) {
-            return Ok(Some(address.clone()));
+            return Ok(Some(broker_vip_channel(vip_enabled, address)?));
         }
         let Some(broker) = queue.broker_name() else {
             return Ok(None);
@@ -1653,10 +1659,7 @@ impl Producer {
         let Some(address) = snapshot.publish_address(broker) else {
             return Ok(None);
         };
-        Ok(Some(broker_vip_channel(
-            self.config.client_config().vip_channel_enabled(),
-            address,
-        )?))
+        Ok(Some(broker_vip_channel(vip_enabled, address)?))
     }
 
     fn request_deadline(
@@ -2036,6 +2039,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn producer_group_setter_updates_later_send_headers_including_null() {
+        let (producer, _) =
+            scripted_producer(crate::ProducerConfig::new("live-producer-group-send").unwrap())
+                .await;
+        producer.set_producer_group(Some("changed-after-start".into()));
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("group-one", "offset-one", 1))));
+        producer
+            .send(&Message::new("orders", b"new producer group".to_vec()))
+            .await
+            .unwrap();
+
+        producer.set_producer_group(None);
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("group-null", "offset-null", 2))));
+        producer
+            .send(&Message::new("orders", b"null producer group".to_vec()))
+            .await
+            .unwrap();
+
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            assert_eq!(
+                transport.attempts[0].producer_group.as_deref(),
+                Some("changed-after-start")
+            );
+            assert_eq!(transport.attempts[1].producer_group, None);
+        }
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn vip_channel_setter_after_start_only_changes_getter_not_runtime_config() {
+        let mut config = crate::ProducerConfig::new("live-vip-channel-send").unwrap();
+        config.set_send_message_with_vip_channel(true);
+        let (producer, _) = scripted_producer(config).await;
+        producer.set_send_message_with_vip_channel(false);
+        assert!(!producer.send_message_with_vip_channel());
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result("vip-send", "vip-offset", 1))));
+
+        producer
+            .send(&Message::new("orders", b"vip channel".to_vec()))
+            .await
+            .unwrap();
+
+        let address = {
+            producer.scripted_transport.lock().unwrap().attempts[0]
+                .address
+                .clone()
+        };
+        assert!(address == "10.0.0.1:10909" || address == "10.0.0.2:10909");
+        producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn runtime_default_topic_settings_reach_later_send_headers() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
@@ -2162,7 +2233,10 @@ mod tests {
             .responses
             .push_back(Ok(Some(response)));
 
-        assert_eq!(producer.producer_group(), Some("tenant%namespace-send"));
+        assert_eq!(
+            producer.producer_group().as_deref(),
+            Some("tenant%namespace-send")
+        );
         let message = Message::new("orders", b"namespaced body".to_vec());
         let result = producer
             .send_with_timeout(&message, Duration::from_secs(1))
