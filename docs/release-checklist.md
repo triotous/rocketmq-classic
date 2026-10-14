@@ -140,7 +140,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   fixture SHA-256 is
   `6ec3f130f86c25b12b08f5d5d51f5b43c0bab1a2e77738208909959bbef79db5`.
   This closes the Message constructor/null-state slice only; broader inherited
-  API and reverse-export reconciliation remain local P18-V01 work.
+  API and reverse-export reconciliation remain local P18-V01 work. The pinned
+  Common API reverse scan also removed Rust-only `Message::{take_body,
+  take_body_nullable,set_property,properties_mut}` and
+  `MessageQueue::new_nullable_broker`; compile-fail doctests guard those five
+  public boundaries. The exact Java user-property and nullable queue APIs
+  remain available.
   The public-surface reverse scan also found caller-configurable decoder limits
   and a limited decompression function with no Java API counterpart. Those
   controls are now internal fixed safety bounds; decoder and pull-result public
