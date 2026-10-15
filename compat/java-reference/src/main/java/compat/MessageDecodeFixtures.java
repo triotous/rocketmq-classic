@@ -227,6 +227,15 @@ public final class MessageDecodeFixtures {
         } finally {
             if (!dynamicWasReserved) MessageConst.STRING_HASH_SET.remove(dynamicReservedProperty);
         }
+        boolean nullWasReserved = MessageConst.STRING_HASH_SET.contains(null);
+        MessageConst.STRING_HASH_SET.add(null);
+        try {
+            expected.put("mutatedNullReservedPropertyPresent", MessageConst.STRING_HASH_SET.contains(null));
+            expected.put("nullReservedPropertyExceptionClass",
+                runtimeExceptionClass(() -> new Message().putUserProperty(null, "value")));
+        } finally {
+            if (!nullWasReserved) MessageConst.STRING_HASH_SET.remove(null);
+        }
         boolean keysWasReserved = MessageConst.STRING_HASH_SET.remove(MessageConst.PROPERTY_KEYS);
         try {
             expected.put("removedReservedPropertyAccepted",
@@ -859,6 +868,15 @@ public final class MessageDecodeFixtures {
             return false;
         } catch (RuntimeException expected) {
             return true;
+        }
+    }
+
+    private static String runtimeExceptionClass(Runnable action) {
+        try {
+            action.run();
+            return null;
+        } catch (RuntimeException expected) {
+            return expected.getClass().getName();
         }
     }
 

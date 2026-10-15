@@ -52,3 +52,14 @@
   current revision's server-free P18-V02 gate; P18-V01, current-revision GitHub
   Ubuntu address-profile evidence, Phase 19 Broker/Docker validation, and
   release version/registry checks remain open.
+- P18-V01 Java oracle for nullable reserved-property-set membership:
+  against pinned RocketMQ 5.5.1, `MessageConst.STRING_HASH_SET` accepts null;
+  while null is present, `Message.putUserProperty(null, "value")` throws the
+  base `java.lang.RuntimeException` before blank-name validation. Added the
+  invoked fixture case and regenerated `fixtures/messages/records.json` with
+  `mvn -q -f compat/java-reference/pom.xml compile exec:java
+  -Dexec.args='message-decode-fixtures fixtures/messages/records.json false'`;
+  the focused Java fixture verification passes. Fixture SHA-256:
+  `80f920015068610174b266111497c018abf9ca4c8b183d6233471a81772f0723`.
+  Rust behavior is not yet updated; that parity change and differential remain
+  open.
