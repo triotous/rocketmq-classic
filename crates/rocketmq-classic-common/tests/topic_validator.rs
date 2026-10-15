@@ -163,6 +163,12 @@ fn public_topic_validator_surface_matches_pinned_java_fixture() {
         );
     }
 
+    let identity = &fixture["validateResultIdentity"];
+    assert_eq!(identity["equalsDeclaredBy"], "java.lang.Object");
+    assert_eq!(identity["hashCodeDeclaredBy"], "java.lang.Object");
+    assert_eq!(identity["sameObjectEqualsItself"], true);
+    assert_eq!(identity["distinctEqualFieldsEquals"], false);
+
     let classification = &fixture["classification"];
     let custom_system_topic = classification["customSystemTopic"].as_str().unwrap();
     let custom_blocked_topic = classification["customBlockedTopic"].as_str().unwrap();

@@ -73,8 +73,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `sendMessageBack`/`maxReconsumeTimes` covers the 3000 ms timeout and logical
   Broker route lookup offline; its live Broker handoff remains pending.
   The public `TopicValidator.ValidateResult(boolean, String)` constructor,
-  including null remarks, also has direct pinned-Java fixture and Rust
-  differential coverage. `TopicValidator` null-input behavior and nullable
+  including null remarks and inherited identity-based `Object.equals`/
+  `hashCode`, also has direct pinned-Java fixture and Rust API-boundary
+  coverage. Rust intentionally omits structural `PartialEq`/`Eq` for this
+  Java identity-valued result. `TopicValidator` null-input behavior and nullable
   system/send-block set members now have fixture-backed Rust differentials too;
   this closes those specific branches only, while the broad API/source/input
   audit remains open. A re-export-aware Rustdoc scan now has exact crosswalks

@@ -49,7 +49,7 @@ public final class TopicValidatorFixtures {
         }
     }
 
-    private static Map<String, Object> render() {
+    private static Map<String, Object> render() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("sourceCommit", SOURCE_COMMIT);
         result.put("clientArtifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
@@ -64,12 +64,14 @@ public final class TopicValidatorFixtures {
             "TopicValidator.getNotAllowedSendTopicSet",
             "TopicValidator.ValidateResult.<init>(boolean, String)",
             "TopicValidator.ValidateResult.isValid",
-            "TopicValidator.ValidateResult.getRemark"));
+            "TopicValidator.ValidateResult.getRemark",
+            "TopicValidator.ValidateResult.equals/hashCode (inherited Object identity)"));
         result.put("constants", constants());
         result.put("validCharacters", validCharacters());
         result.put("topicCases", topicCases());
         result.put("groupCases", groupCases());
         result.put("validateResultConstructorCases", validateResultConstructorCases());
+        result.put("validateResultIdentity", validateResultIdentity());
         result.put("classification", classification());
         result.put("nullableBehavior", nullableBehavior());
         result.put("validCharMutation", validCharMutation());
@@ -188,6 +190,19 @@ public final class TopicValidatorFixtures {
         item.put("remarkIsNull", result.getRemark() == null);
         if (result.getRemark() != null) item.put("remark", result.getRemark());
         return item;
+    }
+
+    private static Map<String, Object> validateResultIdentity() throws Exception {
+        TopicValidator.ValidateResult first = new TopicValidator.ValidateResult(true, "same");
+        TopicValidator.ValidateResult second = new TopicValidator.ValidateResult(true, "same");
+        Map<String, Object> result = new TreeMap<>();
+        result.put("equalsDeclaredBy", first.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        result.put("hashCodeDeclaredBy", first.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
+        result.put("sameObjectEqualsItself", first.equals(first));
+        result.put("distinctEqualFieldsEquals", first.equals(second));
+        return result;
     }
 
     private static Map<String, Object> classification() {

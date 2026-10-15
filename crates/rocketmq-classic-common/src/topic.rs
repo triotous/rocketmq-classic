@@ -104,7 +104,18 @@ fn java_blank(value: Option<&str>) -> bool {
 }
 
 /// Result returned by Java-compatible topic and group validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Java `TopicValidator.ValidateResult` inherits identity-based `Object.equals`
+/// and `Object.hashCode`; it does not define value equality. This type therefore
+/// intentionally has no `PartialEq` or `Eq` implementation.
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::topic::ValidateResult;
+///
+/// fn requires_eq<T: Eq>() {}
+/// requires_eq::<ValidateResult>();
+/// ```
+#[derive(Debug, Clone)]
 pub struct ValidateResult {
     valid: bool,
     remark: Option<String>,
