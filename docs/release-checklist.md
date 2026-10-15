@@ -1211,9 +1211,23 @@ Before any publication:
   `message_decode` integration tests, one topic-validator test, and 17 doctests),
   as do strict Common Clippy and the full offline Maven verify (37 scenarios,
   Java/Rust cross-decodes and fixture checks). This closes this decoder slice
-  only; broad P18-V01 remains open. Full-workspace P18-V02 gates still need to
-  be rerun on the final revision, and current GitHub Ubuntu/P18-V04 evidence,
+  only; broad P18-V01 remains open. At this checkpoint, full-workspace P18-V02
+  gates still needed a rerun; the rerun is recorded below. Current GitHub Ubuntu/P18-V04 evidence,
   Phase 19 local Docker/Broker automation, and release version/registry checks
   remain open. Owner-run deployment/live Broker checks remain Phase 19 manual
   validation. Current message fixture SHA-256:
   `761ffe884d0a7c907bb694969ce0730fbb60390cc1fa92151c310f6894483dfd`.
+
+- Current-revision server-free **P18-V02** gates on `f14d7c6a` (2026-10-15):
+  default and all-feature workspace tests; workspace all-target check; strict
+  all-target/all-feature Clippy; pinned offline Maven verify (37 scenarios,
+  Java/Rust cross-decodes and fixture checks); differential self-test and
+  37-scenario manifest; deterministic race/leak smoke (16 cases × 3); fuzz
+  smoke (104 frame seeds, 11 message seeds, 1,840 bounded mutations); release
+  examples; workspace bench compilation; locked Cargo metadata; workspace
+  metadata/license/dependency checks; seven package listings; Asia/Taipei
+  unique-ID fixture; rustfmt and diff checks all pass. This closes server-free
+  P18-V02 on `f14d7c6a`. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04
+  evidence, Phase 19 local Docker/Broker automation, and release version/
+  registry-resolution checks remain open. Owner-run deployment/live Broker
+  checks remain Phase 19 manual validation.
