@@ -21,6 +21,11 @@ use rocketmq_classic_common::{
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Mutex;
+
+// These fixtures both inspect or mutate the process-wide Java-compatible
+// reserved-property set, so keep them isolated from one another.
+static MESSAGE_CONSTANTS_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
@@ -702,6 +707,9 @@ fn message_decoder_public_constants_match_java_551() {
 
 #[test]
 fn message_constants_match_java_551() {
+    let _guard = MESSAGE_CONSTANTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use rocketmq_classic_common::message::constants;
 
     let expected = &fixture()["messageConstantsApi"];
@@ -1446,6 +1454,9 @@ fn nullable_message_property_keys_match_java_551() {
 
 #[test]
 fn message_public_api_matches_java_551_fixture() {
+    let _guard = MESSAGE_CONSTANTS_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let expected = &fixture()["messagePublicApi"];
     let default_message = Message::default();
     assert_eq!(default_message.topic_nullable(), None);
