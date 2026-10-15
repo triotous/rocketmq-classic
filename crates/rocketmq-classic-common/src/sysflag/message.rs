@@ -116,9 +116,6 @@ impl std::fmt::Display for CompressionType {
     }
 }
 
-pub fn has_compressed_flag(flag: i32) -> bool {
-    flag & COMPRESSED_FLAG != 0
-}
 pub fn clear_compressed_flag(flag: i32) -> i32 {
     flag & !COMPRESSED_FLAG
 }
@@ -142,7 +139,7 @@ mod tests {
 
     #[test]
     fn compression_type_and_flag_helpers_preserve_other_bits() {
-        assert!(has_compressed_flag(COMPRESSED_FLAG | 0x4000));
+        assert!(check(COMPRESSED_FLAG | 0x4000, COMPRESSED_FLAG));
         assert_eq!(clear_compressed_flag(COMPRESSED_FLAG | 0x4000), 0x4000);
         assert_eq!(compression_type(0), Ok(CompressionType::Zlib));
         assert_eq!(

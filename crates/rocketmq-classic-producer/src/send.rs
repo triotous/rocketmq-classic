@@ -4730,7 +4730,7 @@ mod tests {
                 .prepare(&message_for_send, false, compression_sys_flag)
                 .unwrap();
             assert_eq!(
-                message::has_compressed_flag(prepared.sys_flag),
+                message::check(prepared.sys_flag, message::COMPRESSED_FLAG),
                 expected,
                 "Java threshold fixture case {case}"
             );
@@ -4774,7 +4774,7 @@ mod tests {
             let flag = producer.compress_message_before_hook(&mut message, false);
             let prepared = producer.prepare(&message, false, flag).unwrap();
             assert_eq!(
-                message::has_compressed_flag(prepared.sys_flag),
+                message::check(prepared.sys_flag, message::COMPRESSED_FLAG),
                 expected,
                 "Java runtime compression threshold case {case}"
             );
@@ -4795,7 +4795,7 @@ mod tests {
             let flag = producer.compress_message_before_hook(&mut message, false);
             let prepared = producer.prepare(&message, false, flag).unwrap();
             assert_eq!(
-                message::has_compressed_flag(prepared.sys_flag),
+                message::check(prepared.sys_flag, message::COMPRESSED_FLAG),
                 runtime[level_name]["compressed"].as_bool().unwrap()
             );
             assert_eq!(

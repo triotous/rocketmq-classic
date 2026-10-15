@@ -499,6 +499,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `MixAll` reply constants, and records the initial mutable reserved-property
   set. `message_constants_match_java_551` compares every value and reserved
   name. P18-V01 remains open for the broader source/API/input/flow audit.
+- Common flag handling no longer exports Rust-only `has_compressed_flag`.
+  Producer checks use Java's `MessageSysFlag.check(flag, COMPRESSED_FLAG)`
+  counterpart, and a compile-fail rustdoc case guards the removed export.
+  Broader P18-V01 reconciliation remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

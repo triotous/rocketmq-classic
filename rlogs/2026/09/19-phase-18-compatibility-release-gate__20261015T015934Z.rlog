@@ -66,3 +66,10 @@
 - Added fixture reflection for all 76 values, both `MixAll` values, and the sorted initial `MessageConst.STRING_HASH_SET`. `message_constants_match_java_551` checks every value and reserved name. Updated the Phase 8 mapping, release checklist and fixture checksum: `3d867fbd1ace33d2c95561ec12d7ac2f9f709fddc742c754459c7f75e08d563d`.
 - PASS: Common all-feature tests (21 unit, 16 message decode, 1 topic validator, 11 doctests); strict all-target/all-feature Common Clippy; offline Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); formatting, diff, and fixture checksum checks.
 - This closes the message-constant mapping/value slice only. Broad P18-V01 source/API/input/error/flow and reverse-export reconciliation remains open, as do final-revision workspace P18-V02 gates, current-revision GitHub Ubuntu evidence, and Phase 19 local Docker/Broker scenarios. No plan changed; no push, release, or tag action taken.
+
+## MessageSysFlag public surface — 2026-10-15
+
+- Reverse-audited the Common flag helpers against pinned Java 5.5.1 `MessageSysFlag`. Java already exposes `check(flag, expectedFlag)` for arbitrary masks; the Rust-only public `has_compressed_flag` convenience alias was redundant.
+- Removed that public helper, routed Producer compression predicates through `check(flag, COMPRESSED_FLAG)`, and added a compile-fail rustdoc guard. Updated the Phase 8 mapping and release checklist.
+- PASS: Common all-feature tests (21 unit, 16 message decode, 1 topic validator, 12 doctests); Producer all-feature tests (140 unit, 10 admin, 27 producer, 3 request/reply, 17 scripted send, 7 transaction, 6 doctests); strict all-target/all-feature Clippy for Common and Producer; formatting and diff checks.
+- This closes the extra flag-helper export only. Broad P18-V01 reconciliation remains open, along with final-revision workspace P18-V02 gates, current-revision GitHub Ubuntu evidence, and Phase 19 local Docker/Broker scenarios. No plan changed; no push, release, or tag action taken.
