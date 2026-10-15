@@ -83,3 +83,5 @@ were modified. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
 Phase 19 local Docker/Broker automation, and release version/registry resolution
 remain open. Owner-run deployment/live Broker checks remain manual; no push,
 tag, publication, deployment, or live Broker action occurred.
+
+Remoting setting-timing audit documentation reconciliation (2026-10-15): compared the 20 pinned `NettyClientConfig` fields and their current inventory rows against the latest P18-V01 slices. All rows now record Java's read/capture boundary and the corresponding Rust adapter or snapshot; idle timeout and `disableNettyWorkerGroup` have live per-channel adapters, while socket/bootstrap/TLS and runtime values record their respective start, proxy-first-use, or operation timing. Updated the Phase 3 inventory summary and `KNOWN_DIFFERENCES.md` so they no longer describe the completed Remoting timing slice as still pending. The broader API/input/error/control-flow and reverse-export P18-V01 audit remains open. Documentation-only change; `git diff --check` passed. No plan, Java reference source, implementation, or test files changed.
