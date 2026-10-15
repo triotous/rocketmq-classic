@@ -7,10 +7,7 @@ use rocketmq_classic_protocol::{
 };
 use rocketmq_classic_remoting::{
     CodecError,
-    codec::{
-        frame::{self, DEFAULT_MAX_FRAME_SIZE},
-        json_header, rocketmq_header,
-    },
+    codec::{frame, json_header, rocketmq_header},
     command::RemotingCommand,
 };
 
@@ -24,7 +21,7 @@ fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
         language: None,
         ..Default::default()
     };
-    let json = json_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let json = json_header::encode(&command).unwrap();
     let fields: serde_json::Value = serde_json::from_slice(&json).unwrap();
     assert_eq!(
         fields.get("language").is_some(),
@@ -54,7 +51,7 @@ fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
             .is_none(),
         java["JSON"]["explicitNullDecodedLanguageNull"]
     );
-    assert!(rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).is_err());
+    assert!(rocketmq_header::encode(&command).is_err());
     assert_eq!(java["ROCKETMQ"]["outcome"], "NullPointerException");
 }
 
@@ -74,7 +71,7 @@ fn unknown_binary_language_code_matches_java_value_of_byte_null() {
         language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
         ..Default::default()
     };
-    let mut bytes = rocketmq_header::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let mut bytes = rocketmq_header::encode(&command).unwrap();
     bytes[2] = u8::MAX;
     assert_eq!(rocketmq_header::decode(&bytes).unwrap().language, None);
 }
@@ -94,9 +91,7 @@ fn p2_v01_java_fixtures_cross_decode_for_both_wire_serializations() {
         }
         let frame_bytes = fs::read(&path).unwrap();
         let mut input = BytesMut::from(frame_bytes.as_slice());
-        let command = frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let command = frame::decode_next(&mut input).unwrap().unwrap();
         assert!(input.is_empty());
         if path
             .file_name()
@@ -120,24 +115,15 @@ fn p2_v01_java_fixtures_cross_decode_for_both_wire_serializations() {
     assert!(seen_json && seen_rocketmq);
     let private_large_code = fs::read(fixture_dir().join("private-large-code.bin")).unwrap();
     let mut input = BytesMut::from(private_large_code.as_slice());
-    assert_eq!(
-        frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap()
-            .code,
-        4_614
-    );
+    assert_eq!(frame::decode_next(&mut input).unwrap().unwrap().code, 4_614);
     let unknown_code = RemotingCommand {
         code: 987_654,
         ..RemotingCommand::default()
     };
-    let unknown_frame = frame::encode(&unknown_code, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let unknown_frame = frame::encode(&unknown_code).unwrap();
     let mut input = BytesMut::from(unknown_frame.as_slice());
     assert_eq!(
-        frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap()
-            .code,
+        frame::decode_next(&mut input).unwrap().unwrap().code,
         987_654
     );
 }
@@ -146,9 +132,7 @@ fn p2_v01_java_fixtures_cross_decode_for_both_wire_serializations() {
 fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
     let proof_bytes = fs::read(fixture_dir().join("header-proof-001.bin")).unwrap();
     let mut proof_input = BytesMut::from(proof_bytes.as_slice());
-    let proof = frame::decode_next(&mut proof_input, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap();
+    let proof = frame::decode_next(&mut proof_input).unwrap().unwrap();
     let raw_fields = proof.ext_fields.as_ref().unwrap();
     let typed = GetRouteInfoRequestHeader::decode_fields(raw_fields).unwrap();
     assert_eq!(typed.topic, "fixture-topic");
@@ -156,9 +140,7 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
     for name in ["header-fast-001.bin", "header-ordinary-001.bin"] {
         let bytes = fs::read(fixture_dir().join(name)).unwrap();
         let mut input = BytesMut::from(bytes.as_slice());
-        let command = frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let command = frame::decode_next(&mut input).unwrap().unwrap();
         assert_eq!(command.remark.as_deref(), Some("header-equivalent"));
         assert_eq!(
             command.ext_fields.as_ref().unwrap().get("topic").unwrap(),
@@ -170,8 +152,8 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
     let mut fast = BytesMut::from(fast.as_slice());
     let mut ordinary = BytesMut::from(ordinary.as_slice());
     assert_eq!(
-        frame::decode_next(&mut fast, DEFAULT_MAX_FRAME_SIZE).unwrap(),
-        frame::decode_next(&mut ordinary, DEFAULT_MAX_FRAME_SIZE).unwrap()
+        frame::decode_next(&mut fast).unwrap(),
+        frame::decode_next(&mut ordinary).unwrap()
     );
 }
 
@@ -183,19 +165,15 @@ fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
         body: Some(vec![1, 2, 3]),
         ..RemotingCommand::default()
     };
-    let bytes = frame::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let bytes = frame::encode(&command).unwrap();
     for split in 0..bytes.len() {
         let mut input = BytesMut::from(&bytes[..split]);
         let before = input.clone();
-        assert!(
-            frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .is_none()
-        );
+        assert!(frame::decode_next(&mut input).unwrap().is_none());
         assert_eq!(input, before, "input changed at split {split}");
         input.extend_from_slice(&bytes[split..]);
         assert_eq!(
-            frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE).unwrap(),
+            frame::decode_next(&mut input).unwrap(),
             Some(command.clone())
         );
         assert!(input.is_empty());
@@ -203,13 +181,10 @@ fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
     let mut joined = BytesMut::from(bytes.as_slice());
     joined.extend_from_slice(&bytes);
     assert_eq!(
-        frame::decode_next(&mut joined, DEFAULT_MAX_FRAME_SIZE).unwrap(),
+        frame::decode_next(&mut joined).unwrap(),
         Some(command.clone())
     );
-    assert_eq!(
-        frame::decode_next(&mut joined, DEFAULT_MAX_FRAME_SIZE).unwrap(),
-        Some(command)
-    );
+    assert_eq!(frame::decode_next(&mut joined).unwrap(), Some(command));
     assert!(joined.is_empty());
 }
 
@@ -217,27 +192,22 @@ fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
 fn p2_v02_rejects_invalid_lengths_limits_and_unknown_serialization() {
     for declared in [0u32, 1, 3, 0x8000_0000, u32::MAX] {
         let mut input = BytesMut::from(declared.to_be_bytes().as_slice());
-        assert!(frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE).is_err());
+        assert!(frame::decode_next(&mut input).is_err());
     }
-    let mut too_large = BytesMut::from((DEFAULT_MAX_FRAME_SIZE as u32).to_be_bytes().as_slice());
-    assert!(matches!(
-        frame::decode_next(&mut too_large, DEFAULT_MAX_FRAME_SIZE),
-        Err(CodecError::FrameTooLarge { .. })
-    ));
     let max_wire_length = 0x00ff_ffffu32;
     let mut max_frame_prefix = BytesMut::from(max_wire_length.to_be_bytes().as_slice());
     assert!(matches!(
-        frame::decode_next(&mut max_frame_prefix, 0x0100_0003),
+        frame::decode_next(&mut max_frame_prefix),
         Ok(None)
     ));
     let mut invalid_serialization = BytesMut::from(&[0, 0, 0, 4, 2, 0, 0, 0][..]);
     assert!(matches!(
-        frame::decode_next(&mut invalid_serialization, DEFAULT_MAX_FRAME_SIZE),
+        frame::decode_next(&mut invalid_serialization),
         Err(CodecError::UnsupportedSerialization(2))
     ));
     let mut header_larger_than_payload = BytesMut::from(&[0, 0, 0, 4, 0, 0xff, 0xff, 0xff][..]);
     assert!(matches!(
-        frame::decode_next(&mut header_larger_than_payload, DEFAULT_MAX_FRAME_SIZE),
+        frame::decode_next(&mut header_larger_than_payload),
         Err(CodecError::HeaderTooLarge { .. })
     ));
     let mut truncated_nested_header = BytesMut::from(&[0, 0, 0, 28, 1, 0, 0, 24][..]);
@@ -248,7 +218,7 @@ fn p2_v02_rejects_invalid_lengths_limits_and_unknown_serialization() {
     truncated_nested_header.extend_from_slice(&5i32.to_be_bytes());
     truncated_nested_header.extend_from_slice(&[1, 2, 3]);
     assert!(matches!(
-        frame::decode_next(&mut truncated_nested_header, DEFAULT_MAX_FRAME_SIZE),
+        frame::decode_next(&mut truncated_nested_header),
         Err(CodecError::MalformedHeader("RocketMQ", _))
     ));
     let mut command_frame = BytesMut::from(&[0, 0, 0, 32, 1, 0, 0, 28][..]);
@@ -260,20 +230,19 @@ fn p2_v02_rejects_invalid_lengths_limits_and_unknown_serialization() {
     command_frame.extend_from_slice(&[0, 1, 0xff]);
     command_frame.extend_from_slice(&0i32.to_be_bytes());
     assert!(matches!(
-        frame::decode_next(&mut command_frame, DEFAULT_MAX_FRAME_SIZE),
+        frame::decode_next(&mut command_frame),
         Err(CodecError::InvalidUtf8)
     ));
     let command = RemotingCommand::default();
-    let encoded = frame::encode(&command, DEFAULT_MAX_FRAME_SIZE).unwrap();
-    assert!(frame::encode(&command, encoded.len() - 1).is_err());
-    assert_eq!(frame::encode(&command, encoded.len()).unwrap(), encoded);
+    let encoded = frame::encode(&command).unwrap();
+    assert_eq!(frame::encode(&command).unwrap(), encoded);
     let too_wide = RemotingCommand {
         code: 32_768,
         serialization: SerializeType::RocketMq,
         ..RemotingCommand::default()
     };
     assert!(matches!(
-        frame::encode(&too_wide, DEFAULT_MAX_FRAME_SIZE),
+        frame::encode(&too_wide),
         Err(CodecError::FieldTooWide("code"))
     ));
 }

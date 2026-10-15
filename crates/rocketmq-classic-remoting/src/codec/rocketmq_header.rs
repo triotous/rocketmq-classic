@@ -9,7 +9,15 @@ const FIXED_HEADER_LEN: usize = 21;
 /// Java 5.5.1 private-header order: code i16, language u8, version i16,
 /// opaque i32, flag i32, remark length i32 + UTF-8, then map length i32 and
 /// entries of key length i16 + UTF-8 + value length i32 + UTF-8.
-pub fn encode(command: &RemotingCommand, max_header_length: usize) -> Result<Vec<u8>, CodecError> {
+/// Encode a RocketMQ binary remoting header.
+pub fn encode(command: &RemotingCommand) -> Result<Vec<u8>, CodecError> {
+    encode_with_limit(command, 0x00ff_ffff)
+}
+
+pub(crate) fn encode_with_limit(
+    command: &RemotingCommand,
+    max_header_length: usize,
+) -> Result<Vec<u8>, CodecError> {
     let code = i16::try_from(command.code).map_err(|_| CodecError::FieldTooWide("code"))?;
     let version =
         i16::try_from(command.version).map_err(|_| CodecError::FieldTooWide("version"))?;

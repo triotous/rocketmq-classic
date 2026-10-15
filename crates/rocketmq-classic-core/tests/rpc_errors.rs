@@ -5,7 +5,7 @@ use rocketmq_classic_core::{api::MQClientApi, error::RpcError};
 use rocketmq_classic_protocol::header::QueryConsumerOffsetRequestHeader;
 use rocketmq_classic_remoting::{
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
     error::TransportError,
 };
 use tokio::{
@@ -30,9 +30,7 @@ async fn scripted_transport_errors_retain_rpc_category_and_source() {
                 let mut buffer = BytesMut::from(&len[..]);
                 buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
                 stream.read_exact(&mut buffer[4..]).await.unwrap();
-                frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
-                    .unwrap()
-                    .unwrap();
+                frame::decode_next(&mut buffer).unwrap().unwrap();
                 if failure == "frame" {
                     stream.write_all(&0i32.to_be_bytes()).await.unwrap();
                 }

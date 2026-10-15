@@ -87,17 +87,15 @@ fn main() {
         serialization: SerializeType::Json,
         ..RemotingCommand::default()
     };
-    let command_frame_bytes = frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).unwrap();
+    let command_frame_bytes = frame::encode(&command).unwrap();
     benchmark_sync(
         "remoting-frame-encode-decode",
         CODEC_ITERATIONS,
         command_frame_bytes.len(),
         || {
-            let encoded = frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).unwrap();
+            let encoded = frame::encode(&command).unwrap();
             let mut input = BytesMut::from(encoded.as_slice());
-            let decoded = frame::decode_next(&mut input, frame::DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let decoded = frame::decode_next(&mut input).unwrap().unwrap();
             black_box((decoded.code, decoded.body.as_ref().map(Vec::len)));
         },
     );
@@ -208,17 +206,16 @@ fn run_pending_completion_benchmark() {
                 }
                 input.extend_from_slice(&read_buffer[..length]);
                 loop {
-                    let command =
-                        match frame::decode_next(&mut input, frame::DEFAULT_MAX_FRAME_SIZE) {
-                            Ok(Some(command)) => command,
-                            Ok(None) => break,
-                            Err(error) => {
-                                panic!("loopback benchmark received invalid frame: {error}")
-                            }
-                        };
+                    let command = match frame::decode_next(&mut input) {
+                        Ok(Some(command)) => command,
+                        Ok(None) => break,
+                        Err(error) => {
+                            panic!("loopback benchmark received invalid frame: {error}")
+                        }
+                    };
                     let mut response = command;
                     response.mark_response();
-                    let encoded = frame::encode(&response, frame::DEFAULT_MAX_FRAME_SIZE).unwrap();
+                    let encoded = frame::encode(&response).unwrap();
                     socket.write_all(&encoded).await.unwrap();
                 }
             }

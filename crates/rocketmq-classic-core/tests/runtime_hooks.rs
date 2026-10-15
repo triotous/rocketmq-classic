@@ -8,7 +8,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RpcHook, RpcHookError},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use std::sync::{Arc, Mutex};
 use tokio::{
@@ -71,9 +71,7 @@ async fn nullable_heartbeat_language_reaches_hooks_and_json_wire() {
                 header.get("language").and_then(serde_json::Value::as_str),
                 expected
             );
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::HEART_BEAT);
             let mut reply = RemotingCommand {
                 opaque: command.opaque,
@@ -81,7 +79,7 @@ async fn nullable_heartbeat_language_reaches_hooks_and_json_wire() {
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -134,9 +132,7 @@ async fn runtime_config_mutations_reach_heartbeat_language_and_namespace_hook() 
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let command = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(command.code, request::HEART_BEAT);
         assert_eq!(command.language, Some(LanguageCode::Cpp));
         let fields = command.ext_fields.as_ref().unwrap();
@@ -148,7 +144,7 @@ async fn runtime_config_mutations_reach_heartbeat_language_and_namespace_hook() 
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -207,9 +203,7 @@ async fn runtime_hooks_reach_nameserver_heartbeat_v1_v2_and_oneway_with_source_s
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, code);
             assert_eq!(
                 command.language,
@@ -234,7 +228,7 @@ async fn runtime_hooks_reach_nameserver_heartbeat_v1_v2_and_oneway_with_source_s
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }

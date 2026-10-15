@@ -71,7 +71,7 @@ fn main() {
         };
         fs::write(
             output.join(format!("{name}.bin")),
-            frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).expect("encode frame"),
+            frame::encode(&command).expect("encode frame"),
         )
         .expect("write frame");
     }
@@ -678,7 +678,7 @@ fn write_typed_body(
     };
     fs::write(
         output.join(name),
-        frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).expect("encode typed header"),
+        frame::encode(&command).expect("encode typed header"),
     )
     .expect("write typed header fixture");
 }
@@ -702,7 +702,7 @@ fn write_body_bytes(output: &std::path::Path, name: &str, code: i32, body: Vec<u
     };
     fs::write(
         output.join(name),
-        frame::encode(&command, frame::DEFAULT_MAX_FRAME_SIZE).expect("encode typed body frame"),
+        frame::encode(&command).expect("encode typed body frame"),
     )
     .expect("write typed body fixture");
 }

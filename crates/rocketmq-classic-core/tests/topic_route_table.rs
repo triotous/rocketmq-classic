@@ -167,10 +167,7 @@ fn public_nullable_route_conversion_arguments_match_invoked_java() {
 #[tokio::test]
 async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh() {
     use bytes::BytesMut;
-    use rocketmq_classic_remoting::{
-        RemotingCommand,
-        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-    };
+    use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -192,9 +189,7 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             socket.read_exact(&mut bytes[4..]).await.unwrap();
-            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let request = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(request.code, 105);
             assert_eq!(request.ext_fields.as_ref().unwrap()["topic"], "topic");
             let mut response = RemotingCommand {
@@ -204,7 +199,7 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
             };
             response.mark_response();
             socket
-                .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&response).unwrap())
                 .await
                 .unwrap();
         }

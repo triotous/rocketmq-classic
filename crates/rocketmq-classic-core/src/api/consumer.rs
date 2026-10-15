@@ -414,7 +414,7 @@ mod tests {
     use rocketmq_classic_remoting::{
         RemotingCommand,
         client::{RemotingClient, TransportMode},
-        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+        codec::frame,
     };
     use std::time::Duration;
     use tokio::{
@@ -428,9 +428,7 @@ mod tests {
         let mut bytes = bytes::BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap()
+        frame::decode_next(&mut bytes).unwrap().unwrap()
     }
 
     async fn reply(
@@ -449,7 +447,7 @@ mod tests {
         };
         response.mark_response();
         stream
-            .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&response).unwrap())
             .await
             .unwrap();
     }

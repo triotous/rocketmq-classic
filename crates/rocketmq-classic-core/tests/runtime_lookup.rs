@@ -10,10 +10,7 @@ use rocketmq_classic_protocol::{
     codes::request,
     heartbeat::MessageModel,
 };
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -30,9 +27,7 @@ async fn read(socket: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     socket.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn reply(
@@ -49,7 +44,7 @@ async fn reply(
     };
     response.mark_response();
     socket
-        .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&response).unwrap())
         .await
         .unwrap();
 }
@@ -820,7 +815,7 @@ async fn consumer_lookup_uses_timeout_mutated_after_runtime_construction() {
             ..Default::default()
         };
         response.mark_response();
-        if let Ok(bytes) = frame::encode(&response, DEFAULT_MAX_FRAME_SIZE) {
+        if let Ok(bytes) = frame::encode(&response) {
             let _ = socket.write_all(&bytes).await;
         }
     });
@@ -1064,7 +1059,7 @@ async fn default_topic_route_api_matches_invoked_java_api_fixture() {
             };
             response.mark_response();
             socket
-                .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&response).unwrap())
                 .await
                 .unwrap();
         }

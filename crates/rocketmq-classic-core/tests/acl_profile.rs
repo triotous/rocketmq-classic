@@ -7,7 +7,7 @@ use rocketmq_classic_core::auth::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -21,9 +21,7 @@ async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(frame_length + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn write_response(stream: &mut TcpStream, request: &RemotingCommand, accepted: bool) {
@@ -35,7 +33,7 @@ async fn write_response(stream: &mut TcpStream, request: &RemotingCommand, accep
     };
     response.mark_response();
     stream
-        .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&response).unwrap())
         .await
         .unwrap();
 }

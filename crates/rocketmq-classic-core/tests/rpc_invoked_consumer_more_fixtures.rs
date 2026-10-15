@@ -14,7 +14,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use serde_json::Value;
 use tokio::{
@@ -121,9 +121,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             let mut frame_bytes = BytesMut::from(&len[..]);
             frame_bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
             stream.read_exact(&mut frame_bytes[4..]).await.unwrap();
-            let incoming = frame::decode_next(&mut frame_bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let incoming = frame::decode_next(&mut frame_bytes).unwrap().unwrap();
             assert_eq!(
                 incoming.code,
                 expected["request"]["code"].as_i64().unwrap() as i32
@@ -158,7 +156,7 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         });

@@ -7,8 +7,8 @@ use crate::{
     error::CodecError,
 };
 
-/// Default Java Netty frame limit; it includes the 4-byte length prefix.
-pub const DEFAULT_MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
+/// Java Netty's default inbound frame limit; it includes the 4-byte length prefix.
+pub(crate) const DEFAULT_MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 
 /// The outbound Java encoder has no `frameMaxLength` guard; its length prefix
 /// can represent at most a signed Java `int` excluding the 4-byte prefix.
@@ -16,21 +16,27 @@ pub(crate) const JAVA_ENCODER_MAX_FRAME_SIZE: usize = i32::MAX as usize + 4;
 
 // ponytail: Java's FastCodesHeader optimization is covered by equivalent golden frames;
 // keep the common encoder exact until Phase 18 measurements justify specialization.
-pub fn encode(command: &RemotingCommand, max_frame_size: usize) -> Result<Vec<u8>, CodecError> {
+/// Encode a complete command frame, matching `RemotingCommand.encode()`.
+pub fn encode(command: &RemotingCommand) -> Result<Vec<u8>, CodecError> {
     let mut frame = Vec::new();
-    encode_into(command, max_frame_size, &mut frame)?;
+    encode_into(command, &mut frame)?;
     Ok(frame)
 }
 
-pub fn encode_into(
+/// Encode a complete command frame into a caller-owned output buffer.
+pub fn encode_into(command: &RemotingCommand, frame: &mut Vec<u8>) -> Result<(), CodecError> {
+    encode_into_with_limit(command, JAVA_ENCODER_MAX_FRAME_SIZE, frame)
+}
+
+pub(crate) fn encode_into_with_limit(
     command: &RemotingCommand,
     max_frame_size: usize,
     frame: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let max_header_length = max_frame_size.saturating_sub(8).min(0x00ff_ffff);
     let header = match command.serialization {
-        SerializeType::Json => json_header::encode(command, max_header_length)?,
-        SerializeType::RocketMq => rocketmq_header::encode(command, max_header_length)?,
+        SerializeType::Json => json_header::encode_with_limit(command, max_header_length)?,
+        SerializeType::RocketMq => rocketmq_header::encode_with_limit(command, max_header_length)?,
     };
     if header.len() > max_header_length || header.len() > 0x00ff_ffff {
         return Err(CodecError::FieldTooWide("header length"));
@@ -61,7 +67,15 @@ pub fn encode_into(
     Ok(())
 }
 
-pub fn decode_next(
+/// Decode the next complete frame, leaving incomplete input buffered.
+///
+/// The transport's configured inbound frame bound is applied by its decoder.
+/// Direct command decoding follows the signed Java length-prefix limit.
+pub fn decode_next(input: &mut BytesMut) -> Result<Option<RemotingCommand>, CodecError> {
+    decode_next_with_limit(input, JAVA_ENCODER_MAX_FRAME_SIZE)
+}
+
+pub(crate) fn decode_next_with_limit(
     input: &mut BytesMut,
     max_frame_size: usize,
 ) -> Result<Option<RemotingCommand>, CodecError> {
@@ -114,4 +128,34 @@ pub fn decode_next(
     command.body = (!body.is_empty()).then(|| body.to_vec());
     input.advance(total_length);
     Ok(Some(command))
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::BytesMut;
+
+    use super::{decode_next_with_limit, encode, encode_into_with_limit};
+    use crate::{command::RemotingCommand, error::CodecError};
+
+    #[test]
+    fn transport_decoder_and_encoder_apply_the_internal_frame_bound() {
+        let command = RemotingCommand::default();
+        let encoded = encode(&command).unwrap();
+
+        let mut output = Vec::new();
+        assert!(encode_into_with_limit(&command, encoded.len() - 1, &mut output).is_err());
+
+        let mut input = BytesMut::from(encoded.as_slice());
+        assert!(matches!(
+            decode_next_with_limit(&mut input, encoded.len() - 1),
+            Err(CodecError::FrameTooLarge { .. })
+        ));
+
+        let mut input = BytesMut::from(encoded.as_slice());
+        assert_eq!(
+            decode_next_with_limit(&mut input, encoded.len()).unwrap(),
+            Some(command)
+        );
+        assert!(input.is_empty());
+    }
 }

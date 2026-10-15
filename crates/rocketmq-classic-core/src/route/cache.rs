@@ -777,6 +777,8 @@ fn broker_address_exists_in_raw_routes(
 }
 
 // Bound expansion of compact routes before invoking collection converters.
+const MAX_ROUTE_EXPANSION_BYTES: usize = 16 * 1024 * 1024;
+
 fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), RuntimeError> {
     let broker_datas = route.broker_datas_snapshot();
     let queue_datas = route.queue_datas_snapshot();
@@ -790,7 +792,7 @@ fn validate_conversion_size(topic: &str, route: &TopicRouteData) -> Result<(), R
             .and_then(|size| size.checked_mul(count.max(0) as usize));
         estimated = size
             .and_then(|size| estimated.checked_add(size))
-            .filter(|size| *size <= rocketmq_classic_remoting::codec::frame::DEFAULT_MAX_FRAME_SIZE)
+            .filter(|size| *size <= MAX_ROUTE_EXPANSION_BYTES)
             .ok_or(RuntimeError::InvalidRoute(
                 "route queue expansion exceeds bounded memory budget",
             ))?;

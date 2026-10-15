@@ -6,7 +6,7 @@ use rocketmq_classic_protocol::{codes::request, header::HeaderMap};
 use rocketmq_classic_remoting::{
     RemotingCommand, TransportError,
     client::{RemotingClient, TransportMode, tls::TlsConfig},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -21,9 +21,7 @@ async fn read_tls_command(stream: &mut tokio_rustls::server::TlsStream<tokio::ne
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap();
+    let request = frame::decode_next(&mut bytes).unwrap().unwrap();
     let mut response = RemotingCommand {
         code: 0,
         opaque: request.opaque,
@@ -31,7 +29,7 @@ async fn read_tls_command(stream: &mut tokio_rustls::server::TlsStream<tokio::ne
     };
     response.mark_response();
     stream
-        .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&response).unwrap())
         .await
         .unwrap();
 }

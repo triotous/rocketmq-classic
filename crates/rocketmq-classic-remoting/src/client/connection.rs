@@ -149,7 +149,7 @@ impl Connection {
         max_frame_size: usize,
     ) -> Result<Vec<u8>, TransportError> {
         let mut bytes = self.take_frame_buffer();
-        if let Err(error) = frame::encode_into(command, max_frame_size, &mut bytes) {
+        if let Err(error) = frame::encode_into_with_limit(command, max_frame_size, &mut bytes) {
             self.recycle_frame(bytes);
             return Err(TransportError::Codec(error));
         }
@@ -468,7 +468,7 @@ async fn run_connection(
                     }
                     input.extend_from_slice(&read_buffer[..length]);
                     loop {
-                        match frame::decode_next(&mut input, max_frame_size) {
+                        match frame::decode_next_with_limit(&mut input, max_frame_size) {
                             Ok(Some(command)) => {
                                 if command.is_response() {
                                     if let Some(inner) = inner.upgrade() {

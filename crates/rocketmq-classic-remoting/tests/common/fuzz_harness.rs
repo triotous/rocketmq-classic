@@ -174,10 +174,11 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
     let _json_header = json_header::decode(&bounded[..bounded.len().min(MAX_FRAME_BYTES)]);
     let _private_header = rocketmq_header::decode(&bounded[..bounded.len().min(MAX_FRAME_BYTES)]);
 
-    let mut frame_input = BytesMut::from(bounded);
+    let frame_bytes = &bounded[..bounded.len().min(MAX_FRAME_BYTES)];
+    let mut frame_input = BytesMut::from(frame_bytes);
     let mut frame_decodes = 0;
     for _ in 0..4 {
-        match frame::decode_next(&mut frame_input, MAX_FRAME_BYTES) {
+        match frame::decode_next(&mut frame_input) {
             Ok(Some(command)) => {
                 frame_decodes += 1;
                 assert!(
@@ -230,9 +231,9 @@ fn unknown_request_codes_round_trip() {
             serialization,
             ..RemotingCommand::default()
         };
-        let encoded = frame::encode(&command, MAX_FRAME_BYTES).expect("unknown-code frame encodes");
+        let encoded = frame::encode(&command).expect("unknown-code frame encodes");
         let mut input = BytesMut::from(encoded.as_slice());
-        let decoded = frame::decode_next(&mut input, MAX_FRAME_BYTES)
+        let decoded = frame::decode_next(&mut input)
             .expect("unknown-code frame decodes")
             .expect("unknown-code frame is complete");
         assert_eq!(decoded.code, code);

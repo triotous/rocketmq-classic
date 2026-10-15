@@ -4,10 +4,7 @@ use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager}
 use rocketmq_classic_protocol::codes::{request, response};
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use rocketmq_classic_remoting::client::RequestProcessor;
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -24,13 +21,11 @@ async fn read(stream: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 async fn write(stream: &mut TcpStream, command: &RemotingCommand) {
     stream
-        .write_all(&frame::encode(command, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(command).unwrap())
         .await
         .unwrap();
 }

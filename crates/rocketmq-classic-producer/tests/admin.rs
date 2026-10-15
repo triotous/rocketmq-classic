@@ -17,10 +17,7 @@ use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_producer::{Producer, ProducerConfig, ProducerError};
 use rocketmq_classic_protocol::codes::{request, response};
 use rocketmq_classic_protocol::header::HeaderMap;
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use serde_json::json;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -36,9 +33,7 @@ async fn read_command(stream: &mut TcpStream) -> Option<RemotingCommand> {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.ok()?;
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .ok()
-        .flatten()
+    frame::decode_next(&mut bytes).ok().flatten()
 }
 
 fn current_time_millis() -> i64 {
@@ -64,7 +59,7 @@ async fn write_response(
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }
@@ -83,7 +78,7 @@ async fn write_response_fields(
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }
@@ -104,7 +99,7 @@ async fn write_response_body_fields(
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }

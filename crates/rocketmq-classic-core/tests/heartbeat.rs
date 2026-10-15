@@ -8,10 +8,7 @@ use rocketmq_classic_protocol::{
     codes::request,
     heartbeat::{ConsumerData, HeartbeatData, SubscriptionData},
 };
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use std::{
     collections::{HashMap, HashSet},
     sync::{
@@ -290,9 +287,7 @@ async fn read(stream: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn respond(
@@ -314,7 +309,7 @@ async fn respond(
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }
@@ -468,7 +463,7 @@ async fn single_peer_sends_to_slave_for_producer_only_and_reports_wire_failure()
         };
         response.mark_response();
         stream
-            .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&response).unwrap())
             .await
             .unwrap();
     });
@@ -551,9 +546,7 @@ async fn active_broker_connection_sends_heartbeat_and_wakes_runtime_wide_rebalan
             let mut bytes = BytesMut::from(&prefix[..]);
             bytes.resize(u32::from_be_bytes(prefix) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             if command.code == request::HEART_BEAT {
                 observed.fetch_add(1, Ordering::SeqCst);
             }
@@ -909,7 +902,7 @@ async fn failed_peer_does_not_prevent_heartbeat_to_other_brokers() {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });

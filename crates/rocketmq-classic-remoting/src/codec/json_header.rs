@@ -8,7 +8,15 @@ use serde_json::{Map, Value};
 
 use crate::{command::RemotingCommand, error::CodecError};
 
-pub fn encode(command: &RemotingCommand, max_length: usize) -> Result<Vec<u8>, CodecError> {
+/// Encode a JSON remoting header without applying a caller-selected size limit.
+pub fn encode(command: &RemotingCommand) -> Result<Vec<u8>, CodecError> {
+    encode_with_limit(command, 0x00ff_ffff)
+}
+
+pub(crate) fn encode_with_limit(
+    command: &RemotingCommand,
+    max_length: usize,
+) -> Result<Vec<u8>, CodecError> {
     let mut fields = Map::new();
     fields.insert("code".into(), command.code.into());
     if let Some(language) = command.language {
@@ -151,7 +159,7 @@ mod tests {
             ext_fields: Some(BTreeMap::from([("unknown".into(), "kept".into())])),
             ..RemotingCommand::default()
         };
-        let encoded = encode(&command, 4096).unwrap();
+        let encoded = encode_with_limit(&command, 4096).unwrap();
         let value: Value = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(value["language"], "RUST");
         assert_eq!(value["extFields"]["unknown"], "kept");

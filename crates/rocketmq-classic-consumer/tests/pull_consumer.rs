@@ -16,10 +16,7 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{BoundaryType, HeaderMap},
 };
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -124,9 +121,7 @@ async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn respond(
@@ -151,7 +146,7 @@ async fn respond(
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }
@@ -164,7 +159,7 @@ async fn respond_empty(stream: &mut TcpStream, command: &RemotingCommand, code: 
     };
     reply.mark_response();
     stream
-        .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&reply).unwrap())
         .await
         .unwrap();
 }
@@ -279,7 +274,7 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -537,7 +532,7 @@ async fn boundary_lookups_route_to_master_and_preserve_signed_success_values() {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -591,7 +586,7 @@ async fn boundary_lookups_route_to_master_and_preserve_signed_success_values() {
             stream
                 .as_mut()
                 .unwrap()
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }

@@ -20,7 +20,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -48,9 +48,7 @@ async fn peer(
         let mut bytes = BytesMut::from(&len[..]);
         bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let incoming = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let incoming = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(incoming.code, code);
         let mut reply = RemotingCommand {
             code: status,
@@ -63,7 +61,7 @@ async fn peer(
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
         incoming

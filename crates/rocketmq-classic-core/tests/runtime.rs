@@ -1,10 +1,7 @@
 use bytes::BytesMut;
 use rocketmq_classic_protocol::codes::request;
 use rocketmq_classic_remoting::client::RpcHook;
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -196,9 +193,7 @@ async fn registered_consumer_rejects_null_ordered_route_queue_list_like_java() {
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let request = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
         let mut reply = RemotingCommand {
             code: 0,
@@ -208,7 +203,7 @@ async fn registered_consumer_rejects_null_ordered_route_queue_list_like_java() {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -260,9 +255,7 @@ async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let request = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
         let mut reply = RemotingCommand {
             code: 0,
@@ -272,7 +265,7 @@ async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -328,9 +321,7 @@ async fn registered_consumer_nested_route_collection_outcomes_match_invoked_java
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let request = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC, "{peer_id}");
             let mut reply = RemotingCommand {
                 code: 0,
@@ -340,7 +331,7 @@ async fn registered_consumer_nested_route_collection_outcomes_match_invoked_java
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         });
@@ -496,9 +487,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             let topic = command.ext_fields.as_ref().unwrap().get("topic").cloned();
             assert!(seen.insert(topic.clone()), "duplicate route request");
@@ -518,7 +507,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -589,9 +578,7 @@ async fn null_subscription_topic_success_route_fails_before_cache_publication() 
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let command = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
         assert!(!command.ext_fields.as_ref().unwrap().contains_key("topic"));
         let mut reply = RemotingCommand {
@@ -602,7 +589,7 @@ async fn null_subscription_topic_success_route_fails_before_cache_publication() 
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -934,9 +921,7 @@ async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() 
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             let mut reply = RemotingCommand {
                 code: 0,
@@ -946,7 +931,7 @@ async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() 
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -994,9 +979,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             let mut reply = RemotingCommand {
                 code,
@@ -1006,7 +989,7 @@ async fn route_refresh_failure_preserves_last_coherent_snapshot() {
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1098,9 +1081,7 @@ async fn registered_consumer_need_update_republishes_unchanged_route_like_java()
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let request = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
             let mut reply = RemotingCommand {
                 code: 0,
@@ -1110,7 +1091,7 @@ async fn registered_consumer_need_update_republishes_unchanged_route_like_java()
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1210,9 +1191,7 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let request = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let request = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(request.code, request::GET_ROUTEINFO_BY_TOPIC);
             let mut reply = RemotingCommand {
                 code: 0,
@@ -1222,7 +1201,7 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1354,9 +1333,7 @@ async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snaps
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
             if topic == "first" {
@@ -1384,7 +1361,7 @@ async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snaps
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1457,9 +1434,7 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
             let mut reply = RemotingCommand {
@@ -1469,7 +1444,7 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1606,11 +1581,7 @@ async fn callback_executor_capacity_stays_at_its_construction_value_after_config
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            requests.push(
-                frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                    .unwrap()
-                    .unwrap(),
-            );
+            requests.push(frame::decode_next(&mut bytes).unwrap().unwrap());
         }
         let mut replies = BytesMut::new();
         for request in requests {
@@ -1619,7 +1590,7 @@ async fn callback_executor_capacity_stays_at_its_construction_value_after_config
                 ..Default::default()
             };
             reply.mark_response();
-            replies.extend_from_slice(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap());
+            replies.extend_from_slice(&frame::encode(&reply).unwrap());
         }
         stream.write_all(&replies).await.unwrap();
     });
@@ -1694,9 +1665,7 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut bytes[4..]).await.unwrap();
-            let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
             assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
             assert_eq!(command.ext_fields.as_ref().unwrap()["topic"], topic);
             let mut reply = RemotingCommand {
@@ -1712,7 +1681,7 @@ async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_
             }
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }

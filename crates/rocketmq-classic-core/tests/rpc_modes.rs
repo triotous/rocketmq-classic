@@ -16,7 +16,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -36,9 +36,7 @@ async fn sync_send_uses_wait_deadline_while_future_accepts_java_cleanup_grace() 
             let mut buffer = BytesMut::from(&len[..]);
             buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
             stream.read_exact(&mut buffer[4..]).await.unwrap();
-            let request = frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let request = frame::decode_next(&mut buffer).unwrap().unwrap();
             sleep(Duration::from_millis(150)).await;
             let mut reply = RemotingCommand {
                 opaque: request.opaque,
@@ -53,9 +51,7 @@ async fn sync_send_uses_wait_deadline_while_future_accepts_java_cleanup_grace() 
                 ..Default::default()
             };
             reply.mark_response();
-            let _ = stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
-                .await;
+            let _ = stream.write_all(&frame::encode(&reply).unwrap()).await;
         });
         let client = RemotingClient::new(TransportMode::Plain);
         client.start().unwrap();
@@ -97,9 +93,7 @@ async fn pull_sync_future_ack_and_route_select_their_java_wait_modes() {
             let mut buffer = BytesMut::from(&len[..]);
             buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
             stream.read_exact(&mut buffer[4..]).await.unwrap();
-            let incoming = frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
-                .unwrap()
-                .unwrap();
+            let incoming = frame::decode_next(&mut buffer).unwrap().unwrap();
             assert_eq!(
                 incoming.code,
                 match operation {
@@ -124,9 +118,7 @@ async fn pull_sync_future_ack_and_route_select_their_java_wait_modes() {
                 ..Default::default()
             };
             reply.mark_response();
-            let _ = stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
-                .await;
+            let _ = stream.write_all(&frame::encode(&reply).unwrap()).await;
         });
         let client = RemotingClient::new(TransportMode::Plain);
         if operation == "route" {

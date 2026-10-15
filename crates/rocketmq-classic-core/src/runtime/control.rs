@@ -631,10 +631,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn p6_v01_running_first_lookups_share_identity_task_set_and_actual_socket() {
         use bytes::BytesMut;
-        use rocketmq_classic_remoting::{
-            RemotingCommand,
-            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-        };
+        use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -655,9 +652,7 @@ mod tests {
                 let mut bytes = BytesMut::from(&length[..]);
                 bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
                 socket.read_exact(&mut bytes[4..]).await.unwrap();
-                let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                    .unwrap()
-                    .unwrap();
+                let command = frame::decode_next(&mut bytes).unwrap().unwrap();
                 assert_eq!(command.code, 999_999);
                 assert!(identities.insert(command.opaque));
                 let mut reply = RemotingCommand {
@@ -666,7 +661,7 @@ mod tests {
                 };
                 reply.mark_response();
                 socket
-                    .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .write_all(&frame::encode(&reply).unwrap())
                     .await
                     .unwrap();
             }
@@ -755,10 +750,7 @@ mod tests {
             codes::{LanguageCode, request},
             heartbeat::{ConsumerData, HeartbeatData, ProducerData, SubscriptionData},
         };
-        use rocketmq_classic_remoting::{
-            RemotingCommand,
-            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-        };
+        use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
         use std::collections::{BTreeMap, HashSet};
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
@@ -788,7 +780,7 @@ mod tests {
             let mut bytes = BytesMut::from(&length[..]);
             bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
             socket.read_exact(&mut bytes[4..]).await.unwrap();
-            frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE).unwrap()
+            frame::decode_next(&mut bytes).unwrap()
         }
         async fn respond(
             socket: &mut TcpStream,
@@ -804,7 +796,7 @@ mod tests {
             };
             reply.mark_response();
             socket
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         }
@@ -1073,10 +1065,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn p6_v03_every_failure_closes_pending_socket_and_drops_owned_work() {
         use bytes::BytesMut;
-        use rocketmq_classic_remoting::{
-            RemotingCommand, TransportError,
-            codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-        };
+        use rocketmq_classic_remoting::{RemotingCommand, TransportError, codec::frame};
         use std::sync::atomic::{AtomicBool, AtomicUsize};
         use tokio::{io::AsyncReadExt, net::TcpListener};
 
@@ -1113,9 +1102,7 @@ mod tests {
                     let mut bytes = BytesMut::from(&length[..]);
                     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
                     socket.read_exact(&mut bytes[4..]).await.unwrap();
-                    let command = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-                        .unwrap()
-                        .unwrap();
+                    let command = frame::decode_next(&mut bytes).unwrap().unwrap();
                     assert_eq!(command.code, 999_999);
                     seen.send(()).unwrap(); // Deliberately never answer this RPC.
                     let mut byte = [0];

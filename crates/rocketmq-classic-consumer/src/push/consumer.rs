@@ -6293,10 +6293,7 @@ mod tests {
     use rocketmq_classic_protocol::codes::{request, response};
     use rocketmq_classic_protocol::header::HeaderMap;
     use rocketmq_classic_remoting::client::RequestProcessor;
-    use rocketmq_classic_remoting::{
-        RemotingCommand,
-        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-    };
+    use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
     use std::collections::HashMap;
     use std::sync::atomic::AtomicUsize;
     use tokio::{
@@ -7512,9 +7509,7 @@ mod tests {
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap()
+        frame::decode_next(&mut bytes).unwrap().unwrap()
     }
 
     async fn write_remoting_reply(
@@ -7542,7 +7537,7 @@ mod tests {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     }
@@ -7738,7 +7733,7 @@ mod tests {
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         });
@@ -7968,7 +7963,7 @@ mod tests {
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
         });

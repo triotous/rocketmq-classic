@@ -5,7 +5,7 @@ use rocketmq_classic_protocol::header::{
     CommandHeader, PullMessageResponseHeader, QueryConsumerOffsetResponseHeader,
     SendMessageResponseHeader,
 };
-use rocketmq_classic_remoting::codec::frame::{self, DEFAULT_MAX_FRAME_SIZE};
+use rocketmq_classic_remoting::codec::frame;
 
 #[test]
 fn pinned_java_rpc_replies_decode_in_rust() {
@@ -22,7 +22,7 @@ fn pinned_java_rpc_replies_decode_in_rust() {
         assert_eq!(expected["java_client_version"], "5.5.1");
         let frame_bytes = fs::read(path.with_extension("bin")).unwrap();
         let mut input = BytesMut::from(frame_bytes.as_slice());
-        let command = frame::decode_next(&mut input, DEFAULT_MAX_FRAME_SIZE)
+        let command = frame::decode_next(&mut input)
             .unwrap()
             .expect("full Java frame");
         assert!(input.is_empty());
@@ -42,16 +42,13 @@ fn pinned_java_rpc_replies_decode_in_rust() {
         assert_eq!(hex(&body), expected["body_hex"].as_str().unwrap());
         if let Ok(dir) = std::env::var("P5_RUST_FRAMES") {
             fs::create_dir_all(&dir).unwrap();
-            let frame = frame::encode(
-                &rocketmq_classic_remoting::RemotingCommand {
-                    code: command.code,
-                    flag: command.flag,
-                    ext_fields: Some(actual.clone()),
-                    body: Some(body.clone()),
-                    ..rocketmq_classic_remoting::RemotingCommand::default()
-                },
-                DEFAULT_MAX_FRAME_SIZE,
-            )
+            let frame = frame::encode(&rocketmq_classic_remoting::RemotingCommand {
+                code: command.code,
+                flag: command.flag,
+                ext_fields: Some(actual.clone()),
+                body: Some(body.clone()),
+                ..rocketmq_classic_remoting::RemotingCommand::default()
+            })
             .unwrap();
             fs::write(
                 PathBuf::from(dir).join(path.with_extension("bin").file_name().unwrap()),

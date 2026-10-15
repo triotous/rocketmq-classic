@@ -2677,7 +2677,7 @@ mod tests {
                 let mut buffer = bytes::BytesMut::from(&len[..]);
                 buffer.resize(u32::from_be_bytes(len) as usize + 4, 0);
                 stream.read_exact(&mut buffer[4..]).await.unwrap();
-                let request = crate::codec::frame::decode_next(&mut buffer, DEFAULT_MAX_FRAME_SIZE)
+                let request = crate::codec::frame::decode_next(&mut buffer)
                     .unwrap()
                     .unwrap();
                 seen_tx.send(request.opaque).unwrap();
@@ -2687,9 +2687,7 @@ mod tests {
                     reply.opaque = request.opaque;
                     reply.mark_response();
                     stream
-                        .write_all(
-                            &crate::codec::frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap(),
-                        )
+                        .write_all(&crate::codec::frame::encode(&reply).unwrap())
                         .await
                         .unwrap();
                 }
@@ -2748,7 +2746,7 @@ mod tests {
             let mut frame = bytes::BytesMut::from(&length[..]);
             frame.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut frame[4..]).await.unwrap();
-            let request = crate::codec::frame::decode_next(&mut frame, DEFAULT_MAX_FRAME_SIZE)
+            let request = crate::codec::frame::decode_next(&mut frame)
                 .unwrap()
                 .unwrap();
             assert!(request.is_oneway());
@@ -2760,7 +2758,7 @@ mod tests {
             };
             response.mark_response();
             stream
-                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&crate::codec::frame::encode(&response).unwrap())
                 .await
                 .unwrap();
         });
@@ -2795,7 +2793,7 @@ mod tests {
             let mut frame = bytes::BytesMut::from(&length[..]);
             frame.resize(u32::from_be_bytes(length) as usize + 4, 0);
             stream.read_exact(&mut frame[4..]).await.unwrap();
-            crate::codec::frame::decode_next(&mut frame, DEFAULT_MAX_FRAME_SIZE)
+            crate::codec::frame::decode_next(&mut frame)
                 .unwrap()
                 .unwrap()
         }
@@ -2807,7 +2805,7 @@ mod tests {
             };
             response.mark_response();
             stream
-                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&crate::codec::frame::encode(&response).unwrap())
                 .await
                 .unwrap();
         }
@@ -3076,17 +3074,16 @@ mod tests {
             frame_bytes.extend_from_slice(&prefix);
             frame_bytes.resize(frame_length + 4, 0);
             stream.read_exact(&mut frame_bytes[4..]).await.unwrap();
-            let request =
-                crate::codec::frame::decode_next(&mut frame_bytes, DEFAULT_MAX_FRAME_SIZE)
-                    .unwrap()
-                    .unwrap();
+            let request = crate::codec::frame::decode_next(&mut frame_bytes)
+                .unwrap()
+                .unwrap();
             request_tx.send(request.opaque).unwrap();
             let _ = release_rx.await;
             let mut response = test_command();
             response.opaque = request.opaque;
             response.mark_response();
             let _ = stream
-                .write_all(&crate::codec::frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&crate::codec::frame::encode(&response).unwrap())
                 .await;
         });
 

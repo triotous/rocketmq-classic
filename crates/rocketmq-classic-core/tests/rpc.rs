@@ -26,7 +26,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
     error::TransportError,
 };
 use tokio::{
@@ -41,9 +41,7 @@ async fn read_command(stream: &mut tokio::net::TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn scripted_probe_peer(
@@ -65,7 +63,7 @@ async fn scripted_probe_peer(
             };
             reply.mark_response();
             stream
-                .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                .write_all(&frame::encode(&reply).unwrap())
                 .await
                 .unwrap();
             requests.push(request);
@@ -495,9 +493,7 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
         let size = u32::from_be_bytes(length) as usize;
         bytes.resize(size + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let incoming = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let incoming = frame::decode_next(&mut bytes).unwrap().unwrap();
         assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
         assert_eq!(incoming.ext_fields.unwrap()["topic"], "test-topic");
         let mut reply = RemotingCommand {
@@ -509,7 +505,7 @@ async fn route_reply(code: i32, body: Option<Vec<u8>>) -> (MQClientApi, Remoting
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -616,9 +612,7 @@ async fn route_fails_over_unavailable_nameserver_before_deadline() {
         let mut bytes = BytesMut::from(&len[..]);
         bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
         stream.read_exact(&mut bytes[4..]).await.unwrap();
-        let incoming = frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap();
+        let incoming = frame::decode_next(&mut bytes).unwrap().unwrap();
         let mut reply = RemotingCommand {
             code: response::TOPIC_NOT_EXIST,
             opaque: incoming.opaque,
@@ -626,7 +620,7 @@ async fn route_fails_over_unavailable_nameserver_before_deadline() {
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });
@@ -664,7 +658,7 @@ async fn route_failover_returns_success_from_second_nameserver_within_original_d
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
         assert!(
@@ -847,7 +841,7 @@ async fn unsolicited_oneway_reply_without_pending_does_not_poison_next_request()
         };
         unsolicited.mark_response();
         stream
-            .write_all(&frame::encode(&unsolicited, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&unsolicited).unwrap())
             .await
             .unwrap();
         // Give the reader time to discard the unsolicited reply before a new
@@ -866,7 +860,7 @@ async fn unsolicited_oneway_reply_without_pending_does_not_poison_next_request()
         };
         reply.mark_response();
         stream
-            .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&reply).unwrap())
             .await
             .unwrap();
     });

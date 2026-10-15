@@ -18,7 +18,7 @@ use rocketmq_classic_remoting::{
         RequestPipelineError, RequestProcessor, RpcHook, RpcHookError, TransportMode,
         tls::TlsConfig,
     },
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
+    codec::frame,
     error::TransportError,
 };
 use tokio::{
@@ -35,9 +35,7 @@ async fn read_command<S: AsyncRead + Unpin>(stream: &mut S) -> RemotingCommand {
     bytes.extend_from_slice(&prefix);
     bytes.resize(frame_length + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 
 async fn try_read_command<S: AsyncRead + Unpin>(stream: &mut S) -> Option<RemotingCommand> {
@@ -48,9 +46,7 @@ async fn try_read_command<S: AsyncRead + Unpin>(stream: &mut S) -> Option<Remoti
     bytes.extend_from_slice(&prefix);
     bytes.resize(frame_length + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.ok()?;
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .ok()
-        .flatten()
+    frame::decode_next(&mut bytes).ok().flatten()
 }
 
 #[tokio::test]
@@ -87,7 +83,7 @@ async fn mutable_rpc_hook_fields_reach_sync_async_oneway_and_callback_snapshots(
                 };
                 reply.mark_response();
                 stream
-                    .write_all(&frame::encode(&reply, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .write_all(&frame::encode(&reply).unwrap())
                     .await
                     .unwrap();
             } else {
@@ -235,7 +231,7 @@ async fn mutable_inbound_hooks_reach_pipeline_processor_after_hook_and_response_
 
 async fn write_command<S: AsyncWriteExt + Unpin>(stream: &mut S, command: &RemotingCommand) {
     stream
-        .write_all(&frame::encode(command, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(command).unwrap())
         .await
         .unwrap();
 }

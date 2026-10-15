@@ -16,11 +16,7 @@ use rocketmq_classic_consumer::{
 use rocketmq_classic_protocol::codes::{request, response};
 use rocketmq_classic_protocol::header::HeaderMap;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    client::RpcHook,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, client::RpcHook, codec::frame};
 use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -129,7 +125,7 @@ async fn read_command<R: AsyncRead + Unpin>(stream: &mut R) -> Option<RemotingCo
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     stream.read_exact(&mut bytes[4..]).await.ok()?;
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE).ok()?
+    frame::decode_next(&mut bytes).ok()?
 }
 
 async fn write_reply<W: AsyncWrite + Unpin>(stream: &mut W, opaque: i32, reply: ScriptedReply) {
@@ -142,7 +138,7 @@ async fn write_reply<W: AsyncWrite + Unpin>(stream: &mut W, opaque: i32, reply: 
     };
     response_command.mark_response();
     stream
-        .write_all(&frame::encode(&response_command, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&response_command).unwrap())
         .await
         .unwrap();
 }

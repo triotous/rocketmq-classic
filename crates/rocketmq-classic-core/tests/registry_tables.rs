@@ -2716,10 +2716,7 @@ async fn live_table_replacement_invalidates_old_lease_and_retains_owners_without
 #[tokio::test]
 async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_not_commit() {
     use bytes::BytesMut;
-    use rocketmq_classic_remoting::{
-        RemotingCommand,
-        codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-    };
+    use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -2732,9 +2729,7 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         let mut bytes = BytesMut::from(&length[..]);
         bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
         socket.read_exact(&mut bytes[4..]).await.unwrap();
-        frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-            .unwrap()
-            .unwrap()
+        frame::decode_next(&mut bytes).unwrap().unwrap()
     }
     async fn reply(socket: &mut TcpStream, request: &RemotingCommand, body: Option<Vec<u8>>) {
         let mut response = RemotingCommand {
@@ -2744,7 +2739,7 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         };
         response.mark_response();
         socket
-            .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+            .write_all(&frame::encode(&response).unwrap())
             .await
             .unwrap();
     }
@@ -2798,7 +2793,7 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
                 };
                 response.mark_response();
                 socket
-                    .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+                    .write_all(&frame::encode(&response).unwrap())
                     .await
                     .unwrap();
             } else {

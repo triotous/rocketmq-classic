@@ -10,10 +10,7 @@ use rocketmq_classic_protocol::{
     codes::request,
     heartbeat::{ConsumerData, SubscriptionData},
 };
-use rocketmq_classic_remoting::{
-    RemotingCommand,
-    codec::frame::{self, DEFAULT_MAX_FRAME_SIZE},
-};
+use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
 use std::{collections::HashSet, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -54,9 +51,7 @@ async fn read(socket: &mut TcpStream) -> RemotingCommand {
     let mut bytes = BytesMut::from(&length[..]);
     bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
     socket.read_exact(&mut bytes[4..]).await.unwrap();
-    frame::decode_next(&mut bytes, DEFAULT_MAX_FRAME_SIZE)
-        .unwrap()
-        .unwrap()
+    frame::decode_next(&mut bytes).unwrap().unwrap()
 }
 async fn reply(
     socket: &mut TcpStream,
@@ -73,7 +68,7 @@ async fn reply(
     };
     response.mark_response();
     socket
-        .write_all(&frame::encode(&response, DEFAULT_MAX_FRAME_SIZE).unwrap())
+        .write_all(&frame::encode(&response).unwrap())
         .await
         .unwrap();
 }
