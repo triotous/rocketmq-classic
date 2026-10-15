@@ -63,3 +63,22 @@ traits. `git diff --check` passed; this documentation-only sync needed no test.
 It does not close the broader P18-V01 inherited API, input/control-flow, or
 reverse-export audit. No plan, publication, deployment, or live Broker action
 occurred.
+
+2026-10-15 18:21 UTC — closed a bounded `MessageClientExt` inherited-API evidence slice.
+
+Pinned Java 5.5.1 `MessageClientExt` extends `MessageExt`, which inherits the
+`Message` methods. The invoked `messageClientExtApi` fixture now calls the
+inherited topic, queue-ID, and store-timestamp setters/getters; Rust exercises
+the same methods through `MessageClientExt`'s `Deref`/`DerefMut` chain. Fixture
+comparison showed no unrelated case changes. The initial fixture-generation
+call used stale Maven classes; rerunning `compile exec:java` regenerated the
+oracle before the Rust differential passed.
+
+Validation passed: the focused `message_client_ext_api_matches_java_551_fixture`
+test; all-feature Common tests (21 unit, 20 message-decode integration, 1 topic
+validator, 17 doctests); strict all-target/all-feature Common Clippy; pinned
+Maven `verify` (37 scenarios and Java/Rust cross-decodes); rustfmt and
+`git diff --check`. Code/fixture/matrix commit: `ae416072`. This closes only
+the listed inherited-method evidence slice; broad P18-V01 and the final
+full-workspace P18-V02 rerun remain open. No plan edit, push, tag, publication,
+deployment, Docker, or live Broker action occurred.
