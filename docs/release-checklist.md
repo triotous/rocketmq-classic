@@ -864,12 +864,15 @@ the required full Phase 18 gates on the final revision.
   and view-path slice; broad P18-V01 and current-revision GitHub Ubuntu/P18-V04
   evidence remain open.
 
-- Netty decoder frame-limit setting (`754d5050`, 2026-10-15): Rust now reads
-  the Java `com.rocketmq.remoting.frameMaxLength` equivalent when creating its
-  first connection, defaults to `16777216`, and uses the selected limit for
-  inbound decoding and outbound encoding. Separate Java JVM probes verify the
-  default and configured `4096` values; a Rust child-process loopback test
-  verifies the configured connection limit and rejects an oversized frame.
+- Netty decoder frame-limit setting (`754d5050`, corrected by `a06853ba`,
+  2026-10-15): Rust reads the Java `com.rocketmq.remoting.frameMaxLength`
+  equivalent when creating its first connection, defaults to `16777216`, and
+  applies the selected limit to inbound decoding only. The pinned Java
+  `NettyEncoder` has no such limit; Rust allows outbound frames above the
+  configured inbound limit while respecting the signed Java length field.
+  Separate Java JVM probes verify default/configured `4096` decoder limits and
+  that the Java encoder emits a larger frame; a Rust child-process loopback
+  test verifies the same inbound/outbound behavior.
   PASS: `cargo test -p rocketmq-classic-remoting --locked` (84 unit, 6 codec,
   1 fuzz regression, 5 security, 86 transport tests); strict all-target/all-
   feature Remoting Clippy; Maven verify (37 scenarios, both frame-limit probes,
