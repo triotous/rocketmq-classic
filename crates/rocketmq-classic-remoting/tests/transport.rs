@@ -138,8 +138,6 @@ async fn mutable_rpc_hook_fields_reach_sync_async_oneway_and_callback_snapshots(
             },
             Instant::now() + Duration::from_secs(3),
         )
-        .unwrap()
-        .await
         .unwrap();
     peer.await.unwrap();
     client.shutdown().await;
@@ -1363,8 +1361,6 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
             barrier.wait().await;
             client
                 .invoke_oneway(&address, command(code), deadline)
-                .unwrap()
-                .await
                 .unwrap();
         }));
     }
@@ -1980,14 +1976,13 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
     })
     .unwrap();
     client.start().unwrap();
-    let returned = client
+    client
         .invoke_oneway(
             &address.to_string(),
             command(13),
             Instant::now() + Duration::from_secs(2),
         )
         .unwrap();
-    drop(returned);
     tokio::time::timeout(Duration::from_secs(1), accepted_rx)
         .await
         .unwrap()
@@ -2001,7 +1996,7 @@ async fn p3_oneway_returns_after_scheduling_before_peer_receives_frame() {
 }
 
 #[tokio::test]
-async fn p3_oneway_future_reports_connection_failure() {
+async fn p3_oneway_returns_after_scheduling_connection_acquisition() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);
@@ -2011,24 +2006,23 @@ async fn p3_oneway_future_reports_connection_failure() {
     })
     .unwrap();
     client.start().unwrap();
-    let operation = client
+    client
         .invoke_oneway(
             &address.to_string(),
             command(14),
             Instant::now() + Duration::from_secs(2),
         )
         .unwrap();
-    assert!(operation.await.is_err());
     client.shutdown().await;
 }
 
 #[tokio::test]
-async fn p3_oneway_future_reports_admission_timeout() {
+async fn p3_oneway_admission_timeout_is_not_returned_after_call_boundary() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
-        let (_stream, _) = listener.accept().await.unwrap();
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (mut stream, _) = listener.accept().await.unwrap();
+        tokio::time::timeout(Duration::from_millis(200), read_command(&mut stream)).await
     });
     let client = RemotingClient::with_config(ClientConfig {
         oneway_semaphore_value: 0,
@@ -2037,20 +2031,22 @@ async fn p3_oneway_future_reports_admission_timeout() {
     })
     .unwrap();
     client.start().unwrap();
-    let operation = client
+    client
         .invoke_oneway(
             &address.to_string(),
             command(14),
             Instant::now() + Duration::from_millis(50),
         )
         .unwrap();
-    assert!(matches!(operation.await, Err(error) if error.is_timeout()));
-    peer.await.unwrap();
+    assert!(
+        peer.await.unwrap().is_err(),
+        "an expired admission must not write a frame"
+    );
     client.shutdown().await;
 }
 
 #[tokio::test]
-async fn p3_oneway_future_reports_saturated_write_deadline() {
+async fn p3_oneway_write_completion_is_not_returned_after_call_boundary() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
@@ -2066,7 +2062,7 @@ async fn p3_oneway_future_reports_saturated_write_deadline() {
     })
     .unwrap();
     client.start().unwrap();
-    let operation = client
+    client
         .invoke_oneway(
             &address.to_string(),
             RemotingCommand {
@@ -2080,7 +2076,6 @@ async fn p3_oneway_future_reports_saturated_write_deadline() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(operation.await, Err(TransportError::Timeout));
     peer.abort();
     client.shutdown().await;
 }
@@ -2109,7 +2104,7 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
     });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
-    let operation = client
+    client
         .invoke_oneway(
             &address.to_string(),
             command(14),
@@ -2125,7 +2120,6 @@ async fn p3_oneway_starts_connection_acquisition_at_call_time() {
         .unwrap()
         .unwrap();
     assert!(received.is_oneway());
-    assert_eq!(operation.await, Ok(()));
     client.shutdown().await;
 }
 
@@ -2158,15 +2152,13 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
         body: Some(vec![7; 8 * 1024 * 1024]),
         ..command(101)
     };
-    drop(
-        client
-            .invoke_oneway(
-                &address.to_string(),
-                first,
-                Instant::now() + Duration::from_secs(10),
-            )
-            .unwrap(),
-    );
+    client
+        .invoke_oneway(
+            &address.to_string(),
+            first,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {
         while hook_calls.load(Ordering::SeqCst) < 1 {
             tokio::task::yield_now().await;
@@ -2175,15 +2167,13 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
     .await
     .unwrap();
     tokio::time::sleep(Duration::from_millis(100)).await;
-    drop(
-        client
-            .invoke_oneway(
-                &address.to_string(),
-                command(102),
-                Instant::now() + Duration::from_secs(10),
-            )
-            .unwrap(),
-    );
+    client
+        .invoke_oneway(
+            &address.to_string(),
+            command(102),
+            Instant::now() + Duration::from_secs(10),
+        )
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {
         while hook_calls.load(Ordering::SeqCst) < 2 {
             tokio::task::yield_now().await;

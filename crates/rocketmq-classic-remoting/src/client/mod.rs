@@ -2023,19 +2023,16 @@ impl RemotingClient {
         }
     }
 
-    /// Starts connection acquisition at call time and returns a future for connection, admission,
-    /// and socket-write completion. The future does not wait for a Broker response, and dropping it
-    /// does not cancel the client-owned operation. Success means the frame was written locally;
-    /// it does not imply Broker receipt or storage.
+    /// Starts connection acquisition at call time and returns after the client-owned operation is
+    /// scheduled. As in Java, the caller receives only call-boundary errors; it does not observe
+    /// later connection, admission, or socket-write completion, and this call never waits for a
+    /// Broker response.
     pub fn invoke_oneway(
         &self,
         addr: &str,
         mut command: RemotingCommand,
         deadline: Instant,
-    ) -> Result<
-        impl std::future::Future<Output = Result<(), TransportError>> + Send + 'static,
-        TransportError,
-    > {
+    ) -> Result<(), TransportError> {
         if !self.inner.started.load(Ordering::Acquire) {
             return Err(TransportError::NotStarted);
         }
@@ -2061,9 +2058,8 @@ impl RemotingClient {
         if let Some(connection_task) = spawn_after_initial_poll(connection_task) {
             self.inner.spawn(connection_task);
         }
-        let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(async move {
-            let result = async {
+            let _ = async {
                 let connection = connection_rx
                     .await
                     .map_err(|_| TransportError::Closed)?
@@ -2090,10 +2086,9 @@ impl RemotingClient {
                     .map_err(|error| classify_write_error(&addr, error))
             }
             .await;
-            let _ = completion_tx.send(result);
         });
         self.inner.spawn(task);
-        Ok(async move { completion_rx.await.unwrap_or(Err(TransportError::Closed)) })
+        Ok(())
     }
 
     /// Closes connections, fails pending calls, and drains client-owned tasks for up to 90 seconds.
@@ -3196,8 +3191,6 @@ mod tests {
                 test_command(),
                 Instant::now() + std::time::Duration::from_secs(2),
             )
-            .unwrap()
-            .await
             .unwrap();
         let opaque = seen_rx.await.unwrap();
         assert!(!client.inner.pending.lock().unwrap().contains_key(&opaque));
@@ -3238,11 +3231,13 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap().to_string();
         let (pending_tx, pending_rx) = oneshot::channel();
+        let (oneway_tx, oneway_rx) = oneshot::channel();
         let (release_tx, release_rx) = oneshot::channel();
         let peer = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let oneway = read_request(&mut stream).await;
             assert!(oneway.is_oneway());
+            oneway_tx.send(()).unwrap();
             let pending = read_request(&mut stream).await;
             assert!(!pending.is_oneway());
             assert_ne!(oneway.opaque, pending.opaque);
@@ -3265,9 +3260,8 @@ mod tests {
                 oneway,
                 Instant::now() + std::time::Duration::from_secs(10),
             )
-            .unwrap()
-            .await
             .unwrap();
+        oneway_rx.await.unwrap();
         let invoke_client = client.clone();
         let invoke_address = address.clone();
         let pending = tokio::spawn(async move {
@@ -3310,7 +3304,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let client = RemotingClient::new(TransportMode::Plain);
         client.start().unwrap();
-        let _result = client
+        client
             .invoke_oneway(
                 &address.to_string(),
                 test_command(),

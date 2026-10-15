@@ -132,19 +132,17 @@ impl MQClientApi {
     ) -> Result<(), RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
-        self.remoting
-            .invoke_oneway(
-                addr,
-                RemotingCommand {
-                    code,
-                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ext_fields: Some(fields),
-                    body,
-                    ..RemotingCommand::default()
-                },
-                deadline,
-            )?
-            .await?;
+        self.remoting.invoke_oneway(
+            addr,
+            RemotingCommand {
+                code,
+                language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                ext_fields: Some(fields),
+                body,
+                ..RemotingCommand::default()
+            },
+            deadline,
+        )?;
         Ok(())
     }
 }
