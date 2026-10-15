@@ -159,6 +159,7 @@ public final class TlsSettingsFixtures {
         });
         result.put("decryptionStrategyApi", inspectDecryptionStrategyApi());
         result.put("propertyFileReload", inspectPropertyFileReload());
+        result.put("propertyFileAcrossSources", inspectPropertyFileAcrossSources());
         Map<String, Object> propertyNames = new TreeMap<>();
         propertyNames.put("ciphers", TlsSystemConfig.TLS_CIPHERS);
         propertyNames.put("protocols", TlsSystemConfig.TLS_PROTOCOLS);
@@ -220,6 +221,45 @@ public final class TlsSettingsFixtures {
         result.put("observedAuthServer", observedAuthServer);
         result.put("reloadsOnEachContextBuild", observedTestModes.equals(Arrays.asList(true, false, true))
             && observedAuthServer.equals(Arrays.asList(false, true, true)));
+        result.put("serverContacted", false);
+        return result;
+    }
+
+    private static Map<String, Object> inspectPropertyFileAcrossSources() throws Exception {
+        String previousConfigFile = TlsSystemConfig.tlsConfigFile;
+        boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
+        boolean previousAuthServer = TlsSystemConfig.tlsClientAuthServer;
+        Path firstConfigFile = Files.createTempFile("rocketmq-tls-source-first", ".properties");
+        Path secondConfigFile = Files.createTempFile("rocketmq-tls-source-second", ".properties");
+        List<Boolean> observedTestModes = new ArrayList<>();
+        List<Boolean> observedAuthServer = new ArrayList<>();
+        try {
+            TlsSystemConfig.tlsConfigFile = firstConfigFile.toString();
+            Files.writeString(firstConfigFile,
+                "tls.test.mode.enable=false\ntls.client.authServer=true\n");
+            TlsHelper.buildSslContext(true);
+            observedTestModes.add(TlsSystemConfig.tlsTestModeEnable);
+            observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
+
+            TlsSystemConfig.tlsConfigFile = secondConfigFile.toString();
+            Files.writeString(secondConfigFile, "tls.test.mode.enable=false\n");
+            TlsHelper.buildSslContext(true);
+            observedTestModes.add(TlsSystemConfig.tlsTestModeEnable);
+            observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
+        } finally {
+            TlsSystemConfig.tlsConfigFile = previousConfigFile;
+            TlsSystemConfig.tlsTestModeEnable = previousTestMode;
+            TlsSystemConfig.tlsClientAuthServer = previousAuthServer;
+            Files.deleteIfExists(firstConfigFile);
+            Files.deleteIfExists(secondConfigFile);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("observedTestModes", observedTestModes);
+        result.put("observedAuthServer", observedAuthServer);
+        result.put("omittedPropertiesRetainProcessState",
+            observedTestModes.equals(Arrays.asList(false, false))
+                && observedAuthServer.equals(Arrays.asList(true, true)));
         result.put("serverContacted", false);
         return result;
     }

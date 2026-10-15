@@ -53,10 +53,26 @@ struct TlsPropertyFileSource {
 
 impl TlsPropertyFileSource {
     fn new(path: PathBuf, properties: HashMap<String, String>) -> Self {
-        Self {
-            path,
-            properties: Arc::new(Mutex::new(properties)),
-        }
+        // Unit tests isolate property sources; the integration suite exercises
+        // the production process-wide state across independent TLS configs.
+        #[cfg(test)]
+        let properties = Arc::new(Mutex::new(properties));
+
+        #[cfg(not(test))]
+        let properties = {
+            static JAVA_TLS_PROPERTIES: OnceLock<Arc<Mutex<HashMap<String, String>>>> =
+                OnceLock::new();
+            let shared = JAVA_TLS_PROPERTIES
+                .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+                .clone();
+            shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(properties);
+            shared
+        };
+
+        Self { path, properties }
     }
 
     fn reload(&self) -> Result<HashMap<String, String>, TransportError> {

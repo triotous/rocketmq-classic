@@ -1,4 +1,4 @@
-use std::{fs, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, sync::Arc, time::Duration};
 
 use bytes::BytesMut;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair, date_time_ymd};
@@ -101,6 +101,72 @@ async fn expired_server_certificate_is_rejected_with_trust_and_name_checks_enabl
     config.test_mode = false;
     config.auth_server = true;
     assert_tls_connection_rejected(config, acceptor).await;
+}
+
+#[test]
+fn tls_property_file_settings_are_process_wide_across_config_sources() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/security/tls-settings-defaults.json"
+    ))
+    .unwrap();
+    let expected = &fixture["propertyFileAcrossSources"];
+
+    let directory = std::env::temp_dir().join(format!(
+        "rocketmq-tls-process-properties-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let first_file = directory.join("first.properties");
+    let second_file = directory.join("second.properties");
+    fs::write(
+        &first_file,
+        "tls.test.mode.enable=false\ntls.client.authServer=true\n",
+    )
+    .unwrap();
+
+    let first = TlsConfig::from_java_properties(&HashMap::new(), Some(&first_file)).unwrap();
+    assert!(!first.test_mode);
+    assert!(first.auth_server);
+    let first_test_mode = first.test_mode;
+    let first_auth_server = first.auth_server;
+    let _first_client =
+        RemotingClient::with_config(rocketmq_classic_remoting::client::ClientConfig {
+            transport: TransportMode::Tls(first),
+            ..rocketmq_classic_remoting::client::ClientConfig::default()
+        })
+        .unwrap();
+
+    fs::write(&second_file, "tls.test.mode.enable=false\n").unwrap();
+    let second = TlsConfig::from_java_properties(&HashMap::new(), Some(&second_file)).unwrap();
+    let observed_test_modes = vec![first_test_mode, second.test_mode];
+    let observed_auth_server = vec![first_auth_server, second.auth_server];
+
+    assert_eq!(
+        observed_test_modes,
+        expected["observedTestModes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_bool().unwrap())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        observed_auth_server,
+        expected["observedAuthServer"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_bool().unwrap())
+            .collect::<Vec<_>>()
+    );
+
+    let _second_client =
+        RemotingClient::with_config(rocketmq_classic_remoting::client::ClientConfig {
+            transport: TransportMode::Tls(second),
+            ..rocketmq_classic_remoting::client::ClientConfig::default()
+        })
+        .unwrap();
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[tokio::test]
