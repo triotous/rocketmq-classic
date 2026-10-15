@@ -552,7 +552,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `TZ=Asia/Taipei`. CI runs the non-UTC case explicitly. This closes that
   helper slice only; broad P18-V01 remains open.
 - [x] **P18-V02** — Re-run the complete server-free suite on revision
-  `1aae4772` (2026-10-15). Default workspace tests under UTC, all-feature
+  `51be0d20` (2026-10-15). Default workspace tests under UTC, all-feature
   workspace tests, strict all-target/all-feature Clippy, Maven `verify` (37
   scenarios, fixture checks, and Java/Rust cross-decodes), comparator
   self-test and 37-scenario manifest, 16 deterministic race/leak cases × 3,

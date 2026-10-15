@@ -68,3 +68,24 @@
   base `java.lang.RuntimeException` before blank-name validation. Regenerated
   and verified the Java message fixture; current SHA-256:
   `cd48ccada3c107facb4ec332316ef29e569cca7c50cd3b0711152b7234cd6b98`.
+- P18-V01 Rust parity correction (`51be0d20`): `STRING_HASH_SET` now stores
+  `Option<String>`, allowing Rust callers to represent Java's null set member.
+  Both nullable and ordinary `put_user_property` paths check current reserved
+  membership before blank validation. The fixture-backed differential covers
+  live null/empty additions, Java's base `RuntimeException`, mutation restore,
+  ordinary null-name rejection when null is absent, and dynamic string
+  membership/removal. Updated the Phase 6 API map, Phase 8 method matrix,
+  requirement audit, and release checklist. Fixture SHA-256:
+  `cd48ccada3c107facb4ec332316ef29e569cca7c50cd3b0711152b7234cd6b98`.
+- Validation on `51be0d20`: `cargo test -p rocketmq-classic-common
+  --all-features --locked`, strict Common Clippy, `TZ=UTC cargo test
+  --workspace --locked`, `cargo test --workspace --all-features --locked`,
+  strict workspace Clippy, Maven verify (37 scenarios and fixture/cross-decodes),
+  comparator self-test and 37-scenario manifest, 16 race/leak cases × 3,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, workspace benchmark compilation, locked Cargo metadata, metadata/
+  license/dependency check, seven package listings, format, and diff checks all
+  pass. Common all-feature tests passed 21 unit, 19 message decode, 1 Topic
+  Validator, and 14 doctests. This closes the nullable reserved-set slice and
+  P18-V02 server-free gate on this revision; broad P18-V01, current-revision
+  GitHub Ubuntu evidence, and Phase 19 Broker/Docker validation remain open.
