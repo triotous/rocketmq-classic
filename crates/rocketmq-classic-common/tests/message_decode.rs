@@ -1559,6 +1559,72 @@ fn message_public_api_matches_java_551_fixture() {
         None;
     assert_eq!(absent_properties.clone(), None);
 
+    let helper_values = &expected["messageAccessorHelperValues"];
+    let mut accessor_helpers = Message::default();
+    for (property, value, key) in [
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_TRANSFER_FLAG,
+            "transfer",
+            "transferFlag",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_CORRECTION_FLAG,
+            "correction",
+            "correctionFlag",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_ORIGIN_MESSAGE_ID,
+            "origin-id",
+            "originMessageId",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_MQ2_FLAG,
+            "mq2",
+            "mq2Flag",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_RECONSUME_TIME,
+            "4",
+            "reconsumeTime",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_MAX_RECONSUME_TIMES,
+            "8",
+            "maxReconsumeTimes",
+        ),
+        (
+            rocketmq_classic_common::message::constants::PROPERTY_CONSUME_START_TIMESTAMP,
+            "1700000000123",
+            "consumeStartTimeStamp",
+        ),
+    ] {
+        accessor_helpers
+            .set_system_property(property, value)
+            .unwrap();
+        assert_eq!(
+            accessor_helpers.get_property(property),
+            helper_values[key].as_str()
+        );
+    }
+    accessor_helpers.set_system_property_nullable(
+        rocketmq_classic_common::message::constants::PROPERTY_TRANSFER_FLAG,
+        None,
+    );
+    assert!(
+        accessor_helpers
+            .has_property(rocketmq_classic_common::message::constants::PROPERTY_TRANSFER_FLAG)
+    );
+    assert_eq!(
+        accessor_helpers
+            .get_property(rocketmq_classic_common::message::constants::PROPERTY_TRANSFER_FLAG),
+        None
+    );
+    assert_eq!(helper_values["transferFlagNullIsPresent"], true);
+    assert_eq!(
+        helper_values["transferFlagNullValue"],
+        serde_json::Value::Null
+    );
+
     let mut collection_with_null = Message::default();
     collection_with_null
         .set_keys_from_nullable(Some(vec![Some("left"), None, Some("right")]))

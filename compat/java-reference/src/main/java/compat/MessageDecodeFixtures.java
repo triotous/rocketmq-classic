@@ -272,6 +272,29 @@ public final class MessageDecodeFixtures {
         deepCopy.put("copy-only", "copy");
         expected.put("deepCopyPropertiesSourceIgnoresCopyMutation", !deepCopySource.containsKey("copy-only"));
 
+        Message accessorHelperMessage = new Message();
+        Map<String, Object> accessorHelperValues = new TreeMap<>();
+        MessageAccessor.setTransferFlag(accessorHelperMessage, "transfer");
+        accessorHelperValues.put("transferFlag", MessageAccessor.getTransferFlag(accessorHelperMessage));
+        MessageAccessor.setCorrectionFlag(accessorHelperMessage, "correction");
+        accessorHelperValues.put("correctionFlag", MessageAccessor.getCorrectionFlag(accessorHelperMessage));
+        MessageAccessor.setOriginMessageId(accessorHelperMessage, "origin-id");
+        accessorHelperValues.put("originMessageId", MessageAccessor.getOriginMessageId(accessorHelperMessage));
+        MessageAccessor.setMQ2Flag(accessorHelperMessage, "mq2");
+        accessorHelperValues.put("mq2Flag", MessageAccessor.getMQ2Flag(accessorHelperMessage));
+        MessageAccessor.setReconsumeTime(accessorHelperMessage, "4");
+        accessorHelperValues.put("reconsumeTime", MessageAccessor.getReconsumeTime(accessorHelperMessage));
+        MessageAccessor.setMaxReconsumeTimes(accessorHelperMessage, "8");
+        accessorHelperValues.put("maxReconsumeTimes", MessageAccessor.getMaxReconsumeTimes(accessorHelperMessage));
+        MessageAccessor.setConsumeStartTimeStamp(accessorHelperMessage, "1700000000123");
+        accessorHelperValues.put("consumeStartTimeStamp",
+            MessageAccessor.getConsumeStartTimeStamp(accessorHelperMessage));
+        expected.put("messageAccessorHelperValues", accessorHelperValues);
+        MessageAccessor.setTransferFlag(accessorHelperMessage, null);
+        accessorHelperValues.put("transferFlagNullIsPresent",
+            accessorHelperMessage.hasProperty(MessageConst.PROPERTY_TRANSFER_FLAG));
+        accessorHelperValues.put("transferFlagNullValue", MessageAccessor.getTransferFlag(accessorHelperMessage));
+
         Message nullKeyProperty = new Message();
         MessageAccessor.putProperty(nullKeyProperty, null, "value");
         expected.put("nullKeyPropertyPresent", nullKeyProperty.hasProperty(null));
