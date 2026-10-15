@@ -1407,6 +1407,34 @@ fn message_public_api_matches_java_551_fixture() {
     let null_user_name = Message::default();
     assert_eq!(null_user_name.get_nullable_user_property(None), None);
     assert_eq!(expected["nullUserNameLookupIsNull"], true);
+
+    let mut replaced_properties = Message::default();
+    replaced_properties.set_properties(Some(std::collections::BTreeMap::from([(
+        "old".to_owned(),
+        "value".to_owned(),
+    )])));
+    assert_eq!(replaced_properties.get_property("old"), Some("value"));
+    assert_eq!(expected["setPropertiesInitialValue"], "value");
+    replaced_properties.set_properties(Some(std::collections::BTreeMap::from([(
+        "new".to_owned(),
+        "replacement".to_owned(),
+    )])));
+    assert!(!replaced_properties.has_property("old"));
+    assert_eq!(replaced_properties.get_property("new"), Some("replacement"));
+    assert_eq!(expected["setPropertiesReplacesOldKey"], true);
+    assert_eq!(expected["setPropertiesReplacementValue"], "replacement");
+    replaced_properties.set_properties(Some(std::collections::BTreeMap::new()));
+    assert_eq!(
+        replaced_properties
+            .get_properties()
+            .map(|map| map.is_empty()),
+        Some(true)
+    );
+    assert_eq!(expected["setPropertiesEmptyMapIsPresent"], true);
+    replaced_properties.set_properties(None);
+    assert_eq!(replaced_properties.get_properties(), None);
+    assert_eq!(expected["setPropertiesNullMapIsNull"], true);
+
     let mut collection_with_null = Message::default();
     collection_with_null
         .set_keys_from_nullable(Some(vec![Some("left"), None, Some("right")]))

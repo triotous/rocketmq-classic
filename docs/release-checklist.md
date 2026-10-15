@@ -511,6 +511,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and Rust already exposes those inherited setters through `DerefMut`. A
   compile-fail rustdoc case guards the removed Rust-only method; broader P18-V01
   reverse-export reconciliation remains open.
+- `MessageAccessor.setProperties` now maps to `Message::set_properties` for
+  replacing, emptying, and clearing the property map, with pinned Java fixture
+  coverage. Java's shallow `cloneMessage` alias behavior and null-key property
+  maps remain in the P18-V01 source/input audit.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

@@ -241,6 +241,22 @@ public final class MessageDecodeFixtures {
         expected.put("nullNameContainsIsFalse", !nullNameContains.hasProperty(null));
         expected.put("nullNameContainsKeepsPropertiesNull", nullNameContains.getProperties() == null);
         expected.put("nullUserNameLookupIsNull", new Message().getUserProperty(null) == null);
+
+        Message replacedProperties = new Message();
+        MessageAccessor.setProperties(replacedProperties,
+            new HashMap<>(Map.of("old", "value")));
+        expected.put("setPropertiesInitialValue", replacedProperties.getProperty("old"));
+        Map<String, String> replacementProperties = new HashMap<>();
+        replacementProperties.put("new", "replacement");
+        MessageAccessor.setProperties(replacedProperties, replacementProperties);
+        expected.put("setPropertiesReplacesOldKey", !replacedProperties.hasProperty("old"));
+        expected.put("setPropertiesReplacementValue", replacedProperties.getProperty("new"));
+        MessageAccessor.setProperties(replacedProperties, new HashMap<>());
+        expected.put("setPropertiesEmptyMapIsPresent",
+            replacedProperties.getProperties() != null && replacedProperties.getProperties().isEmpty());
+        MessageAccessor.setProperties(replacedProperties, null);
+        expected.put("setPropertiesNullMapIsNull", replacedProperties.getProperties() == null);
+
         Message collectionWithNull = new Message();
         collectionWithNull.setKeys(java.util.Arrays.asList("left", null, "right"));
         expected.put("collectionKeysWithNullMember", collectionWithNull.getKeys());

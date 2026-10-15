@@ -373,6 +373,15 @@ impl Message {
     pub fn get_properties(&self) -> Option<&MessageProperties> {
         self.properties_nullable()
     }
+    /// Replace the message property map, corresponding to Java's
+    /// `MessageAccessor.setProperties`. Rust takes ownership of the supplied
+    /// map; `None` preserves Java's null-map state.
+    pub fn set_properties(&mut self, properties: Option<MessageProperties>) {
+        self.properties = properties;
+        self.null_properties.clear();
+        self.properties_read_initialized
+            .store(false, AtomicOrdering::Relaxed);
+    }
     /// Returns stored property entries, including Java-style null values, in
     /// deterministic key order. `properties()` and `get_properties()` retain
     /// the Rust string-to-string map view; this iterator exposes the entries

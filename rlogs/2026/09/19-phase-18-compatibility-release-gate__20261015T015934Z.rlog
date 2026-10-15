@@ -87,3 +87,11 @@
 - Added a compile-fail rustdoc guard and updated the Phase 8 method matrix and release checklist.
 - PASS: Common all-feature tests and doctests; strict all-target/all-feature Common Clippy; formatting and diff checks.
 - This closes that reverse-export method only. Broad P18-V01, full final-revision P18-V02, current-revision GitHub Ubuntu address-profile evidence, and Phase 19 Docker/Broker automation and scenarios remain open. No plan changed; no push, release, or tag action taken.
+
+## MessageAccessor.setProperties surface — 2026-10-15
+
+- Pinned Java `MessageAccessor.setProperties` is public and replaces the full property map, including restoring a null-map state. Added Rust `Message::set_properties(Option<MessageProperties>)` with ownership semantics.
+- Extended the invoked Java message fixture and Rust differential to cover non-empty replacement, removed old keys, empty-map presence, and null-map restoration. Updated the Phase 8 crosswalk and release checklist.
+- PASS: Java fixture regeneration; Common all-feature tests and doctests; formatting and diff checks. The full offline Maven fixture-verification pass remains pending for this slice.
+- The Java shallow body/property alias behavior in `MessageAccessor.cloneMessage` and null property keys remain open P18-V01 audit items. Full P18-V01/P18-V02, current-revision GitHub Ubuntu evidence, and Phase 19 local Docker/Broker automation remain open. No plan changed; no push, release, or tag action taken.
+- Follow-up verification: strict all-target/all-feature Common Clippy passes; pinned offline Maven `verify` passes all 37 scenarios, including message fixture drift and Java/Rust cross-decodes. Fixture SHA-256: `770e9ca99f5eeb330bd95fbacdefc1af28d2aec1944fee883339cb5491ce92ae`.
