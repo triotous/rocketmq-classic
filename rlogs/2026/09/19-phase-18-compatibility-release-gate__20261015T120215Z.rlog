@@ -1,0 +1,27 @@
+# Current-revision Phase 18 server-free verification — 2026-10-15T12:02:15Z
+
+- Revision: `d165ba45` (`docs(compat): correct inbound frame limit direction`);
+  code behavior under test includes `a06853ba`.
+- PASS: `cargo fmt --all -- --check`;
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`;
+  `TZ=UTC cargo test --workspace --locked`;
+  `cargo test --workspace --all-features --locked`.
+- PASS: `mvn -o -q -f compat/java-reference/pom.xml verify` (37 scenarios,
+  Java frame-limit probes, base frames, 54 typed headers, and 14 typed bodies);
+  `python3 tests/differential/compare.py --self-test`;
+  `python3 tests/differential/compare.py --validate-manifest`.
+- PASS: `bash tests/stress/run-offline-smoke.sh` (16 cases × 3);
+  `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`
+  (104 frame seeds, 10 message seeds, 1,824 bounded mutations);
+  release example build; workspace benchmark compilation; locked Cargo
+  metadata; workspace license/dependency checks; seven package listings.
+- PASS: the pinned Java unique-ID helper differential under `TZ=UTC` and
+  `TZ=Asia/Taipei`; `git diff --check`.
+- P18-V02 server-free gates now pass on the current revision. P18-V01's broad
+  Java/Rust source/API/input/error/flow and reverse-export audit, current
+  GitHub Ubuntu address-profile evidence/P18-V04, Phase 19 local Docker/Broker
+  automation, and release version/registry resolution remain open.
+- Maven's Java compatibility harness emitted JDK `Unsafe` and reflective final
+  field mutation warnings; Maven exited successfully.
+- No plan changes, Java-reference changes, push, tag, publication, or Broker
+  validation.

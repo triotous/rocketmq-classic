@@ -932,3 +932,16 @@ Before any publication:
   complete.
 - [ ] Do not create or push a release tag as part of Phase 18.
 - [ ] Re-run the full release checks from the final revision before publication.
+
+- Current-revision P18-V02 server-free rerun (`d165ba45`, 2026-10-15):
+  formatting, strict all-target/all-feature workspace Clippy, UTC workspace
+  tests, all-feature workspace tests, Maven verify (37 scenarios and Java/Rust
+  cross-decodes including frame-limit probes), differential self-test and
+  manifest validation, deterministic race/leak smoke (16 cases × 3), fuzz
+  smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples,
+  workspace benchmark compilation, locked Cargo metadata, workspace
+  metadata/license/dependency checks, seven package listings, and the Java
+  unique-ID fixture under UTC and Asia/Taipei all pass. `git diff --check`
+  passes. This closes P18-V02 server-free gates on `d165ba45`; P18-V01,
+  current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation, and pre-publication version/registry resolution remain open.
