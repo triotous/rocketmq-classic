@@ -14,10 +14,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.WriteBufferWaterMark;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
@@ -67,6 +69,7 @@ public final class RemotingLiveConfigProbe {
         verifyClientWorkerThreadsSetting();
         verifyConnectTimeoutSetting();
         verifyProxyConnectTimeoutSetting();
+        verifyBootstrapOptionSettings();
         verifyChannelPipelineSettings();
         System.out.println("Remoting live config mutation verified");
     }
@@ -258,6 +261,86 @@ public final class RemotingLiveConfigProbe {
             client.shutdown();
             joinPeer(firstPeer, "first channel config");
             joinPeer(secondPeer, "second channel config");
+        }
+    }
+
+    private static void verifyBootstrapOptionSettings() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setSocksProxyConfig(
+            "{\"127.0.0.0/8\":{\"addr\":\"127.0.0.1:1080\"},"
+                + "\"10.0.0.0/8\":{\"addr\":\"127.0.0.1:1080\"}}");
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try {
+            config.setClientSocketSndBufSize(8192);
+            config.setClientSocketRcvBufSize(16384);
+            config.setWriteBufferLowWaterMark(4096);
+            config.setWriteBufferHighWaterMark(24576);
+            config.setClientPooledByteBufAllocatorEnable(true);
+            client.start();
+
+            Field directField = NettyRemotingClient.class.getDeclaredField("bootstrap");
+            directField.setAccessible(true);
+            Bootstrap direct = (Bootstrap) directField.get(client);
+            Map<ChannelOption<?>, Object> directOptions = direct.config().options();
+            assertIntOption(directOptions, ChannelOption.SO_SNDBUF, 8192, "direct send buffer");
+            assertIntOption(directOptions, ChannelOption.SO_RCVBUF, 16384, "direct receive buffer");
+            Object directWatermarks = directOptions.get(ChannelOption.WRITE_BUFFER_WATER_MARK);
+            if (!(directWatermarks instanceof WriteBufferWaterMark)
+                || ((WriteBufferWaterMark) directWatermarks).low() != 4096
+                || ((WriteBufferWaterMark) directWatermarks).high() != 24576) {
+                throw new IllegalStateException("start did not capture direct write watermarks: "
+                    + directWatermarks);
+            }
+            if (directOptions.get(ChannelOption.ALLOCATOR) != PooledByteBufAllocator.DEFAULT) {
+                throw new IllegalStateException("start did not capture the direct allocator setting");
+            }
+
+            config.setClientSocketSndBufSize(12288);
+            config.setClientSocketRcvBufSize(20480);
+            config.setWriteBufferLowWaterMark(2048);
+            config.setWriteBufferHighWaterMark(12288);
+            config.setClientPooledByteBufAllocatorEnable(false);
+            assertIntOption(directOptions, ChannelOption.SO_SNDBUF, 8192, "direct send buffer snapshot");
+            assertIntOption(directOptions, ChannelOption.SO_RCVBUF, 16384, "direct receive buffer snapshot");
+
+            java.lang.reflect.Method fetchBootstrap = NettyRemotingClient.class
+                .getDeclaredMethod("fetchBootstrap", String.class);
+            fetchBootstrap.setAccessible(true);
+            Bootstrap firstProxy = (Bootstrap) fetchBootstrap.invoke(client, "127.0.0.1:10911");
+            Map<ChannelOption<?>, Object> firstProxyOptions = firstProxy.config().options();
+            assertIntOption(firstProxyOptions, ChannelOption.SO_SNDBUF, 12288, "first proxy send buffer");
+            assertIntOption(firstProxyOptions, ChannelOption.SO_RCVBUF, 20480, "first proxy receive buffer");
+            if (firstProxyOptions.containsKey(ChannelOption.WRITE_BUFFER_WATER_MARK)
+                || firstProxyOptions.containsKey(ChannelOption.ALLOCATOR)) {
+                throw new IllegalStateException("proxy Bootstrap unexpectedly configured direct-only options");
+            }
+
+            config.setClientSocketSndBufSize(24576);
+            config.setClientSocketRcvBufSize(32768);
+            Bootstrap reusedProxy = (Bootstrap) fetchBootstrap.invoke(client, "127.0.0.1:10911");
+            if (reusedProxy != firstProxy) {
+                throw new IllegalStateException("proxy Bootstrap was not reused for its CIDR");
+            }
+            assertIntOption(reusedProxy.config().options(), ChannelOption.SO_SNDBUF, 12288,
+                "cached proxy send buffer");
+            assertIntOption(reusedProxy.config().options(), ChannelOption.SO_RCVBUF, 20480,
+                "cached proxy receive buffer");
+
+            Bootstrap secondProxy = (Bootstrap) fetchBootstrap.invoke(client, "10.0.0.1:10911");
+            assertIntOption(secondProxy.config().options(), ChannelOption.SO_SNDBUF, 24576,
+                "new proxy send buffer");
+            assertIntOption(secondProxy.config().options(), ChannelOption.SO_RCVBUF, 32768,
+                "new proxy receive buffer");
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static void assertIntOption(Map<ChannelOption<?>, Object> options, ChannelOption<Integer> option,
+        int expected, String label) {
+        Object actual = options.get(option);
+        if (!Integer.valueOf(expected).equals(actual)) {
+            throw new IllegalStateException(label + " mismatch: expected " + expected + ", got " + actual);
         }
     }
 

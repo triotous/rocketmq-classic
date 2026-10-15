@@ -179,6 +179,7 @@ impl ClientInner {
         let selected = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
         let proxy_cidr = selected.as_ref().map(|selection| selection.cidr.as_str());
         let connect_deadline = self.connection_deadline_for_route(proxy_cidr, deadline);
+        let connection_settings = self.connection_settings_for_route(proxy_cidr)?;
         let generation = self
             .generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -192,8 +193,8 @@ impl ClientInner {
             &key,
             &self.security,
             proxy,
-            self.config.client_socket_send_buffer_size,
-            self.config.client_socket_receive_buffer_size,
+            connection_settings.send_buffer_size,
+            connection_settings.receive_buffer_size,
             connect_deadline,
         ));
         let stream = tokio::select! {
@@ -213,9 +214,9 @@ impl ClientInner {
             generation,
             Arc::downgrade(self),
             max_frame_size,
-            self.config.write_buffer_watermarks(),
+            connection_settings.write_buffer_watermarks,
             key.clone(),
-            self.config.pooled_byte_buffer_allocator_enabled,
+            connection_settings.pooled_byte_buffer_allocator_enabled,
             max_idle_time,
             disable_worker_group,
         );

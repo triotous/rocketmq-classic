@@ -1815,6 +1815,78 @@ impl SocksProxyConfig {
 }
 
 /// Client controls mapped from Java `NettyClientConfig` settings used by this transport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ConnectionSettings {
+    pub(super) send_buffer_size: usize,
+    pub(super) receive_buffer_size: usize,
+    pub(super) write_buffer_watermarks: (usize, usize),
+    pub(super) pooled_byte_buffer_allocator_enabled: bool,
+}
+
+impl ConnectionSettings {
+    pub(super) fn direct(
+        send_buffer_size: usize,
+        receive_buffer_size: usize,
+        write_buffer_low_water_mark: usize,
+        write_buffer_high_water_mark: usize,
+        pooled_byte_buffer_allocator_enabled: bool,
+    ) -> Result<Self, TransportError> {
+        if i32::try_from(send_buffer_size).is_err()
+            || i32::try_from(receive_buffer_size).is_err()
+            || i32::try_from(write_buffer_low_water_mark).is_err()
+            || i32::try_from(write_buffer_high_water_mark).is_err()
+        {
+            return Err(TransportError::InvalidConfiguration(
+                "integer client settings must fit their Java signed integer ranges".into(),
+            ));
+        }
+        if write_buffer_low_water_mark > 0
+            && write_buffer_high_water_mark > 0
+            && write_buffer_low_water_mark > write_buffer_high_water_mark
+        {
+            return Err(TransportError::InvalidConfiguration(
+                "write buffer low water mark must not exceed high water mark when both are enabled"
+                    .into(),
+            ));
+        }
+
+        Ok(Self {
+            send_buffer_size,
+            receive_buffer_size,
+            write_buffer_watermarks: watermarks(
+                write_buffer_low_water_mark,
+                write_buffer_high_water_mark,
+            ),
+            pooled_byte_buffer_allocator_enabled,
+        })
+    }
+
+    pub(super) fn proxy(
+        send_buffer_size: usize,
+        receive_buffer_size: usize,
+    ) -> Result<Self, TransportError> {
+        if i32::try_from(send_buffer_size).is_err() || i32::try_from(receive_buffer_size).is_err() {
+            return Err(TransportError::InvalidConfiguration(
+                "socket buffer sizes must fit their Java signed integer ranges".into(),
+            ));
+        }
+        Ok(Self {
+            send_buffer_size,
+            receive_buffer_size,
+            write_buffer_watermarks: (64 * 1024, 32 * 1024),
+            pooled_byte_buffer_allocator_enabled: false,
+        })
+    }
+}
+
+fn watermarks(low: usize, high: usize) -> (usize, usize) {
+    if low > 0 && high > 0 {
+        (high, low)
+    } else {
+        (64 * 1024, 32 * 1024)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     pub transport: TransportMode,
@@ -1909,15 +1981,12 @@ impl ClientConfig {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn write_buffer_watermarks(&self) -> (usize, usize) {
-        if self.write_buffer_low_water_mark > 0 && self.write_buffer_high_water_mark > 0 {
-            (
-                self.write_buffer_high_water_mark,
-                self.write_buffer_low_water_mark,
-            )
-        } else {
-            (64 * 1024, 32 * 1024)
-        }
+        watermarks(
+            self.write_buffer_low_water_mark,
+            self.write_buffer_high_water_mark,
+        )
     }
 
     /// Java-compatible getter/setter behavior: retain JSON text until client construction.

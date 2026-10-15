@@ -150,6 +150,13 @@ struct ClientInner {
     client_worker_threads: AtomicUsize,
     disable_netty_worker_group: AtomicBool,
     client_channel_max_idle_time_seconds: AtomicI32,
+    client_socket_send_buffer_size: AtomicUsize,
+    client_socket_receive_buffer_size: AtomicUsize,
+    write_buffer_high_water_mark: AtomicUsize,
+    write_buffer_low_water_mark: AtomicUsize,
+    pooled_byte_buffer_allocator_enabled: AtomicBool,
+    active_connection_settings: Mutex<Option<config::ConnectionSettings>>,
+    proxy_connection_settings: Mutex<HashMap<String, config::ConnectionSettings>>,
     scan_available_nameserver: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
@@ -216,6 +223,51 @@ impl ClientInner {
         (
             std::time::Duration::from_secs(max_idle_seconds.max(0) as u64),
             disable_worker_group,
+        )
+    }
+
+    fn direct_connection_settings(&self) -> Result<config::ConnectionSettings, TransportError> {
+        self.active_connection_settings
+            .lock()
+            .unwrap()
+            .as_ref()
+            .copied()
+            .ok_or(TransportError::NotStarted)
+    }
+
+    fn connection_settings_for_route(
+        &self,
+        proxy_cidr: Option<&str>,
+    ) -> Result<config::ConnectionSettings, TransportError> {
+        match proxy_cidr {
+            None => self.direct_connection_settings(),
+            Some(cidr) => {
+                let mut settings = self.proxy_connection_settings.lock().unwrap();
+                if let Some(cached) = settings.get(cidr) {
+                    return Ok(*cached);
+                }
+                let captured = config::ConnectionSettings::proxy(
+                    self.client_socket_send_buffer_size.load(Ordering::Acquire),
+                    self.client_socket_receive_buffer_size
+                        .load(Ordering::Acquire),
+                )?;
+                settings.insert(cidr.to_owned(), captured);
+                Ok(captured)
+            }
+        }
+    }
+
+    fn capture_direct_connection_settings(
+        &self,
+    ) -> Result<config::ConnectionSettings, TransportError> {
+        config::ConnectionSettings::direct(
+            self.client_socket_send_buffer_size.load(Ordering::Acquire),
+            self.client_socket_receive_buffer_size
+                .load(Ordering::Acquire),
+            self.write_buffer_low_water_mark.load(Ordering::Acquire),
+            self.write_buffer_high_water_mark.load(Ordering::Acquire),
+            self.pooled_byte_buffer_allocator_enabled
+                .load(Ordering::Acquire),
         )
     }
 
@@ -723,6 +775,17 @@ impl RemotingClient {
             client_worker_threads: AtomicUsize::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
+            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicUsize::new(
+                config.client_socket_receive_buffer_size,
+            ),
+            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            pooled_byte_buffer_allocator_enabled: AtomicBool::new(
+                config.pooled_byte_buffer_allocator_enabled,
+            ),
+            active_connection_settings: Mutex::new(None),
+            proxy_connection_settings: Mutex::new(HashMap::new()),
             scan_available_nameserver: AtomicBool::new(scan_available_nameserver),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
@@ -834,6 +897,78 @@ impl RemotingClient {
             .store(seconds, Ordering::Release);
     }
 
+    /// Returns the configured Java client socket send-buffer size in bytes.
+    pub fn get_client_socket_send_buffer_size(&self) -> usize {
+        self.inner
+            .client_socket_send_buffer_size
+            .load(Ordering::Acquire)
+    }
+
+    /// Sets the direct Bootstrap value captured by `start()` and the value
+    /// captured when each proxy CIDR is first used.
+    pub fn set_client_socket_send_buffer_size(&self, size: usize) {
+        self.inner
+            .client_socket_send_buffer_size
+            .store(size, Ordering::Release);
+    }
+
+    /// Returns the configured Java client socket receive-buffer size in bytes.
+    pub fn get_client_socket_receive_buffer_size(&self) -> usize {
+        self.inner
+            .client_socket_receive_buffer_size
+            .load(Ordering::Acquire)
+    }
+
+    /// Sets the direct Bootstrap value captured by `start()` and the value
+    /// captured when each proxy CIDR is first used.
+    pub fn set_client_socket_receive_buffer_size(&self, size: usize) {
+        self.inner
+            .client_socket_receive_buffer_size
+            .store(size, Ordering::Release);
+    }
+
+    /// Returns the configured Java write-buffer high watermark in bytes.
+    pub fn get_write_buffer_high_water_mark(&self) -> usize {
+        self.inner
+            .write_buffer_high_water_mark
+            .load(Ordering::Acquire)
+    }
+
+    /// Sets the direct Bootstrap value captured by `start()`.
+    pub fn set_write_buffer_high_water_mark(&self, size: usize) {
+        self.inner
+            .write_buffer_high_water_mark
+            .store(size, Ordering::Release);
+    }
+
+    /// Returns the configured Java write-buffer low watermark in bytes.
+    pub fn get_write_buffer_low_water_mark(&self) -> usize {
+        self.inner
+            .write_buffer_low_water_mark
+            .load(Ordering::Acquire)
+    }
+
+    /// Sets the direct Bootstrap value captured by `start()`.
+    pub fn set_write_buffer_low_water_mark(&self, size: usize) {
+        self.inner
+            .write_buffer_low_water_mark
+            .store(size, Ordering::Release);
+    }
+
+    /// Returns whether the Rust per-connection frame reuse pool is enabled.
+    pub fn is_pooled_byte_buffer_allocator_enabled(&self) -> bool {
+        self.inner
+            .pooled_byte_buffer_allocator_enabled
+            .load(Ordering::Acquire)
+    }
+
+    /// Sets the direct Bootstrap value captured by `start()`.
+    pub fn set_pooled_byte_buffer_allocator_enabled(&self, enabled: bool) {
+        self.inner
+            .pooled_byte_buffer_allocator_enabled
+            .store(enabled, Ordering::Release);
+    }
+
     /// Returns the configured Java `connectTimeoutMillis` value.
     pub fn get_connect_timeout_millis(&self) -> i32 {
         self.inner.connect_timeout_millis.load(Ordering::Acquire)
@@ -861,6 +996,10 @@ impl RemotingClient {
 
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
+        let config = ClientConfig {
+            transport: security.clone(),
+            ..ClientConfig::default()
+        };
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -902,11 +1041,19 @@ impl RemotingClient {
             client_worker_threads: AtomicUsize::new(4),
             disable_netty_worker_group: AtomicBool::new(false),
             client_channel_max_idle_time_seconds: AtomicI32::new(120),
+            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicUsize::new(
+                config.client_socket_receive_buffer_size,
+            ),
+            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            pooled_byte_buffer_allocator_enabled: AtomicBool::new(
+                config.pooled_byte_buffer_allocator_enabled,
+            ),
+            active_connection_settings: Mutex::new(None),
+            proxy_connection_settings: Mutex::new(HashMap::new()),
             scan_available_nameserver: AtomicBool::new(true),
-            config: ClientConfig {
-                transport: security.clone(),
-                ..ClientConfig::default()
-            },
+            config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),
             started: AtomicBool::new(true),
@@ -960,10 +1107,12 @@ impl RemotingClient {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
             TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
         })?;
+        let connection_settings = self.inner.capture_direct_connection_settings()?;
         self.inner.active_connect_timeout_millis.store(
             self.inner.connect_timeout_millis.load(Ordering::Acquire),
             Ordering::Release,
         );
+        *self.inner.active_connection_settings.lock().unwrap() = Some(connection_settings);
         *self.inner.runtime.lock().unwrap() = Some(runtime);
         let startup_state = startup.take().ok_or_else(|| {
             TransportError::InvalidConfiguration("client startup state is unavailable".into())
@@ -2582,6 +2731,7 @@ mod tests {
                 assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
             });
             let client = RemotingClient::with_config(ClientConfig::default()).unwrap();
+            client.start().unwrap();
             let connection = client
                 .inner
                 .connection(&address, Instant::now() + std::time::Duration::from_secs(3))
@@ -2604,6 +2754,7 @@ mod tests {
             inbound_rejected.unwrap().unwrap();
             assert!(connection.is_closed());
             connection.join().await;
+            client.shutdown().await;
             return;
         }
 
@@ -3685,6 +3836,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bootstrap_options_use_start_and_proxy_first_use_snapshots() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.set_client_socket_send_buffer_size(4096);
+        client.set_client_socket_receive_buffer_size(8192);
+        client.set_write_buffer_low_water_mark(16 * 1024);
+        client.set_write_buffer_high_water_mark(48 * 1024);
+        client.set_pooled_byte_buffer_allocator_enabled(true);
+        client.start().unwrap();
+
+        let direct = client.inner.direct_connection_settings().unwrap();
+        assert_eq!(direct.send_buffer_size, 4096);
+        assert_eq!(direct.receive_buffer_size, 8192);
+        assert_eq!(direct.write_buffer_watermarks, (48 * 1024, 16 * 1024));
+        assert!(direct.pooled_byte_buffer_allocator_enabled);
+
+        client.set_client_socket_send_buffer_size(12 * 1024);
+        client.set_client_socket_receive_buffer_size(24 * 1024);
+        client.set_write_buffer_low_water_mark(4 * 1024);
+        client.set_write_buffer_high_water_mark(12 * 1024);
+        client.set_pooled_byte_buffer_allocator_enabled(true);
+
+        let first_proxy = client
+            .inner
+            .connection_settings_for_route(Some("127.0.0.0/8"))
+            .unwrap();
+        assert_eq!(first_proxy.send_buffer_size, 12 * 1024);
+        assert_eq!(first_proxy.receive_buffer_size, 24 * 1024);
+        assert_eq!(first_proxy.write_buffer_watermarks, (64 * 1024, 32 * 1024));
+        assert!(!first_proxy.pooled_byte_buffer_allocator_enabled);
+
+        client.set_client_socket_send_buffer_size(32 * 1024);
+        client.set_client_socket_receive_buffer_size(48 * 1024);
+        assert_eq!(
+            client
+                .inner
+                .connection_settings_for_route(Some("127.0.0.0/8"))
+                .unwrap(),
+            first_proxy
+        );
+        let second_proxy = client
+            .inner
+            .connection_settings_for_route(Some("10.0.0.0/8"))
+            .unwrap();
+        assert_eq!(second_proxy.send_buffer_size, 32 * 1024);
+        assert_eq!(second_proxy.receive_buffer_size, 48 * 1024);
+        assert_eq!(client.inner.direct_connection_settings().unwrap(), direct);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_live_write_watermarks_leave_start_retryable() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.set_write_buffer_low_water_mark(8192);
+        client.set_write_buffer_high_water_mark(4096);
+        assert!(matches!(
+            client.start(),
+            Err(TransportError::InvalidConfiguration(_))
+        ));
+        assert!(!client.inner.started.load(Ordering::Acquire));
+
+        client.set_write_buffer_high_water_mark(16 * 1024);
+        client.start().unwrap();
+        assert_eq!(
+            client
+                .inner
+                .direct_connection_settings()
+                .unwrap()
+                .write_buffer_watermarks,
+            (16 * 1024, 8192)
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn worker_group_pool_is_available_for_live_channel_toggles() {
         let config = ClientConfig {
             disable_netty_worker_group: true,
@@ -3729,6 +3962,17 @@ mod tests {
             client_worker_threads: AtomicUsize::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
+            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicUsize::new(
+                config.client_socket_receive_buffer_size,
+            ),
+            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            pooled_byte_buffer_allocator_enabled: AtomicBool::new(
+                config.pooled_byte_buffer_allocator_enabled,
+            ),
+            active_connection_settings: Mutex::new(None),
+            proxy_connection_settings: Mutex::new(HashMap::new()),
             scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
             connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
