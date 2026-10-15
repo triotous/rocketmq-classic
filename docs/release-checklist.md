@@ -387,7 +387,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 
 - [ ] **P18-V01** — Broad Java/Rust source, overload input/error/flow, inherited
   API, and reverse-export reconciliation remains open; this is local parity
-  work, not final manual validation. The producer send mutation branch is now
+  work, not final manual validation. Earlier Phase 3 notes that accepted
+  unmatched Rust-only APIs, immutable config snapshots, or selected observable
+  differences are historical and do not waive the current parity contract.
+  The producer send mutation branch is now
   oracle-backed, and surfaced Rust-only publish-info constructors/snapshot
   helpers are crate-private. Producer publish-info queue/cursor/selector and
   live-view callback adapters now have exact Rust-to-Java matrix rows guarded
@@ -932,6 +935,24 @@ Before any publication:
   complete.
 - [ ] Do not create or push a release tag as part of Phase 18.
 - [ ] Re-run the full release checks from the final revision before publication.
+
+- Remoting codec API reverse-export correction (`c27b60e4`, 2026-10-15):
+  public frame and header encoders no longer accept caller-selected size bounds;
+  public frame decoding no longer exposes a per-call bound, and Java's private
+  16 MiB default is crate-private. The live connection decoder still applies
+  the Java property to inbound frames only; outbound framing keeps the signed
+  Java length bound. Compile-fail doctests guard the removed signatures and
+  constant, and an internal unit test preserves bounded transport behavior.
+  This closes the remoting codec API disposition slice only; broad P18-V01
+  remains open.
+- Current-revision server-free P18-V02 rerun on `c27b60e4` (2026-10-15): all
+  server-free P18-V02 gates pass after the codec API change, including default
+  and all-feature workspace suites, strict Clippy, Maven verify (37 scenarios
+  and cross-decodes), differential self-test/manifest, race/leak smoke,
+  fuzz smoke, examples, benchmark compilation, metadata/package checks,
+  UTC/Asia-Taipei differential, formatting, and diff checks. P18-V01, current
+  GitHub Ubuntu address-profile/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation, and pre-publication version/registry checks remain open.
 
 - Current-revision P18-V02 server-free rerun (`d165ba45`, 2026-10-15):
   formatting, strict all-target/all-feature workspace Clippy, UTC workspace

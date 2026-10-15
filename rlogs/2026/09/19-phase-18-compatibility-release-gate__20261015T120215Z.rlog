@@ -25,3 +25,38 @@
   field mutation warnings; Maven exited successfully.
 - No plan changes, Java-reference changes, push, tag, publication, or Broker
   validation.
+
+## P18-V01 Remoting codec public API reconciliation — 2026-10-15
+
+- Source review: Java 5.5.1 exposes `RemotingCommand.encode/decode`,
+  `NettyEncoder.encode`, and `NettyDecoder.decode`; its 16 MiB frame default is
+  private and its `frameMaxLength` property applies to inbound decoding only.
+- Rust public codec helpers now mirror those encoding/decoding capabilities
+  without caller-selected per-call bounds. The Java default is crate-private;
+  bounded helpers remain internal for the connection decoder and encoder.
+  Cross-crate loopback fixture callsites now use the public no-bound API.
+- Added compile-fail API guards for the old frame/header bounds and default
+  constant, plus an internal unit test for bounded transport encoding/decoding.
+- First focused run exposed an overly specific expected encoder error variant;
+  the test now checks the bound rejection without requiring one variant.
+- Code commit: `c27b60e4 fix(remoting): align public codec bounds with Java API`.
+- PASS after the change: formatter, all-target/all-feature workspace Clippy,
+  UTC default workspace tests, all-feature workspace tests, Maven verify
+  (37 scenarios, frame probes and Java/Rust cross-decodes), differential
+  self-test/manifest, race/leak smoke (16 × 3), fuzz smoke (1,824 mutations),
+  release examples, benchmark compilation, metadata/package checks, UTC and
+  Asia/Taipei unique-ID differential, and `git diff --check`.
+- This closes the codec API disposition only. The broader P18-V01 Java/Rust
+  source/API/settings/input/error/flow and reverse-export audit remains open.
+
+## P18-V01 historical-disposition documentation correction — 2026-10-15
+
+- Reconciled `KNOWN_DIFFERENCES.md`, `JAVA_5_5_1_COMPATIBILITY.md`, and the
+  Phase 3 Remoting inventory with the current parity contract: historical
+  acceptance of unmatched Rust-only APIs, immutable remoting config snapshots,
+  or selected observable differences does not close P18-V01. Public API and
+  setting capabilities must map to Java 5.5.1, and remaining setting-update
+  and operation behavior must be checked row by row.
+- Updated the release checklist to identify these earlier Phase 3 decisions as
+  historical and preserve the full P18-V01 audit as open local parity work.
+- Documentation-only correction; `git diff --check` is the validation gate.
