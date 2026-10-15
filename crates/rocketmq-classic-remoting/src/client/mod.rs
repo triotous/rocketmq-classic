@@ -697,9 +697,12 @@ impl RemotingClient {
     }
 
     pub fn with_config_and_channel_event_listener(
-        config: ClientConfig,
+        mut config: ClientConfig,
         channel_listener: Option<Arc<dyn ChannelEventListener>>,
     ) -> Result<Self, TransportError> {
+        if let TransportMode::Tls(tls) = &mut config.transport {
+            tls.reload_property_file_for_context()?;
+        }
         config.validate()?;
         if let TransportMode::Tls(tls) = &config.transport {
             // Validate certificate and key material before retaining worker
@@ -2726,6 +2729,64 @@ async fn timeout_scheduler(
 mod tests {
     use super::*;
     use crate::codec::frame::DEFAULT_MAX_FRAME_SIZE;
+
+    #[test]
+    fn java_tls_property_file_is_reloaded_for_each_client_context() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/security/tls-settings-defaults.json"
+        ))
+        .unwrap();
+        let expected_modes = fixture["propertyFileReload"]["observedTestModes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_bool().unwrap())
+            .collect::<Vec<_>>();
+        let expected_auth_server = fixture["propertyFileReload"]["observedAuthServer"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_bool().unwrap())
+            .collect::<Vec<_>>();
+
+        let directory = std::env::temp_dir().join(format!(
+            "rocketmq-tls-context-reload-{}-{}",
+            std::process::id(),
+            Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let properties_file = directory.join("tls.properties");
+        std::fs::write(
+            &properties_file,
+            "tls.test.mode.enable=true\ntls.client.authServer=false\n",
+        )
+        .unwrap();
+        let properties = HashMap::new();
+        let tls = TlsConfig::from_java_properties(&properties, Some(&properties_file)).unwrap();
+
+        let mut observed_modes = Vec::new();
+        let mut observed_auth_server = Vec::new();
+        for (test_mode, auth_server) in [(true, Some(false)), (false, Some(true)), (true, None)] {
+            let mut snapshot = format!("tls.test.mode.enable={test_mode}\n");
+            if let Some(auth_server) = auth_server {
+                snapshot.push_str(&format!("tls.client.authServer={auth_server}\n"));
+            }
+            std::fs::write(&properties_file, snapshot).unwrap();
+            let client = RemotingClient::with_config(ClientConfig {
+                transport: TransportMode::Tls(tls.clone()),
+                ..ClientConfig::default()
+            })
+            .unwrap();
+            let TransportMode::Tls(context_config) = &client.inner.config.transport else {
+                unreachable!("TLS configuration should be retained by the remoting client");
+            };
+            observed_modes.push(context_config.test_mode);
+            observed_auth_server.push(context_config.auth_server);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(observed_modes, expected_modes);
+        assert_eq!(observed_auth_server, expected_auth_server);
+    }
 
     #[tokio::test]
     async fn java_frame_max_length_property_is_applied_to_new_connections() {

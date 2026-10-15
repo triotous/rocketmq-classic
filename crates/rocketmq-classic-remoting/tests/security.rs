@@ -96,16 +96,11 @@ async fn expired_server_certificate_is_rejected_with_trust_and_name_checks_enabl
     server_params.not_after = date_time_ymd(1991, 1, 1);
     let server_certificate = server_params.signed_by(&server_key, &ca, &ca_key).unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(server_config(&server_certificate, &server_key)));
-    assert_tls_connection_rejected(
-        TlsConfig {
-            ca_pem: Some(ca.pem().into_bytes()),
-            test_mode: false,
-            auth_server: true,
-            ..TlsConfig::default()
-        },
-        acceptor,
-    )
-    .await;
+    let mut config = TlsConfig::default();
+    config.ca_pem = Some(ca.pem().into_bytes());
+    config.test_mode = false;
+    config.auth_server = true;
+    assert_tls_connection_rejected(config, acceptor).await;
 }
 
 #[tokio::test]
@@ -159,13 +154,12 @@ async fn missing_client_certificate_is_rejected_by_a_required_client_auth_peer()
 
 #[test]
 fn malformed_tls_identity_is_rejected_before_remoting_client_is_created() {
+    let mut tls = TlsConfig::default();
+    tls.test_mode = false;
+    tls.client_cert_pem = Some(b"not a certificate".to_vec());
+    tls.client_key_pem = Some(b"not a private key".to_vec());
     let result = RemotingClient::with_config(rocketmq_classic_remoting::client::ClientConfig {
-        transport: TransportMode::Tls(TlsConfig {
-            test_mode: false,
-            client_cert_pem: Some(b"not a certificate".to_vec()),
-            client_key_pem: Some(b"not a private key".to_vec()),
-            ..TlsConfig::default()
-        }),
+        transport: TransportMode::Tls(tls),
         ..rocketmq_classic_remoting::client::ClientConfig::default()
     });
     assert!(matches!(result, Err(TransportError::Tls(_))));
@@ -178,10 +172,8 @@ fn unreadable_tls_identity_is_rejected_while_loading_properties() {
         std::process::id()
     ));
     fs::create_dir_all(&directory).unwrap();
-    let mut config = TlsConfig {
-        test_mode: false,
-        ..TlsConfig::default()
-    };
+    let mut config = TlsConfig::default();
+    config.test_mode = false;
     let properties = std::collections::HashMap::from([
         ("tls.client.certPath".into(), "missing-client.pem".into()),
         ("tls.client.keyPath".into(), "missing-client.key".into()),

@@ -2,8 +2,8 @@ use std::{
     collections::HashMap,
     fmt,
     io::BufReader,
-    path::Path,
-    sync::{Arc, OnceLock, RwLock},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock, RwLock},
 };
 
 use base64::Engine;
@@ -43,6 +43,36 @@ fn registered_decryption_strategy() -> DecryptionStrategyRegistration {
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
+}
+
+#[derive(Clone)]
+struct TlsPropertyFileSource {
+    path: PathBuf,
+    properties: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl TlsPropertyFileSource {
+    fn new(path: PathBuf, properties: HashMap<String, String>) -> Self {
+        Self {
+            path,
+            properties: Arc::new(Mutex::new(properties)),
+        }
+    }
+
+    fn reload(&self) -> Result<HashMap<String, String>, TransportError> {
+        let mut properties = self
+            .properties
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.path.is_file() {
+            if let Ok(bytes) = std::fs::read(&self.path) {
+                // Like Java's static TLS settings, absent keys retain the most
+                // recently loaded value instead of reverting to system defaults.
+                properties.extend(parse_java_properties(&bytes)?);
+            }
+        }
+        Ok(properties.clone())
+    }
 }
 
 /// Registers the process-wide equivalent of Java
@@ -208,6 +238,7 @@ pub struct TlsConfig {
     pub auth_server: bool,
     /// Java `tls.client.keyPassword`; used for encrypted PKCS#8 files.
     pub key_password: Option<String>,
+    property_file_source: Option<TlsPropertyFileSource>,
 }
 
 /// Reads/decrypts a private-key file for Java `TlsHelper`-compatible loading.
@@ -259,6 +290,7 @@ impl Default for TlsConfig {
             test_mode: true,
             auth_server: false,
             key_password: None,
+            property_file_source: None,
         }
     }
 }
@@ -270,30 +302,36 @@ impl TlsConfig {
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
     ) -> Result<Self, TransportError> {
-        let mut properties = system_properties.clone();
         let configured_path = config_file
             .map(Path::to_owned)
             .or_else(|| {
-                properties
+                system_properties
                     .get("tls.config.file")
                     .map(|value| Path::new(value).to_owned())
             })
             .unwrap_or_else(|| Path::new("/etc/rocketmq/tls.properties").to_owned());
-        if configured_path.is_file() {
-            if let Ok(bytes) = std::fs::read(&configured_path) {
-                properties.extend(parse_java_properties(&bytes)?);
-            }
-        }
+        let source = TlsPropertyFileSource::new(configured_path, system_properties.clone());
+        let properties = source.reload()?;
         let mut config = Self::default();
         config.apply_properties(&properties, Path::new("."))?;
+        config.property_file_source = Some(source);
         Ok(config)
     }
 
     /// Loads client TLS settings from a Java-compatible properties file once.
-    /// The file is not watched; new clients must explicitly load changed settings.
+    /// The file is not retained as a live source.
     pub fn load_properties_file(&mut self, path: &Path) -> Result<(), TransportError> {
         let properties = read_java_properties(path)?;
+        self.property_file_source = None;
         self.apply_properties(&properties, Path::new("."))
+    }
+
+    pub(crate) fn reload_property_file_for_context(&mut self) -> Result<(), TransportError> {
+        if let Some(source) = self.property_file_source.take() {
+            let properties = source.reload()?;
+            self.apply_properties(&properties, Path::new("."))?;
+        }
+        Ok(())
     }
 
     /// Applies Java `TlsSystemConfig` client keys, resolving file paths relative to `base_dir`.

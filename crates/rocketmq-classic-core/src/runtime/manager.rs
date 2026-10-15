@@ -1736,12 +1736,10 @@ mod tests {
         let manager = ClientRuntimeManager::new();
         let mut config = ClientConfig::new("explicit-client-tls");
         config.set_use_tls(true);
-        let tls = TlsConfig {
-            test_mode: false,
-            client_cert_pem: Some(b"malformed client certificate".to_vec()),
-            client_key_pem: Some(b"malformed client key".to_vec()),
-            ..TlsConfig::default()
-        };
+        let mut tls = TlsConfig::default();
+        tls.test_mode = false;
+        tls.client_cert_pem = Some(b"malformed client certificate".to_vec());
+        tls.client_key_pem = Some(b"malformed client key".to_vec());
 
         let result = manager
             .get_or_create_with_hook_and_tls_config(&config, None, Some(tls))

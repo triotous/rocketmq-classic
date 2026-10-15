@@ -628,10 +628,8 @@ mod tests {
     fn explicit_tls_config_enables_client_transport() {
         let mut config = ProducerConfig::new("tls-producer").unwrap();
         assert!(!config.client_config().use_tls());
-        let tls = TlsConfig {
-            test_mode: false,
-            ..TlsConfig::default()
-        };
+        let mut tls = TlsConfig::default();
+        tls.test_mode = false;
         config.set_tls_config(Some(tls));
         assert!(config.client_config().use_tls());
         assert!(!config.tls_config().unwrap().test_mode);

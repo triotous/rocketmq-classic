@@ -2207,12 +2207,10 @@ async fn p3_outbound_rpc_hook_runs_before_oneway_admission_wait() {
 async fn p3_u01_tls_verifies_ca_and_hostname_without_insecure_fallback() {
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
     let cert_pem = certificate.cert.pem();
-    let ca = TlsConfig {
-        ca_pem: Some(cert_pem.as_bytes().to_vec()),
-        test_mode: false,
-        auth_server: true,
-        ..TlsConfig::default()
-    };
+    let mut ca = TlsConfig::default();
+    ca.ca_pem = Some(cert_pem.as_bytes().to_vec());
+    ca.test_mode = false;
+    ca.auth_server = true;
     let server_config = tokio_rustls::rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(
@@ -2310,18 +2308,13 @@ async fn p3_tls_matches_java_trust_all_modes() {
             }
         }
     });
-    for config in [
-        TlsConfig {
-            test_mode: true,
-            auth_server: true,
-            ..TlsConfig::default()
-        },
-        TlsConfig {
-            test_mode: false,
-            auth_server: false,
-            ..TlsConfig::default()
-        },
-    ] {
+    let mut test_mode_config = TlsConfig::default();
+    test_mode_config.test_mode = true;
+    test_mode_config.auth_server = true;
+    let mut disabled_auth_config = TlsConfig::default();
+    disabled_auth_config.test_mode = false;
+    disabled_auth_config.auth_server = false;
+    for config in [test_mode_config, disabled_auth_config] {
         let client = RemotingClient::new(TransportMode::Tls(config));
         client.start().unwrap();
         let response = client
@@ -5639,12 +5632,11 @@ async fn p3_u01_tls_rejects_untrusted_ca() {
         let (socket, _) = listener.accept().await.unwrap();
         let _ = tokio::time::timeout(Duration::from_secs(1), acceptor.accept(socket)).await;
     });
-    let client = RemotingClient::new(TransportMode::Tls(TlsConfig {
-        ca_pem: Some(Vec::new()),
-        test_mode: false,
-        auth_server: true,
-        ..TlsConfig::default()
-    }));
+    let mut tls = TlsConfig::default();
+    tls.ca_pem = Some(Vec::new());
+    tls.test_mode = false;
+    tls.auth_server = true;
+    let client = RemotingClient::new(TransportMode::Tls(tls));
     client.start().unwrap();
     let result = client
         .invoke(
