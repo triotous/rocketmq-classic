@@ -13,7 +13,7 @@ use rocketmq_classic_common::{
 };
 use rocketmq_classic_protocol::{
     codes::SerializeType,
-    header::{CommandHeader, ProofHeader},
+    header::{CommandHeader, GetRouteInfoRequestHeader},
 };
 use rocketmq_classic_remoting::{
     codec::{frame, json_header, rocketmq_header},
@@ -187,7 +187,7 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
                         .is_none_or(|body| body.len() <= MAX_FRAME_BYTES)
                 );
                 if let Some(fields) = command.ext_fields.as_ref() {
-                    let _typed_header = ProofHeader::decode_fields(fields);
+                    let _typed_header = GetRouteInfoRequestHeader::decode_fields(fields);
                 }
             }
             Ok(None) | Err(_) => break,

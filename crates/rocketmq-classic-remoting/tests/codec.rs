@@ -1,7 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use bytes::BytesMut;
-use rocketmq_classic_protocol::{codes::SerializeType, header::CommandHeader};
+use rocketmq_classic_protocol::{
+    codes::SerializeType,
+    header::{CommandHeader, GetRouteInfoRequestHeader},
+};
 use rocketmq_classic_remoting::{
     CodecError,
     codec::{
@@ -147,7 +150,7 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
         .unwrap()
         .unwrap();
     let raw_fields = proof.ext_fields.as_ref().unwrap();
-    let typed = rocketmq_classic_protocol::header::ProofHeader::decode_fields(raw_fields).unwrap();
+    let typed = GetRouteInfoRequestHeader::decode_fields(raw_fields).unwrap();
     assert_eq!(typed.topic, "fixture-topic");
     assert_eq!(raw_fields.get("oracle").map(String::as_str), Some("5.5.1"));
     for name in ["header-fast-001.bin", "header-ordinary-001.bin"] {
