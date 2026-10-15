@@ -1,0 +1,40 @@
+# Phase 18 current-revision server-free gates — 2026-10-15T16:26:12Z
+
+## Revision and verification
+
+- Tested code/documentation revision: `ae08e42d` on
+  `phase/19-phase-18-compatibility-release-gate`; worktree clean before runs.
+- `cargo test --workspace --locked`: passed, exit 0.
+- `cargo test --workspace --all-features --locked`: passed, exit 0.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`:
+  passed, exit 0.
+- `mvn -q -o -f compat/java-reference/pom.xml verify`: passed, exit 0;
+  37 scenarios and Java/Rust fixture cross-decodes. JDK/Netty emitted deprecated
+  `Unsafe` warnings; Maven completed successfully.
+- `python3 tests/differential/compare.py --self-test` and
+  `python3 tests/differential/compare.py --validate-manifest`: passed;
+  manifest validated 37 scenarios.
+- `bash tests/stress/run-offline-smoke.sh`: passed; 16 deterministic
+  race/leak cases × 3 repetitions.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`:
+  passed; 104 frame seeds, 10 message seeds, 1,824 bounded mutations.
+- `cargo build -p rocketmq-classic --examples --release --locked`: passed.
+- `cargo bench --workspace --no-run --locked`: passed; all workspace bench
+  targets compiled.
+- `cargo package --workspace --list --locked --allow-dirty`: passed.
+- `cargo metadata --format-version 1 --locked --no-deps` and
+  `python3 scripts/check-workspace-metadata.py`: passed; package licenses and
+  dependency direction validated.
+- `TZ=Asia/Taipei cargo test -p rocketmq-classic-core --all-features --locked
+  unique_id::tests::`: passed; four unique-ID tests.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+## Status
+
+- Server-free P18-V02 is verified on `ae08e42d`. It must be rerun after any
+  later implementation revision.
+- Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
+  local Docker/Broker automation, and release version/registry resolution
+  remain open. Owner-run deployment/live Broker checks remain manual.
+- No plan files or Java reference sources were changed. No push, tag,
+  publication, deployment, or live Broker action was performed.

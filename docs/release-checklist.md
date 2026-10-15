@@ -1162,3 +1162,17 @@ Before any publication:
   full-workspace P18-V02, GitHub Ubuntu/P18-V04 evidence, Phase 19 local
   Docker/Broker automation, and release version/registry-resolution checks
   remain open. Owner-run deployment/live Broker checks remain manual.
+
+- Current-revision server-free **P18-V02** gates on `ae08e42d` (2026-10-15):
+  default and all-feature workspace tests, strict all-target/all-feature
+  Clippy, pinned Maven `verify` (37 scenarios and Java/Rust cross-decodes),
+  differential self-test and 37-scenario manifest, race/leak smoke (16 cases
+  × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations),
+  release examples, workspace bench compilation, locked Cargo metadata,
+  workspace metadata/license/dependency checks, package listings, UTC default
+  fixture tests and the unique-ID fixture under Asia/Taipei all pass. Rustfmt
+  and `git diff --check` pass. This closes server-free P18-V02 only on
+  `ae08e42d`; any later implementation revision needs another full rerun.
+  Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
+  local Docker/Broker automation, and release version/registry-resolution
+  checks remain open. Owner-run deployment/live Broker checks remain manual.
