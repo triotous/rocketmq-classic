@@ -1031,6 +1031,12 @@ public final class MessageDecodeFixtures {
         expected.put("messageIdFallsBackAfterUniqueClear", message.getMsgId());
         message.setMsgId("ignored-after-clear");
         expected.put("setMessageIdDoesNotReplaceOffsetFallback", message.getMsgId());
+        message.setTopic("inherited-topic");
+        expected.put("inheritedTopic", message.getTopic());
+        message.setQueueId(-17);
+        expected.put("inheritedQueueId", message.getQueueId());
+        message.setStoreTimestamp(1_700_000_000_123L);
+        expected.put("inheritedStoreTimestamp", message.getStoreTimestamp());
         return expected;
     }
 

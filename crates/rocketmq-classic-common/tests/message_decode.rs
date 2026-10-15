@@ -337,6 +337,24 @@ fn message_client_ext_api_matches_java_551_fixture() {
         message.message_id().as_deref(),
         expected["setMessageIdDoesNotReplaceOffsetFallback"].as_str()
     );
+
+    // MessageClientExt inherits these setters and getters from MessageExt
+    // and Message in Java. Exercise method resolution through the Rust wrapper.
+    message.set_topic("inherited-topic");
+    assert_eq!(
+        message.topic(),
+        expected["inheritedTopic"].as_str().unwrap()
+    );
+    message.set_queue_id(-17);
+    assert_eq!(
+        message.queue_id(),
+        expected["inheritedQueueId"].as_i64().unwrap() as i32
+    );
+    message.set_store_timestamp(1_700_000_000_123);
+    assert_eq!(
+        message.store_timestamp(),
+        expected["inheritedStoreTimestamp"].as_i64().unwrap()
+    );
 }
 
 #[test]
