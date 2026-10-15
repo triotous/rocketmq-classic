@@ -1888,6 +1888,15 @@ fn watermarks(low: usize, high: usize) -> (usize, usize) {
 }
 
 #[derive(Clone, Debug)]
+/// Configuration values for a [`RemotingClient`](super::RemotingClient).
+///
+/// Validation is performed by `RemotingClient::with_config` before the client
+/// is constructed; there is no standalone Java `NettyClientConfig` validator.
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::ClientConfig;
+/// let _ = ClientConfig::default().validate();
+/// ```
 pub struct ClientConfig {
     pub transport: TransportMode,
     /// Java `connectTimeoutMillis`; negative values leave Netty's 30-second default in effect.
@@ -1951,7 +1960,7 @@ impl ClientConfig {
         std::time::Duration::from_secs(self.max_idle_time.max(0) as u64)
     }
 
-    pub fn validate(&self) -> Result<(), TransportError> {
+    pub(super) fn validate(&self) -> Result<(), TransportError> {
         if self.worker_threads == 0
             || i32::try_from(self.worker_threads).is_err()
             || i32::try_from(self.callback_executor_threads).is_err()

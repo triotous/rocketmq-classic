@@ -49,6 +49,10 @@ async fn try_read_command<S: AsyncRead + Unpin>(stream: &mut S) -> Option<Remoti
     frame::decode_next(&mut bytes).ok().flatten()
 }
 
+fn config_is_accepted(config: ClientConfig) -> Result<(), TransportError> {
+    RemotingClient::with_config(config).map(drop)
+}
+
 #[tokio::test]
 async fn mutable_rpc_hook_fields_reach_sync_async_oneway_and_callback_snapshots() {
     struct Mutator;
@@ -2879,11 +2883,10 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(matches!(defaults.transport, TransportMode::Plain));
     assert_eq!(defaults.connect_timeout, 3000);
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             connect_timeout: -1,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert_eq!(defaults.async_semaphore_value, 65535);
@@ -2898,19 +2901,17 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     );
     assert_eq!(defaults.channel_not_active_interval, 60_000);
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             channel_not_active_interval: -1,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             max_idle_time: 0,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     for zero_capacity in [
@@ -2927,7 +2928,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             ..defaults.clone()
         },
     ] {
-        assert!(zero_capacity.validate().is_ok());
+        assert!(config_is_accepted(zero_capacity).is_ok());
     }
     assert_eq!(defaults.client_socket_send_buffer_size, 0);
     assert_eq!(defaults.client_socket_receive_buffer_size, 0);
@@ -2936,11 +2937,10 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(!defaults.pooled_byte_buffer_allocator_enabled);
     assert_eq!(defaults.max_idle_time, 120);
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             max_idle_time: -1,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(defaults.close_socket_if_timeout);
@@ -2950,11 +2950,10 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert_eq!(defaults.max_reconnect_interval_time_seconds, 60);
     for value in [i64::MIN, -1, 0, i64::MAX] {
         assert!(
-            ClientConfig {
+            config_is_accepted(ClientConfig {
                 max_reconnect_interval_time_seconds: value,
                 ..defaults.clone()
-            }
-            .validate()
+            })
             .is_ok()
         );
     }
@@ -2979,19 +2978,17 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert!(callback_executor_disabled.get_callback_executor().is_none());
     callback_executor_disabled.shutdown().await;
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             socks_proxy_config: r#"{"0.0.0.0/0":{"addr":"localhost:1080"}}"#.into(),
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             worker_threads: 0,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_err()
     );
     for invalid_capacity in [
@@ -3028,48 +3025,43 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             ..defaults.clone()
         },
     ] {
-        assert!(invalid_capacity.validate().is_err());
+        assert!(config_is_accepted(invalid_capacity).is_err());
     }
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             callback_executor_threads: 0,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             write_buffer_low_water_mark: 10,
             write_buffer_high_water_mark: 5,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_err()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             pooled_byte_buffer_allocator_enabled: true,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             write_buffer_low_water_mark: 0,
             write_buffer_high_water_mark: 128,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             write_buffer_high_water_mark: 128,
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
     for invalid in [
@@ -3082,14 +3074,13 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             ..defaults.clone()
         },
     ] {
-        assert!(invalid.validate().is_err());
+        assert!(config_is_accepted(invalid).is_err());
     }
     assert!(
-        ClientConfig {
+        config_is_accepted(ClientConfig {
             socks_proxy_config: r#"{"not-a-cidr":{"addr":"invalid","username":"user"}}"#.into(),
             ..defaults.clone()
-        }
-        .validate()
+        })
         .is_ok()
     );
 
