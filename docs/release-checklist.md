@@ -819,6 +819,13 @@ the required full Phase 18 gates on the final revision.
   P18-V02 server-free gates are complete on this revision. P18-V01, current
   GitHub Ubuntu/P18-V04 CI evidence, Phase 19 Broker/Docker automation, and
   pre-publication version/registry resolution checks remain open.
+- Common `MessageExt` source-surface sweep (2026-10-15): all public Java
+  declarations, including both socket-address buffer helpers and inherited
+  `Message` behavior, have Rust owner mappings and invoked fixture coverage in
+  the Phase 8 matrix. `cargo test -p rocketmq-classic-common --test
+  message_decode --locked message_ext_` passes all four matching fixture
+  tests. No additional gap surfaced in this class inventory; this closes one
+  bounded P18-V01 audit slice only.
 
 ## Package graph and metadata
 

@@ -50,3 +50,18 @@
   Broker/Docker automation, and pre-publication version/registry resolution
   checks remain open. No plan file changed; no push, release, or tag action
   taken; the Java reference checkout remains read-only.
+
+# Common MessageExt declared-surface audit — 20261015T090153Z
+
+- Read the pinned Java 5.5.1 `MessageExt.java` source and enumerated its public
+  constructors, host-byte conversion overloads, scalar/system-flag accessors,
+  inherited `Message` methods, and `toString`. Cross-checked each declaration
+  against the Rust owners and invoked fixtures in
+  `PHASE_8_OFFLINE_METHOD_MATRIX.md`; no additional missing declaration
+  surfaced in this class.
+- Updated the Phase 6 audit and release checklist to close this inventory
+  slice only. Broader P18-V01 reconciliation remains open. No plan or Java
+  reference files were modified.
+
+- PASS: `cargo test -p rocketmq-classic-common --test message_decode --locked
+  message_ext_` (4 fixture tests); `git diff --check`.
