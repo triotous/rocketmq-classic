@@ -140,18 +140,18 @@ const STRING_HASH_SET_INITIAL: &[&str] = &[
 
 /// Mutable reserved-property names corresponding to Java's public
 /// `MessageConst.STRING_HASH_SET`.
-pub static STRING_HASH_SET: LazyLock<RwLock<HashSet<String>>> = LazyLock::new(|| {
+pub static STRING_HASH_SET: LazyLock<RwLock<HashSet<Option<String>>>> = LazyLock::new(|| {
     RwLock::new(
         STRING_HASH_SET_INITIAL
             .iter()
-            .map(|property| (*property).to_owned())
+            .map(|property| Some((*property).to_owned()))
             .collect(),
     )
 });
 
-pub(crate) fn is_reserved_user_property(name: &str) -> bool {
+pub(crate) fn is_reserved_user_property(name: Option<&str>) -> bool {
     STRING_HASH_SET
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .contains(name)
+        .contains(&name.map(str::to_owned))
 }

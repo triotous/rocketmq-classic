@@ -924,7 +924,7 @@ fn message_constants_match_java_551() {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .iter()
-            .cloned()
+            .filter_map(|property| property.clone())
             .collect::<Vec<_>>()
     };
     reserved_names.sort();
@@ -1683,12 +1683,13 @@ fn message_public_api_matches_java_551_fixture() {
         );
     }
     let dynamic_reserved_property = "__RMQ_DYNAMIC_RESERVED_FIXTURE__";
+    let dynamic_reserved_key = Some(dynamic_reserved_property.to_owned());
     let dynamic_was_reserved = {
         let mut properties = rocketmq_classic_common::message::constants::STRING_HASH_SET
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let existed = properties.contains(dynamic_reserved_property);
-        properties.insert(dynamic_reserved_property.to_owned());
+        let existed = properties.contains(&dynamic_reserved_key);
+        properties.insert(dynamic_reserved_key.clone());
         existed
     };
     let dynamic_reserved_result =
@@ -1697,16 +1698,68 @@ fn message_public_api_matches_java_551_fixture() {
         rocketmq_classic_common::message::constants::STRING_HASH_SET
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .remove(dynamic_reserved_property);
+            .remove(&dynamic_reserved_key);
     }
     assert_eq!(
         dynamic_reserved_result,
         Err(rocketmq_classic_common::message::MessagePropertyError::ReservedProperty)
     );
+    let null_reserved_was_reserved = {
+        let mut properties = rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let existed = properties.contains(&None);
+        properties.insert(None);
+        existed
+    };
+    let null_reserved_result =
+        Message::default().put_user_property_nullable(None, Some("value".to_owned()));
+    if !null_reserved_was_reserved {
+        rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&None);
+    }
+    assert_eq!(
+        null_reserved_result,
+        Err(rocketmq_classic_common::message::MessagePropertyError::ReservedProperty)
+    );
+    assert_eq!(expected["mutatedNullReservedPropertyPresent"], true);
+    assert_eq!(
+        expected["nullReservedPropertyExceptionClass"],
+        "java.lang.RuntimeException"
+    );
+    let empty_reserved_key = Some(String::new());
+    let empty_reserved_was_reserved = {
+        let mut properties = rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let existed = properties.contains(&empty_reserved_key);
+        properties.insert(empty_reserved_key.clone());
+        existed
+    };
+    let empty_reserved_result = Message::default().put_user_property("", "value");
+    if !empty_reserved_was_reserved {
+        rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&empty_reserved_key);
+    }
+    assert_eq!(
+        empty_reserved_result,
+        Err(rocketmq_classic_common::message::MessagePropertyError::ReservedProperty)
+    );
+    assert_eq!(expected["mutatedEmptyReservedPropertyPresent"], true);
+    assert_eq!(
+        expected["emptyReservedPropertyExceptionClass"],
+        "java.lang.RuntimeException"
+    );
     let keys_was_reserved = rocketmq_classic_common::message::constants::STRING_HASH_SET
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .remove(rocketmq_classic_common::message::constants::PROPERTY_KEYS);
+        .remove(&Some(
+            rocketmq_classic_common::message::constants::PROPERTY_KEYS.to_owned(),
+        ));
     let removed_reserved_result = Message::default().put_user_property(
         rocketmq_classic_common::message::constants::PROPERTY_KEYS,
         "user-value",
@@ -1715,7 +1768,9 @@ fn message_public_api_matches_java_551_fixture() {
         rocketmq_classic_common::message::constants::STRING_HASH_SET
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(rocketmq_classic_common::message::constants::PROPERTY_KEYS.to_owned());
+            .insert(Some(
+                rocketmq_classic_common::message::constants::PROPERTY_KEYS.to_owned(),
+            ));
     }
     assert!(keys_was_reserved);
     assert_eq!(removed_reserved_result, Ok(None));

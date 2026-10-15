@@ -438,10 +438,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   This input boundary is closed; broad Message overload/input/API
   reconciliation remains open P18-V01 work.
 - Common `MessageConst.STRING_HASH_SET` mutation: Rust now exposes a
-  lock-protected mutable set and `putUserProperty` reads its current contents.
-  Invoked Java and Rust fixtures verify add/remove mutations affect reserved
-  property validation. This closes the set-mutation behavior only; broad
-  Common reverse-surface reconciliation remains open P18-V01 work.
+  lock-protected mutable set with nullable members, and `putUserProperty`
+  checks live membership before blank validation. Invoked Java and Rust
+  fixtures verify dynamic additions/removals plus null/empty-string entries;
+  null and empty reserved keys produce Java's reserved-property failure before
+  blank-name validation. Fixture SHA-256:
+  `cd48ccada3c107facb4ec332316ef29e569cca7c50cd3b0711152b7234cd6b98`.
+  This closes that mutable-set behavior slice; broad Common reverse-surface
+  reconciliation remains open P18-V01 work.
 - Common `Message` priority accessors: `priority`/`set_priority` now match the
   pinned Java getter's `-1` fallback and decimal parsing, and setter rejection
   for negative values. Invoked Java/Rust fixtures cover map initialization,

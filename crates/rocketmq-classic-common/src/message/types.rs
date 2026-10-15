@@ -623,10 +623,7 @@ impl Message {
         key: Option<String>,
         value: Option<String>,
     ) -> Result<Option<String>, MessagePropertyError> {
-        if key
-            .as_deref()
-            .is_some_and(crate::message::constants::is_reserved_user_property)
-        {
+        if crate::message::constants::is_reserved_user_property(key.as_deref()) {
             return Err(MessagePropertyError::ReservedProperty);
         }
         let key = key
@@ -645,10 +642,10 @@ impl Message {
     ) -> Result<Option<String>, MessagePropertyError> {
         let key = key.into();
         let value = value.into();
-        validate_property(&key, &value)?;
-        if crate::message::constants::is_reserved_user_property(&key) {
+        if crate::message::constants::is_reserved_user_property(Some(&key)) {
             return Err(MessagePropertyError::ReservedProperty);
         }
+        validate_property(&key, &value)?;
         Ok(self.put_property_value(key, Some(value)))
     }
 
