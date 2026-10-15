@@ -1218,6 +1218,68 @@ impl std::fmt::Display for MessageExt {
     }
 }
 
+/// Client-decoded `MessageExt` view corresponding to Java's
+/// `MessageClientExt`. The wrapped base message retains its physical ID;
+/// `message_id()` resolves the live `UNIQ_KEY` property first, and the Java
+/// subclass's `setMsgId` override remains a no-op.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct MessageClientExt(MessageExt);
+
+impl MessageClientExt {
+    pub fn new(message: MessageExt) -> Self {
+        Self(message)
+    }
+
+    pub fn message_id(&self) -> Option<&str> {
+        self.0
+            .message()
+            .get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .or_else(|| self.0.message_id())
+    }
+
+    /// Java `MessageClientExt.setMsgId` intentionally does nothing.
+    pub fn set_message_id(&mut self, _value: Option<String>) {}
+
+    /// Java `MessageClientExt.getOffsetMsgId` returns the inherited `msgId`.
+    pub fn offset_message_id(&self) -> Option<&str> {
+        self.0.message_id()
+    }
+
+    /// Java `MessageClientExt.setOffsetMsgId` writes the inherited `msgId`.
+    pub fn set_offset_message_id(&mut self, value: Option<String>) {
+        self.0.set_message_id(value);
+    }
+
+    pub fn as_message_ext(&self) -> &MessageExt {
+        &self.0
+    }
+
+    pub fn as_message_ext_mut(&mut self) -> &mut MessageExt {
+        &mut self.0
+    }
+}
+
+impl From<MessageExt> for MessageClientExt {
+    fn from(message: MessageExt) -> Self {
+        Self::new(message)
+    }
+}
+
+impl Deref for MessageClientExt {
+    type Target = MessageExt;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for MessageClientExt {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 fn parse_transient_sys_flag(value: Option<&str>) -> Result<Option<i32>, MessageSysFlagParseError> {
     let Some(value) = value.filter(|value| !value.is_empty()) else {
         return Ok(None);

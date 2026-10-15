@@ -30,7 +30,8 @@ pub use properties::{
     encode_properties, encode_properties_nullable,
 };
 pub use types::{
-    Message, MessageExt, MessageKeyCollectionError, MessageProperties, MessagePropertyError,
-    MessagePropertyParseError, MessageQueue, MessageQueueCompareError, MessageSysFlagParseError,
-    NAME_VALUE_SEPARATOR, NullableMessageProperties, PROPERTY_SEPARATOR, TopicFilterType,
+    Message, MessageClientExt, MessageExt, MessageKeyCollectionError, MessageProperties,
+    MessagePropertyError, MessagePropertyParseError, MessageQueue, MessageQueueCompareError,
+    MessageSysFlagParseError, NAME_VALUE_SEPARATOR, NullableMessageProperties, PROPERTY_SEPARATOR,
+    TopicFilterType,
 };

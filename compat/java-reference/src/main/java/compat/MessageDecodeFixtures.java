@@ -21,8 +21,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.Message;
-import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageClientExt;
+import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageId;
@@ -61,6 +61,7 @@ public final class MessageDecodeFixtures {
             "serverContacted", false,
             "generator", "compat.MessageDecodeFixtures"
         ));
+        root.put("messageClientExtApi", messageClientExtApi());
         root.put("messageExtPublicApi", messageExtPublicApi());
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
@@ -927,6 +928,36 @@ public final class MessageDecodeFixtures {
         expected.put("storeSize", message.getStoreSize());
         expected.put("reconsumeTimes", message.getReconsumeTimes());
         expected.put("preparedTransactionOffset", message.getPreparedTransactionOffset());
+        return expected;
+    }
+
+    private static Map<String, Object> messageClientExtApi() {
+        MessageClientExt message = new MessageClientExt();
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("defaultMessageId", message.getMsgId());
+        expected.put("defaultOffsetMessageId", message.getOffsetMsgId());
+        message.setMsgId("ignored-initial");
+        expected.put("setMessageIdOnDefault", message.getMsgId());
+        expected.put("setMessageIdDoesNotSetOffset", message.getOffsetMsgId());
+        message.setOffsetMsgId("offset-1");
+        expected.put("offsetMessageId", message.getOffsetMsgId());
+        expected.put("messageIdFallsBackToOffset", message.getMsgId());
+        MessageAccessor.putProperty(message, MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-1");
+        expected.put("messageIdPrefersUnique", message.getMsgId());
+        expected.put("offsetRemainsWhenUniqueExists", message.getOffsetMsgId());
+        message.setMsgId("ignored-after-unique");
+        expected.put("setMessageIdDoesNotReplaceUnique", message.getMsgId());
+        MessageAccessor.putProperty(message, MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-2");
+        expected.put("messageIdReadsLiveUniqueProperty", message.getMsgId());
+        message.setOffsetMsgId("offset-2");
+        expected.put("offsetMessageIdReplaced", message.getOffsetMsgId());
+        expected.put("uniqueSurvivesOffsetReplacement", message.getMsgId());
+        MessageAccessor.clearProperty(message, MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX);
+        expected.put("messageIdFallsBackAfterUniqueClear", message.getMsgId());
+        message.setMsgId("ignored-after-clear");
+        expected.put("setMessageIdDoesNotReplaceOffsetFallback", message.getMsgId());
         return expected;
     }
 

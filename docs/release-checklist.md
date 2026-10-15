@@ -521,7 +521,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and `Message::set_nullable_properties`, with nullable lookup/clear APIs and
   encoded-key coverage across compact/stored records, producer send/batch, and
   consumer retry-topic fallback. Current message fixture SHA-256:
-  `dd291975d5c9da29101cbdf8f663fee2089fae9ec75802c78916701f039ad34a`.
+  `195a465e232a4eff25b4b713c4988f3103f1f9835e635371441a83e70b537eeb`.
   The same invoked fixture now calls Java's transfer/correction/origin-ID/MQ2/
   reconsume/max-reconsume/consume-start helper pairs and compares the Rust
   property-constant mappings, including a present null transfer flag. This
@@ -532,6 +532,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Message tags, string keys, wait-store and transaction-ID setters also have
   direct Java/Rust getter checks, including nullable state and overwrite
   behavior.
+  A Rust `MessageClientExt` view now preserves the Java no-op `setMsgId`, live
+  `UNIQ_KEY` getter and mutable offset-ID fallback semantics. Its direct
+  fixture/differential closes that subclass API slice only; broader P18-V01
+  remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

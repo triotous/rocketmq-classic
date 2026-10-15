@@ -4,16 +4,17 @@ use rocketmq_classic_common::{
         BLANK_MAGIC_CODE, CHARSET_UTF8, CompactMessageError, DecodeError, DecodeOptions,
         MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
         MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION,
-        MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageExt, MessageHostAddress,
-        MessageHostAddressBytesError, MessageId, MessageIdError, MessageProperties, MessageVersion,
-        MessageVersionError, PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION,
-        SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
-        client_decodes_with_body, count_inner_messages, create_message_id,
-        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
-        decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
-        decode_properties_nullable, decode_record_properties, encode_compact_message,
-        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
-        encode_nullable_property_entries, encode_properties_nullable,
+        MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageClientExt, MessageExt,
+        MessageHostAddress, MessageHostAddressBytesError, MessageId, MessageIdError,
+        MessageProperties, MessageVersion, MessageVersionError, PHY_POS_POSITION,
+        PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION, TopicFilterType,
+        append_crc32_property, client_decode, client_decodes, client_decodes_with_body,
+        count_inner_messages, create_message_id, create_message_id_from_host_bytes,
+        decode_compact_message, decode_compact_messages, decode_inner_batch, decode_many,
+        decode_many_as_client, decode_message_id, decode_one, decode_properties_nullable,
+        decode_record_properties, encode_compact_message, encode_compact_messages,
+        encode_message_ext, encode_message_ext_uniquely, encode_nullable_property_entries,
+        encode_properties_nullable,
     },
     sysflag::message,
 };
@@ -215,6 +216,87 @@ fn message_ext_scalar_public_api_matches_java_551_fixture() {
     assert_eq!(
         message.prepared_transaction_offset(),
         expected["preparedTransactionOffset"].as_i64().unwrap()
+    );
+}
+
+#[test]
+fn message_client_ext_api_matches_java_551_fixture() {
+    let expected = &fixture()["messageClientExtApi"];
+    let mut message = MessageClientExt::default();
+    assert_eq!(message.message_id(), expected["defaultMessageId"].as_str());
+    assert_eq!(
+        message.offset_message_id(),
+        expected["defaultOffsetMessageId"].as_str()
+    );
+    message.set_message_id(Some("ignored-initial".to_owned()));
+    assert_eq!(
+        message.message_id(),
+        expected["setMessageIdOnDefault"].as_str()
+    );
+    assert_eq!(
+        message.offset_message_id(),
+        expected["setMessageIdDoesNotSetOffset"].as_str()
+    );
+    message.set_offset_message_id(Some("offset-1".to_owned()));
+    assert_eq!(
+        message.offset_message_id(),
+        expected["offsetMessageId"].as_str()
+    );
+    assert_eq!(
+        message.message_id(),
+        expected["messageIdFallsBackToOffset"].as_str()
+    );
+    message
+        .message_mut()
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-1",
+        )
+        .unwrap();
+    assert_eq!(
+        message.message_id(),
+        expected["messageIdPrefersUnique"].as_str()
+    );
+    assert_eq!(
+        message.offset_message_id(),
+        expected["offsetRemainsWhenUniqueExists"].as_str()
+    );
+    message.set_message_id(Some("ignored-after-unique".to_owned()));
+    assert_eq!(
+        message.message_id(),
+        expected["setMessageIdDoesNotReplaceUnique"].as_str()
+    );
+    message
+        .message_mut()
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-2",
+        )
+        .unwrap();
+    assert_eq!(
+        message.message_id(),
+        expected["messageIdReadsLiveUniqueProperty"].as_str()
+    );
+    message.set_offset_message_id(Some("offset-2".to_owned()));
+    assert_eq!(
+        message.offset_message_id(),
+        expected["offsetMessageIdReplaced"].as_str()
+    );
+    assert_eq!(
+        message.message_id(),
+        expected["uniqueSurvivesOffsetReplacement"].as_str()
+    );
+    message.message_mut().clear_system_property(
+        rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+    );
+    assert_eq!(
+        message.message_id(),
+        expected["messageIdFallsBackAfterUniqueClear"].as_str()
+    );
+    message.set_message_id(Some("ignored-after-clear".to_owned()));
+    assert_eq!(
+        message.message_id(),
+        expected["setMessageIdDoesNotReplaceOffsetFallback"].as_str()
     );
 }
 
