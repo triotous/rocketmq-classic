@@ -759,6 +759,19 @@ the required full Phase 18 gates on the final revision.
   Maven verify (37 scenarios and fixture/cross-decodes), format, and diff
   checks pass. The complete workspace gate remains pending on the final P18
   revision.
+- Current-revision server-free P18-V02 follow-up (`0a7c94ca`,
+  `8418d163`, 2026-10-15): after reconciling the 31 modeled request headers
+  with `RpcRequestHeader` equality/hash behavior and updating their call sites,
+  default workspace tests under UTC and all-feature workspace tests pass.
+  Strict all-target/all-feature workspace Clippy, Maven verify (37 scenarios
+  and Java/Rust cross-decodes), comparator self-test and manifest validation,
+  race/leak smoke (16 cases × 3), fuzz smoke (104 frame seeds, 10 message
+  seeds, 1,824 mutations), release examples, workspace benchmark compilation,
+  locked Cargo metadata, metadata/license/dependency checks, seven package
+  listings, UTC/Asia-Taipei near-time ClientID differential, formatting, and
+  diff checks pass. This closes the server-free P18-V02 gates on these commits
+  only; broad P18-V01, current-revision GitHub Ubuntu evidence, P18-V04 CI
+  evidence, and Phase 19 Broker/Docker scenarios remain open.
 
 ## Package graph and metadata
 
