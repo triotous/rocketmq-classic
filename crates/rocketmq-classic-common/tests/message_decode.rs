@@ -188,6 +188,17 @@ fn message_ext_socket_address_api_matches_java_551() {
     let born = MessageHostAddress::from_ip_address(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
     let store = MessageHostAddress::unresolved("broker.invalid", 10912);
     let mut message = MessageExt::default();
+    assert_eq!(
+        message.broker_name(),
+        expected["brokerNameDefault"].as_str()
+    );
+    message.set_broker_name(Some("broker-a".to_owned()));
+    assert_eq!(message.broker_name(), expected["brokerNameSet"].as_str());
+    message.set_broker_name(None);
+    assert_eq!(
+        message.broker_name(),
+        expected["brokerNameCleared"].as_str()
+    );
     message.set_born_host(Some(born.clone()));
     message.set_store_host(Some(store.clone()));
 

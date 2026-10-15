@@ -483,6 +483,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   property codec input slice only; P18-V01 remains open. Current message
   fixture SHA-256:
   `b4ae563511220dbf008a4ef0bc30d82f2c325005e36eb52b15a5ee87bff59d40`.
+- Common `MessageExt` broker-name accessors now have direct Java fixture and
+  Rust getter/setter coverage for default, non-null and cleared values. This
+  closes this accessor slice only; P18-V01 remains open. Current message fixture
+  SHA-256: `bb5fd8ba6d671739bb352e7780f29661e759c53dce7fe3887e1726149660ad1e`.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

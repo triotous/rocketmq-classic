@@ -690,10 +690,15 @@ public final class MessageDecodeFixtures {
             InetAddress.getByAddress(new byte[] {(byte) 192, 0, 2, 10}), 10911);
         InetSocketAddress unresolved = InetSocketAddress.createUnresolved("broker.invalid", 10912);
         MessageExt message = new MessageExt();
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("brokerNameDefault", message.getBrokerName());
+        message.setBrokerName("broker-a");
+        expected.put("brokerNameSet", message.getBrokerName());
+        message.setBrokerName(null);
+        expected.put("brokerNameCleared", message.getBrokerName());
         message.setBornHost(born);
         message.setStoreHost(unresolved);
 
-        Map<String, Object> expected = new TreeMap<>();
         expected.put("bornHostClass", message.getBornHost().getClass().getName());
         expected.put("bornHostToString", message.getBornHost().toString());
         expected.put("bornHostString", message.getBornHostString());
