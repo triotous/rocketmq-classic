@@ -31,3 +31,24 @@ Code/test/fixture/compatibility-matrix commit: `c0878056`. Broad P18-V01,
 current GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation
 and release version/registry resolution remain open. No plan, push, tag,
 publication, deployment or live Broker action occurred.
+
+2026-10-15 18:09 UTC — closed a second P18-V01 Remoting serialization mismatch.
+
+Pinned Java 5.5.1 `RocketMQSerializable.writeStr(true, key)` writes the UTF-8
+key byte count with `setShort`, retaining only its low 16 bits while keeping
+the full key bytes. Added an oracle frame with a 32,768-byte key; its wire
+length is `0x8000` (signed `-32768`). The Rust regression first failed with
+`FieldTooWide("ext field key")`; the encoder now matches Java byte-for-byte.
+The fixture is in `fixtures/remoting/edge-cases/` because the intentionally
+wrapped length makes it invalid for ordinary decoding.
+
+Validation passed: `cargo test -p rocketmq-classic-remoting --all-features
+--locked` (96 unit, 8 codec, 1 fuzz regression, 5 security, 100 transport and
+5 doctests); strict all-target/all-feature Remoting Clippy; Maven verify (37
+scenarios); rustfmt, diff checks and fixture comparison against freshly
+generated Java output. Fixture SHA-256:
+`7af64d29f396b2e7a1dd70a57066920890559fce1f170844ca8d4e1ba3a453ca`. Commit
+`c62e0740` closes this private-key-length slice only. Broad P18-V01, current
+GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and
+release version/registry resolution remain open. No plan, push, tag,
+publication, deployment or live Broker action occurred.

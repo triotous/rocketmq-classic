@@ -1246,3 +1246,18 @@ Before any publication:
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and
   release version/registry resolution remain open. Fixture SHA-256:
   `033e89778d92def6f5e1875211ea4ca7b59facaf813a72a57de8c386c5e4acf8`.
+
+- P18-V01 Remoting private key-length narrowing (`c62e0740`, 2026-10-15):
+  pinned Java 5.5.1 `RocketMQSerializable.writeStr(true, key)` stores the UTF-8
+  key length with `setShort`. A 32,768-byte key therefore writes `0x8000`
+  while retaining all key bytes. Rust now matches the emitted Java frame;
+  before the fix its encoder returned `FieldTooWide("ext field key")`. The
+  direct Java fixture lives under `fixtures/remoting/edge-cases/` because its
+  signed length is negative and the case verifies encoding. Remoting
+  all-feature tests pass (96 unit, 8 codec, 1 fuzz regression, 5 security,
+  100 transport and 5 doctests); strict Remoting Clippy, Maven verify (37
+  scenarios), formatting, diff checks and fresh-fixture comparison pass.
+  This closes the private key-length slice only; broad P18-V01, current GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and release
+  version/registry resolution remain open. Fixture SHA-256:
+  `7af64d29f396b2e7a1dd70a57066920890559fce1f170844ca8d4e1ba3a453ca`.
