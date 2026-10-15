@@ -819,6 +819,19 @@ the required full Phase 18 gates on the final revision.
   P18-V02 server-free gates are complete on this revision. P18-V01, current
   GitHub Ubuntu/P18-V04 CI evidence, Phase 19 Broker/Docker automation, and
   pre-publication version/registry resolution checks remain open.
+- Current-revision server-free P18-V02 rerun (`78bf82ca`, 2026-10-15), after
+  the Netty frame-limit parity change: default and all-feature workspace tests,
+  strict all-target/all-feature Clippy, Maven verify (37 scenarios and
+  Java/Rust cross-decodes, including default/configured frame-limit probes),
+  comparator self-test and 37-scenario manifest, deterministic race/leak smoke
+  (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824
+  mutations), release examples, workspace benchmark compilation, locked Cargo
+  metadata, workspace metadata/license/dependency checks, all seven package
+  listings, unique-ID fixture tests under UTC and Asia/Taipei, formatting, and
+  diff checks pass. P18-V02 server-free gates are complete on `78bf82ca`.
+  Broad P18-V01, current GitHub Ubuntu/P18-V04 CI evidence, Phase 19 local
+  Broker/Docker automation, and pre-publication version/registry resolution
+  checks remain open.
 - Common `MessageExt` source-surface sweep (2026-10-15): all public Java
   declarations, including both socket-address buffer helpers and inherited
   `Message` behavior, have Rust owner mappings and invoked fixture coverage in
