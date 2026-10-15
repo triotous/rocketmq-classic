@@ -351,7 +351,8 @@ mod linux {
     const MAX_FRAMES: usize = 128;
     const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(5);
     const THREAD_SIGNAL_TIMEOUT: Duration = Duration::from_millis(100);
-    const SIGNAL_CANDIDATES: [libc::c_int; 2] = [libc::SIGWINCH, libc::SIGURG];
+    // SIGCHLD is another default-ignore fallback when the common signals are unavailable.
+    const SIGNAL_CANDIDATES: [libc::c_int; 3] = [libc::SIGWINCH, libc::SIGURG, libc::SIGCHLD];
     const MAX_FRAME_GAP: u64 = 1024 * 1024;
     const MAX_STACK_SPAN: u64 = 32 * 1024 * 1024;
 
@@ -528,16 +529,19 @@ mod linux {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
-    fn install_signal_handler(threads: &[ThreadInfo]) -> io::Result<SignalHandler> {
-        for signal in SIGNAL_CANDIDATES {
-            let mask = 1u64 << (signal - 1);
-            if threads
+    fn unblocked_signal_candidates(
+        threads: &[ThreadInfo],
+    ) -> impl Iterator<Item = libc::c_int> + '_ {
+        SIGNAL_CANDIDATES.iter().copied().filter(move |signal| {
+            let mask = 1u64 << (*signal - 1);
+            !threads
                 .iter()
                 .any(|thread| thread.blocked_signals & mask != 0)
-            {
-                continue;
-            }
+        })
+    }
 
+    fn install_signal_handler(threads: &[ThreadInfo]) -> io::Result<SignalHandler> {
+        for signal in unblocked_signal_candidates(threads) {
             let mut previous = unsafe { mem::zeroed::<libc::sigaction>() };
             if unsafe { libc::sigaction(signal, ptr::null(), &mut previous) } != 0 {
                 continue;
@@ -738,6 +742,40 @@ mod linux {
             .collect();
         unsafe { libc::free(symbols.cast()) };
         strings
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{SIGNAL_CANDIDATES, ThreadInfo, unblocked_signal_candidates};
+
+        #[test]
+        fn signal_candidate_falls_back_to_sigchld_when_common_signals_are_blocked() {
+            let blocked_signals = (1u64 << (libc::SIGWINCH - 1)) | (1u64 << (libc::SIGURG - 1));
+            let threads = [ThreadInfo {
+                id: 1,
+                name: "test".into(),
+                blocked_signals,
+            }];
+
+            assert_eq!(
+                unblocked_signal_candidates(&threads).collect::<Vec<_>>(),
+                vec![libc::SIGCHLD]
+            );
+        }
+
+        #[test]
+        fn signal_candidate_selection_rejects_when_every_candidate_is_blocked() {
+            let blocked_signals = SIGNAL_CANDIDATES
+                .iter()
+                .fold(0u64, |mask, signal| mask | (1u64 << (*signal - 1)));
+            let threads = [ThreadInfo {
+                id: 1,
+                name: "test".into(),
+                blocked_signals,
+            }];
+
+            assert_eq!(unblocked_signal_candidates(&threads).count(), 0);
+        }
     }
 }
 
