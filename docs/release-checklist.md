@@ -440,6 +440,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Invoked Java and Rust fixtures verify add/remove mutations affect reserved
   property validation. This closes the set-mutation behavior only; broad
   Common reverse-surface reconciliation remains open P18-V01 work.
+- Common `Message` priority accessors: `priority`/`set_priority` now match the
+  pinned Java getter's `-1` fallback and decimal parsing, and setter rejection
+  for negative values. Invoked Java/Rust fixtures cover map initialization,
+  malformed/overflow/Unicode-digit inputs and no mutation after rejection.
+  This closes that API slice only; P18-V01 remains open.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

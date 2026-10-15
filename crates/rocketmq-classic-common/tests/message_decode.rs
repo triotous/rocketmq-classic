@@ -386,6 +386,58 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(expected["nonBreakingSpaceUserPropertyNameAccepted"], true);
     assert_eq!(expected["emSpaceUserPropertyValueAccepted"], true);
     assert_eq!(expected["asciiControlOnlyUserPropertyRejected"], true);
+    let mut priority = Message::default();
+    assert_eq!(
+        priority.priority(),
+        expected["absentPriority"].as_i64().unwrap() as i32
+    );
+    assert_eq!(expected["absentPriorityInitializesProperties"], true);
+    assert_eq!(
+        priority
+            .get_properties_mut()
+            .map(|properties| properties.is_empty()),
+        Some(true)
+    );
+    assert_eq!(priority.set_priority(17), Ok(()));
+    assert_eq!(
+        priority.priority(),
+        expected["setPriority"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        priority.get_property(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY),
+        Some(expected["setPriorityProperty"].as_str().unwrap())
+    );
+    assert_eq!(
+        priority.set_priority(-1),
+        Err(rocketmq_classic_common::message::MessagePropertyError::NegativePriority)
+    );
+    assert_eq!(expected["negativePriorityRejected"], true);
+    assert_eq!(
+        rocketmq_classic_common::message::MessagePropertyError::NegativePriority.to_string(),
+        expected["negativePriorityErrorMessage"].as_str().unwrap()
+    );
+    assert_eq!(
+        priority.priority(),
+        expected["priorityAfterNegative"].as_i64().unwrap() as i32
+    );
+    assert_eq!(priority.set_priority(0), Ok(()));
+    assert_eq!(
+        priority.priority(),
+        expected["zeroPriority"].as_i64().unwrap() as i32
+    );
+    for input in expected["priorityInputs"].as_array().unwrap() {
+        let mut candidate = Message::default();
+        candidate
+            .set_system_property(
+                rocketmq_classic_common::message::constants::PROPERTY_PRIORITY,
+                input["input"].as_str().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            candidate.priority(),
+            input["priority"].as_i64().unwrap() as i32
+        );
+    }
     let dynamic_reserved_property = "__RMQ_DYNAMIC_RESERVED_FIXTURE__";
     let dynamic_was_reserved = {
         let mut properties = rocketmq_classic_common::message::constants::STRING_HASH_SET

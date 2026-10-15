@@ -1167,3 +1167,11 @@ The invoked Java fixture confirms non-breaking-space keys and em-space values ar
 | `MessageConst.STRING_HASH_SET` is a public mutable `HashSet<String>` consulted by `Message.putUserProperty` | `message::constants::STRING_HASH_SET` is a process-wide `LazyLock<RwLock<HashSet<String>>>`; each user-property insertion reads the current set |
 
 The invoked Java fixture adds a custom reserved name and removes `KEYS`, verifies that `putUserProperty` observes each mutation, then restores the set. The Rust fixture performs the same insert/remove behavior under the lock. This closes the mutable reserved-set behavior only; the remaining Common public API and P18-V01 audit stay open.
+
+## Common public API: Message priority
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `Message.setPriority(int)` rejects negative values; `Message.getPriority()` parses `PROPERTY_PRIORITY` with `NumberUtils.toInt(..., -1)` | `Message::set_priority` returns `MessagePropertyError::NegativePriority` for negatives; `Message::priority` returns `-1` for absent, malformed, or overflowing values and uses the Java-compatible decimal parser |
+
+The invoked Java fixture and Rust regression cover absent-property map initialization, zero/positive/negative setter values, no mutation after rejected negative input, signed `i32` boundaries, malformed and whitespace inputs, overflow, and Arabic-Indic decimal digits. This closes the priority accessor slice only; broad Common/P18-V01 reconciliation remains open.

@@ -31,6 +31,8 @@ pub enum MessagePropertyError {
     EmptyValue,
     #[error("user property name is reserved by RocketMQ")]
     ReservedProperty,
+    #[error("The priority must be greater than or equal to 0")]
+    NegativePriority,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -475,6 +477,21 @@ impl Message {
             crate::message::constants::PROPERTY_DELAY_TIME_LEVEL,
             Some(level.to_string()),
         );
+    }
+    pub fn priority(&self) -> i32 {
+        self.get_property(crate::message::constants::PROPERTY_PRIORITY)
+            .and_then(parse_java_i32)
+            .unwrap_or(-1)
+    }
+    pub fn set_priority(&mut self, priority: i32) -> Result<(), MessagePropertyError> {
+        if priority < 0 {
+            return Err(MessagePropertyError::NegativePriority);
+        }
+        self.put_property_value(
+            crate::message::constants::PROPERTY_PRIORITY,
+            Some(priority.to_string()),
+        );
+        Ok(())
     }
     pub fn delay_time_sec(&self) -> Result<i64, MessagePropertyParseError> {
         self.parse_i64_property(crate::message::constants::PROPERTY_TIMER_DELAY_SEC)

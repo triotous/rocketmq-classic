@@ -251,6 +251,31 @@ public final class MessageDecodeFixtures {
         expected.put("buyerId", message.getBuyerId());
         expected.put("instanceIdProperty", message.getProperty("INSTANCE_ID"));
 
+        Message priority = new Message();
+        expected.put("absentPriority", priority.getPriority());
+        expected.put("absentPriorityInitializesProperties", priority.getProperties() != null);
+        priority.setPriority(17);
+        expected.put("setPriority", priority.getPriority());
+        expected.put("setPriorityProperty", priority.getProperty(MessageConst.PROPERTY_PRIORITY));
+        expected.put("negativePriorityRejected", throwsIllegalArgument(() -> priority.setPriority(-1)));
+        expected.put("negativePriorityErrorMessage",
+            illegalArgumentMessage(() -> priority.setPriority(-1)));
+        expected.put("priorityAfterNegative", priority.getPriority());
+        priority.setPriority(0);
+        expected.put("zeroPriority", priority.getPriority());
+
+        List<Map<String, Object>> priorityInputs = new ArrayList<>();
+        for (String value : List.of("", " ", "+", "++1", "+1", "-1", "2147483647",
+            "-2147483648", "2147483648", "-2147483649", "\u0661\u0662")) {
+            Message input = new Message();
+            MessageAccessor.putProperty(input, MessageConst.PROPERTY_PRIORITY, value);
+            Map<String, Object> result = new TreeMap<>();
+            result.put("input", value);
+            result.put("priority", input.getPriority());
+            priorityInputs.add(result);
+        }
+        expected.put("priorityInputs", priorityInputs);
+
         message.setDelayTimeLevel(-7);
         message.setDelayTimeSec(Long.MIN_VALUE);
         message.setDelayTimeMs(9007199254740993L);
@@ -341,6 +366,15 @@ public final class MessageDecodeFixtures {
             return false;
         } catch (IllegalArgumentException expected) {
             return true;
+        }
+    }
+
+    private static String illegalArgumentMessage(Runnable action) {
+        try {
+            action.run();
+            return null;
+        } catch (IllegalArgumentException expected) {
+            return expected.getMessage();
         }
     }
 
