@@ -20,7 +20,7 @@ use rocketmq_classic_common::{
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Mutex;
 
 // These fixtures both inspect or mutate the process-wide Java-compatible
@@ -532,6 +532,8 @@ fn message_ext_socket_address_api_matches_java_551() {
     let fixture = fixture();
     let expected = &fixture["messageExtHostApi"];
     let born = MessageHostAddress::from_ip_address(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
+    let born_socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
+    let from_socket_addr = MessageHostAddress::from_socket_addr(born_socket_addr);
     let store = MessageHostAddress::unresolved("broker.invalid", 10912);
     let mut message = MessageExt::default();
     assert_eq!(
@@ -550,6 +552,20 @@ fn message_ext_socket_address_api_matches_java_551() {
 
     assert_eq!(expected["bornHostClass"], "java.net.InetSocketAddress");
     assert_eq!(born.to_string(), expected["bornHostToString"]);
+    assert_eq!(
+        born.ip_address(),
+        Some(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)))
+    );
+    assert!(born.is_resolved());
+    assert_eq!(born.socket_addr(), Some(born_socket_addr));
+    assert_eq!(from_socket_addr.to_string(), expected["bornHostToString"]);
+    assert_eq!(
+        from_socket_addr.host_name(),
+        expected["bornHostNameString"].as_str().unwrap()
+    );
+    assert_eq!(from_socket_addr.ip_address(), Some(born_socket_addr.ip()));
+    assert!(from_socket_addr.is_resolved());
+    assert_eq!(from_socket_addr.socket_addr(), Some(born_socket_addr));
     assert_eq!(
         message.born_host_string().as_deref(),
         expected["bornHostString"].as_str()
@@ -589,6 +605,8 @@ fn message_ext_socket_address_api_matches_java_551() {
     assert_eq!(expected["storeHostClass"], "java.net.InetSocketAddress");
     assert_eq!(store.to_string(), expected["storeHostToString"]);
     assert!(!store.is_resolved());
+    assert_eq!(store.ip_address(), None);
+    assert_eq!(store.socket_addr(), None);
     assert_eq!(store.socket_address_string(), None);
     assert_eq!(expected["storeHostUnresolved"], true);
     assert_eq!(expected["storeHostGetterRetainsObject"], true);
