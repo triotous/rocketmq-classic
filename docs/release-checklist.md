@@ -1358,6 +1358,37 @@ Before any publication:
   workspace check and strict Clippy, Maven `verify` (37 scenarios and fixture
   checks), comparator self-test and 37-scenario manifest, deterministic
   race/leak smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message
+  seeds, 1,856 bounded mutations), release examples, facade offline benchmark
+  compilation, locked Cargo metadata, workspace metadata/license/dependency
+  checks, seven package listings with LICENSE/NOTICE, Asia/Taipei Unique ID
+  fixture, formatting, and diff checks pass. This closes local server-free
+  P18-V02 only. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment/live Broker checks remain
+  Phase 19 manual validation.
+
+- P18-V01 TLS property-file reload timing (`83afee2a`, 2026-10-15, pinned
+  Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`): the invoked Java
+  fixture changes `tls.test.mode.enable` across three context builds and
+  confirms `true → false → true`; it also confirms that an omitted
+  `tls.client.authServer` property retains its previous value. Rust reloads a
+  retained file source immediately before each new RemotingClient builds its
+  TLS connector; an existing client keeps its constructed settings. Clones of
+  one `TlsConfig` share the last-loaded values. Java's TLS values are
+  process-static, while separately created Rust `TlsConfig` sources retain
+  independent explicit property maps; that cross-config boundary stays in the
+  broad P18-V01 audit. The Rust differential
+  `java_tls_property_file_is_reloaded_for_each_client_context` matches the
+  fixture. Updated TLS fixture SHA-256 values: defaults
+  `c5db30257df68c1e1926a811549bb534210a4e3a70df95aed1cde3195c764528`,
+  system properties
+  `099916a84c78f2b5b1f4b434eec904cc556779271e43db39831ae7208f7d8951`.
+
+- Current-revision server-free P18-V02 rerun on code revision `83afee2a`
+  (2026-10-15): default and all-feature workspace tests, all-target/all-feature
+  workspace check and strict Clippy, Maven `verify` (37 scenarios and fixture
+  checks), comparator self-test and 37-scenario manifest, deterministic
+  race/leak smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message
   seeds, 1,856 bounded mutations), release examples, offline benchmark
   compilation, locked Cargo metadata, workspace metadata/license/dependency
   checks, seven package listings with LICENSE/NOTICE, Asia/Taipei Unique ID
