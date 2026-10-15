@@ -838,6 +838,18 @@ the required full Phase 18 gates on the final revision.
   Default/all-feature workspace tests, strict all-target/all-feature Clippy,
   formatting, and diff checks pass. This closes those header exports only;
   broad P18-V01 remains open.
+- Physical message-ID decoder parity (`fa6c0ff0`, 2026-10-15): Producer, Push,
+  and Pull `view_message` now use the Java-mapped Common decoder. Pinned Java
+  `UtilAll.string2bytes` turns an invalid nibble into `0xFF`; scripted facade
+  tests mutate the physical ID's final nibble to `G` and verify `VIEW_MESSAGE_BY_ID`
+  with offset `255`, including the Producer's later unique-key fallback. The
+  duplicate Core parser and Rust-only DTO/errors are removed with a compile-fail
+  export check. Default/all-feature workspace tests, strict Clippy, Maven verify
+  (37 scenarios/cross-decodes), comparator/manifest, race/leak (16 × 3), fuzz
+  smoke (1,824 mutations), release examples, benchmark compilation, metadata,
+  format, and diff checks pass on this revision. This closes only the decoder
+  and view-path slice; broad P18-V01 and current-revision GitHub Ubuntu/P18-V04
+  evidence remain open.
 
 ## Package graph and metadata
 
