@@ -710,6 +710,41 @@ async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
 }
 
 #[tokio::test]
+async fn p3_nameserver_scan_setting_is_read_at_start_time() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let client = RemotingClient::with_config(ClientConfig {
+        connect_timeout: 40,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    assert!(!client.get_scan_available_nameserver());
+    client.update_name_server_address_list(vec![address.to_string()]);
+    client.set_scan_available_nameserver(true);
+    assert!(client.get_scan_available_nameserver());
+
+    client.start().unwrap();
+    let (stream, _) = tokio::time::timeout(Duration::from_millis(250), listener.accept())
+        .await
+        .expect("start-time config update should schedule an immediate scan")
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !client
+            .get_available_name_srv_list()
+            .contains(&address.to_string())
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+
+    client.shutdown().await;
+    drop(stream);
+}
+
+#[tokio::test]
 async fn p3_nameserver_update_prunes_availability_on_next_scan() {
     async fn peer() -> (String, tokio::task::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

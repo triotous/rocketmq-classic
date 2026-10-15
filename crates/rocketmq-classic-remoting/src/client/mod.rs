@@ -144,6 +144,7 @@ struct ClientInner {
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
+    scan_available_nameserver: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
@@ -629,6 +630,7 @@ impl RemotingClient {
         let close_socket_if_timeout = config.close_socket_if_timeout;
         let enable_reconnect_for_go_away = config.enable_reconnect_for_go_away;
         let disable_callback_executor = config.disable_callback_executor;
+        let scan_available_nameserver = config.scan_available_nameserver;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -660,6 +662,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
+            scan_available_nameserver: AtomicBool::new(scan_available_nameserver),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender: callback_sender.clone(),
@@ -730,6 +733,18 @@ impl RemotingClient {
             .store(disabled, Ordering::Release);
     }
 
+    /// Returns whether NameServer reachability scans are enabled in the config view.
+    pub fn get_scan_available_nameserver(&self) -> bool {
+        self.inner.scan_available_nameserver.load(Ordering::Acquire)
+    }
+
+    /// Updates whether `start()` schedules NameServer reachability scans.
+    pub fn set_scan_available_nameserver(&self, enabled: bool) {
+        self.inner
+            .scan_available_nameserver
+            .store(enabled, Ordering::Release);
+    }
+
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
@@ -767,6 +782,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
+            scan_available_nameserver: AtomicBool::new(true),
             config: ClientConfig {
                 transport: security.clone(),
                 ..ClientConfig::default()
@@ -850,7 +866,7 @@ impl RemotingClient {
             Arc::downgrade(&self.inner),
             self.inner.shutdown.subscribe(),
         )));
-        if self.inner.config.scan_available_nameserver {
+        if self.inner.scan_available_nameserver.load(Ordering::Acquire) {
             self.inner.spawn(tokio::spawn(scan_available_name_servers(
                 Arc::downgrade(&self.inner),
                 self.inner.shutdown.subscribe(),
@@ -3425,6 +3441,7 @@ mod tests {
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
+            scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),

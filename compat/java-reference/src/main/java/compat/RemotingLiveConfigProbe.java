@@ -56,6 +56,7 @@ public final class RemotingLiveConfigProbe {
         }
         verifyGoAwayReconnectSetting();
         verifyCallbackExecutorSetting();
+        verifyScanAvailableNameServerSetting();
         System.out.println("Remoting live config mutation verified");
     }
 
@@ -81,6 +82,26 @@ public final class RemotingLiveConfigProbe {
         } finally {
             client.shutdown();
             custom.shutdown();
+        }
+    }
+
+    private static void verifyScanAvailableNameServerSetting() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setScanAvailableNameSrv(false);
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            server.setSoTimeout(3000);
+            client.updateNameServerAddressList(
+                java.util.Collections.singletonList("127.0.0.1:" + server.getLocalPort()));
+            config.setScanAvailableNameSrv(true);
+            client.start();
+            try (Socket accepted = server.accept()) {
+                if (!accepted.isConnected()) {
+                    throw new IllegalStateException("start-time scan did not establish its probe connection");
+                }
+            }
+        } finally {
+            client.shutdown();
         }
     }
 
