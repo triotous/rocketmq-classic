@@ -1,0 +1,8 @@
+# Phase 18 continuation — Message property compatibility
+
+- Started from clean branch `phase/19-phase-18-compatibility-release-gate` at `e8fa4234`.
+- Re-read the Phase 18 plan and Rust coding workflow. The objective remains full Java 5.5.1 compatibility, with API/setting parity and matching observable flows; plans remain unchanged.
+- Reconfirmed pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`: `MessageAccessor.putProperty` and `clearProperty` delegate to a `HashMap` that accepts a null key; `MessageDecoder.messageProperties2String` serializes it as the literal key `null`. `MessageAccessor.cloneMessage` shares body and property references and does not copy `transactionId`.
+- Planned next: add invoked Java fixture and Rust differential for a null property key, then implement storage/lookup/removal and cover every message-to-wire path. Keep clone semantics as a separate compatibility slice.
+- Added invoked Java cases for null-key lookup, presence, clear, null value, and property-string encoding. A first direct exec used stale compiled classes and left the fixture hash unchanged; after `mvn -q -o -f compat/java-reference/pom.xml test-compile`, regeneration succeeded. Current message fixture SHA-256: `e774ee6cd0ef2b9538f648d93c87c75d0ddb84c14c081f1dc2279163a05ef9f2`.
+- PASS: `mvn -q -o -f compat/java-reference/pom.xml verify` completed; all pinned Java fixture drift checks passed, including 37 scenarios, the updated message fixture, and Java decoding of Rust-generated frames. `git diff --check` passed.
