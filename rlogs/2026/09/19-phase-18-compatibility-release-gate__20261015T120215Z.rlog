@@ -60,3 +60,6 @@
 - Updated the release checklist to identify these earlier Phase 3 decisions as
   historical and preserve the full P18-V01 audit as open local parity work.
 - Documentation-only correction; `git diff --check` is the validation gate.
+- Follow-up consistency pass: the Java compatibility summary and known-
+  differences index now mark remaining Phase 3 disposition labels as historical
+  where P18-V01 still needs to verify current API, setting and behavior parity.
