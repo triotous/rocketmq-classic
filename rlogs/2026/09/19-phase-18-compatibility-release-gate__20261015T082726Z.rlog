@@ -1,0 +1,13 @@
+# Phase 18 Message clone alias implementation and server-free gate rerun — 20261015T082726Z
+
+- Implemented `Message::clone_message()` with shared, lock-protected body/property storage. `set_body`/`set_properties` replace only the receiver's storage; ordinary Rust `Clone` remains a deep independent copy. Safe body/property accessors use guards or owned strings so Rust does not expose references beyond a lock guard.
+- Extended the Rust message differential to cover bidirectional body/property mutations and setter detachment against the invoked Java 5.5.1 `messagePublicApi` fixture. Fixture SHA-256: `b9f6f527720c425b17af57367a524f65e1f16da20acfc369502d64fa37b821e7`.
+- Updated `PHASE_8_OFFLINE_METHOD_MATRIX.md` and `docs/release-checklist.md` to record alias parity, ordinary `Clone` behavior, and remaining Phase 18/19 gates. No plan changed.
+- Fixed two strict-Clippy findings and applied rustfmt.
+- PASS: `cargo test --workspace --locked`; `cargo test --workspace --all-features --locked`; `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all -- --check`; `git diff --check`.
+- PASS: `mvn -f compat/java-reference/pom.xml verify` (37 scenarios and fixture/cross-decodes); differential comparator self-test; 37-scenario manifest validation.
+- PASS: deterministic race/leak smoke (16 cases × 3); fuzz smoke (104 frame seeds, 10 message seeds, 1,824 bounded mutations); release example build; workspace benchmark compilation.
+- PASS: locked Cargo metadata; workspace metadata/license/dependency check; seven package listings; unique-ID fixture test under `TZ=Asia/Taipei`.
+- Code commit: `cfed06f6 fix(message): preserve Java cloneMessage alias semantics`.
+- Remaining gates: broad bidirectional P18-V01 Java/Rust source/API/settings/input/error/control-flow/reverse-export audit; current-revision GitHub Ubuntu/P18-V04 CI evidence; Phase 19 local Docker/Broker automation; pre-publication version/registry resolution checks. Deployment-only owner checks remain separately tracked.
+- No push, release, or tag action taken; the Java reference checkout remains read-only.

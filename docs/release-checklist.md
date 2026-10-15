@@ -726,12 +726,15 @@ the required full Phase 18 gates on the final revision.
 - The public `MessageAccessor.cloneMessage` helper now maps directly to
   `Message::clone_message`. Its invoked Java `messagePublicApi` fixture and Rust
   differential check copied topic/body/flag/property values, distinct message
-  ownership, omitted transaction ID, and unchanged source transaction ID.
+  identity, omitted transaction ID, and unchanged source transaction ID.
   Producer selector preparation uses this same projection. The Java fixture
-  now confirms shared body-array/property-map identity, bidirectional mutation
+  confirms shared body-array/property-map identity, bidirectional mutation
   visibility, and per-message detachment after `setBody`/`setProperties`.
-  Rust still deep-owns those values, so direct alias parity remains open P18-V01
-  work. Current message fixture SHA-256:
+  Rust `clone_message()` now shares synchronized body/property storage and the
+  replacement setters detach the receiver; ordinary Rust `Clone` remains a
+  deep, independent copy. Rust accessors use borrow guards or owned property
+  strings to keep those alias semantics safe. This closes the direct alias
+  slice only; broad P18-V01 remains open. Current message fixture SHA-256:
   `b9f6f527720c425b17af57367a524f65e1f16da20acfc369502d64fa37b821e7`.
   The current-revision P18-V02 rerun is recorded below; broad P18-V01, GitHub
   Ubuntu evidence, and Phase 19 gates remain open.
@@ -773,6 +776,19 @@ the required full Phase 18 gates on the final revision.
   diff checks pass. This closes the server-free P18-V02 gates on these commits
   only; broad P18-V01, current-revision GitHub Ubuntu evidence, P18-V04 CI
   evidence, and Phase 19 Broker/Docker scenarios remain open.
+
+- Current-revision server-free P18-V02 run (`cfed06f6`, 2026-10-15): default
+  and all-feature workspace tests, strict all-target/all-feature Clippy, pinned
+  Maven `verify` (37 scenarios and fixture/cross-decodes), differential
+  comparator self-test and 37-scenario manifest, deterministic race/leak smoke
+  (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824
+  mutations), release examples, workspace benchmark compilation, locked Cargo
+  metadata, workspace metadata/license/dependency checks, seven package
+  listings, Asia/Taipei unique-ID regression, formatting, and diff checks pass.
+  The direct `cloneMessage` alias behavior is covered in this run. Broad
+  P18-V01, current-revision GitHub Ubuntu/P18-V04 CI evidence, Phase 19 local
+  Broker/Docker automation, and pre-publication version/registry resolution
+  checks remain open.
 
 ## Package graph and metadata
 
