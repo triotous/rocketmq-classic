@@ -3,6 +3,7 @@ package compat;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -57,6 +58,7 @@ public final class RemotingLiveConfigProbe {
         verifyGoAwayReconnectSetting();
         verifyCallbackExecutorSetting();
         verifyScanAvailableNameServerSetting();
+        verifyClientWorkerThreadsSetting();
         System.out.println("Remoting live config mutation verified");
     }
 
@@ -99,6 +101,31 @@ public final class RemotingLiveConfigProbe {
                 if (!accepted.isConnected()) {
                     throw new IllegalStateException("start-time scan did not establish its probe connection");
                 }
+            }
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static void verifyClientWorkerThreadsSetting() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setClientWorkerThreads(1);
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try {
+            config.setClientWorkerThreads(3);
+            client.start();
+            Field field = NettyRemotingClient.class.getDeclaredField("defaultEventExecutorGroup");
+            field.setAccessible(true);
+            Object executorGroup = field.get(client);
+            if (!(executorGroup instanceof Iterable<?>)) {
+                throw new IllegalStateException("client worker executor group was not initialized");
+            }
+            int count = 0;
+            for (Object ignored : (Iterable<?>) executorGroup) {
+                count++;
+            }
+            if (count != 3) {
+                throw new IllegalStateException("start did not use the live worker count: " + count);
             }
         } finally {
             client.shutdown();

@@ -12,7 +12,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering},
     },
 };
 
@@ -144,6 +144,7 @@ struct ClientInner {
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
+    client_worker_threads: AtomicUsize,
     scan_available_nameserver: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
@@ -662,6 +663,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
+            client_worker_threads: AtomicUsize::new(config.worker_threads),
             scan_available_nameserver: AtomicBool::new(scan_available_nameserver),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
@@ -733,6 +735,18 @@ impl RemotingClient {
             .store(disabled, Ordering::Release);
     }
 
+    /// Returns the worker count used when the client starts its request workers.
+    pub fn get_client_worker_threads(&self) -> usize {
+        self.inner.client_worker_threads.load(Ordering::Acquire)
+    }
+
+    /// Updates the worker count that `start()` uses to create request workers.
+    pub fn set_client_worker_threads(&self, worker_threads: usize) {
+        self.inner
+            .client_worker_threads
+            .store(worker_threads, Ordering::Release);
+    }
+
     /// Returns whether NameServer reachability scans are enabled in the config view.
     pub fn get_scan_available_nameserver(&self) -> bool {
         self.inner.scan_available_nameserver.load(Ordering::Acquire)
@@ -782,6 +796,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
+            client_worker_threads: AtomicUsize::new(4),
             scan_available_nameserver: AtomicBool::new(true),
             config: ClientConfig {
                 transport: security.clone(),
@@ -832,6 +847,12 @@ impl RemotingClient {
         if self.inner.started.load(Ordering::Acquire) {
             return Ok(());
         }
+        let worker_threads = self.inner.client_worker_threads.load(Ordering::Acquire);
+        if worker_threads == 0 || i32::try_from(worker_threads).is_err() {
+            return Err(TransportError::InvalidConfiguration(
+                "client worker thread count must fit a positive Java signed integer".into(),
+            ));
+        }
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
             TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
         })?;
@@ -842,7 +863,7 @@ impl RemotingClient {
         for task in processor::start(
             Arc::downgrade(&self.inner),
             startup_state.inbound_receiver,
-            self.inner.config.worker_threads,
+            worker_threads,
             self.inner.config.disable_netty_worker_group,
         ) {
             self.inner.spawn(task);
@@ -3401,6 +3422,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn client_worker_threads_setting_is_read_when_starting() {
+        let client = RemotingClient::with_config(ClientConfig {
+            worker_threads: 1,
+            callback_executor_threads: 1,
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        assert_eq!(client.get_client_worker_threads(), 1);
+
+        client.set_client_worker_threads(0);
+        assert!(matches!(
+            client.start(),
+            Err(TransportError::InvalidConfiguration(_))
+        ));
+        client.set_client_worker_threads(3);
+        client.start().unwrap();
+        assert_eq!(client.get_client_worker_threads(), 3);
+        // Processor start owns one dispatcher plus three workers. The other two
+        // client tasks are the channel-event worker and timeout scheduler.
+        assert_eq!(client.inner.tasks.lock().unwrap().len(), 6);
+        assert_eq!(client.inner.callback_workers.lock().unwrap().len(), 1);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn worker_group_toggle_controls_handler_dispatch_path() {
         let config = ClientConfig {
             disable_netty_worker_group: true,
@@ -3441,6 +3488,7 @@ mod tests {
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
+            client_worker_threads: AtomicUsize::new(config.worker_threads),
             scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
