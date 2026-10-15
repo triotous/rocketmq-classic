@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod decoder;
 mod host_address;
+mod message_id;
 mod properties;
 mod types;
 
@@ -9,6 +10,10 @@ pub use decoder::{
     decode_many, decode_one,
 };
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
+pub use message_id::{
+    MessageId, MessageIdError, create_message_id, create_message_id_from_host_bytes,
+    decode_message_id,
+};
 pub use properties::{decode_properties, encode_properties};
 pub use types::{
     Message, MessageExt, MessageKeyCollectionError, MessageProperties, MessagePropertyError,

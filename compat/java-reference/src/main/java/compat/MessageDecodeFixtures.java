@@ -20,6 +20,7 @@ import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageClientExt;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageId;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.utils.NetworkUtil;
@@ -130,7 +131,7 @@ public final class MessageDecodeFixtures {
         }
     }
 
-    private static Map<String, Object> messagePublicApi() {
+    private static Map<String, Object> messagePublicApi() throws Exception {
         Message message = new Message("orders", "green", "first second", 17,
             new byte[] {0, -1, 42}, false);
         Map<String, Object> expected = new TreeMap<>();
@@ -396,6 +397,39 @@ public final class MessageDecodeFixtures {
         }
     }
 
+    private static boolean throwsMessageIdNullPointer(String value) {
+        try {
+            MessageDecoder.decodeMessageId(value);
+            return false;
+        } catch (NullPointerException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
+    private static boolean throwsMessageIdBufferUnderflow(String value) {
+        try {
+            MessageDecoder.decodeMessageId(value);
+            return false;
+        } catch (java.nio.BufferUnderflowException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
+    private static boolean throwsMessageIdIllegalArgument(String value) {
+        try {
+            MessageDecoder.decodeMessageId(value);
+            return false;
+        } catch (IllegalArgumentException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
     private static Map<String, Object> messageExtHostApi() throws Exception {
         InetSocketAddress born = new InetSocketAddress(
             InetAddress.getByAddress(new byte[] {(byte) 192, 0, 2, 10}), 10911);
@@ -452,6 +486,63 @@ public final class MessageDecodeFixtures {
         expected.put("constructorStoreTimestamp", constructed.getStoreTimestamp());
         expected.put("constructorStoreHost", constructed.getStoreHost().toString());
         expected.put("constructorMessageId", constructed.getMsgId());
+
+        InetSocketAddress messageIdIpv4Address = new InetSocketAddress(
+            InetAddress.getByAddress(new byte[] {(byte) 192, 0, 2, 10}), 10911);
+        InetSocketAddress messageIdIpv6Address = new InetSocketAddress(
+            InetAddress.getByName("2001:db8::20"), 10915);
+        long messageIdIpv4Offset = -123456789012345L;
+        long messageIdIpv6Offset = Long.MIN_VALUE + 17;
+        String messageIdIpv4 = MessageDecoder.createMessageId(messageIdIpv4Address, messageIdIpv4Offset);
+        String messageIdIpv6 = MessageDecoder.createMessageId(messageIdIpv6Address, messageIdIpv6Offset);
+        expected.put("messageIdIpv4Created", messageIdIpv4);
+        expected.put("messageIdIpv6Created", messageIdIpv6);
+
+        ByteBuffer ipv4AddressBytes = ByteBuffer.allocate(8)
+            .put(messageIdIpv4Address.getAddress().getAddress())
+            .putInt(messageIdIpv4Address.getPort());
+        expected.put("messageIdIpv4CreatedFromBytes", MessageDecoder.createMessageId(
+            ByteBuffer.allocate(16), ipv4AddressBytes.flip(), messageIdIpv4Offset));
+        ByteBuffer ipv6AddressBytes = ByteBuffer.allocate(20)
+            .put(messageIdIpv6Address.getAddress().getAddress())
+            .putInt(messageIdIpv6Address.getPort());
+        expected.put("messageIdIpv6CreatedFromBytes", MessageDecoder.createMessageId(
+            ByteBuffer.allocate(28), ipv6AddressBytes.flip(), messageIdIpv6Offset));
+
+        MessageId decodedIpv4MessageId = MessageDecoder.decodeMessageId(messageIdIpv4);
+        InetSocketAddress decodedIpv4Address = (InetSocketAddress) decodedIpv4MessageId.getAddress();
+        expected.put("messageIdIpv4DecodedHost", decodedIpv4Address.getAddress().getHostAddress());
+        expected.put("messageIdIpv4DecodedPort", decodedIpv4Address.getPort());
+        expected.put("messageIdIpv4DecodedOffset", decodedIpv4MessageId.getOffset());
+        MessageId decodedIpv6MessageId = MessageDecoder.decodeMessageId(messageIdIpv6);
+        InetSocketAddress decodedIpv6Address = (InetSocketAddress) decodedIpv6MessageId.getAddress();
+        expected.put("messageIdIpv6DecodedHost", decodedIpv6Address.getAddress().getHostAddress());
+        expected.put("messageIdIpv6DecodedPort", decodedIpv6Address.getPort());
+        expected.put("messageIdIpv6DecodedOffset", decodedIpv6MessageId.getOffset());
+        expected.put("messageIdIpv6ExtraBytesIgnored",
+            MessageDecoder.decodeMessageId(messageIdIpv6 + "FFFF").getOffset());
+
+        MessageId mutableMessageId = new MessageId(messageIdIpv4Address, 42L);
+        mutableMessageId.setAddress(messageIdIpv6Address);
+        mutableMessageId.setOffset(-17L);
+        InetSocketAddress mutableMessageIdAddress = (InetSocketAddress) mutableMessageId.getAddress();
+        expected.put("messageIdSetterHost", mutableMessageIdAddress.getAddress().getHostAddress());
+        expected.put("messageIdSetterPort", mutableMessageIdAddress.getPort());
+        expected.put("messageIdSetterOffset", mutableMessageId.getOffset());
+        MessageId nullableMessageId = new MessageId(null, 0L);
+        expected.put("messageIdNullableAddress", nullableMessageId.getAddress() == null);
+        nullableMessageId.setAddress(messageIdIpv4Address);
+        nullableMessageId.setAddress(null);
+        expected.put("messageIdNullableSetter", nullableMessageId.getAddress() == null);
+
+        expected.put("messageIdEmptyThrowsNullPointer",
+            throwsMessageIdNullPointer(""));
+        expected.put("messageIdShortThrowsBufferUnderflow", throwsMessageIdBufferUnderflow("0"));
+        expected.put("messageIdBadPortThrowsIllegalArgument",
+            throwsMessageIdIllegalArgument("7F000001FFFFFFFF0000000000003039"));
+        expected.put("messageIdInvalidHexHost",
+            ((InetSocketAddress) MessageDecoder.decodeMessageId("GG00000100002A9F0000000000003039")
+                .getAddress()).getAddress().getHostAddress());
         return expected;
     }
 

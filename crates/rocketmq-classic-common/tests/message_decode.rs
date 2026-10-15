@@ -2,7 +2,9 @@ use base64::Engine;
 use rocketmq_classic_common::{
     message::{
         DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
-        MessageHostAddressBytesError, TopicFilterType, decode_many, decode_one,
+        MessageHostAddressBytesError, MessageId, MessageIdError, TopicFilterType,
+        create_message_id, create_message_id_from_host_bytes, decode_many, decode_message_id,
+        decode_one,
     },
     sysflag::message,
 };
@@ -239,6 +241,131 @@ fn message_ext_socket_address_api_matches_java_551() {
     let decoded: MessageExt = serde_json::from_value(encoded).unwrap();
     assert_eq!(decoded.born_host(), Some(&born));
     assert_eq!(decoded.store_host(), Some(&store));
+}
+
+#[test]
+fn message_id_api_matches_java_551() {
+    let expected = &fixture()["messageExtHostApi"];
+    let ipv4 = MessageHostAddress::from_ip_address(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
+    let ipv6 = MessageHostAddress::from_ip_address(
+        IpAddr::V6("2001:db8::20".parse::<Ipv6Addr>().unwrap()),
+        10915,
+    );
+    let ipv4_offset = -123_456_789_012_345_i64;
+    let ipv6_offset = i64::MIN + 17;
+
+    let ipv4_id = create_message_id(&ipv4, ipv4_offset).unwrap();
+    let ipv6_id = create_message_id(&ipv6, ipv6_offset).unwrap();
+    assert_eq!(ipv4_id, expected["messageIdIpv4Created"]);
+    assert_eq!(ipv6_id, expected["messageIdIpv6Created"]);
+    assert_eq!(
+        create_message_id_from_host_bytes(&ipv4.network_bytes().unwrap(), ipv4_offset).unwrap(),
+        expected["messageIdIpv4CreatedFromBytes"]
+    );
+    assert_eq!(
+        create_message_id_from_host_bytes(&ipv6.network_bytes().unwrap(), ipv6_offset).unwrap(),
+        expected["messageIdIpv6CreatedFromBytes"]
+    );
+
+    let decoded_ipv4 = decode_message_id(&ipv4_id).unwrap();
+    assert_eq!(
+        decoded_ipv4
+            .address()
+            .unwrap()
+            .host_address_string()
+            .as_deref(),
+        expected["messageIdIpv4DecodedHost"].as_str()
+    );
+    assert_eq!(
+        decoded_ipv4.address().unwrap().port(),
+        expected["messageIdIpv4DecodedPort"]
+    );
+    assert_eq!(decoded_ipv4.offset(), ipv4_offset);
+    assert_eq!(
+        decoded_ipv4.offset(),
+        expected["messageIdIpv4DecodedOffset"]
+    );
+    let decoded_ipv6 = decode_message_id(&ipv6_id).unwrap();
+    assert_eq!(
+        decoded_ipv6
+            .address()
+            .unwrap()
+            .host_address_string()
+            .as_deref(),
+        expected["messageIdIpv6DecodedHost"].as_str()
+    );
+    assert_eq!(
+        decoded_ipv6.address().unwrap().port(),
+        expected["messageIdIpv6DecodedPort"]
+    );
+    assert_eq!(decoded_ipv6.offset(), ipv6_offset);
+    assert_eq!(
+        decoded_ipv6.offset(),
+        expected["messageIdIpv6DecodedOffset"]
+    );
+    assert_eq!(
+        decode_message_id(&format!("{ipv6_id}FFFF"))
+            .unwrap()
+            .offset(),
+        expected["messageIdIpv6ExtraBytesIgnored"]
+    );
+
+    let mut mutable_id = MessageId::new(Some(ipv4), 42);
+    mutable_id.set_address(Some(ipv6.clone()));
+    mutable_id.set_offset(-17);
+    assert_eq!(
+        mutable_id
+            .address()
+            .unwrap()
+            .host_address_string()
+            .as_deref(),
+        expected["messageIdSetterHost"].as_str()
+    );
+    assert_eq!(
+        mutable_id.address().unwrap().port(),
+        expected["messageIdSetterPort"]
+    );
+    assert_eq!(mutable_id.offset(), expected["messageIdSetterOffset"]);
+    mutable_id.set_address(None);
+    assert_eq!(mutable_id.address(), None);
+    assert_eq!(expected["messageIdNullableAddress"], true);
+    assert_eq!(expected["messageIdNullableSetter"], true);
+
+    assert_eq!(
+        create_message_id(&MessageHostAddress::unresolved("broker.invalid", 10911), 0),
+        Err(MessageIdError::UnresolvedAddress)
+    );
+    assert_eq!(
+        create_message_id_from_host_bytes(&[0; 4], 0),
+        Err(MessageIdError::InvalidAddressLength { length: 4 })
+    );
+    assert_eq!(
+        decode_message_id("").unwrap_err(),
+        MessageIdError::EmptyMessageId
+    );
+    assert_eq!(expected["messageIdEmptyThrowsNullPointer"], true);
+    assert_eq!(
+        decode_message_id("0").unwrap_err(),
+        MessageIdError::InsufficientBytes {
+            required: 28,
+            available: 0
+        }
+    );
+    assert_eq!(expected["messageIdShortThrowsBufferUnderflow"], true);
+    assert_eq!(
+        decode_message_id("7F000001FFFFFFFF0000000000003039").unwrap_err(),
+        MessageIdError::InvalidPort { port: -1 }
+    );
+    assert_eq!(expected["messageIdBadPortThrowsIllegalArgument"], true);
+    let invalid_hex = decode_message_id("GG00000100002A9F0000000000003039").unwrap();
+    assert_eq!(
+        invalid_hex
+            .address()
+            .unwrap()
+            .host_address_string()
+            .as_deref(),
+        expected["messageIdInvalidHexHost"].as_str()
+    );
 }
 
 #[test]

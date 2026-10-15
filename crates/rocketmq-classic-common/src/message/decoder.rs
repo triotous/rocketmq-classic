@@ -2,6 +2,7 @@ use std::io;
 
 use thiserror::Error;
 
+use super::message_id::encode_message_id;
 use super::{MessageExt, MessageHostAddress, decode_properties};
 use crate::{
     compression::{DEFAULT_MAX_DECOMPRESSED_BODY_BYTES, decompress_limited},
@@ -237,7 +238,7 @@ fn decode_one_with_limits(
     message.set_body_crc(body_crc);
     message.set_born_host(Some(born_host));
     message.set_store_host(Some(store_host.clone()));
-    message.set_message_id(Some(create_message_id(&input, commit_log_offset)));
+    message.set_message_id(Some(message_id_from_record(&input, commit_log_offset)));
     Ok((message, record_size))
 }
 
@@ -307,19 +308,10 @@ fn nonnegative_length(
     })
 }
 
-fn create_message_id(input: &Cursor<'_>, offset: i64) -> String {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+fn message_id_from_record(input: &Cursor<'_>, offset: i64) -> String {
     let host_start = input.store_host_start;
     let host_length = input.store_host_length;
-    let mut bytes = Vec::with_capacity(host_length + 8);
-    bytes.extend_from_slice(&input.record[host_start..host_start + host_length]);
-    bytes.extend_from_slice(&offset.to_be_bytes());
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        encoded.push(HEX[usize::from(byte >> 4)] as char);
-        encoded.push(HEX[usize::from(byte & 0x0f)] as char);
-    }
-    encoded
+    encode_message_id(&input.record[host_start..host_start + host_length], offset)
 }
 
 fn crc32(bytes: &[u8]) -> u32 {

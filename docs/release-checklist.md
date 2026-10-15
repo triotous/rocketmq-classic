@@ -445,6 +445,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   for negative values. Invoked Java/Rust fixtures cover map initialization,
   malformed/overflow/Unicode-digit inputs and no mutation after rejection.
   This closes that API slice only; P18-V01 remains open.
+- Common MessageId API slice: Rust now exposes both Java `createMessageId`
+  address forms, `decodeMessageId`, and the mutable nullable `MessageId` model.
+  The invoked Java fixture covers IPv4/IPv6, negative 64-bit offsets, invalid
+  hex conversion, trailing bytes, short input and invalid ports. This closes
+  the MessageId surface only; fixture SHA-256 is
+  `a79a06ff99f4889c283e749939820e184f6c0f3ab9179d0a8e92af4b4414b53b`;
+  P18-V01 remains open.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
