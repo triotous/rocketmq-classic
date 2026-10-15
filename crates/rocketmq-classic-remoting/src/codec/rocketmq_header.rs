@@ -39,8 +39,8 @@ pub(crate) fn encode_with_limit(
         for (key, value) in fields {
             let key = key.as_bytes();
             let value = value.as_bytes();
-            let key_len =
-                i16::try_from(key.len()).map_err(|_| CodecError::FieldTooWide("ext field key"))?;
+            // Java's RocketMQ `writeStr` stores key byte lengths with setShort.
+            let key_len = key.len() as i16;
             let value_len = i32::try_from(value.len())
                 .map_err(|_| CodecError::FieldTooWide("ext field value"))?;
             entries.extend_from_slice(&key_len.to_be_bytes());

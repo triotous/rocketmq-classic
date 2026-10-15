@@ -355,6 +355,7 @@ public final class Main {
         largeCodeAndVersion.setVersion(987654);
         writeFixture(output, "PRIVATE-LARGE-CODE-VERSION", 987654, SerializeType.ROCKETMQ,
             largeCodeAndVersion, bytes(largeCodeAndVersion.encode()));
+        writeOversizedKeyFixture(output);
         writeFastHeaderFixtures(output);
         selfTest();
     }
@@ -1146,6 +1147,29 @@ public final class Main {
         metadata.put("payload_sha256", sha256(frame));
         metadata.put("creation_command", "mvn -f compat/java-reference/pom.xml exec:java -Dexec.args=\"fixtures --output <DIR>\"");
         Files.writeString(output.resolve(stem + ".json"), toJson(metadata) + "\n", StandardCharsets.UTF_8);
+    }
+
+    private static void writeOversizedKeyFixture(Path output) throws Exception {
+        String key = "k".repeat(32768);
+        RemotingCommand command = command(34, SerializeType.ROCKETMQ, "PRIVATE-LARGE-KEY");
+        command.setExtFields(new java.util.HashMap<>());
+        command.addExtField(key, "v");
+        byte[] frame = bytes(command.encode());
+        Path edgeCases = output.resolve("edge-cases");
+        Files.createDirectories(edgeCases);
+        Files.write(edgeCases.resolve("private-large-key.bin"), frame);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("java_client_version", "5.5.1");
+        metadata.put("server_version", "5.3.4");
+        metadata.put("scenario_id", "PRIVATE-LARGE-KEY");
+        metadata.put("serialization", SerializeType.ROCKETMQ.name());
+        metadata.put("request_code", 34);
+        metadata.put("utf8_key_length", key.getBytes(StandardCharsets.UTF_8).length);
+        metadata.put("signed_wire_key_length", (short) key.getBytes(StandardCharsets.UTF_8).length);
+        metadata.put("payload_sha256", sha256(frame));
+        metadata.put("creation_command", "mvn -f compat/java-reference/pom.xml exec:java -Dexec.args=\"fixtures --output <DIR>\"");
+        Files.writeString(edgeCases.resolve("private-large-key.json"), toJson(metadata) + "\n",
+            StandardCharsets.UTF_8);
     }
 
     private static void writeScenario(String id, Path output) throws Exception {

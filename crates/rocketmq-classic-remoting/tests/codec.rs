@@ -182,6 +182,29 @@ fn private_rocketmq_header_narrows_code_and_version_like_java() {
 }
 
 #[test]
+fn private_rocketmq_header_narrows_ext_field_key_length_like_java() {
+    let java_fixture = fs::read(fixture_dir().join("edge-cases/private-large-key.bin")).unwrap();
+    let key = "k".repeat(32_768);
+    let remark = "PRIVATE-LARGE-KEY";
+    let command = RemotingCommand {
+        code: 34,
+        language: Some(LanguageCode::Rust),
+        opaque: 7,
+        remark: Some(remark.into()),
+        ext_fields: Some(std::collections::BTreeMap::from([(key, "v".into())])),
+        serialization: SerializeType::RocketMq,
+        ..RemotingCommand::default()
+    };
+
+    assert_eq!(frame::encode(&command).unwrap(), java_fixture);
+    let key_length_offset = 8 + 21 + remark.len();
+    assert_eq!(
+        &java_fixture[key_length_offset..key_length_offset + 2],
+        &(32_768u16).to_be_bytes()
+    );
+}
+
+#[test]
 fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
     let command = RemotingCommand {
         code: 34,
