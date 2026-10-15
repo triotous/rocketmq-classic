@@ -730,13 +730,7 @@ impl GroupRegistry {
             GroupKind::Consumer => (None, entries.consumers.remove(&lease.group), None),
             GroupKind::Admin => (None, None, entries.admins.remove(&lease.group)),
         };
-        let cancelled = if kind == GroupKind::Producer {
-            take_pending_replies_for_owner(&mut entries, &lease.identity)
-        } else {
-            Vec::new()
-        };
         drop(entries);
-        notify_pending_reply_shutdown(cancelled);
         drop(removed_producer);
         drop(removed_consumer);
         drop(removed_admin);
@@ -831,33 +825,6 @@ impl GroupRegistry {
             .consumers
             .get(group)
             .map(|entry| entry.handle.clone()))
-    }
-}
-
-fn take_pending_replies_for_owner(
-    entries: &mut Entries,
-    owner: &Arc<()>,
-) -> Vec<oneshot::Sender<PendingReplyCompletion>> {
-    let owned_ids = entries
-        .pending_replies
-        .iter()
-        .filter(|(_, entry)| Arc::ptr_eq(&entry.owner, owner))
-        .map(|(correlation_id, _)| correlation_id.clone())
-        .collect::<Vec<_>>();
-    owned_ids
-        .into_iter()
-        .filter_map(|correlation_id| {
-            entries
-                .pending_replies
-                .remove(&correlation_id)
-                .map(|entry| entry.sender)
-        })
-        .collect()
-}
-
-fn notify_pending_reply_shutdown(senders: Vec<oneshot::Sender<PendingReplyCompletion>>) {
-    for sender in senders {
-        let _ = sender.send(PendingReplyCompletion::ProducerShutdown);
     }
 }
 
@@ -1011,15 +978,27 @@ mod pending_reply_admission_tests {
             PendingReplyCompletion::Timeout { .. }
         ));
 
-        let shutdown_deadline = Instant::now() + Duration::from_secs(2);
-        let mut shutdown_pending = registry
-            .register_pending_reply(&lease, "shutdown", shutdown_deadline)
+        let unregister_deadline = Instant::now() + Duration::from_secs(2);
+        let mut unregister_pending = registry
+            .register_pending_reply(&lease, "unregister", unregister_deadline)
             .await
             .unwrap();
         assert!(registry.unregister(&lease, GroupKind::Producer).unwrap());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), unregister_pending.receive())
+                .await
+                .is_err()
+        );
+        assert!(registry.complete_pending_reply(
+            "unregister",
+            crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
+                "reply-topic",
+                b"late reply".to_vec()
+            ))
+        ));
         assert!(matches!(
-            shutdown_pending.receive().await.unwrap(),
-            PendingReplyCompletion::ProducerShutdown
+            unregister_pending.receive().await.unwrap(),
+            PendingReplyCompletion::Reply(_)
         ));
 
         let group_owner: Arc<dyn ProducerRuntime> = Arc::new(Producer);

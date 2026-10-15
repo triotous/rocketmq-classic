@@ -52,3 +52,35 @@ Rust `PendingReplyRequest`, `PendingReplyControl`, and
 Recorded that dropped-future cancellation and the lower-level `ProducerShutdown`
 completion still need a P18-V01 API/flow disposition. Documentation-only change;
 no tests were run. Broad P18-V01 remains open.
+
+2026-10-15 21:45 UTC — closed the request/reply producer-unregister disposition
+from the Phase 15 matrix. Pinned Java `MQClientInstance.unregisterProducer`
+removes the producer table entry and unregisters it with brokers; it does not
+remove entries from `RequestFutureHolder.getRequestFutureTable()`. Rust
+lease-based unregister previously removed that producer's pending correlations
+and returned `ProducerShutdown`, unlike Java and the existing group-based Rust
+path. Lease unregister now preserves correlations so late replies still
+complete them. Request-future drop cancellation maps to Java's synchronous
+request `finally` cleanup after interruption; direct `control.cancel` maps to
+removal from Java's public live correlation table. Updated the Phase 15 matrix
+and release checklist; broad P18-V01 remains open.
+
+Validation passed:
+
+- `cargo fmt --all -- --check`
+- `cargo test -p rocketmq-classic-core --locked` — 159 unit tests, all
+  integration targets and 13 doctests passed, including the lease-unregister
+  pending-reply and full inbound late-reply regressions.
+- `cargo test -p rocketmq-classic-producer --locked` — 142 unit tests, all
+  integration targets and 6 doctests passed, including Producer shutdown and
+  request/reply lifecycle coverage.
+- `cargo clippy -p rocketmq-classic-core --all-targets --all-features --locked
+  -- -D warnings`
+- `git diff --check`
+
+Follow-up disposition: `GroupRegistry::clear()` can still send
+`PendingReplyCompletion::ProducerShutdown` for a request registered directly
+against a Rust `ClientRuntime` before startup fails. The public Java Producer
+API has no matching pre-start registration path. This Rust-only lifecycle case
+remains explicitly open for the broad reverse/API audit; the request/reply
+matrix status remains PARTIAL.

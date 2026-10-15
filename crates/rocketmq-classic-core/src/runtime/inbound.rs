@@ -891,10 +891,20 @@ mod tests {
             .unwrap();
         let late_send_completion = second_pending.control();
         unregister(&runtime, &first_lease, true).await;
-        assert!(matches!(
-            first_pending.receive().await.unwrap(),
-            PendingReplyCompletion::ProducerShutdown
-        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(1), first_pending.receive())
+                .await
+                .is_err(),
+            "producer unregister must leave the pending correlation available"
+        );
+
+        let late_reply = dispatch_reply(&runtime, "first", b"late reply");
+        assert_eq!(late_reply.code, response::SUCCESS);
+        let PendingReplyCompletion::Reply(first_reply) = first_pending.receive().await.unwrap()
+        else {
+            panic!("an outstanding correlation must accept a reply after unregister")
+        };
+        assert_eq!(first_reply.body().as_ref(), b"late reply");
 
         let reply = dispatch_reply(&runtime, "second", b"reply-body");
         assert_eq!(reply.code, response::SUCCESS);

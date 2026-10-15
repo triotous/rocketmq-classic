@@ -1464,3 +1464,18 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry resolution remain open. Owner-run
   deployment and production checks remain Phase 19 manual validation.
+- P18-V01 request/reply unregister flow (`2026-10-15`, pinned Java source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): Java
+  `MQClientInstance.unregisterProducer` removes the producer table entry and
+  unregisters it with Brokers; it does not clear
+  `RequestFutureHolder.getRequestFutureTable()`. Rust lease-based producer
+  unregister now preserves pending correlations, matching group-based
+  unregister and the Java path. Core registry and inbound regressions verify
+  that an outstanding correlation accepts a late reply after unregister.
+  Rust future-drop cancellation maps to Java synchronous request interruption
+  and its `finally` removal; explicit cancellation maps to removing an entry
+  from Java's public live correlation map. Core tests, Producer tests, strict
+  Core Clippy, formatting, and diff checks pass. This closes normal unregister
+  and cancellation mappings only. Rust `ProducerShutdown` on startup-failure
+  registry clear remains a ClientRuntime-only path for the broad P18-V01
+  reverse audit.
