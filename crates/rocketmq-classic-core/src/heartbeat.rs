@@ -19,6 +19,7 @@ impl rocketmq_classic_remoting::client::ChannelEventListener for HeartbeatChanne
     fn on_active_async<'a>(
         &'a self,
         address: &'a str,
+        _: &'a rocketmq_classic_remoting::client::ChannelHandle,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let Some(runtime) = self.0.get().and_then(Weak::upgrade) else {

@@ -13,8 +13,8 @@ use rocketmq_classic_protocol::codes::{SerializeType, request, response};
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{
-        CallbackExecutor, ChannelEvent, ChannelEventListener, ClientConfig, InvokeCallback,
-        InvokeCallbackResult, NettyEventType, RemotingClient, RequestExecutor, RequestPipeline,
+        CallbackExecutor, ChannelEvent, ChannelEventListener, ChannelHandle, ClientConfig,
+        InvokeCallback, NettyEventType, RemotingClient, RequestExecutor, RequestPipeline,
         RequestPipelineError, RequestProcessor, RpcHook, RpcHookError, TransportMode,
         tls::TlsConfig,
     },
@@ -371,14 +371,25 @@ async fn p3_client_start_is_explicit_and_idempotent() {
 }
 
 struct ContextCallback {
-    sender: tokio::sync::mpsc::UnboundedSender<InvokeCallbackResult>,
+    sender: tokio::sync::mpsc::UnboundedSender<CallbackSnapshot>,
     events: Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
+
+struct CallbackSnapshot {
+    request: RemotingCommand,
+    response: Option<RemotingCommand>,
+    error: Option<TransportError>,
+    timeout_millis: i64,
+    send_request_ok: bool,
+    timed_out: bool,
+    channel_address: Option<String>,
+    channel_generation: Option<u64>,
 }
 
 struct EventCallback(Arc<std::sync::Mutex<Vec<&'static str>>>);
 
 impl InvokeCallback for EventCallback {
-    fn operation_complete_with_context(&self, _: &InvokeCallbackResult) {
+    fn operation_complete(&self, _: &rocketmq_classic_remoting::client::ResponseFuture) {
         self.0.lock().unwrap().push("complete");
     }
 
@@ -388,9 +399,20 @@ impl InvokeCallback for EventCallback {
 }
 
 impl InvokeCallback for ContextCallback {
-    fn operation_complete_with_context(&self, context: &InvokeCallbackResult) {
+    fn operation_complete(&self, future: &rocketmq_classic_remoting::client::ResponseFuture) {
         self.events.lock().unwrap().push("complete");
-        let _ = self.sender.send(context.clone());
+        let _ = self.sender.send(CallbackSnapshot {
+            request: future.request_command().unwrap(),
+            response: future.response_command(),
+            error: future.cause(),
+            timeout_millis: future.timeout_millis(),
+            send_request_ok: future.is_send_request_ok(),
+            timed_out: future.is_timeout(),
+            channel_address: future
+                .channel()
+                .map(|channel| channel.remote_addr().to_owned()),
+            channel_generation: future.channel().map(|channel| channel.generation()),
+        });
     }
 
     fn operation_succeed(&self, _: &RemotingCommand) {
@@ -518,6 +540,40 @@ async fn p3_future_connect_failure_includes_java_remote_address_and_null_cause()
 }
 
 #[tokio::test]
+async fn p3_result_closure_receives_connect_failure_once() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+    client
+        .invoke_async(
+            address.clone(),
+            command(71),
+            Instant::now() + Duration::from_secs(1),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                if let Some(sender) = sender.lock().unwrap().take() {
+                    let _ = sender.send(result);
+                }
+            }),
+        )
+        .unwrap();
+
+    let result = tokio::time::timeout(Duration::from_secs(2), receiver)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        result,
+        Err(TransportError::ConnectRequest { remote_addr, .. }) if remote_addr == address
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -556,10 +612,15 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
         context.request.opaque,
         context.response.as_ref().unwrap().opaque
     );
+    assert!((0..=50).contains(&context.timeout_millis));
     assert!(context.send_request_ok);
-    assert!(!context.timed_out);
+    assert!(context.timed_out);
     assert!(context.error.is_none());
-    assert!(context.elapsed >= Duration::from_millis(100));
+    assert_eq!(
+        context.channel_address.as_deref(),
+        Some(address.to_string().as_str())
+    );
+    assert!(context.channel_generation.unwrap() > 0);
     tokio::time::timeout(Duration::from_secs(2), async {
         while events.lock().unwrap().len() < 2 {
             tokio::task::yield_now().await;
@@ -574,17 +635,32 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
 
 #[tokio::test]
 async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut byte = [0];
+        let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut byte).await;
+    });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+    );
     let (callback_tx, mut callback_rx) = tokio::sync::mpsc::unbounded_channel();
     let events = Arc::new(std::sync::Mutex::new(Vec::new()));
     let mut request = command(20);
     request.opaque = 74;
     client
         .invoke_async(
-            "127.0.0.1:1",
+            address.to_string(),
             request,
-            Instant::now(),
+            Instant::now() - Duration::from_millis(100),
             Arc::new(ContextCallback {
                 sender: callback_tx,
                 events: events.clone(),
@@ -601,12 +677,19 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
             phase: rocketmq_classic_remoting::error::TimeoutPhase::Operation,
             remote_addr: Some(ref remote_addr),
             ..
-        }) if remote_addr == "127.0.0.1:1"
+        }) if remote_addr == &address.to_string()
     ));
+    assert!(context.timeout_millis < 0);
     assert!(context.timed_out);
     assert!(context.send_request_ok);
+    assert_eq!(
+        context.channel_address.as_deref(),
+        Some(address.to_string().as_str())
+    );
+    assert!(context.channel_generation.unwrap() > 0);
     wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]
@@ -2371,7 +2454,7 @@ async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
 struct IdleListener(tokio::sync::mpsc::UnboundedSender<String>);
 
 impl rocketmq_classic_remoting::client::ChannelEventListener for IdleListener {
-    fn on_idle(&self, remote_addr: &str) {
+    fn on_idle(&self, remote_addr: &str, _: &ChannelHandle) {
         let _ = self.0.send(remote_addr.to_owned());
     }
 }
@@ -2495,6 +2578,7 @@ async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_
         fn on_active_async<'a>(
             &'a self,
             _: &'a str,
+            _: &'a ChannelHandle,
         ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
             Box::pin(async move {
                 self.live.fetch_add(1, Ordering::SeqCst);
@@ -2569,7 +2653,7 @@ async fn p16_slow_sync_channel_observer_does_not_block_transport_runtime() {
         release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
     }
     impl ChannelEventListener for Listener {
-        fn on_connect(&self, _: &str) {
+        fn on_connect(&self, _: &str, _: &ChannelHandle) {
             self.entered.store(true, Ordering::Release);
             let _ = self
                 .release
@@ -2703,8 +2787,73 @@ async fn p16_channel_events_carry_connection_generation_and_redacted_peer() {
         assert_eq!(connect.generation, active.generation);
         assert_eq!(connect.remote_addr, address.to_string());
         assert_eq!(active.remote_addr, address.to_string());
+        assert_eq!(connect.channel.generation(), connect.generation);
+        assert_eq!(active.channel.generation(), active.generation);
+        assert_eq!(active.channel.remote_addr(), address.to_string());
     }
     client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_channel_handle_writes_commands_and_closes_its_connection() {
+    struct ActiveChannel(tokio::sync::mpsc::UnboundedSender<ChannelHandle>);
+    impl ChannelEventListener for ActiveChannel {
+        fn on_active(&self, _: &str, channel: &ChannelHandle) {
+            let _ = self.0.send(channel.clone());
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+        let direct_write = read_command(&mut stream).await;
+        let _ = written_tx.send(direct_write.code);
+        let mut byte = [0; 1];
+        let _ = stream.read(&mut byte).await;
+    });
+    let (channel_tx, mut channel_rx) = tokio::sync::mpsc::unbounded_channel();
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(Arc::new(ActiveChannel(channel_tx))),
+    )
+    .unwrap();
+    client.start().unwrap();
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .code,
+        42
+    );
+    let channel = tokio::time::timeout(Duration::from_secs(1), channel_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(channel.remote_addr(), address.to_string());
+    assert!(channel.is_open());
+    assert!(channel.is_active());
+    assert!(channel.is_writable());
+    channel
+        .write_and_flush(&command(77), Instant::now() + Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert_eq!(written_rx.await.unwrap(), 77);
+    assert!(channel.close());
+    assert!(!channel.is_open());
+    client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]
@@ -3141,19 +3290,19 @@ impl RpcHook for AfterRequestRecorder {
 
 struct TestEvents(Arc<std::sync::Mutex<Vec<&'static str>>>);
 impl ChannelEventListener for TestEvents {
-    fn on_connect(&self, _: &str) {
+    fn on_connect(&self, _: &str, _: &ChannelHandle) {
         self.0.lock().unwrap().push("connect");
     }
 
-    fn on_exception(&self, _: &str) {
+    fn on_exception(&self, _: &str, _: &ChannelHandle) {
         self.0.lock().unwrap().push("exception");
     }
 
-    fn on_close(&self, _: &str) {
+    fn on_close(&self, _: &str, _: &ChannelHandle) {
         self.0.lock().unwrap().push("close");
     }
 
-    fn on_active(&self, _: &str) {
+    fn on_active(&self, _: &str, _: &ChannelHandle) {
         self.0.lock().unwrap().push("active");
     }
 }
@@ -3393,14 +3542,29 @@ async fn p3_callback_executor_disable_setting_is_read_at_completion_time() {
 
 #[tokio::test]
 async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut byte = [0];
+        let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut byte).await;
+    });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+    );
     client.set_callback_executor(Some(Arc::new(PanickingCallbackExecutor)));
     let executor_fallback = Arc::new(AtomicUsize::new(0));
     let seen = executor_fallback.clone();
     client
         .invoke_async(
-            "127.0.0.1:1",
+            address.to_string(),
             command(1),
             Instant::now() - Duration::from_millis(1),
             Arc::new(move |_: Result<RemotingCommand, TransportError>| {
@@ -3408,12 +3572,19 @@ async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained()
             }),
         )
         .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while executor_fallback.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("panicking executor should fall back to inline callback delivery");
     assert_eq!(executor_fallback.load(Ordering::SeqCst), 1);
 
     client.set_callback_executor(Some(Arc::new(InlineCallbackExecutor)));
     client
         .invoke_async(
-            "127.0.0.1:1",
+            address.to_string(),
             command(2),
             Instant::now() - Duration::from_millis(1),
             Arc::new(|_: Result<RemotingCommand, TransportError>| panic!("callback panic")),
@@ -3423,7 +3594,7 @@ async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained()
     let seen = after_callback_panic.clone();
     client
         .invoke_async(
-            "127.0.0.1:1",
+            address.to_string(),
             command(3),
             Instant::now() - Duration::from_millis(1),
             Arc::new(move |_: Result<RemotingCommand, TransportError>| {
@@ -3431,20 +3602,43 @@ async fn p3_callback_executor_panic_falls_back_and_callback_panic_is_contained()
             }),
         )
         .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while after_callback_panic.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("callback panic should not prevent a later callback");
     assert_eq!(after_callback_panic.load(Ordering::SeqCst), 1);
     client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]
 async fn p3_callback_executor_rejection_runs_callback_inline() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut byte = [0];
+        let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut byte).await;
+    });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .await
+    );
     client.set_callback_executor(Some(Arc::new(RejectingCallbackExecutor)));
     let (callback_tx, callback_rx) = tokio::sync::oneshot::channel();
     let callback_tx = Arc::new(std::sync::Mutex::new(Some(callback_tx)));
     client
         .invoke_async(
-            "127.0.0.1:1",
+            address.to_string(),
             command(1),
             Instant::now() - Duration::from_millis(1),
             Arc::new(move |result: Result<RemotingCommand, TransportError>| {
@@ -3460,6 +3654,7 @@ async fn p3_callback_executor_rejection_runs_callback_inline() {
         })
     ));
     client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]
@@ -3694,7 +3889,10 @@ async fn p3_async_admission_timeout_completes_through_callback() {
             .is_some_and(TransportError::is_timeout)
     );
     assert!(second_context.send_request_ok);
-    assert!(second_context.timed_out);
+    assert!(
+        !second_context.timed_out,
+        "Java's exceptional callback wrapper starts a new ResponseFuture at completion"
+    );
     assert!(callback_rx.await.unwrap().is_err());
     client.shutdown().await;
     peer.await.unwrap();

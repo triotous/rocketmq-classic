@@ -4,7 +4,7 @@ use tokio::time::Instant;
 
 use crate::error::TransportError;
 
-use super::{ClientInner, connection};
+use super::{ChannelHandle, ClientInner, connection};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(super) struct Address(String);
@@ -137,14 +137,14 @@ impl ClientInner {
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
-        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            return Err(TransportError::Timeout);
-        }
         let key = Address::parse(address)?.0;
         if let Some(connection) = self.connections.lock().unwrap().get(&key).cloned() {
             if !connection.is_closed() && !connection.is_retired() {
                 return Ok(connection);
             }
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Err(TransportError::Timeout);
         }
         let max_frame_size = self.frame_max_length()?;
         let gate = {
@@ -183,11 +183,12 @@ impl ClientInner {
         let generation = self
             .generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.notify_channel(&key, super::NettyEventType::Connect, generation);
         let proxy = match selected.as_ref() {
             Some(selection) => selection.connect_proxy()?,
             None => None,
         };
+        let channel = ChannelHandle::pending(&key, generation);
+        self.notify_channel(super::NettyEventType::Connect, channel.clone());
         let (max_idle_time, disable_worker_group) = self.channel_pipeline_settings();
         let mut dial = Box::pin(connection::connect(
             &key,
@@ -198,22 +199,41 @@ impl ClientInner {
             connection_settings.receive_buffer_size,
             connect_deadline,
         ));
+        let mut channel_closed = channel.subscribe_closed();
+        if *channel_closed.borrow() {
+            drop(dial);
+            return Err(TransportError::Closed);
+        }
         let stream = tokio::select! {
-            result = &mut dial => result?,
+            result = &mut dial => match result {
+                Ok(stream) => stream,
+                Err(error) => {
+                    channel.mark_closed();
+                    return Err(error);
+                }
+            },
             result = shutdown.changed() => {
                 let _ = result;
                 drop(dial);
+                channel.mark_closed();
                 return Err(TransportError::Shutdown);
+            },
+            result = channel_closed.changed() => {
+                let _ = result;
+                drop(dial);
+                return Err(TransportError::Closed);
             }
         };
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             drop(stream);
+            channel.mark_closed();
             return Err(TransportError::Shutdown);
         }
         let connection = connection::Connection::spawn_with_channel_settings(
             stream,
             generation,
             Arc::downgrade(self),
+            channel.clone(),
             max_frame_size,
             connection_settings.write_buffer_watermarks,
             key.clone(),
@@ -222,7 +242,7 @@ impl ClientInner {
             disable_worker_group,
         );
         let mut connections = self.connections.lock().unwrap();
-        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) || !channel.is_open() {
             connection.close();
             drop(connections);
             connection.join().await;
@@ -230,7 +250,7 @@ impl ClientInner {
         }
         connections.insert(key.clone(), connection.clone());
         drop(connections);
-        self.notify_channel(&key, super::NettyEventType::Active, generation);
+        self.notify_channel(super::NettyEventType::Active, channel);
         Ok(connection)
     }
 
@@ -238,8 +258,8 @@ impl ClientInner {
         let (was_retired, address, removed) = {
             let mut retired = self.retired_connections.lock().unwrap();
             let mut connections = self.connections.lock().unwrap();
-            if let Some((address, _)) = retired.remove(&generation) {
-                (true, Some(address), None)
+            if let Some((address, connection)) = retired.remove(&generation) {
+                (true, Some(address), Some(connection))
             } else {
                 let address = connections.iter().find_map(|(address, connection)| {
                     (connection.generation == generation).then(|| address.clone())
@@ -251,10 +271,17 @@ impl ClientInner {
             }
         };
         if let Some(address) = &address {
+            let channel = removed
+                .as_ref()
+                .map(|connection| connection.channel_handle());
             if failure.is_some() && failure != Some(TransportError::Closed) {
-                self.notify_channel(address, super::NettyEventType::Exception, generation);
+                if let Some(channel) = &channel {
+                    self.notify_channel(super::NettyEventType::Exception, channel.clone());
+                }
             }
-            self.notify_channel(address, super::NettyEventType::Close, generation);
+            if let Some(channel) = &channel {
+                self.notify_channel(super::NettyEventType::Close, channel.clone());
+            }
             if !was_retired {
                 let mut chosen = self.chosen_nameserver.lock().unwrap();
                 if chosen.as_deref() == Some(address.as_str()) {

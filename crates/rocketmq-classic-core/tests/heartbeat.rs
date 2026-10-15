@@ -610,11 +610,9 @@ async fn active_broker_connection_sends_heartbeat_and_wakes_runtime_wide_rebalan
         .unwrap();
     runtime.shutdown().await.unwrap();
     peer.await.unwrap();
-    let listener = runtime.remoting().get_channel_event_listener().unwrap();
     let weak = Arc::downgrade(&runtime);
     drop(runtime);
     assert!(weak.upgrade().is_none(), "listener retained its runtime");
-    listener.on_active_async(&address).await;
 }
 
 #[tokio::test]

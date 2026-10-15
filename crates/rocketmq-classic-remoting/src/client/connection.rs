@@ -16,6 +16,7 @@ use crate::{
     error::{ErrorSource, TransportError},
 };
 
+use super::response_future::ChannelHandle;
 use super::{ClientInner, config::SocksProxyConfig, connection_manager};
 
 pub use super::tls::TransportMode;
@@ -50,6 +51,7 @@ impl Drop for OutboundFrame {
 
 pub(crate) struct Connection {
     pub(crate) generation: u64,
+    channel: ChannelHandle,
     sender: mpsc::UnboundedSender<OutboundFrame>,
     address: String,
     pooled_byte_buffer_allocator_enabled: bool,
@@ -103,10 +105,12 @@ impl Connection {
                 )
             })
             .unwrap_or_default();
+        let channel = ChannelHandle::pending(&address, generation);
         Self::spawn_with_channel_settings(
             stream,
             generation,
             inner,
+            channel,
             max_frame_size,
             write_watermarks,
             address,
@@ -121,6 +125,7 @@ impl Connection {
         stream: BoxedStream,
         generation: u64,
         inner: Weak<ClientInner>,
+        channel: ChannelHandle,
         max_frame_size: usize,
         write_watermarks: (usize, usize),
         address: String,
@@ -129,10 +134,11 @@ impl Connection {
         disable_worker_group: bool,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let closed = Arc::new(AtomicBool::new(false));
+        let closed = channel.closed_flag();
         let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
         let connection = Arc::new(Self {
             generation,
+            channel: channel.clone(),
             sender,
             address: address.clone(),
             pooled_byte_buffer_allocator_enabled,
@@ -142,15 +148,17 @@ impl Connection {
             shutdown,
             queued_write_bytes: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             write_watermarks,
-            writable: Arc::new(AtomicBool::new(true)),
+            writable: channel.writable_flag(),
             frame_pool: Arc::new(std::sync::Mutex::new(Vec::new())),
         });
+        channel.attach(&connection);
         let task = tokio::spawn(run_connection(
             stream,
             receiver,
             inner,
             ConnectionTask {
                 generation,
+                channel,
                 closed,
                 shutdown: shutdown_rx,
                 max_frame_size,
@@ -312,9 +320,12 @@ impl Connection {
     }
 
     pub(crate) fn close(&self) {
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.channel.mark_closed();
         let _ = self.shutdown.send(true);
+    }
+
+    pub(crate) fn channel_handle(&self) -> ChannelHandle {
+        self.channel.clone()
     }
 
     pub(crate) fn address(&self) -> &str {
@@ -385,6 +396,7 @@ impl Connection {
 
 struct ConnectionTask {
     generation: u64,
+    channel: ChannelHandle,
     closed: Arc<AtomicBool>,
     shutdown: tokio::sync::watch::Receiver<bool>,
     max_frame_size: usize,
@@ -406,6 +418,7 @@ async fn run_connection(
 ) {
     let ConnectionTask {
         generation,
+        channel,
         closed,
         mut shutdown,
         max_frame_size,
@@ -429,7 +442,7 @@ async fn run_connection(
             result = shutdown.changed() => if result.is_err() || *shutdown.borrow() { break None },
             _ = &mut idle_timer, if !max_idle_time.is_zero() => {
                 if let Some(inner) = inner.upgrade() {
-                    inner.notify_channel(&address, super::NettyEventType::Idle, generation);
+                    inner.notify_channel(super::NettyEventType::Idle, channel.clone());
                 }
                 break None;
             },

@@ -219,6 +219,8 @@ pub enum TransportError {
     Closed,
     #[error("request was interrupted because its channel was closed")]
     Interrupted,
+    #[error("remoting callback failed: {0}")]
+    Remoting(String),
     #[error("RPC hook failed: {0}")]
     RpcHook(String),
     #[error("TLS setup or handshake failed: {0}")]

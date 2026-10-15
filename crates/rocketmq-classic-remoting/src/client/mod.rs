@@ -4,6 +4,7 @@ mod connection_manager;
 mod java_number;
 mod pending;
 mod processor;
+mod response_future;
 pub mod tls;
 
 use std::{
@@ -30,6 +31,7 @@ use crate::{command::RemotingCommand, error::TransportError};
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
 pub use processor::RequestProcessor;
+pub use response_future::{ChannelHandle, ResponseFuture};
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode};
 
 #[cfg(test)]
@@ -85,6 +87,14 @@ struct CallbackTracking {
     channel_established: Arc<AtomicBool>,
     opaque: Arc<AtomicI32>,
     request: Arc<Mutex<RemotingCommand>>,
+    timing: Arc<Mutex<CallbackTiming>>,
+}
+
+#[derive(Clone, Copy)]
+struct CallbackTiming {
+    wrapper_timeout_millis: i64,
+    response_begin: Instant,
+    response_timeout_millis: i64,
 }
 
 #[derive(Clone, Copy)]
@@ -97,10 +107,8 @@ struct InvokeOptions {
 }
 
 struct CallbackJob {
-    callback: Arc<dyn InvokeCallback>,
-    context: InvokeCallbackResult,
+    future: Arc<ResponseFuture>,
     channel_established: Arc<AtomicBool>,
-    _permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 type CallbackTask = Box<dyn FnOnce() + Send + 'static>;
@@ -311,6 +319,16 @@ fn rpc_hook_transport_error(error: RpcHookError) -> TransportError {
     }
 }
 
+fn remaining_timeout_millis(deadline: Instant, now: Instant) -> i64 {
+    let (duration, expired) = if deadline >= now {
+        (deadline.duration_since(now), false)
+    } else {
+        (now.duration_since(deadline), true)
+    };
+    let millis = duration.as_millis().min(i64::MAX as u128) as i64;
+    if expired { -millis } else { millis }
+}
+
 fn classify_connection_error(remote_addr: &str, error: TransportError) -> TransportError {
     let cause = match error {
         TransportError::Connect(message) | TransportError::Tls(message) => {
@@ -511,60 +529,9 @@ where
     }
 }
 
-/// Completion data corresponding to Java's `ResponseFuture` callback metadata.
-#[derive(Clone, Debug)]
-pub struct InvokeCallbackResult {
-    pub request: RemotingCommand,
-    pub response: Option<RemotingCommand>,
-    pub error: Option<TransportError>,
-    pub send_request_ok: bool,
-    pub timed_out: bool,
-    pub elapsed: std::time::Duration,
-}
-
-impl InvokeCallbackResult {
-    fn from_result(
-        request: RemotingCommand,
-        result: Result<RemotingCommand, TransportError>,
-        elapsed: std::time::Duration,
-    ) -> Self {
-        match result {
-            Ok(response) => Self {
-                request,
-                response: Some(response),
-                error: None,
-                send_request_ok: true,
-                timed_out: false,
-                elapsed,
-            },
-            Err(error) => Self {
-                request,
-                response: None,
-                // Java's async wrapper constructs a fresh ResponseFuture for exceptional
-                // completion; its public sendRequestOK field therefore keeps the true default.
-                send_request_ok: true,
-                timed_out: error.is_timeout(),
-                error: Some(error),
-                elapsed,
-            },
-        }
-    }
-
-    fn result(&self) -> Result<RemotingCommand, TransportError> {
-        match (&self.response, &self.error) {
-            (Some(response), _) => Ok(response.clone()),
-            (None, Some(error)) => Err(error.clone()),
-            (None, None) => Err(TransportError::Closed),
-        }
-    }
-}
-
 /// Connection lifecycle notifications corresponding to Java `ChannelEventListener`.
 pub trait InvokeCallback: Send + Sync + 'static {
-    fn operation_complete(&self, _result: &Result<RemotingCommand, TransportError>) {}
-    fn operation_complete_with_context(&self, context: &InvokeCallbackResult) {
-        self.operation_complete(&context.result());
-    }
+    fn operation_complete(&self, _future: &ResponseFuture) {}
     fn operation_succeed(&self, _response: &RemotingCommand) {}
     fn operation_fail(&self, _error: &TransportError) {}
 }
@@ -573,8 +540,12 @@ impl<F> InvokeCallback for F
 where
     F: Fn(Result<RemotingCommand, TransportError>) + Send + Sync + 'static,
 {
-    fn operation_complete(&self, result: &Result<RemotingCommand, TransportError>) {
-        self(result.clone());
+    fn operation_succeed(&self, response: &RemotingCommand) {
+        self(Ok(response.clone()));
+    }
+
+    fn operation_fail(&self, error: &TransportError) {
+        self(Err(error.clone()));
     }
 }
 
@@ -668,6 +639,7 @@ pub struct ChannelEvent {
     pub remote_addr: String,
     pub event_type: NettyEventType,
     pub generation: u64,
+    pub channel: ChannelHandle,
 }
 
 pub trait ChannelEventListener: Send + Sync + 'static {
@@ -675,32 +647,32 @@ pub trait ChannelEventListener: Send + Sync + 'static {
     /// queue, so a slow observer cannot block transport or a Tokio runtime worker. Queue overflow
     /// drops the event. A synchronous callback already running cannot be forcibly cancelled by
     /// shutdown; it must return for its blocking thread to be reclaimed.
-    /// Receives the event with generation metadata. The default adapter
-    /// preserves the Java-shaped address callbacks below.
+    /// Receives the event with its Rust channel handle and generation metadata.
     fn on_channel_event(&self, event: &ChannelEvent) {
         match event.event_type {
-            NettyEventType::Connect => self.on_connect(&event.remote_addr),
-            NettyEventType::Close => self.on_close(&event.remote_addr),
-            NettyEventType::Exception => self.on_exception(&event.remote_addr),
-            NettyEventType::Idle => self.on_idle(&event.remote_addr),
+            NettyEventType::Connect => self.on_connect(&event.remote_addr, &event.channel),
+            NettyEventType::Close => self.on_close(&event.remote_addr, &event.channel),
+            NettyEventType::Exception => self.on_exception(&event.remote_addr, &event.channel),
+            NettyEventType::Idle => self.on_idle(&event.remote_addr, &event.channel),
             // Active is delivered through the async adapter below.
             NettyEventType::Active => {}
         }
     }
 
-    fn on_connect(&self, _remote_addr: &str) {}
-    fn on_close(&self, _remote_addr: &str) {}
-    fn on_exception(&self, _remote_addr: &str) {}
-    fn on_idle(&self, _remote_addr: &str) {}
-    fn on_active(&self, _remote_addr: &str) {}
+    fn on_connect(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
+    fn on_close(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
+    fn on_exception(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
+    fn on_idle(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
+    fn on_active(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
     /// Borrowed async work stays in the owned event worker; existing sync
     /// listeners use the default adapter without spawning detached tasks.
     fn on_active_async<'a>(
         &'a self,
         remote_addr: &'a str,
+        channel: &'a ChannelHandle,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
-            self.on_active(remote_addr);
+            self.on_active(remote_addr, channel);
         })
     }
 }
@@ -1526,50 +1498,41 @@ impl RemotingClient {
             return Err(TransportError::Shutdown);
         }
         let addr = addr.into();
-        if Instant::now() >= deadline {
-            let callback = CallbackJob {
-                callback,
-                context: InvokeCallbackResult {
-                    request: command,
-                    response: None,
-                    error: Some(TransportError::timeout(
-                        crate::error::TimeoutPhase::Operation,
-                        Some(addr.clone()),
-                        None,
-                    )),
-                    send_request_ok: true,
-                    timed_out: true,
-                    elapsed: std::time::Duration::ZERO,
-                },
-                channel_established: Arc::new(AtomicBool::new(true)),
-                _permit: None,
-            };
-            self.inner.dispatch_callback(callback);
-            return Ok(());
-        }
-        let client = self.clone();
         let started = Instant::now();
+        let timeout_millis = remaining_timeout_millis(deadline, started);
+        let callback_timing = Arc::new(Mutex::new(CallbackTiming {
+            wrapper_timeout_millis: timeout_millis,
+            response_begin: started,
+            response_timeout_millis: timeout_millis,
+        }));
+        let client = self.clone();
         let callback_request_state = Arc::new(Mutex::new(command.clone()));
         let channel_established = Arc::new(AtomicBool::new(false));
         let callback_opaque = Arc::new(AtomicI32::new(command.opaque));
         let task = tokio::spawn(async move {
+            let mut channel = None;
             let (result, permit) = match client.inner.connection(&addr, deadline).await {
-                Ok(_) => {
+                Ok(connection) => {
+                    channel = Some(connection.channel_handle());
                     channel_established.store(true, Ordering::Release);
+                    let wrapper_timeout_millis = remaining_timeout_millis(deadline, Instant::now());
+                    callback_timing.lock().unwrap().wrapper_timeout_millis = wrapper_timeout_millis;
                     let hooks = client.inner.rpc_hooks.lock().unwrap().clone();
                     let hook_result = run_before_rpc_hooks(&hooks, &addr, &mut command);
                     *callback_request_state.lock().unwrap() = command.clone();
                     if let Err(error) = hook_result {
-                        let context = InvokeCallbackResult::from_result(
+                        let future = ResponseFuture::from_result(
+                            channel,
                             callback_request_state.lock().unwrap().clone(),
                             Err(rpc_hook_transport_error(error)),
-                            started.elapsed(),
+                            wrapper_timeout_millis,
+                            Instant::now(),
+                            callback.clone(),
+                            None,
                         );
                         client.inner.dispatch_callback(CallbackJob {
-                            callback: callback.clone(),
-                            context,
+                            future,
                             channel_established: channel_established.clone(),
-                            _permit: None,
                         });
                         return;
                     }
@@ -1596,6 +1559,7 @@ impl RemotingClient {
                                         channel_established: channel_established.clone(),
                                         opaque: callback_opaque.clone(),
                                         request: callback_request_state.clone(),
+                                        timing: callback_timing.clone(),
                                     }),
                                     &mut admission,
                                 )
@@ -1615,20 +1579,27 @@ impl RemotingClient {
                 }
                 Err(error) => (Err(classify_connection_error(&addr, error)), None),
             };
-            let context = InvokeCallbackResult::from_result(
+            let (future_timeout_millis, future_begin) = {
+                let timing = *callback_timing.lock().unwrap();
+                if result.is_ok() {
+                    (timing.response_timeout_millis, timing.response_begin)
+                } else {
+                    (timing.wrapper_timeout_millis, Instant::now())
+                }
+            };
+            let future = ResponseFuture::from_result(
+                channel,
                 callback_request_state.lock().unwrap().clone(),
                 result,
-                started.elapsed(),
+                future_timeout_millis,
+                future_begin,
+                callback,
+                permit,
             );
-            // invokeAsyncImpl synthesizes a default-true ResponseFuture on failure;
-            // the internal requestFail flag is not the public callback's flag.
-            let job = CallbackJob {
-                callback: callback.clone(),
-                context,
+            client.inner.dispatch_callback(CallbackJob {
+                future,
                 channel_established: channel_established.clone(),
-                _permit: permit,
-            };
-            client.inner.dispatch_callback(job);
+            });
         });
         self.inner.spawn(task);
         Ok(())
@@ -1863,6 +1834,12 @@ impl RemotingClient {
                 }
                 Err(error) => return Err(error),
             }
+        }
+        if let Some(callback) = &callback {
+            let response_begin = Instant::now();
+            let mut timing = callback.timing.lock().unwrap();
+            timing.response_begin = response_begin;
+            timing.response_timeout_millis = remaining_timeout_millis(deadline, response_begin);
         }
         let pending_deadline = deadline + std::time::Duration::from_secs(1);
         let (opaque, receiver) = self.inner.insert_pending(
@@ -2207,12 +2184,13 @@ impl ClientInner {
         }
     }
 
-    fn notify_channel(&self, address: &str, event: NettyEventType, generation: u64) {
+    fn notify_channel(&self, event_type: NettyEventType, channel: ChannelHandle) {
         if self.channel_listener.is_some() {
             let _ = self.channel_event_sender.try_send(ChannelEvent {
-                remote_addr: redact_peer_address(address),
-                event_type: event,
-                generation,
+                remote_addr: channel.remote_addr().to_owned(),
+                event_type,
+                generation: channel.generation(),
+                channel,
             });
         }
     }
@@ -2432,16 +2410,10 @@ where
 
 fn run_callback(job: CallbackJob) {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let connect_failed = !job.channel_established.load(Ordering::Acquire);
-        if !connect_failed {
-            job.callback.operation_complete_with_context(&job.context);
-        }
-        match (&job.context.response, &job.context.error) {
-            (Some(response), _) => job.callback.operation_succeed(response),
-            (None, Some(error)) => job.callback.operation_fail(error),
-            (None, None) => job.callback.operation_fail(&TransportError::Closed),
-        }
+        job.future
+            .dispatch_async_callback(job.channel_established.load(Ordering::Acquire));
     }));
+    job.future.release();
 }
 
 fn start_channel_event_worker(
@@ -2471,7 +2443,7 @@ fn start_channel_event_worker(
                 }));
                 if matches!(event.event_type, NettyEventType::Active) {
                     let operation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        listener.on_active_async(&event.remote_addr)
+                        listener.on_active_async(&event.remote_addr, &event.channel)
                     }));
                     if let Ok(operation) = operation {
                         let mut callback_shutdown = callback_shutdown;
@@ -2919,6 +2891,7 @@ mod tests {
             fn on_active_async<'a>(
                 &'a self,
                 _: &'a str,
+                _: &'a ChannelHandle,
             ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
                 Box::pin(async move {
                     let call = self.calls.fetch_add(1, Ordering::SeqCst);
@@ -2947,6 +2920,7 @@ mod tests {
                 remote_addr: "broker".into(),
                 event_type: NettyEventType::Active,
                 generation: 1,
+                channel: ChannelHandle::pending("broker", 1),
             })
             .await
             .unwrap();
@@ -2955,6 +2929,7 @@ mod tests {
                 remote_addr: "broker".into(),
                 event_type: NettyEventType::Active,
                 generation: 1,
+                channel: ChannelHandle::pending("broker", 1),
             })
             .await
             .unwrap();
@@ -4642,22 +4617,22 @@ mod tests {
         let callback_started = started.clone();
         let callback_finished = finished.clone();
         let callback_release = release_rx.clone();
-        client.inner.dispatch_callback(CallbackJob {
-            callback: Arc::new(move |_: Result<RemotingCommand, TransportError>| {
+        let future = ResponseFuture::from_result(
+            None,
+            test_command(),
+            Err(TransportError::Shutdown),
+            1000,
+            Instant::now(),
+            Arc::new(move |_: Result<RemotingCommand, TransportError>| {
                 callback_started.store(true, Ordering::Release);
                 callback_release.lock().unwrap().recv().unwrap();
                 callback_finished.store(true, Ordering::Release);
             }),
-            context: InvokeCallbackResult {
-                request: test_command(),
-                response: None,
-                error: Some(TransportError::Shutdown),
-                send_request_ok: true,
-                timed_out: false,
-                elapsed: std::time::Duration::ZERO,
-            },
+            None,
+        );
+        client.inner.dispatch_callback(CallbackJob {
+            future,
             channel_established: Arc::new(AtomicBool::new(true)),
-            _permit: None,
         });
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             while !started.load(Ordering::Acquire) {
