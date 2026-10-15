@@ -109,3 +109,24 @@ revision's complete P18-V02 workspace rerun and current-revision GitHub Ubuntu
 address-profile result remain outstanding. P18-V03 is complete; Phase 19's
 Docker/Broker scenarios and pre-publication version/registry checks remain
 separate future work.
+
+2026-10-15 UTC — P15 request/reply startup rollback follow-up, code commit
+182f8f69, against pinned Java client source
+efa1be59d6fc747ad220f036c86030f05f0419f9. ClientRuntime reply registration
+now requires Running. Failed startup rollback drops internal reply senders;
+the Rust-only ProducerShutdown completion and ProducerError::RequestReplyShutdown
+public variant were removed. Added regression checks to every injected initial
+startup failure and registry-clear handling; updated the Phase 15 matrix and
+Phase 6 reverse audit.
+
+Validation passed:
+- cargo test -p rocketmq-classic-core -p rocketmq-classic-producer --locked:
+  Core 160 unit tests, all integration targets, and 13 doctests; Producer 142
+  unit tests, all integration targets, and 6 doctests.
+- cargo clippy -p rocketmq-classic-core -p rocketmq-classic-producer
+  --all-targets --all-features --locked -- -D warnings.
+- cargo fmt --all -- --check and git diff --check.
+
+This closes the identified P15 startup-failure completion path. P18-V01 remains
+open for the full bidirectional public API/settings/flow audit. P18-V02 still
+requires a full workspace rerun on the final P18 revision.

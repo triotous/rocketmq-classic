@@ -1494,3 +1494,15 @@ Before any publication:
   the pre-start ClientRuntime pending-reply ProducerShutdown path. The full
   final-revision P18-V02 workspace rerun and current-revision GitHub Ubuntu
   address-profile result remain outstanding.
+
+- P15 request/reply startup rollback follow-up (182f8f69, 2026-10-15,
+  pinned Java source efa1be59d6fc747ad220f036c86030f05f0419f9): reply
+  registration now requires a Running ClientRuntime, so a failed startup cannot
+  leave a request to receive a Rust-only ProducerShutdown completion.
+  GroupRegistry clear drops internal senders, and the public
+  RequestReplyShutdown error and ProducerShutdown completion variant are
+  removed. The Phase 15 matrix marks this local lifecycle slice verified; the
+  full P18-V01 reverse API audit remains open. cargo test for Core and Producer
+  passes (Core: 160 unit tests, all integration targets, 13 doctests; Producer:
+  142 unit tests, all integration targets, 6 doctests). Strict all-target,
+  all-feature Clippy for both crates, format, and diff checks pass.
