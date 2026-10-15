@@ -510,11 +510,11 @@ pub(super) async fn connect(
     proxy: Option<&SocksProxyConfig>,
     send_buffer_size: usize,
     receive_buffer_size: usize,
-    deadline: Instant,
+    deadline: Option<Instant>,
 ) -> Result<BoxedStream, TransportError> {
     let (host, port) = split_address(address)?;
     let host = connect_host(&host);
-    let stream = time::timeout(deadline.saturating_duration_since(Instant::now()), async {
+    let dial = async {
         if let Some(proxy) = proxy {
             let stream = match (&proxy.username, &proxy.password) {
                 (Some(username), Some(password)) => {
@@ -589,22 +589,27 @@ pub(super) async fn connect(
                 .map_err(TransportError::connect_source)?;
             Ok(Box::new(stream) as BoxedStream)
         }
-    })
-    .await
-    .map_err(|_| TransportError::Timeout)??;
+    };
+    let stream = match deadline {
+        Some(deadline) => time::timeout_at(deadline, dial)
+            .await
+            .map_err(|_| TransportError::Timeout)??,
+        None => dial.await?,
+    };
     match mode {
         TransportMode::Plain => Ok(stream),
         TransportMode::Tls(config) => {
             let server_name = ServerName::try_from(host).map_err(TransportError::tls_source)?;
             let connector = config.connector()?;
-            time::timeout(
-                deadline.saturating_duration_since(Instant::now()),
-                connector.connect(server_name, stream),
-            )
-            .await
-            .map_err(|_| TransportError::Timeout)?
-            .map(|tls| Box::new(tls) as BoxedStream)
-            .map_err(TransportError::tls_source)
+            let handshake = connector.connect(server_name, stream);
+            let tls = match deadline {
+                Some(deadline) => time::timeout_at(deadline, handshake)
+                    .await
+                    .map_err(|_| TransportError::Timeout)?,
+                None => handshake.await,
+            }
+            .map_err(TransportError::tls_source)?;
+            Ok(Box::new(tls) as BoxedStream)
         }
     }
 }

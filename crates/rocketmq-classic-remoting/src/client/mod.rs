@@ -143,6 +143,7 @@ struct ClientInner {
     config: ClientConfig,
     connect_timeout_millis: AtomicI32,
     active_connect_timeout_millis: AtomicI32,
+    proxy_connect_timeout_millis: Mutex<HashMap<String, i32>>,
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
@@ -171,20 +172,38 @@ impl ClientInner {
         self.active_connect_timeout_millis.load(Ordering::Acquire)
     }
 
-    fn connect_timeout_duration(&self) -> std::time::Duration {
-        config::connect_timeout_duration(self.active_connect_timeout_millis())
-    }
-
     fn scan_interval(&self) -> std::time::Duration {
         config::scan_interval(self.active_connect_timeout_millis())
     }
 
-    fn connection_deadline(&self, deadline: Instant) -> Instant {
-        if self.active_connect_timeout_millis() == 0 {
+    fn deadline_for_connect_timeout(
+        deadline: Option<Instant>,
+        timeout_millis: i32,
+    ) -> Option<Instant> {
+        if timeout_millis == 0 {
             deadline
         } else {
-            deadline.min(Instant::now() + self.connect_timeout_duration())
+            let connect_deadline =
+                Instant::now() + config::connect_timeout_duration(timeout_millis);
+            Some(deadline.map_or(connect_deadline, |deadline| deadline.min(connect_deadline)))
         }
+    }
+
+    fn connection_deadline_for_route(
+        &self,
+        proxy_cidr: Option<&str>,
+        deadline: Option<Instant>,
+    ) -> Option<Instant> {
+        let timeout_millis = match proxy_cidr {
+            Some(cidr) => {
+                let mut timeouts = self.proxy_connect_timeout_millis.lock().unwrap();
+                *timeouts
+                    .entry(cidr.to_owned())
+                    .or_insert_with(|| self.connect_timeout_millis.load(Ordering::Acquire))
+            }
+            None => self.active_connect_timeout_millis(),
+        };
+        Self::deadline_for_connect_timeout(deadline, timeout_millis)
     }
 
     fn frame_max_length(&self) -> Result<usize, TransportError> {
@@ -684,6 +703,7 @@ impl RemotingClient {
             max_frame_size_override: None,
             connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
+            proxy_connect_timeout_millis: Mutex::new(HashMap::new()),
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
@@ -776,7 +796,8 @@ impl RemotingClient {
         self.inner.connect_timeout_millis.load(Ordering::Acquire)
     }
 
-    /// Updates the connect timeout used when `start()` configures the client.
+    /// Sets the direct-connect value captured by `start()` and the live value captured
+    /// when each proxy CIDR is first used.
     pub fn set_connect_timeout_millis(&self, timeout_millis: i32) {
         self.inner
             .connect_timeout_millis
@@ -831,6 +852,7 @@ impl RemotingClient {
             max_frame_size_override: Some(max_frame_size),
             connect_timeout_millis: AtomicI32::new(3000),
             active_connect_timeout_millis: AtomicI32::new(3000),
+            proxy_connect_timeout_millis: Mutex::new(HashMap::new()),
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
@@ -2394,9 +2416,7 @@ async fn scan_available_name_servers(
                     let scan_workers = scan_workers.clone();
                     scans.spawn(async move {
                         let _permit = scan_workers.acquire_owned().await.ok()?;
-                        let probe_timeout = inner.connect_timeout_duration();
-                        let deadline = Instant::now() + probe_timeout;
-                        let connection = inner.connection(&address, deadline).await;
+                        let connection = inner.connection_for_scan(&address).await;
                         Some((address, connection))
                     });
                 }
@@ -3503,7 +3523,11 @@ mod tests {
         client.start().unwrap();
         assert_eq!(client.inner.active_connect_timeout_millis(), 25);
         let requested_deadline = Instant::now() + std::time::Duration::from_secs(1);
-        let connect_deadline = client.inner.connection_deadline(requested_deadline);
+        let connect_deadline = ClientInner::deadline_for_connect_timeout(
+            Some(requested_deadline),
+            client.inner.active_connect_timeout_millis(),
+        )
+        .unwrap();
         assert!(connect_deadline <= requested_deadline);
         assert!(
             connect_deadline.saturating_duration_since(Instant::now())
@@ -3513,6 +3537,74 @@ mod tests {
         client.set_connect_timeout_millis(99);
         assert_eq!(client.get_connect_timeout_millis(), 99);
         assert_eq!(client.inner.active_connect_timeout_millis(), 25);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn proxy_connect_timeout_is_read_on_first_route_use_and_then_cached() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.start().unwrap();
+
+        client.set_connect_timeout_millis(125);
+        let first = client
+            .inner
+            .connection_deadline_for_route(
+                Some("127.0.0.0/8"),
+                Some(Instant::now() + std::time::Duration::from_secs(5)),
+            )
+            .unwrap();
+        assert_eq!(
+            client
+                .inner
+                .proxy_connect_timeout_millis
+                .lock()
+                .unwrap()
+                .get("127.0.0.0/8"),
+            Some(&125)
+        );
+        assert_eq!(client.inner.active_connect_timeout_millis(), 3000);
+
+        client.set_connect_timeout_millis(250);
+        let cached = client
+            .inner
+            .connection_deadline_for_route(
+                Some("127.0.0.0/8"),
+                Some(Instant::now() + std::time::Duration::from_secs(5)),
+            )
+            .unwrap();
+        assert_eq!(
+            client
+                .inner
+                .proxy_connect_timeout_millis
+                .lock()
+                .unwrap()
+                .get("127.0.0.0/8"),
+            Some(&125)
+        );
+        assert!(first <= Instant::now() + std::time::Duration::from_millis(125));
+        assert!(cached <= Instant::now() + std::time::Duration::from_millis(125));
+
+        let second_route = client
+            .inner
+            .connection_deadline_for_route(
+                Some("10.0.0.0/8"),
+                Some(Instant::now() + std::time::Duration::from_secs(5)),
+            )
+            .unwrap();
+        assert_eq!(
+            client
+                .inner
+                .proxy_connect_timeout_millis
+                .lock()
+                .unwrap()
+                .get("10.0.0.0/8"),
+            Some(&250)
+        );
+        assert!(second_route <= Instant::now() + std::time::Duration::from_millis(250));
         client.shutdown().await;
     }
 
@@ -3561,6 +3653,7 @@ mod tests {
             scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
             connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
+            proxy_connect_timeout_millis: Mutex::new(HashMap::new()),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),

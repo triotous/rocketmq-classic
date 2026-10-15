@@ -119,10 +119,25 @@ impl ClientInner {
         address: &str,
         deadline: Instant,
     ) -> Result<Arc<connection::Connection>, TransportError> {
+        self.connection_with_deadline(address, Some(deadline)).await
+    }
+
+    pub(super) async fn connection_for_scan(
+        self: &Arc<Self>,
+        address: &str,
+    ) -> Result<Arc<connection::Connection>, TransportError> {
+        self.connection_with_deadline(address, None).await
+    }
+
+    async fn connection_with_deadline(
+        self: &Arc<Self>,
+        address: &str,
+        deadline: Option<Instant>,
+    ) -> Result<Arc<connection::Connection>, TransportError> {
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             return Err(TransportError::Timeout);
         }
         let key = Address::parse(address)?.0;
@@ -144,9 +159,13 @@ impl ClientInner {
                 }
             }
         };
-        let _guard = tokio::time::timeout_at(deadline, gate.lock())
-            .await
-            .map_err(|_| TransportError::Timeout)?;
+        let gate_lock = gate.lock();
+        let _guard = match deadline {
+            Some(deadline) => tokio::time::timeout_at(deadline, gate_lock)
+                .await
+                .map_err(|_| TransportError::Timeout)?,
+            None => gate_lock.await,
+        };
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {
             return Err(TransportError::Shutdown);
         }
@@ -156,9 +175,10 @@ impl ClientInner {
             }
         }
         let mut shutdown = self.shutdown.subscribe();
-        let connect_deadline = self.connection_deadline(deadline);
         let (host, _) = connection::split_address(&key)?;
         let selected = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
+        let proxy_cidr = selected.as_ref().map(|selection| selection.cidr.as_str());
+        let connect_deadline = self.connection_deadline_for_route(proxy_cidr, deadline);
         let generation = self
             .generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

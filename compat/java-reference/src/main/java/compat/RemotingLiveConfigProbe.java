@@ -62,6 +62,7 @@ public final class RemotingLiveConfigProbe {
         verifyScanAvailableNameServerSetting();
         verifyClientWorkerThreadsSetting();
         verifyConnectTimeoutSetting();
+        verifyProxyConnectTimeoutSetting();
         System.out.println("Remoting live config mutation verified");
     }
 
@@ -148,6 +149,54 @@ public final class RemotingLiveConfigProbe {
             Object configured = bootstrap.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
             if (!Integer.valueOf(2345).equals(configured)) {
                 throw new IllegalStateException("start did not use the live connect timeout: " + configured);
+            }
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static void verifyProxyConnectTimeoutSetting() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setConnectTimeoutMillis(1);
+        config.setSocksProxyConfig(
+            "{\"127.0.0.0/8\":{\"addr\":\"127.0.0.1:1080\"},"
+                + "\"10.0.0.0/8\":{\"addr\":\"127.0.0.1:1080\"}}");
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try {
+            client.start();
+            config.setConnectTimeoutMillis(2345);
+
+            Field directField = NettyRemotingClient.class.getDeclaredField("bootstrap");
+            directField.setAccessible(true);
+            Bootstrap direct = (Bootstrap) directField.get(client);
+            Object directTimeout = direct.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+            if (!Integer.valueOf(1).equals(directTimeout)) {
+                throw new IllegalStateException("direct bootstrap changed after start: " + directTimeout);
+            }
+
+            java.lang.reflect.Method fetchBootstrap = NettyRemotingClient.class
+                .getDeclaredMethod("fetchBootstrap", String.class);
+            fetchBootstrap.setAccessible(true);
+            Bootstrap firstProxy = (Bootstrap) fetchBootstrap.invoke(client, "127.0.0.1:10911");
+            Object firstTimeout = firstProxy.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+            if (!Integer.valueOf(2345).equals(firstTimeout)) {
+                throw new IllegalStateException("first proxy bootstrap missed live timeout: " + firstTimeout);
+            }
+
+            config.setConnectTimeoutMillis(6789);
+            Bootstrap reusedProxy = (Bootstrap) fetchBootstrap.invoke(client, "127.0.0.1:10911");
+            if (reusedProxy != firstProxy) {
+                throw new IllegalStateException("proxy bootstrap was not reused for its CIDR");
+            }
+            Object cachedTimeout = reusedProxy.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+            if (!Integer.valueOf(2345).equals(cachedTimeout)) {
+                throw new IllegalStateException("cached proxy bootstrap changed timeout: " + cachedTimeout);
+            }
+
+            Bootstrap secondProxy = (Bootstrap) fetchBootstrap.invoke(client, "10.0.0.1:10911");
+            Object secondTimeout = secondProxy.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+            if (!Integer.valueOf(6789).equals(secondTimeout)) {
+                throw new IllegalStateException("new proxy bootstrap missed latest timeout: " + secondTimeout);
             }
         } finally {
             client.shutdown();

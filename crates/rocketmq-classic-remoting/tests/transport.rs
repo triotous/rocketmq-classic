@@ -710,6 +710,27 @@ async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
 }
 
 #[tokio::test]
+async fn p18_nameserver_scan_allows_zero_connect_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let client = RemotingClient::with_config(ClientConfig {
+        connect_timeout: 0,
+        scan_available_nameserver: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.update_name_server_address_list(vec![address.to_string()]);
+    client.start().unwrap();
+
+    let (stream, _) = tokio::time::timeout(Duration::from_millis(500), listener.accept())
+        .await
+        .expect("zero connect timeout should allow a NameServer scan to connect")
+        .unwrap();
+    client.shutdown().await;
+    drop(stream);
+}
+
+#[tokio::test]
 async fn p3_nameserver_scan_setting_is_read_at_start_time() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -742,6 +763,51 @@ async fn p3_nameserver_scan_setting_is_read_at_start_time() {
 
     client.shutdown().await;
     drop(stream);
+}
+
+#[tokio::test]
+async fn p18_nameserver_proxy_scan_uses_timeout_cached_at_first_route_use() {
+    let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_address = proxy.local_addr().unwrap();
+    let proxy_peer = tokio::spawn(async move {
+        let (mut client, _) = tokio::time::timeout(Duration::from_secs(2), proxy.accept())
+            .await
+            .expect("NameServer scan did not connect through the proxy")
+            .unwrap();
+        let mut greeting = [0; 2];
+        client.read_exact(&mut greeting).await.unwrap();
+        assert_eq!(greeting[0], 5);
+        let mut methods = vec![0; usize::from(greeting[1])];
+        client.read_exact(&mut methods).await.unwrap();
+        assert_eq!(methods, [0]);
+        let started = Instant::now();
+        let mut byte = [0; 1];
+        let closed = tokio::time::timeout(Duration::from_secs(2), client.read(&mut byte)).await;
+        assert!(
+            closed.is_ok(),
+            "proxy scan did not apply its connect timeout"
+        );
+        started.elapsed()
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        connect_timeout: 40,
+        scan_available_nameserver: true,
+        socks_proxy_config: format!(r#"{{"127.0.0.0/8":{{"addr":"{}"}}}}"#, proxy_address),
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    client.set_connect_timeout_millis(300);
+    client.update_name_server_address_list(vec!["127.0.0.1:19003".into()]);
+
+    let elapsed_result = tokio::time::timeout(Duration::from_secs(3), proxy_peer).await;
+    client.shutdown().await;
+    let elapsed = elapsed_result.expect("proxy scan did not finish").unwrap();
+    assert!(
+        elapsed >= Duration::from_millis(200),
+        "proxy scan used the start-time timeout instead of the first-use value: {elapsed:?}"
+    );
+    assert!(elapsed < Duration::from_secs(2));
 }
 
 #[tokio::test]
@@ -4944,6 +5010,62 @@ async fn p3_u01_socks5_proxy_tunnels_a_remoting_request() {
 #[tokio::test]
 async fn p3_u01_socks5_no_auth_proxy_tunnels_a_remoting_request() {
     socks5_proxy_tunnels_a_remoting_request(false).await;
+}
+
+#[tokio::test]
+async fn p18_proxy_connect_timeout_uses_live_first_use_value_and_caches_it() {
+    let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_address = proxy.local_addr().unwrap();
+    let proxy_peer = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (mut client, _) = proxy.accept().await.unwrap();
+            let mut greeting = [0; 2];
+            client.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting[0], 5);
+            let mut methods = vec![0; usize::from(greeting[1])];
+            client.read_exact(&mut methods).await.unwrap();
+            assert_eq!(methods, [0]);
+            let mut byte = [0; 1];
+            let _ = client.read(&mut byte).await;
+        }
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        socks_proxy_config: format!(r#"{{"127.0.0.0/8":{{"addr":"{}"}}}}"#, proxy_address),
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+
+    client.set_connect_timeout_millis(125);
+    let first = tokio::time::timeout(
+        Duration::from_secs(1),
+        client.is_address_reachable("127.0.0.1:19001", Instant::now() + Duration::from_secs(5)),
+    )
+    .await;
+
+    client.set_connect_timeout_millis(2000);
+    let second = tokio::time::timeout(
+        Duration::from_secs(1),
+        client.is_address_reachable("127.0.0.1:19002", Instant::now() + Duration::from_secs(5)),
+    )
+    .await;
+    client.shutdown().await;
+    tokio::time::timeout(Duration::from_secs(2), proxy_peer)
+        .await
+        .expect("scripted proxy did not observe both timed out connections")
+        .unwrap();
+
+    assert_eq!(
+        first,
+        Ok(false),
+        "first proxy bootstrap missed the live value"
+    );
+    assert_eq!(
+        second,
+        Ok(false),
+        "cached proxy bootstrap changed its timeout"
+    );
 }
 
 async fn socks5_proxy_tunnels_a_remoting_request(username_password: bool) {
