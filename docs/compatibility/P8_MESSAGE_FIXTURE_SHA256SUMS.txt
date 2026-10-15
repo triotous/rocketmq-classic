@@ -1,1 +1,1 @@
-cd48ccada3c107facb4ec332316ef29e569cca7c50cd3b0711152b7234cd6b98  fixtures/messages/records.json
+b9f6f527720c425b17af57367a524f65e1f16da20acfc369502d64fa37b821e7  fixtures/messages/records.json

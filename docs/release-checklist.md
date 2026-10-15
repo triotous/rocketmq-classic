@@ -727,13 +727,14 @@ the required full Phase 18 gates on the final revision.
   `Message::clone_message`. Its invoked Java `messagePublicApi` fixture and Rust
   differential check copied topic/body/flag/property values, distinct message
   ownership, omitted transaction ID, and unchanged source transaction ID.
-  Producer selector preparation uses this same projection. The Java reference
-  shares body/property references; Rust represents the snapshot with owned
-  values. Current message fixture SHA-256:
-  `7c61fee7311b7926b92b845899083e5f80a2ba8e67105ed7656de3d5e3a17a22`.
-  This closes that method mapping only. The current-revision P18-V02 rerun is
-  recorded below; broad P18-V01, GitHub Ubuntu evidence, and Phase 19 gates
-  remain open.
+  Producer selector preparation uses this same projection. The Java fixture
+  now confirms shared body-array/property-map identity, bidirectional mutation
+  visibility, and per-message detachment after `setBody`/`setProperties`.
+  Rust still deep-owns those values, so direct alias parity remains open P18-V01
+  work. Current message fixture SHA-256:
+  `b9f6f527720c425b17af57367a524f65e1f16da20acfc369502d64fa37b821e7`.
+  The current-revision P18-V02 rerun is recorded below; broad P18-V01, GitHub
+  Ubuntu evidence, and Phase 19 gates remain open.
 - Current-revision server-free P18-V02 rerun (`1aae4772`, 2026-10-15):
   `TZ=UTC cargo test --workspace --locked` and
   `cargo test --workspace --all-features --locked` pass; strict workspace

@@ -291,6 +291,35 @@ public final class MessageDecodeFixtures {
         expected.put("accessorCloneTransactionIdIsNull", accessorClone.getTransactionId() == null);
         expected.put("accessorCloneSourceTransactionId", accessorCloneSource.getTransactionId());
 
+        Message aliasSource = new Message("clone-alias-topic", new byte[] {1, 2, 3});
+        Map<String, String> aliasProperties = new HashMap<>();
+        aliasProperties.put("shared", "initial");
+        MessageAccessor.setProperties(aliasSource, aliasProperties);
+        Message aliasClone = MessageAccessor.cloneMessage(aliasSource);
+        expected.put("accessorCloneSharesBodyArray", aliasClone.getBody() == aliasSource.getBody());
+        expected.put("accessorCloneSharesPropertiesMap",
+            aliasClone.getProperties() == aliasSource.getProperties());
+        aliasClone.getBody()[0] = 9;
+        expected.put("accessorCloneBodyMutationVisibleInSource", aliasSource.getBody()[0]);
+        aliasSource.getProperties().put("source-only", "source");
+        expected.put("accessorClonePropertyMutationVisibleInClone",
+            aliasClone.getProperty("source-only"));
+        aliasClone.getProperties().put("clone-only", "clone");
+        expected.put("accessorClonePropertyMutationVisibleInSource",
+            aliasSource.getProperty("clone-only"));
+        aliasClone.setBody(new byte[] {7, 8});
+        expected.put("accessorCloneSetBodyDetachesArray",
+            aliasClone.getBody() != aliasSource.getBody());
+        expected.put("accessorCloneSetBodyLeavesSourceArray", aliasSource.getBody()[0]);
+        Map<String, String> detachedProperties = new HashMap<>();
+        detachedProperties.put("detached", "value");
+        MessageAccessor.setProperties(aliasClone, detachedProperties);
+        expected.put("accessorCloneSetPropertiesDetachesMap",
+            aliasClone.getProperties() != aliasSource.getProperties());
+        aliasClone.getProperties().put("clone-after-detach", "clone");
+        expected.put("accessorCloneDetachedPropertyMutationLeavesSource",
+            !aliasSource.getProperties().containsKey("clone-after-detach"));
+
         Map<String, String> deepCopySource = new HashMap<>();
         deepCopySource.put(null, null);
         deepCopySource.put("present", "original");
