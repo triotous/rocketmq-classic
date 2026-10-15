@@ -1127,14 +1127,51 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
     let producer = Arc::new(Producer::new(config));
     producer.start().await.unwrap();
 
-    let mut message = Message::new("orders", b"select-only".to_vec());
+    let java_fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let java_snapshot = &java_fixture["implementationSelectorMessageSnapshot"];
+    let mut message = Message::new("tenant%orders", b"select-only".to_vec());
+    message.set_flag(java_snapshot["selectorFlag"].as_i64().unwrap() as i32);
+    message.set_transaction_id(Some(
+        java_snapshot["sourceTransactionId"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    ));
+    message
+        .put_user_property(
+            "fixture-key",
+            java_snapshot["selectorProperty"].as_str().unwrap(),
+        )
+        .unwrap();
     let selected = producer
         .invoke_message_queue_selector(
             &message,
             |queues, selected_message| {
-                assert_eq!(selected_message.topic(), "orders");
+                assert_eq!(
+                    selected_message.topic(),
+                    java_snapshot["selectorTopic"].as_str().unwrap()
+                );
+                assert_eq!(selected_message.body(), message.body());
+                assert_eq!(selected_message.flag(), java_snapshot["selectorFlag"]);
+                assert_eq!(
+                    selected_message.get_property("fixture-key"),
+                    java_snapshot["selectorProperty"].as_str()
+                );
+                assert_eq!(selected_message.transaction_id(), None);
+                assert_eq!(
+                    message.topic(),
+                    java_snapshot["sourceTopic"].as_str().unwrap()
+                );
+                assert_eq!(
+                    message.transaction_id(),
+                    java_snapshot["sourceTransactionId"].as_str()
+                );
                 assert_eq!(queues.len(), 1);
-                assert_eq!(queues[0].topic(), Some("orders"));
+                assert_eq!(
+                    queues[0].topic(),
+                    Some(java_snapshot["selectorQueueTopic"].as_str().unwrap())
+                );
                 queues.first().cloned()
             },
             std::time::Duration::from_secs(1),
@@ -1142,18 +1179,21 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
         .await
         .unwrap();
 
-    assert_eq!(message.topic(), "orders");
+    assert_eq!(message.topic(), "tenant%orders");
     assert_eq!(selected.topic(), Some("tenant%orders"));
     assert_eq!(selected.broker_name(), Some("broker-a"));
     assert_eq!(selected.queue_id(), 0);
+
+    assert_eq!(java_snapshot["selectorMessageIsDistinct"], true);
+    assert_eq!(java_snapshot["selectorBodyShared"], true);
+    assert_eq!(java_snapshot["selectorPropertiesShared"], true);
+    assert_eq!(java_snapshot["selectorTransactionIdIsNull"], true);
 
     let no_queue = producer
         .invoke_message_queue_selector(&message, |_, _| None, std::time::Duration::from_secs(1))
         .await;
     assert!(matches!(no_queue, Err(ProducerError::NoQueueSelected)));
 
-    let java_fixture: serde_json::Value =
-        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
     let java_invoke = &java_fixture["implementationSelectorFailure"]["invoke"];
     assert_eq!(java_invoke["errorClass"], "MQClientException");
     assert_eq!(java_invoke["causeClass"], "IllegalStateException");
@@ -1178,7 +1218,14 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
     let java_send = &java_fixture["implementationSelectorFailure"]["send"];
     assert_eq!(java_send["errorMessage"], java_invoke["errorMessage"]);
     let selector_send_failure = producer
-        .send_with_selector(&mut message, |_, _| panic!("fixture-selector-failure"))
+        .send_with_selector(&mut message, |_, selected_message| {
+            assert_eq!(
+                selected_message.topic(),
+                java_snapshot["selectorTopic"].as_str().unwrap()
+            );
+            assert_eq!(selected_message.transaction_id(), None);
+            panic!("fixture-selector-failure")
+        })
         .await
         .unwrap_err();
     assert_eq!(

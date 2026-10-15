@@ -513,8 +513,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   reverse-export reconciliation remains open.
 - `MessageAccessor.setProperties` now maps to `Message::set_properties` for
   replacing, emptying, and clearing the property map, with pinned Java fixture
-  coverage. Java's shallow `cloneMessage` alias behavior remains in the
-  P18-V01 source/API audit. Null-key maps now use `NullableMessageProperties`
+  coverage. The selector path now matches `cloneMessage`'s observable fields:
+  it gives callbacks an unnamespaced snapshot with the source body, flag and
+  properties, and no transaction ID. Java's shared body/property references
+  are recorded in the fixture; Rust callbacks receive an immutable reference,
+  so a deep-owned snapshot preserves the observable values. Null-key maps now use `NullableMessageProperties`
   and `Message::set_nullable_properties`, with nullable lookup/clear APIs and
   encoded-key coverage across compact/stored records, producer send/batch, and
   consumer retry-topic fallback. Current message fixture SHA-256:
@@ -651,6 +654,18 @@ the required full Phase 18 gates on the final revision.
   package-content listings pass. P18-V02 server-free gates pass on this
   revision. P18-V01, the current-revision GitHub Ubuntu address-profile result,
   and Phase 19 Broker/Docker validation remain open.
+- Selector message snapshot (`2026-10-15`, pinned Java 5.5.1): the invoked
+  `ProducerCoreFixtures.implementationSelectorMessageSnapshot` case confirms
+  that `MessageAccessor.cloneMessage` passes a distinct selector argument,
+  removes the configured namespace, retains body/flag/properties, shares body
+  and property references, and leaves `transactionId` null. Rust now prepares
+  the same readable selector view and preserves the input message; its closure
+  receives `&Message`, so reference identity and mutation cannot be observed.
+  The Java/Rust fixture and focused scripted-selector regression pass. Fixture
+  SHA-256: `41dd9cca0b559e68397eb2d7bd41769596417ac0d0be605b8cd586423524b1d1`.
+  This closes only the selector snapshot slice; broad P18-V01, the full gate on
+  this revision, current-revision GitHub Ubuntu evidence, and Phase 19 local
+  Broker/Docker automation remain open.
 
 ## Package graph and metadata
 

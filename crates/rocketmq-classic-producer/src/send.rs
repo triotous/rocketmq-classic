@@ -378,9 +378,10 @@ impl Producer {
     }
 
     /// Invokes a queue selector for the current writable route without sending.
-    /// The selector receives unnamespaced queues and the caller's message;
-    /// the returned queue is namespaced for use with this producer. Values
-    /// captured by the closure serve the role of Java's selector `arg`.
+    /// The selector receives unnamespaced queues and a message view with its
+    /// namespace removed. The returned queue is namespaced for use with this
+    /// producer. Values captured by the closure serve the role of Java's
+    /// selector `arg`.
     pub async fn invoke_message_queue_selector<F>(
         &self,
         message: &Message,
@@ -1738,8 +1739,15 @@ impl Producer {
             .iter()
             .map(|queue| self.queue_without_namespace(queue))
             .collect::<Result<Vec<_>, _>>()?;
+        let mut selector_message = message.clone();
+        if let Some(topic) = message.topic_nullable() {
+            selector_message.set_topic(self.topic_without_namespace(topic)?);
+        }
+        // Java's MessageAccessor.cloneMessage constructs a base Message and
+        // copies topic, body, flag and properties, leaving transactionId null.
+        selector_message.set_transaction_id(None);
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            selector(&logical_queues, message)
+            selector(&logical_queues, &selector_message)
         }))
         .map_err(|payload| ProducerError::SelectorPanicked(selector_panic_message(&*payload)))?
         .map(|logical_queue| {

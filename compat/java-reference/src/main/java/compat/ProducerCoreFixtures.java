@@ -153,6 +153,7 @@ public final class ProducerCoreFixtures {
         result.put("implementationPublishInfoTableAdvanced", implementationPublishInfoTableAdvanced());
         result.put("implementationQueueFilterSelection", implementationQueueFilterSelection());
         result.put("implementationSelectorFailure", implementationSelectorFailure());
+        result.put("implementationSelectorMessageSnapshot", implementationSelectorMessageSnapshot());
         result.put("producerClientFactoryApi", publicApiSurface(MQClientInstance.class));
         result.put("mqFaultStrategyApi", publicApiSurface(MQFaultStrategy.class));
         result.put("mqFaultStrategyBrokerFilterApi", publicApiSurface(MQFaultStrategy.BrokerFilter.class));
@@ -976,6 +977,56 @@ public final class ProducerCoreFixtures {
             Message message = new Message("orders", new byte[] {1});
             result.put("invoke", selectorFailureCase(implementation, message, true));
             result.put("send", selectorFailureCase(implementation, message, false));
+            return result;
+        } finally {
+            implementation.setServiceState(ServiceState.SHUTDOWN_ALREADY);
+            Field factoryState = MQClientInstance.class.getDeclaredField("serviceState");
+            factoryState.setAccessible(true);
+            factoryState.set(factory, ServiceState.RUNNING);
+            factory.shutdown();
+        }
+    }
+
+    private static Map<String, Object> implementationSelectorMessageSnapshot() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("producer-selector-snapshot");
+        producer.setNamespace("tenant");
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("producer-selector-snapshot");
+        clientConfig.setNamespace("tenant");
+        MQClientInstance factory = new MQClientInstance(clientConfig, 0, clientConfig.buildMQClientId());
+        try {
+            Field factoryField = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
+            factoryField.setAccessible(true);
+            factoryField.set(implementation, factory);
+            implementation.setServiceState(ServiceState.RUNNING);
+
+            TopicPublishInfo topicPublishInfo = new TopicPublishInfo();
+            topicPublishInfo.setMessageQueueList(new ArrayList<>(List.of(
+                new MessageQueue("tenant%orders", "broker-a", 0))));
+            implementation.updateTopicPublishInfo("tenant%orders", topicPublishInfo);
+
+            Message message = new Message("tenant%orders", new byte[] {1, 2});
+            message.setFlag(7);
+            message.setTransactionId("source-transaction-id");
+            MessageAccessor.putProperty(message, "fixture-key", "fixture-value");
+            Map<String, Object> result = new TreeMap<>();
+            MessageQueue selected = implementation.invokeMessageQueueSelector(message,
+                (queues, selectorMessage, argument) -> {
+                    result.put("selectorMessageIsDistinct", selectorMessage != message);
+                    result.put("selectorTopic", selectorMessage.getTopic());
+                    result.put("selectorBodyShared", selectorMessage.getBody() == message.getBody());
+                    result.put("selectorFlag", selectorMessage.getFlag());
+                    result.put("selectorPropertiesShared",
+                        selectorMessage.getProperties() == message.getProperties());
+                    result.put("selectorProperty", selectorMessage.getProperty("fixture-key"));
+                    result.put("selectorTransactionIdIsNull", selectorMessage.getTransactionId() == null);
+                    result.put("selectorQueueTopic", queues.get(0).getTopic());
+                    return queues.get(0);
+                }, new Object(), 10_000);
+            result.put("selectedQueueTopic", selected.getTopic());
+            result.put("sourceTopic", message.getTopic());
+            result.put("sourceTransactionId", message.getTransactionId());
             return result;
         } finally {
             implementation.setServiceState(ServiceState.SHUTDOWN_ALREADY);
