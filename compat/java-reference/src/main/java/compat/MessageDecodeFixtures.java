@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -60,6 +61,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
+        root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         root.put("messageCompactApi", messageCompactApi());
         root.put("messageExtEncodeApi", messageExtEncodeApi());
@@ -361,6 +363,24 @@ public final class MessageDecodeFixtures {
         expected.put("sysflagPosition", MessageDecoder.SYSFLAG_POSITION);
         expected.put("nameValueSeparator", (int) MessageDecoder.NAME_VALUE_SEPARATOR);
         expected.put("propertySeparator", (int) MessageDecoder.PROPERTY_SEPARATOR);
+        return expected;
+    }
+
+    private static Map<String, Object> messageDecoderPropertiesApi() {
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("nullMapEncoded", MessageDecoder.messageProperties2String(null));
+        expected.put("emptyMapEncoded", MessageDecoder.messageProperties2String(new HashMap<>()));
+        Map<String, String> nullValue = new HashMap<>();
+        nullValue.put("ignored", null);
+        expected.put("nullValueEncoded", MessageDecoder.messageProperties2String(nullValue));
+        Map<String, String> nullKey = new HashMap<>();
+        nullKey.put(null, "value");
+        expected.put("nullKeyEncoded", MessageDecoder.messageProperties2String(nullKey));
+        expected.put("nullInputDecoded", new TreeMap<>(MessageDecoder.string2messageProperties(null)));
+        expected.put("emptyInputDecoded", new TreeMap<>(MessageDecoder.string2messageProperties("")));
+        String encoded = "a\u0001one\u0002a\u0001two\u0002broken\u0002\u0001empty-key\u0002";
+        expected.put("encodedInput", encoded);
+        expected.put("encodedInputDecoded", new TreeMap<>(MessageDecoder.string2messageProperties(encoded)));
         return expected;
     }
 

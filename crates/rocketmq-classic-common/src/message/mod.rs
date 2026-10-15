@@ -25,7 +25,10 @@ pub use message_id::{
     MessageId, MessageIdError, create_message_id, create_message_id_from_host_bytes,
     decode_message_id,
 };
-pub use properties::{decode_properties, encode_properties};
+pub use properties::{
+    decode_properties, decode_properties_nullable, encode_nullable_property_entries,
+    encode_properties, encode_properties_nullable,
+};
 pub use types::{
     Message, MessageExt, MessageKeyCollectionError, MessageProperties, MessagePropertyError,
     MessagePropertyParseError, MessageQueue, MessageQueueCompareError, MessageSysFlagParseError,

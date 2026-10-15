@@ -5,14 +5,15 @@ use rocketmq_classic_common::{
         MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
         MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION,
         MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageExt, MessageHostAddress,
-        MessageHostAddressBytesError, MessageId, MessageIdError, PHY_POS_POSITION,
-        PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION, TopicFilterType,
-        append_crc32_property, client_decode, client_decodes, client_decodes_with_body,
-        count_inner_messages, create_message_id, create_message_id_from_host_bytes,
-        decode_compact_message, decode_compact_messages, decode_inner_batch, decode_many,
-        decode_many_as_client, decode_message_id, decode_one, decode_record_properties,
-        encode_compact_message, encode_compact_messages, encode_message_ext,
-        encode_message_ext_uniquely,
+        MessageHostAddressBytesError, MessageId, MessageIdError, MessageProperties,
+        PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
+        TopicFilterType, append_crc32_property, client_decode, client_decodes,
+        client_decodes_with_body, count_inner_messages, create_message_id,
+        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
+        decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
+        decode_properties_nullable, decode_record_properties, encode_compact_message,
+        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
+        encode_nullable_property_entries, encode_properties_nullable,
     },
     sysflag::message,
 };
@@ -502,6 +503,39 @@ fn message_decoder_public_constants_match_java_551() {
         expected["nameValueSeparator"]
     );
     assert_eq!(PROPERTY_SEPARATOR as i32, expected["propertySeparator"]);
+}
+
+#[test]
+fn message_decoder_property_map_methods_match_java_551() {
+    let expected = &fixture()["messageDecoderPropertiesApi"];
+    assert_eq!(encode_properties_nullable(None), expected["nullMapEncoded"]);
+    assert_eq!(
+        encode_properties_nullable(Some(&MessageProperties::new())),
+        expected["emptyMapEncoded"]
+    );
+    let null_value = [(Some("ignored"), None)];
+    assert_eq!(
+        encode_nullable_property_entries(Some(&null_value)),
+        expected["nullValueEncoded"]
+    );
+    let null_key = [(None, Some("value"))];
+    assert_eq!(
+        encode_nullable_property_entries(Some(&null_key)),
+        expected["nullKeyEncoded"]
+    );
+    assert_eq!(
+        serde_json::to_value(decode_properties_nullable(None)).unwrap(),
+        expected["nullInputDecoded"]
+    );
+    assert_eq!(
+        serde_json::to_value(decode_properties_nullable(Some(""))).unwrap(),
+        expected["emptyInputDecoded"]
+    );
+    let encoded = expected["encodedInput"].as_str().unwrap();
+    assert_eq!(
+        serde_json::to_value(decode_properties_nullable(Some(encoded))).unwrap(),
+        expected["encodedInputDecoded"]
+    );
 }
 
 #[test]

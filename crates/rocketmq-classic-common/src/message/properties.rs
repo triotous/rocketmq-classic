@@ -15,6 +15,33 @@ pub fn encode_properties(properties: &MessageProperties) -> String {
     encoded
 }
 
+/// Java `MessageDecoder.messageProperties2String` for a nullable property map.
+pub fn encode_properties_nullable(properties: Option<&MessageProperties>) -> String {
+    properties.map(encode_properties).unwrap_or_default()
+}
+
+/// Serialize Java-style nullable property entries, including a null key or
+/// null value. Java omits null values and appends the literal `"null"` for a
+/// null key. The slice order is retained; Java Map iteration order is unspecified.
+pub fn encode_nullable_property_entries(
+    entries: Option<&[(Option<&str>, Option<&str>)]>,
+) -> String {
+    let Some(entries) = entries else {
+        return String::new();
+    };
+    let mut encoded = String::new();
+    for (key, value) in entries {
+        let Some(value) = value else {
+            continue;
+        };
+        encoded.push_str(key.unwrap_or("null"));
+        encoded.push(NAME_VALUE_SEPARATOR);
+        encoded.push_str(value);
+        encoded.push(PROPERTY_SEPARATOR);
+    }
+    encoded
+}
+
 /// Parse properties using Java MessageDecoder's permissive record rules.
 /// Duplicate keys use last nonempty-value wins; malformed, too-short,
 /// empty-key, and empty-value entries are ignored without user-property validation.
@@ -32,6 +59,12 @@ pub fn decode_properties(encoded: &str) -> MessageProperties {
         }
     }
     properties
+}
+
+/// Java `MessageDecoder.string2messageProperties` returns an empty map for a
+/// null input; this adapter preserves that behavior with an `Option<&str>`.
+pub fn decode_properties_nullable(encoded: Option<&str>) -> MessageProperties {
+    encoded.map(decode_properties).unwrap_or_default()
 }
 
 #[cfg(test)]
