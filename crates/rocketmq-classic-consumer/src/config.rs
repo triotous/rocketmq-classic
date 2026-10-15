@@ -5,13 +5,27 @@ use rocketmq_classic_remoting::client::TlsConfig;
 use crate::error::PullConsumerError;
 
 pub const DEFAULT_CONSUMER_GROUP: &str = "DEFAULT_CONSUMER";
-pub const DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
-pub const DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
-pub const DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
-pub const DEFAULT_PULL_MAX_RECONSUME_TIMES: i32 = 16;
-pub const DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE: bool = true;
+pub(crate) const DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS: i64 = 20_000;
+pub(crate) const DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
+pub(crate) const DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS: i64 = 10_000;
+pub(crate) const DEFAULT_PULL_MAX_RECONSUME_TIMES: i32 = 16;
+pub(crate) const DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE: bool = true;
 
 /// Settings implemented by Java 5.5.1 `DefaultMQPullConsumer` for explicit pull.
+///
+/// Rust-only constants for Java's private defaults are not part of this public
+/// configuration API. The public default group constant corresponds to
+/// `MixAll.DEFAULT_CONSUMER_GROUP`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_consumer::config::{
+///     DEFAULT_BROKER_SUSPEND_MAX_TIME_MILLIS,
+///     DEFAULT_CONSUMER_PULL_TIMEOUT_MILLIS,
+///     DEFAULT_CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND,
+///     DEFAULT_PULL_CONSUMER_ENABLE_REBALANCE,
+///     DEFAULT_PULL_MAX_RECONSUME_TIMES,
+/// };
+/// ```
 pub struct PullConsumerConfig {
     client: ClientConfig,
     tls_config: Option<TlsConfig>,

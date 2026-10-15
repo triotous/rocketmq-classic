@@ -1,16 +1,25 @@
 //! POP message receipt data used by the push consumer's ACK lifecycle.
+//!
+//! Batch-ACK request assembly is an internal implementation detail.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_consumer::pop::build_batch_ack_body;
+//! ```
 
-use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use rocketmq_classic_common::message::{DecodeError, DecodeOptions, MessageExt, decode_many};
 use rocketmq_classic_core::api::extensions::PopReply;
 use rocketmq_classic_protocol::header::{
     AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
 };
+use rocketmq_classic_protocol::header::{PopMessageRequestHeader, PopMessageResponseHeader};
+#[cfg(test)]
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{BatchAck, BatchAckMessageRequestBody, BitSet},
-    header::{PopMessageRequestHeader, PopMessageResponseHeader},
 };
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
@@ -561,7 +570,8 @@ impl PopReceipt {
 
 /// Builds the source-used batch ACK request body. Java merges receipts that
 /// share retry kind, queue, checkpoint offset and pop time into one bitset.
-pub fn build_batch_ack_body(
+#[cfg(test)]
+fn build_batch_ack_body(
     receipts: &[PopReceipt],
     topic: &str,
     consumer_group: &str,

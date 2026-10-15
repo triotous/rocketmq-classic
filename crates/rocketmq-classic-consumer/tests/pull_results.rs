@@ -5,9 +5,8 @@ use std::sync::{
 
 use base64::Engine;
 use rocketmq_classic_common::message::{DecodeOptions, MessageQueue};
-use rocketmq_classic_consumer::pull::{
-    FilterMessageContext, FilterMessageHook, PullAPIWrapper, build_class_filter_subscription_data,
-};
+use rocketmq_classic_consumer::pull::{FilterMessageContext, FilterMessageHook, PullAPIWrapper};
+use rocketmq_classic_consumer::{PushConsumer, PushConsumerConfig};
 use rocketmq_classic_core::api::consumer::{PullResultExt, PullStatus};
 use rocketmq_classic_protocol::heartbeat::SubscriptionData;
 use serde_json::Value;
@@ -51,6 +50,23 @@ fn result(status: PullStatus, raw_messages: Option<Vec<u8>>) -> PullResultExt {
         offset_delta: Some(5),
         raw_messages,
     }
+}
+
+async fn class_filter_subscription(
+    topic: &str,
+    class_name: &str,
+    source: &str,
+) -> SubscriptionData {
+    let consumer = PushConsumer::new(PushConsumerConfig::new("pull-results-class-filter").unwrap());
+    consumer
+        .subscribe_with_class_filter(topic, class_name, source)
+        .await
+        .unwrap();
+    consumer
+        .subscriptions()
+        .into_iter()
+        .find(|subscription| subscription.get_topic() == Some(topic))
+        .expect("public class-filter subscription is stored")
 }
 
 struct MarkHook(Arc<AtomicBool>);
@@ -191,13 +207,14 @@ fn tag_filter_discards_messages_without_a_tag_and_empty_tag_filters_keep_them() 
     );
 }
 
-#[test]
-fn class_filter_subscription_keeps_source_and_skips_tag_filtering() {
-    let mut subscription = build_class_filter_subscription_data(
+#[tokio::test]
+async fn class_filter_subscription_keeps_source_and_skips_tag_filtering() {
+    let mut subscription = class_filter_subscription(
         "orders",
         "example.OrderFilter",
         "package example; public class OrderFilter {}",
-    );
+    )
+    .await;
     assert!(subscription.is_class_filter_mode());
     assert_eq!(subscription.get_topic(), Some("orders"));
     assert_eq!(subscription.get_sub_string(), Some("example.OrderFilter"));
@@ -228,10 +245,10 @@ fn class_filter_subscription_keeps_source_and_skips_tag_filtering() {
     assert!(tags.is_empty());
 }
 
-#[test]
-fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() {
+#[tokio::test]
+async fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() {
     let queue = MessageQueue::new("orders", "broker-a", 5);
-    let subscription = build_class_filter_subscription_data("orders", "Filter", "source");
+    let subscription = class_filter_subscription("orders", "Filter", "source").await;
     let mut outer = record("inner-batch");
     // Use a tag constraint; class-filter mode suppresses this client-side pass.
     let mut class_filter = subscription;

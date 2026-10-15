@@ -31,6 +31,14 @@ This matrix tracks Phase 13 implementation evidence. A lower-level request/heade
 | Five `DefaultLitePullConsumer` constructors, including RPC-hook and deprecated namespace overloads | `LitePullConsumerConfig::new_default/new`, `ClientConfig` namespace fields, `LitePullConsumer::new/new_with_rpc_hook` | Pinned constructor inventory and RPC-hook/namespace integration test |
 | Public Lite settings and inherited `ClientConfig` getters/setters | `LitePullConsumerConfig` (exact public accessor inventory below); the facade also exposes consumer-level getters/setters for Java settings read dynamically during operation | Pinned defaults/configured values, stream-request default, validation, name-server update, namespace, trace lifecycle, plus post-construction setter/getter and scripted pull/poll checks |
 
+## Rust public-surface reverse-scan follow-up
+
+`rocketmq_classic_consumer::pop::build_batch_ack_body` had no corresponding
+Java public consumer method and was used only by the Rust unit tests. It is now
+compiled only for tests and is private; the module doctest verifies external
+code cannot import it. Production batch-ACK behavior remains covered by the
+receipt and scripted ACK tests above.
+
 ## Pinned Java public surface and defaults
 
 The fixture records all `LitePullConsumer` interface signatures, all declared public `DefaultLitePullConsumer` method signatures and the five public constructors. It invokes selected public getters/setters and captures config validation. Rust's `new_default` preserves Java's no-argument constructor group (`DEFAULT_CONSUMER`), which is rejected at startup; `set_consume_from_where` rejects the three enum values Java rejects. Defaults observed from the 5.5.1 artifact include clustering mode, auto-commit enabled, 20 pull threads, a 5-second auto-commit interval, batch 10, all-queue threshold 10000, queue count threshold 1000, queue body-size threshold 100 MiB, max consume span 2000, 5-second default poll timeout, 30-second metadata polling, last-offset consumption and a timestamp 30 minutes in the past. Setting an auto-commit interval below 1000 ms is ignored. The heartbeat builder replaces its retained subscription set with the selector map's built subscriptions. Inherited `ClientConfig` settings are exposed through `LitePullConsumerConfig::client_config` and copied into the runtime configuration.

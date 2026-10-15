@@ -208,7 +208,7 @@ impl PullAPIWrapper {
     }
 }
 
-pub fn build_class_filter_subscription_data(
+pub(crate) fn build_class_filter_subscription_data(
     topic: impl Into<String>,
     class_name: impl Into<String>,
     filter_class_source: impl Into<String>,
