@@ -539,6 +539,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   The Java `MessageQueue` constructors, fields, copy, equality/hash/text and
   ordering methods now have a method-level Phase 8 crosswalk to their existing
   invoked fixtures and Rust differential tests; broad P18-V01 remains open.
+  The Phase 7 reverse scan also found the public `MessageClientIDSetter`
+  unique-ID decoding helpers still lack complete Rust mappings, and the Rust
+  generator's UTC month boundary differs from Java's local `Calendar` boundary.
+  This remains local P18-V01 parity work.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.
