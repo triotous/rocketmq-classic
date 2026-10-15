@@ -176,3 +176,42 @@ Status
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and release
   version/registry checks remain open. Owner-run deployment/live Broker checks
   remain Phase 19 manual validation.
+
+Session: 2026-10-15 15:12 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Scope: Current-revision server-free P18-V02 gates after Remoting `useTLS`
+
+Revision
+- Code revision: 04c219dc. Documentation-only follow-up: 44d69079.
+- `mvn -f compat/java-reference/pom.xml verify` passed after the code change;
+  it verified 37 scenarios, the Remoting live-config probe, fixture checks,
+  and Java/Rust cross-decodes.
+
+Verification
+- `env TZ=UTC cargo test --workspace --locked`: passed.
+- `cargo test --workspace --all-features --locked`: passed.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`:
+  passed.
+- `python3 tests/differential/compare.py --self-test`: passed;
+  `--validate-manifest`: 37 scenarios passed.
+- `bash tests/stress/run-offline-smoke.sh`: 16 deterministic cases passed,
+  each repeated three times.
+- `cargo run --locked -p rocketmq-classic-remoting --example fuzz_smoke`:
+  passed 104 frame seeds, 10 message seeds, 1,824 bounded mutations.
+- `cargo build -p rocketmq-classic --examples --release --locked`: passed.
+- `cargo bench --workspace --no-run --locked`: passed.
+- `cargo metadata --locked --format-version 1`: passed; 215 total packages,
+  including 208 external packages, all registry-sourced with license metadata.
+- `python3 scripts/check-workspace-metadata.py`: passed.
+- `cargo package --workspace --list --locked --allow-dirty`: listed all seven
+  packages successfully.
+- The Java-backed unique-ID fixture passed under both UTC (full workspace run)
+  and `TZ=Asia/Taipei` (focused test).
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+Status
+- Current-revision server-free P18-V02 is closed on code revision 04c219dc.
+- Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
+  local Docker/Broker automation, and release version/registry-resolution
+  checks remain open. Owner-run deployment/live Broker checks remain Phase 19
+  manual validation.

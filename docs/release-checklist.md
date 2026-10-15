@@ -1113,3 +1113,19 @@ Before any publication:
   Phase 19 local Docker/Broker automation, and release version/registry checks
   remain open. Owner-run deployment/live Broker checks remain Phase 19 manual
   validation.
+
+- Current-revision server-free P18-V02 rerun on code revision `04c219dc`
+  (2026-10-15; documentation-only follow-up `44d69079`): UTC default and
+  all-feature workspace tests, strict all-target/all-feature Clippy, Maven
+  `verify` (37 scenarios, live Remoting config probe and Java/Rust cross-decodes),
+  comparator self-test and 37-scenario manifest, 16 race/leak cases × 3,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, workspace benchmark compilation, full locked Cargo metadata,
+  workspace metadata/license/dependency checks, seven package listings, and
+  unique-ID fixture checks under UTC and Asia/Taipei all pass. Formatting and
+  diff checks pass. The 208 external Cargo packages are registry-sourced and
+  carry license metadata.
+- This closes the current-revision P18-V02 server-free gate. Broad P18-V01,
+  current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation, and release version/registry-resolution checks remain open.
+  Owner-run deployment/live Broker checks remain Phase 19 manual validation.
