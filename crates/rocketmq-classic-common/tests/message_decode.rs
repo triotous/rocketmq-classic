@@ -3,8 +3,8 @@ use rocketmq_classic_common::{
     message::{
         DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
         MessageHostAddressBytesError, MessageId, MessageIdError, TopicFilterType,
-        create_message_id, create_message_id_from_host_bytes, decode_many, decode_message_id,
-        decode_one,
+        append_crc32_property, create_message_id, create_message_id_from_host_bytes, decode_many,
+        decode_message_id, decode_one,
     },
     sysflag::message,
 };
@@ -366,6 +366,18 @@ fn message_id_api_matches_java_551() {
             .as_deref(),
         expected["messageIdInvalidHexHost"].as_str()
     );
+}
+
+#[test]
+fn crc32_property_helpers_match_both_java_buffers() {
+    let expected = &fixture()["messageDecoderCrcApi"]["cases"];
+    for case in expected.as_array().unwrap() {
+        let mut bytes = Vec::new();
+        append_crc32_property(&mut bytes, case["crc32"].as_i64().unwrap() as i32);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        assert_eq!(encoded, case["byteBufferBase64"]);
+        assert_eq!(case["byteBufferBase64"], case["byteBufBase64"]);
+    }
 }
 
 #[test]

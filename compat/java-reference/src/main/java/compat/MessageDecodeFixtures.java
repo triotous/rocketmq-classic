@@ -2,6 +2,8 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -57,6 +59,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
+        root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
             InetAddress.getByName("192.0.2.10"), 10911,
@@ -318,6 +321,26 @@ public final class MessageDecodeFixtures {
         diagnostic.getProperties().put("DIRECT", "through-map");
         expected.put("directMapMutation", diagnostic.getProperty("DIRECT"));
         return expected;
+    }
+
+    private static Map<String, Object> messageDecoderCrcApi() {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        for (int crc32 : new int[] {0, 1, 10, Integer.MAX_VALUE, -1, Integer.MIN_VALUE}) {
+            ByteBuffer byteBuffer = ByteBuffer.allocate(20);
+            MessageDecoder.createCrc32(byteBuffer, crc32);
+            ByteBuf byteBuf = Unpooled.buffer(20);
+            MessageDecoder.createCrc32(byteBuf, crc32);
+            byte[] byteBufBytes = new byte[byteBuf.readableBytes()];
+            byteBuf.getBytes(byteBuf.readerIndex(), byteBufBytes);
+
+            Map<String, Object> value = new TreeMap<>();
+            value.put("crc32", crc32);
+            value.put("byteBufferBase64", Base64.getEncoder().encodeToString(byteBuffer.array()));
+            value.put("byteBufBase64", Base64.getEncoder().encodeToString(byteBufBytes));
+            cases.add(value);
+            byteBuf.release();
+        }
+        return Map.of("cases", cases);
     }
 
     private static Map<String, Object> numericPropertyInput(String property, String value) {

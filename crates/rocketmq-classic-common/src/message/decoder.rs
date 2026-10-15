@@ -13,6 +13,24 @@ pub const MESSAGE_MAGIC_CODE_V1: i32 = -626_843_481;
 pub const MESSAGE_MAGIC_CODE_V2: i32 = -626_843_477;
 pub const BLANK_MAGIC_CODE: i32 = -875_286_124;
 
+/// Append the Java `MessageDecoder.createCrc32` property record to a buffer.
+/// The ten decimal digits are emitted least-significant first, matching Java.
+pub fn append_crc32_property(output: &mut Vec<u8>, mut crc32: i32) {
+    output.extend_from_slice(super::constants::PROPERTY_CRC32.as_bytes());
+    output.push(super::NAME_VALUE_SEPARATOR as u8);
+    for _ in 0..10 {
+        let digit = if crc32 > 0 {
+            let digit = (crc32 % 10) as u8;
+            crc32 /= 10;
+            digit
+        } else {
+            0
+        };
+        output.push(b'0' + digit);
+    }
+    output.push(super::PROPERTY_SEPARATOR as u8);
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodeOptions {
     pub read_body: bool,

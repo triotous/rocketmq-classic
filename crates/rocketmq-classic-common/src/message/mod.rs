@@ -7,7 +7,7 @@ mod types;
 
 pub use decoder::{
     BLANK_MAGIC_CODE, DecodeError, DecodeOptions, MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2,
-    decode_many, decode_one,
+    append_crc32_property, decode_many, decode_one,
 };
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
 pub use message_id::{

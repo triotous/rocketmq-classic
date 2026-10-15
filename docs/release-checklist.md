@@ -450,8 +450,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   The invoked Java fixture covers IPv4/IPv6, negative 64-bit offsets, invalid
   hex conversion, trailing bytes, short input and invalid ports. This closes
   the MessageId surface only; fixture SHA-256 is
-  `a79a06ff99f4889c283e749939820e184f6c0f3ab9179d0a8e92af4b4414b53b`;
+  `70fa17767b0ec98b9e6b6885572e7dfc61ff43609dfb377e7cfca34c6e9348f5`;
   P18-V01 remains open.
+- Common CRC property helper slice: `append_crc32_property` matches both Java
+  `createCrc32` overloads for zero, positive and negative inputs. The invoked
+  fixture checks ByteBuffer and ByteBuf output equality; P18-V01 remains open.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
