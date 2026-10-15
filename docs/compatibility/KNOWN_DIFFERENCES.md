@@ -7,7 +7,6 @@
 
 ## Phase 2 Remoting codec
 
-- Java's 5.5.1 private RocketMQ serializer narrows request code and version to signed 16-bit values. The Rust private-header encoder rejects values outside that range instead of silently wrapping. JSON encoding retains full i32 request codes and is the supported path for such values. Java-generated fixture `private-large-code` documents the Java narrowing behavior; it is decoded as the narrowed signed value.
 - Java's private serializer writes both absent and empty remark as a zero-length string; Rust preserves the distinction in its command model but the wire decoder returns `None` for either representation. An absent versus empty body similarly collapses to no body when the frame body length is zero.
 
 - No Rust client implementation exists at the start of Phase 0; all Rust mappings are pending their owning phase.

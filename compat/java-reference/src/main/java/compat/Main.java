@@ -350,6 +350,11 @@ public final class Main {
         }
         writeFixture(output, "HEADER-PROOF-001", 10, SerializeType.JSON);
         writeFixture(output, "PRIVATE-LARGE-CODE", 987654, SerializeType.ROCKETMQ);
+        RemotingCommand largeCodeAndVersion = command(987654, SerializeType.ROCKETMQ,
+            "PRIVATE-LARGE-CODE-VERSION");
+        largeCodeAndVersion.setVersion(987654);
+        writeFixture(output, "PRIVATE-LARGE-CODE-VERSION", 987654, SerializeType.ROCKETMQ,
+            largeCodeAndVersion, bytes(largeCodeAndVersion.encode()));
         writeFastHeaderFixtures(output);
         selfTest();
     }

@@ -18,9 +18,10 @@ pub(crate) fn encode_with_limit(
     command: &RemotingCommand,
     max_header_length: usize,
 ) -> Result<Vec<u8>, CodecError> {
-    let code = i16::try_from(command.code).map_err(|_| CodecError::FieldTooWide("code"))?;
-    let version =
-        i16::try_from(command.version).map_err(|_| CodecError::FieldTooWide("version"))?;
+    // Java's `ByteBuf.writeShort` and `ByteBuffer.putShort` retain the low
+    // sixteen bits for both values, including inputs outside the signed range.
+    let code = command.code as i16;
+    let version = command.version as i16;
     let remark = command
         .remark
         .as_deref()

@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use bytes::BytesMut;
 use rocketmq_classic_protocol::{
-    codes::SerializeType,
+    codes::{LanguageCode, SerializeType},
     header::{CommandHeader, GetRouteInfoRequestHeader},
 };
 use rocketmq_classic_remoting::{
@@ -158,6 +158,30 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
 }
 
 #[test]
+fn private_rocketmq_header_narrows_code_and_version_like_java() {
+    let java_fixture = fs::read(fixture_dir().join("private-large-code-version.bin")).unwrap();
+    let command = RemotingCommand {
+        code: 987_654,
+        language: Some(LanguageCode::Rust),
+        version: 987_654,
+        opaque: 7,
+        remark: Some("PRIVATE-LARGE-CODE-VERSION".into()),
+        ext_fields: Some(std::collections::BTreeMap::from([(
+            "oracle".into(),
+            "5.5.1".into(),
+        )])),
+        serialization: SerializeType::RocketMq,
+        ..RemotingCommand::default()
+    };
+
+    assert_eq!(frame::encode(&command).unwrap(), java_fixture);
+    let mut input = BytesMut::from(java_fixture.as_slice());
+    let decoded = frame::decode_next(&mut input).unwrap().unwrap();
+    assert_eq!(decoded.code, 4_614);
+    assert_eq!(decoded.version, 4_614);
+}
+
+#[test]
 fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
     let command = RemotingCommand {
         code: 34,
@@ -241,8 +265,10 @@ fn p2_v02_rejects_invalid_lengths_limits_and_unknown_serialization() {
         serialization: SerializeType::RocketMq,
         ..RemotingCommand::default()
     };
-    assert!(matches!(
-        frame::encode(&too_wide),
-        Err(CodecError::FieldTooWide("code"))
-    ));
+    let wrapped = frame::encode(&too_wide).unwrap();
+    let mut input = BytesMut::from(wrapped.as_slice());
+    assert_eq!(
+        frame::decode_next(&mut input).unwrap().unwrap().code,
+        i16::MIN as i32
+    );
 }
