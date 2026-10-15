@@ -429,6 +429,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   pass for this slice. The full P18-V02 rerun, including race/fuzz, example,
   benchmark, metadata, and package-content gates, remains required on the final
   revision. Broader Common/Core/API reconciliation remains open P18-V01 work.
+- Common `putUserProperty` whitespace input slice: Rust now follows Java
+  `String.trim()` (U+0000–U+0020 only), preserving Java acceptance of
+  non-breaking-space keys and em-space values. Invoked Java and Rust fixture
+  cases cover those values and rejection of ASCII control/space-only input.
+  This input boundary is closed; broad Message overload/input/API
+  reconciliation remains open P18-V01 work.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

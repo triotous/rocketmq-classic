@@ -1151,3 +1151,11 @@ Compile-fail rustdoc examples guard the three removed helper exports. `message_p
 | `MessageExt.equals` / `hashCode`, inherited from `Object` through `Message` | `MessageExt` `PartialEq`/`Eq` compare a hidden identity token, so separately constructed equal-content values are unequal |
 
 The invoked `messagePublicApi` fixture checks that each Java object equals itself and that a distinct default instance with identical fields is not equal. The Rust fixture checks the same behavior for fresh `MessageExt` values; its `Clone` retains the identity token. A compile-fail rustdoc example guards `Message`'s lack of structural equality. This closes only the `Message`/`MessageExt` equality-trait reverse-surface slice; the broader Common constructor, property, overload/input, inherited API, and P18-V01 reconciliation remains open.
+
+## Common public API: Message user-property whitespace validation
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `Message.putUserProperty(String, String)` rejects keys or values empty after Java `String.trim()` | `put_user_property` and `put_user_property_nullable` trim only code points U+0000 through U+0020 before the empty check |
+
+The invoked Java fixture confirms non-breaking-space keys and em-space values are accepted while ASCII control/space-only keys are rejected. Rust fixture cases compare those outcomes. This closes the `String.trim()` input boundary only; other property inputs and the broader Common/P18-V01 audit remain open.

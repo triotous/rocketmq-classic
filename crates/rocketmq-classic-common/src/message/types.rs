@@ -518,10 +518,10 @@ impl Message {
             return Err(MessagePropertyError::ReservedProperty);
         }
         let key = key
-            .filter(|key| !key.trim().is_empty())
+            .filter(|key| !java_trim_is_empty(key))
             .ok_or(MessagePropertyError::EmptyKey)?;
         let value = value
-            .filter(|value| !value.trim().is_empty())
+            .filter(|value| !java_trim_is_empty(value))
             .ok_or(MessagePropertyError::EmptyValue)?;
         self.put_user_property(key, value)
     }
@@ -1316,13 +1316,19 @@ fn java_optional_string_cmp(left: &Option<String>, right: &Option<String>) -> Or
 }
 
 fn validate_property(key: &str, value: &str) -> Result<(), MessagePropertyError> {
-    if key.trim().is_empty() {
+    if java_trim_is_empty(key) {
         return Err(MessagePropertyError::EmptyKey);
     }
-    if value.trim().is_empty() {
+    if java_trim_is_empty(value) {
         return Err(MessagePropertyError::EmptyValue);
     }
     Ok(())
+}
+
+fn java_trim_is_empty(value: &str) -> bool {
+    value
+        .trim_matches(|character: char| character <= '\u{20}')
+        .is_empty()
 }
 
 #[cfg(test)]

@@ -194,6 +194,12 @@ public final class MessageDecodeFixtures {
             throwsIllegalArgument(() -> nullableProperties.putUserProperty(null, "value")));
         expected.put("nullPropertyValueRejected",
             throwsIllegalArgument(() -> nullableProperties.putUserProperty("key", null)));
+        expected.put("nonBreakingSpaceUserPropertyNameAccepted",
+            !throwsIllegalArgument(() -> new Message().putUserProperty("\u00a0", "value")));
+        expected.put("emSpaceUserPropertyValueAccepted",
+            !throwsIllegalArgument(() -> new Message().putUserProperty("key", "\u2003")));
+        expected.put("asciiControlOnlyUserPropertyRejected",
+            throwsIllegalArgument(() -> new Message().putUserProperty("\u001f ", "value")));
 
         Message nullNameLookup = new Message();
         expected.put("nullNameLookupIsNull", nullNameLookup.getProperty(null) == null);

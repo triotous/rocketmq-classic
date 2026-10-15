@@ -365,6 +365,27 @@ fn message_public_api_matches_java_551_fixture() {
     );
     assert_eq!(expected["nullPropertyNameRejected"], true);
     assert_eq!(expected["nullPropertyValueRejected"], true);
+    let mut whitespace_property = Message::default();
+    assert_eq!(
+        whitespace_property.put_user_property("\u{00a0}", "value"),
+        Ok(None)
+    );
+    assert_eq!(
+        whitespace_property.put_user_property("key", "\u{2003}"),
+        Ok(None)
+    );
+    assert_eq!(
+        whitespace_property
+            .put_user_property_nullable(Some("custom".to_owned()), Some("\u{00a0}".to_owned())),
+        Ok(None)
+    );
+    assert_eq!(
+        whitespace_property.put_user_property("\u{001f} ", "value"),
+        Err(rocketmq_classic_common::message::MessagePropertyError::EmptyKey)
+    );
+    assert_eq!(expected["nonBreakingSpaceUserPropertyNameAccepted"], true);
+    assert_eq!(expected["emSpaceUserPropertyValueAccepted"], true);
+    assert_eq!(expected["asciiControlOnlyUserPropertyRejected"], true);
     let null_name_lookup = Message::default();
     assert_eq!(null_name_lookup.get_nullable_property(None), None);
     assert_eq!(
