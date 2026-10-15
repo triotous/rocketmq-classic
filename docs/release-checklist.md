@@ -391,7 +391,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   unmatched Rust-only APIs, immutable config snapshots, or selected observable
   differences are historical and do not waive the current parity contract.
   Remoting `clientCloseSocketIfTimeout` now has a live Rust update adapter and
-  Java/Rust post-start timeout evidence; this closes that setting row only.
+  Java/Rust post-start timeout evidence; `enableReconnectForGoAway`,
+  `disableCallbackExecutor`, and `isScanAvailableNameSrv` also have live
+  adapters and timing regressions. These close their setting rows only.
   The producer send mutation branch is now
   oracle-backed, and surfaced Rust-only publish-info constructors/snapshot
   helpers are crate-private. Producer publish-info queue/cursor/selector and
@@ -1004,6 +1006,22 @@ Before any publication:
   checks, seven package listings, Asia/Taipei unique-ID differential and diff
   checks. Locked Cargo metadata reports 208 external packages, all registry
   sourced with license metadata.
+- P18-V01 Remoting NameServer scan timing slice (`6ffccd1b`, 2026-10-15):
+  `isScanAvailableNameSrv` now has a live atomic Rust adapter, read by `start()`
+  when deciding whether to schedule reachability scans. A Rust loopback test
+  and the Java `RemotingLiveConfigProbe` both change the value after client
+  construction and before `start()`, then verify the scan connects. This
+  closes that setting row only; scan cadence/topology and broad P18-V01 remain
+  separately described in the remoting inventory.
+- PASS on `6ffccd1b`: UTC default and all-feature workspace tests, strict
+  all-target/all-feature Clippy, Maven verify (37 scenarios, live remoting
+  config probe and Java/Rust cross-decodes), differential self-test and
+  37-scenario manifest, deterministic race/leak smoke (16 cases × 3), fuzz
+  smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples,
+  benchmark compilation, locked Cargo metadata, metadata/license/dependency
+  checks, seven package listings, Asia/Taipei unique-ID differential, format,
+  and diff checks all pass. Full Remoting results include 85 unit, 6 codec,
+  1 fuzz regression, 5 security, 90 transport, and 5 doctest cases.
 - Remaining non-manual work: complete broad bidirectional P18-V01 source/API,
   setting, input/error/control-flow, inherited API and reverse-export
   reconciliation; obtain current-revision GitHub Ubuntu address-profile
