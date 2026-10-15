@@ -87,7 +87,7 @@ fn encode_message_ext_inner(
     } else {
         encode_host(message_ext.store_host(), "store", store_host_length)?
     };
-    let encoded_body = encode_body(body, sys_flag, need_compress, uniquely)?;
+    let encoded_body = encode_body(&body, sys_flag, need_compress, uniquely)?;
 
     let topic_length = (topic.len() as u8) as i8;
     let properties_length = properties.len() as i16;

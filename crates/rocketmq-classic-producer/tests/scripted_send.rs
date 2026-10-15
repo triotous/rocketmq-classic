@@ -652,10 +652,9 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
     assert_eq!(result.queue_offset, 7);
     assert!(matches!(result.msg_id.len(), 32 | 56));
     assert_eq!(attempts.load(Ordering::SeqCst), 3);
-    assert_eq!(message.body(), b"immutable-body");
+    assert_eq!(message.body().as_ref(), b"immutable-body");
     let unique_id = message
-        .properties()
-        .get("UNIQ_KEY")
+        .get_property("UNIQ_KEY")
         .expect("Java send should put the generated ID on the caller message");
 
     let sent = requests.lock().unwrap().clone();
@@ -1155,7 +1154,7 @@ async fn invoke_message_queue_selector_returns_the_namespaced_queue_without_send
                 assert_eq!(selected_message.body(), message.body());
                 assert_eq!(selected_message.flag(), java_snapshot["selectorFlag"]);
                 assert_eq!(
-                    selected_message.get_property("fixture-key"),
+                    selected_message.get_property("fixture-key").as_deref(),
                     java_snapshot["selectorProperty"].as_str()
                 );
                 assert_eq!(selected_message.transaction_id(), None);

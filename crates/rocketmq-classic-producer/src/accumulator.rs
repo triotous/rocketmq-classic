@@ -31,7 +31,7 @@ impl BatchKey {
             topic: message.topic().to_owned(),
             queue,
             wait_store_msg_ok: message.is_wait_store_msg_ok(),
-            tag: message.tags().map(str::to_owned),
+            tag: message.tags(),
             mode,
         }
     }

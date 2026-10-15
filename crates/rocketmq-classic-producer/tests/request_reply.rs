@@ -30,9 +30,9 @@ fn reply_message_matches_the_invoked_java_utility_fixture() {
     let reply = create_reply_message(Some(&request), body).unwrap();
     let expected = &fixture["replyMessage"];
     assert_eq!(reply.topic(), expected["topic"]);
-    assert_eq!(reply.body(), body);
+    assert_eq!(reply.body().to_vec(), body);
     assert_eq!(
-        reply.properties(),
+        &*reply.properties(),
         &serde_json::from_value(expected["properties"].clone()).unwrap()
     );
     assert_eq!(reply.properties()[PROPERTY_MESSAGE_TYPE], "reply");

@@ -23,20 +23,22 @@ pub fn encode_properties_nullable(properties: Option<&MessageProperties>) -> Str
 /// Serialize Java-style nullable property entries, including a null key or
 /// null value. Java omits null values and appends the literal `"null"` for a
 /// null key. The slice order is retained; Java Map iteration order is unspecified.
-pub fn encode_nullable_property_entries(
-    entries: Option<&[(Option<&str>, Option<&str>)]>,
-) -> String {
+pub fn encode_nullable_property_entries<K, V>(entries: Option<&[(Option<K>, Option<V>)]>) -> String
+where
+    K: AsRef<str>,
+    V: AsRef<str>,
+{
     let Some(entries) = entries else {
         return String::new();
     };
     let mut encoded = String::new();
     for (key, value) in entries {
-        let Some(value) = value else {
+        let Some(value) = value.as_ref() else {
             continue;
         };
-        encoded.push_str(key.unwrap_or("null"));
+        encoded.push_str(key.as_ref().map(AsRef::as_ref).unwrap_or("null"));
         encoded.push(NAME_VALUE_SEPARATOR);
-        encoded.push_str(value);
+        encoded.push_str(value.as_ref());
         encoded.push(PROPERTY_SEPARATOR);
     }
     encoded

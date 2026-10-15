@@ -1148,20 +1148,16 @@ fn implementation_hook_helpers_match_pinned_java_fixture() {
         fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
             let marker = context
                 .message
-                .properties()
-                .get("DIRECT_SEND_HOOK")
-                .map(String::as_str)
-                .unwrap_or("<null>");
+                .get_property("DIRECT_SEND_HOOK")
+                .unwrap_or_else(|| "<null>".to_owned());
             self.0.lock().unwrap().push(format!("before:last:{marker}"));
         }
 
         fn send_message_after(&self, context: &mut SendMessageContext<'_>) {
             let marker = context
                 .message
-                .properties()
-                .get("DIRECT_SEND_HOOK")
-                .map(String::as_str)
-                .unwrap_or("<null>");
+                .get_property("DIRECT_SEND_HOOK")
+                .unwrap_or_else(|| "<null>".to_owned());
             self.0.lock().unwrap().push(format!("after:last:{marker}"));
         }
     }
@@ -2720,7 +2716,7 @@ fn check_forbidden_context_and_modes_match_pinned_java_fixture() {
     );
     assert_eq!(context.message.topic(), expected["messageTopic"]);
     assert_eq!(
-        context.message.body(),
+        context.message.body().as_ref(),
         expected["messageBody"].as_str().unwrap().as_bytes()
     );
     assert_eq!(
@@ -2828,7 +2824,7 @@ fn send_message_context_surface_matches_pinned_java_fixture() {
     );
     assert_eq!(context.message.topic(), expected["messageTopic"]);
     assert_eq!(
-        context.message.body(),
+        context.message.body().as_ref(),
         expected["messageBody"].as_str().unwrap().as_bytes()
     );
     assert_eq!(

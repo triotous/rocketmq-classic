@@ -203,8 +203,8 @@ pub(crate) fn consume_contexts(
         trace_beans.push(LiteTraceBean {
             topic: without_namespace(client_config, message.message().topic()),
             message_id: message.message_id().map(str::to_owned),
-            tags: message.message().tags().map(str::to_owned),
-            keys: message.message().keys().map(str::to_owned),
+            tags: message.message().tags(),
+            keys: message.message().keys(),
             store_time_millis: message.store_timestamp(),
             body_length: message.store_size(),
             retry_times: message.reconsume_times(),

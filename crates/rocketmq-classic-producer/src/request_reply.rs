@@ -53,8 +53,7 @@ pub fn create_reply_message(
 ) -> Result<Message, ReplyMessageError> {
     let request = request.ok_or(ReplyMessageError::NullRequest)?;
     let cluster = request
-        .properties()
-        .get(PROPERTY_CLUSTER)
+        .get_property(PROPERTY_CLUSTER)
         .ok_or(ReplyMessageError::MissingCluster)?;
 
     let mut reply = Message::default();
@@ -66,8 +65,8 @@ pub fn create_reply_message(
         PROPERTY_MESSAGE_REPLY_TO_CLIENT,
         PROPERTY_MESSAGE_TTL,
     ] {
-        if let Some(value) = request.properties().get(property) {
-            let _ = reply.set_system_property(property, value.clone());
+        if let Some(value) = request.get_property(property) {
+            let _ = reply.set_system_property(property, value);
         }
     }
     Ok(reply)

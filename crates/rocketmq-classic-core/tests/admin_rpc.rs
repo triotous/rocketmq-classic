@@ -549,13 +549,13 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
         messages[0]
             .as_ref()
             .unwrap()
-            .with(|message| message.message().body() == b"hello-v2")
+            .with(|message| message.message().body().as_ref() == b"hello-v2")
     );
     assert!(
         messages[1]
             .as_ref()
             .unwrap()
-            .with(|message| message.message().body() == b"hello-v1")
+            .with(|message| message.message().body().as_ref() == b"hello-v1")
     );
     for peer in [first_peer, second_peer] {
         let command = peer.await.unwrap();
@@ -831,7 +831,7 @@ async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     header.encode_fields(&mut expected_fields);
     assert_eq!(command.ext_fields, Some(expected_fields));
     assert_eq!(message.message().topic(), "orders");
-    assert_eq!(message.message().body(), b"hello-v1");
+    assert_eq!(message.message().body().as_ref(), b"hello-v1");
     assert_eq!(
         message.message_id(),
         message

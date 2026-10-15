@@ -510,7 +510,8 @@ impl Producer {
         let wire_message = self.message_with_namespace(message)?;
         let use_auto_batch = auto_batch_enabled && mode != SendMode::Oneway && self.auto_batch();
         let (backpressure_enabled, backpressure) = if mode == SendMode::Future && !use_auto_batch {
-            self.acquire_async_backpressure(wire_message.body().len(), deadline)
+            let message_body_length = wire_message.body().len();
+            self.acquire_async_backpressure(message_body_length, deadline)
                 .await?
         } else {
             (false, None)
@@ -789,9 +790,12 @@ impl Producer {
             .messages
             .iter()
             .filter_map(Message::keys)
-            .flat_map(|keys| keys.split(KEY_SEPARATOR))
+            .flat_map(|keys| {
+                keys.split(KEY_SEPARATOR)
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
             .filter(|key| !key.is_empty())
-            .map(str::to_owned)
             .collect::<BTreeSet<_>>();
         if !keys.is_empty() {
             batch
@@ -948,7 +952,8 @@ impl Producer {
         deadline: Instant,
     ) -> Result<Option<SendResult>, ProducerError> {
         let (backpressure_enabled, backpressure) = if mode == SendMode::Future {
-            self.acquire_async_backpressure(message.body().len(), deadline)
+            let message_body_length = message.body().len();
+            self.acquire_async_backpressure(message_body_length, deadline)
                 .await?
         } else {
             (false, None)
@@ -1020,7 +1025,8 @@ impl Producer {
     ) -> Result<Option<SendResult>, ProducerError> {
         let wire_message = self.message_with_namespace(message)?;
         let (backpressure_enabled, backpressure) = if mode == SendMode::Future {
-            self.acquire_async_backpressure(wire_message.body().len(), deadline)
+            let message_body_length = wire_message.body().len();
+            self.acquire_async_backpressure(message_body_length, deadline)
                 .await?
         } else {
             (false, None)
@@ -1573,15 +1579,19 @@ impl Producer {
             .ok()
             .flatten()
             .map(str::to_owned);
-        let properties = message.properties();
-        let is_transaction_half = properties
-            .get(PROPERTY_TRANSACTION_PREPARED)
-            .is_some_and(|value| value == "true");
-        let is_delay = properties.contains_key(PROPERTY_DELAY_TIME_LEVEL)
-            || properties.contains_key("__STARTDELIVERTIME")
-            || properties.contains_key(PROPERTY_TIMER_DELIVER_MS)
-            || properties.contains_key(PROPERTY_TIMER_DELAY_SEC)
-            || properties.contains_key(PROPERTY_TIMER_DELAY_MS);
+        let (is_transaction_half, is_delay) = {
+            let properties = message.properties();
+            (
+                properties
+                    .get(PROPERTY_TRANSACTION_PREPARED)
+                    .is_some_and(|value| value == "true"),
+                properties.contains_key(PROPERTY_DELAY_TIME_LEVEL)
+                    || properties.contains_key("__STARTDELIVERTIME")
+                    || properties.contains_key(PROPERTY_TIMER_DELIVER_MS)
+                    || properties.contains_key(PROPERTY_TIMER_DELAY_SEC)
+                    || properties.contains_key(PROPERTY_TIMER_DELAY_MS),
+            )
+        };
         let message_type = if is_delay {
             SendMessageType::Delay
         } else if is_transaction_half {
@@ -1888,9 +1898,10 @@ impl Producer {
         if batch || (message.body().len() as i64) < self.config.compress_threshold() as i64 {
             return 0;
         }
+        let original_body = message.body().to_vec();
         match rocketmq_classic_common::compression::compress(
             self.config.compress_type(),
-            message.body(),
+            &original_body,
             self.config.compress_level(),
         ) {
             Ok(compressed) => {
@@ -1938,7 +1949,7 @@ impl Producer {
 
         let mut property_entries = properties
             .iter()
-            .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
+            .map(|(key, value)| (Some(key.clone()), Some(value.clone())))
             .collect::<Vec<_>>();
         property_entries.extend(
             copy.nullable_property_entries()
@@ -2757,10 +2768,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.msg_id, "msg-1");
-        assert_eq!(message.body(), b"same immutable body");
+        assert_eq!(message.body().as_ref(), b"same immutable body");
         let unique_id = message
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .expect("Java send writes its prepared ID to the caller message");
         assert!(matches!(unique_id.len(), 32 | 56));
 
@@ -3140,7 +3150,7 @@ mod tests {
             }
 
             fn send_message_before(&self, context: &mut SendMessageContext<'_>) {
-                assert_eq!(context.message.tags(), Some("checked"));
+                assert_eq!(context.message.tags().as_deref(), Some("checked"));
                 self.0.lock().unwrap().push("send-before");
             }
 
@@ -4051,12 +4061,10 @@ mod tests {
         assert_eq!(first_result.queue_offset, 20);
         assert_eq!(second_result.queue_offset, 21);
         let first_unique_id = first
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .expect("auto-batched Java send mutates the first caller message");
         let second_unique_id = second
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .expect("auto-batched Java send mutates the second caller message");
         assert_ne!(first_unique_id, second_unique_id);
         let fixture: serde_json::Value =
@@ -4090,8 +4098,8 @@ mod tests {
             properties.get(PROPERTY_KEYS).map(String::as_str),
             Some("key-a key-b")
         );
-        assert_eq!(first.body(), b"first");
-        assert_eq!(second.body(), b"second");
+        assert_eq!(first.body().as_ref(), b"first");
+        assert_eq!(second.body().as_ref(), b"second");
         producer.shutdown().await.unwrap();
     }
 
@@ -4418,8 +4426,7 @@ mod tests {
             Err(ProducerError::NotStarted)
         ));
         let unique_id = message
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .expect("pinned Java assigns UNIQ_KEY before accumulator dispatch");
         assert_eq!(
             expected["uniqueIdPresent"].as_bool(),
@@ -4756,16 +4763,16 @@ mod tests {
                         &prepared.body
                     )
                     .unwrap(),
-                    message.body()
+                    message.body().to_vec()
                 );
             } else {
-                assert_eq!(prepared.body, message.body());
+                assert_eq!(prepared.body, message.body().to_vec());
             }
             assert_eq!(message.body().len(), length);
 
             let batch_prepared = producer.prepare(&message, true, 0).unwrap();
             assert_eq!(batch_prepared.sys_flag, 0);
-            assert_eq!(batch_prepared.body, message.body());
+            assert_eq!(batch_prepared.body, message.body().to_vec());
         }
     }
 

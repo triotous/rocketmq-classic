@@ -195,11 +195,10 @@ impl TransactionProducer {
             let _ = message.set_system_property("__transactionId__", transaction_id);
         }
         if let Some(transaction_id) = message
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .filter(|value| !value.is_empty())
         {
-            message.set_transaction_id(Some(transaction_id.clone()));
+            message.set_transaction_id(Some(transaction_id));
         }
 
         let (local_state, callback_error) = match send_result.status {
@@ -648,9 +647,7 @@ impl TransactionRuntime {
         }
         if let Some(transaction_id) = message
             .message()
-            .properties()
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-            .cloned()
+            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         {
             message
                 .message_mut()
@@ -1158,8 +1155,7 @@ mod tests {
                 Some("transaction-producer")
             );
             let unique_id = message
-                .properties()
-                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
                 .expect("Java half-send retains the generated or caller-provided ID");
             assert!(!unique_id.is_empty());
             assert_eq!(message.transaction_id(), Some(unique_id.as_str()));
@@ -1481,8 +1477,7 @@ mod tests {
                 Some("transaction-producer")
             );
             let unique_id = message
-                .properties()
-                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
                 .expect("Java half-send retains the generated or caller-provided ID");
             assert!(matches!(unique_id.len(), 32 | 56));
             assert_eq!(message.transaction_id(), Some(unique_id.as_str()));

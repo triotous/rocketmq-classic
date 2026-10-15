@@ -81,7 +81,7 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         );
         assert_eq!(decoded.message().topic(), expected["topic"]);
         assert_eq!(
-            decoded.message().body(),
+            decoded.message().body().to_vec(),
             base64::engine::general_purpose::STANDARD
                 .decode(expected["bodyBase64"].as_str().unwrap())
                 .unwrap()
@@ -223,14 +223,17 @@ fn message_ext_scalar_public_api_matches_java_551_fixture() {
 fn message_client_ext_api_matches_java_551_fixture() {
     let expected = &fixture()["messageClientExtApi"];
     let mut message = MessageClientExt::default();
-    assert_eq!(message.message_id(), expected["defaultMessageId"].as_str());
+    assert_eq!(
+        message.message_id().as_deref(),
+        expected["defaultMessageId"].as_str()
+    );
     assert_eq!(
         message.offset_message_id(),
         expected["defaultOffsetMessageId"].as_str()
     );
     message.set_message_id(Some("ignored-initial".to_owned()));
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["setMessageIdOnDefault"].as_str()
     );
     assert_eq!(
@@ -243,7 +246,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["offsetMessageId"].as_str()
     );
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["messageIdFallsBackToOffset"].as_str()
     );
     message
@@ -254,7 +257,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         )
         .unwrap();
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["messageIdPrefersUnique"].as_str()
     );
     assert_eq!(
@@ -263,7 +266,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
     );
     message.set_message_id(Some("ignored-after-unique".to_owned()));
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["setMessageIdDoesNotReplaceUnique"].as_str()
     );
     message
@@ -274,7 +277,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         )
         .unwrap();
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["messageIdReadsLiveUniqueProperty"].as_str()
     );
     message.set_offset_message_id(Some("offset-2".to_owned()));
@@ -283,19 +286,19 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["offsetMessageIdReplaced"].as_str()
     );
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["uniqueSurvivesOffsetReplacement"].as_str()
     );
     message.message_mut().clear_system_property(
         rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
     );
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["messageIdFallsBackAfterUniqueClear"].as_str()
     );
     message.set_message_id(Some("ignored-after-clear".to_owned()));
     assert_eq!(
-        message.message_id(),
+        message.message_id().as_deref(),
         expected["setMessageIdDoesNotReplaceOffsetFallback"].as_str()
     );
 }
@@ -1089,12 +1092,12 @@ fn message_decoder_property_map_methods_match_java_551() {
         encode_properties_nullable(Some(&MessageProperties::new())),
         expected["emptyMapEncoded"]
     );
-    let null_value = [(Some("ignored"), None)];
+    let null_value: [(Option<&str>, Option<&str>); 1] = [(Some("ignored"), None)];
     assert_eq!(
         encode_nullable_property_entries(Some(&null_value)),
         expected["nullValueEncoded"]
     );
-    let null_key = [(None, Some("value"))];
+    let null_key: [(Option<&str>, Option<&str>); 1] = [(None, Some("value"))];
     assert_eq!(
         encode_nullable_property_entries(Some(&null_key)),
         expected["nullKeyEncoded"]
@@ -1346,13 +1349,16 @@ fn nullable_message_property_keys_match_java_551() {
         message.set_property_nullable(None, Some("value".to_owned())),
         None
     );
-    assert_eq!(message.get_nullable_property(None), Some("value"));
+    assert_eq!(
+        message.get_nullable_property(None).as_deref(),
+        Some("value")
+    );
     assert!(message.has_nullable_property(None));
     assert_eq!(expected["nullKeyPropertyPresent"], true);
     assert_eq!(expected["nullKeyPropertyValue"], "value");
     assert_eq!(message.to_string(), expected["nullKeyPropertyString"]);
     let entries = message.nullable_property_entries().collect::<Vec<_>>();
-    assert_eq!(entries, vec![(None, Some("value"))]);
+    assert_eq!(entries, vec![(None, Some("value".to_owned()))]);
     assert_eq!(
         encode_nullable_property_entries(Some(&entries)),
         expected["nullKeyPropertyEncoded"]
@@ -1361,7 +1367,10 @@ fn nullable_message_property_keys_match_java_551() {
     let serialized = serde_json::to_value(&message).unwrap();
     assert_eq!(serialized["nullKeyProperty"]["value"], "value");
     let round_trip: Message = serde_json::from_value(serialized).unwrap();
-    assert_eq!(round_trip.get_nullable_property(None), Some("value"));
+    assert_eq!(
+        round_trip.get_nullable_property(None).as_deref(),
+        Some("value")
+    );
     assert!(round_trip.has_nullable_property(None));
 
     let mut compact_message = Message::new("orders", [1, 2, 3]);
@@ -1369,7 +1378,10 @@ fn nullable_message_property_keys_match_java_551() {
     let compact = encode_compact_message(&compact_message).unwrap();
     let (decoded_compact, consumed) = decode_compact_message(&compact).unwrap();
     assert_eq!(consumed, compact.len());
-    assert_eq!(decoded_compact.get_property("null"), Some("value"));
+    assert_eq!(
+        decoded_compact.get_property("null").as_deref(),
+        Some("value")
+    );
 
     let mut message_ext = MessageExt::default();
     message_ext.message_mut().set_topic("orders");
@@ -1415,8 +1427,11 @@ fn nullable_message_property_keys_match_java_551() {
     nullable_properties.insert(None, Some("value".to_owned()));
     nullable_properties.insert(Some("nullable".to_owned()), None);
     message.set_nullable_properties(Some(nullable_properties));
-    assert_eq!(message.get_nullable_property(None), Some("value"));
-    assert_eq!(message.get_property("nullable"), None);
+    assert_eq!(
+        message.get_nullable_property(None).as_deref(),
+        Some("value")
+    );
+    assert_eq!(message.get_property("nullable").as_deref(), None);
     assert!(message.has_property("nullable"));
     message.set_properties(None);
     assert!(!message.has_nullable_property(None));
@@ -1425,7 +1440,10 @@ fn nullable_message_property_keys_match_java_551() {
         rocketmq_classic_common::message::NullableMessageProperties::new();
     null_key_replacement.insert(None, Some("replacement".to_owned()));
     message.set_nullable_properties(Some(null_key_replacement));
-    assert_eq!(message.get_nullable_property(None), Some("replacement"));
+    assert_eq!(
+        message.get_nullable_property(None).as_deref(),
+        Some("replacement")
+    );
     assert_eq!(expected["setPropertiesNullKeyPresent"], true);
     assert_eq!(expected["setPropertiesNullKeyValue"], "replacement");
     assert_eq!(
@@ -1515,9 +1533,12 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(direct_setters.set_keys("setter-key"), Ok(None));
     assert_eq!(direct_setters.set_wait_store_msg_ok(false), Ok(None));
     direct_setters.set_transaction_id(Some("transaction-setter".to_owned()));
-    assert_eq!(direct_setters.tags(), expected["setTagsGetter"].as_str());
     assert_eq!(
-        direct_setters.keys(),
+        direct_setters.tags().as_deref(),
+        expected["setTagsGetter"].as_str()
+    );
+    assert_eq!(
+        direct_setters.keys().as_deref(),
         expected["setKeysStringGetter"].as_str()
     );
     assert_eq!(
@@ -1526,7 +1547,8 @@ fn message_public_api_matches_java_551_fixture() {
     );
     assert_eq!(
         direct_setters
-            .get_property(rocketmq_classic_common::message::constants::PROPERTY_WAIT_STORE_MSG_OK),
+            .get_property(rocketmq_classic_common::message::constants::PROPERTY_WAIT_STORE_MSG_OK)
+            .as_deref(),
         expected["setWaitStoreMsgOKProperty"].as_str()
     );
     assert_eq!(
@@ -1648,7 +1670,9 @@ fn message_public_api_matches_java_551_fixture() {
         expected["setPriority"].as_i64().unwrap() as i32
     );
     assert_eq!(
-        priority.get_property(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY),
+        priority
+            .get_property(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY)
+            .as_deref(),
         Some(expected["setPriorityProperty"].as_str().unwrap())
     );
     assert_eq!(
@@ -1800,14 +1824,20 @@ fn message_public_api_matches_java_551_fixture() {
         "old".to_owned(),
         "value".to_owned(),
     )])));
-    assert_eq!(replaced_properties.get_property("old"), Some("value"));
+    assert_eq!(
+        replaced_properties.get_property("old").as_deref(),
+        Some("value")
+    );
     assert_eq!(expected["setPropertiesInitialValue"], "value");
     replaced_properties.set_properties(Some(std::collections::BTreeMap::from([(
         "new".to_owned(),
         "replacement".to_owned(),
     )])));
     assert!(!replaced_properties.has_property("old"));
-    assert_eq!(replaced_properties.get_property("new"), Some("replacement"));
+    assert_eq!(
+        replaced_properties.get_property("new").as_deref(),
+        Some("replacement")
+    );
     assert_eq!(expected["setPropertiesReplacesOldKey"], true);
     assert_eq!(expected["setPropertiesReplacementValue"], "replacement");
     replaced_properties.set_properties(Some(std::collections::BTreeMap::new()));
@@ -1847,7 +1877,7 @@ fn message_public_api_matches_java_551_fixture() {
     );
     assert_eq!(accessor_clone.flag(), expected["accessorCloneFlag"]);
     assert_eq!(
-        accessor_clone.get_property("clone-key"),
+        accessor_clone.get_property("clone-key").as_deref(),
         expected["accessorCloneProperty"].as_str()
     );
     assert_eq!(accessor_clone.transaction_id(), None);
@@ -1856,12 +1886,63 @@ fn message_public_api_matches_java_551_fixture() {
         accessor_clone_source.transaction_id(),
         expected["accessorCloneSourceTransactionId"].as_str()
     );
+    let mut alias_source = Message::new("clone-alias-topic", [1, 2, 3]);
+    alias_source.set_properties(Some(std::collections::BTreeMap::from([(
+        "shared".to_owned(),
+        "initial".to_owned(),
+    )])));
+    let mut alias_clone = alias_source.clone_message();
+    assert_eq!(expected["accessorCloneSharesBodyArray"], true);
+    assert_eq!(expected["accessorCloneSharesPropertiesMap"], true);
+    alias_clone.body_mut().unwrap()[0] = expected["accessorCloneBodyMutationVisibleInSource"]
+        .as_u64()
+        .unwrap() as u8;
+    assert_eq!(
+        alias_source.body()[0],
+        expected["accessorCloneBodyMutationVisibleInSource"]
+            .as_u64()
+            .unwrap() as u8
+    );
+    alias_source
+        .set_system_property("source-only", "source")
+        .unwrap();
+    assert_eq!(
+        alias_clone.get_property("source-only").as_deref(),
+        expected["accessorClonePropertyMutationVisibleInClone"].as_str()
+    );
+    alias_clone
+        .set_system_property("clone-only", "clone")
+        .unwrap();
+    assert_eq!(
+        alias_source.get_property("clone-only").as_deref(),
+        expected["accessorClonePropertyMutationVisibleInSource"].as_str()
+    );
+    alias_clone.set_body([7, 8]);
+    assert_eq!(expected["accessorCloneSetBodyDetachesArray"], true);
+    assert_eq!(
+        alias_source.body()[0],
+        expected["accessorCloneSetBodyLeavesSourceArray"]
+            .as_u64()
+            .unwrap() as u8
+    );
+    alias_clone.set_properties(Some(std::collections::BTreeMap::from([(
+        "detached".to_owned(),
+        "value".to_owned(),
+    )])));
+    assert_eq!(expected["accessorCloneSetPropertiesDetachesMap"], true);
+    alias_clone
+        .set_system_property("clone-after-detach", "clone")
+        .unwrap();
+    assert_eq!(
+        expected["accessorCloneDetachedPropertyMutationLeavesSource"],
+        !alias_source.has_property("clone-after-detach")
+    );
     let mut independent_clone = accessor_clone.clone();
     independent_clone.set_body([9, 8, 7]);
     independent_clone
         .put_user_property("copy-only", "copy")
         .unwrap();
-    assert_eq!(accessor_clone_source.body(), &[0, 255, 42]);
+    assert_eq!(accessor_clone_source.body().as_ref(), &[0, 255, 42]);
     assert_eq!(accessor_clone_source.get_property("copy-only"), None);
     let mut copy_source = rocketmq_classic_common::message::NullableMessageProperties::new();
     copy_source.insert(None, None);
@@ -1923,7 +2004,7 @@ fn message_public_api_matches_java_551_fixture() {
             .set_system_property(property, value)
             .unwrap();
         assert_eq!(
-            accessor_helpers.get_property(property),
+            accessor_helpers.get_property(property).as_deref(),
             helper_values[key].as_str()
         );
     }
@@ -1951,7 +2032,7 @@ fn message_public_api_matches_java_551_fixture() {
         .set_keys_from_nullable(Some(vec![Some("left"), None, Some("right")]))
         .unwrap();
     assert_eq!(
-        collection_with_null.keys(),
+        collection_with_null.keys().as_deref(),
         expected["collectionKeysWithNullMember"].as_str()
     );
     assert_eq!(expected["collectionKeysWithNullMember"], "left null right");
@@ -1971,8 +2052,8 @@ fn message_public_api_matches_java_551_fixture() {
         false,
     );
     assert_eq!(message.topic(), expected["topic"]);
-    assert_eq!(message.tags(), expected["tags"].as_str());
-    assert_eq!(message.keys(), expected["keys"].as_str());
+    assert_eq!(message.tags().as_deref(), expected["tags"].as_str());
+    assert_eq!(message.keys().as_deref(), expected["keys"].as_str());
     assert_eq!(message.flag(), expected["flag"]);
     assert_eq!(
         base64::engine::general_purpose::STANDARD.encode(message.body()),
@@ -1980,11 +2061,11 @@ fn message_public_api_matches_java_551_fixture() {
     );
     assert_eq!(message.is_wait_store_msg_ok(), expected["waitStore"]);
     assert_eq!(
-        message.get_property("TAGS"),
+        message.get_property("TAGS").as_deref(),
         expected["propertyTags"].as_str()
     );
     assert_eq!(
-        message.get_user_property("TAGS"),
+        message.get_user_property("TAGS").as_deref(),
         expected["userPropertyTags"].as_str()
     );
     assert_eq!(message.get_property("missing"), None);
@@ -1992,12 +2073,15 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(message.has_property("missing"), expected["hasMissing"]);
 
     message.set_keys_from(["third", "fourth"]);
-    assert_eq!(message.keys(), expected["collectionKeys"].as_str());
+    assert_eq!(
+        message.keys().as_deref(),
+        expected["collectionKeys"].as_str()
+    );
     message.set_buyer_id("buyer-1");
     message.set_instance_id("instance-1");
-    assert_eq!(message.buyer_id(), expected["buyerId"].as_str());
+    assert_eq!(message.buyer_id().as_deref(), expected["buyerId"].as_str());
     assert_eq!(
-        message.get_property("INSTANCE_ID"),
+        message.get_property("INSTANCE_ID").as_deref(),
         expected["instanceIdProperty"].as_str()
     );
 
@@ -2086,7 +2170,7 @@ fn message_public_api_matches_java_551_fixture() {
         .unwrap()
         .insert("DIRECT".to_owned(), "through-map".to_owned());
     assert_eq!(
-        diagnostic.get_property("DIRECT"),
+        diagnostic.get_property("DIRECT").as_deref(),
         expected["directMapMutation"].as_str()
     );
 
@@ -2224,7 +2308,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
             .0;
             if let Some(expected_body) = option["bodyBase64"].as_str() {
                 assert_eq!(
-                    decoded.message().body(),
+                    decoded.message().body().to_vec(),
                     base64::engine::general_purpose::STANDARD
                         .decode(expected_body)
                         .unwrap(),
@@ -2283,7 +2367,10 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
         .0;
         assert_ne!(preserved.sys_flag() & message::COMPRESSED_FLAG, 0);
-        assert_eq!(preserved.message().body(), encoded_body(&compressed));
+        assert_eq!(
+            preserved.message().body().as_ref(),
+            encoded_body(&compressed)
+        );
         for decompress_body in [false, true] {
             let skipped = decode_one(
                 &compressed,

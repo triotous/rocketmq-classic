@@ -263,8 +263,8 @@ async fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() 
         .unwrap();
     let messages = processed.messages.unwrap();
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].message().body(), b"inner-one");
-    assert_eq!(messages[1].message().body(), b"inner-two");
+    assert_eq!(messages[0].message().body().as_ref(), b"inner-one");
+    assert_eq!(messages[1].message().body().as_ref(), b"inner-two");
     assert_eq!(messages[0].queue_offset(), 53);
     assert_eq!(messages[1].queue_offset(), 54);
     assert_eq!(messages[0].message().flag(), 301);
@@ -293,7 +293,7 @@ async fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() 
         .messages
         .unwrap();
     assert_eq!(fallback.len(), 1);
-    assert_eq!(fallback[0].message().body(), &[0, 0, 0, 8]);
+    assert_eq!(fallback[0].message().body().as_ref(), &[0, 0, 0, 8]);
 }
 
 #[test]

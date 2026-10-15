@@ -364,7 +364,7 @@ fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPull
     let mut total_decoded = 0usize;
     let mut messages = Vec::new();
     while offset < bytes.len() {
-        let size = read_i32(bytes, offset).ok_or(ProcessPullError::MalformedInnerBatch {
+        let size = read_i32(&bytes, offset).ok_or(ProcessPullError::MalformedInnerBatch {
             offset,
             reason: "missing record size",
         })?;

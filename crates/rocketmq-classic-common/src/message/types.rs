@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -18,6 +18,140 @@ pub const PROPERTY_SEPARATOR: char = '\u{2}';
 pub type MessageProperties = BTreeMap<String, String>;
 /// Java-style property map capable of representing null keys and values.
 pub type NullableMessageProperties = BTreeMap<Option<String>, Option<String>>;
+
+#[derive(Debug, Clone, Default)]
+struct MessagePropertyStorage {
+    values: MessageProperties,
+    null_values: BTreeSet<String>,
+    null_key_value: Option<Option<String>>,
+}
+
+struct MessageBodyReadView<'a>(Option<RwLockReadGuard<'a, Vec<u8>>>);
+
+impl Deref for MessageBodyReadView<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().map(|body| &body[..]).unwrap_or_default()
+    }
+}
+
+impl AsRef<[u8]> for MessageBodyReadView<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl std::fmt::Debug for MessageBodyReadView<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&**self, formatter)
+    }
+}
+
+impl PartialEq for MessageBodyReadView<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl<const N: usize> PartialEq<&[u8; N]> for MessageBodyReadView<'_> {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        **self == other[..]
+    }
+}
+
+impl PartialEq<Vec<u8>> for MessageBodyReadView<'_> {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.as_ref() == other.as_slice()
+    }
+}
+
+impl PartialEq<&[u8]> for MessageBodyReadView<'_> {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.as_ref() == *other
+    }
+}
+
+struct MessageBodyWriteView<'a>(RwLockWriteGuard<'a, Vec<u8>>);
+
+impl Deref for MessageBodyWriteView<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for MessageBodyWriteView<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+enum MessagePropertiesReadSource<'a> {
+    Shared(RwLockReadGuard<'a, MessagePropertyStorage>),
+    Empty,
+}
+
+struct MessagePropertiesReadView<'a>(MessagePropertiesReadSource<'a>);
+
+impl Deref for MessagePropertiesReadView<'_> {
+    type Target = MessageProperties;
+
+    fn deref(&self) -> &Self::Target {
+        match &self.0 {
+            MessagePropertiesReadSource::Shared(properties) => &properties.values,
+            MessagePropertiesReadSource::Empty => empty_message_properties(),
+        }
+    }
+}
+
+impl std::fmt::Debug for MessagePropertiesReadView<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&**self, formatter)
+    }
+}
+
+impl PartialEq for MessagePropertiesReadView<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Serialize for MessagePropertiesReadView<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize(serializer)
+    }
+}
+
+struct MessagePropertiesWriteView<'a>(RwLockWriteGuard<'a, MessagePropertyStorage>);
+
+impl Deref for MessagePropertiesWriteView<'_> {
+    type Target = MessageProperties;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.values
+    }
+}
+
+impl DerefMut for MessagePropertiesWriteView<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0.values
+    }
+}
+
+fn read_message_state<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn write_message_state<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TopicFilterType {
@@ -100,11 +234,9 @@ pub struct MessageSysFlagParseError {
 #[derive(Debug)]
 pub struct Message {
     topic: Option<String>,
-    body: Option<Vec<u8>>,
+    body: Option<Arc<RwLock<Vec<u8>>>>,
     flag: i32,
-    properties: Option<MessageProperties>,
-    null_properties: BTreeSet<String>,
-    null_key_property: Option<Option<String>>,
+    properties: Option<Arc<RwLock<MessagePropertyStorage>>>,
     properties_read_initialized: AtomicBool,
     transaction_id: Option<String>,
 }
@@ -143,23 +275,39 @@ impl Serialize for Message {
     where
         S: Serializer,
     {
-        let properties = self.get_properties().map(|properties| {
-            let mut nullable = properties
-                .iter()
-                .map(|(key, value)| (key.clone(), Some(value.clone())))
-                .collect::<BTreeMap<_, _>>();
-            for key in &self.null_properties {
-                nullable.entry(key.clone()).or_insert(None);
+        let property_snapshot = match self.properties.as_ref() {
+            Some(properties) => {
+                let properties = read_message_state(properties);
+                let mut nullable = properties
+                    .values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), Some(value.clone())))
+                    .collect::<BTreeMap<_, _>>();
+                for key in &properties.null_values {
+                    nullable.entry(key.clone()).or_insert(None);
+                }
+                Some(nullable)
             }
-            nullable
-        });
+            None if self
+                .properties_read_initialized
+                .load(AtomicOrdering::Relaxed) =>
+            {
+                Some(BTreeMap::new())
+            }
+            None => None,
+        };
         MessageSerde {
             topic: self.topic.clone(),
-            body: self.body.clone(),
+            body: self
+                .body
+                .as_ref()
+                .map(|body| read_message_state(body).clone()),
             flag: self.flag,
-            properties,
+            properties: property_snapshot,
             null_key_property: self
-                .null_key_property
+                .properties
+                .as_ref()
+                .and_then(|properties| read_message_state(properties).null_key_value.clone())
                 .clone()
                 .map(|value| NullablePropertyValue { value }),
             transaction_id: self.transaction_id.clone(),
@@ -174,29 +322,36 @@ impl<'de> Deserialize<'de> for Message {
         D: Deserializer<'de>,
     {
         let wire = MessageSerde::deserialize(deserializer)?;
-        let (properties, null_properties) = match wire.properties {
+        let properties = match wire.properties {
             Some(values) => {
                 let mut properties = BTreeMap::new();
-                let mut null_properties = BTreeSet::new();
+                let mut null_values = BTreeSet::new();
                 for (key, value) in values {
                     if let Some(value) = value {
                         properties.insert(key, value);
                     } else {
-                        null_properties.insert(key);
+                        null_values.insert(key);
                     }
                 }
-                (Some(properties), null_properties)
+                Some(Arc::new(RwLock::new(MessagePropertyStorage {
+                    values: properties,
+                    null_values,
+                    null_key_value: None,
+                })))
             }
-            None => (None, BTreeSet::new()),
+            None => None,
         };
-        let null_key_property = wire.null_key_property.map(|property| property.value);
+        if let (Some(properties), Some(null_key_property)) = (
+            &properties,
+            wire.null_key_property.map(|property| property.value),
+        ) {
+            write_message_state(properties).null_key_value = Some(null_key_property);
+        }
         Ok(Self {
             topic: wire.topic,
-            body: wire.body,
+            body: wire.body.map(|body| Arc::new(RwLock::new(body))),
             flag: wire.flag,
             properties,
-            null_properties,
-            null_key_property,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: wire.transaction_id,
         })
@@ -207,11 +362,15 @@ impl Clone for Message {
     fn clone(&self) -> Self {
         Self {
             topic: self.topic.clone(),
-            body: self.body.clone(),
+            body: self
+                .body
+                .as_ref()
+                .map(|body| Arc::new(RwLock::new(read_message_state(body).clone()))),
             flag: self.flag,
-            properties: self.properties.clone(),
-            null_properties: self.null_properties.clone(),
-            null_key_property: self.null_key_property.clone(),
+            properties: self
+                .properties
+                .as_ref()
+                .map(|properties| Arc::new(RwLock::new(read_message_state(properties).clone()))),
             properties_read_initialized: AtomicBool::new(
                 self.properties_read_initialized
                     .load(AtomicOrdering::Relaxed),
@@ -228,8 +387,6 @@ impl Default for Message {
             body: None,
             flag: 0,
             properties: None,
-            null_properties: BTreeSet::new(),
-            null_key_property: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -249,11 +406,12 @@ impl Message {
     ) -> Self {
         Self {
             topic: Some(topic),
-            body: Some(body),
+            body: Some(Arc::new(RwLock::new(body))),
             flag: 0,
-            properties: Some(properties),
-            null_properties: BTreeSet::new(),
-            null_key_property: None,
+            properties: Some(Arc::new(RwLock::new(MessagePropertyStorage {
+                values: properties,
+                ..MessagePropertyStorage::default()
+            }))),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -262,11 +420,12 @@ impl Message {
     pub(crate) fn from_compact(body: Vec<u8>, flag: i32, properties: MessageProperties) -> Self {
         Self {
             topic: None,
-            body: Some(body),
+            body: Some(Arc::new(RwLock::new(body))),
             flag,
-            properties: Some(properties),
-            null_properties: BTreeSet::new(),
-            null_key_property: None,
+            properties: Some(Arc::new(RwLock::new(MessagePropertyStorage {
+                values: properties,
+                ..MessagePropertyStorage::default()
+            }))),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -275,27 +434,35 @@ impl Message {
     pub fn new(topic: impl Into<String>, body: impl Into<Vec<u8>>) -> Self {
         Self {
             topic: Some(topic.into()),
-            body: Some(body.into()),
+            body: Some(Arc::new(RwLock::new(body.into()))),
             flag: 0,
-            properties: Some(BTreeMap::from([(
-                crate::message::constants::PROPERTY_WAIT_STORE_MSG_OK.to_owned(),
-                "true".to_owned(),
-            )])),
-            null_properties: BTreeSet::new(),
-            null_key_property: None,
+            properties: Some(Arc::new(RwLock::new(MessagePropertyStorage {
+                values: BTreeMap::from([(
+                    crate::message::constants::PROPERTY_WAIT_STORE_MSG_OK.to_owned(),
+                    "true".to_owned(),
+                )]),
+                ..MessagePropertyStorage::default()
+            }))),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
     }
 
-    /// Creates the Rust-owned value snapshot produced by Java's
-    /// `MessageAccessor.cloneMessage`: topic, body, flag, and property values
-    /// are copied, while the transaction ID is left unset. Rust ownership
-    /// gives the snapshot independent body and property storage.
+    /// Creates the `MessageAccessor.cloneMessage` projection. Body bytes and
+    /// the property map are shared with the source until either message
+    /// replaces that field; the transaction ID is left unset.
     pub fn clone_message(&self) -> Self {
-        let mut message = self.clone();
-        message.transaction_id = None;
-        message
+        Self {
+            topic: self.topic.clone(),
+            body: self.body.clone(),
+            flag: self.flag,
+            properties: self.properties.clone(),
+            properties_read_initialized: AtomicBool::new(
+                self.properties_read_initialized
+                    .load(AtomicOrdering::Relaxed),
+            ),
+            transaction_id: None,
+        }
     }
 
     /// Java's two-argument constructor, preserving null topic and body values.
@@ -349,7 +516,7 @@ impl Message {
     ) -> Self {
         let mut message = Self {
             topic,
-            body,
+            body: body.map(|body| Arc::new(RwLock::new(body))),
             flag,
             ..Self::default()
         };
@@ -378,43 +545,78 @@ impl Message {
     pub fn set_topic_nullable(&mut self, topic: Option<String>) {
         self.topic = topic;
     }
-    pub fn body(&self) -> &[u8] {
-        self.body.as_deref().unwrap_or_default()
+    pub fn body(
+        &self,
+    ) -> impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_ {
+        MessageBodyReadView(self.body.as_ref().map(|body| read_message_state(body)))
     }
-    pub fn body_nullable(&self) -> Option<&[u8]> {
-        self.body.as_deref()
+    pub fn body_nullable(
+        &self,
+    ) -> Option<impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_> {
+        self.body
+            .as_ref()
+            .map(|body| MessageBodyReadView(Some(read_message_state(body))))
+    }
+    /// Mutably borrows the Java `getBody()` byte array when one is present.
+    /// Messages returned by `clone_message()` share this array until either
+    /// message calls `set_body` or `set_body_nullable`.
+    pub fn body_mut(&mut self) -> Option<impl DerefMut<Target = [u8]> + '_> {
+        self.body
+            .as_ref()
+            .map(|body| MessageBodyWriteView(write_message_state(body)))
     }
     pub fn set_body(&mut self, body: impl Into<Vec<u8>>) {
-        self.body = Some(body.into());
+        self.body = Some(Arc::new(RwLock::new(body.into())));
     }
     pub fn set_body_nullable(&mut self, body: Option<Vec<u8>>) {
-        self.body = body;
+        self.body = body.map(|body| Arc::new(RwLock::new(body)));
     }
     pub fn flag(&self) -> i32 {
         self.flag
     }
-    pub fn properties(&self) -> &MessageProperties {
-        self.properties
-            .as_ref()
-            .unwrap_or_else(|| empty_message_properties())
-    }
-    pub fn properties_nullable(&self) -> Option<&MessageProperties> {
-        self.properties.as_ref().or_else(|| {
-            self.properties_read_initialized
-                .load(AtomicOrdering::Relaxed)
-                .then(empty_message_properties)
+    pub fn properties(
+        &self,
+    ) -> impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_ {
+        MessagePropertiesReadView(match self.properties.as_ref() {
+            Some(properties) => MessagePropertiesReadSource::Shared(read_message_state(properties)),
+            None => MessagePropertiesReadSource::Empty,
         })
     }
-    pub fn get_properties(&self) -> Option<&MessageProperties> {
+    pub fn properties_nullable(
+        &self,
+    ) -> Option<impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_>
+    {
+        match self.properties.as_ref() {
+            Some(properties) => Some(MessagePropertiesReadView(
+                MessagePropertiesReadSource::Shared(read_message_state(properties)),
+            )),
+            None if self
+                .properties_read_initialized
+                .load(AtomicOrdering::Relaxed) =>
+            {
+                Some(MessagePropertiesReadView(
+                    MessagePropertiesReadSource::Empty,
+                ))
+            }
+            None => None,
+        }
+    }
+    pub fn get_properties(
+        &self,
+    ) -> Option<impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_>
+    {
         self.properties_nullable()
     }
     /// Replace the message property map, corresponding to Java's
     /// `MessageAccessor.setProperties`. Rust takes ownership of the supplied
     /// map; `None` preserves Java's null-map state.
     pub fn set_properties(&mut self, properties: Option<MessageProperties>) {
-        self.properties = properties;
-        self.null_properties.clear();
-        self.null_key_property = None;
+        self.properties = properties.map(|values| {
+            Arc::new(RwLock::new(MessagePropertyStorage {
+                values,
+                ..MessagePropertyStorage::default()
+            }))
+        });
         self.properties_read_initialized
             .store(false, AtomicOrdering::Relaxed);
     }
@@ -422,29 +624,32 @@ impl Message {
     /// values. `None` represents a null map; `Some(empty)` represents an empty
     /// map.
     pub fn set_nullable_properties(&mut self, properties: Option<NullableMessageProperties>) {
-        self.properties = properties.as_ref().map(|_| MessageProperties::new());
-        self.null_properties.clear();
-        self.null_key_property = None;
         self.properties_read_initialized
             .store(false, AtomicOrdering::Relaxed);
-        if let Some(properties) = properties {
+        self.properties = properties.map(|properties| {
+            let mut storage = MessagePropertyStorage::default();
             for (key, value) in properties {
                 match key {
                     Some(key) => {
-                        self.put_property_value(key, value);
+                        if let Some(value) = value {
+                            storage.values.insert(key, value);
+                        } else {
+                            storage.null_values.insert(key);
+                        }
                     }
                     None => {
-                        self.null_key_property = Some(value);
+                        storage.null_key_value = Some(value);
                     }
                 }
             }
-        }
+            Arc::new(RwLock::new(storage))
+        });
     }
     /// Returns stored property entries, including Java-style null values, in
     /// deterministic key order. `properties()` and `get_properties()` retain
     /// the Rust string-to-string map view; this iterator exposes the entries
     /// that Java callers can observe through `Message.getProperties()`.
-    pub fn property_entries(&self) -> impl Iterator<Item = (&str, Option<&str>)> + '_ {
+    pub fn property_entries(&self) -> impl Iterator<Item = (String, Option<String>)> {
         self.nullable_property_entries()
             .filter_map(|(key, value)| key.map(|key| (key, value)))
     }
@@ -452,32 +657,35 @@ impl Message {
     /// in deterministic key order. A null key is returned as `None`.
     pub fn nullable_property_entries(
         &self,
-    ) -> impl Iterator<Item = (Option<&str>, Option<&str>)> + '_ {
+    ) -> impl Iterator<Item = (Option<String>, Option<String>)> {
         let mut entries = self
             .properties
-            .iter()
-            .flat_map(|properties| {
+            .as_ref()
+            .map_or_else(Vec::new, |properties| {
+                let properties = read_message_state(properties);
                 properties
+                    .values
                     .iter()
-                    .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
-            })
-            .chain(self.null_properties.iter().filter_map(|key| {
-                (!self
-                    .properties
-                    .as_ref()
-                    .is_some_and(|properties| properties.contains_key(key)))
-                .then_some((Some(key.as_str()), None))
-            }))
-            .chain(
-                self.null_key_property
-                    .as_ref()
-                    .map(|value| (None, value.as_deref())),
-            )
-            .collect::<Vec<_>>();
+                    .map(|(key, value)| (Some(key.clone()), Some(value.clone())))
+                    .chain(
+                        properties
+                            .null_values
+                            .iter()
+                            .filter(|key| !properties.values.contains_key(*key))
+                            .map(|key| (Some(key.clone()), None)),
+                    )
+                    .chain(
+                        properties
+                            .null_key_value
+                            .as_ref()
+                            .map(|value| (None, value.clone())),
+                    )
+                    .collect::<Vec<_>>()
+            });
         entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
         entries.into_iter()
     }
-    pub fn get_properties_mut(&mut self) -> Option<&mut MessageProperties> {
+    pub fn get_properties_mut(&mut self) -> Option<impl DerefMut<Target = MessageProperties> + '_> {
         if self.properties.is_none()
             && !self
                 .properties_read_initialized
@@ -485,19 +693,21 @@ impl Message {
         {
             return None;
         }
-        Some(self.properties.get_or_insert_with(MessageProperties::new))
+        let properties = self
+            .properties
+            .get_or_insert_with(|| Arc::new(RwLock::new(MessagePropertyStorage::default())));
+        Some(MessagePropertiesWriteView(write_message_state(properties)))
     }
-    pub fn get_property(&self, key: &str) -> Option<&str> {
+    pub fn get_property(&self, key: &str) -> Option<String> {
         if self.properties.is_none() {
             self.properties_read_initialized
                 .store(true, AtomicOrdering::Relaxed);
         }
         self.properties
             .as_ref()
-            .and_then(|properties| properties.get(key))
-            .map(String::as_str)
+            .and_then(|properties| read_message_state(properties).values.get(key).cloned())
     }
-    pub fn get_nullable_property(&self, key: Option<&str>) -> Option<&str> {
+    pub fn get_nullable_property(&self, key: Option<&str>) -> Option<String> {
         match key {
             Some(key) => self.get_property(key),
             None => {
@@ -505,32 +715,40 @@ impl Message {
                     self.properties_read_initialized
                         .store(true, AtomicOrdering::Relaxed);
                 }
-                self.null_key_property.as_ref().and_then(Option::as_deref)
+                self.properties.as_ref().and_then(|properties| {
+                    read_message_state(properties)
+                        .null_key_value
+                        .as_ref()
+                        .and_then(Clone::clone)
+                })
             }
         }
     }
-    pub fn get_user_property(&self, key: &str) -> Option<&str> {
+    pub fn get_user_property(&self, key: &str) -> Option<String> {
         self.get_property(key)
     }
-    pub fn get_nullable_user_property(&self, key: Option<&str>) -> Option<&str> {
+    pub fn get_nullable_user_property(&self, key: Option<&str>) -> Option<String> {
         self.get_nullable_property(key)
     }
     pub fn has_property(&self, key: &str) -> bool {
-        self.properties
-            .as_ref()
-            .is_some_and(|properties| properties.contains_key(key))
-            || self.null_properties.contains(key)
+        self.properties.as_ref().is_some_and(|properties| {
+            let properties = read_message_state(properties);
+            properties.values.contains_key(key) || properties.null_values.contains(key)
+        })
     }
     pub fn has_nullable_property(&self, key: Option<&str>) -> bool {
         match key {
             Some(key) => self.has_property(key),
-            None => self.null_key_property.is_some(),
+            None => self
+                .properties
+                .as_ref()
+                .is_some_and(|properties| read_message_state(properties).null_key_value.is_some()),
         }
     }
-    pub fn tags(&self) -> Option<&str> {
+    pub fn tags(&self) -> Option<String> {
         self.get_property(crate::message::constants::PROPERTY_TAGS)
     }
-    pub fn keys(&self) -> Option<&str> {
+    pub fn keys(&self) -> Option<String> {
         self.get_property(crate::message::constants::PROPERTY_KEYS)
     }
     pub fn is_wait_store_msg_ok(&self) -> bool {
@@ -543,7 +761,7 @@ impl Message {
     pub fn set_flag(&mut self, flag: i32) {
         self.flag = flag;
     }
-    pub fn buyer_id(&self) -> Option<&str> {
+    pub fn buyer_id(&self) -> Option<String> {
         self.get_property(crate::message::constants::PROPERTY_BUYER_ID)
     }
     pub fn set_buyer_id(&mut self, buyer_id: impl Into<String>) {
@@ -575,7 +793,7 @@ impl Message {
     }
     pub fn priority(&self) -> i32 {
         self.get_property(crate::message::constants::PROPERTY_PRIORITY)
-            .and_then(parse_java_i32)
+            .and_then(|value| parse_java_i32(&value))
             .unwrap_or(-1)
     }
     pub fn set_priority(&mut self, priority: i32) -> Result<(), MessagePropertyError> {
@@ -676,25 +894,28 @@ impl Message {
             .store(false, AtomicOrdering::Relaxed);
         match key {
             Some(key) => {
-                let previous = self
-                    .has_property(&key)
-                    .then(|| self.get_property(&key).map(str::to_owned));
+                let previous = self.has_property(&key).then(|| self.get_property(&key));
                 self.put_property_value(key, value);
                 previous
             }
             None => {
-                self.properties.get_or_insert_with(MessageProperties::new);
-                self.null_key_property.replace(value)
+                let properties = self.properties.get_or_insert_with(|| {
+                    Arc::new(RwLock::new(MessagePropertyStorage::default()))
+                });
+                write_message_state(properties)
+                    .null_key_value
+                    .replace(value)
             }
         }
     }
 
     /// Removes a system property, corresponding to Java `MessageAccessor.clearProperty`.
     pub fn clear_system_property(&mut self, key: &str) -> Option<String> {
-        self.null_properties.remove(key);
-        self.properties
-            .as_mut()
-            .and_then(|properties| properties.remove(key))
+        self.properties.as_mut().and_then(|properties| {
+            let mut properties = write_message_state(properties);
+            properties.null_values.remove(key);
+            properties.values.remove(key)
+        })
     }
 
     /// Clear a nullable property key through Java's `MessageAccessor` API.
@@ -707,7 +928,10 @@ impl Message {
                 let value = self.clear_system_property(key);
                 was_present.then_some(value)
             }
-            None => self.null_key_property.take(),
+            None => self
+                .properties
+                .as_ref()
+                .and_then(|properties| write_message_state(properties).null_key_value.take()),
         }
     }
 
@@ -782,7 +1006,7 @@ impl Message {
         let Some(value) = self.get_property(property) else {
             return Ok(0);
         };
-        parse_java_i32(value).ok_or_else(|| MessagePropertyParseError {
+        parse_java_i32(&value).ok_or_else(|| MessagePropertyParseError {
             property,
             value: value.to_owned(),
         })
@@ -792,7 +1016,7 @@ impl Message {
         let Some(value) = self.get_property(property) else {
             return Ok(0);
         };
-        parse_java_i64(value).ok_or_else(|| MessagePropertyParseError {
+        parse_java_i64(&value).ok_or_else(|| MessagePropertyParseError {
             property,
             value: value.to_owned(),
         })
@@ -806,19 +1030,18 @@ impl Message {
         let key = key.into();
         self.properties_read_initialized
             .store(false, AtomicOrdering::Relaxed);
+        let properties = self
+            .properties
+            .get_or_insert_with(|| Arc::new(RwLock::new(MessagePropertyStorage::default())));
+        let mut properties = write_message_state(properties);
         match value {
             Some(value) => {
-                self.null_properties.remove(&key);
-                self.properties
-                    .get_or_insert_with(MessageProperties::new)
-                    .insert(key, value)
+                properties.null_values.remove(&key);
+                properties.values.insert(key, value)
             }
             None => {
-                let previous = self
-                    .properties
-                    .get_or_insert_with(MessageProperties::new)
-                    .remove(&key);
-                self.null_properties.insert(key);
+                let previous = properties.values.remove(&key);
+                properties.null_values.insert(key);
                 previous
             }
         }
@@ -834,7 +1057,11 @@ impl Message {
                 "{{{}}}",
                 self.nullable_property_entries()
                     .map(|(key, value)| {
-                        format!("{}={}", key.unwrap_or("null"), value.unwrap_or("null"))
+                        format!(
+                            "{}={}",
+                            key.as_deref().unwrap_or("null"),
+                            value.as_deref().unwrap_or("null")
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -844,6 +1071,7 @@ impl Message {
             .body
             .as_ref()
             .map(|body| {
+                let body = read_message_state(body);
                 format!(
                     "[{}]",
                     body.iter()
@@ -1158,7 +1386,8 @@ impl MessageExt {
     pub fn topic_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         parse_transient_sys_flag(
             self.message
-                .get_property(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG),
+                .get_property(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG)
+                .as_deref(),
         )
     }
     /// Set or clear Java's transient topic system flag property.
@@ -1174,7 +1403,8 @@ impl MessageExt {
     pub fn group_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         parse_transient_sys_flag(
             self.message
-                .get_property(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG),
+                .get_property(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG)
+                .as_deref(),
         )
     }
     /// Set or clear Java's transient group system flag property.
@@ -1238,11 +1468,11 @@ impl MessageClientExt {
         Self(message)
     }
 
-    pub fn message_id(&self) -> Option<&str> {
+    pub fn message_id(&self) -> Option<String> {
         self.0
             .message()
             .get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-            .or_else(|| self.0.message_id())
+            .or_else(|| self.0.message_id().map(str::to_owned))
     }
 
     /// Java `MessageClientExt.setMsgId` intentionally does nothing.
@@ -1606,7 +1836,7 @@ mod tests {
         message.set_transaction_id(Some("tx".into()));
         assert!(message.is_wait_store_msg_ok());
         message.set_tags("tag").unwrap();
-        assert_eq!(message.tags(), Some("tag"));
+        assert_eq!(message.tags(), Some("tag".to_owned()));
         let mut ext = MessageExt::new(message.clone());
         ext.set_queue_offset(i64::MIN);
         ext.set_commit_log_offset(i64::MAX);

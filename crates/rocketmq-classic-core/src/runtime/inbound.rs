@@ -907,7 +907,7 @@ mod tests {
             panic!("matching correlation must complete with the decoded reply")
         };
         assert_eq!(reply_message.message().topic(), "cluster-a_REPLY_TOPIC");
-        assert_eq!(reply_message.message().body(), b"reply-body");
+        assert_eq!(reply_message.message().body().as_ref(), b"reply-body");
         assert_eq!(
             reply_message.message().properties()[PROPERTY_CORRELATION_ID],
             "second"
@@ -995,7 +995,7 @@ mod tests {
             match pending.receive().await.unwrap() {
                 PendingReplyCompletion::Reply(reply) => {
                     assert!(reply_won);
-                    assert_eq!(reply.message().body(), b"reply");
+                    assert_eq!(reply.message().body().as_ref(), b"reply");
                 }
                 PendingReplyCompletion::Timeout { .. } => assert_eq!(expired, 1),
                 other => panic!("unexpected terminal request/reply result: {other:?}"),

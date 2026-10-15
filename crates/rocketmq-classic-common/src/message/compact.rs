@@ -54,7 +54,7 @@ pub fn encode_compact_message(message: &Message) -> Result<Vec<u8>, CompactMessa
     record.extend_from_slice(&0_i32.to_be_bytes()); // body CRC
     record.extend_from_slice(&message.flag().to_be_bytes());
     record.extend_from_slice(&body_length.to_be_bytes());
-    record.extend_from_slice(body);
+    record.extend_from_slice(&body);
     record.extend_from_slice(&properties_length.to_be_bytes());
     record.extend_from_slice(&property_bytes);
     Ok(record)
@@ -160,7 +160,7 @@ pub fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, Compact
         .message()
         .body_nullable()
         .ok_or(CompactMessageError::MissingBody)?;
-    decode_compact_messages(body).map(|messages| {
+    decode_compact_messages(&body).map(|messages| {
         messages
             .into_iter()
             .enumerate()

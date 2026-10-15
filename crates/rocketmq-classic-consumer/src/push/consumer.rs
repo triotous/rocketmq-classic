@@ -105,7 +105,7 @@ fn retry_wire_properties(
         .and_then(|value| value.parse::<i32>().ok());
     let mut property_entries = properties
         .iter()
-        .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
+        .map(|(key, value)| (Some(key.clone()), Some(value.clone())))
         .collect::<Vec<_>>();
     property_entries.extend(
         retry
@@ -3003,12 +3003,7 @@ impl PushConsumer {
         let retry_topic = format!("%RETRY%{consumer_group}");
         for message in messages {
             if retry_topic == message.message().topic() {
-                if let Some(origin_topic) = message
-                    .message()
-                    .properties()
-                    .get(PROPERTY_RETRY_TOPIC)
-                    .cloned()
-                {
+                if let Some(origin_topic) = message.message().get_property(PROPERTY_RETRY_TOPIC) {
                     message.message_mut().set_topic(origin_topic);
                 }
             }
@@ -3426,22 +3421,18 @@ impl PushConsumer {
         let mut retry = Message::new(retry_topic, original.message().body().to_vec());
         retry.set_flag(original.message().flag());
         for (key, value) in original.message().nullable_property_entries() {
-            if key != Some(PROPERTY_TRANSACTION_PREPARED) {
-                let _ =
-                    retry.set_property_nullable(key.map(str::to_owned), value.map(str::to_owned));
+            if key.as_deref() != Some(PROPERTY_TRANSACTION_PREPARED) {
+                let _ = retry.set_property_nullable(key, value);
             }
         }
         let origin_message_id = original
             .message()
-            .properties()
-            .get(PROPERTY_ORIGIN_MESSAGE_ID)
-            .map(String::as_str)
+            .get_property(PROPERTY_ORIGIN_MESSAGE_ID)
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| original.message_id());
+            .or_else(|| original.message_id().map(str::to_owned));
         let _ = retry.set_system_property(PROPERTY_RETRY_TOPIC, origin_topic);
         if let Some(origin_message_id) = origin_message_id {
-            let _ =
-                retry.set_system_property(PROPERTY_ORIGIN_MESSAGE_ID, origin_message_id.to_owned());
+            let _ = retry.set_system_property(PROPERTY_ORIGIN_MESSAGE_ID, origin_message_id);
         }
         let _ = retry.set_system_property(PROPERTY_RECONSUME_TIME, reconsume_times.to_string());
         let _ = retry.set_system_property(
@@ -4633,12 +4624,7 @@ impl PushConsumer {
         let retry_topic = format!("%RETRY%{consumer_group}");
         for message in messages {
             if message.message().topic() == retry_topic {
-                if let Some(origin_topic) = message
-                    .message()
-                    .properties()
-                    .get(PROPERTY_RETRY_TOPIC)
-                    .cloned()
-                {
+                if let Some(origin_topic) = message.message().get_property(PROPERTY_RETRY_TOPIC) {
                     message.message_mut().set_topic(origin_topic);
                 }
             }
@@ -4657,10 +4643,9 @@ impl PushConsumer {
     ) -> Result<AckStatus, PushConsumerError> {
         let raw = message
             .message()
-            .properties()
-            .get(PROPERTY_POP_CK)
+            .get_property(PROPERTY_POP_CK)
             .ok_or(PushConsumerError::MissingPopReceipt)?;
-        let receipt = PopReceipt::parse(raw.clone())?;
+        let receipt = PopReceipt::parse(raw)?;
         let address = self
             .resolve_pop_broker_address(runtime, route_topic, receipt.broker_name())
             .await?
@@ -6235,11 +6220,11 @@ fn pop_delay_seconds() -> &'static [i32] {
 fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
     let Some(raw_receipt) = messages
         .first()
-        .and_then(|message| message.message().properties().get(PROPERTY_POP_CK))
+        .and_then(|message| message.message().get_property(PROPERTY_POP_CK))
     else {
         return true;
     };
-    let Ok(receipt) = PopReceipt::parse(raw_receipt.clone()) else {
+    let Ok(receipt) = PopReceipt::parse(raw_receipt) else {
         return true;
     };
     if receipt.pop_time() <= 0 || receipt.invisible_time() <= 0 {
@@ -6252,8 +6237,8 @@ fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
 fn pop_invisible_timeout(messages: &[MessageExt]) -> Duration {
     messages
         .first()
-        .and_then(|message| message.message().properties().get(PROPERTY_POP_CK))
-        .and_then(|raw| PopReceipt::parse(raw.clone()).ok())
+        .and_then(|message| message.message().get_property(PROPERTY_POP_CK))
+        .and_then(|raw| PopReceipt::parse(raw).ok())
         .map(|receipt| Duration::from_millis(receipt.invisible_time().max(0) as u64))
         .unwrap_or(Duration::MAX)
 }
@@ -6877,9 +6862,9 @@ mod tests {
             consumer.filter_pop_messages(&SubscriptionData::default(), vec![first, second]);
         assert_eq!(*events.lock().unwrap(), ["false:2"]);
         assert_eq!(accepted.len(), 1);
-        assert_eq!(accepted[0].message().body(), b"one");
+        assert_eq!(accepted[0].message().body().as_ref(), b"one");
         assert_eq!(discarded.len(), 1);
-        assert_eq!(discarded[0].message().body(), b"two");
+        assert_eq!(discarded[0].message().body().as_ref(), b"two");
 
         let queues = BTreeSet::from([
             MessageQueue::new("tenant%orders", "broker-a", 1),
@@ -11328,7 +11313,9 @@ mod tests {
                 fixture["sendBackFallbackRetryTopics"][0].as_str().unwrap()
             );
             assert_eq!(
-                scripted.retry_messages[0].get_nullable_property(None),
+                scripted.retry_messages[0]
+                    .get_nullable_property(None)
+                    .as_deref(),
                 Some("value")
             );
             assert_eq!(scripted.retry_wire_properties.len(), 1);

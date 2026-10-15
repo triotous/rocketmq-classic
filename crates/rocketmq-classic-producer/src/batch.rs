@@ -60,7 +60,7 @@ pub(crate) fn create_batch(
 
 fn validate_batch_delay(message: &Message) -> Result<(), ProducerError> {
     let property_positive = |property: &str, long: bool| -> Result<bool, ProducerError> {
-        let Some(value) = message.properties().get(property) else {
+        let Some(value) = message.properties().get(property).cloned() else {
             return Ok(false);
         };
         if long {
@@ -119,7 +119,7 @@ fn encode_message(message: &Message) -> Result<Vec<u8>, ProducerError> {
     encoded.extend_from_slice(&0_i32.to_be_bytes()); // Java's batch BODYCRC placeholder.
     encoded.extend_from_slice(&message.flag().to_be_bytes());
     encoded.extend_from_slice(&body_len.to_be_bytes());
-    encoded.extend_from_slice(body);
+    encoded.extend_from_slice(&body);
     encoded.extend_from_slice(&property_len.to_be_bytes());
     encoded.extend_from_slice(properties);
     Ok(encoded)
@@ -142,19 +142,20 @@ mod tests {
         let first = Message::new("orders", b"first".to_vec());
         let second = Message::new("orders", b"second".to_vec());
         let batch = create_batch(&[first.clone(), second.clone()], &config, &ids).unwrap();
+        let batch_body = batch.body();
         assert_eq!(batch.topic(), "orders");
-        assert_eq!(first.body(), b"first");
-        assert_eq!(second.body(), b"second");
+        assert_eq!(first.body().as_ref(), b"first");
+        assert_eq!(second.body().as_ref(), b"second");
         assert!(
             !first
                 .properties()
                 .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         );
-        let first_record_size = u32::from_be_bytes(batch.body()[0..4].try_into().unwrap()) as usize;
-        assert_eq!(&batch.body()[4..12], &[0; 8]);
-        let first_body_size = u32::from_be_bytes(batch.body()[16..20].try_into().unwrap()) as usize;
+        let first_record_size = u32::from_be_bytes(batch_body[0..4].try_into().unwrap()) as usize;
+        assert_eq!(&batch_body[4..12], &[0; 8]);
+        let first_body_size = u32::from_be_bytes(batch_body[16..20].try_into().unwrap()) as usize;
         let first_properties_size = u16::from_be_bytes(
-            batch.body()[20 + first_body_size..22 + first_body_size]
+            batch_body[20 + first_body_size..22 + first_body_size]
                 .try_into()
                 .unwrap(),
         ) as usize;
@@ -164,15 +165,15 @@ mod tests {
         );
         assert_eq!(first_body_size, 5);
         let first_properties =
-            std::str::from_utf8(&batch.body()[22 + first_body_size..first_record_size]).unwrap();
+            std::str::from_utf8(&batch_body[22 + first_body_size..first_record_size]).unwrap();
         assert!(first_properties.contains("UNIQ_KEY"));
         assert!(first_properties.contains("WAIT"));
         let second_record_size = u32::from_be_bytes(
-            batch.body()[first_record_size..first_record_size + 4]
+            batch_body[first_record_size..first_record_size + 4]
                 .try_into()
                 .unwrap(),
         ) as usize;
-        assert_eq!(second_record_size, batch.body().len() - first_record_size);
+        assert_eq!(second_record_size, batch_body.len() - first_record_size);
     }
 
     #[test]
@@ -280,16 +281,16 @@ mod tests {
         assert!(properties.contains(expected));
 
         let batch = create_batch(&[message], &config(), &UniqueIdGenerator::new(None)).unwrap();
-        let first_size = u32::from_be_bytes(batch.body()[..4].try_into().unwrap()) as usize;
-        let first_body_length =
-            u32::from_be_bytes(batch.body()[16..20].try_into().unwrap()) as usize;
+        let batch_body = batch.body();
+        let first_size = u32::from_be_bytes(batch_body[..4].try_into().unwrap()) as usize;
+        let first_body_length = u32::from_be_bytes(batch_body[16..20].try_into().unwrap()) as usize;
         let first_properties_length = u16::from_be_bytes(
-            batch.body()[20 + first_body_length..22 + first_body_length]
+            batch_body[20 + first_body_length..22 + first_body_length]
                 .try_into()
                 .unwrap(),
         ) as usize;
         let first_properties =
-            std::str::from_utf8(&batch.body()[22 + first_body_length..first_size]).unwrap();
+            std::str::from_utf8(&batch_body[22 + first_body_length..first_size]).unwrap();
         assert_eq!(first_properties.len(), first_properties_length);
         assert!(first_properties.contains(expected));
     }
