@@ -70,3 +70,33 @@ Validation passed:
 The constructor slice's earlier Maven verify passed on the same Java fixture;
 this continuation changes no Java source or fixture. Broad P18-V01 remains
 open, and full-workspace P18-V02 must be rerun on the final code revision.
+
+2026-10-15 19:12 UTC — reconciled the Java `MessageExt` constructor surface.
+
+Pinned source commit `efa1be59d6fc747ad220f036c86030f05f0419f9` declares exactly
+these public constructors: `MessageExt()` and
+`MessageExt(int, long, SocketAddress, long, SocketAddress, String)`. The invoked
+`messageExtPublicApi` fixture now reflects and pins both signatures. Rust
+`MessageExt::new()` and `Default` map to the no-argument constructor; the
+Rust-only public `new(Message)` conversion was removed. Common decoder internals
+use a crate-private `from_message`; Consumer/Core product paths use no-argument
+construction and inherited setters. Consumer/Core test fixtures use cfg(test)
+helpers, which add no downstream API. A compile-fail doctest guards both the
+removed conversion and the private helper boundary. The Phase 8 matrix and
+release checklist record this bounded closure; broad P18-V01 remains open.
+
+Fixture SHA-256: `9400beefa451ed1e29cdda0cb1171387aacd6929d5e2a144de3a837f6ca840e0`.
+Code/test/fixture/matrix changes are pending their own commit.
+
+Validation:
+- `cargo test -p rocketmq-classic-common -p rocketmq-classic-consumer -p rocketmq-classic-core --all-features --locked` passed; Common, Consumer, Core, their integration tests and doctests all passed. The first run surfaced three unused imports from migrated call sites; those imports were removed.
+- `cargo test -p rocketmq-classic-common --all-features --locked` passed after the Java constructor fixture update: 21 unit tests, 20 message-decode integration tests, 1 topic-validator integration test, and 22 doctests, including both compile-fail API checks.
+- `cargo clippy -p rocketmq-classic-common -p rocketmq-classic-consumer -p rocketmq-classic-core --all-targets --all-features --locked -- -D warnings` passed after import cleanup.
+- `mvn -f compat/java-reference/pom.xml verify` passed: all 37 scenarios and fixture drift checks.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+Full-workspace P18-V02 gates still need a final-revision rerun. Broad P18-V01,
+current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+automation, and pre-publication registry resolution remain open. No push,
+publication, Docker, live Broker, tag, or deployment action was taken.
+Code/test/fixture/compatibility-matrix commit: `7665b769`.

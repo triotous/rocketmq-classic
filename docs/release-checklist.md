@@ -1311,3 +1311,14 @@ Before any publication:
   control-flow reconciliation. Common all-feature tests (21 unit, 20
   message-decode integration, 1 topic-validator and 20 doctests), strict Common
   Clippy, formatting and diff checks pass.
+
+- P18-V01 `MessageExt` constructor parity (`7665b769`, 2026-10-15): the pinned
+  Java fixture now reflects both public constructors: no-argument and
+  `(int, long, SocketAddress, long, SocketAddress, String)`. Rust `new()` and
+  `Default` map to the no-argument constructor; the prior public
+  `new(Message)` conversion was removed. Common retains a crate-private
+  `from_message` helper for decoder internals, while Consumer/Core product paths
+  construct through `new()` and inherited setters.
+  A compile-fail rustdoc example protects the absent conversion API. This
+  closes the constructor slice only; broad P18-V01 remains open. Fixture SHA-256:
+  `9400beefa451ed1e29cdda0cb1171387aacd6929d5e2a144de3a837f6ca840e0`.
