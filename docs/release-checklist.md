@@ -391,7 +391,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   unmatched Rust-only APIs, immutable config snapshots, or selected observable
   differences are historical and do not waive the current parity contract.
   Remoting `clientCloseSocketIfTimeout` now has a live Rust update adapter and
-  Java/Rust post-start timeout evidence; `enableReconnectForGoAway`,
+  Java/Rust post-start timeout evidence; `clientWorkerThreads`, `enableReconnectForGoAway`,
   `disableCallbackExecutor`, and `isScanAvailableNameSrv` also have live
   adapters and timing regressions. These close their setting rows only.
   The producer send mutation branch is now
@@ -1022,6 +1022,20 @@ Before any publication:
   checks, seven package listings, Asia/Taipei unique-ID differential, format,
   and diff checks all pass. Full Remoting results include 85 unit, 6 codec,
   1 fuzz regression, 5 security, 90 transport, and 5 doctest cases.
+- P18-V01 Remoting worker-count timing slice (`e7e5728a`, 2026-10-15):
+  `clientWorkerThreads` now has a live atomic Rust adapter, read at `start()`
+  when creating request workers. The Rust regression covers post-construction
+  mutation, startup validation and worker count; the Java live-config probe
+  mutates `NettyClientConfig` after client construction and checks the executor
+  group created by `start()`. This closes that setting row only.
+- PASS on `e7e5728a`: UTC default and all-feature workspace tests, strict
+  all-target/all-feature workspace Clippy, Maven verify (37 scenarios, Java
+  fixtures, live remoting config probe and Java/Rust cross-decodes), comparator
+  self-test/37-scenario manifest, deterministic race/leak smoke (16 cases × 3),
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, benchmark compilation, locked Cargo metadata, workspace
+  metadata/license/dependency checks, seven package listings, Asia/Taipei
+  unique-ID differential, format and diff checks all pass.
 - Remaining non-manual work: complete broad bidirectional P18-V01 source/API,
   setting, input/error/control-flow, inherited API and reverse-export
   reconciliation; obtain current-revision GitHub Ubuntu address-profile
