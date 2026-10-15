@@ -214,6 +214,7 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                     queue_id: 2,
                     commit_offset: 42,
                     broker_name: None,
+                    ..UpdateConsumerOffsetRequestHeader::default()
                 };
                 match api
                     .update_consumer_offset(&addr, &header, name == "update-oneway", deadline)

@@ -819,6 +819,7 @@ mod tests {
             topic: "tenant%orders".into(),
             group: "tenant%workers".into(),
             client_addr: None,
+            ..GetConsumerStatusRequestHeader::default()
         }
         .encode_fields(&mut fields);
 

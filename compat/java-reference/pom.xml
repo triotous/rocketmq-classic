@@ -559,6 +559,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-request-header-identity-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RequestHeaderIdentityFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/protocol/request-header-identity.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-message-decode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

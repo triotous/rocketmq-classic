@@ -951,6 +951,7 @@ impl PushConsumer {
             queue_id: queue.queue_id(),
             committed: true,
             broker_name: Some(broker_name),
+            ..GetMaxOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -971,6 +972,7 @@ impl PushConsumer {
                 .to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetMinOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -991,6 +993,7 @@ impl PushConsumer {
                 .to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetEarliestMsgStoretimeRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -1182,6 +1185,7 @@ impl PushConsumer {
         let header = QueryConsumeTimeSpanRequestHeader {
             topic: Some(topic.to_owned()),
             group: self.group_name(),
+            ..QueryConsumeTimeSpanRequestHeader::default()
         };
         let mut spans = Vec::new();
         for broker in brokers {
@@ -3303,6 +3307,7 @@ impl PushConsumer {
             origin_msg_id: message.message_id().map(str::to_owned),
             max_reconsume_times: Some(max_reconsume_times),
             unit_mode: self.config.unit_mode(),
+            ..ConsumerSendMsgBackRequestHeader::default()
         };
         let store_host = message
             .store_host()
@@ -3565,6 +3570,7 @@ impl PushConsumer {
             unit_mode: Some(self.config.unit_mode()),
             max_reconsume_times,
             batch: Some(false),
+            ..SendMessageRequestHeaderV1::default()
         };
         runtime
             .api()
@@ -4118,6 +4124,7 @@ impl PushConsumer {
                 expression: subscription.get_sub_string().map(str::to_owned),
                 order: Some(false),
                 attempt_id: None,
+                ..PopMessageRequestHeader::default()
             };
             let deadline = Instant::now()
                 + Duration::from_millis(poll_time.saturating_add(10_000).max(0) as u64);
@@ -5398,6 +5405,7 @@ impl PushConsumer {
             queue_id: queue.queue_id(),
             committed: true,
             broker_name: Some(broker_name.to_owned()),
+            ..GetMaxOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -5424,6 +5432,7 @@ impl PushConsumer {
             timestamp,
             boundary_type: Some(BoundaryType::Lower),
             broker_name: Some(broker_name.to_owned()),
+            ..SearchOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()

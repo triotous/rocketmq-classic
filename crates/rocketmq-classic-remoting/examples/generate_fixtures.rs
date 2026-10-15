@@ -274,6 +274,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         &GetRouteInfoRequestHeader {
             topic: "orders".into(),
             accept_standard_json_only: None,
+            ..GetRouteInfoRequestHeader::default()
         },
     );
     write_typed(
@@ -294,6 +295,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             unit_mode: Some(false),
             max_reconsume_times: Some(16),
             batch: Some(false),
+            ..SendMessageRequestHeaderV1::default()
         },
     );
     write_typed(
@@ -314,6 +316,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             k: Some(false),
             l: Some(16),
             m: Some(false),
+            ..SendMessageRequestHeaderV2::default()
         },
     );
     write_typed(
@@ -334,6 +337,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             k: Some(false),
             l: Some(16),
             m: Some(false),
+            ..SendMessageRequestHeaderV2::default()
         },
     );
     write_typed(
@@ -363,6 +367,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             queue_id: 1,
             set_zero_if_not_found: None,
             broker_name: None,
+            ..QueryConsumerOffsetRequestHeader::default()
         },
     );
     write_typed(
@@ -375,6 +380,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             queue_id: 1,
             commit_offset: 9,
             broker_name: None,
+            ..UpdateConsumerOffsetRequestHeader::default()
         },
     );
     write_typed(
@@ -443,6 +449,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             born_host: "127.0.0.1:1001".into(),
             store_host: "127.0.0.1:10911".into(),
             store_timestamp: 6,
+            ..ReplyMessageRequestHeader::default()
         },
     );
     let binary_reply = vec![0, 255, 128, 42, 10];
@@ -464,6 +471,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             k: Some(false),
             l: None,
             m: Some(false),
+            ..SendMessageRequestHeaderV2::default()
         },
         binary_reply.clone(),
     );
@@ -486,6 +494,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             born_host: "127.0.0.1:1001".into(),
             store_host: "127.0.0.1:10911".into(),
             store_timestamp: 6,
+            ..ReplyMessageRequestHeader::default()
         },
         binary_reply,
     );
@@ -546,6 +555,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             offset: Some(9),
             timestamp: 1_712_345_678_901,
             force: true,
+            ..ResetOffsetRequestHeader::default()
         },
     );
     write_typed(
@@ -603,6 +613,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             extra_info: "startOffset popTime invisibleTime queueId".into(),
             offset: 9,
             lite_topic: None,
+            ..AckMessageRequestHeader::default()
         },
     );
     write_typed(
@@ -618,6 +629,7 @@ fn generate_p4_headers(output: &std::path::Path) {
             invisible_time: 60_000,
             lite_topic: None,
             suspend: false,
+            ..ChangeInvisibleTimeRequestHeader::default()
         },
     );
 }

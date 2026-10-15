@@ -138,6 +138,10 @@ public final class Main {
             HeaderResponseIdentityFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "request-header-identity-fixture".equals(args[0])) {
+            RequestHeaderIdentityFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "acl-fixture".equals(args[0])) {
             AclFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;

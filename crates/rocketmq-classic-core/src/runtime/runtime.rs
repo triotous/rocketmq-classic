@@ -1227,6 +1227,7 @@ impl ClientRuntime {
             client_id: self.client_id.clone(),
             producer_group: (kind == GroupKind::Producer).then(|| group.to_owned()),
             consumer_group: (kind == GroupKind::Consumer).then(|| group.to_owned()),
+            ..rocketmq_classic_protocol::header::UnregisterClientRequestHeader::default()
         };
         let snapshot = self.routes.snapshot()?;
         for brokers in snapshot.broker_addresses.values() {

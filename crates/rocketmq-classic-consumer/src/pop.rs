@@ -546,6 +546,7 @@ impl PopReceipt {
             extra_info: self.raw.clone(),
             offset: self.queue_offset,
             lite_topic: None,
+            ..AckMessageRequestHeader::default()
         }
     }
 
@@ -564,6 +565,7 @@ impl PopReceipt {
             invisible_time,
             lite_topic: None,
             suspend: false,
+            ..ChangeInvisibleTimeRequestHeader::default()
         }
     }
 }

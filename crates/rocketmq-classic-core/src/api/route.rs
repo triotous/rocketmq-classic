@@ -44,6 +44,7 @@ impl MQClientApi {
             GetRouteInfoRequestHeader {
                 topic: topic.to_owned(),
                 accept_standard_json_only: None,
+                ..GetRouteInfoRequestHeader::default()
             }
             .encode_fields(&mut fields);
         }

@@ -1160,6 +1160,7 @@ impl PullConsumer {
             queue_id: queue.queue_id(),
             committed: true,
             broker_name: Some(broker_name),
+            ..GetMaxOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -1182,6 +1183,7 @@ impl PullConsumer {
                 .to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetMinOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -1204,6 +1206,7 @@ impl PullConsumer {
                 .to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetEarliestMsgStoretimeRequestHeader::default()
         };
         Ok(runtime
             .api()

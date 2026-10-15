@@ -98,6 +98,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
                     committed: request["ext"]["committed"] == "true",
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
+                    ..GetMaxOffsetRequestHeader::default()
                 };
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
@@ -108,6 +109,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
                     queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
+                    ..GetMinOffsetRequestHeader::default()
                 };
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
@@ -118,6 +120,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
                     queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
+                    ..GetEarliestMsgStoretimeRequestHeader::default()
                 };
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);

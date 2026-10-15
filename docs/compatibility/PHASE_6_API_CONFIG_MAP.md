@@ -1143,7 +1143,15 @@ The invoked `ProtocolDtoIdentityFixtures` reflects both inherited methods and co
 | --- | --- |
 | `QueryConsumerOffsetResponseHeader`, `SearchOffsetResponseHeader`, `GetMaxOffsetResponseHeader`, `GetMinOffsetResponseHeader`, `GetEarliestMsgStoretimeResponseHeader`, `PullMessageResponseHeader`, `QueryMessageResponseHeader`, `RecallMessageResponseHeader`, `SendMessageResponseHeader`, `UnregisterClientResponseHeader`, `EndTransactionResponseHeader`, `CheckTransactionStateResponseHeader`, `NotificationResponseHeader`, `PopMessageResponseHeader`, `PopLiteMessageResponseHeader`, and `PollingInfoResponseHeader`; each inherits `Object.equals/hashCode` | Corresponding Rust response-header DTOs intentionally do not implement structural `PartialEq`/`Eq` |
 
-`HeaderResponseIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all 16 Java classes. Compile-fail doctests guard every Rust header boundary. Fixture: `fixtures/protocol/header-response-identity.json`, SHA-256 `d618338067333760a74c956d3ca677d4acf0c44acef87b4f9607395fb96f6e6f`. This row covers response headers; request headers inheriting `RpcRequestHeader.equals/hashCode` have separate base-field behavior and remain under P18-V01 audit.
+`HeaderResponseIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all 16 Java classes. Compile-fail doctests guard every Rust header boundary. Fixture: `fixtures/protocol/header-response-identity.json`, SHA-256 `d618338067333760a74c956d3ca677d4acf0c44acef87b4f9607395fb96f6e6f`.
+
+## Protocol request-header inherited equality
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| 31 modeled request-header classes inheriting `RpcRequestHeader.equals/hashCode`, including `TopicRequestHeader` and `TopicQueueRequestHeader` descendants | Rust request-header DTOs retain and encode/decode nullable `ns`, `nsd`, `bname`, and `oway`; `PartialEq`, `Eq`, and `Hash` use only those four values, ignoring subclass payload and `TopicRequestHeader.lo`. `UnlockBatchMqRequestHeader` has its own type instead of aliasing the Lock class. `ConsumeMessageDirectlyResultRequestHeader` keeps its subclass `brokerName` separate from inherited `bname`. |
+
+`RequestHeaderIdentityFixtures` invokes all 31 pinned Java classes. It confirms that each inherited method is declared by `RpcRequestHeader`, distinct default instances compare equal, any changed base field compares unequal, and payload-only changes leave equality/hash unchanged when the class has a payload field. Rust tests exercise the same four base fields and codec round-trips for all 31 types. Fixture: `fixtures/protocol/request-header-identity.json`, SHA-256 `4cc545d6d1fc0efdb2cdd74b6a1eb0cd0b00b98ad028766f8bd7d2c05bd75973`.
 
 ## Common public API: TopicValidator
 

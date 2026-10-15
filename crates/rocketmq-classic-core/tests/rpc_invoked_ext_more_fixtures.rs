@@ -152,6 +152,7 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 client_id: "client".into(),
                 producer_group: Some("producer".into()),
                 consumer_group: Some("consumer".into()),
+                ..UnregisterClientRequestHeader::default()
             };
             match api.unregister_client(&addr, &header, deadline).await {
                 Ok(()) => "ok".into(),

@@ -56,9 +56,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   invoked identity fixture is `fixtures/protocol/dto-identity.json`.
   Sixteen typed response-header DTOs now also omit structural equality,
   matching the pinned Java classes' inherited Object identity; their fixture
-  is `fixtures/protocol/header-response-identity.json`. Request headers inheriting
-  `RpcRequestHeader.equals/hashCode` have a separate base-field mapping and
-  remain in the broad P18-V01 audit.
+  is `fixtures/protocol/header-response-identity.json`. The 31 modeled request
+  headers inheriting `RpcRequestHeader.equals/hashCode` now retain and encode
+  all four nullable base fields and compare/hash only those fields; the invoked
+  Java fixture is `fixtures/protocol/request-header-identity.json`. The
+  `ConsumeMessageDirectlyResultRequestHeader` base `bname` is separate from its
+  subclass `brokerName`, and Lock/Unlock request headers have distinct Rust
+  types. This closes the inherited request-header equality slice only; the
+  broad P18-V01 audit remains open.
   `adjustThreadPool` has a direct owner
   mapping and fixture evidence for the pinned built-in services' no-op
   behavior. The raw `executeTask`/`executeTaskLater` methods map to the

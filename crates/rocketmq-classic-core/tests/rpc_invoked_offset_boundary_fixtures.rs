@@ -77,18 +77,21 @@ fn rpc_header(fixture: &Value) -> (i32, HeaderMap) {
             queue_id: queue.queue_id(),
             committed: request_fixture["ext"]["committed"] == "true",
             broker_name: Some("broker".into()),
+            ..Default::default()
         }
         .encode_fields(&mut fields),
         request::GET_MIN_OFFSET => GetMinOffsetRequestHeader {
             topic: queue.topic().unwrap().to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some("broker".into()),
+            ..Default::default()
         }
         .encode_fields(&mut fields),
         request::GET_EARLIEST_MSG_STORETIME => GetEarliestMsgStoretimeRequestHeader {
             topic: queue.topic().unwrap().to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some("broker".into()),
+            ..Default::default()
         }
         .encode_fields(&mut fields),
         code => panic!("unexpected offset boundary request code {code}"),
@@ -133,6 +136,7 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
                     queue_id: queue.queue_id(),
                     committed: request_fixture["ext"]["committed"] == "true",
                     broker_name: Some("broker".into()),
+                    ..Default::default()
                 },
                 deadline,
             )
@@ -145,6 +149,7 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
                     topic: queue.topic().unwrap().to_owned(),
                     queue_id: queue.queue_id(),
                     broker_name: Some("broker".into()),
+                    ..Default::default()
                 },
                 deadline,
             )
@@ -157,6 +162,7 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
                     topic: queue.topic().unwrap().to_owned(),
                     queue_id: queue.queue_id(),
                     broker_name: Some("broker".into()),
+                    ..Default::default()
                 },
                 deadline,
             )

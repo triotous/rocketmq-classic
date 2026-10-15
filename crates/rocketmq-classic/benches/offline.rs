@@ -141,6 +141,7 @@ fn main() {
                 unit_mode: Some(false),
                 max_reconsume_times: None,
                 batch: Some(false),
+                ..SendMessageRequestHeaderV1::default()
             };
             let mut fields = HeaderMap::new();
             header.encode_fields(&mut fields);

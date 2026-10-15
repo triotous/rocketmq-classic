@@ -14,7 +14,7 @@ fn java_fields(stem: &str) -> HeaderMap {
         .unwrap_or_else(|error| panic!("{stem}: {error}"))
 }
 
-// Each row names one public model (including the unlock alias), its Java->Rust
+// Each row names one public model, its Java->Rust
 // oracle, and Rust->Java evidence when the Java verifier checks typed-*.bin.
 macro_rules! inventory {
     ($visit:ident) => {
@@ -99,11 +99,8 @@ macro_rules! cases {
                     .and_then(|tail| tail.strip_suffix(" {") )
             }).collect();
             let inventory: BTreeSet<_> = [$(stringify!($model)),*].into_iter().collect();
-            // A type alias shares its implementation with LockBatchMqRequestHeader.
-            let implemented_inventory: BTreeSet<_> = inventory.iter().copied()
-                .filter(|name| *name != "UnlockBatchMqRequestHeader").collect();
-            assert_eq!(implemented_inventory, implementations, "update fixtures when basic.rs adds a CommandHeader");
-            assert!(source.contains("pub type UnlockBatchMqRequestHeader = LockBatchMqRequestHeader;"));
+            assert_eq!(inventory, implementations, "update fixtures when basic.rs adds a CommandHeader");
+            assert!(source.contains("pub struct UnlockBatchMqRequestHeader"));
             $(
                 assert!(exports.contains(stringify!($model)), "{} must be public", stringify!($model));
                 let _ = java_fields($stem);

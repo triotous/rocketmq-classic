@@ -1627,6 +1627,7 @@ impl Producer {
             unit_mode: Some(self.config.client_config().unit_mode()),
             max_reconsume_times: attempt.prepared.max_reconsume_times,
             batch: Some(attempt.prepared.batch),
+            ..SendMessageRequestHeaderV1::default()
         };
         #[cfg(test)]
         {

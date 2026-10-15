@@ -509,6 +509,7 @@ mod tests {
         let header = QueryConsumeTimeSpanRequestHeader {
             topic: Some("orders".into()),
             group: Some("consumer-a".into()),
+            ..QueryConsumeTimeSpanRequestHeader::default()
         };
         let spans = api
             .query_consume_time_span(

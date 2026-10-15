@@ -408,6 +408,7 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
         born_host: "127.0.0.1:1".into(),
         store_host: "127.0.0.1:2".into(),
         store_timestamp: 6,
+        ..ReplyMessageRequestHeader::default()
     };
     fields.clear();
     reply.encode_fields(&mut fields);
@@ -1008,8 +1009,8 @@ fn header_validation_matrix() {
             "topic",
             "",
             "",
-            "acceptStandardJsonOnly",
-            "acceptStandardJsonOnly"
+            "acceptStandardJsonOnly ns nsd bname oway",
+            "acceptStandardJsonOnly nsd oway"
         ),
         row!(
             CreateTopicRequestHeader,
@@ -1053,8 +1054,8 @@ fn header_validation_matrix() {
             "topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag",
             "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes maxReconsumeTimes",
             "bornTimestamp",
-            "producerGroup properties reconsumeTimes unitMode maxReconsumeTimes batch",
-            "unitMode batch"
+            "producerGroup properties reconsumeTimes unitMode maxReconsumeTimes batch ns nsd bname oway",
+            "unitMode batch nsd oway"
         ),
         row!(
             SendMessageRequestHeaderV2,
@@ -1062,8 +1063,8 @@ fn header_validation_matrix() {
             "b c d e f g h",
             "d e f h j l",
             "g",
-            "a i j k l m",
-            "k m"
+            "a i j k l m ns nsd bname oway",
+            "k m nsd oway"
         ),
         row!(
             PullMessageRequestHeader,
@@ -1071,8 +1072,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion",
             "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
             "queueOffset commitOffset suspendTimeoutMillis subVersion",
-            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname",
-            ""
+            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname ns nsd oway",
+            "nsd oway"
         ),
         row!(
             PullMessageResponseHeader,
@@ -1089,8 +1090,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId",
             "queueId",
             "",
-            "setZeroIfNotFound bname",
-            "setZeroIfNotFound"
+            "setZeroIfNotFound bname ns nsd oway",
+            "setZeroIfNotFound nsd oway"
         ),
         row!(
             QueryConsumeTimeSpanRequestHeader,
@@ -1098,8 +1099,8 @@ fn header_validation_matrix() {
             "",
             "",
             "",
-            "topic group",
-            ""
+            "topic group ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             QueryConsumerOffsetResponseHeader,
@@ -1116,8 +1117,8 @@ fn header_validation_matrix() {
             "topic queueId timestamp",
             "queueId",
             "timestamp",
-            "liteTopic boundaryType bname",
-            ""
+            "liteTopic boundaryType bname ns nsd oway",
+            "nsd oway"
         ),
         row!(
             GetMaxOffsetRequestHeader,
@@ -1125,8 +1126,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname committed",
-            "committed"
+            "bname committed ns nsd oway",
+            "committed nsd oway"
         ),
         row!(
             GetMinOffsetRequestHeader,
@@ -1134,8 +1135,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname",
-            ""
+            "bname ns nsd oway",
+            "nsd oway"
         ),
         row!(
             GetEarliestMsgStoretimeRequestHeader,
@@ -1143,8 +1144,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname",
-            ""
+            "bname ns nsd oway",
+            "nsd oway"
         ),
         row!(
             SearchOffsetResponseHeader,
@@ -1188,8 +1189,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId commitOffset",
             "queueId",
             "commitOffset",
-            "bname",
-            ""
+            "bname ns nsd oway",
+            "nsd oway"
         ),
         row!(
             SendMessageResponseHeader,
@@ -1206,8 +1207,8 @@ fn header_validation_matrix() {
             "clientID",
             "",
             "",
-            "producerGroup consumerGroup",
-            ""
+            "producerGroup consumerGroup ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             UnregisterClientResponseHeader,
@@ -1224,8 +1225,8 @@ fn header_validation_matrix() {
             "group originTopic offset delayLevel",
             "delayLevel maxReconsumeTimes",
             "offset",
-            "bname originMsgId maxReconsumeTimes",
-            "unitMode"
+            "bname originMsgId maxReconsumeTimes ns nsd oway",
+            "unitMode nsd oway"
         ),
         row!(
             EndTransactionRequestHeader,
@@ -1269,8 +1270,8 @@ fn header_validation_matrix() {
             "producerGroup topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag bornHost storeHost storeTimestamp",
             "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes",
             "bornTimestamp storeTimestamp",
-            "properties reconsumeTimes",
-            "unitMode"
+            "properties reconsumeTimes ns nsd bname oway",
+            "unitMode nsd oway"
         ),
         row!(
             RecallMessageRequestHeader,
@@ -1296,8 +1297,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId pollTime bornTime",
             "queueId",
             "pollTime bornTime",
-            "order attemptId clientId expType exp",
-            "order isLiteConsumer"
+            "order attemptId clientId expType exp ns nsd bname oway",
+            "order isLiteConsumer nsd oway"
         ),
         row!(
             NotificationResponseHeader,
@@ -1314,8 +1315,8 @@ fn header_validation_matrix() {
             "group topic timestamp",
             "queueId",
             "offset timestamp",
-            "queueId offset",
-            "isForce"
+            "queueId offset ns nsd bname oway",
+            "isForce nsd oway"
         ),
         row!(
             GetConsumerStatusRequestHeader,
@@ -1323,8 +1324,8 @@ fn header_validation_matrix() {
             "topic group",
             "",
             "",
-            "clientAddr",
-            ""
+            "clientAddr ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             GetConsumerRunningInfoRequestHeader,
@@ -1341,8 +1342,8 @@ fn header_validation_matrix() {
             "consumerGroup",
             "",
             "",
-            "",
-            ""
+            "ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             LockBatchMqRequestHeader,
@@ -1368,8 +1369,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId maxMsgNums invisibleTime pollTime bornTime initMode",
             "queueId maxMsgNums initMode",
             "invisibleTime pollTime bornTime",
-            "expType exp order attemptId",
-            "order"
+            "expType exp order attemptId ns nsd bname oway",
+            "order nsd oway"
         ),
         row!(
             PopMessageResponseHeader,
@@ -1404,8 +1405,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId extraInfo offset",
             "queueId",
             "offset",
-            "liteTopic",
-            ""
+            "liteTopic ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             ChangeInvisibleTimeRequestHeader,
@@ -1413,8 +1414,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId extraInfo offset invisibleTime",
             "queueId",
             "offset invisibleTime",
-            "liteTopic",
-            "suspend"
+            "liteTopic ns nsd bname oway",
+            "suspend nsd oway"
         ),
         row!(
             PollingInfoRequestHeader,
@@ -1422,8 +1423,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId",
             "queueId",
             "",
-            "",
-            ""
+            "ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             PollingInfoResponseHeader,
@@ -1458,8 +1459,8 @@ fn header_validation_matrix() {
             "consumerGroup",
             "topicSysFlag groupSysFlag",
             "",
-            "clientId msgId brokerName topic topicSysFlag groupSysFlag",
-            ""
+            "clientId msgId brokerName topic topicSysFlag groupSysFlag ns nsd bname oway",
+            "nsd oway"
         ),
     ];
     // Keep the matrix tied to the public implementations, not just to fixture names.
@@ -1474,9 +1475,8 @@ fn header_validation_matrix() {
         .collect();
     let matrix: BTreeSet<_> = cases.iter().map(|case| case.model).collect();
     assert_eq!(matrix.len(), cases.len(), "duplicate validation row");
-    let mut expected = implementations;
-    assert!(source.contains("pub type UnlockBatchMqRequestHeader = LockBatchMqRequestHeader;"));
-    expected.insert("UnlockBatchMqRequestHeader");
+    let expected = implementations;
+    assert!(source.contains("pub struct UnlockBatchMqRequestHeader"));
     assert_eq!(
         matrix, expected,
         "update the matrix for every public header"
@@ -1505,11 +1505,7 @@ fn header_validation_matrix() {
         modeled.extend(booleans.iter().copied());
         modeled.extend(i32_fields.iter().copied());
         modeled.extend(i64_fields.iter().copied());
-        let implementation = if case.model == "UnlockBatchMqRequestHeader" {
-            "LockBatchMqRequestHeader"
-        } else {
-            case.model
-        };
+        let implementation = case.model;
         let encode_source = source
             .split_once(&format!("impl CommandHeader for {implementation} {{"))
             .unwrap()

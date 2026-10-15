@@ -103,6 +103,7 @@ impl RemoteBrokerOffsetStore {
             queue_id: queue.queue_id(),
             set_zero_if_not_found: None,
             broker_name: queue.broker_name().map(str::to_owned),
+            ..QueryConsumerOffsetRequestHeader::default()
         };
         let offset = self
             .runtime
@@ -133,6 +134,7 @@ impl RemoteBrokerOffsetStore {
             queue_id: queue.queue_id(),
             commit_offset: offset,
             broker_name: queue.broker_name().map(str::to_owned),
+            ..UpdateConsumerOffsetRequestHeader::default()
         };
         self.runtime
             .api()

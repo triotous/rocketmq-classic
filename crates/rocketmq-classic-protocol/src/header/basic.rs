@@ -1,8 +1,89 @@
+use std::hash::{Hash, Hasher};
+
 use super::{
     CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
     optional_java_boolean, optional_string, required_i32, required_i64, required_string,
 };
 use crate::codes::JavaEnumLookupError;
+
+macro_rules! impl_rpc_request_header_semantics {
+    ($($header:ty),+ $(,)?) => {
+        $(
+            impl PartialEq for $header {
+                fn eq(&self, other: &Self) -> bool {
+                    self.namespace == other.namespace
+                        && self.namespaced == other.namespaced
+                        && self.broker_name == other.broker_name
+                        && self.oneway == other.oneway
+                }
+            }
+
+            impl Eq for $header {}
+
+            impl Hash for $header {
+                fn hash<H: Hasher>(&self, state: &mut H) {
+                    self.namespace.hash(state);
+                    self.namespaced.hash(state);
+                    self.broker_name.hash(state);
+                    self.oneway.hash(state);
+                }
+            }
+        )+
+    };
+}
+
+impl_rpc_request_header_semantics!(
+    QueryConsumerOffsetRequestHeader,
+    UpdateConsumerOffsetRequestHeader,
+    QueryConsumeTimeSpanRequestHeader,
+    SearchOffsetRequestHeader,
+    GetMaxOffsetRequestHeader,
+    GetMinOffsetRequestHeader,
+    GetEarliestMsgStoretimeRequestHeader,
+    PullMessageRequestHeader,
+    UnregisterClientRequestHeader,
+    GetRouteInfoRequestHeader,
+    CreateTopicRequestHeader,
+    QueryMessageRequestHeader,
+    GetConsumerListByGroupRequestHeader,
+    LockBatchMqRequestHeader,
+    UnlockBatchMqRequestHeader,
+    ConsumerSendMsgBackRequestHeader,
+    RecallMessageRequestHeader,
+    EndTransactionRequestHeader,
+    CheckTransactionStateRequestHeader,
+    ReplyMessageRequestHeader,
+    NotificationRequestHeader,
+    ResetOffsetRequestHeader,
+    GetConsumerStatusRequestHeader,
+    GetConsumerRunningInfoRequestHeader,
+    PopMessageRequestHeader,
+    AckMessageRequestHeader,
+    ChangeInvisibleTimeRequestHeader,
+    PollingInfoRequestHeader,
+    SendMessageRequestHeaderV1,
+    SendMessageRequestHeaderV2,
+);
+
+impl PartialEq for ConsumeMessageDirectlyResultRequestHeader {
+    fn eq(&self, other: &Self) -> bool {
+        self.namespace == other.namespace
+            && self.namespaced == other.namespaced
+            && self.rpc_broker_name == other.rpc_broker_name
+            && self.oneway == other.oneway
+    }
+}
+
+impl Eq for ConsumeMessageDirectlyResultRequestHeader {}
+
+impl Hash for ConsumeMessageDirectlyResultRequestHeader {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.namespace.hash(state);
+        self.namespaced.hash(state);
+        self.rpc_broker_name.hash(state);
+        self.oneway.hash(state);
+    }
+}
 
 fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T>) {
     if let Some(value) = value {
@@ -10,13 +91,16 @@ fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryConsumerOffsetRequestHeader {
     pub consumer_group: String,
     pub topic: String,
     pub queue_id: i32,
     pub set_zero_if_not_found: Option<bool>,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for QueryConsumerOffsetRequestHeader {
@@ -26,10 +110,16 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
         fields.insert("queueId".into(), self.queue_id.to_string());
         put_optional(fields, "setZeroIfNotFound", self.set_zero_if_not_found);
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -39,13 +129,16 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct UpdateConsumerOffsetRequestHeader {
     pub consumer_group: String,
     pub topic: String,
     pub queue_id: i32,
     pub commit_offset: i64,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for UpdateConsumerOffsetRequestHeader {
@@ -55,10 +148,16 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("commitOffset".into(), self.commit_offset.to_string());
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -92,20 +191,32 @@ impl CommandHeader for QueryConsumerOffsetResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryConsumeTimeSpanRequestHeader {
     pub topic: Option<String>,
     pub group: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "topic", self.topic.as_deref());
         put_optional(fields, "group", self.group.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: optional_string(fields, "topic"),
             group: optional_string(fields, "group"),
         })
@@ -185,7 +296,7 @@ impl std::fmt::Display for BoundaryType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SearchOffsetRequestHeader {
     pub topic: String,
     pub lite_topic: Option<String>,
@@ -193,6 +304,9 @@ pub struct SearchOffsetRequestHeader {
     pub timestamp: i64,
     pub boundary_type: Option<BoundaryType>,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for SearchOffsetRequestHeader {
@@ -207,6 +321,9 @@ impl CommandHeader for SearchOffsetRequestHeader {
             self.boundary_type.map(BoundaryType::name),
         );
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -222,6 +339,9 @@ impl CommandHeader for SearchOffsetRequestHeader {
             })
             .transpose()?;
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             lite_topic: optional_string(fields, "liteTopic"),
             queue_id: required_i32(fields, "queueId")?,
@@ -232,12 +352,15 @@ impl CommandHeader for SearchOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct GetMaxOffsetRequestHeader {
     pub topic: String,
     pub queue_id: i32,
     pub committed: bool,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl Default for GetMaxOffsetRequestHeader {
@@ -247,6 +370,9 @@ impl Default for GetMaxOffsetRequestHeader {
             queue_id: 0,
             committed: true,
             broker_name: None,
+            namespace: None,
+            namespaced: None,
+            oneway: None,
         }
     }
 }
@@ -257,10 +383,16 @@ impl CommandHeader for GetMaxOffsetRequestHeader {
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("committed".into(), self.committed.to_string());
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             committed: optional_java_boolean(fields, "committed").unwrap_or(true),
@@ -269,11 +401,14 @@ impl CommandHeader for GetMaxOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetMinOffsetRequestHeader {
     pub topic: String,
     pub queue_id: i32,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for GetMinOffsetRequestHeader {
@@ -281,10 +416,16 @@ impl CommandHeader for GetMinOffsetRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             broker_name: optional_string(fields, "bname"),
@@ -292,11 +433,14 @@ impl CommandHeader for GetMinOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetEarliestMsgStoretimeRequestHeader {
     pub topic: String,
     pub queue_id: i32,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
@@ -304,10 +448,16 @@ impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
             broker_name: optional_string(fields, "bname"),
@@ -411,7 +561,7 @@ impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PullMessageRequestHeader {
     pub consumer_group: String,
     pub topic: String,
@@ -429,6 +579,9 @@ pub struct PullMessageRequestHeader {
     pub request_source: Option<i32>,
     pub proxy_forward_client_id: Option<String>,
     pub broker_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for PullMessageRequestHeader {
@@ -456,10 +609,16 @@ impl CommandHeader for PullMessageRequestHeader {
             self.proxy_forward_client_id.as_deref(),
         );
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             lite_topic: optional_string(fields, "liteTopic"),
@@ -528,11 +687,15 @@ impl CommandHeader for PullMessageResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct UnregisterClientRequestHeader {
     pub client_id: String,
     pub producer_group: Option<String>,
     pub consumer_group: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for UnregisterClientRequestHeader {
@@ -540,10 +703,18 @@ impl CommandHeader for UnregisterClientRequestHeader {
         fields.insert("clientID".into(), self.client_id.clone());
         put_optional(fields, "producerGroup", self.producer_group.as_deref());
         put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             client_id: required_string(fields, "clientID")?.to_owned(),
             producer_group: optional_string(fields, "producerGroup"),
             consumer_group: optional_string(fields, "consumerGroup"),
@@ -551,10 +722,14 @@ impl CommandHeader for UnregisterClientRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetRouteInfoRequestHeader {
     pub topic: String,
     pub accept_standard_json_only: Option<bool>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for GetRouteInfoRequestHeader {
@@ -565,10 +740,18 @@ impl CommandHeader for GetRouteInfoRequestHeader {
             "acceptStandardJsonOnly",
             self.accept_standard_json_only,
         );
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             accept_standard_json_only: optional_java_boolean(fields, "acceptStandardJsonOnly"),
         })
@@ -576,7 +759,7 @@ impl CommandHeader for GetRouteInfoRequestHeader {
 }
 
 /// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CreateTopicRequestHeader {
     pub topic: String,
     pub default_topic: String,
@@ -668,7 +851,7 @@ impl CommandHeader for CreateTopicRequestHeader {
 }
 
 /// Pinned Java `QueryMessageRequestHeader` used by `QUERY_MESSAGE`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct QueryMessageRequestHeader {
     pub topic: String,
     pub key: String,
@@ -771,12 +954,16 @@ impl CommandHeader for ViewMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetConsumerListByGroupRequestHeader {
     pub consumer_group: String,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LockBatchMqRequestHeader {
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -802,21 +989,53 @@ impl CommandHeader for LockBatchMqRequestHeader {
     }
 }
 
-pub type UnlockBatchMqRequestHeader = LockBatchMqRequestHeader;
+#[derive(Debug, Clone, Default)]
+pub struct UnlockBatchMqRequestHeader {
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
 
-impl CommandHeader for GetConsumerListByGroupRequestHeader {
+impl CommandHeader for UnlockBatchMqRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
+impl CommandHeader for GetConsumerListByGroupRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("consumerGroup".into(), self.consumer_group.clone());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConsumerSendMsgBackRequestHeader {
     pub group: String,
     pub broker_name: Option<String>,
@@ -826,6 +1045,9 @@ pub struct ConsumerSendMsgBackRequestHeader {
     pub origin_msg_id: Option<String>,
     pub max_reconsume_times: Option<i32>,
     pub unit_mode: bool,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for ConsumerSendMsgBackRequestHeader {
@@ -838,10 +1060,16 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
         put_optional(fields, "originMsgId", self.origin_msg_id.as_deref());
         put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
         fields.insert("unitMode".into(), self.unit_mode.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
             group: required_string(fields, "group")?.to_owned(),
             broker_name: optional_string(fields, "bname"),
             origin_topic: required_string(fields, "originTopic")?.to_owned(),
@@ -858,7 +1086,7 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
 
 /// Java 5.5.1 `RecallMessageRequestHeader`, including nullable fields inherited
 /// from `RpcRequestHeader` and `TopicRequestHeader`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RecallMessageRequestHeader {
     pub producer_group: Option<String>,
     pub topic: String,
@@ -955,7 +1183,7 @@ impl CommandHeader for UnregisterClientResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct EndTransactionRequestHeader {
     pub topic: Option<String>,
     pub producer_group: Option<String>,
@@ -1047,7 +1275,7 @@ impl CommandHeader for EndTransactionResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CheckTransactionStateRequestHeader {
     pub topic: Option<String>,
     pub transaction_state_table_offset: i64,
@@ -1133,7 +1361,7 @@ impl CommandHeader for CheckTransactionStateResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ReplyMessageRequestHeader {
     pub producer_group: String,
     pub topic: String,
@@ -1149,9 +1377,13 @@ pub struct ReplyMessageRequestHeader {
     pub born_host: String,
     pub store_host: String,
     pub store_timestamp: i64,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct NotificationRequestHeader {
     pub consumer_group: String,
     pub topic: String,
@@ -1164,6 +1396,10 @@ pub struct NotificationRequestHeader {
     pub client_id: Option<String>,
     pub expression_type: Option<String>,
     pub expression: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for NotificationRequestHeader {
@@ -1179,10 +1415,18 @@ impl CommandHeader for NotificationRequestHeader {
         put_optional(fields, "clientId", self.client_id.as_deref());
         put_optional(fields, "expType", self.expression_type.as_deref());
         put_optional(fields, "exp", self.expression.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -1225,7 +1469,7 @@ impl CommandHeader for NotificationResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ResetOffsetRequestHeader {
     pub group: String,
     pub topic: String,
@@ -1233,6 +1477,10 @@ pub struct ResetOffsetRequestHeader {
     pub offset: Option<i64>,
     pub timestamp: i64,
     pub force: bool,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for ResetOffsetRequestHeader {
@@ -1243,10 +1491,18 @@ impl CommandHeader for ResetOffsetRequestHeader {
         put_optional(fields, "offset", self.offset);
         fields.insert("timestamp".into(), self.timestamp.to_string());
         fields.insert("isForce".into(), self.force.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             group: required_string(fields, "group")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: optional_i32(fields, "queueId")?.unwrap_or(-1),
@@ -1257,11 +1513,15 @@ impl CommandHeader for ResetOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetConsumerStatusRequestHeader {
     pub topic: String,
     pub group: String,
     pub client_addr: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for GetConsumerStatusRequestHeader {
@@ -1269,10 +1529,18 @@ impl CommandHeader for GetConsumerStatusRequestHeader {
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("group".into(), self.group.clone());
         put_optional(fields, "clientAddr", self.client_addr.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             topic: required_string(fields, "topic")?.to_owned(),
             group: required_string(fields, "group")?.to_owned(),
             client_addr: optional_string(fields, "clientAddr"),
@@ -1282,7 +1550,7 @@ impl CommandHeader for GetConsumerStatusRequestHeader {
 
 /// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
 /// `RpcRequestHeader` namespace and broker-routing fields.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct GetConsumerRunningInfoRequestHeader {
     pub consumer_group: String,
     pub client_id: String,
@@ -1317,7 +1585,7 @@ impl CommandHeader for GetConsumerRunningInfoRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConsumeMessageDirectlyResultRequestHeader {
     pub consumer_group: String,
     pub client_id: Option<String>,
@@ -1326,9 +1594,15 @@ pub struct ConsumeMessageDirectlyResultRequestHeader {
     pub topic: Option<String>,
     pub topic_sys_flag: Option<i32>,
     pub group_sys_flag: Option<i32>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    /// The inherited `RpcRequestHeader.bname`; distinct from this class's
+    /// `brokerName` payload field.
+    pub rpc_broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PopMessageRequestHeader {
     pub consumer_group: String,
     pub topic: String,
@@ -1342,6 +1616,10 @@ pub struct PopMessageRequestHeader {
     pub expression: Option<String>,
     pub order: Option<bool>,
     pub attempt_id: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for PopMessageRequestHeader {
@@ -1358,10 +1636,18 @@ impl CommandHeader for PopMessageRequestHeader {
         put_optional(fields, "exp", self.expression.as_deref());
         put_optional(fields, "order", self.order);
         put_optional(fields, "attemptId", self.attempt_id.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -1459,7 +1745,7 @@ impl CommandHeader for PopLiteMessageResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct AckMessageRequestHeader {
     pub consumer_group: String,
     pub topic: String,
@@ -1467,6 +1753,10 @@ pub struct AckMessageRequestHeader {
     pub extra_info: String,
     pub offset: i64,
     pub lite_topic: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for AckMessageRequestHeader {
@@ -1477,10 +1767,18 @@ impl CommandHeader for AckMessageRequestHeader {
         fields.insert("extraInfo".into(), self.extra_info.clone());
         fields.insert("offset".into(), self.offset.to_string());
         put_optional(fields, "liteTopic", self.lite_topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -1491,7 +1789,7 @@ impl CommandHeader for AckMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ChangeInvisibleTimeRequestHeader {
     pub consumer_group: String,
     pub topic: String,
@@ -1501,13 +1799,21 @@ pub struct ChangeInvisibleTimeRequestHeader {
     pub invisible_time: i64,
     pub lite_topic: Option<String>,
     pub suspend: bool,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PollingInfoRequestHeader {
     pub consumer_group: String,
     pub topic: String,
     pub queue_id: i32,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for PollingInfoRequestHeader {
@@ -1515,10 +1821,18 @@ impl CommandHeader for PollingInfoRequestHeader {
         fields.insert("consumerGroup".into(), self.consumer_group.clone());
         fields.insert("topic".into(), self.topic.clone());
         fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -1631,10 +1945,18 @@ impl CommandHeader for ChangeInvisibleTimeRequestHeader {
         fields.insert("invisibleTime".into(), self.invisible_time.to_string());
         put_optional(fields, "liteTopic", self.lite_topic.as_deref());
         fields.insert("suspend".into(), self.suspend.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: required_i32(fields, "queueId")?,
@@ -1656,10 +1978,18 @@ impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
         put_optional(fields, "topic", self.topic.as_deref());
         put_optional(fields, "topicSysFlag", self.topic_sys_flag);
         put_optional(fields, "groupSysFlag", self.group_sys_flag);
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.rpc_broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            rpc_broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             client_id: optional_string(fields, "clientId"),
             msg_id: optional_string(fields, "msgId"),
@@ -1690,10 +2020,18 @@ impl CommandHeader for ReplyMessageRequestHeader {
         fields.insert("bornHost".into(), self.born_host.clone());
         fields.insert("storeHost".into(), self.store_host.clone());
         fields.insert("storeTimestamp".into(), self.store_timestamp.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             producer_group: required_string(fields, "producerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
             default_topic: required_string(fields, "defaultTopic")?.to_owned(),
@@ -1734,7 +2072,7 @@ impl CommandHeader for SendMessageResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SendMessageRequestHeaderV2 {
     pub a: Option<String>,
     pub b: String,
@@ -1749,6 +2087,10 @@ pub struct SendMessageRequestHeaderV2 {
     pub k: Option<bool>,
     pub l: Option<i32>,
     pub m: Option<bool>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV2 {
@@ -1766,10 +2108,18 @@ impl CommandHeader for SendMessageRequestHeaderV2 {
         put_optional(fields, "k", self.k);
         put_optional(fields, "l", self.l);
         put_optional(fields, "m", self.m);
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             a: optional_string(fields, "a"),
             b: required_string(fields, "b")?.to_owned(),
             c: required_string(fields, "c")?.to_owned(),
@@ -1803,6 +2153,10 @@ impl SendMessageRequestHeaderV2 {
             k: header.unit_mode,
             l: header.max_reconsume_times,
             m: header.batch,
+            namespace: header.namespace.clone(),
+            namespaced: header.namespaced,
+            broker_name: header.broker_name.clone(),
+            oneway: header.oneway,
         }
     }
 
@@ -1821,11 +2175,15 @@ impl SendMessageRequestHeaderV2 {
             unit_mode: self.k,
             max_reconsume_times: self.l,
             batch: self.m,
+            namespace: self.namespace.clone(),
+            namespaced: self.namespaced,
+            broker_name: self.broker_name.clone(),
+            oneway: self.oneway,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SendMessageRequestHeaderV1 {
     pub producer_group: Option<String>,
     pub topic: String,
@@ -1840,6 +2198,10 @@ pub struct SendMessageRequestHeaderV1 {
     pub unit_mode: Option<bool>,
     pub max_reconsume_times: Option<i32>,
     pub batch: Option<bool>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV1 {
@@ -1860,10 +2222,18 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
         put_optional(fields, "unitMode", self.unit_mode);
         put_optional(fields, "maxReconsumeTimes", self.max_reconsume_times);
         put_optional(fields, "batch", self.batch);
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
             producer_group: optional_string(fields, "producerGroup"),
             topic: required_string(fields, "topic")?.to_owned(),
             default_topic: required_string(fields, "defaultTopic")?.to_owned(),
@@ -1923,6 +2293,315 @@ mod tests {
         }
     }
 
+    fn request_header_hash<T: std::hash::Hash>(value: &T) -> u64 {
+        use std::hash::Hasher;
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    macro_rules! check_rpc_request_header {
+        ($header:ty, $broker_field:ident, $prepare:expr, $payload_change:expr) => {{
+            let mut header = <$header>::default();
+            header.namespace = Some("namespace".into());
+            header.namespaced = Some(true);
+            header.$broker_field = Some("broker".into());
+            header.oneway = Some(false);
+            ($prepare)(&mut header);
+
+            let mut payload_change = header.clone();
+            ($payload_change)(&mut payload_change);
+            assert_eq!(
+                header,
+                payload_change,
+                "{} payload equality",
+                stringify!($header)
+            );
+            assert_eq!(
+                request_header_hash(&header),
+                request_header_hash(&payload_change),
+                "{} payload hash",
+                stringify!($header)
+            );
+
+            let mut fields = HeaderMap::new();
+            header.encode_fields(&mut fields);
+            assert_eq!(fields.get("ns").map(String::as_str), Some("namespace"));
+            assert_eq!(fields.get("nsd").map(String::as_str), Some("true"));
+            assert_eq!(fields.get("bname").map(String::as_str), Some("broker"));
+            assert_eq!(fields.get("oway").map(String::as_str), Some("false"));
+            let decoded = <$header>::decode_fields(&fields).unwrap();
+            assert_eq!(
+                header,
+                decoded,
+                "{} base-field round trip",
+                stringify!($header)
+            );
+
+            let mut changed_namespace = header.clone();
+            changed_namespace.namespace = Some("other-namespace".into());
+            assert_ne!(header, changed_namespace, "{} ns", stringify!($header));
+            let mut changed_namespaced = header.clone();
+            changed_namespaced.namespaced = Some(false);
+            assert_ne!(header, changed_namespaced, "{} nsd", stringify!($header));
+            let mut changed_broker = header.clone();
+            changed_broker.$broker_field = Some("other-broker".into());
+            assert_ne!(header, changed_broker, "{} bname", stringify!($header));
+            let mut changed_oneway = header.clone();
+            changed_oneway.oneway = Some(true);
+            assert_ne!(header, changed_oneway, "{} oway", stringify!($header));
+        }};
+    }
+
+    #[test]
+    fn request_header_equality_and_hash_match_rpc_base_fields() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/protocol/request-header-identity.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["clientArtifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(fixture["serverContacted"], false);
+        let cases = fixture["identityCases"].as_object().unwrap();
+        assert_eq!(cases.len(), 31);
+        for (rust_name, identity) in cases {
+            let java_class = if rust_name == "GetRouteInfoRequestHeader" {
+                "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
+                    .to_owned()
+            } else if rust_name == "SendMessageRequestHeaderV1" {
+                "org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader".to_owned()
+            } else {
+                format!("org.apache.rocketmq.remoting.protocol.header.{rust_name}")
+            };
+            assert_eq!(identity["javaClass"], java_class, "{rust_name}");
+            assert_eq!(
+                identity["equalsDeclaredBy"], "org.apache.rocketmq.remoting.rpc.RpcRequestHeader",
+                "{rust_name}"
+            );
+            assert_eq!(
+                identity["hashCodeDeclaredBy"], "org.apache.rocketmq.remoting.rpc.RpcRequestHeader",
+                "{rust_name}"
+            );
+            assert_eq!(identity["sameObjectEqualsItself"], true, "{rust_name}");
+            assert_eq!(
+                identity["distinctDefaultObjectsEquals"], true,
+                "{rust_name}"
+            );
+            assert_eq!(identity["equalBaseFieldsEquals"], true, "{rust_name}");
+            assert_eq!(identity["equalBaseFieldsHashEqual"], true, "{rust_name}");
+            assert_eq!(identity["payloadDifferenceIgnored"], true, "{rust_name}");
+            assert_eq!(
+                identity["payloadDifferenceTested"],
+                !matches!(
+                    rust_name.as_str(),
+                    "LockBatchMqRequestHeader" | "UnlockBatchMqRequestHeader"
+                ),
+                "{rust_name}"
+            );
+            for field in ["ns", "nsd", "bname", "oway"] {
+                assert_eq!(
+                    identity["baseFieldDifferenceEquals"][field], false,
+                    "{rust_name}.{field}"
+                );
+            }
+        }
+
+        check_rpc_request_header!(
+            QueryConsumerOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QueryConsumerOffsetRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            UpdateConsumerOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut UpdateConsumerOffsetRequestHeader| h.commit_offset = 17
+        );
+        check_rpc_request_header!(
+            QueryConsumeTimeSpanRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QueryConsumeTimeSpanRequestHeader| h.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            SearchOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut SearchOffsetRequestHeader| h.timestamp = 17
+        );
+        check_rpc_request_header!(
+            GetMaxOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetMaxOffsetRequestHeader| h.committed = false
+        );
+        check_rpc_request_header!(
+            GetMinOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetMinOffsetRequestHeader| h.queue_id = 17
+        );
+        check_rpc_request_header!(
+            GetEarliestMsgStoretimeRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetEarliestMsgStoretimeRequestHeader| h.queue_id = 17
+        );
+        check_rpc_request_header!(
+            PullMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut PullMessageRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            UnregisterClientRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut UnregisterClientRequestHeader| h.client_id = "payload".into()
+        );
+        check_rpc_request_header!(
+            GetRouteInfoRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetRouteInfoRequestHeader| h.topic = "payload".into()
+        );
+        check_rpc_request_header!(
+            CreateTopicRequestHeader,
+            broker_name,
+            |h: &mut CreateTopicRequestHeader| h.topic_filter_type = "SINGLE_TAG".into(),
+            |h: &mut CreateTopicRequestHeader| h.topic = "payload".into()
+        );
+        check_rpc_request_header!(
+            QueryMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QueryMessageRequestHeader| h.key = "payload".into()
+        );
+        check_rpc_request_header!(
+            GetConsumerListByGroupRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetConsumerListByGroupRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            LockBatchMqRequestHeader,
+            broker_name,
+            |_| {},
+            |_: &mut LockBatchMqRequestHeader| {}
+        );
+        check_rpc_request_header!(
+            UnlockBatchMqRequestHeader,
+            broker_name,
+            |_| {},
+            |_: &mut UnlockBatchMqRequestHeader| {}
+        );
+        check_rpc_request_header!(
+            ConsumerSendMsgBackRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut ConsumerSendMsgBackRequestHeader| h.group = "payload".into()
+        );
+        check_rpc_request_header!(
+            RecallMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut RecallMessageRequestHeader| h.recall_handle = "payload".into()
+        );
+        check_rpc_request_header!(
+            EndTransactionRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut EndTransactionRequestHeader| h.transaction_id = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            CheckTransactionStateRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut CheckTransactionStateRequestHeader| h.transaction_id = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            ReplyMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut ReplyMessageRequestHeader| h.producer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            NotificationRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut NotificationRequestHeader| h.attempt_id = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            ResetOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut ResetOffsetRequestHeader| h.group = "payload".into()
+        );
+        check_rpc_request_header!(
+            GetConsumerStatusRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetConsumerStatusRequestHeader| h.topic = "payload".into()
+        );
+        check_rpc_request_header!(
+            GetConsumerRunningInfoRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetConsumerRunningInfoRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            ConsumeMessageDirectlyResultRequestHeader,
+            rpc_broker_name,
+            |_| {},
+            |h: &mut ConsumeMessageDirectlyResultRequestHeader| h.broker_name =
+                Some("payload".into())
+        );
+        check_rpc_request_header!(
+            PopMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut PopMessageRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            AckMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut AckMessageRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            ChangeInvisibleTimeRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut ChangeInvisibleTimeRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            PollingInfoRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut PollingInfoRequestHeader| h.consumer_group = "payload".into()
+        );
+        check_rpc_request_header!(
+            SendMessageRequestHeaderV1,
+            broker_name,
+            |_| {},
+            |h: &mut SendMessageRequestHeaderV1| h.topic = "payload".into()
+        );
+        check_rpc_request_header!(
+            SendMessageRequestHeaderV2,
+            broker_name,
+            |_| {},
+            |h: &mut SendMessageRequestHeaderV2| h.b = "payload".into()
+        );
+    }
+
     #[test]
     fn query_offset_preserves_unknown_fields_and_optional_false() {
         let raw = HeaderMap::from([
@@ -1958,6 +2637,7 @@ mod tests {
             unit_mode: Some(true),
             max_reconsume_times: Some(16),
             batch: Some(false),
+            ..SendMessageRequestHeaderV1::default()
         };
         let v2 = SendMessageRequestHeaderV2::from_v1(&v1);
         assert_eq!(v2.normalized_v1(), v1);

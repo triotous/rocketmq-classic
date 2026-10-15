@@ -126,6 +126,7 @@ async fn heartbeat_versions_and_unregister_header() {
                 client_id: "c".into(),
                 producer_group: None,
                 consumer_group: Some("g".into()),
+                ..UnregisterClientRequestHeader::default()
             },
             deadline(),
         )

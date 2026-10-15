@@ -113,6 +113,7 @@ fn query_header(queue: &MessageQueue) -> QueryConsumerOffsetRequestHeader {
         queue_id: queue.queue_id(),
         set_zero_if_not_found: None,
         broker_name: Some("broker".into()),
+        ..QueryConsumerOffsetRequestHeader::default()
     }
 }
 

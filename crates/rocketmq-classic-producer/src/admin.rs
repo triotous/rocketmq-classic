@@ -137,6 +137,7 @@ impl Producer {
             queue_id: queue.queue_id(),
             committed: true,
             broker_name: Some(broker_name),
+            ..GetMaxOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -151,6 +152,7 @@ impl Producer {
             topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetMinOffsetRequestHeader::default()
         };
         Ok(runtime
             .api()
@@ -168,6 +170,7 @@ impl Producer {
             topic: queue.topic().ok_or(ProducerError::InvalidQueue)?.to_owned(),
             queue_id: queue.queue_id(),
             broker_name: Some(broker_name),
+            ..GetEarliestMsgStoretimeRequestHeader::default()
         };
         Ok(runtime
             .api()
