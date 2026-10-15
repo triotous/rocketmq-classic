@@ -143,6 +143,7 @@ struct ClientInner {
     config: ClientConfig,
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
+    disable_callback_executor: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
@@ -627,6 +628,7 @@ impl RemotingClient {
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let close_socket_if_timeout = config.close_socket_if_timeout;
         let enable_reconnect_for_go_away = config.enable_reconnect_for_go_away;
+        let disable_callback_executor = config.disable_callback_executor;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -657,6 +659,7 @@ impl RemotingClient {
             max_frame_size_override: None,
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
+            disable_callback_executor: AtomicBool::new(disable_callback_executor),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender: callback_sender.clone(),
@@ -715,6 +718,18 @@ impl RemotingClient {
             .store(enabled, Ordering::Release);
     }
 
+    /// Returns whether Java-equivalent callback executor dispatch is disabled.
+    pub fn get_disable_callback_executor(&self) -> bool {
+        self.inner.disable_callback_executor.load(Ordering::Acquire)
+    }
+
+    /// Updates callback executor dispatch for later callback completions.
+    pub fn set_disable_callback_executor(&self, disabled: bool) {
+        self.inner
+            .disable_callback_executor
+            .store(disabled, Ordering::Release);
+    }
+
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
@@ -751,6 +766,7 @@ impl RemotingClient {
             max_frame_size_override: Some(max_frame_size),
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
+            disable_callback_executor: AtomicBool::new(false),
             config: ClientConfig {
                 transport: security.clone(),
                 ..ClientConfig::default()
@@ -1121,20 +1137,15 @@ impl RemotingClient {
     }
 
     pub fn set_callback_executor(&self, executor: Option<Arc<dyn CallbackExecutor>>) {
-        *self.inner.callback_executor.lock().unwrap() =
-            if self.inner.config.disable_callback_executor {
-                None
-            } else {
-                Some(executor.unwrap_or_else(|| {
-                    Arc::new(ClientCallbackExecutor {
-                        sender: self.inner.callback_sender.clone(),
-                    })
-                }))
-            };
+        *self.inner.callback_executor.lock().unwrap() = Some(executor.unwrap_or_else(|| {
+            Arc::new(ClientCallbackExecutor {
+                sender: self.inner.callback_sender.clone(),
+            })
+        }));
     }
 
     pub fn get_callback_executor(&self) -> Option<Arc<dyn CallbackExecutor>> {
-        if self.inner.config.disable_callback_executor {
+        if self.inner.disable_callback_executor.load(Ordering::Acquire) {
             None
         } else {
             self.inner.callback_executor.lock().unwrap().clone()
@@ -2038,7 +2049,7 @@ impl ClientInner {
 
     fn dispatch_callback(&self, job: CallbackJob) {
         let task: CallbackTask = Box::new(move || run_callback(job));
-        if self.config.disable_callback_executor {
+        if self.disable_callback_executor.load(Ordering::Acquire) {
             task();
             return;
         }
@@ -3413,6 +3424,7 @@ mod tests {
             max_frame_size_override: Some(DEFAULT_MAX_FRAME_SIZE),
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
+            disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),

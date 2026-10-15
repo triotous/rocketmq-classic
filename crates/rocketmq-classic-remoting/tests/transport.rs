@@ -2468,7 +2468,17 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     })
     .unwrap();
     callback_executor_disabled.start().unwrap();
-    callback_executor_disabled.set_callback_executor(Some(Arc::new(ThreadCallbackExecutor)));
+    assert!(callback_executor_disabled.get_disable_callback_executor());
+    let retained_executor: Arc<dyn CallbackExecutor> = Arc::new(ThreadCallbackExecutor);
+    callback_executor_disabled.set_callback_executor(Some(retained_executor.clone()));
+    assert!(callback_executor_disabled.get_callback_executor().is_none());
+    callback_executor_disabled.set_disable_callback_executor(false);
+    assert!(!callback_executor_disabled.get_disable_callback_executor());
+    assert!(Arc::ptr_eq(
+        &callback_executor_disabled.get_callback_executor().unwrap(),
+        &retained_executor
+    ));
+    callback_executor_disabled.set_disable_callback_executor(true);
     assert!(callback_executor_disabled.get_callback_executor().is_none());
     callback_executor_disabled.shutdown().await;
     assert!(
@@ -2681,6 +2691,19 @@ impl CallbackExecutor for ThreadCallbackExecutor {
         task: Box<dyn FnOnce() + Send + 'static>,
     ) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
         std::thread::spawn(task);
+        Ok(())
+    }
+}
+
+struct CountingCallbackExecutor(Arc<AtomicUsize>);
+
+impl CallbackExecutor for CountingCallbackExecutor {
+    fn execute(
+        &self,
+        task: Box<dyn FnOnce() + Send + 'static>,
+    ) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        task();
         Ok(())
     }
 }
@@ -2954,6 +2977,87 @@ async fn p3_caller_callback_executor_routes_callbacks_to_owned_executor() {
     assert_ne!(callback_thread, caller_thread);
     peer.await.unwrap();
     client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p3_callback_executor_disable_setting_is_read_at_completion_time() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for code in [12, 13] {
+            let request = read_command(&mut stream).await;
+            let mut response = command(code);
+            response.opaque = request.opaque;
+            response.mark_response();
+            write_command(&mut stream, &response).await;
+        }
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        disable_callback_executor: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    assert!(!client.get_disable_callback_executor());
+    let executions = Arc::new(AtomicUsize::new(0));
+    let executor: Arc<dyn CallbackExecutor> =
+        Arc::new(CountingCallbackExecutor(executions.clone()));
+    client.set_callback_executor(Some(executor.clone()));
+
+    client.set_disable_callback_executor(true);
+    assert!(client.get_disable_callback_executor());
+    assert!(client.get_callback_executor().is_none());
+    let (first_tx, mut first_rx) = tokio::sync::mpsc::unbounded_channel();
+    client
+        .invoke_async(
+            address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                let _ = first_tx.send(result.map(|response| response.code));
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), first_rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        12
+    );
+    assert_eq!(executions.load(Ordering::SeqCst), 0);
+
+    client.set_disable_callback_executor(false);
+    assert!(!client.get_disable_callback_executor());
+    assert!(Arc::ptr_eq(
+        &client.get_callback_executor().unwrap(),
+        &executor
+    ));
+    let (second_tx, mut second_rx) = tokio::sync::mpsc::unbounded_channel();
+    client
+        .invoke_async(
+            address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+            Arc::new(move |result: Result<RemotingCommand, TransportError>| {
+                let _ = second_tx.send(result.map(|response| response.code));
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), second_rx.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        13
+    );
+    assert_eq!(executions.load(Ordering::SeqCst), 1);
+
+    client.shutdown().await;
+    peer.await.unwrap();
 }
 
 #[tokio::test]

@@ -9,6 +9,8 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
@@ -53,7 +55,33 @@ public final class RemotingLiveConfigProbe {
             throw new IllegalStateException("scripted peer did not terminate after client shutdown");
         }
         verifyGoAwayReconnectSetting();
+        verifyCallbackExecutorSetting();
         System.out.println("Remoting live config mutation verified");
+    }
+
+    private static void verifyCallbackExecutorSetting() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        ExecutorService custom = Executors.newSingleThreadExecutor();
+        try {
+            client.start();
+            client.setCallbackExecutor(custom);
+            config.setDisableCallbackExecutor(true);
+            if (client.getCallbackExecutor() != null) {
+                throw new IllegalStateException("disabled callback executor remained externally visible");
+            }
+            client.setCallbackExecutor(custom);
+            if (client.getCallbackExecutor() != null) {
+                throw new IllegalStateException("setting a custom executor bypassed the live disable flag");
+            }
+            config.setDisableCallbackExecutor(false);
+            if (client.getCallbackExecutor() != custom) {
+                throw new IllegalStateException("re-enabled callback executor did not retain the custom executor");
+            }
+        } finally {
+            client.shutdown();
+            custom.shutdown();
+        }
     }
 
     private static void verifyGoAwayReconnectSetting() throws Exception {
