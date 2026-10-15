@@ -3614,6 +3614,53 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
 }
 
 #[tokio::test]
+async fn p3_go_away_reads_live_setting_after_client_start() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut first, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut first).await;
+        let mut go_away = command(response::GO_AWAY);
+        go_away.opaque = request.opaque;
+        go_away.mark_response();
+        write_command(&mut first, &go_away).await;
+        drop(first);
+
+        let (mut second, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+            .await
+            .expect("live reconnect setting did not create a replacement connection")
+            .unwrap();
+        let retry = read_command(&mut second).await;
+        let mut response = command(42);
+        response.opaque = retry.opaque;
+        response.mark_response();
+        write_command(&mut second, &response).await;
+        retry
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        enable_reconnect_for_go_away: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    client.set_enable_reconnect_for_go_away(true);
+    assert!(client.get_enable_reconnect_for_go_away());
+
+    let result = client
+        .invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.code, 42);
+    client.shutdown().await;
+    let retry = peer.await.unwrap();
+    assert_eq!(retry.code, 1);
+}
+
+#[tokio::test]
 async fn p3_go_away_replacement_keeps_other_old_connection_requests_alive() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

@@ -142,6 +142,7 @@ struct ClientInner {
     max_frame_size_override: Option<usize>,
     config: ClientConfig,
     close_socket_if_timeout: AtomicBool,
+    enable_reconnect_for_go_away: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
@@ -625,6 +626,7 @@ impl RemotingClient {
         }
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
         let close_socket_if_timeout = config.close_socket_if_timeout;
+        let enable_reconnect_for_go_away = config.enable_reconnect_for_go_away;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -654,6 +656,7 @@ impl RemotingClient {
             security: config.transport.clone(),
             max_frame_size_override: None,
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
+            enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender: callback_sender.clone(),
@@ -698,6 +701,20 @@ impl RemotingClient {
             .store(enabled, Ordering::Release);
     }
 
+    /// Returns the live Java `enableReconnectForGoAway` behavior setting.
+    pub fn get_enable_reconnect_for_go_away(&self) -> bool {
+        self.inner
+            .enable_reconnect_for_go_away
+            .load(Ordering::Acquire)
+    }
+
+    /// Updates whether later GO_AWAY responses reconnect and retry the request.
+    pub fn set_enable_reconnect_for_go_away(&self, enabled: bool) {
+        self.inner
+            .enable_reconnect_for_go_away
+            .store(enabled, Ordering::Release);
+    }
+
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
@@ -733,6 +750,7 @@ impl RemotingClient {
             security: security.clone(),
             max_frame_size_override: Some(max_frame_size),
             close_socket_if_timeout: AtomicBool::new(true),
+            enable_reconnect_for_go_away: AtomicBool::new(true),
             config: ClientConfig {
                 transport: security.clone(),
                 ..ClientConfig::default()
@@ -1573,7 +1591,10 @@ impl RemotingClient {
             Ok(Ok(Ok(response))) => {
                 pending.disarm();
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
-                    if self.inner.config.enable_reconnect_for_go_away
+                    if self
+                        .inner
+                        .enable_reconnect_for_go_away
+                        .load(Ordering::Acquire)
                         && !options.retried_go_away
                         && self.inner.retire_for_go_away(addr, connection.clone())
                     {
@@ -3391,6 +3412,7 @@ mod tests {
             security: TransportMode::Plain,
             max_frame_size_override: Some(DEFAULT_MAX_FRAME_SIZE),
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
+            enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),
