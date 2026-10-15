@@ -131,6 +131,9 @@ public final class MessageDecodeFixtures {
             InetAddress.getByName("198.51.100.26"), 10927,
             MessageSysFlag.INNER_BATCH_FLAG | MessageSysFlag.NEED_UNWRAP_FLAG,
             Map.of("TAGS", "outer")), null));
+        cases.add(record("empty-body-v1", message("orders", new byte[0], 27, 51,
+            InetAddress.getByName("192.0.2.19"), 10930,
+            InetAddress.getByName("198.51.100.28"), 10931, 0, Map.of()), null));
 
         root.put("cases", cases);
         String json = JSON.toJSONString(root, JSONWriter.Feature.MapSortField) + "\n";
@@ -1253,7 +1256,8 @@ public final class MessageDecodeFixtures {
         MessageExt decoded = MessageDecoder.decode(ByteBuffer.wrap(encoded), true, true, false, false, true);
         Map<String, Object> expected = new TreeMap<>();
         expected.put("topic", decoded.getTopic());
-        expected.put("bodyBase64", Base64.getEncoder().encodeToString(decoded.getBody()));
+        expected.put("bodyBase64", decoded.getBody() == null
+            ? null : Base64.getEncoder().encodeToString(decoded.getBody()));
         expected.put("flag", decoded.getFlag());
         expected.put("bodyCRC", decoded.getBodyCRC());
         expected.put("queueId", decoded.getQueueId());
@@ -1306,7 +1310,79 @@ public final class MessageDecodeFixtures {
         result.put("decoded", expected);
         result.put("clientDecoded", expectedClientIds);
         result.put("decodeOptions", bodyOptions);
+        result.put("decodeOverloads", decodeOverloads(encoded));
         return result;
+    }
+
+    private static Map<String, Object> decodeOverloads(byte[] encoded) {
+        Map<String, Object> outcomes = new TreeMap<>();
+        ByteBuffer input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeDefault", decodeSnapshot(MessageDecoder.decode(input), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeReadBodyFalse",
+            decodeSnapshot(MessageDecoder.decode(input, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeReadBodyTrue",
+            decodeSnapshot(MessageDecoder.decode(input, true), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeNoBodyNoDecompress",
+            decodeSnapshot(MessageDecoder.decode(input, false, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeNoBodyDecompress",
+            decodeSnapshot(MessageDecoder.decode(input, false, true), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeBodyNoDecompress",
+            decodeSnapshot(MessageDecoder.decode(input, true, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeBodyDecompress",
+            decodeSnapshot(MessageDecoder.decode(input, true, true), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeGenericFourArguments",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeClientFourArguments",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, true), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeGenericFiveArguments",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, false, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodePropertiesStringFiveArguments",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, false, true), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeWithoutCrcCheck",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, false, false, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("decodeWithCrcCheck",
+            decodeSnapshot(MessageDecoder.decode(input, true, true, false, false, true), input));
+
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("clientDecodeReadBodyFalse",
+            decodeSnapshot(MessageDecoder.clientDecode(input, false), input));
+        input = ByteBuffer.wrap(encoded);
+        outcomes.put("clientDecodeReadBodyTrue",
+            decodeSnapshot(MessageDecoder.clientDecode(input, true), input));
+        return outcomes;
+    }
+
+    private static Map<String, Object> decodeSnapshot(MessageExt message, ByteBuffer input) {
+        Map<String, Object> snapshot = new TreeMap<>();
+        snapshot.put("messageClass", message.getClass().getSimpleName());
+        snapshot.put("topic", message.getTopic());
+        snapshot.put("bodyBase64", message.getBody() == null
+            ? null : Base64.getEncoder().encodeToString(message.getBody()));
+        snapshot.put("sysFlag", message.getSysFlag());
+        snapshot.put("properties", message.getProperties() == null
+            ? null : new TreeMap<>(message.getProperties()));
+        snapshot.put("messageId", message.getMsgId());
+        snapshot.put("offsetMsgId", message instanceof MessageClientExt
+            ? ((MessageClientExt) message).getOffsetMsgId() : null);
+        snapshot.put("consumed", input.position());
+        return snapshot;
     }
 
     private static byte[] convertToV2(byte[] v1, int sysFlag, String topic) {

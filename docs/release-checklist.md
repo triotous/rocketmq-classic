@@ -526,8 +526,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   match the invoked Java 5.5.1 bytes for IPv4/IPv6, configured-size padding and
   undersized buffers; compressed ZLIB/LZ4/ZSTD records decode to Java's expected
   body. Rust regression and the Java fixture are updated. This closes those two
-  encoder methods only; the remaining decoder overloads and broad P18-V01 audit
-  remain open. Current message fixture SHA-256:
+  encoder methods only; at that checkpoint, the remaining decoder overloads
+  and broad P18-V01 audit remained open. Current message fixture SHA-256:
   `c7bf73f5baa095242502d97e06953e2ef2a2c4ea774ed69923aeef586fde940a`.
 - Common client decode and `MessageDecoder` constant slice: Rust now exposes
   client ID fallback helpers, client batch decoding, Java record-offset and
@@ -768,7 +768,7 @@ the required full Phase 18 gates on the final revision.
   replacement setters detach the receiver; ordinary Rust `Clone` remains a
   deep, independent copy. Rust accessors use borrow guards or owned property
   strings to keep those alias semantics safe. This closes the direct alias
-  slice only; broad P18-V01 remains open. Current message fixture SHA-256:
+  slice only; broad P18-V01 remains open. Fixture SHA-256 at that checkpoint:
   `b9f6f527720c425b17af57367a524f65e1f16da20acfc369502d64fa37b821e7`.
   The current-revision P18-V02 rerun is recorded below; broad P18-V01, GitHub
   Ubuntu evidence, and Phase 19 gates remain open.
@@ -1201,3 +1201,19 @@ Before any publication:
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry-resolution checks remain open. Owner-run
   deployment/live Broker checks remain manual validation.
+
+- P18-V01 Common `MessageDecoder` overload/body-null slice (2026-10-15): the
+  Java 5.5.1 fixture now invokes every generic `decode` overload and both
+  `clientDecode` variants against eleven records, including an empty body.
+  Rust now preserves Java's null body when body reading is disabled or the
+  record body is empty, and preserves a null properties map when the record has
+  no properties section. The Common crate suite passes (21 unit tests, 20
+  `message_decode` integration tests, one topic-validator test, and 17 doctests),
+  as do strict Common Clippy and the full offline Maven verify (37 scenarios,
+  Java/Rust cross-decodes and fixture checks). This closes this decoder slice
+  only; broad P18-V01 remains open. Full-workspace P18-V02 gates still need to
+  be rerun on the final revision, and current GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and release version/registry checks
+  remain open. Owner-run deployment/live Broker checks remain Phase 19 manual
+  validation. Current message fixture SHA-256:
+  `761ffe884d0a7c907bb694969ce0730fbb60390cc1fa92151c310f6894483dfd`.

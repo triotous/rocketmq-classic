@@ -11,14 +11,14 @@ use rocketmq_classic_common::{
         append_crc32_property, client_decode, client_decodes, client_decodes_with_body,
         count_inner_messages, create_message_id, create_message_id_from_host_bytes,
         decode_compact_message, decode_compact_messages, decode_inner_batch, decode_many,
-        decode_many_as_client, decode_message_id, decode_one, decode_properties_nullable,
-        decode_record_properties, encode_compact_message, encode_compact_messages,
-        encode_message_ext, encode_message_ext_uniquely, encode_nullable_property_entries,
-        encode_properties_nullable,
+        decode_many_as_client, decode_message_id, decode_one, decode_one_as_client,
+        decode_properties_nullable, decode_record_properties, encode_compact_message,
+        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
+        encode_nullable_property_entries, encode_properties_nullable,
     },
     sysflag::message,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Mutex;
@@ -35,6 +35,33 @@ fn record(case: &Value) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD
         .decode(case["recordBase64"].as_str().unwrap())
         .unwrap()
+}
+
+fn decoded_snapshot(message: &MessageExt, consumed: usize) -> Value {
+    let mut snapshot = json!({
+        "messageClass": if message.offset_message_id().is_some() {
+            "MessageClientExt"
+        } else {
+            "MessageExt"
+        },
+        "topic": message.topic_nullable(),
+        "sysFlag": message.sys_flag(),
+        "messageId": message.message_id(),
+        "consumed": consumed,
+    });
+    if let Some(body_base64) = message
+        .body_nullable()
+        .map(|body| base64::engine::general_purpose::STANDARD.encode(&*body))
+    {
+        snapshot["bodyBase64"] = json!(body_base64);
+    }
+    if let Some(properties) = message.properties_nullable() {
+        snapshot["properties"] = serde_json::to_value(&*properties).unwrap();
+    }
+    if let Some(offset_message_id) = message.offset_message_id() {
+        snapshot["offsetMsgId"] = json!(offset_message_id);
+    }
+    snapshot
 }
 
 fn encoded_body(record: &[u8]) -> &[u8] {
@@ -85,12 +112,18 @@ fn java_551_message_records_decode_to_the_pinned_results() {
             case["name"]
         );
         assert_eq!(decoded.topic(), expected["topic"]);
-        assert_eq!(
-            decoded.body().to_vec(),
-            base64::engine::general_purpose::STANDARD
-                .decode(expected["bodyBase64"].as_str().unwrap())
-                .unwrap()
-        );
+        if let Some(expected_body) = expected["bodyBase64"].as_str() {
+            assert_eq!(
+                decoded.body_nullable().map(|body| body.to_vec()),
+                Some(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(expected_body)
+                        .unwrap()
+                )
+            );
+        } else {
+            assert!(decoded.body_nullable().is_none());
+        }
         assert_eq!(decoded.flag(), expected["flag"]);
         assert_eq!(decoded.body_crc(), expected["bodyCRC"]);
         assert_eq!(decoded.queue_id(), expected["queueId"]);
@@ -404,6 +437,111 @@ fn client_message_decoder_apis_match_java_551() {
             .iter()
             .all(|message| message.body().is_empty())
     );
+}
+
+#[test]
+fn message_decoder_overloads_match_invoked_java_551() {
+    let fixture = fixture();
+    let decode_cases = [
+        ("decodeDefault", DecodeOptions::default(), false),
+        (
+            "decodeReadBodyFalse",
+            DecodeOptions {
+                read_body: false,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+        ("decodeReadBodyTrue", DecodeOptions::default(), false),
+        (
+            "decodeNoBodyNoDecompress",
+            DecodeOptions {
+                read_body: false,
+                decompress_body: false,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+        (
+            "decodeNoBodyDecompress",
+            DecodeOptions {
+                read_body: false,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+        (
+            "decodeBodyNoDecompress",
+            DecodeOptions {
+                decompress_body: false,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+        ("decodeBodyDecompress", DecodeOptions::default(), false),
+        (
+            "decodeGenericFourArguments",
+            DecodeOptions::default(),
+            false,
+        ),
+        ("decodeClientFourArguments", DecodeOptions::default(), true),
+        (
+            "decodeGenericFiveArguments",
+            DecodeOptions::default(),
+            false,
+        ),
+        (
+            "decodePropertiesStringFiveArguments",
+            DecodeOptions {
+                set_properties_string: true,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+        ("decodeWithoutCrcCheck", DecodeOptions::default(), false),
+        (
+            "decodeWithCrcCheck",
+            DecodeOptions {
+                verify_crc: true,
+                ..DecodeOptions::default()
+            },
+            false,
+        ),
+    ];
+
+    for case in fixture["cases"].as_array().unwrap() {
+        let bytes = record(case);
+        for (name, options, client) in decode_cases {
+            let decoded = if client {
+                decode_one_as_client(&bytes, options)
+            } else {
+                decode_one(&bytes, options)
+            }
+            .unwrap_or_else(|error| panic!("{} {name}: {error}", case["name"]));
+            assert_eq!(
+                decoded_snapshot(&decoded.0, decoded.1),
+                case["decodeOverloads"][name],
+                "{} {name}",
+                case["name"]
+            );
+        }
+
+        for read_body in [false, true] {
+            let (decoded, consumed) = client_decode(&bytes, read_body)
+                .unwrap_or_else(|error| panic!("{} clientDecode: {error}", case["name"]));
+            let name = if read_body {
+                "clientDecodeReadBodyTrue"
+            } else {
+                "clientDecodeReadBodyFalse"
+            };
+            assert_eq!(
+                decoded_snapshot(&decoded, consumed),
+                case["decodeOverloads"][name],
+                "{} {name}",
+                case["name"]
+            );
+        }
+    }
 }
 
 #[test]
@@ -2341,10 +2479,12 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
             .0;
             if let Some(expected_body) = option["bodyBase64"].as_str() {
                 assert_eq!(
-                    decoded.body().to_vec(),
-                    base64::engine::general_purpose::STANDARD
-                        .decode(expected_body)
-                        .unwrap(),
+                    decoded.body_nullable().map(|body| body.to_vec()),
+                    Some(
+                        base64::engine::general_purpose::STANDARD
+                            .decode(expected_body)
+                            .unwrap()
+                    ),
                     "{} readBody={} decompressBody={}",
                     case["name"],
                     option["readBody"],
@@ -2352,7 +2492,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
                 );
             } else {
                 assert!(
-                    decoded.body().is_empty(),
+                    decoded.body_nullable().is_none(),
                     "{} readBody={} decompressBody={}",
                     case["name"],
                     option["readBody"],

@@ -401,17 +401,19 @@ fn empty_message_properties() -> &'static MessageProperties {
 impl Message {
     pub(crate) fn from_decoded(
         topic: String,
-        body: Vec<u8>,
-        properties: MessageProperties,
+        body: Option<Vec<u8>>,
+        properties: Option<MessageProperties>,
     ) -> Self {
         Self {
             topic: Some(topic),
-            body: Some(Arc::new(RwLock::new(body))),
+            body: body.map(|body| Arc::new(RwLock::new(body))),
             flag: 0,
-            properties: Some(Arc::new(RwLock::new(MessagePropertyStorage {
-                values: properties,
-                ..MessagePropertyStorage::default()
-            }))),
+            properties: properties.map(|values| {
+                Arc::new(RwLock::new(MessagePropertyStorage {
+                    values,
+                    ..MessagePropertyStorage::default()
+                }))
+            }),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }

@@ -367,15 +367,13 @@ fn decode_one_with_limits(
     let body_length = input.i32("body length")?;
     let body_length = nonnegative_length(body_length_offset, "body", body_length)?;
     let encoded_body = input.bytes(body_length, "body")?;
-    let mut body = if options.read_body {
-        encoded_body.to_vec()
-    } else {
-        Vec::new()
-    };
+    let mut body = (options.read_body && body_length > 0).then(|| encoded_body.to_vec());
     if options.verify_crc
         && options.read_body
         && body_length > 0
-        && crc32(&body) & 0x7fff_ffff != body_crc as u32
+        && body
+            .as_deref()
+            .is_some_and(|body| crc32(body) & 0x7fff_ffff != body_crc as u32)
     {
         return Err(DecodeError::CrcMismatch);
     }
@@ -386,7 +384,13 @@ fn decode_one_with_limits(
     {
         let compression_type = message::compression_type(sys_flag)
             .map_err(|error| DecodeError::CompressionType(error.to_string()))?;
-        body = decompress_limited(compression_type, &body, limits.max_decompressed_body_bytes)
+        let encoded_body = body.as_deref().expect("read body when decompressing");
+        body = Some(
+            decompress_limited(
+                compression_type,
+                encoded_body,
+                limits.max_decompressed_body_bytes,
+            )
             .map_err(|error| {
                 if error.kind() == io::ErrorKind::InvalidData
                     && error.to_string().contains("exceeds configured limit")
@@ -399,7 +403,8 @@ fn decode_one_with_limits(
                 } else {
                     DecodeError::Decompression(error.to_string())
                 }
-            })?;
+            })?,
+        );
         sys_flag &= !message::COMPRESSED_FLAG;
     }
 
@@ -423,10 +428,13 @@ fn decode_one_with_limits(
         });
     }
 
-    let mut decoded_properties = decode_properties(&properties);
-    if options.set_properties_string && properties_length > 0 {
-        decoded_properties.insert("propertiesString".to_owned(), properties.into_owned());
-    }
+    let decoded_properties = (properties_length > 0).then(|| {
+        let mut decoded_properties = decode_properties(&properties);
+        if options.set_properties_string {
+            decoded_properties.insert("propertiesString".to_owned(), properties.into_owned());
+        }
+        decoded_properties
+    });
     let mut message = MessageExt::new(super::Message::from_decoded(
         topic,
         body,
