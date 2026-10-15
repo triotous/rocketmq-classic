@@ -826,6 +826,11 @@ the required full Phase 18 gates on the final revision.
   message_decode --locked message_ext_` passes all four matching fixture
   tests. No additional gap surfaced in this class inventory; this closes one
   bounded P18-V01 audit slice only.
+- `MessageClientExt` decoded offset-ID correction (`e15f0417`, 2026-10-15):
+  wrapping client-decoded messages now preserves Java's physical offset ID
+  separately from the live `UNIQ_KEY` getter, including setter and key-clear
+  fallback behavior. Workspace default/all-feature tests and the current-tree
+  server-free P18-V02 gates pass; broad P18-V01 remains open.
 
 ## Package graph and metadata
 
