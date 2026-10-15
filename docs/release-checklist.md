@@ -1268,3 +1268,22 @@ Before any publication:
   private `java_to_string` implementation helpers as public exports. This is
   a documentation correction only; broader inherited API and reverse-export
   reconciliation remains open.
+
+- Current-revision server-free **P18-V02** gates on code revision `ae416072`
+  (tested at HEAD `a6f3010c`, whose only later change is this run's execution
+  log; 2026-10-15): UTC default and all-feature workspace tests pass when run
+  serially; strict all-target/all-feature Clippy and workspace all-target
+  check pass. Two concurrent full test processes initially collided on shared
+  offset-store fixture paths (`OffsetStore(AlreadyOpen)`); both suites pass on
+  the serialized rerun. Pinned Maven `verify` passes (37 scenarios and
+  Java/Rust cross-decodes); comparator self-test and 37-scenario manifest pass;
+  deterministic race/leak smoke passes (16 cases × 3); fuzz smoke passes (105
+  frame seeds, 11 message seeds, 1,856 bounded mutations); release examples and
+  workspace benches compile; locked metadata reports seven workspace crates
+  and 208 crates.io dependencies; metadata/license/dependency checks and all
+  seven package listings pass with LICENSE/NOTICE; the unique-ID fixture passes
+  under UTC and Asia/Taipei; rustfmt and `git diff --check` pass. This closes
+  server-free P18-V02 on the tested code. Broad P18-V01, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  release version/registry-resolution checks remain open. Owner-run deployment
+  and live Broker checks remain Phase 19 manual validation.

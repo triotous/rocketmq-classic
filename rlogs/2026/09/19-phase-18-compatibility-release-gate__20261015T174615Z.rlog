@@ -82,3 +82,29 @@ Maven `verify` (37 scenarios and Java/Rust cross-decodes); rustfmt and
 the listed inherited-method evidence slice; broad P18-V01 and the final
 full-workspace P18-V02 rerun remain open. No plan edit, push, tag, publication,
 deployment, Docker, or live Broker action occurred.
+
+2026-10-15 18:32 UTC — reran server-free P18-V02 gates on the current code tree.
+
+At the tested code revision `ae416072` (HEAD `a6f3010c` adds only the preceding
+execution-log entry), both `TZ=UTC cargo test --workspace --locked` and
+`TZ=UTC cargo test --workspace --all-features --locked` pass. The initial
+attempt started those two full suites concurrently and exposed shared
+offset-store fixture collisions (`OffsetStore(AlreadyOpen)`) in three tests;
+the affected tests and both complete suites passed when rerun serially. Strict
+all-target/all-feature workspace Clippy and all-target workspace check pass.
+
+Other P18-V02 evidence on the same source tree: pinned Maven `verify` (37
+scenarios and Java/Rust cross-decodes), differential self-test and manifest
+(37 scenarios), deterministic race/leak smoke (16 cases × 3), fuzz smoke (105
+frame seeds, 11 message seeds, 1,856 bounded mutations), release examples,
+workspace benchmark compilation, locked Cargo metadata (7 workspace packages,
+208 crates.io dependencies), workspace metadata/license/dependency checks, all
+seven package listings with LICENSE/NOTICE, the unique-ID fixture under
+`TZ=UTC` and `TZ=Asia/Taipei`, rustfmt, and `git diff --check` all pass. The
+Maven verify and formatting checks ran on the same source tree before its code
+commit; no source changes followed. This closes server-free P18-V02 on this
+code tree only. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+and pre-publication version/registry checks remain open. Phase 19 local
+Docker/Broker scenarios and owner-run deployment/live Broker checks remain
+outside this Phase 18 gate. No plan edit, push, tag, publication, deployment,
+Docker, or live Broker action occurred.
