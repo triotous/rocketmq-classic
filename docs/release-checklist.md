@@ -1522,3 +1522,19 @@ Before any publication:
   Docker/Broker automation, and pre-publication version/registry resolution
   remain open. Owner-run deployment and production checks remain Phase 19
   manual validation.
+
+- Current-revision server-free **P18-V02** rerun on code revision `4c142334`
+  (2026-10-15): on macOS ARM64, UTC default and all-feature workspace tests,
+  all-target/all-feature workspace check and strict Clippy, pinned Maven verify
+  (37 scenarios and Java/Rust cross-decodes), comparator self-test and
+  37-scenario manifest validation all pass. Race/leak smoke passes (16 cases ×
+  3); fuzz smoke passes (105 frame seeds, 11 message seeds, 1,856 mutations);
+  release examples and workspace benchmark compilation pass. Locked metadata,
+  workspace metadata/license/dependency checks, seven package listings with
+  LICENSE/NOTICE, the Asia/Taipei Unique ID fixture, formatting and diff checks
+  pass. This closes the macOS server-free P18-V02 gate on `4c142334`. The
+  Linux-only signal fallback is type-checked in an isolated target harness but
+  has not been run on Linux; current-revision GitHub Ubuntu/P18-V04 evidence,
+  broad P18-V01, Phase 19 Docker/Broker automation, and pre-publication
+  version/registry resolution remain open. Owner-run deployment and production
+  checks remain Phase 19 manual validation.

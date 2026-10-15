@@ -105,6 +105,19 @@ tests type-check with warnings denied for x86_64 and ARM64. Native Windows
 runtime behavior has not been executed on this macOS host and stays an
 environment check for final validation.
 
+Linux signal-availability follow-up (`4c142334`, 2026-10-15): the latest
+inspectable GitHub Ubuntu run for older revision `cc79eb6e` failed
+`jstack_includes_current_and_other_named_threads` because neither existing
+default-ignore candidate (`SIGWINCH`, `SIGURG`) was usable. Added `SIGCHLD` as
+another default-ignore candidate and regressions for fallback selection and
+the all-candidates-blocked case. The pinned Java 5.5.1 path uses
+`Thread.getAllStackTraces()` and does not have this signal-selection boundary.
+The updated Linux module and tests pass an isolated x86_64 Linux target
+type-check; a complete workspace cross-check cannot run on this Mac because
+the Linux C sysroot/compiler needed by AWS-LC and zstd is unavailable. The
+current revision has not yet had a Linux runtime or GitHub Ubuntu run, so this
+fix remains pending that evidence.
+
 ## Verification status
 
 - **P17-V01:** Local API coverage passes. Route-not-found, empty-route and

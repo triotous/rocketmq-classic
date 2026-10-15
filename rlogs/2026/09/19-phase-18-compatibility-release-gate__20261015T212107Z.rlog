@@ -158,3 +158,34 @@ current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
 automation, and pre-publication version/registry resolution remain open.
 Owner-run production topology and platform checks remain manual. No push, tag,
 publication, deployment, Docker, or live Broker action occurred.
+
+2026-10-15 UTC — Linux `jstack` signal fallback follow-up, code commit
+`4c142334`. Pinned Java client source `efa1be59d6fc747ad220f036c86030f05f0419f9`
+uses `Thread.getAllStackTraces()` in `ClientRemotingProcessor`; the previous
+GitHub Ubuntu run (`38686280678`, source revision `cc79eb6e`) failed the Rust
+all-thread stack test because neither `SIGWINCH` nor `SIGURG` was usable. Added
+default-ignore `SIGCHLD` as a fallback, factored candidate filtering, and added
+tests for fallback selection and the case where every candidate is blocked.
+The Phase 17 matrix records this finding.
+
+Validation on the code tree for `4c142334`:
+- `TZ=UTC cargo test --workspace --locked` and
+  `TZ=UTC cargo test --workspace --all-features --locked` pass on macOS ARM64.
+- All-target/all-feature workspace check and strict Clippy pass.
+- Pinned Maven verify (37 scenarios and Java/Rust cross-decodes), comparator
+  self-test, and 37-scenario manifest validation pass.
+- Race/leak smoke passes (16 cases × 3); fuzz smoke passes 105 frame seeds,
+  11 message seeds, and 1,856 bounded mutations.
+- Release examples and workspace benchmarks compile; locked metadata,
+  metadata/license/dependency checks, and all seven package listings pass.
+- Asia/Taipei Unique ID fixture, rustfmt, and `git diff --check` pass.
+- The exact Linux module and tests pass `cargo check --tests` in an isolated
+  x86_64 Linux target harness. Full workspace cross-check was attempted but
+  the Mac host lacks the Linux C sysroot/compiler required by AWS-LC and zstd;
+  no Linux runtime test was possible here.
+
+This records macOS P18-V02 server-free evidence only. Current-revision GitHub
+Ubuntu/runtime evidence remains absent; the inspected old run is a failure and
+does not validate the fix. Broad P18-V01, Phase 19 local Docker/Broker
+automation, and version/registry resolution also remain open. No push or
+deployment was performed.
