@@ -76,6 +76,14 @@ pub struct MessageSysFlagParseError {
 /// let mut message = Message::default();
 /// message.properties_mut();
 /// ```
+///
+/// Java `Message.toString()` is represented by Rust's `Display`/`ToString`;
+/// its formatter helper is not a separate public method:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// let _ = Message::default().java_to_string();
+/// ```
 #[derive(Debug)]
 pub struct Message {
     topic: Option<String>,
@@ -674,7 +682,7 @@ impl Message {
 
     /// Java-style diagnostic representation. Java's `HashMap` property order
     /// is unspecified; Rust emits the `BTreeMap` order for reproducibility.
-    pub fn java_to_string(&self) -> String {
+    fn java_to_string(&self) -> String {
         let properties = if self.properties_nullable().is_none() {
             "null".to_owned()
         } else {
@@ -741,6 +749,15 @@ impl DerefMut for MessageExt {
     }
 }
 
+/// Extended RocketMQ message data corresponding to Java's `MessageExt`.
+///
+/// Java `MessageExt.toString()` is exposed through Rust's `Display`/`ToString`;
+/// its formatter helper is not a separate public method:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageExt;
+/// let _ = MessageExt::default().java_to_string();
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MessageExt {
     #[serde(flatten)]
@@ -1009,7 +1026,7 @@ impl MessageExt {
     /// Java-style diagnostic string. Property entries are emitted in Rust's
     /// deterministic map order; Java's backing `HashMap` does not promise an
     /// iteration order when multiple properties are present.
-    pub fn java_to_string(&self) -> String {
+    fn java_to_string(&self) -> String {
         let born_host = self
             .born_host
             .as_ref()

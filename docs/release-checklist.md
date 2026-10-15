@@ -412,6 +412,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   namespaced topics, physical lookup, and terminal errors. The Pull example
   now registers through the Java-mapped listener API. This closes those facade
   methods and branches only; broad P18-V01 reconciliation remains open.
+- Common message formatting reverse-surface slice: `Message::java_to_string`,
+  `MessageExt::java_to_string`, and `MessageHostAddress::java_to_string` are
+  now internal helpers; Java `toString()` behavior remains exposed through
+  Rust `Display`/`ToString`. Compile-fail doctests guard all three boundaries.
+  Common all-feature tests, strict Clippy, formatting, and diff checks pass.
+  Constructor/property accessors and the wider Common/Core/API reconciliation
+  remain open P18-V01 work.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

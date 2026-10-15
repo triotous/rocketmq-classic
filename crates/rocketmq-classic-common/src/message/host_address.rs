@@ -9,6 +9,14 @@ use thiserror::Error;
 ///
 /// The host name is retained separately from the resolved IP address, matching
 /// Java's `getHostString()` behavior without requiring reverse DNS lookups.
+///
+/// Java socket-address text is available through Rust's `Display`/`ToString`;
+/// the exact-format helper remains internal:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageHostAddress;
+/// let _ = MessageHostAddress::new("127.0.0.1", 10911).java_to_string();
+/// ```
 #[derive(Debug, Clone)]
 pub struct MessageHostAddress {
     host_name: String,
@@ -163,7 +171,7 @@ impl MessageHostAddress {
     }
 
     /// Java `InetSocketAddress.toString()` form used by the message fixture model.
-    pub fn java_to_string(&self) -> String {
+    fn java_to_string(&self) -> String {
         match self.address {
             Some(socket_address) => {
                 let address = java_socket_host_string(socket_address);

@@ -1133,3 +1133,12 @@ One hundred forty-three direct Java input cases cover decoded fields, accepted/r
 | `isSystemTopic`, `addSystemTopic`, `getSystemTopicSet`; `isNotAllowedSendTopic`, `getNotAllowedSendTopicSet` | Nullable adapters preserve Java behavior: `is_system_topic_nullable` returns true for null only when the live set contains null, otherwise `TopicValidatorError::NullString`; `add_system_topic_nullable` and `is_not_allowed_send_topic_nullable` preserve nullable set members. Synchronized live sets use `HashSet<Option<String>>` and remain mutable |
 
 The pinned fixture invokes all constants, validation/classification methods, mutable table/set behavior, and six direct constructor cases covering both valid flags with null, empty, and non-empty remarks. It also checks Java null-input exceptions for `isTopicOrGroupIllegal` and `isSystemTopic`, null membership before and after adding null to the mutable sets, and non-null classification cases. `public_topic_validator_surface_matches_pinned_java_fixture` compares Java outcomes with the nullable Rust adapters and the constructor, including null versus empty/non-null remarks. Fixture SHA-256: `33a3617cca49b8803a457b28990529abdcb2f32888d35e585138251964bcfef1`.
+
+## Common public API: Message diagnostic formatting
+
+| Pinned Java 5.5.1 API | Rust counterpart / current boundary |
+| --- | --- |
+| `Message.toString()` / `MessageExt.toString()` | Rust `Display` implementations provide the corresponding `.to_string()` behavior; internal `java_to_string` formatting helpers are not exposed as separate public methods |
+| `InetSocketAddress.toString()` text used by `MessageExt` host fields | `MessageHostAddress` implements `Display`/`ToString`; its internal formatter is not a separate public API |
+
+Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. This closes the formatter-helper boundary only; the remaining Common message constructors, property accessors, overload inputs, and their reverse-export mappings remain part of P18-V01.
