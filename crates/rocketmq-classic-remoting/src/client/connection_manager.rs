@@ -156,12 +156,7 @@ impl ClientInner {
             }
         }
         let mut shutdown = self.shutdown.subscribe();
-        let connect_timeout = self.config.connect_timeout_duration();
-        let connect_deadline = if self.config.connect_timeout == 0 {
-            deadline
-        } else {
-            deadline.min(Instant::now() + connect_timeout)
-        };
+        let connect_deadline = self.connection_deadline(deadline);
         let (host, _) = connection::split_address(&key)?;
         let selected = super::config::ClientConfig::proxy_for(&self.socks_proxy_routes, &host)?;
         let generation = self

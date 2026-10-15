@@ -1874,18 +1874,6 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
-    pub(super) fn connect_timeout_duration(&self) -> std::time::Duration {
-        if self.connect_timeout < 0 {
-            std::time::Duration::from_secs(30)
-        } else {
-            std::time::Duration::from_millis(self.connect_timeout as u64)
-        }
-    }
-
-    pub(super) fn scan_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(self.connect_timeout.max(100) as u64)
-    }
-
     pub(super) fn max_idle_time_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.max_idle_time.max(0) as u64)
     }
@@ -2006,6 +1994,18 @@ impl ClientConfig {
     }
 }
 
+pub(super) fn connect_timeout_duration(timeout_millis: i32) -> std::time::Duration {
+    if timeout_millis < 0 {
+        std::time::Duration::from_secs(30)
+    } else {
+        std::time::Duration::from_millis(timeout_millis as u64)
+    }
+}
+
+pub(super) fn scan_interval(timeout_millis: i32) -> std::time::Duration {
+    std::time::Duration::from_millis(timeout_millis.max(100) as u64)
+}
+
 /// Fastjson 2.0.63 skips these UTF-16 units before its root value. The
 /// compatibility fixture probes every BMP code unit at the document boundary.
 fn strip_fastjson_document_prefix(input: &str) -> &str {
@@ -2063,7 +2063,9 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientConfig, ParsedProxyRoute, SocksProxyConfig};
+    use super::{
+        ClientConfig, ParsedProxyRoute, SocksProxyConfig, connect_timeout_duration, scan_interval,
+    };
 
     #[test]
     fn frame_max_length_property_uses_java_integer_and_positive_limit_rules() {
@@ -2079,10 +2081,13 @@ mod tests {
     fn signed_time_settings_match_java_normalization() {
         let defaults = ClientConfig::default();
         assert_eq!(
-            defaults.connect_timeout_duration(),
+            connect_timeout_duration(defaults.connect_timeout),
             std::time::Duration::from_secs(3)
         );
-        assert_eq!(defaults.scan_interval(), std::time::Duration::from_secs(3));
+        assert_eq!(
+            scan_interval(defaults.connect_timeout),
+            std::time::Duration::from_secs(3)
+        );
 
         let negative = ClientConfig {
             connect_timeout: -1,
@@ -2092,11 +2097,11 @@ mod tests {
         };
         assert!(negative.validate().is_ok());
         assert_eq!(
-            negative.connect_timeout_duration(),
+            connect_timeout_duration(negative.connect_timeout),
             std::time::Duration::from_secs(30)
         );
         assert_eq!(
-            negative.scan_interval(),
+            scan_interval(negative.connect_timeout),
             std::time::Duration::from_millis(100)
         );
         assert_eq!(negative.max_idle_time_duration(), std::time::Duration::ZERO);

@@ -13,6 +13,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelOption;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
@@ -59,6 +61,7 @@ public final class RemotingLiveConfigProbe {
         verifyCallbackExecutorSetting();
         verifyScanAvailableNameServerSetting();
         verifyClientWorkerThreadsSetting();
+        verifyConnectTimeoutSetting();
         System.out.println("Remoting live config mutation verified");
     }
 
@@ -126,6 +129,25 @@ public final class RemotingLiveConfigProbe {
             }
             if (count != 3) {
                 throw new IllegalStateException("start did not use the live worker count: " + count);
+            }
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static void verifyConnectTimeoutSetting() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setConnectTimeoutMillis(1);
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try {
+            config.setConnectTimeoutMillis(2345);
+            client.start();
+            Field field = NettyRemotingClient.class.getDeclaredField("bootstrap");
+            field.setAccessible(true);
+            Bootstrap bootstrap = (Bootstrap) field.get(client);
+            Object configured = bootstrap.config().options().get(ChannelOption.CONNECT_TIMEOUT_MILLIS);
+            if (!Integer.valueOf(2345).equals(configured)) {
+                throw new IllegalStateException("start did not use the live connect timeout: " + configured);
             }
         } finally {
             client.shutdown();

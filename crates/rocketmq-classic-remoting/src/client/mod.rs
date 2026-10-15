@@ -141,6 +141,8 @@ struct ClientInner {
     security: TransportMode,
     max_frame_size_override: Option<usize>,
     config: ClientConfig,
+    connect_timeout_millis: AtomicI32,
+    active_connect_timeout_millis: AtomicI32,
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
@@ -165,6 +167,26 @@ struct ClientInner {
 }
 
 impl ClientInner {
+    fn active_connect_timeout_millis(&self) -> i32 {
+        self.active_connect_timeout_millis.load(Ordering::Acquire)
+    }
+
+    fn connect_timeout_duration(&self) -> std::time::Duration {
+        config::connect_timeout_duration(self.active_connect_timeout_millis())
+    }
+
+    fn scan_interval(&self) -> std::time::Duration {
+        config::scan_interval(self.active_connect_timeout_millis())
+    }
+
+    fn connection_deadline(&self, deadline: Instant) -> Instant {
+        if self.active_connect_timeout_millis() == 0 {
+            deadline
+        } else {
+            deadline.min(Instant::now() + self.connect_timeout_duration())
+        }
+    }
+
     fn frame_max_length(&self) -> Result<usize, TransportError> {
         match self.max_frame_size_override {
             Some(max_frame_size) => Ok(max_frame_size),
@@ -660,6 +682,8 @@ impl RemotingClient {
             tasks: Mutex::new(Vec::new()),
             security: config.transport.clone(),
             max_frame_size_override: None,
+            connect_timeout_millis: AtomicI32::new(config.connect_timeout),
+            active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
@@ -747,6 +771,18 @@ impl RemotingClient {
             .store(worker_threads, Ordering::Release);
     }
 
+    /// Returns the configured Java `connectTimeoutMillis` value.
+    pub fn get_connect_timeout_millis(&self) -> i32 {
+        self.inner.connect_timeout_millis.load(Ordering::Acquire)
+    }
+
+    /// Updates the connect timeout used when `start()` configures the client.
+    pub fn set_connect_timeout_millis(&self, timeout_millis: i32) {
+        self.inner
+            .connect_timeout_millis
+            .store(timeout_millis, Ordering::Release);
+    }
+
     /// Returns whether NameServer reachability scans are enabled in the config view.
     pub fn get_scan_available_nameserver(&self) -> bool {
         self.inner.scan_available_nameserver.load(Ordering::Acquire)
@@ -793,6 +829,8 @@ impl RemotingClient {
             runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             security: security.clone(),
             max_frame_size_override: Some(max_frame_size),
+            connect_timeout_millis: AtomicI32::new(3000),
+            active_connect_timeout_millis: AtomicI32::new(3000),
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
@@ -856,6 +894,10 @@ impl RemotingClient {
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
             TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
         })?;
+        self.inner.active_connect_timeout_millis.store(
+            self.inner.connect_timeout_millis.load(Ordering::Acquire),
+            Ordering::Release,
+        );
         *self.inner.runtime.lock().unwrap() = Some(runtime);
         let startup_state = startup.take().ok_or_else(|| {
             TransportError::InvalidConfiguration("client startup state is unavailable".into())
@@ -2324,7 +2366,7 @@ async fn scan_available_name_servers(
 ) {
     let interval_duration = inner
         .upgrade()
-        .map(|inner| inner.config.scan_interval())
+        .map(|inner| inner.scan_interval())
         .unwrap_or_else(|| std::time::Duration::from_secs(3));
     let mut interval = time::interval(interval_duration);
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -2352,7 +2394,7 @@ async fn scan_available_name_servers(
                     let scan_workers = scan_workers.clone();
                     scans.spawn(async move {
                         let _permit = scan_workers.acquire_owned().await.ok()?;
-                        let probe_timeout = inner.config.connect_timeout_duration();
+                        let probe_timeout = inner.connect_timeout_duration();
                         let deadline = Instant::now() + probe_timeout;
                         let connection = inner.connection(&address, deadline).await;
                         Some((address, connection))
@@ -3448,6 +3490,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn connect_timeout_setting_is_snapshotted_when_starting() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        assert_eq!(client.get_connect_timeout_millis(), 3000);
+        client.set_connect_timeout_millis(25);
+        assert_eq!(client.inner.active_connect_timeout_millis(), 3000);
+
+        client.start().unwrap();
+        assert_eq!(client.inner.active_connect_timeout_millis(), 25);
+        let requested_deadline = Instant::now() + std::time::Duration::from_secs(1);
+        let connect_deadline = client.inner.connection_deadline(requested_deadline);
+        assert!(connect_deadline <= requested_deadline);
+        assert!(
+            connect_deadline.saturating_duration_since(Instant::now())
+                <= std::time::Duration::from_millis(25)
+        );
+
+        client.set_connect_timeout_millis(99);
+        assert_eq!(client.get_connect_timeout_millis(), 99);
+        assert_eq!(client.inner.active_connect_timeout_millis(), 25);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn worker_group_toggle_controls_handler_dispatch_path() {
         let config = ClientConfig {
             disable_netty_worker_group: true,
@@ -3490,6 +3559,8 @@ mod tests {
             disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
             client_worker_threads: AtomicUsize::new(config.worker_threads),
             scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
+            connect_timeout_millis: AtomicI32::new(config.connect_timeout),
+            active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),
