@@ -136,3 +136,43 @@ Status
   final-revision workspace P18-V02, current-revision GitHub Ubuntu/P18-V04,
   Phase 19 local Docker/Broker automation, and release version/registry checks
   remain open. Owner-run deployment/live Broker checks remain manual.
+
+Session: 2026-10-15 15:00 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Scope: P18-V01 Remoting `useTLS` setting timing
+
+Source review
+- Java builds its SSL context when the client is constructed, then reads
+  mutable `useTLS` for each new channel. If no SSL context was captured,
+  enabling the flag later cannot add TLS to the channel.
+- Rust previously used `TransportMode` as both context and channel decision,
+  so it could not turn TLS off for a later channel after construction.
+
+Implementation
+- Code commit: 04c219dc fix(remoting): read TLS toggle for new channels.
+- Rust now exposes a live `useTLS` adapter, captures the connector at
+  construction, and samples the toggle per new connection before handshake.
+  Existing connections retain their established transport mode.
+- Added Rust loopback coverage for post-start disable/enable and for enabling
+  the toggle when no TLS connector was captured. Extended Java
+  `RemotingLiveConfigProbe` to mutate `useTLS` after client start and verify a
+  new channel omits `SslHandler`.
+- Updated the Remoting inventory and release checklist. No plan files were
+  edited.
+
+Verification
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: passed;
+  91 unit, 6 codec, 1 fuzz regression, 5 security, 97 transport, 5 doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`: passed.
+- `cargo fmt --all -- --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed; 37 scenarios,
+  Remoting live-config probe, Java/Rust cross-decodes and fixture checks.
+- `git diff --check`: passed before code commit.
+
+Status
+- The Remoting `useTLS` setting-timing row is closed on 04c219dc.
+- Broad P18-V01, final-revision full-workspace P18-V02, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and release
+  version/registry checks remain open. Owner-run deployment/live Broker checks
+  remain Phase 19 manual validation.

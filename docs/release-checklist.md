@@ -1095,3 +1095,21 @@ Before any publication:
   The frame-limit child test was updated to call `start()` before its internal
   connection helper; the initial failure was test setup, and the targeted
   regression passed after cleanup was added.
+
+- P18-V01 Remoting `useTLS` setting timing (`04c219dc`, 2026-10-15): the TLS
+  context remains captured at construction, while the live `useTLS` adapter is
+  sampled for each new connection before handshake. Existing channels retain
+  their mode; enabling TLS without a captured context leaves new connections
+  plain. Rust loopback tests cover post-start mutation and absent-context
+  behavior; Maven `RemotingLiveConfigProbe` verifies Java's post-start disable
+  on a newly created channel.
+- PASS on `04c219dc`: Remoting all-feature tests (91 unit, 6 codec, 1 fuzz
+  regression, 5 security, 97 transport, 5 doctests), strict Remoting
+  all-target/all-feature Clippy, `cargo fmt --all -- --check`, Maven `verify`
+  (37 scenarios, live-config probe and Java/Rust cross-decodes), and
+  `git diff --check`.
+- This closes the Remoting `useTLS` setting-timing row only. Broad P18-V01,
+  final-revision full-workspace P18-V02, current-revision GitHub Ubuntu/P18-V04,
+  Phase 19 local Docker/Broker automation, and release version/registry checks
+  remain open. Owner-run deployment/live Broker checks remain Phase 19 manual
+  validation.
