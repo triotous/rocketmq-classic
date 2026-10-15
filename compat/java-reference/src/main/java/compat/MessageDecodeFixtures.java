@@ -686,6 +686,9 @@ public final class MessageDecodeFixtures {
         expected.put("msgId", decoded.getMsgId());
         expected.put("properties", decoded.getProperties() == null
             ? Map.of() : new TreeMap<>(decoded.getProperties()));
+        Map<String, String> propertiesDecodedDirectly = MessageDecoder.decodeProperties(ByteBuffer.wrap(encoded));
+        expected.put("recordProperties", propertiesDecodedDirectly == null
+            ? null : new TreeMap<>(propertiesDecodedDirectly));
 
         MessageExt propertiesStringDecoded = MessageDecoder.decode(
             ByteBuffer.wrap(encoded), true, true, false, true, true);

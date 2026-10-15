@@ -4,7 +4,7 @@ use rocketmq_classic_common::{
         DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
         MessageHostAddressBytesError, MessageId, MessageIdError, TopicFilterType,
         append_crc32_property, create_message_id, create_message_id_from_host_bytes, decode_many,
-        decode_message_id, decode_one,
+        decode_message_id, decode_one, decode_record_properties,
     },
     sysflag::message,
 };
@@ -62,6 +62,12 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         let expected = &case["decoded"];
         assert_eq!(consumed, bytes.len(), "{}", case["name"]);
+        assert_eq!(
+            serde_json::to_value(decode_record_properties(&bytes).unwrap()).unwrap(),
+            expected["recordProperties"],
+            "{}",
+            case["name"]
+        );
         assert_eq!(decoded.message().topic(), expected["topic"]);
         assert_eq!(
             decoded.message().body(),

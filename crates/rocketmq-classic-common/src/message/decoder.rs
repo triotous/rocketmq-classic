@@ -3,7 +3,7 @@ use std::io;
 use thiserror::Error;
 
 use super::message_id::encode_message_id;
-use super::{MessageExt, MessageHostAddress, decode_properties};
+use super::{MessageExt, MessageHostAddress, MessageProperties, decode_properties};
 use crate::{
     compression::{DEFAULT_MAX_DECOMPRESSED_BODY_BYTES, decompress_limited},
     sysflag::message,
@@ -113,6 +113,22 @@ pub fn decode_one(
     options: DecodeOptions,
 ) -> Result<(MessageExt, usize), DecodeError> {
     decode_one_with_limits(record, options, DecodeLimits::default())
+}
+
+/// Decode only the property map from a Broker message record, matching Java's
+/// `MessageDecoder.decodeProperties(ByteBuffer)` return of null for no entries.
+pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessageProperties>, DecodeError> {
+    let (message, _) = decode_one(
+        record,
+        DecodeOptions {
+            read_body: false,
+            decompress_body: false,
+            set_properties_string: false,
+            verify_crc: false,
+        },
+    )?;
+    let properties = message.message().properties();
+    Ok((!properties.is_empty()).then(|| properties.clone()))
 }
 
 fn decode_one_with_limits(

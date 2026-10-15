@@ -12,3 +12,10 @@
 - Updated the Phase 8 method map and current message fixture SHA-256: `70fa17767b0ec98b9e6b6885572e7dfc61ff43609dfb377e7cfca34c6e9348f5`.
 - PASS: Common all-feature tests (21 unit, 9 message decode, 1 topic validator, 11 doctests); strict Common Clippy; pinned offline Maven `verify` (37 scenarios, fixture drift and cross-decodes); formatting, diff and checksum checks.
 - This closes the CRC helper slice only; P18-V01 remains open, and current-revision full P18-V02 gates, Ubuntu evidence and Phase 19 local Broker/Docker scenarios remain outstanding.
+
+## Record property extraction — 2026-10-15
+
+- Pinned Java exposes `MessageDecoder.decodeProperties(ByteBuffer)` separately from full record decode. Added public `decode_record_properties`, which reads the record without materializing the body and returns `None` for the Java null result when no property entries exist.
+- Extended each of the ten Java-generated message fixtures with a direct call to `decodeProperties`; the Rust message decode regression compares the standalone result for every V1/V2, host and compression case. Fixture SHA-256: `b5f5f89b6e0df7c2e706fd121a91860ea3a4a8f0e923893c9d6c8170704b7744`.
+- PASS: Common all-feature tests (21 unit, 9 message decode, 1 topic validator, 11 doctests); strict Common Clippy; pinned offline Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); format, diff and checksum checks.
+- This closes the record-property extraction slice only. P18-V01 still has additional public decoder/encoder methods and the wider bidirectional API audit open; final-revision P18-V02, GitHub Ubuntu evidence and Phase 19 Docker/Broker scenarios also remain outstanding.
