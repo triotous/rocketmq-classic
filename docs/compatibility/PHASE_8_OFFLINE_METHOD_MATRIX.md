@@ -84,7 +84,7 @@ All integers use Java `ByteBuffer` big-endian order. After the 4-byte total-size
 
 | ID | Status | Coverage |
 | --- | --- | --- |
-| P8-V01 | `UNIT_VERIFIED` | Ten Java records: both magic versions; all four born/store IPv4/IPv6 combinations; all three compressors; valid CRC; all body-read/decompression combinations; `propertiesString`; generic/client IDs; concatenated records; direct `MessageVersion` enum API and public message-constant cases. |
+| P8-V01 | `UNIT_VERIFIED` | Eleven Java records: both magic versions; all four born/store IPv4/IPv6 combinations; all three compressors; valid CRC; all body-read/decompression combinations; `propertiesString`; generic/client IDs; concatenated records; direct `MessageVersion` enum API and public message-constant cases. The fixture invokes every `decode` overload and both `clientDecode` variants, including empty-body and nullable properties/body states. |
 | P8-V02 | `UNIT_VERIFIED` | Every truncated prefix; invalid magic/store/body/topic/property lengths; unknown compressor; record/decompressed/aggregate caps; empty compressed body; no panic or out-of-bounds read. |
 | P8-V03 | `UNIT_VERIFIED` | FOUND and all three non-FOUND statuses; tag match/miss/missing tag/empty filter; suggested broker and offsets; inner batch success/fallback; hooks; enrichment and raw-byte release; class-filter setup/routing. |
 

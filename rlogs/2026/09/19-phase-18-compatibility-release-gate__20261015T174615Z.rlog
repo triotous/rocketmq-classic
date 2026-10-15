@@ -1,0 +1,10 @@
+2026-10-15 17:46 UTC — corrected the Phase 8 decoder evidence summary.
+
+The P8-V01 local verification row now records eleven pinned Java message
+records and calls out the direct invocation of every `decode` overload and
+both `clientDecode` variants, including nullable body/properties states. This
+aligns the summary with the fixture and the current release checklist.
+
+Validation: `git diff --check` passed. This is a documentation-only correction;
+no test was needed. No plan, push, tag, publication, deployment, or live Broker
+action occurred.
