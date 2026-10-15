@@ -236,6 +236,15 @@ public final class MessageDecodeFixtures {
         } finally {
             if (!nullWasReserved) MessageConst.STRING_HASH_SET.remove(null);
         }
+        boolean emptyWasReserved = MessageConst.STRING_HASH_SET.contains("");
+        MessageConst.STRING_HASH_SET.add("");
+        try {
+            expected.put("mutatedEmptyReservedPropertyPresent", MessageConst.STRING_HASH_SET.contains(""));
+            expected.put("emptyReservedPropertyExceptionClass",
+                runtimeExceptionClass(() -> new Message().putUserProperty("", "value")));
+        } finally {
+            if (!emptyWasReserved) MessageConst.STRING_HASH_SET.remove("");
+        }
         boolean keysWasReserved = MessageConst.STRING_HASH_SET.remove(MessageConst.PROPERTY_KEYS);
         try {
             expected.put("removedReservedPropertyAccepted",

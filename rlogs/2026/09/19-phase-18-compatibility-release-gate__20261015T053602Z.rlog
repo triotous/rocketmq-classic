@@ -63,3 +63,8 @@
   `80f920015068610174b266111497c018abf9ca4c8b183d6233471a81772f0723`.
   Rust behavior is not yet updated; that parity change and differential remain
   open.
+- P18-V01 oracle refinement: the same mutable Java set also accepts an empty
+  name. With `""` present, `Message.putUserProperty("", "value")` throws the
+  base `java.lang.RuntimeException` before blank-name validation. Regenerated
+  and verified the Java message fixture; current SHA-256:
+  `cd48ccada3c107facb4ec332316ef29e569cca7c50cd3b0711152b7234cd6b98`.
