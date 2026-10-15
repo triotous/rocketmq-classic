@@ -1079,3 +1079,19 @@ Before any publication:
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   release version/registry dependency checks. Owner-run deployment/live Broker
   checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting Bootstrap-option timing (`7b00a52f`, 2026-10-15): socket
+  send/receive buffers now use live adapters; direct options are captured by
+  `start()`, while proxy values are captured and cached per CIDR on first use.
+  Direct watermarks and the Rust frame-pool switch are also captured at start.
+  Proxy connections retain default watermarks and disable the frame pool,
+  matching options omitted by Java's proxy Bootstrap. Rust unit coverage and
+  the Java `RemotingLiveConfigProbe` verify direct, cached-proxy, and new-CIDR
+  behavior.
+- PASS on `7b00a52f`: Remoting all-feature tests (91 unit, 6 codec, 1 fuzz
+  regression, 5 security, 95 transport, 5 doctests), strict Remoting
+  all-target/all-feature Clippy, formatting, Maven `verify` (37 scenarios,
+  live-config probe and Java/Rust cross-decodes), and `git diff --check`.
+  The frame-limit child test was updated to call `start()` before its internal
+  connection helper; the initial failure was test setup, and the targeted
+  regression passed after cleanup was added.

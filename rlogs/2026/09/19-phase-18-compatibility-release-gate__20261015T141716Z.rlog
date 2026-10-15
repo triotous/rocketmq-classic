@@ -86,3 +86,53 @@ Status
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   release version/registry checks remain open. Owner-run deployment/live Broker
   checks remain Phase 19 manual validation.
+
+Session: 2026-10-15 14:52 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Scope: P18-V01 Remoting Bootstrap socket-buffer, watermark, and allocator timing
+
+Source review
+- Pinned Java direct Bootstrap reads socket buffers, custom write watermarks,
+  and allocator choice while `start()` constructs the Bootstrap.
+- `createBootstrap()` for a matched proxy CIDR reads socket buffers when that
+  CIDR is first used and caches the Bootstrap; it does not set custom write
+  watermarks or the allocator option. Rust previously used construction-time
+  snapshots for all routes.
+
+Implementation
+- Code commit: 7b00a52f fix(remoting): sample bootstrap settings at source timing.
+- Added live Rust adapters for socket send/receive buffers, write watermarks,
+  and frame-pool enablement. Direct settings are captured at `start()`; proxy
+  socket buffers are captured and cached per CIDR. Proxy channels use default
+  watermarks and do not use the optional frame pool.
+- Added Rust regressions for direct start snapshots, per-CIDR proxy caching,
+  direct watermark validation, and retryable startup after invalid settings.
+  Extended Java `RemotingLiveConfigProbe` to inspect direct and proxy Bootstrap
+  option maps, including reuse and later-CIDR reads.
+- A first all-feature Rust run failed because an existing frame-limit child
+  test invoked the internal connection helper without calling `start()`. The
+  helper now follows the public lifecycle and shuts down its client. The full
+  Remoting suite then passed; the targeted frame-limit test passed again after
+  the cleanup adjustment.
+- Updated the five setting rows and appended release evidence.
+  No plan files were edited.
+
+Verification
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: passed;
+  91 unit, 6 codec, 1 fuzz regression, 5 security, 95 transport, 5 doctests.
+- Targeted `java_frame_max_length_property_is_applied_to_new_connections`:
+  passed after the test lifecycle correction.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`: passed.
+- `cargo fmt --all -- --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed; 37 scenarios,
+  Remoting live-config probe, Java/Rust cross-decodes and fixture checks.
+- `git diff --check`: passed before code commit.
+
+Status
+- The direct/proxy source-timing rows for socket buffers, write watermarks,
+  and allocator selection are closed on 7b00a52f.
+- Other Remoting settings, full bidirectional P18-V01 reconciliation,
+  final-revision workspace P18-V02, current-revision GitHub Ubuntu/P18-V04,
+  Phase 19 local Docker/Broker automation, and release version/registry checks
+  remain open. Owner-run deployment/live Broker checks remain manual.
