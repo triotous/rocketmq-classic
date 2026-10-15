@@ -1086,14 +1086,9 @@ impl PushConsumer {
     pub fn try_reset_pop_retry_topic(&self, messages: &mut [MessageExt], consumer_group: &str) {
         let prefix = format!("%RETRY%{consumer_group}_");
         for message in messages {
-            if let Some(topic) = message
-                .message()
-                .topic()
-                .strip_prefix(&prefix)
-                .map(str::to_owned)
-            {
+            if let Some(topic) = message.topic().strip_prefix(&prefix).map(str::to_owned) {
                 if !topic.is_empty() {
-                    message.message_mut().set_topic(topic);
+                    message.set_topic(topic);
                 }
             }
         }
@@ -1312,10 +1307,8 @@ impl PushConsumer {
         if let Some(messages) = result.get_message_list() {
             for message in messages.snapshot().into_iter().flatten() {
                 message.with_mut(|message| {
-                    if let Some(topic) =
-                        client_config.without_namespace(Some(message.message().topic()))?
-                    {
-                        message.message_mut().set_topic(topic);
+                    if let Some(topic) = client_config.without_namespace(Some(message.topic()))? {
+                        message.set_topic(topic);
                     }
                     Ok::<(), PushConsumerError>(())
                 })?;
@@ -1694,7 +1687,7 @@ impl PushConsumer {
         let started = std::time::Instant::now();
         let orderly = matches!(&context.consume_service, ConsumeService::Orderly(_));
         let queue = MessageQueue::new_nullable(
-            Some(message.message().topic().to_owned()),
+            Some(message.topic().to_owned()),
             broker_name.clone(),
             message.queue_id(),
         );
@@ -1706,7 +1699,6 @@ impl PushConsumer {
         if let Some(message) = messages.first_mut() {
             let offset_message_id = message.message_id().map(str::to_owned);
             let message_id = message
-                .message()
                 .properties()
                 .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
                 .cloned()
@@ -1869,7 +1861,7 @@ impl PushConsumer {
             None => message.broker_name().map(str::to_owned),
         };
         let queue = MessageQueue::new_nullable(
-            Some(message.message().topic().to_owned()),
+            Some(message.topic().to_owned()),
             effective_broker,
             message.queue_id(),
         );
@@ -2350,12 +2342,12 @@ impl PushConsumer {
             .map_err(|error| self.pull_retry_error(error.to_string()))?;
         if let Some(messages) = processed.messages.as_mut() {
             for message in messages {
-                let message_topic = message.message().topic().to_owned();
+                let message_topic = message.topic().to_owned();
                 let topic = client_config
                     .without_namespace(Some(&message_topic))
                     .map_err(|error| self.pull_retry_error(error.to_string()))?;
                 if let Some(topic) = topic {
-                    message.message_mut().set_topic(topic);
+                    message.set_topic(topic);
                 }
             }
         }
@@ -3002,13 +2994,13 @@ impl PushConsumer {
         let mut config = self.config.client_config().clone();
         let retry_topic = format!("%RETRY%{consumer_group}");
         for message in messages {
-            if retry_topic == message.message().topic() {
-                if let Some(origin_topic) = message.message().get_property(PROPERTY_RETRY_TOPIC) {
-                    message.message_mut().set_topic(origin_topic);
+            if retry_topic == message.topic() {
+                if let Some(origin_topic) = message.get_property(PROPERTY_RETRY_TOPIC) {
+                    message.set_topic(origin_topic);
                 }
             }
-            if let Ok(Some(topic)) = config.without_namespace(Some(message.message().topic())) {
-                message.message_mut().set_topic(topic);
+            if let Ok(Some(topic)) = config.without_namespace(Some(message.topic())) {
+                message.set_topic(topic);
             }
         }
     }
@@ -3237,7 +3229,7 @@ impl PushConsumer {
             .map(str::to_owned)
             .or_else(|| self.config.consumer_group());
         let origin_topic = client_config
-            .with_namespace(Some(message.message().topic()))
+            .with_namespace(Some(message.topic()))
             .ok()
             .flatten();
         let Some(consumer_group) = consumer_group else {
@@ -3270,7 +3262,7 @@ impl PushConsumer {
                 runtime,
                 message,
                 retry_topic,
-                message.message().topic().to_owned(),
+                message.topic().to_owned(),
                 sequence,
                 max_reconsume_times,
             );
@@ -3418,15 +3410,14 @@ impl PushConsumer {
         max_reconsume_times: i32,
     ) -> Message {
         let reconsume_times = original.reconsume_times().saturating_add(1);
-        let mut retry = Message::new(retry_topic, original.message().body().to_vec());
-        retry.set_flag(original.message().flag());
-        for (key, value) in original.message().nullable_property_entries() {
+        let mut retry = Message::new(retry_topic, original.body().to_vec());
+        retry.set_flag(original.flag());
+        for (key, value) in original.nullable_property_entries() {
             if key.as_deref() != Some(PROPERTY_TRANSACTION_PREPARED) {
                 let _ = retry.set_property_nullable(key, value);
             }
         }
         let origin_message_id = original
-            .message()
             .get_property(PROPERTY_ORIGIN_MESSAGE_ID)
             .filter(|value| !value.trim().is_empty())
             .or_else(|| original.message_id().map(str::to_owned));
@@ -4274,7 +4265,6 @@ impl PushConsumer {
             let tag_matches = subscription.is_class_filter_mode()
                 || tags.is_empty()
                 || message
-                    .message()
                     .tags()
                     .is_some_and(|tag| tags.contains(&Some(tag.to_owned())));
             if !tag_matches {
@@ -4623,13 +4613,13 @@ impl PushConsumer {
         let mut config = self.config.client_config().clone();
         let retry_topic = format!("%RETRY%{consumer_group}");
         for message in messages {
-            if message.message().topic() == retry_topic {
-                if let Some(origin_topic) = message.message().get_property(PROPERTY_RETRY_TOPIC) {
-                    message.message_mut().set_topic(origin_topic);
+            if message.topic() == retry_topic {
+                if let Some(origin_topic) = message.get_property(PROPERTY_RETRY_TOPIC) {
+                    message.set_topic(origin_topic);
                 }
             }
-            if let Ok(Some(topic)) = config.without_namespace(Some(message.message().topic())) {
-                message.message_mut().set_topic(topic);
+            if let Ok(Some(topic)) = config.without_namespace(Some(message.topic())) {
+                message.set_topic(topic);
             }
         }
     }
@@ -4642,7 +4632,6 @@ impl PushConsumer {
         consumer_group: &str,
     ) -> Result<AckStatus, PushConsumerError> {
         let raw = message
-            .message()
             .get_property(PROPERTY_POP_CK)
             .ok_or(PushConsumerError::MissingPopReceipt)?;
         let receipt = PopReceipt::parse(raw)?;
@@ -4651,7 +4640,7 @@ impl PushConsumer {
             .await?
             .ok_or_else(|| PushConsumerError::PopBrokerNotFound(receipt.broker_name().to_owned()))?
             .1;
-        let header = receipt.ack_header(message.message().topic(), consumer_group);
+        let header = receipt.ack_header(message.topic(), consumer_group);
         Ok(runtime
             .api()
             .ack_message(
@@ -4670,7 +4659,7 @@ impl PushConsumer {
         consumer_group: &str,
         invisible_time: i64,
     ) {
-        let Some(raw) = message.message().properties().get(PROPERTY_POP_CK).cloned() else {
+        let Some(raw) = message.properties().get(PROPERTY_POP_CK).cloned() else {
             return;
         };
         let Ok(receipt) = PopReceipt::parse(raw) else {
@@ -4682,11 +4671,8 @@ impl PushConsumer {
         else {
             return;
         };
-        let header = receipt.change_invisible_header(
-            message.message().topic(),
-            consumer_group,
-            invisible_time,
-        );
+        let header =
+            receipt.change_invisible_header(message.topic(), consumer_group, invisible_time);
         match runtime
             .api()
             .change_invisible_time(
@@ -4699,9 +4685,7 @@ impl PushConsumer {
         {
             Ok(result) if result.status == AckStatus::Ok => {
                 if let Some(extra_info) = result.extra_info {
-                    let _ = message
-                        .message_mut()
-                        .set_system_property(PROPERTY_POP_CK, extra_info);
+                    let _ = message.set_system_property(PROPERTY_POP_CK, extra_info);
                 }
             }
             Ok(_) => {}
@@ -6220,7 +6204,7 @@ fn pop_delay_seconds() -> &'static [i32] {
 fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
     let Some(raw_receipt) = messages
         .first()
-        .and_then(|message| message.message().get_property(PROPERTY_POP_CK))
+        .and_then(|message| message.get_property(PROPERTY_POP_CK))
     else {
         return true;
     };
@@ -6237,7 +6221,7 @@ fn pop_batch_is_expired(messages: &[MessageExt], now_millis: i64) -> bool {
 fn pop_invisible_timeout(messages: &[MessageExt]) -> Duration {
     messages
         .first()
-        .and_then(|message| message.message().get_property(PROPERTY_POP_CK))
+        .and_then(|message| message.get_property(PROPERTY_POP_CK))
         .and_then(|raw| PopReceipt::parse(raw).ok())
         .map(|receipt| Duration::from_millis(receipt.invisible_time().max(0) as u64))
         .unwrap_or(Duration::MAX)
@@ -6862,9 +6846,9 @@ mod tests {
             consumer.filter_pop_messages(&SubscriptionData::default(), vec![first, second]);
         assert_eq!(*events.lock().unwrap(), ["false:2"]);
         assert_eq!(accepted.len(), 1);
-        assert_eq!(accepted[0].message().body().as_ref(), b"one");
+        assert_eq!(accepted[0].body().as_ref(), b"one");
         assert_eq!(discarded.len(), 1);
-        assert_eq!(discarded[0].message().body().as_ref(), b"two");
+        assert_eq!(discarded[0].body().as_ref(), b"two");
 
         let queues = BTreeSet::from([
             MessageQueue::new("tenant%orders", "broker-a", 1),
@@ -6897,7 +6881,7 @@ mod tests {
         consumer.try_reset_pop_retry_topic(&mut pop_retry_messages, group);
         let pop_retry_topics = pop_retry_messages
             .iter()
-            .map(|message| message.message().topic())
+            .map(|message| message.topic())
             .collect::<Vec<_>>();
         assert_eq!(
             fixture["resetPopRetryTopics"],
@@ -6911,7 +6895,6 @@ mod tests {
                     b"".to_vec(),
                 ));
                 message
-                    .message_mut()
                     .set_system_property(PROPERTY_RETRY_TOPIC, "tenant%orders")
                     .unwrap();
                 message
@@ -6922,7 +6905,7 @@ mod tests {
         consumer.reset_retry_and_namespace(&mut reset_messages, group);
         let reset_topics = reset_messages
             .iter()
-            .map(|message| message.message().topic())
+            .map(|message| message.topic())
             .collect::<Vec<_>>();
         assert_eq!(
             fixture["resetRetryAndNamespaceTopics"],
@@ -7511,7 +7494,6 @@ mod tests {
         let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
         if let Some(receipt) = receipt {
             message
-                .message_mut()
                 .set_system_property(PROPERTY_POP_CK, receipt)
                 .unwrap();
         }
@@ -7941,7 +7923,7 @@ mod tests {
             )
             .await;
         assert_eq!(
-            changed_message.message().properties().get(PROPERTY_POP_CK),
+            changed_message.properties().get(PROPERTY_POP_CK),
             Some(&replacement_receipt)
         );
         assert_eq!(
@@ -8211,27 +8193,21 @@ mod tests {
         message.set_message_id(Some(format!("broker-msg-{offset}")));
         message.set_reconsume_times(2);
         message
-            .message_mut()
             .set_system_property(PROPERTY_ORIGIN_MESSAGE_ID, "origin-msg")
             .unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_RECONSUME_TIME, "2")
             .unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_MAX_RECONSUME_TIMES, "7")
             .unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "source-uniq")
             .unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_TRANSACTION_PREPARED, "true")
             .unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_KEYS, "order-1")
             .unwrap();
         message
@@ -8242,7 +8218,6 @@ mod tests {
         message.set_queue_offset(offset);
         if let Some(origin_topic) = origin_topic {
             message
-                .message_mut()
                 .set_system_property(PROPERTY_RETRY_TOPIC, origin_topic)
                 .unwrap();
         }
@@ -9661,7 +9636,7 @@ mod tests {
                     let calls = calls.clone();
                     async move {
                         assert_eq!(messages.len(), 1);
-                        assert_eq!(messages[0].message().topic(), "orders");
+                        assert_eq!(messages[0].topic(), "orders");
                         assert_eq!(context.message_queue().topic(), Some("orders"));
                         assert_eq!(context.message_queue().broker_name(), Some("broker-a"));
                         calls.fetch_add(1, Ordering::AcqRel);
@@ -9867,7 +9842,7 @@ mod tests {
                     async move {
                         *received_topics.lock().unwrap() = messages
                             .iter()
-                            .map(|message| message.message().topic().to_owned())
+                            .map(|message| message.topic().to_owned())
                             .collect();
                         (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
                     }
@@ -9929,7 +9904,7 @@ mod tests {
                     async move {
                         *received_topics.lock().unwrap() = messages
                             .iter()
-                            .map(|message| message.message().topic().to_owned())
+                            .map(|message| message.topic().to_owned())
                             .collect();
                         (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
                     }
@@ -9998,7 +9973,7 @@ mod tests {
                         received_topics.lock().unwrap().push(
                             messages
                                 .iter()
-                                .map(|message| message.message().topic().to_owned())
+                                .map(|message| message.topic().to_owned())
                                 .collect::<Vec<_>>(),
                         );
                         (Some(ConsumeOrderlyStatus::Success), context)
@@ -11272,9 +11247,7 @@ mod tests {
         };
         let queue = MessageQueue::new("tenant%orders", "broker-a", 1);
         let mut retry_input = retry_test_message(90);
-        retry_input
-            .message_mut()
-            .set_property_nullable(None, Some("value".to_owned()));
+        retry_input.set_property_nullable(None, Some("value".to_owned()));
         let request = consume_request(queue.clone(), 195, vec![retry_input]);
         {
             let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
@@ -12512,22 +12485,19 @@ mod tests {
 
         let make_messages = || {
             let mut retry = retry_test_message(1);
+            retry.set_topic(format!("%RETRY%{namespaced_group}"));
             retry
-                .message_mut()
-                .set_topic(format!("%RETRY%{namespaced_group}"));
-            retry
-                .message_mut()
                 .set_system_property(PROPERTY_RETRY_TOPIC, "tenant%orders")
                 .unwrap();
 
             let mut dlq = retry_test_message(2);
-            dlq.message_mut().set_topic(format!(
+            dlq.set_topic(format!(
                 "%DLQ%tenant%{}",
                 consumer.config().consumer_group().unwrap()
             ));
 
             let mut normal = retry_test_message(3);
-            normal.message_mut().set_topic("tenant%orders");
+            normal.set_topic("tenant%orders");
             vec![retry, dlq, normal]
         };
 
@@ -12536,7 +12506,7 @@ mod tests {
         assert_eq!(
             orderly_messages
                 .iter()
-                .map(|message| message.message().topic())
+                .map(|message| message.topic())
                 .collect::<Vec<_>>(),
             ["orders", "%DLQ%namespace-consumer", "orders"]
         );
@@ -12546,7 +12516,7 @@ mod tests {
         assert_eq!(
             pop_messages
                 .iter()
-                .map(|message| message.message().topic())
+                .map(|message| message.topic())
                 .collect::<Vec<_>>(),
             ["orders", "%DLQ%namespace-consumer", "orders"]
         );

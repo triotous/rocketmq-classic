@@ -500,20 +500,16 @@ fn query_message_matches(message: &MessageExt, query: &AdminQueryRequest) -> boo
         return message.message_id() == Some(query.key.as_str());
     }
 
-    let topic_matches =
-        query.logical_message_queue || message.message().topic() == query.topic.as_str();
+    let topic_matches = query.logical_message_queue || message.topic() == query.topic.as_str();
     if !topic_matches {
         return false;
     }
     match query.index_type.as_deref() {
-        Some(constants::INDEX_KEY_TYPE) => message.message().keys().is_some_and(|keys| {
+        Some(constants::INDEX_KEY_TYPE) => message.keys().is_some_and(|keys| {
             keys.split(constants::KEY_SEPARATOR)
                 .any(|key| key == query.key)
         }),
-        Some(constants::INDEX_TAG_TYPE) => message
-            .message()
-            .tags()
-            .is_some_and(|tags| tags == query.key),
+        Some(constants::INDEX_TAG_TYPE) => message.tags().is_some_and(|tags| tags == query.key),
         _ => false,
     }
 }
@@ -524,7 +520,6 @@ fn query_message_matches(message: &MessageExt, query: &AdminQueryRequest) -> boo
 fn client_decode_message(message: &mut MessageExt) {
     let offset_message_id = message.message_id().map(str::to_owned);
     let client_message_id = message
-        .message()
         .properties()
         .get(constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         .cloned()

@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for message in messages {
                     println!(
                         "consumed topic={} queue={} offset={} id={:?}",
-                        message.message().topic(),
+                        message.topic(),
                         queue.queue_id(),
                         message.queue_offset(),
                         message.message_id()

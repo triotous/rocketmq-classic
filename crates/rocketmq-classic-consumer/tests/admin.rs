@@ -646,7 +646,7 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .unwrap()
         .unwrap();
     let push_after = current_time_millis();
-    assert_eq!(push_message.message().topic(), "orders");
+    assert_eq!(push_message.topic(), "orders");
     assert_eq!(push_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
         push_message.offset_message_id(),
@@ -699,7 +699,7 @@ async fn push_and_pull_query_facades_preserve_java_client_message_ids() {
         .unwrap()
         .unwrap();
     let pull_after = current_time_millis();
-    assert_eq!(pull_message.message().topic(), "orders");
+    assert_eq!(pull_message.topic(), "orders");
     assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
     assert_eq!(
         pull_message.offset_message_id(),
@@ -852,7 +852,7 @@ async fn push_and_pull_view_message_match_java_unique_key_fallback_and_physical_
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(push_message.message().topic(), "orders");
+    assert_eq!(push_message.topic(), "orders");
     assert_eq!(push_message.message_id(), Some("producer-unique-1"));
     let push_view = timeout(Duration::from_secs(1), async {
         loop {
@@ -917,7 +917,7 @@ async fn push_and_pull_view_message_match_java_unique_key_fallback_and_physical_
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(pull_message.message().topic(), "orders");
+    assert_eq!(pull_message.topic(), "orders");
     assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
     let pull_view = timeout(Duration::from_secs(1), async {
         loop {

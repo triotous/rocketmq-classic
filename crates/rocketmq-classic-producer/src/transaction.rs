@@ -642,16 +642,11 @@ impl TransactionRuntime {
             return;
         };
         let mut client_config = producer.config().client_config().clone();
-        if let Ok(Some(topic)) = client_config.without_namespace(Some(message.message().topic())) {
-            message.message_mut().set_topic(topic);
+        if let Ok(Some(topic)) = client_config.without_namespace(Some(message.topic())) {
+            message.set_topic(topic);
         }
-        if let Some(transaction_id) = message
-            .message()
-            .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-        {
-            message
-                .message_mut()
-                .set_transaction_id(Some(transaction_id));
+        if let Some(transaction_id) = message.get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX) {
+            message.set_transaction_id(Some(transaction_id));
         }
 
         #[allow(deprecated)]
@@ -779,7 +774,6 @@ impl TransactionRuntime {
             return;
         };
         let unique_key = message
-            .message()
             .properties()
             .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .cloned()
@@ -798,13 +792,7 @@ impl TransactionRuntime {
         };
         let remark =
             callback_error.map(|error| format!("checkLocalTransactionState Exception: {error}"));
-        producer.do_execute_end_transaction_hook(
-            message.message_mut(),
-            &header.msg_id,
-            remote,
-            state,
-            true,
-        );
+        producer.do_execute_end_transaction_hook(&mut message, &header.msg_id, remote, state, true);
         #[cfg(test)]
         {
             producer
@@ -1171,8 +1159,8 @@ mod tests {
                 .check_message
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner) = Some((
-                message.message().topic().to_owned(),
-                message.message().transaction_id().map(str::to_owned),
+                message.topic().to_owned(),
+                message.transaction_id().map(str::to_owned),
             ));
             if self.check_panic {
                 panic!("check callback panic");
@@ -1201,8 +1189,8 @@ mod tests {
                 .check_message
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner) = Some((
-                message.message().topic().to_owned(),
-                message.message().transaction_id().map(str::to_owned),
+                message.topic().to_owned(),
+                message.transaction_id().map(str::to_owned),
             ));
             Ok(Some(LocalTransactionState::Rollback))
         }

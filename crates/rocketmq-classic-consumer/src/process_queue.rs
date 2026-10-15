@@ -196,7 +196,7 @@ impl ProcessQueue {
         let mut inserted_count = 0usize;
         for message in messages {
             let offset = message.queue_offset();
-            let body_bytes = message.message().body().len() as u64;
+            let body_bytes = message.body().len() as u64;
             state.highest_seen_offset = Some(
                 state
                     .highest_seen_offset
@@ -786,7 +786,7 @@ mod tests {
 
         let batch = process_queue.take_batch(17, 8).unwrap().unwrap();
         assert_eq!(batch.offsets(), &[10, 11, 12]);
-        assert_eq!(batch.messages()[0].message().body().len(), 7);
+        assert_eq!(batch.messages()[0].body().len(), 7);
         let in_flight = process_queue.snapshot(17).unwrap();
         assert_eq!(in_flight.cached_count, 3);
         assert_eq!(in_flight.cached_bytes, 10);

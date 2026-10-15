@@ -431,7 +431,7 @@ async fn pull_routes_per_queue_returns_decoded_messages_and_only_explicitly_pers
     assert_eq!(found.result.next_begin_offset, 101);
     let messages = found.messages.unwrap();
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].message().topic(), "orders");
+    assert_eq!(messages[0].topic(), "orders");
     assert!(hook_ran_in_unit_mode.load(std::sync::atomic::Ordering::SeqCst));
     assert_eq!(
         consumer

@@ -456,7 +456,7 @@ async fn view_message_unique_key_fallback_uses_java_query_defaults_and_namespace
         .unwrap()
         .unwrap();
     let after_millis = current_time_millis();
-    assert_eq!(message.message().topic(), "orders");
+    assert_eq!(message.topic(), "orders");
     assert_eq!(message.message_id(), Some("producer-unique-1"));
     assert_eq!(
         message.offset_message_id(),

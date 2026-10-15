@@ -658,8 +658,8 @@ impl PullConsumer {
 
         let mut client_config = self.config.client_config().clone();
         for message in messages {
-            if let Some(topic) = client_config.without_namespace(Some(message.message().topic()))? {
-                message.message_mut().set_topic(topic);
+            if let Some(topic) = client_config.without_namespace(Some(message.topic()))? {
+                message.set_topic(topic);
             }
         }
         Ok(())
@@ -1588,7 +1588,7 @@ impl PullConsumer {
         broker_name_override: Option<Option<&str>>,
         consumer_group_override: Option<&str>,
     ) -> Result<(), PullConsumerError> {
-        let original_topic = message.message().topic().to_owned();
+        let original_topic = message.topic().to_owned();
         let mut client_config = self.config.client_config().clone();
         let restored_topic = client_config
             .without_namespace(Some(&original_topic))?
@@ -1598,9 +1598,7 @@ impl PullConsumer {
             let (runtime, _) = self.started_runtime().await?;
             let namespaced_topic = self.topic_with_namespace(&original_topic)?;
             let mut namespaced_message = message.clone();
-            namespaced_message
-                .message_mut()
-                .set_topic(namespaced_topic.clone());
+            namespaced_message.set_topic(namespaced_topic.clone());
             let effective_broker = match broker_name_override {
                 Some(broker_name) => broker_name.map(str::to_owned),
                 None => namespaced_message.broker_name().map(str::to_owned),
@@ -1611,7 +1609,7 @@ impl PullConsumer {
                 namespaced_message.queue_id(),
             );
             let route_queue = MessageQueue::new_nullable(
-                Some(namespaced_message.message().topic().to_owned()),
+                Some(namespaced_message.topic().to_owned()),
                 namespaced_message.broker_name().map(str::to_owned),
                 namespaced_message.queue_id(),
             );
@@ -1659,7 +1657,7 @@ impl PullConsumer {
         }
         .await;
 
-        message.message_mut().set_topic(restored_topic);
+        message.set_topic(restored_topic);
         result
     }
 
@@ -2600,7 +2598,7 @@ mod tests {
         assert_eq!(
             empty_messages
                 .iter()
-                .map(|message| message.message().topic().to_owned())
+                .map(|message| message.topic().to_owned())
                 .collect::<Vec<_>>(),
             expected["resetTopicEmptyListOutput"]
                 .as_array()
@@ -2619,7 +2617,7 @@ mod tests {
         assert_eq!(
             reset_messages
                 .iter()
-                .map(|message| message.message().topic().to_owned())
+                .map(|message| message.topic().to_owned())
                 .collect::<Vec<_>>(),
             expected["resetTopicOutput"]
                 .as_array()
@@ -2644,7 +2642,7 @@ mod tests {
         assert_eq!(
             no_namespace_messages
                 .iter()
-                .map(|message| message.message().topic().to_owned())
+                .map(|message| message.topic().to_owned())
                 .collect::<Vec<_>>(),
             expected["resetTopicNoNamespaceOutput"]
                 .as_array()
@@ -3022,7 +3020,7 @@ mod tests {
         message.set_reconsume_times(4);
 
         consumer.send_message_back(&mut message, 2).await.unwrap();
-        assert_eq!(message.message().topic(), "orders");
+        assert_eq!(message.topic(), "orders");
         consumer
             .send_message_back_with_group(
                 &mut message,
@@ -3032,7 +3030,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(message.message().topic(), "orders");
+        assert_eq!(message.topic(), "orders");
 
         {
             let scripted = helper.scripted_retry_transport.lock().unwrap();

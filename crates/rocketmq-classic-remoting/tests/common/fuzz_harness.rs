@@ -199,14 +199,14 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
     if let Ok((message, consumed)) = decode_one(bounded, options) {
         message_decodes += 1;
         assert!(consumed <= bounded.len());
-        assert!(message.message().body().len() <= MAX_DECOMPRESSED_BYTES);
+        assert!(message.body().len() <= MAX_DECOMPRESSED_BYTES);
     }
     if let Ok(messages) = decode_many(bounded, options) {
         message_decodes += messages.len();
         assert!(
             messages
                 .iter()
-                .all(|message| { message.message().body().len() <= MAX_DECOMPRESSED_BYTES })
+                .all(|message| { message.body().len() <= MAX_DECOMPRESSED_BYTES })
         );
     }
 

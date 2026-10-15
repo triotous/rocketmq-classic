@@ -79,14 +79,14 @@ fn java_551_message_records_decode_to_the_pinned_results() {
             "{}",
             case["name"]
         );
-        assert_eq!(decoded.message().topic(), expected["topic"]);
+        assert_eq!(decoded.topic(), expected["topic"]);
         assert_eq!(
-            decoded.message().body().to_vec(),
+            decoded.body().to_vec(),
             base64::engine::general_purpose::STANDARD
                 .decode(expected["bodyBase64"].as_str().unwrap())
                 .unwrap()
         );
-        assert_eq!(decoded.message().flag(), expected["flag"]);
+        assert_eq!(decoded.flag(), expected["flag"]);
         assert_eq!(decoded.body_crc(), expected["bodyCRC"]);
         assert_eq!(decoded.queue_id(), expected["queueId"]);
         assert_eq!(decoded.queue_offset(), expected["queueOffset"]);
@@ -109,7 +109,7 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         );
         assert_eq!(decoded.message_id().unwrap(), expected["msgId"]);
         assert_eq!(
-            serde_json::to_value(decoded.message().properties()).unwrap(),
+            serde_json::to_value(decoded.properties()).unwrap(),
             expected["properties"]
         );
         assert_eq!(decoded.store_size() as usize, bytes.len());
@@ -250,7 +250,6 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["messageIdFallsBackToOffset"].as_str()
     );
     message
-        .message_mut()
         .set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
             "unique-1",
@@ -270,7 +269,6 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["setMessageIdDoesNotReplaceUnique"].as_str()
     );
     message
-        .message_mut()
         .set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
             "unique-2",
@@ -289,7 +287,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         message.message_id().as_deref(),
         expected["uniqueSurvivesOffsetReplacement"].as_str()
     );
-    message.message_mut().clear_system_property(
+    message.clear_system_property(
         rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
     );
     assert_eq!(
@@ -338,7 +336,7 @@ fn client_message_decoder_apis_match_java_551() {
     let expected = &cases[..2];
     assert_eq!(batch.len(), expected.len());
     for (message, case) in batch.iter().zip(expected) {
-        assert!(message.message().body().is_empty());
+        assert!(message.body().is_empty());
         assert_eq!(
             message.message_id(),
             case["clientDecoded"]["msgId"].as_str()
@@ -348,10 +346,7 @@ fn client_message_decoder_apis_match_java_551() {
             case["clientDecoded"]["offsetMsgId"].as_str()
         );
         assert_eq!(
-            message
-                .message()
-                .properties()
-                .contains_key("propertiesString"),
+            message.properties().contains_key("propertiesString"),
             !case["decoded"]["properties"]
                 .as_object()
                 .unwrap()
@@ -366,7 +361,7 @@ fn client_message_decoder_apis_match_java_551() {
     assert!(
         body_skipped_batch
             .iter()
-            .all(|message| message.message().body().is_empty())
+            .all(|message| message.body().is_empty())
     );
 }
 
@@ -1178,8 +1173,8 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
     }
 
     let mut outer = MessageExt::default();
-    outer.message_mut().set_topic("outer-topic");
-    outer.message_mut().set_body(batch_bytes.clone());
+    outer.set_topic("outer-topic");
+    outer.set_body(batch_bytes.clone());
     outer.set_queue_id(7);
     outer.set_queue_offset(100);
     outer.set_sys_flag(0x40);
@@ -1188,26 +1183,26 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
     outer.set_store_timestamp(12);
     outer.set_store_host(Some(MessageHostAddress::new("198.51.100.20", 10912)));
     outer.set_commit_log_offset(13);
-    outer.message_mut().set_wait_store_msg_ok(false).unwrap();
+    outer.set_wait_store_msg_ok(false).unwrap();
     let expanded = decode_inner_batch(&outer).unwrap();
     assert_eq!(expanded.len(), 2);
     for (message, case) in expanded
         .iter()
         .zip(expected["expanded"].as_array().unwrap())
     {
-        assert_eq!(message.message().topic(), case["topic"]);
+        assert_eq!(message.topic(), case["topic"]);
         assert_eq!(message.queue_id(), case["queueId"]);
         assert_eq!(message.queue_offset(), case["queueOffset"]);
-        assert_eq!(message.message().flag(), case["flag"]);
+        assert_eq!(message.flag(), case["flag"]);
         assert_eq!(
-            base64::engine::general_purpose::STANDARD.encode(message.message().body()),
+            base64::engine::general_purpose::STANDARD.encode(message.body()),
             case["bodyBase64"]
         );
         assert_eq!(
-            serde_json::to_value(message.message().properties()).unwrap(),
+            serde_json::to_value(message.properties()).unwrap(),
             case["properties"]
         );
-        assert_eq!(message.message().is_wait_store_msg_ok(), case["waitStore"]);
+        assert_eq!(message.is_wait_store_msg_ok(), case["waitStore"]);
         assert_eq!(message.sys_flag(), case["sysFlag"]);
         assert_eq!(message.born_timestamp(), case["bornTimestamp"]);
         assert_eq!(message.born_host().unwrap().to_string(), case["bornHost"]);
@@ -1262,13 +1257,10 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
 fn message_ext_encoder_matches_java_551() {
     fn message_ext_for_encoding(sys_flag: i32, born_ip: &str, store_ip: &str) -> MessageExt {
         let mut message_ext = MessageExt::default();
-        message_ext.message_mut().set_topic("orders");
-        message_ext.message_mut().set_body([0, 255, 42, 55]);
-        message_ext.message_mut().set_flag(-23);
-        message_ext
-            .message_mut()
-            .set_system_property("k", "v")
-            .unwrap();
+        message_ext.set_topic("orders");
+        message_ext.set_body([0, 255, 42, 55]);
+        message_ext.set_flag(-23);
+        message_ext.set_system_property("k", "v").unwrap();
         message_ext.set_body_crc(0x1234_5678);
         message_ext.set_queue_id(7);
         message_ext.set_queue_offset(23);
@@ -1334,7 +1326,7 @@ fn message_ext_encoder_matches_java_551() {
         let (decoded, consumed) = decode_one(&encoded, DecodeOptions::default()).unwrap();
         assert_eq!(consumed, encoded.len());
         assert_eq!(
-            base64::engine::general_purpose::STANDARD.encode(decoded.message().body()),
+            base64::engine::general_purpose::STANDARD.encode(decoded.body()),
             case["decodedBodyBase64"]
         );
         assert_eq!(decoded.sys_flag(), case["decodedSysFlag"]);
@@ -1384,11 +1376,9 @@ fn nullable_message_property_keys_match_java_551() {
     );
 
     let mut message_ext = MessageExt::default();
-    message_ext.message_mut().set_topic("orders");
-    message_ext.message_mut().set_body([1, 2, 3]);
-    message_ext
-        .message_mut()
-        .set_property_nullable(None, Some("value".to_owned()));
+    message_ext.set_topic("orders");
+    message_ext.set_body([1, 2, 3]);
+    message_ext.set_property_nullable(None, Some("value".to_owned()));
     message_ext.set_born_host(Some(MessageHostAddress::from_ip_address(
         IpAddr::V4(Ipv4Addr::LOCALHOST),
         10_911,
@@ -2205,7 +2195,7 @@ fn message_ext_system_flag_helpers_match_java_551() {
         rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
         rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
     ] {
-        message.message_mut().set_system_property(key, "").unwrap();
+        message.set_system_property(key, "").unwrap();
     }
     assert_eq!(expected["topicSysFlagEmptyIsNull"], true);
     assert_eq!(expected["groupSysFlagEmptyIsNull"], true);
@@ -2216,10 +2206,7 @@ fn message_ext_system_flag_helpers_match_java_551() {
         rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
         rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
     ] {
-        message
-            .message_mut()
-            .set_system_property(key, "bad")
-            .unwrap();
+        message.set_system_property(key, "bad").unwrap();
     }
     assert_eq!(expected["topicSysFlagMalformedThrows"], true);
     assert_eq!(expected["groupSysFlagMalformedThrows"], true);
@@ -2227,7 +2214,6 @@ fn message_ext_system_flag_helpers_match_java_551() {
     assert!(message.group_sys_flag().is_err());
     message.set_topic_sys_flag(Some(1));
     message
-        .message_mut()
         .set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
             "١",
@@ -2308,7 +2294,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
             .0;
             if let Some(expected_body) = option["bodyBase64"].as_str() {
                 assert_eq!(
-                    decoded.message().body().to_vec(),
+                    decoded.body().to_vec(),
                     base64::engine::general_purpose::STANDARD
                         .decode(expected_body)
                         .unwrap(),
@@ -2319,7 +2305,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
                 );
             } else {
                 assert!(
-                    decoded.message().body().is_empty(),
+                    decoded.body().is_empty(),
                     "{} readBody={} decompressBody={}",
                     case["name"],
                     option["readBody"],
@@ -2342,7 +2328,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
         .0;
         assert_eq!(
-            serde_json::to_value(with_properties_string.message().properties()).unwrap(),
+            serde_json::to_value(with_properties_string.properties()).unwrap(),
             case["decoded"]["propertiesWithString"],
             "{} propertiesString",
             case["name"]
@@ -2367,10 +2353,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
         .0;
         assert_ne!(preserved.sys_flag() & message::COMPRESSED_FLAG, 0);
-        assert_eq!(
-            preserved.message().body().as_ref(),
-            encoded_body(&compressed)
-        );
+        assert_eq!(preserved.body().as_ref(), encoded_body(&compressed));
         for decompress_body in [false, true] {
             let skipped = decode_one(
                 &compressed,
@@ -2383,7 +2366,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
             )
             .unwrap_or_else(|error| panic!("{}: {error}", case["name"]))
             .0;
-            assert!(skipped.message().body().is_empty());
+            assert!(skipped.body().is_empty());
             assert_ne!(skipped.sys_flag() & message::COMPRESSED_FLAG, 0);
         }
     }
@@ -2441,7 +2424,7 @@ fn body_decode_options_match_java_and_reject_truncated_topics() {
     )
     .unwrap()
     .0;
-    assert!(decoded_empty.message().body().is_empty());
+    assert!(decoded_empty.body().is_empty());
     assert_ne!(decoded_empty.sys_flag() & message::COMPRESSED_FLAG, 0);
 }
 

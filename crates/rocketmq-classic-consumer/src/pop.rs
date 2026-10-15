@@ -236,10 +236,7 @@ fn add_receipts(
     let mut sorted_offsets: HashMap<String, Vec<i64>> = HashMap::new();
     if start_offsets.is_some() {
         for message in messages.iter() {
-            let retry = retry_category(
-                message.message().topic(),
-                message.message().properties().get(PROPERTY_POP_CK),
-            )?;
+            let retry = retry_category(message.topic(), message.properties().get(PROPERTY_POP_CK))?;
             let key = format!("{retry}@{}", message.queue_id());
             sorted_offsets
                 .entry(key)
@@ -254,10 +251,7 @@ fn add_receipts(
     let fallback_offsets = if start_offsets.is_none() {
         let mut checkpoints = HashMap::new();
         for message in messages.iter() {
-            let retry = retry_category(
-                message.message().topic(),
-                message.message().properties().get(PROPERTY_POP_CK),
-            )?;
+            let retry = retry_category(message.topic(), message.properties().get(PROPERTY_POP_CK))?;
             checkpoints
                 .entry(format!("{retry}@{}", message.queue_id()))
                 .or_insert(message.queue_offset());
@@ -268,10 +262,10 @@ fn add_receipts(
     };
 
     for message in messages.iter_mut() {
-        if message.message().properties().contains_key(PROPERTY_POP_CK) {
+        if message.properties().contains_key(PROPERTY_POP_CK) {
             continue;
         }
-        let retry = retry_category(message.message().topic(), None)?;
+        let retry = retry_category(message.topic(), None)?;
         let key = format!("{retry}@{}", message.queue_id());
         let raw = if let Some(start_offsets) = &start_offsets {
             let start_offset = start_offsets.get(&key).ok_or_else(|| {
@@ -332,23 +326,16 @@ fn add_receipts(
                 message.queue_offset()
             )
         };
-        let _ = message
-            .message_mut()
-            .set_system_property(PROPERTY_POP_CK, raw);
+        let _ = message.set_system_property(PROPERTY_POP_CK, raw);
     }
 
     let topic = request.topic.clone();
     for message in messages.iter_mut() {
         message.set_broker_name(Some(broker_name.to_owned()));
-        message.message_mut().set_topic(topic.clone());
-        if !message
-            .message()
-            .properties()
-            .contains_key(PROPERTY_FIRST_POP_TIME)
-        {
-            let _ = message
-                .message_mut()
-                .set_system_property(PROPERTY_FIRST_POP_TIME, header.pop_time.to_string());
+        message.set_topic(topic.clone());
+        if !message.properties().contains_key(PROPERTY_FIRST_POP_TIME) {
+            let _ =
+                message.set_system_property(PROPERTY_FIRST_POP_TIME, header.pop_time.to_string());
         }
     }
     Ok(())
@@ -713,15 +700,8 @@ mod tests {
         let receipts = messages
             .iter()
             .map(|message| {
-                PopReceipt::parse(
-                    message
-                        .message()
-                        .properties()
-                        .get(PROPERTY_POP_CK)
-                        .unwrap()
-                        .clone(),
-                )
-                .unwrap()
+                PopReceipt::parse(message.properties().get(PROPERTY_POP_CK).unwrap().clone())
+                    .unwrap()
             })
             .collect::<Vec<_>>();
         assert_eq!(receipts[0].checkpoint_queue_offset(), 10);
@@ -730,10 +710,9 @@ mod tests {
         assert_eq!(receipts[2].checkpoint_queue_offset(), 20);
         assert_eq!(receipts[2].queue_offset(), 200);
         assert_eq!(messages[0].broker_name(), Some("broker-a"));
-        assert_eq!(messages[0].message().topic(), "orders");
+        assert_eq!(messages[0].topic(), "orders");
         assert_eq!(
             messages[0]
-                .message()
                 .properties()
                 .get(PROPERTY_FIRST_POP_TIME)
                 .map(String::as_str),
@@ -758,22 +737,10 @@ mod tests {
         };
         let mut messages = vec![message("orders", 1, 5), message("orders", 1, 6)];
         add_receipts(&mut messages, &header, &request, "broker-a").unwrap();
-        let first = PopReceipt::parse(
-            messages[0]
-                .message()
-                .properties()
-                .get(PROPERTY_POP_CK)
-                .unwrap(),
-        )
-        .unwrap();
-        let second = PopReceipt::parse(
-            messages[1]
-                .message()
-                .properties()
-                .get(PROPERTY_POP_CK)
-                .unwrap(),
-        )
-        .unwrap();
+        let first =
+            PopReceipt::parse(messages[0].properties().get(PROPERTY_POP_CK).unwrap()).unwrap();
+        let second =
+            PopReceipt::parse(messages[1].properties().get(PROPERTY_POP_CK).unwrap()).unwrap();
         assert_eq!(first.checkpoint_queue_offset(), 5);
         assert_eq!(second.checkpoint_queue_offset(), 5);
         assert_eq!(second.queue_offset(), 6);

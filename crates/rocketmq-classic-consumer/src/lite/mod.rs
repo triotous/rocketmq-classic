@@ -1530,7 +1530,7 @@ impl LitePullConsumer {
         let messages = result.messages.take().unwrap_or_default();
         let body_bytes = messages
             .iter()
-            .map(|message| message.message().body().len())
+            .map(|message| message.body().len())
             .sum::<usize>();
         let mut states = self
             .queue_states

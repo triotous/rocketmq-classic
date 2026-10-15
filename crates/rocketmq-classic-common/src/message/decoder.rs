@@ -300,7 +300,7 @@ pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessagePropertie
             verify_crc: false,
         },
     )?;
-    let properties = message.message().properties();
+    let properties = message.properties();
     Ok((!properties.is_empty()).then(|| properties.clone()))
 }
 
@@ -432,7 +432,7 @@ fn decode_one_with_limits(
         body,
         decoded_properties,
     ));
-    message.message_mut().set_flag(flag);
+    message.set_flag(flag);
     message.set_queue_id(queue_id);
     message.set_queue_offset(queue_offset);
     message.set_commit_log_offset(commit_log_offset);
@@ -488,7 +488,6 @@ pub fn client_decodes_with_body(
 fn assign_client_message_ids(message: &mut MessageExt) {
     let offset_message_id = message.message_id().map(str::to_owned);
     let client_message_id = message
-        .message()
         .properties()
         .get(super::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         .cloned()
@@ -511,7 +510,6 @@ fn decode_many_with_limits(
             return Err(DecodeError::InvalidStoreSize { offset, size: 0 });
         }
         let property_bytes = message
-            .message()
             .properties()
             .iter()
             .try_fold(0_usize, |size, (key, value)| {
@@ -525,8 +523,8 @@ fn decode_many_with_limits(
             })?;
         decoded_bytes = decoded_bytes
             .checked_add(std::mem::size_of::<MessageExt>())
-            .and_then(|size| size.checked_add(message.message().body().len()))
-            .and_then(|size| size.checked_add(message.message().topic().len()))
+            .and_then(|size| size.checked_add(message.body().len()))
+            .and_then(|size| size.checked_add(message.topic().len()))
             .and_then(|size| size.checked_add(property_bytes))
             .ok_or(DecodeError::AggregateLimitExceeded {
                 limit: limits.max_total_decoded_bytes,

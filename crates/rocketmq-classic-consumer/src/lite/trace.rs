@@ -192,7 +192,7 @@ pub(crate) fn consume_contexts(
     let mut region_id = None;
     let mut trace_beans = Vec::with_capacity(messages.len());
     for message in messages {
-        let properties = message.message().properties();
+        let properties = message.properties();
         if properties
             .get(PROPERTY_TRACE_SWITCH)
             .is_some_and(|trace_switch| trace_switch == "false")
@@ -201,10 +201,10 @@ pub(crate) fn consume_contexts(
         }
         region_id = properties.get(PROPERTY_MSG_REGION).cloned();
         trace_beans.push(LiteTraceBean {
-            topic: without_namespace(client_config, message.message().topic()),
+            topic: without_namespace(client_config, message.topic()),
             message_id: message.message_id().map(str::to_owned),
-            tags: message.message().tags(),
-            keys: message.message().keys(),
+            tags: message.tags(),
+            keys: message.keys(),
             store_time_millis: message.store_timestamp(),
             body_length: message.store_size(),
             retry_times: message.reconsume_times(),
@@ -636,15 +636,13 @@ mod tests {
         included.set_store_timestamp(1_700);
         included.set_store_size(4);
         included.set_reconsume_times(2);
-        included.message_mut().set_tags("paid").unwrap();
-        included.message_mut().set_keys("order-1 order-2").unwrap();
+        included.set_tags("paid").unwrap();
+        included.set_keys("order-1 order-2").unwrap();
         included
-            .message_mut()
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
         let mut excluded = MessageExt::new(Message::new("ns%orders", b"skip".to_vec()));
         excluded
-            .message_mut()
             .set_system_property(PROPERTY_TRACE_SWITCH, "false")
             .unwrap();
 
@@ -670,7 +668,6 @@ mod tests {
         let mut message = MessageExt::new(Message::new("ns%orders", b"body".to_vec()));
         message.set_message_id(Some("msg-1".to_owned()));
         message
-            .message_mut()
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
         let mut context = ConsumeMessageContext::new(

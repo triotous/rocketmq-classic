@@ -95,10 +95,8 @@ impl Producer {
         if let Some(messages) = result.get_message_list() {
             for message in messages.snapshot().into_iter().flatten() {
                 message.with_mut(|message| {
-                    if let Some(topic) =
-                        client_config.without_namespace(Some(message.message().topic()))?
-                    {
-                        message.message_mut().set_topic(topic);
+                    if let Some(topic) = client_config.without_namespace(Some(message.topic()))? {
+                        message.set_topic(topic);
                     }
                     Ok::<(), ProducerError>(())
                 })?;

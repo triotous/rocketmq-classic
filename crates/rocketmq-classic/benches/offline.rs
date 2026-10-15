@@ -110,7 +110,7 @@ fn main() {
         || {
             let (message, consumed) =
                 decode_one(&message_record, DecodeOptions::default()).unwrap();
-            black_box((message.message().body().len(), consumed));
+            black_box((message.body().len(), consumed));
         },
     );
 

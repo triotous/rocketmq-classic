@@ -300,7 +300,6 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     for message in &mut messages {
         let offset_id = message.message_id().map(str::to_owned);
         let client_id = message
-            .message()
             .properties()
             .get("UNIQ_KEY")
             .cloned()
@@ -404,12 +403,7 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
     let message_record = java_message_record("ipv4-v1");
     let decoded = decode_many(&message_record, Default::default()).unwrap();
     let offset_message_id = decoded[0].message_id().unwrap().to_owned();
-    let unique_key = decoded[0]
-        .message()
-        .properties()
-        .get("UNIQ_KEY")
-        .unwrap()
-        .to_owned();
+    let unique_key = decoded[0].properties().get("UNIQ_KEY").unwrap().to_owned();
     assert_ne!(offset_message_id, unique_key);
 
     let mut first_header = HeaderMap::new();
@@ -549,13 +543,13 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
         messages[0]
             .as_ref()
             .unwrap()
-            .with(|message| message.message().body().as_ref() == b"hello-v2")
+            .with(|message| message.body().as_ref() == b"hello-v2")
     );
     assert!(
         messages[1]
             .as_ref()
             .unwrap()
-            .with(|message| message.message().body().as_ref() == b"hello-v1")
+            .with(|message| message.body().as_ref() == b"hello-v1")
     );
     for peer in [first_peer, second_peer] {
         let command = peer.await.unwrap();
@@ -830,15 +824,11 @@ async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     let mut expected_fields = HeaderMap::new();
     header.encode_fields(&mut expected_fields);
     assert_eq!(command.ext_fields, Some(expected_fields));
-    assert_eq!(message.message().topic(), "orders");
-    assert_eq!(message.message().body().as_ref(), b"hello-v1");
+    assert_eq!(message.topic(), "orders");
+    assert_eq!(message.body().as_ref(), b"hello-v1");
     assert_eq!(
         message.message_id(),
-        message
-            .message()
-            .properties()
-            .get("UNIQ_KEY")
-            .map(String::as_str)
+        message.properties().get("UNIQ_KEY").map(String::as_str)
     );
     assert!(message.offset_message_id().is_some());
     client.shutdown().await;

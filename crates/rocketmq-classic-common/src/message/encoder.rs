@@ -57,18 +57,13 @@ fn encode_message_ext_inner(
     uniquely: bool,
 ) -> Result<Vec<u8>, MessageExtEncodeError> {
     let topic = message_ext
-        .message()
         .topic_nullable()
         .ok_or(MessageExtEncodeError::MissingTopic)?
         .as_bytes();
     let body = message_ext
-        .message()
         .body_nullable()
         .ok_or(MessageExtEncodeError::MissingBody)?;
-    let property_entries = message_ext
-        .message()
-        .nullable_property_entries()
-        .collect::<Vec<_>>();
+    let property_entries = message_ext.nullable_property_entries().collect::<Vec<_>>();
     let properties = encode_nullable_property_entries(Some(&property_entries)).into_bytes();
     let sys_flag = message_ext.sys_flag();
     let born_host_length = if sys_flag & message::BORNHOST_V6_FLAG == 0 {
@@ -166,7 +161,7 @@ fn encode_message_ext_inner(
     put_i32(&mut output, &mut cursor, MESSAGE_MAGIC_CODE)?;
     put_i32(&mut output, &mut cursor, message_ext.body_crc())?;
     put_i32(&mut output, &mut cursor, message_ext.queue_id())?;
-    put_i32(&mut output, &mut cursor, message_ext.message().flag())?;
+    put_i32(&mut output, &mut cursor, message_ext.flag())?;
     put_i64(&mut output, &mut cursor, message_ext.queue_offset())?;
     put_i64(&mut output, &mut cursor, message_ext.commit_log_offset())?;
     put_i32(&mut output, &mut cursor, sys_flag)?;

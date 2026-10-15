@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Replace this with the application's durable side effect.
                 println!(
                     "processed topic={} queue={} offset={} id={:?}",
-                    message.message().topic(),
+                    message.topic(),
                     queue.queue_id(),
                     message.queue_offset(),
                     message.message_id()

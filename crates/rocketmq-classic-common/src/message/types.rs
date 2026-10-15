@@ -1127,6 +1127,18 @@ impl DerefMut for MessageExt {
 /// extended.set_message(Default::default());
 /// ```
 ///
+/// The Java class inherits `Message` directly; it has no composition accessors:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageExt;
+/// let _ = MessageExt::default().message();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageExt;
+/// MessageExt::default().message_mut();
+/// ```
+///
 /// ```compile_fail
 /// use rocketmq_classic_common::message::MessageExt;
 /// let _ = MessageExt::default().java_to_string();
@@ -1224,12 +1236,6 @@ impl MessageExt {
             message_id,
             ..Self::default()
         }
-    }
-    pub fn message(&self) -> &Message {
-        &self.message
-    }
-    pub fn message_mut(&mut self) -> &mut Message {
-        &mut self.message
     }
     pub fn broker_name(&self) -> Option<&str> {
         self.broker_name.as_deref()
@@ -1470,7 +1476,6 @@ impl MessageClientExt {
 
     pub fn message_id(&self) -> Option<String> {
         self.0
-            .message()
             .get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .or_else(|| self.0.message_id().map(str::to_owned))
     }
@@ -1840,9 +1845,9 @@ mod tests {
         let mut ext = MessageExt::new(message.clone());
         ext.set_queue_offset(i64::MIN);
         ext.set_commit_log_offset(i64::MAX);
-        assert_eq!(ext.message().topic_nullable(), message.topic_nullable());
-        assert_eq!(ext.message().body_nullable(), message.body_nullable());
-        assert_eq!(ext.message().properties(), message.properties());
+        assert_eq!(ext.topic_nullable(), message.topic_nullable());
+        assert_eq!(ext.body_nullable(), message.body_nullable());
+        assert_eq!(ext.properties(), message.properties());
         assert_eq!(ext.queue_offset(), i64::MIN);
         assert_eq!(ext.commit_log_offset(), i64::MAX);
     }

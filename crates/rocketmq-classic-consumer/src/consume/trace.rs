@@ -43,7 +43,7 @@ impl ConsumeMessageHook for ConsumeTraceHook {
         let mut region_id = None;
         let mut trace_beans = Vec::with_capacity(messages.len());
         for message in messages {
-            let properties = message.message().properties();
+            let properties = message.properties();
             if properties
                 .get(PROPERTY_TRACE_SWITCH)
                 .is_some_and(|trace_switch| trace_switch == "false")
@@ -114,7 +114,7 @@ impl ConsumeMessageHook for ConsumeTraceHook {
 }
 
 fn trace_bean(message: &MessageExt, client_config: &ClientConfig) -> TraceBean {
-    let base_message = message.message();
+    let base_message = &**message;
     TraceBean {
         topic: Some(without_namespace(client_config, base_message.topic())),
         message_id: message.message_id().map(str::to_owned),
@@ -190,10 +190,9 @@ mod tests {
         message.set_message_id(Some("message-1".into()));
         message.set_store_size(4);
         message.set_store_timestamp(1_700);
-        message.message_mut().set_tags("paid").unwrap();
-        message.message_mut().set_keys("key-1 key-2").unwrap();
+        message.set_tags("paid").unwrap();
+        message.set_keys("key-1 key-2").unwrap();
         message
-            .message_mut()
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
         let mut context = ConsumeMessageContext::new(
@@ -247,7 +246,6 @@ mod tests {
 
         let mut trace_off = MessageExt::new(Message::new("orders", b"body".to_vec()));
         trace_off
-            .message_mut()
             .set_system_property(PROPERTY_TRACE_SWITCH, "false")
             .unwrap();
         context.messages = Some(vec![trace_off]);

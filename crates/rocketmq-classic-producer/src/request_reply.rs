@@ -490,7 +490,7 @@ mod tests {
     ) -> RequestCallback {
         Box::new(move |result| {
             calls.fetch_add(1, Ordering::SeqCst);
-            let _ = sender.send(result.map(|reply| reply.message().body().to_vec()));
+            let _ = sender.send(result.map(|reply| reply.body().to_vec()));
         })
     }
 

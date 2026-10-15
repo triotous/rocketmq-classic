@@ -281,7 +281,6 @@ fn filter_tags(messages: &mut Vec<MessageExt>, subscription: &SubscriptionData) 
     }
     messages.retain(|message| {
         message
-            .message()
             .tags()
             .is_some_and(|tag| tags.contains(&Some(tag.to_owned())))
     });
@@ -291,7 +290,6 @@ fn attach_client_message_ids(messages: &mut [MessageExt]) {
     for message in messages {
         let offset_message_id = message.message_id().map(str::to_owned);
         let message_id = message
-            .message()
             .properties()
             .get(
                 rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
@@ -306,23 +304,21 @@ fn attach_client_message_ids(messages: &mut [MessageExt]) {
 fn enrich_messages(messages: &mut [MessageExt], queue: &MessageQueue, result: &PullResultExt) {
     for message in messages {
         let is_prepared = message
-            .message()
             .properties()
             .get(rocketmq_classic_common::message::constants::PROPERTY_TRANSACTION_PREPARED)
             .is_some_and(|value| value.eq_ignore_ascii_case("true"));
         if is_prepared {
             let transaction_id = message
-                .message()
                 .properties()
                 .get(rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
                 .cloned();
-            message.message_mut().set_transaction_id(transaction_id);
+            message.set_transaction_id(transaction_id);
         }
-        let _ = message.message_mut().set_system_property(
+        let _ = message.set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_MIN_OFFSET,
             result.min_offset.to_string(),
         );
-        let _ = message.message_mut().set_system_property(
+        let _ = message.set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_MAX_OFFSET,
             result.max_offset.to_string(),
         );
@@ -359,7 +355,7 @@ const MAX_INNER_BATCH_RECORD_BYTES: usize = 16 * 1024 * 1024;
 const MAX_INNER_BATCH_DECODED_BYTES: usize = 64 * 1024 * 1024;
 
 fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPullError> {
-    let bytes = outer.message().body();
+    let bytes = outer.body();
     let mut offset = 0usize;
     let mut total_decoded = 0usize;
     let mut messages = Vec::new();
@@ -438,7 +434,7 @@ fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPull
         }
         let properties = String::from_utf8_lossy(&record[properties_start..properties_end]);
         let mut message = Message::default();
-        message.set_topic(outer.message().topic().to_owned());
+        message.set_topic(outer.topic().to_owned());
         message.set_body(record[body_start..body_end].to_vec());
         message.set_flag(flag);
         for (key, value) in decode_properties(&properties) {

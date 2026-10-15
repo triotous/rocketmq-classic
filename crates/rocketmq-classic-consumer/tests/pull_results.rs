@@ -79,10 +79,7 @@ impl FilterMessageHook for MarkHook {
     fn filter_message(&self, context: &mut FilterMessageContext) {
         self.0.store(context.unit_mode, Ordering::SeqCst);
         if let Some(message) = context.messages.first_mut() {
-            message
-                .message_mut()
-                .set_system_property("HOOK_MARK", "seen")
-                .unwrap();
+            message.set_system_property("HOOK_MARK", "seen").unwrap();
         }
     }
 }
@@ -120,27 +117,15 @@ fn found_results_filter_enrich_run_hooks_and_drop_raw_bytes() {
     assert_eq!(message.queue_id(), 9);
     assert_eq!(message.queue_offset(), 46);
     assert_eq!(
-        message
-            .message()
-            .properties()
-            .get("MIN_OFFSET")
-            .map(String::as_str),
+        message.properties().get("MIN_OFFSET").map(String::as_str),
         Some("20")
     );
     assert_eq!(
-        message
-            .message()
-            .properties()
-            .get("MAX_OFFSET")
-            .map(String::as_str),
+        message.properties().get("MAX_OFFSET").map(String::as_str),
         Some("160")
     );
     assert_eq!(
-        message
-            .message()
-            .properties()
-            .get("HOOK_MARK")
-            .map(String::as_str),
+        message.properties().get("HOOK_MARK").map(String::as_str),
         Some("seen")
     );
     assert!(hook_ran_in_unit_mode.load(Ordering::SeqCst));
@@ -160,10 +145,7 @@ fn prepared_transactions_get_the_producer_unique_id_as_transaction_id() {
         )
         .unwrap();
     let messages = processed.messages.unwrap();
-    assert_eq!(
-        messages[0].message().transaction_id(),
-        Some("producer-unique-2")
-    );
+    assert_eq!(messages[0].transaction_id(), Some("producer-unique-2"));
     assert_eq!(messages[0].message_id(), Some("producer-unique-2"));
     assert_eq!(
         messages[0].offset_message_id(),
@@ -263,21 +245,17 @@ async fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() 
         .unwrap();
     let messages = processed.messages.unwrap();
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[0].message().body().as_ref(), b"inner-one");
-    assert_eq!(messages[1].message().body().as_ref(), b"inner-two");
+    assert_eq!(messages[0].body().as_ref(), b"inner-one");
+    assert_eq!(messages[1].body().as_ref(), b"inner-two");
     assert_eq!(messages[0].queue_offset(), 53);
     assert_eq!(messages[1].queue_offset(), 54);
-    assert_eq!(messages[0].message().flag(), 301);
+    assert_eq!(messages[0].flag(), 301);
     assert_eq!(messages[0].message_id(), Some("inner-unique-1"));
     assert_eq!(messages[0].offset_message_id(), None);
     assert_eq!(messages[1].message_id(), None);
     assert_eq!(messages[1].offset_message_id(), None);
     assert_eq!(
-        messages[0]
-            .message()
-            .properties()
-            .get("TAGS")
-            .map(String::as_str),
+        messages[0].properties().get("TAGS").map(String::as_str),
         Some("green")
     );
 
@@ -293,7 +271,7 @@ async fn inner_batches_unwrap_when_both_flags_are_set_and_fall_back_as_a_unit() 
         .messages
         .unwrap();
     assert_eq!(fallback.len(), 1);
-    assert_eq!(fallback[0].message().body().as_ref(), &[0, 0, 0, 8]);
+    assert_eq!(fallback[0].body().as_ref(), &[0, 0, 0, 8]);
 }
 
 #[test]

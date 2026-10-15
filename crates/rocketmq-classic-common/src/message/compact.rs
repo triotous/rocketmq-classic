@@ -157,7 +157,6 @@ pub fn count_inner_messages(records: &[u8]) -> Result<usize, CompactMessageError
 /// Expand a compact body as Java `MessageDecoder.decodeMessage(MessageExt, list)` does.
 pub fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, CompactMessageError> {
     let body = outer
-        .message()
         .body_nullable()
         .ok_or(CompactMessageError::MissingBody)?;
     decode_compact_messages(&body).map(|messages| {
@@ -166,8 +165,8 @@ pub fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, Compact
             .enumerate()
             .map(|(index, message)| {
                 let mut message = message;
-                message.set_topic_nullable(outer.message().topic_nullable().map(str::to_owned));
-                let _ = message.set_wait_store_msg_ok(outer.message().is_wait_store_msg_ok());
+                message.set_topic_nullable(outer.topic_nullable().map(str::to_owned));
+                let _ = message.set_wait_store_msg_ok(outer.is_wait_store_msg_ok());
                 let mut inner = MessageExt::new(message);
                 inner.set_queue_id(outer.queue_id());
                 inner.set_queue_offset(outer.queue_offset().wrapping_add(index as i64));
