@@ -15,6 +15,26 @@
 //! use rocketmq_classic_remoting::RemotingCommand;
 //! AclUtils::combine_request_content(&RemotingCommand::default());
 //! ```
+//!
+//! Java's `AclClientRPCHook` keeps its credentials private, and `AclException`
+//! exposes causes through the standard error chain rather than string-only
+//! accessors or constructors:
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::{AclClientRpcHook, SessionCredentials};
+//! let hook = AclClientRpcHook::new(SessionCredentials::new("access", "secret"));
+//! let _credentials = hook.session_credentials();
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::AclException;
+//! let _ = AclException::with_cause_message("request failed", "cause");
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::AclException;
+//! let _ = AclException::with_status_code_and_cause("denied", 1, "request failed", "cause");
+//! ```
 
 use std::{
     borrow::Cow,
@@ -94,31 +114,6 @@ impl AclException {
         }
     }
 
-    pub fn with_cause_message(message: impl Into<String>, cause: impl Into<String>) -> Self {
-        let cause = cause.into();
-        Self {
-            message: Some(message.into()),
-            cause_message: Some(cause.clone()),
-            cause: Some(Arc::new(AclMessageCause(cause))),
-            ..Self::default()
-        }
-    }
-
-    pub fn with_status_code_and_cause(
-        status: impl Into<String>,
-        code: i32,
-        message: impl Into<String>,
-        cause: impl Into<String>,
-    ) -> Self {
-        let cause = cause.into();
-        Self {
-            message: Some(message.into()),
-            cause_message: Some(cause.clone()),
-            cause: Some(Arc::new(AclMessageCause(cause))),
-            ..Self::with_status_code(status, code)
-        }
-    }
-
     /// Builds the Rust equivalent of Java's `(message, Throwable)` constructor.
     pub fn with_cause(
         message: impl Into<String>,
@@ -169,7 +164,8 @@ impl AclException {
         self.message.as_deref()
     }
 
-    pub fn cause_message(&self) -> Option<&str> {
+    #[cfg(test)]
+    pub(crate) fn cause_message(&self) -> Option<&str> {
         self.cause_message.as_deref()
     }
 
@@ -218,17 +214,6 @@ impl std::error::Error for AclException {
             .map(|cause| cause as &(dyn std::error::Error + 'static))
     }
 }
-
-#[derive(Debug)]
-struct AclMessageCause(String);
-
-impl fmt::Display for AclMessageCause {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for AclMessageCause {}
 
 /// Java `AclSigner.SigningAlgorithm` values.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -931,7 +916,8 @@ impl AclClientRpcHook {
         Self { credentials }
     }
 
-    pub fn session_credentials(&self) -> &SessionCredentials {
+    #[cfg(test)]
+    pub(crate) fn session_credentials(&self) -> &SessionCredentials {
         &self.credentials
     }
 }
