@@ -116,6 +116,109 @@ fn java_551_message_records_decode_to_the_pinned_results() {
 }
 
 #[test]
+fn message_ext_scalar_public_api_matches_java_551_fixture() {
+    let expected = &fixture()["messageExtPublicApi"];
+    let defaults = MessageExt::default();
+    assert_eq!(
+        defaults.queue_id(),
+        expected["defaultQueueId"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        defaults.born_timestamp(),
+        expected["defaultBornTimestamp"].as_i64().unwrap()
+    );
+    assert_eq!(
+        defaults.store_timestamp(),
+        expected["defaultStoreTimestamp"].as_i64().unwrap()
+    );
+    assert_eq!(defaults.message_id(), expected["defaultMessageId"].as_str());
+    assert_eq!(
+        defaults.sys_flag(),
+        expected["defaultSysFlag"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        defaults.body_crc(),
+        expected["defaultBodyCrc"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        defaults.queue_offset(),
+        expected["defaultQueueOffset"].as_i64().unwrap()
+    );
+    assert_eq!(
+        defaults.commit_log_offset(),
+        expected["defaultCommitLogOffset"].as_i64().unwrap()
+    );
+    assert_eq!(
+        defaults.store_size(),
+        expected["defaultStoreSize"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        defaults.reconsume_times(),
+        expected["defaultReconsumeTimes"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        defaults.prepared_transaction_offset(),
+        expected["defaultPreparedTransactionOffset"]
+            .as_i64()
+            .unwrap()
+    );
+
+    let mut message = MessageExt::default();
+    message.set_queue_id(-17);
+    message.set_born_timestamp(i64::MIN + 17);
+    message.set_store_timestamp(i64::MAX - 17);
+    message.set_message_id(Some("message-ext-id".to_owned()));
+    message.set_sys_flag(-33);
+    message.set_body_crc(i32::MIN);
+    message.set_queue_offset(i64::MIN);
+    message.set_commit_log_offset(i64::MAX);
+    message.set_store_size(-21);
+    message.set_reconsume_times(-4);
+    message.set_prepared_transaction_offset(i64::MAX - 1);
+    assert_eq!(
+        message.queue_id(),
+        expected["queueId"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.born_timestamp(),
+        expected["bornTimestamp"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.store_timestamp(),
+        expected["storeTimestamp"].as_i64().unwrap()
+    );
+    assert_eq!(message.message_id(), expected["messageId"].as_str());
+    assert_eq!(
+        message.sys_flag(),
+        expected["sysFlag"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.body_crc(),
+        expected["bodyCrc"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.queue_offset(),
+        expected["queueOffset"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.commit_log_offset(),
+        expected["commitLogOffset"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.store_size(),
+        expected["storeSize"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.reconsume_times(),
+        expected["reconsumeTimes"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.prepared_transaction_offset(),
+        expected["preparedTransactionOffset"].as_i64().unwrap()
+    );
+}
+
+#[test]
 fn client_message_decoder_apis_match_java_551() {
     let fixture = fixture();
     let cases = fixture["cases"].as_array().unwrap();

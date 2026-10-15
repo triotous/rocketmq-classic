@@ -61,6 +61,7 @@ public final class MessageDecodeFixtures {
             "serverContacted", false,
             "generator", "compat.MessageDecodeFixtures"
         ));
+        root.put("messageExtPublicApi", messageExtPublicApi());
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
@@ -863,6 +864,47 @@ public final class MessageDecodeFixtures {
         } catch (Exception unexpected) {
             return false;
         }
+    }
+
+    private static Map<String, Object> messageExtPublicApi() {
+        MessageExt defaults = new MessageExt();
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("defaultQueueId", defaults.getQueueId());
+        expected.put("defaultBornTimestamp", defaults.getBornTimestamp());
+        expected.put("defaultStoreTimestamp", defaults.getStoreTimestamp());
+        expected.put("defaultMessageId", defaults.getMsgId());
+        expected.put("defaultSysFlag", defaults.getSysFlag());
+        expected.put("defaultBodyCrc", defaults.getBodyCRC());
+        expected.put("defaultQueueOffset", defaults.getQueueOffset());
+        expected.put("defaultCommitLogOffset", defaults.getCommitLogOffset());
+        expected.put("defaultStoreSize", defaults.getStoreSize());
+        expected.put("defaultReconsumeTimes", defaults.getReconsumeTimes());
+        expected.put("defaultPreparedTransactionOffset", defaults.getPreparedTransactionOffset());
+
+        MessageExt message = new MessageExt();
+        message.setQueueId(-17);
+        message.setBornTimestamp(Long.MIN_VALUE + 17);
+        message.setStoreTimestamp(Long.MAX_VALUE - 17);
+        message.setMsgId("message-ext-id");
+        message.setSysFlag(-33);
+        message.setBodyCRC(Integer.MIN_VALUE);
+        message.setQueueOffset(Long.MIN_VALUE);
+        message.setCommitLogOffset(Long.MAX_VALUE);
+        message.setStoreSize(-21);
+        message.setReconsumeTimes(-4);
+        message.setPreparedTransactionOffset(Long.MAX_VALUE - 1);
+        expected.put("queueId", message.getQueueId());
+        expected.put("bornTimestamp", message.getBornTimestamp());
+        expected.put("storeTimestamp", message.getStoreTimestamp());
+        expected.put("messageId", message.getMsgId());
+        expected.put("sysFlag", message.getSysFlag());
+        expected.put("bodyCrc", message.getBodyCRC());
+        expected.put("queueOffset", message.getQueueOffset());
+        expected.put("commitLogOffset", message.getCommitLogOffset());
+        expected.put("storeSize", message.getStoreSize());
+        expected.put("reconsumeTimes", message.getReconsumeTimes());
+        expected.put("preparedTransactionOffset", message.getPreparedTransactionOffset());
+        return expected;
     }
 
     private static Map<String, Object> messageExtHostApi() throws Exception {
