@@ -1253,6 +1253,10 @@ impl ClientRuntime {
         correlation_id: &str,
         deadline: tokio::time::Instant,
     ) -> Result<super::PendingReplyRequest, RuntimeError> {
+        let state = self.state();
+        if state != RuntimeState::Running {
+            return Err(RuntimeError::InvalidState(state));
+        }
         let pending = self
             .groups
             .register_pending_reply(lease, correlation_id, deadline)

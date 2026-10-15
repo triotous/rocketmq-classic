@@ -1020,6 +1020,16 @@ mod tests {
                 .register_producer("producer", producer.clone())
                 .await
                 .unwrap();
+            assert!(matches!(
+                runtime
+                    .register_reply_request(
+                        &lease,
+                        "pre-start-request",
+                        Instant::now() + Duration::from_secs(60)
+                    )
+                    .await,
+                Err(RuntimeError::InvalidState(RuntimeState::Created))
+            ));
             runtime.control.fault.store(point, Ordering::Release);
             runtime.rebalance_later(60_000).unwrap();
             runtime.execute_task_later(async {}, 60_000).unwrap();

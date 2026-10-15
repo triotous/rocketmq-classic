@@ -152,7 +152,6 @@ pub enum PendingReplyCompletion {
     Reply(MessageExt),
     Timeout { send_succeeded: bool },
     SendFailed(String),
-    ProducerShutdown,
 }
 
 /// Identity-bound operations for the currently pending correlation entry.
@@ -461,9 +460,7 @@ impl GroupRegistry {
             let pending = std::mem::take(&mut entries.pending_replies);
             (std::mem::take(&mut *entries), pending)
         };
-        for entry in pending.into_values() {
-            let _ = entry.sender.send(PendingReplyCompletion::ProducerShutdown);
-        }
+        drop(pending);
         drop(previous);
         Ok(())
     }
@@ -1052,6 +1049,24 @@ mod pending_reply_admission_tests {
                 .unregister(&replacement_lease, GroupKind::Producer)
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn clearing_registry_drops_pending_reply_without_extra_completion_variant() {
+        let registry = Arc::new(GroupRegistry::with_pending_reply_capacity(1));
+        let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
+        let lease = registry
+            .register_producer("request-owner", producer)
+            .unwrap();
+        let mut pending = registry
+            .register_pending_reply(&lease, "cleared", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        registry.clear().unwrap();
+
+        assert!(pending.receive().await.is_err());
+        assert!(registry.snapshot().unwrap().producers.is_empty());
     }
 }
 

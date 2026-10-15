@@ -294,9 +294,6 @@ impl Producer {
             Ok(PendingReplyCompletion::SendFailed(cause)) => {
                 Err(ProducerError::RequestSendFailed { topic, cause })
             }
-            Ok(PendingReplyCompletion::ProducerShutdown) => {
-                Err(ProducerError::RequestReplyShutdown)
-            }
             Err(_) => Err(ProducerError::RequestReplyCancelled),
         }
     }
