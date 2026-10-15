@@ -260,7 +260,9 @@ fn message_ext_scalar_public_api_matches_java_551_fixture() {
 #[test]
 fn message_client_ext_api_matches_java_551_fixture() {
     let expected = &fixture()["messageClientExtApi"];
-    let mut message = MessageClientExt::default();
+    assert_eq!(expected["publicConstructorCount"].as_u64(), Some(1));
+    assert_eq!(expected["publicNoArgConstructor"].as_bool(), Some(true));
+    let mut message = MessageClientExt::new();
     assert_eq!(
         message.message_id().as_deref(),
         expected["defaultMessageId"].as_str()
@@ -376,34 +378,6 @@ fn client_message_decoder_apis_match_java_551() {
             decoded.offset_message_id(),
             case["clientDecoded"]["offsetMsgId"].as_str()
         );
-        let mut decoded_client_ext = MessageClientExt::from(decoded.clone());
-        assert_eq!(
-            decoded_client_ext.message_id().as_deref(),
-            case["clientDecoded"]["msgId"].as_str()
-        );
-        assert_eq!(
-            decoded_client_ext.offset_message_id(),
-            case["clientDecoded"]["offsetMsgId"].as_str()
-        );
-        if case["clientDecoded"]["msgId"] != case["clientDecoded"]["offsetMsgId"] {
-            decoded_client_ext.set_offset_message_id(Some("replacement-offset".to_owned()));
-            assert_eq!(
-                decoded_client_ext.offset_message_id(),
-                Some("replacement-offset")
-            );
-            assert_eq!(
-                decoded_client_ext.message_id().as_deref(),
-                case["clientDecoded"]["msgId"].as_str()
-            );
-            decoded_client_ext.clear_system_property(
-                rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
-            );
-            assert_eq!(
-                decoded_client_ext.message_id().as_deref(),
-                Some("replacement-offset")
-            );
-        }
-
         if index < 2 {
             joined.extend_from_slice(&bytes);
         }
@@ -426,15 +400,6 @@ fn client_message_decoder_apis_match_java_551() {
         );
         assert_eq!(
             message.offset_message_id(),
-            case["clientDecoded"]["offsetMsgId"].as_str()
-        );
-        let decoded_client_ext = MessageClientExt::from(message.clone());
-        assert_eq!(
-            decoded_client_ext.message_id().as_deref(),
-            case["clientDecoded"]["msgId"].as_str()
-        );
-        assert_eq!(
-            decoded_client_ext.offset_message_id(),
             case["clientDecoded"]["offsetMsgId"].as_str()
         );
         assert_eq!(

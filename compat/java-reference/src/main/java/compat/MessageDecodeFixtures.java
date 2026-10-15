@@ -1007,6 +1007,15 @@ public final class MessageDecodeFixtures {
     private static Map<String, Object> messageClientExtApi() {
         MessageClientExt message = new MessageClientExt();
         Map<String, Object> expected = new TreeMap<>();
+        java.lang.reflect.Constructor<?>[] publicConstructors = MessageClientExt.class.getConstructors();
+        boolean hasPublicNoArgConstructor = false;
+        for (java.lang.reflect.Constructor<?> constructor : publicConstructors) {
+            if (constructor.getParameterCount() == 0) {
+                hasPublicNoArgConstructor = true;
+            }
+        }
+        expected.put("publicConstructorCount", publicConstructors.length);
+        expected.put("publicNoArgConstructor", hasPublicNoArgConstructor);
         expected.put("defaultMessageId", message.getMsgId());
         expected.put("defaultOffsetMessageId", message.getOffsetMsgId());
         message.setMsgId("ignored-initial");

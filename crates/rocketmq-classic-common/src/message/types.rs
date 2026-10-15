@@ -1466,14 +1466,35 @@ impl std::fmt::Display for MessageExt {
 /// Client-decoded `MessageExt` view corresponding to Java's
 /// `MessageClientExt`. The wrapped base message retains its physical ID;
 /// `message_id()` resolves the live `UNIQ_KEY` property first, and the Java
-/// subclass's `setMsgId` override remains a no-op.
+/// subclass's `setMsgId` override remains a no-op. Java exposes an implicit
+/// public no-argument constructor; Rust provides `new()` and `Default` for
+/// that construction path.
+///
+/// ```
+/// use rocketmq_classic_common::message::MessageClientExt;
+/// let _by_constructor = MessageClientExt::new();
+/// let _by_default = MessageClientExt::default();
+/// ```
+///
+/// Constructing this wrapper from an existing `MessageExt` is not a Java
+/// public API:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{MessageClientExt, MessageExt};
+/// let _ = MessageClientExt::new(MessageExt::default());
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{MessageClientExt, MessageExt};
+/// let _: MessageClientExt = MessageExt::default().into();
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct MessageClientExt(MessageExt);
 
 impl MessageClientExt {
-    pub fn new(message: MessageExt) -> Self {
-        Self(message)
+    pub fn new() -> Self {
+        Self(MessageExt::default())
     }
 
     pub fn message_id(&self) -> Option<String> {
@@ -1494,12 +1515,6 @@ impl MessageClientExt {
     /// Java `MessageClientExt.setOffsetMsgId` writes the inherited `msgId`.
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
         self.0.set_offset_message_id(value);
-    }
-}
-
-impl From<MessageExt> for MessageClientExt {
-    fn from(message: MessageExt) -> Self {
-        Self::new(message)
     }
 }
 
