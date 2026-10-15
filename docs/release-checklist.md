@@ -1231,3 +1231,18 @@ Before any publication:
   evidence, Phase 19 local Docker/Broker automation, and release version/
   registry-resolution checks remain open. Owner-run deployment/live Broker
   checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting private-header narrowing (`c0878056`, 2026-10-15): pinned
+  Java 5.5.1 `RocketMQSerializable` writes request code and version with
+  `writeShort`, retaining the low 16 bits. The Rust private-header encoder now
+  matches this behavior. The new invoked Java fixture uses `987654` for both
+  fields and records `4614` after decode; Rust encoding matches the complete
+  Java frame byte-for-byte. Before the fix, the regression failed with
+  `FieldTooWide("code")`. Remoting all-feature tests pass (96 unit, 7 codec,
+  1 fuzz regression, 5 security, 100 transport and 5 doctests); strict
+  all-target/all-feature Remoting Clippy, Maven verify (37 scenarios),
+  formatting, diff checks and fixture regeneration comparison pass. This
+  closes the private-header narrowing slice only; broad P18-V01, current
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and
+  release version/registry resolution remain open. Fixture SHA-256:
+  `033e89778d92def6f5e1875211ea4ca7b59facaf813a72a57de8c386c5e4acf8`.

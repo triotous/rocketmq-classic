@@ -8,3 +8,26 @@ aligns the summary with the fixture and the current release checklist.
 Validation: `git diff --check` passed. This is a documentation-only correction;
 no test was needed. No plan, push, tag, publication, deployment, or live Broker
 action occurred.
+
+2026-10-15 17:59 UTC — closed one P18-V01 Remoting codec behavior mismatch.
+
+Pinned Java 5.5.1 `RocketMQSerializable` uses `writeShort` for both request
+code and version, so i32 inputs retain their low 16 bits. The Rust private
+header encoder previously rejected values outside the signed range. Added a
+Java-generated `PRIVATE-LARGE-CODE-VERSION` frame for code/version `987654`,
+which decode as `4614`; the new Rust regression first failed with
+`FieldTooWide("code")`. Rust now narrows both fields exactly like Java, and
+the complete encoded frame matches byte-for-byte. Removed this resolved item
+from `KNOWN_DIFFERENCES.md` and added the new fixture to the compatibility
+matrix.
+
+Validation passed: `cargo test -p rocketmq-classic-remoting --all-features
+--locked` (96 unit, 7 codec, 1 fuzz regression, 5 security, 100 transport and
+5 doctests); strict all-target/all-feature Remoting Clippy; Maven verify (37
+scenarios); `cargo fmt --all -- --check`; `git diff --check`; and byte-for-byte
+comparison of the checked-in fixture against fresh pinned-Java output. Fixture
+SHA-256: `033e89778d92def6f5e1875211ea4ca7b59facaf813a72a57de8c386c5e4acf8`.
+Code/test/fixture/compatibility-matrix commit: `c0878056`. Broad P18-V01,
+current GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation
+and release version/registry resolution remain open. No plan, push, tag,
+publication, deployment or live Broker action occurred.
