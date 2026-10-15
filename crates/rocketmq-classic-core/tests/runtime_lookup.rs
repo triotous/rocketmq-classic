@@ -602,7 +602,10 @@ async fn uncached_consumer_lookup_refreshes_once_and_assignment_reuses_raw_topic
             "messageModel": peer_java_assignment_call["messageModel"],
         }))
         .unwrap();
-        assert_eq!(body, java_body);
+        assert_eq!(
+            serde_json::to_value(&body).unwrap(),
+            serde_json::to_value(&java_body).unwrap()
+        );
         let assignment = serde_json::json!({"messageQueue":{"topic":"topic","brokerName":"broker","queueId":2},"mode":"POP","attachments":{"key":"value"}});
         reply(
             &mut socket,

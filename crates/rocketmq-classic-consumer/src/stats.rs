@@ -367,7 +367,7 @@ fn millis(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsumerStatsManager, MetricSeries, SampleWindow};
+    use super::{ConsumerConsumeStatus, ConsumerStatsManager, MetricSeries, SampleWindow};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -431,12 +431,14 @@ mod tests {
         assert_eq!(hour_status.consume_failed_msgs, 3);
         drop(topics);
         assert_eq!(
-            stats.status_at("client-b", "workers", "orders", hour_target),
-            Default::default()
+            serde_json::to_value(stats.status_at("client-b", "workers", "orders", hour_target))
+                .unwrap(),
+            serde_json::to_value(ConsumerConsumeStatus::default()).unwrap()
         );
         assert_eq!(
-            stats.status_at("client-a", "other-group", "orders", hour_target),
-            Default::default()
+            serde_json::to_value(stats.status_at("client-a", "other-group", "orders", hour_target))
+                .unwrap(),
+            serde_json::to_value(ConsumerConsumeStatus::default()).unwrap()
         );
     }
 }
