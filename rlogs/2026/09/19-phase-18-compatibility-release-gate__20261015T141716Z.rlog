@@ -43,3 +43,46 @@ Status
   deployment/live Broker checks remain manual Phase 19 validation.
 - Branch phase/19-phase-18-compatibility-release-gate is local and ahead of
   origin; no push, tag, publication, or live Broker action was performed.
+
+Session: 2026-10-15 14:39 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Scope: P18-V01 Remoting per-channel idle-timeout and worker-group setting timing
+
+Source review
+- Compared pinned Java channel pipeline initialization with Rust's connection
+  creation and processor-worker startup paths.
+- Java reads `clientChannelMaxIdleTimeSeconds` and
+  `disableNettyWorkerGroup` while each channel pipeline is initialized. Rust
+  previously captured both at construction and could not reflect later Java
+  config changes.
+
+Implementation
+- Code commit: b37d8522 fix(remoting): read channel settings per connection.
+- Added live Rust adapters. Each new connection samples both values before
+  dialing; existing connections keep their initialized idle timer and dispatch
+  path. The worker pool starts at client start so later channels can choose
+  either dispatch mode.
+- Rust loopback tests cover post-start setting changes and existing-channel
+  retention. Java `RemotingLiveConfigProbe` checks the new channel's idle
+  handler and executor selection.
+- Updated the two setting rows in
+  `docs/compatibility/PHASE_3_REMOTING_INVENTORY.md` and appended evidence to
+  `docs/release-checklist.md`. No plan files were edited.
+
+Verification
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: passed;
+  89 unit, 6 codec, 1 fuzz regression, 5 security, 95 transport, 5 doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`: passed.
+- `cargo fmt --all -- --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed; 37 scenarios,
+  Remoting live-config probe, Java/Rust cross-decodes and fixture checks.
+- `git diff --check`: passed before code commit; documentation diff check is
+  recorded with the following documentation commit.
+
+Status
+- The two Remoting setting-timing rows are closed on b37d8522.
+- Broad P18-V01, final-revision full-workspace P18-V02 gates, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  release version/registry checks remain open. Owner-run deployment/live Broker
+  checks remain Phase 19 manual validation.

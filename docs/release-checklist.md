@@ -383,6 +383,22 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   The owner must provide any deployment-only credentials, topology, and
   maintenance inputs at that phase.
 
+- P18-V01 Remoting per-channel setting timing (`b37d8522`, 2026-10-15):
+  `clientChannelMaxIdleTimeSeconds` and `disableNettyWorkerGroup` now have live
+  adapters sampled for each new channel. Rust preserves the initialized idle
+  handler and dispatch path on existing channels; its worker pool starts once
+  so later channels can select either worker dispatch or direct dispatch.
+  Rust loopback tests cover post-start mutation and old-channel retention; the
+  Java `RemotingLiveConfigProbe` verifies the corresponding idle handler and
+  event executor for channels created after mutation. The two setting-timing
+  rows are closed; broad P18-V01 remains open.
+- PASS on `b37d8522`: `cargo test -p rocketmq-classic-remoting
+  --all-features --locked` (89 unit, 6 codec, 1 fuzz regression, 5 security,
+  95 transport, 5 doctests), strict Remoting all-target/all-feature Clippy,
+  `cargo fmt --all -- --check`, Maven `verify` (37 scenarios, live-config
+  probe, Java/Rust cross-decodes and fixture checks), and `git diff --check`.
+  These are scoped checks, not the final full-workspace P18-V02 rerun.
+
 ## Phase 18 verification disposition
 
 - [ ] **P18-V01** — Broad Java/Rust source, overload input/error/flow, inherited
