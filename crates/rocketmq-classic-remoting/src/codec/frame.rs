@@ -10,6 +10,10 @@ use crate::{
 /// Default Java Netty frame limit; it includes the 4-byte length prefix.
 pub const DEFAULT_MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 
+/// The outbound Java encoder has no `frameMaxLength` guard; its length prefix
+/// can represent at most a signed Java `int` excluding the 4-byte prefix.
+pub(crate) const JAVA_ENCODER_MAX_FRAME_SIZE: usize = i32::MAX as usize + 4;
+
 // ponytail: Java's FastCodesHeader optimization is covered by equivalent golden frames;
 // keep the common encoder exact until Phase 18 measurements justify specialization.
 pub fn encode(command: &RemotingCommand, max_frame_size: usize) -> Result<Vec<u8>, CodecError> {

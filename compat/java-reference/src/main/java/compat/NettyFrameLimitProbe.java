@@ -5,8 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.rocketmq.remoting.netty.NettyEncoder;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
-/** Invokes the pinned NettyDecoder class initializer in a fresh JVM. */
+/** Probes the pinned Netty decoder limit and encoder behavior in a fresh JVM. */
 public final class NettyFrameLimitProbe {
     private NettyFrameLimitProbe() {
     }
@@ -37,6 +41,20 @@ public final class NettyFrameLimitProbe {
         int actual = field.getInt(null);
         if (actual != expected) {
             throw new IllegalStateException("NettyDecoder frame limit " + actual + " != " + expected);
+        }
+        if (configured) {
+            int bodySize = intValue(fixture, "encoderProbeBodySize");
+            RemotingCommand command = RemotingCommand.createRequestCommand(0, null);
+            command.setBody(new byte[bodySize]);
+            ByteBuf encoded = Unpooled.buffer();
+            try {
+                new NettyEncoder().encode(null, command, encoded);
+                if (encoded.readableBytes() <= expected) {
+                    throw new IllegalStateException("NettyEncoder applied the decoder frame limit");
+                }
+            } finally {
+                encoded.release();
+            }
         }
     }
 

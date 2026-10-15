@@ -1527,7 +1527,7 @@ impl RemotingClient {
         let mut pending =
             pending::PendingGuard::new(Arc::downgrade(&self.inner), opaque, connection.generation);
         let frame = connection
-            .encode_command(&command, connection.max_frame_size)
+            .encode_command(&command, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)
             .map_err(|error| classify_write_error(connection.address(), error))?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         match time::timeout(remaining, connection.send(frame, deadline)).await {
@@ -1724,7 +1724,8 @@ impl RemotingClient {
                         }
                         error => error,
                     })?;
-                let frame = connection.encode_command(&command, connection.max_frame_size)?;
+                let frame = connection
+                    .encode_command(&command, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)?;
                 connection
                     .send(frame, deadline)
                     .await
@@ -2377,14 +2378,18 @@ mod tests {
         let expected = fixture["configured"].as_u64().unwrap() as usize;
 
         if std::env::var_os(CHILD_MARKER).is_some() {
-            use tokio::io::AsyncReadExt;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap().to_string();
             let peer = tokio::spawn(async move {
                 let (mut stream, _) = listener.accept().await.unwrap();
+                stream
+                    .write_all(&(expected as u32).to_be_bytes())
+                    .await
+                    .unwrap();
                 let mut byte = [0];
-                let _ = stream.read(&mut byte).await;
+                assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
             });
             let client = RemotingClient::with_config(ClientConfig::default()).unwrap();
             let connection = client
@@ -2392,19 +2397,23 @@ mod tests {
                 .connection(&address, Instant::now() + std::time::Duration::from_secs(3))
                 .await
                 .unwrap();
-            assert_eq!(connection.max_frame_size, expected);
             let oversized = RemotingCommand {
                 body: Some(vec![0; expected]),
                 ..RemotingCommand::default()
             };
+            let outbound = connection
+                .encode_command(&oversized, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)
+                .unwrap();
+            assert!(outbound.len() > expected);
+            let inbound_rejected =
+                tokio::time::timeout(std::time::Duration::from_secs(3), peer).await;
             assert!(
-                connection
-                    .encode_command(&oversized, connection.max_frame_size)
-                    .is_err()
+                inbound_rejected.is_ok(),
+                "connection did not close after a frame exceeded the configured inbound limit"
             );
-            connection.close();
+            inbound_rejected.unwrap().unwrap();
+            assert!(connection.is_closed());
             connection.join().await;
-            peer.await.unwrap();
             return;
         }
 

@@ -306,7 +306,8 @@ fn send_response(
         .find(|connection| connection.generation == request.generation)
         .cloned();
     if let Some(connection) = connection {
-        match connection.encode_command(&response, connection.max_frame_size) {
+        match connection.encode_command(&response, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)
+        {
             Ok(encoded) => {
                 let Some(runtime) = client.runtime.lock().unwrap().clone() else {
                     return;
