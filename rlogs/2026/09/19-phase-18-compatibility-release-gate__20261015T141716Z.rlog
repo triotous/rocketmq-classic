@@ -215,3 +215,13 @@ Status
   local Docker/Broker automation, and release version/registry-resolution
   checks remain open. Owner-run deployment/live Broker checks remain Phase 19
   manual validation.
+
+Addendum: Remoting setting inventory review — 2026-10-15 15:13 UTC
+- Rechecked pinned Java `NettyRemotingClient` construction/start/channel/bootstrap
+  read sites against every `NettyClientConfig` row in the Remoting inventory.
+  The timing disposition now includes construction, start, per-channel,
+  per-operation, and per-proxy-CIDR first-use snapshots; the live `useTLS`
+  toggle closes the final row identified by this review.
+- Clarified the inventory conclusion that Remoting setting-timing rows have
+  dispositions, while the broader P18-V01 API, overload/input/error/control-flow
+  and reverse-export audit remains open. No plan files were edited.
