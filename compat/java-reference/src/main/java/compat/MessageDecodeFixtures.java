@@ -61,6 +61,7 @@ public final class MessageDecodeFixtures {
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         root.put("messageCompactApi", messageCompactApi());
+        root.put("messageExtEncodeApi", messageExtEncodeApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
             InetAddress.getByName("192.0.2.10"), 10911,
@@ -455,6 +456,83 @@ public final class MessageDecodeFixtures {
             return false;
         } catch (IllegalArgumentException expected) {
             return true;
+        }
+    }
+
+    private static Map<String, Object> messageExtEncodeApi() throws Exception {
+        Map<String, Object> expected = new TreeMap<>();
+        MessageExt ipv4 = messageExtForEncoding(0, "192.0.2.10", "198.51.100.20");
+        byte[] ipv4Encoded = MessageDecoder.encode(ipv4, false);
+        expected.put("ipv4StandardBase64", Base64.getEncoder().encodeToString(ipv4Encoded));
+        expected.put("ipv4UniqueBase64", Base64.getEncoder().encodeToString(
+            MessageDecoder.encodeUniquely(ipv4, false)));
+
+        MessageExt ipv6 = messageExtForEncoding(
+            MessageSysFlag.BORNHOST_V6_FLAG | MessageSysFlag.STOREHOSTADDRESS_V6_FLAG,
+            "2001:db8::10", "2001:db8::20");
+        expected.put("ipv6StandardBase64", Base64.getEncoder().encodeToString(
+            MessageDecoder.encode(ipv6, false)));
+        expected.put("ipv6UniqueBase64", Base64.getEncoder().encodeToString(
+            MessageDecoder.encodeUniquely(ipv6, false)));
+
+        ipv4.setStoreSize(ipv4Encoded.length + 3);
+        expected.put("paddedStandardBase64", Base64.getEncoder().encodeToString(
+            MessageDecoder.encode(ipv4, false)));
+        MessageExt tooSmall = messageExtForEncoding(0, "192.0.2.10", "198.51.100.20");
+        tooSmall.setStoreSize(1);
+        expected.put("tooSmallStoreSizeThrows", throwsMessageExtEncodeBufferOverflow(tooSmall));
+
+        List<Map<String, Object>> compressed = new ArrayList<>();
+        for (int compressionType : new int[] {
+            MessageSysFlag.COMPRESSION_ZLIB_TYPE,
+            MessageSysFlag.COMPRESSION_LZ4_TYPE,
+            MessageSysFlag.COMPRESSION_ZSTD_TYPE
+        }) {
+            MessageExt message = messageExtForEncoding(
+                MessageSysFlag.COMPRESSED_FLAG | compressionType,
+                "192.0.2.10", "198.51.100.20");
+            byte[] encoded = MessageDecoder.encode(message, true);
+            MessageExt decoded = MessageDecoder.decode(
+                ByteBuffer.wrap(encoded), true, true, false, false, false);
+            Map<String, Object> row = new TreeMap<>();
+            row.put("compressionType", compressionType);
+            row.put("decodedBodyBase64", Base64.getEncoder().encodeToString(decoded.getBody()));
+            row.put("decodedSysFlag", decoded.getSysFlag());
+            compressed.add(row);
+        }
+        expected.put("compressed", compressed);
+        return expected;
+    }
+
+    private static MessageExt messageExtForEncoding(int sysFlag, String bornIp, String storeIp)
+        throws Exception {
+        MessageExt message = new MessageExt();
+        message.setTopic("orders");
+        message.setBody(new byte[] {0, -1, 42, 55});
+        message.setFlag(-23);
+        message.setBodyCRC(0x12345678);
+        message.setQueueId(7);
+        message.setQueueOffset(23L);
+        message.setCommitLogOffset(4567L);
+        message.setSysFlag(sysFlag);
+        message.setBornTimestamp(123L);
+        message.setBornHost(new InetSocketAddress(InetAddress.getByName(bornIp), 10911));
+        message.setStoreTimestamp(234L);
+        message.setStoreHost(new InetSocketAddress(InetAddress.getByName(storeIp), 10912));
+        message.setReconsumeTimes(2);
+        message.setPreparedTransactionOffset(345L);
+        MessageAccessor.setProperties(message, new java.util.HashMap<>(Map.of("k", "v")));
+        return message;
+    }
+
+    private static boolean throwsMessageExtEncodeBufferOverflow(MessageExt message) {
+        try {
+            MessageDecoder.encode(message, false);
+            return false;
+        } catch (java.nio.BufferOverflowException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
         }
     }
 

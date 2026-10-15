@@ -6,7 +6,8 @@ use rocketmq_classic_common::{
         append_crc32_property, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
         decode_inner_batch, decode_many, decode_message_id, decode_one, decode_record_properties,
-        encode_compact_message, encode_compact_messages,
+        encode_compact_message, encode_compact_messages, encode_message_ext,
+        encode_message_ext_uniquely,
     },
     sysflag::message,
 };
@@ -527,6 +528,89 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
             available: 4
         }
     );
+}
+
+#[test]
+fn message_ext_encoder_matches_java_551() {
+    fn message_ext_for_encoding(sys_flag: i32, born_ip: &str, store_ip: &str) -> MessageExt {
+        let mut message_ext = MessageExt::default();
+        message_ext.message_mut().set_topic("orders");
+        message_ext.message_mut().set_body([0, 255, 42, 55]);
+        message_ext.message_mut().set_flag(-23);
+        message_ext
+            .message_mut()
+            .set_system_property("k", "v")
+            .unwrap();
+        message_ext.set_body_crc(0x1234_5678);
+        message_ext.set_queue_id(7);
+        message_ext.set_queue_offset(23);
+        message_ext.set_commit_log_offset(4567);
+        message_ext.set_sys_flag(sys_flag);
+        message_ext.set_born_timestamp(123);
+        message_ext.set_born_host(Some(MessageHostAddress::from_ip_address(
+            born_ip.parse().unwrap(),
+            10_911,
+        )));
+        message_ext.set_store_timestamp(234);
+        message_ext.set_store_host(Some(MessageHostAddress::from_ip_address(
+            store_ip.parse().unwrap(),
+            10_912,
+        )));
+        message_ext.set_reconsume_times(2);
+        message_ext.set_prepared_transaction_offset(345);
+        message_ext
+    }
+
+    let expected = &fixture()["messageExtEncodeApi"];
+    let ipv4 = message_ext_for_encoding(0, "192.0.2.10", "198.51.100.20");
+    let ipv4_encoded = encode_message_ext(&ipv4, false).unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&ipv4_encoded),
+        expected["ipv4StandardBase64"]
+    );
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .encode(encode_message_ext_uniquely(&ipv4, false).unwrap()),
+        expected["ipv4UniqueBase64"]
+    );
+
+    let ipv6_flag = message::BORNHOST_V6_FLAG | message::STOREHOSTADDRESS_V6_FLAG;
+    let ipv6 = message_ext_for_encoding(ipv6_flag, "2001:db8::10", "2001:db8::20");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(encode_message_ext(&ipv6, false).unwrap()),
+        expected["ipv6StandardBase64"]
+    );
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .encode(encode_message_ext_uniquely(&ipv6, false).unwrap()),
+        expected["ipv6UniqueBase64"]
+    );
+
+    let mut padded = ipv4.clone();
+    padded.set_store_size(ipv4_encoded.len() as i32 + 3);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD
+            .encode(encode_message_ext(&padded, false).unwrap()),
+        expected["paddedStandardBase64"]
+    );
+
+    let mut too_small = ipv4.clone();
+    too_small.set_store_size(1);
+    assert!(encode_message_ext(&too_small, false).is_err());
+    assert_eq!(expected["tooSmallStoreSizeThrows"], true);
+
+    for case in expected["compressed"].as_array().unwrap() {
+        let sys_flag = message::COMPRESSED_FLAG | case["compressionType"].as_i64().unwrap() as i32;
+        let compressed = message_ext_for_encoding(sys_flag, "192.0.2.10", "198.51.100.20");
+        let encoded = encode_message_ext(&compressed, true).unwrap();
+        let (decoded, consumed) = decode_one(&encoded, DecodeOptions::default()).unwrap();
+        assert_eq!(consumed, encoded.len());
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(decoded.message().body()),
+            case["decodedBodyBase64"]
+        );
+        assert_eq!(decoded.sys_flag(), case["decodedSysFlag"]);
+    }
 }
 
 #[test]

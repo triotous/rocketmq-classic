@@ -1,6 +1,7 @@
 mod compact;
 pub mod constants;
 pub mod decoder;
+mod encoder;
 mod host_address;
 mod message_id;
 mod properties;
@@ -14,6 +15,7 @@ pub use decoder::{
     BLANK_MAGIC_CODE, DecodeError, DecodeOptions, MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2,
     append_crc32_property, decode_many, decode_one, decode_record_properties,
 };
+pub use encoder::{MessageExtEncodeError, encode_message_ext, encode_message_ext_uniquely};
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
 pub use message_id::{
     MessageId, MessageIdError, create_message_id, create_message_id_from_host_bytes,

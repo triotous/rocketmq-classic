@@ -462,6 +462,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   inner-batch expansion and count helpers now match the invoked Java 5.5.1
   fixture, including copied outer metadata and checked malformed inputs.
   P18-V01 remains open for the other MessageDecoder methods and broad audit.
+- Common `MessageExt` record encoder slice: public standard and unique encoders
+  match the invoked Java 5.5.1 bytes for IPv4/IPv6, configured-size padding and
+  undersized buffers; compressed ZLIB/LZ4/ZSTD records decode to Java's expected
+  body. Rust regression and the Java fixture are updated. This closes those two
+  encoder methods only; the remaining decoder overloads and broad P18-V01 audit
+  remain open. Current message fixture SHA-256:
+  `c7bf73f5baa095242502d97e06953e2ef2a2c4ea774ed69923aeef586fde940a`.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
