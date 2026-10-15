@@ -386,6 +386,45 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(expected["nonBreakingSpaceUserPropertyNameAccepted"], true);
     assert_eq!(expected["emSpaceUserPropertyValueAccepted"], true);
     assert_eq!(expected["asciiControlOnlyUserPropertyRejected"], true);
+    let dynamic_reserved_property = "__RMQ_DYNAMIC_RESERVED_FIXTURE__";
+    let dynamic_was_reserved = {
+        let mut properties = rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let existed = properties.contains(dynamic_reserved_property);
+        properties.insert(dynamic_reserved_property.to_owned());
+        existed
+    };
+    let dynamic_reserved_result =
+        Message::default().put_user_property(dynamic_reserved_property, "value");
+    if !dynamic_was_reserved {
+        rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(dynamic_reserved_property);
+    }
+    assert_eq!(
+        dynamic_reserved_result,
+        Err(rocketmq_classic_common::message::MessagePropertyError::ReservedProperty)
+    );
+    let keys_was_reserved = rocketmq_classic_common::message::constants::STRING_HASH_SET
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(rocketmq_classic_common::message::constants::PROPERTY_KEYS);
+    let removed_reserved_result = Message::default().put_user_property(
+        rocketmq_classic_common::message::constants::PROPERTY_KEYS,
+        "user-value",
+    );
+    if keys_was_reserved {
+        rocketmq_classic_common::message::constants::STRING_HASH_SET
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(rocketmq_classic_common::message::constants::PROPERTY_KEYS.to_owned());
+    }
+    assert!(keys_was_reserved);
+    assert_eq!(removed_reserved_result, Ok(None));
+    assert_eq!(expected["mutatedReservedPropertyRejected"], true);
+    assert_eq!(expected["removedReservedPropertyAccepted"], true);
     let null_name_lookup = Message::default();
     assert_eq!(null_name_lookup.get_nullable_property(None), None);
     assert_eq!(

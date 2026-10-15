@@ -1159,3 +1159,11 @@ The invoked `messagePublicApi` fixture checks that each Java object equals itsel
 | `Message.putUserProperty(String, String)` rejects keys or values empty after Java `String.trim()` | `put_user_property` and `put_user_property_nullable` trim only code points U+0000 through U+0020 before the empty check |
 
 The invoked Java fixture confirms non-breaking-space keys and em-space values are accepted while ASCII control/space-only keys are rejected. Rust fixture cases compare those outcomes. This closes the `String.trim()` input boundary only; other property inputs and the broader Common/P18-V01 audit remain open.
+
+## Common public API: mutable reserved-property set
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `MessageConst.STRING_HASH_SET` is a public mutable `HashSet<String>` consulted by `Message.putUserProperty` | `message::constants::STRING_HASH_SET` is a process-wide `LazyLock<RwLock<HashSet<String>>>`; each user-property insertion reads the current set |
+
+The invoked Java fixture adds a custom reserved name and removes `KEYS`, verifies that `putUserProperty` observes each mutation, then restores the set. The Rust fixture performs the same insert/remove behavior under the lock. This closes the mutable reserved-set behavior only; the remaining Common public API and P18-V01 audit stay open.

@@ -1,5 +1,8 @@
 // Message property and message-key constants from Apache RocketMQ 5.5.1 MessageConst.
 
+use std::collections::HashSet;
+use std::sync::{LazyLock, RwLock};
+
 pub const PROPERTY_KEYS: &str = "KEYS";
 pub const PROPERTY_TAGS: &str = "TAGS";
 pub const PROPERTY_WAIT_STORE_MSG_OK: &str = "WAIT";
@@ -78,7 +81,7 @@ pub const PROPERTY_TIMER_DELAY_MS: &str = "TIMER_DELAY_MS";
 pub const PROPERTY_CRC32: &str = "__CRC32#";
 pub const PROPERTY_DLQ_ORIGIN_TOPIC: &str = "DLQ_ORIGIN_TOPIC";
 pub const PROPERTY_DLQ_ORIGIN_MESSAGE_ID: &str = "DLQ_ORIGIN_MESSAGE_ID";
-pub const STRING_HASH_SET: &[&str] = &[
+const STRING_HASH_SET_INITIAL: &[&str] = &[
     PROPERTY_TRACE_SWITCH,
     PROPERTY_MSG_REGION,
     PROPERTY_KEYS,
@@ -134,3 +137,21 @@ pub const STRING_HASH_SET: &[&str] = &[
     PROPERTY_PRIORITY,
     PROPERTY_LITE_TOPIC,
 ];
+
+/// Mutable reserved-property names corresponding to Java's public
+/// `MessageConst.STRING_HASH_SET`.
+pub static STRING_HASH_SET: LazyLock<RwLock<HashSet<String>>> = LazyLock::new(|| {
+    RwLock::new(
+        STRING_HASH_SET_INITIAL
+            .iter()
+            .map(|property| (*property).to_owned())
+            .collect(),
+    )
+});
+
+pub(crate) fn is_reserved_user_property(name: &str) -> bool {
+    STRING_HASH_SET
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .contains(name)
+}

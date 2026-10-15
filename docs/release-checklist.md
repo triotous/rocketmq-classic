@@ -435,6 +435,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   cases cover those values and rejection of ASCII control/space-only input.
   This input boundary is closed; broad Message overload/input/API
   reconciliation remains open P18-V01 work.
+- Common `MessageConst.STRING_HASH_SET` mutation: Rust now exposes a
+  lock-protected mutable set and `putUserProperty` reads its current contents.
+  Invoked Java and Rust fixtures verify add/remove mutations affect reserved
+  property validation. This closes the set-mutation behavior only; broad
+  Common reverse-surface reconciliation remains open P18-V01 work.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

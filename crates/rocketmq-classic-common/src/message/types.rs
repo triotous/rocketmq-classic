@@ -513,7 +513,7 @@ impl Message {
     ) -> Result<Option<String>, MessagePropertyError> {
         if key
             .as_deref()
-            .is_some_and(|key| crate::message::constants::STRING_HASH_SET.contains(&key))
+            .is_some_and(crate::message::constants::is_reserved_user_property)
         {
             return Err(MessagePropertyError::ReservedProperty);
         }
@@ -534,7 +534,7 @@ impl Message {
         let key = key.into();
         let value = value.into();
         validate_property(&key, &value)?;
-        if crate::message::constants::STRING_HASH_SET.contains(&key.as_str()) {
+        if crate::message::constants::is_reserved_user_property(&key) {
             return Err(MessagePropertyError::ReservedProperty);
         }
         Ok(self.put_property_value(key, Some(value)))

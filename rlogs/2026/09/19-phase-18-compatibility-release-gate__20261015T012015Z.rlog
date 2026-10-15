@@ -1,0 +1,7 @@
+# Phase 18 MessageConst reserved-set mutability — 20261015T012015Z
+
+- Pinned Java 5.5.1 exposes `MessageConst.STRING_HASH_SET` as a public mutable `HashSet<String>`, and `Message.putUserProperty` reads its live contents. The Rust public constant was an immutable slice, so caller mutations were impossible. The 54 initial reserved property names match the pinned Java initializer exactly.
+- Replaced the immutable slice with a public `LazyLock<RwLock<HashSet<String>>>`. User-property validation reads the current set. The invoked Java fixture adds a dynamic reserved name and removes `KEYS`, verifies both validation outcomes, then restores the Java set; the Rust fixture does the equivalent and restores the Rust set.
+- Updated Phase 6/8 API maps, requirement audit, release checklist and the regenerated message fixture. Fixture SHA-256: `2ec8cd462b925af5f31fe73a9d4c9103c50bc7d39169cc119c8305342b73d56c`.
+- PASS: `cargo test -p rocketmq-classic-common --all-features --locked` (21 unit tests, 8 integration tests, 11 doctests); `cargo clippy -p rocketmq-classic-common --all-targets --all-features --locked -- -D warnings`; `mvn -o -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
+- This closes the mutable reserved-set behavior only. Broad P18-V01 API/input/reverse-export reconciliation remains open. Full final-revision P18-V02 gates, current-revision GitHub Ubuntu evidence, and Phase 19 Docker/Broker scenarios remain outstanding. No plan file changed.

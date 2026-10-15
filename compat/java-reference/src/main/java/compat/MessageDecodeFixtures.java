@@ -14,6 +14,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageClientExt;
@@ -200,6 +201,23 @@ public final class MessageDecodeFixtures {
             !throwsIllegalArgument(() -> new Message().putUserProperty("key", "\u2003")));
         expected.put("asciiControlOnlyUserPropertyRejected",
             throwsIllegalArgument(() -> new Message().putUserProperty("\u001f ", "value")));
+        String dynamicReservedProperty = "__RMQ_DYNAMIC_RESERVED_FIXTURE__";
+        boolean dynamicWasReserved = MessageConst.STRING_HASH_SET.contains(dynamicReservedProperty);
+        MessageConst.STRING_HASH_SET.add(dynamicReservedProperty);
+        try {
+            expected.put("mutatedReservedPropertyRejected",
+                throwsRuntimeException(() -> new Message().putUserProperty(dynamicReservedProperty, "value")));
+        } finally {
+            if (!dynamicWasReserved) MessageConst.STRING_HASH_SET.remove(dynamicReservedProperty);
+        }
+        boolean keysWasReserved = MessageConst.STRING_HASH_SET.remove(MessageConst.PROPERTY_KEYS);
+        try {
+            expected.put("removedReservedPropertyAccepted",
+                keysWasReserved && !throwsRuntimeException(
+                    () -> new Message().putUserProperty(MessageConst.PROPERTY_KEYS, "user-value")));
+        } finally {
+            if (keysWasReserved) MessageConst.STRING_HASH_SET.add(MessageConst.PROPERTY_KEYS);
+        }
 
         Message nullNameLookup = new Message();
         expected.put("nullNameLookupIsNull", nullNameLookup.getProperty(null) == null);
@@ -322,6 +340,15 @@ public final class MessageDecodeFixtures {
             action.run();
             return false;
         } catch (IllegalArgumentException expected) {
+            return true;
+        }
+    }
+
+    private static boolean throwsRuntimeException(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (RuntimeException expected) {
             return true;
         }
     }
