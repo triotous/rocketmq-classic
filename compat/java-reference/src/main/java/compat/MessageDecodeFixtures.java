@@ -138,6 +138,12 @@ public final class MessageDecodeFixtures {
         expected.put("defaultBodyIsNull", defaultMessage.getBody() == null);
         expected.put("defaultPropertiesIsNull", defaultMessage.getProperties() == null);
         expected.put("defaultToString", defaultMessage.toString());
+        expected.put("messageEqualsSelf", defaultMessage.equals(defaultMessage));
+        expected.put("messageEqualsDistinctSameState", defaultMessage.equals(new Message()));
+        MessageExt defaultMessageExt = new MessageExt();
+        expected.put("messageExtEqualsSelf", defaultMessageExt.equals(defaultMessageExt));
+        expected.put("messageExtEqualsDistinctSameState",
+            defaultMessageExt.equals(new MessageExt()));
         defaultMessage.getProperty("missing");
         expected.put("propertyLookupInitializesProperties",
             defaultMessage.getProperties() != null && defaultMessage.getProperties().isEmpty());

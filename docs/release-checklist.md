@@ -419,6 +419,16 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Common all-feature tests, strict Clippy, formatting, and diff checks pass.
   Constructor/property accessors and the wider Common/Core/API reconciliation
   remain open P18-V01 work.
+- Common message equality reverse-surface slice: Java `Message` and
+  `MessageExt` inherit identity-based `Object.equals`/`hashCode`; Rust no longer
+  exposes structural equality. `MessageExt` equality now uses a hidden identity
+  token; Java and Rust fixtures cover same-instance/clone and distinct-default
+  outcomes. A compile-fail doctest guards `Message`'s lack of structural
+  equality. Default/all-feature workspace tests, strict workspace Clippy,
+  Maven verify (37 scenarios and cross-decodes), formatting, and diff checks
+  pass for this slice. The full P18-V02 rerun, including race/fuzz, example,
+  benchmark, metadata, and package-content gates, remains required on the final
+  revision. Broader Common/Core/API reconciliation remains open P18-V01 work.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

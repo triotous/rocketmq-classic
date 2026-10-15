@@ -249,6 +249,13 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(default_message.body_nullable(), None);
     assert_eq!(default_message.get_properties(), None);
     assert_eq!(default_message.to_string(), expected["defaultToString"]);
+    assert_eq!(expected["messageEqualsSelf"], true);
+    assert_eq!(expected["messageEqualsDistinctSameState"], false);
+    assert_eq!(expected["messageExtEqualsSelf"], true);
+    assert_eq!(expected["messageExtEqualsDistinctSameState"], false);
+    let default_message_ext = MessageExt::default();
+    assert_eq!(default_message_ext, default_message_ext);
+    assert_ne!(default_message_ext, MessageExt::default());
     let default_after_lookup = default_message.clone();
     assert_eq!(default_after_lookup.get_property("missing"), None);
     assert_eq!(

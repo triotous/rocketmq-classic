@@ -1142,3 +1142,12 @@ The pinned fixture invokes all constants, validation/classification methods, mut
 | `InetSocketAddress.toString()` text used by `MessageExt` host fields | `MessageHostAddress` implements `Display`/`ToString`; its internal formatter is not a separate public API |
 
 Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. This closes the formatter-helper boundary only; the remaining Common message constructors, property accessors, overload inputs, and their reverse-export mappings remain part of P18-V01.
+
+## Common public API: Message equality semantics
+
+| Pinned Java 5.5.1 API | Rust counterpart / current boundary |
+| --- | --- |
+| `Message.equals` / `hashCode`, inherited from `Object` | `Message` has no structural `PartialEq`/`Eq` implementation |
+| `MessageExt.equals` / `hashCode`, inherited from `Object` through `Message` | `MessageExt` `PartialEq`/`Eq` compare a hidden identity token, so separately constructed equal-content values are unequal |
+
+The invoked `messagePublicApi` fixture checks that each Java object equals itself and that a distinct default instance with identical fields is not equal. The Rust fixture checks the same behavior for fresh `MessageExt` values; its `Clone` retains the identity token. A compile-fail rustdoc example guards `Message`'s lack of structural equality. This closes only the `Message`/`MessageExt` equality-trait reverse-surface slice; the broader Common constructor, property, overload/input, inherited API, and P18-V01 reconciliation remains open.

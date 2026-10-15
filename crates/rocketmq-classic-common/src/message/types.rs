@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
@@ -83,6 +84,14 @@ pub struct MessageSysFlagParseError {
 /// ```compile_fail
 /// use rocketmq_classic_common::message::Message;
 /// let _ = Message::default().java_to_string();
+/// ```
+///
+/// Java `Message` inherits identity-based `Object.equals`/`hashCode`; Rust
+/// does not provide structural `PartialEq`/`Eq` for this type:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::Message;
+/// assert_eq!(Message::default(), Message::default());
 /// ```
 #[derive(Debug)]
 pub struct Message {
@@ -188,19 +197,6 @@ impl Clone for Message {
         }
     }
 }
-
-impl PartialEq for Message {
-    fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic
-            && self.body == other.body
-            && self.flag == other.flag
-            && self.properties_nullable() == other.properties_nullable()
-            && self.null_properties == other.null_properties
-            && self.transaction_id == other.transaction_id
-    }
-}
-
-impl Eq for Message {}
 
 impl Default for Message {
     fn default() -> Self {
@@ -758,8 +754,21 @@ impl DerefMut for MessageExt {
 /// use rocketmq_classic_common::message::MessageExt;
 /// let _ = MessageExt::default().java_to_string();
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+///
+/// Java `MessageExt` inherits identity-based `Object.equals`/`hashCode`;
+/// Rust equality also follows the message identity token instead of comparing
+/// fields. Cloning a `MessageExt` preserves that token:
+///
+/// ```
+/// use rocketmq_classic_common::message::MessageExt;
+/// let message = MessageExt::default();
+/// assert_eq!(message, message.clone());
+/// assert_ne!(message, MessageExt::default());
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MessageExt {
+    #[serde(skip)]
+    identity: Arc<()>,
     #[serde(flatten)]
     message: Message,
     #[serde(rename = "brokerName", skip_serializing_if = "Option::is_none")]
@@ -793,6 +802,14 @@ pub struct MessageExt {
     #[serde(rename = "preparedTransactionOffset")]
     prepared_transaction_offset: i64,
 }
+
+impl PartialEq for MessageExt {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.identity, &other.identity)
+    }
+}
+
+impl Eq for MessageExt {}
 
 impl MessageExt {
     pub fn new(message: Message) -> Self {
@@ -1387,7 +1404,9 @@ mod tests {
         let mut ext = MessageExt::new(message.clone());
         ext.set_queue_offset(i64::MIN);
         ext.set_commit_log_offset(i64::MAX);
-        assert_eq!(ext.message(), &message);
+        assert_eq!(ext.message().topic_nullable(), message.topic_nullable());
+        assert_eq!(ext.message().body_nullable(), message.body_nullable());
+        assert_eq!(ext.message().properties(), message.properties());
         assert_eq!(ext.queue_offset(), i64::MIN);
         assert_eq!(ext.commit_log_offset(), i64::MAX);
     }

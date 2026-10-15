@@ -316,7 +316,17 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
         .flatten()
         .map(|message| message.snapshot())
         .collect::<Vec<_>>();
-    assert_eq!(returned_messages, messages);
+    let returned_values = returned_messages
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let expected_values = messages
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(returned_values, expected_values);
     client.shutdown().await;
 }
 
