@@ -513,8 +513,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   reverse-export reconciliation remains open.
 - `MessageAccessor.setProperties` now maps to `Message::set_properties` for
   replacing, emptying, and clearing the property map, with pinned Java fixture
-  coverage. Java's shallow `cloneMessage` alias behavior and null-key property
-  maps remain in the P18-V01 source/input audit.
+  coverage. Java's shallow `cloneMessage` alias behavior remains in the
+  P18-V01 source/API audit. Null-key maps now use `NullableMessageProperties`
+  and `Message::set_nullable_properties`, with nullable lookup/clear APIs and
+  encoded-key coverage across compact/stored records, producer send/batch, and
+  consumer retry-topic fallback. Current message fixture SHA-256:
+  `1c8eaa749d9b1d990e04520a5879c84b7d55dad99d8cf08c775afc4866a14f21`.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

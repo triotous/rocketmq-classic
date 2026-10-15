@@ -15,7 +15,7 @@ use std::collections::VecDeque;
 use rocketmq_classic_common::{
     message::{
         DecodeOptions, Message, MessageExt, MessageHostAddress, MessageQueue, constants::*,
-        encode_properties,
+        encode_nullable_property_entries,
     },
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
@@ -93,6 +93,34 @@ use super::{
 
 type ConsumerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
+fn retry_wire_properties(
+    retry: &Message,
+) -> (BTreeMap<String, String>, Option<i32>, Option<i32>, String) {
+    let mut properties = retry.properties().clone();
+    let reconsume_times = properties
+        .remove(PROPERTY_RECONSUME_TIME)
+        .and_then(|value| value.parse::<i32>().ok());
+    let max_reconsume_times = properties
+        .remove(PROPERTY_MAX_RECONSUME_TIMES)
+        .and_then(|value| value.parse::<i32>().ok());
+    let mut property_entries = properties
+        .iter()
+        .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
+        .collect::<Vec<_>>();
+    property_entries.extend(
+        retry
+            .nullable_property_entries()
+            .filter(|(key, _)| key.is_none()),
+    );
+    let encoded_properties = encode_nullable_property_entries(Some(&property_entries));
+    (
+        properties,
+        reconsume_times,
+        max_reconsume_times,
+        encoded_properties,
+    )
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct SendBackOptions<'a> {
     pub(crate) broker_name_override: Option<Option<&'a str>>,
@@ -117,6 +145,7 @@ pub(crate) struct ScriptedRetryTransport {
     pub(crate) broker_targets: Vec<(Option<String>, Option<String>)>,
     pub(crate) broker_timeouts_millis: Vec<u64>,
     pub(crate) retry_messages: Vec<Message>,
+    pub(crate) retry_wire_properties: Vec<String>,
 }
 
 #[cfg(test)]
@@ -3391,9 +3420,10 @@ impl PushConsumer {
         let reconsume_times = original.reconsume_times().saturating_add(1);
         let mut retry = Message::new(retry_topic, original.message().body().to_vec());
         retry.set_flag(original.message().flag());
-        for (key, value) in original.message().properties() {
-            if key != PROPERTY_TRANSACTION_PREPARED {
-                let _ = retry.set_system_property(key.clone(), value.clone());
+        for (key, value) in original.message().nullable_property_entries() {
+            if key != Some(PROPERTY_TRANSACTION_PREPARED) {
+                let _ =
+                    retry.set_property_nullable(key.map(str::to_owned), value.map(str::to_owned));
             }
         }
         let origin_message_id = original
@@ -3433,6 +3463,8 @@ impl PushConsumer {
         runtime: &Arc<ClientRuntime>,
         retry: &Message,
     ) -> Result<(), String> {
+        let (properties, reconsume_times, max_reconsume_times, encoded_properties) =
+            retry_wire_properties(retry);
         #[cfg(test)]
         {
             let mut scripted = self
@@ -3440,6 +3472,9 @@ impl PushConsumer {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             scripted.retry_messages.push(retry.clone());
+            scripted
+                .retry_wire_properties
+                .push(encoded_properties.clone());
             if let Some(result) = scripted.retry_results.pop_front() {
                 return result;
             }
@@ -3498,13 +3533,6 @@ impl PushConsumer {
             broker_vip_channel(self.config.client_config().vip_channel_enabled(), address)
                 .map_err(|error| error.to_string())?;
 
-        let mut properties = retry.properties().clone();
-        let reconsume_times = properties
-            .remove(PROPERTY_RECONSUME_TIME)
-            .and_then(|value| value.parse::<i32>().ok());
-        let max_reconsume_times = properties
-            .remove(PROPERTY_MAX_RECONSUME_TIMES)
-            .and_then(|value| value.parse::<i32>().ok());
         let mut body = retry.body().to_vec();
         let mut sys_flag = 0;
         if body.len() >= DEFAULT_COMPRESS_THRESHOLD {
@@ -3532,7 +3560,7 @@ impl PushConsumer {
             sys_flag,
             born_timestamp: epoch_millis(),
             flag: retry.flag(),
-            properties: Some(encode_properties(&properties)),
+            properties: Some(encoded_properties),
             reconsume_times,
             unit_mode: Some(self.config.unit_mode()),
             max_reconsume_times,
@@ -11249,7 +11277,11 @@ mod tests {
             consume_service: ConsumeService::Concurrent(idle_consume_service()),
         };
         let queue = MessageQueue::new("tenant%orders", "broker-a", 1);
-        let request = consume_request(queue.clone(), 195, vec![retry_test_message(90)]);
+        let mut retry_input = retry_test_message(90);
+        retry_input
+            .message_mut()
+            .set_property_nullable(None, Some("value".to_owned()));
+        let request = consume_request(queue.clone(), 195, vec![retry_input]);
         {
             let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
             scripted
@@ -11271,6 +11303,9 @@ mod tests {
             "../../../../fixtures/consumer/push-implementation-accessor.json"
         ))
         .unwrap();
+        let message_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/messages/records.json"))
+                .unwrap();
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
@@ -11282,6 +11317,18 @@ mod tests {
             assert_eq!(
                 scripted.retry_messages[0].topic(),
                 fixture["sendBackFallbackRetryTopics"][0].as_str().unwrap()
+            );
+            assert_eq!(
+                scripted.retry_messages[0].get_nullable_property(None),
+                Some("value")
+            );
+            assert_eq!(scripted.retry_wire_properties.len(), 1);
+            assert!(
+                scripted.retry_wire_properties[0].contains(
+                    message_fixture["messagePublicApi"]["nullKeyPropertyEncoded"]
+                        .as_str()
+                        .unwrap()
+                )
             );
         }
 

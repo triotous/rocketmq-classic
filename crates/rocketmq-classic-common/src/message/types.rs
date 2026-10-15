@@ -16,6 +16,8 @@ pub const NAME_VALUE_SEPARATOR: char = '\u{1}';
 pub const PROPERTY_SEPARATOR: char = '\u{2}';
 
 pub type MessageProperties = BTreeMap<String, String>;
+/// Java-style property map capable of representing null keys and values.
+pub type NullableMessageProperties = BTreeMap<Option<String>, Option<String>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TopicFilterType {
@@ -102,8 +104,14 @@ pub struct Message {
     flag: i32,
     properties: Option<MessageProperties>,
     null_properties: BTreeSet<String>,
+    null_key_property: Option<Option<String>>,
     properties_read_initialized: AtomicBool,
     transaction_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct NullablePropertyValue {
+    value: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -116,6 +124,12 @@ struct MessageSerde {
     flag: i32,
     #[serde(default)]
     properties: Option<BTreeMap<String, Option<String>>>,
+    #[serde(
+        default,
+        rename = "nullKeyProperty",
+        skip_serializing_if = "Option::is_none"
+    )]
+    null_key_property: Option<NullablePropertyValue>,
     #[serde(
         default,
         rename = "transactionId",
@@ -144,6 +158,10 @@ impl Serialize for Message {
             body: self.body.clone(),
             flag: self.flag,
             properties,
+            null_key_property: self
+                .null_key_property
+                .clone()
+                .map(|value| NullablePropertyValue { value }),
             transaction_id: self.transaction_id.clone(),
         }
         .serialize(serializer)
@@ -171,12 +189,14 @@ impl<'de> Deserialize<'de> for Message {
             }
             None => (None, BTreeSet::new()),
         };
+        let null_key_property = wire.null_key_property.map(|property| property.value);
         Ok(Self {
             topic: wire.topic,
             body: wire.body,
             flag: wire.flag,
             properties,
             null_properties,
+            null_key_property,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: wire.transaction_id,
         })
@@ -191,6 +211,7 @@ impl Clone for Message {
             flag: self.flag,
             properties: self.properties.clone(),
             null_properties: self.null_properties.clone(),
+            null_key_property: self.null_key_property.clone(),
             properties_read_initialized: AtomicBool::new(
                 self.properties_read_initialized
                     .load(AtomicOrdering::Relaxed),
@@ -208,6 +229,7 @@ impl Default for Message {
             flag: 0,
             properties: None,
             null_properties: BTreeSet::new(),
+            null_key_property: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -231,6 +253,7 @@ impl Message {
             flag: 0,
             properties: Some(properties),
             null_properties: BTreeSet::new(),
+            null_key_property: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -243,6 +266,7 @@ impl Message {
             flag,
             properties: Some(properties),
             null_properties: BTreeSet::new(),
+            null_key_property: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -258,6 +282,7 @@ impl Message {
                 "true".to_owned(),
             )])),
             null_properties: BTreeSet::new(),
+            null_key_property: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
         }
@@ -379,31 +404,67 @@ impl Message {
     pub fn set_properties(&mut self, properties: Option<MessageProperties>) {
         self.properties = properties;
         self.null_properties.clear();
+        self.null_key_property = None;
         self.properties_read_initialized
             .store(false, AtomicOrdering::Relaxed);
+    }
+    /// Replace the property map while preserving Java `HashMap` null keys and
+    /// values. `None` represents a null map; `Some(empty)` represents an empty
+    /// map.
+    pub fn set_nullable_properties(&mut self, properties: Option<NullableMessageProperties>) {
+        self.properties = properties.as_ref().map(|_| MessageProperties::new());
+        self.null_properties.clear();
+        self.null_key_property = None;
+        self.properties_read_initialized
+            .store(false, AtomicOrdering::Relaxed);
+        if let Some(properties) = properties {
+            for (key, value) in properties {
+                match key {
+                    Some(key) => {
+                        self.put_property_value(key, value);
+                    }
+                    None => {
+                        self.null_key_property = Some(value);
+                    }
+                }
+            }
+        }
     }
     /// Returns stored property entries, including Java-style null values, in
     /// deterministic key order. `properties()` and `get_properties()` retain
     /// the Rust string-to-string map view; this iterator exposes the entries
     /// that Java callers can observe through `Message.getProperties()`.
     pub fn property_entries(&self) -> impl Iterator<Item = (&str, Option<&str>)> + '_ {
+        self.nullable_property_entries()
+            .filter_map(|(key, value)| key.map(|key| (key, value)))
+    }
+    /// Returns stored Java-style entries, including a null key or null value,
+    /// in deterministic key order. A null key is returned as `None`.
+    pub fn nullable_property_entries(
+        &self,
+    ) -> impl Iterator<Item = (Option<&str>, Option<&str>)> + '_ {
         let mut entries = self
             .properties
             .iter()
             .flat_map(|properties| {
                 properties
                     .iter()
-                    .map(|(key, value)| (key.as_str(), Some(value.as_str())))
+                    .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
             })
             .chain(self.null_properties.iter().filter_map(|key| {
                 (!self
                     .properties
                     .as_ref()
                     .is_some_and(|properties| properties.contains_key(key)))
-                .then_some((key.as_str(), None))
+                .then_some((Some(key.as_str()), None))
             }))
+            .chain(
+                self.null_key_property
+                    .as_ref()
+                    .map(|value| (None, value.as_deref())),
+            )
             .collect::<Vec<_>>();
-        entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
         entries.into_iter()
     }
     pub fn get_properties_mut(&mut self) -> Option<&mut MessageProperties> {
@@ -434,7 +495,7 @@ impl Message {
                     self.properties_read_initialized
                         .store(true, AtomicOrdering::Relaxed);
                 }
-                None
+                self.null_key_property.as_ref().and_then(Option::as_deref)
             }
         }
     }
@@ -451,7 +512,10 @@ impl Message {
             || self.null_properties.contains(key)
     }
     pub fn has_nullable_property(&self, key: Option<&str>) -> bool {
-        key.is_some_and(|key| self.has_property(key))
+        match key {
+            Some(key) => self.has_property(key),
+            None => self.null_key_property.is_some(),
+        }
     }
     pub fn tags(&self) -> Option<&str> {
         self.get_property(crate::message::constants::PROPERTY_TAGS)
@@ -593,12 +657,51 @@ impl Message {
         self.put_property_value(key, value);
     }
 
+    /// Set a property through Java's nullable `MessageAccessor.putProperty`
+    /// boundary. The nested return value distinguishes an absent key from a
+    /// key whose previous value was null.
+    pub fn set_property_nullable(
+        &mut self,
+        key: Option<String>,
+        value: Option<String>,
+    ) -> Option<Option<String>> {
+        self.properties_read_initialized
+            .store(false, AtomicOrdering::Relaxed);
+        match key {
+            Some(key) => {
+                let previous = self
+                    .has_property(&key)
+                    .then(|| self.get_property(&key).map(str::to_owned));
+                self.put_property_value(key, value);
+                previous
+            }
+            None => {
+                self.properties.get_or_insert_with(MessageProperties::new);
+                self.null_key_property.replace(value)
+            }
+        }
+    }
+
     /// Removes a system property, corresponding to Java `MessageAccessor.clearProperty`.
     pub fn clear_system_property(&mut self, key: &str) -> Option<String> {
         self.null_properties.remove(key);
         self.properties
             .as_mut()
             .and_then(|properties| properties.remove(key))
+    }
+
+    /// Clear a nullable property key through Java's `MessageAccessor` API.
+    /// The nested return value distinguishes an absent key from a key whose
+    /// value was null.
+    pub fn clear_property_nullable(&mut self, key: Option<&str>) -> Option<Option<String>> {
+        match key {
+            Some(key) => {
+                let was_present = self.has_property(key);
+                let value = self.clear_system_property(key);
+                was_present.then_some(value)
+            }
+            None => self.null_key_property.take(),
+        }
     }
 
     pub fn set_tags(
@@ -720,20 +823,12 @@ impl Message {
         let properties = if self.properties_nullable().is_none() {
             "null".to_owned()
         } else {
-            let mut entries = self
-                .properties()
-                .iter()
-                .map(|(key, value)| (key.as_str(), Some(value.as_str())))
-                .collect::<Vec<_>>();
-            entries.extend(self.null_properties.iter().filter_map(|key| {
-                (!self.properties().contains_key(key)).then_some((key.as_str(), None))
-            }));
-            entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
             format!(
                 "{{{}}}",
-                entries
-                    .into_iter()
-                    .map(|(key, value)| format!("{key}={}", value.unwrap_or("null")))
+                self.nullable_property_entries()
+                    .map(|(key, value)| {
+                        format!("{}={}", key.unwrap_or("null"), value.unwrap_or("null"))
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             )

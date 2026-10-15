@@ -1,4 +1,4 @@
-use rocketmq_classic_common::message::{Message, constants::*, encode_properties};
+use rocketmq_classic_common::message::{Message, constants::*, encode_nullable_property_entries};
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 
 use crate::{ProducerConfig, ProducerError, validation};
@@ -88,7 +88,8 @@ fn validate_batch_delay(message: &Message) -> Result<(), ProducerError> {
 
 fn encode_message(message: &Message) -> Result<Vec<u8>, ProducerError> {
     let body = message.body();
-    let properties = encode_properties(message.properties());
+    let property_entries = message.nullable_property_entries().collect::<Vec<_>>();
+    let properties = encode_nullable_property_entries(Some(&property_entries));
     let properties = properties.as_bytes();
     if properties.len() > i16::MAX as usize {
         return Err(ProducerError::BatchPropertiesTooLarge);
@@ -254,6 +255,43 @@ mod tests {
             actual.len(),
             fixture["batchEncoding"]["length"].as_u64().unwrap() as usize
         );
+    }
+
+    #[test]
+    fn batch_message_with_null_property_key_uses_java_wire_key() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+        let expected = fixture["messagePublicApi"]["nullKeyPropertyEncoded"]
+            .as_str()
+            .unwrap();
+        let mut message = Message::new("orders", b"body".to_vec());
+        message.set_property_nullable(None, Some("value".to_owned()));
+
+        let encoded = encode_message(&message).unwrap();
+        let size = u32::from_be_bytes(encoded[..4].try_into().unwrap()) as usize;
+        let body_length = u32::from_be_bytes(encoded[16..20].try_into().unwrap()) as usize;
+        let properties_length = u16::from_be_bytes(
+            encoded[20 + body_length..22 + body_length]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let properties = std::str::from_utf8(&encoded[22 + body_length..size]).unwrap();
+        assert_eq!(properties.len(), properties_length);
+        assert!(properties.contains(expected));
+
+        let batch = create_batch(&[message], &config(), &UniqueIdGenerator::new(None)).unwrap();
+        let first_size = u32::from_be_bytes(batch.body()[..4].try_into().unwrap()) as usize;
+        let first_body_length =
+            u32::from_be_bytes(batch.body()[16..20].try_into().unwrap()) as usize;
+        let first_properties_length = u16::from_be_bytes(
+            batch.body()[20 + first_body_length..22 + first_body_length]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let first_properties =
+            std::str::from_utf8(&batch.body()[22 + first_body_length..first_size]).unwrap();
+        assert_eq!(first_properties.len(), first_properties_length);
+        assert!(first_properties.contains(expected));
     }
 
     #[test]

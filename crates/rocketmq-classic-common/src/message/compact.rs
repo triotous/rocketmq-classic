@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::{Message, MessageExt, MessageProperties, decode_properties, encode_properties};
+use super::{Message, MessageExt, decode_properties, encode_nullable_property_entries};
 
 /// Failures while encoding or decoding Java's compact inner-message records.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -34,9 +34,8 @@ pub fn encode_compact_message(message: &Message) -> Result<Vec<u8>, CompactMessa
     let body = message
         .body_nullable()
         .ok_or(CompactMessageError::MissingBody)?;
-    let empty_properties = MessageProperties::new();
-    let properties = message.properties_nullable().unwrap_or(&empty_properties);
-    let property_bytes = encode_properties(properties).into_bytes();
+    let property_entries = message.nullable_property_entries().collect::<Vec<_>>();
+    let property_bytes = encode_nullable_property_entries(Some(&property_entries)).into_bytes();
     let properties_length = i16::try_from(property_bytes.len()).map_err(|_| {
         CompactMessageError::PropertiesTooLong {
             length: property_bytes.len(),

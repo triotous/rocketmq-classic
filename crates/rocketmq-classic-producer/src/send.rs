@@ -6,7 +6,7 @@ use std::{
 };
 
 use rocketmq_classic_common::{
-    message::{Message, MessageQueue, constants::*, encode_properties},
+    message::{Message, MessageQueue, constants::*, encode_nullable_property_entries},
     sysflag::message,
 };
 use rocketmq_classic_core::{
@@ -1930,6 +1930,15 @@ impl Producer {
             None
         };
 
+        let mut property_entries = properties
+            .iter()
+            .map(|(key, value)| (Some(key.as_str()), Some(value.as_str())))
+            .collect::<Vec<_>>();
+        property_entries.extend(
+            copy.nullable_property_entries()
+                .filter(|(key, _)| key.is_none()),
+        );
+
         let body = copy.body().to_vec();
         let mut sys_flag = compression_sys_flag;
         if copy
@@ -1942,7 +1951,7 @@ impl Producer {
         Ok(PreparedMessage {
             topic: copy.topic().to_owned(),
             body,
-            properties: Some(encode_properties(&properties)),
+            properties: Some(encode_nullable_property_entries(Some(&property_entries))),
             unique_id,
             born_timestamp: epoch_millis_now(),
             flag: copy.flag(),
@@ -4752,6 +4761,21 @@ mod tests {
             assert_eq!(batch_prepared.sys_flag, 0);
             assert_eq!(batch_prepared.body, message.body());
         }
+    }
+
+    #[test]
+    fn prepared_send_keeps_java_null_key_property_encoding() {
+        let producer = Producer::new(crate::ProducerConfig::new("null-key-property").unwrap());
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+        let expected = fixture["messagePublicApi"]["nullKeyPropertyEncoded"]
+            .as_str()
+            .unwrap();
+        let mut message = Message::new("orders", b"body".to_vec());
+        message.set_property_nullable(None, Some("value".to_owned()));
+
+        let prepared = producer.prepare(&message, false, 0).unwrap();
+        assert!(prepared.properties.as_deref().unwrap().contains(expected));
     }
 
     #[test]

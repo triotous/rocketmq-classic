@@ -32,5 +32,5 @@ pub use properties::{
 pub use types::{
     Message, MessageExt, MessageKeyCollectionError, MessageProperties, MessagePropertyError,
     MessagePropertyParseError, MessageQueue, MessageQueueCompareError, MessageSysFlagParseError,
-    NAME_VALUE_SEPARATOR, PROPERTY_SEPARATOR, TopicFilterType,
+    NAME_VALUE_SEPARATOR, NullableMessageProperties, PROPERTY_SEPARATOR, TopicFilterType,
 };

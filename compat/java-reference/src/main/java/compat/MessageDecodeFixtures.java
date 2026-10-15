@@ -261,6 +261,7 @@ public final class MessageDecodeFixtures {
         MessageAccessor.putProperty(nullKeyProperty, null, "value");
         expected.put("nullKeyPropertyPresent", nullKeyProperty.hasProperty(null));
         expected.put("nullKeyPropertyValue", nullKeyProperty.getProperty(null));
+        expected.put("nullKeyPropertyString", nullKeyProperty.toString());
         expected.put("nullKeyPropertyEncoded",
             MessageDecoder.messageProperties2String(nullKeyProperty.getProperties()));
         MessageAccessor.clearProperty(nullKeyProperty, null);
@@ -272,6 +273,15 @@ public final class MessageDecodeFixtures {
         expected.put("nullKeyNullValuePresent", nullKeyNullValue.hasProperty(null));
         expected.put("nullKeyNullValueEncoded",
             MessageDecoder.messageProperties2String(nullKeyNullValue.getProperties()));
+
+        Map<String, String> nullKeyReplacement = new HashMap<>();
+        nullKeyReplacement.put(null, "replacement");
+        Message nullKeySetProperties = new Message();
+        MessageAccessor.setProperties(nullKeySetProperties, nullKeyReplacement);
+        expected.put("setPropertiesNullKeyPresent", nullKeySetProperties.hasProperty(null));
+        expected.put("setPropertiesNullKeyValue", nullKeySetProperties.getProperty(null));
+        expected.put("setPropertiesNullKeyEncoded",
+            MessageDecoder.messageProperties2String(nullKeySetProperties.getProperties()));
 
         Message collectionWithNull = new Message();
         collectionWithNull.setKeys(java.util.Arrays.asList("left", null, "right"));

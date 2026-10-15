@@ -1154,6 +1154,104 @@ fn message_ext_encoder_matches_java_551() {
 }
 
 #[test]
+fn nullable_message_property_keys_match_java_551() {
+    let expected = &fixture()["messagePublicApi"];
+    let mut message = Message::default();
+    assert_eq!(
+        message.set_property_nullable(None, Some("value".to_owned())),
+        None
+    );
+    assert_eq!(message.get_nullable_property(None), Some("value"));
+    assert!(message.has_nullable_property(None));
+    assert_eq!(expected["nullKeyPropertyPresent"], true);
+    assert_eq!(expected["nullKeyPropertyValue"], "value");
+    assert_eq!(message.to_string(), expected["nullKeyPropertyString"]);
+    let entries = message.nullable_property_entries().collect::<Vec<_>>();
+    assert_eq!(entries, vec![(None, Some("value"))]);
+    assert_eq!(
+        encode_nullable_property_entries(Some(&entries)),
+        expected["nullKeyPropertyEncoded"]
+    );
+
+    let serialized = serde_json::to_value(&message).unwrap();
+    assert_eq!(serialized["nullKeyProperty"]["value"], "value");
+    let round_trip: Message = serde_json::from_value(serialized).unwrap();
+    assert_eq!(round_trip.get_nullable_property(None), Some("value"));
+    assert!(round_trip.has_nullable_property(None));
+
+    let mut compact_message = Message::new("orders", [1, 2, 3]);
+    compact_message.set_property_nullable(None, Some("value".to_owned()));
+    let compact = encode_compact_message(&compact_message).unwrap();
+    let (decoded_compact, consumed) = decode_compact_message(&compact).unwrap();
+    assert_eq!(consumed, compact.len());
+    assert_eq!(decoded_compact.get_property("null"), Some("value"));
+
+    let mut message_ext = MessageExt::default();
+    message_ext.message_mut().set_topic("orders");
+    message_ext.message_mut().set_body([1, 2, 3]);
+    message_ext
+        .message_mut()
+        .set_property_nullable(None, Some("value".to_owned()));
+    message_ext.set_born_host(Some(MessageHostAddress::from_ip_address(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        10_911,
+    )));
+    message_ext.set_store_host(Some(MessageHostAddress::from_ip_address(
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        10_912,
+    )));
+    let record = encode_message_ext(&message_ext, false).unwrap();
+    let record_properties = decode_record_properties(&record).unwrap().unwrap();
+    assert_eq!(
+        record_properties.get("null").map(String::as_str),
+        Some("value")
+    );
+
+    let previous = message.set_property_nullable(None, None);
+    assert_eq!(previous, Some(Some("value".to_owned())));
+    assert!(message.has_nullable_property(None));
+    assert_eq!(message.get_nullable_property(None), None);
+    assert_eq!(expected["nullKeyNullValuePresent"], true);
+    assert_eq!(expected["nullKeyNullValueEncoded"], "");
+    assert_eq!(
+        encode_nullable_property_entries(Some(
+            &message.nullable_property_entries().collect::<Vec<_>>()
+        )),
+        expected["nullKeyNullValueEncoded"]
+    );
+    assert_eq!(message.clear_property_nullable(None), Some(None));
+    assert!(!message.has_nullable_property(None));
+    assert!(message.get_properties().is_some());
+    assert_eq!(expected["nullKeyPropertyCleared"], true);
+    assert_eq!(expected["nullKeyPropertyMapRemainsPresent"], true);
+
+    let mut nullable_properties =
+        rocketmq_classic_common::message::NullableMessageProperties::new();
+    nullable_properties.insert(None, Some("value".to_owned()));
+    nullable_properties.insert(Some("nullable".to_owned()), None);
+    message.set_nullable_properties(Some(nullable_properties));
+    assert_eq!(message.get_nullable_property(None), Some("value"));
+    assert_eq!(message.get_property("nullable"), None);
+    assert!(message.has_property("nullable"));
+    message.set_properties(None);
+    assert!(!message.has_nullable_property(None));
+
+    let mut null_key_replacement =
+        rocketmq_classic_common::message::NullableMessageProperties::new();
+    null_key_replacement.insert(None, Some("replacement".to_owned()));
+    message.set_nullable_properties(Some(null_key_replacement));
+    assert_eq!(message.get_nullable_property(None), Some("replacement"));
+    assert_eq!(expected["setPropertiesNullKeyPresent"], true);
+    assert_eq!(expected["setPropertiesNullKeyValue"], "replacement");
+    assert_eq!(
+        encode_nullable_property_entries(Some(
+            &message.nullable_property_entries().collect::<Vec<_>>()
+        )),
+        expected["setPropertiesNullKeyEncoded"]
+    );
+}
+
+#[test]
 fn message_public_api_matches_java_551_fixture() {
     let expected = &fixture()["messagePublicApi"];
     let default_message = Message::default();

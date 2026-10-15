@@ -9,7 +9,9 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::BytesMut;
-use rocketmq_classic_common::message::{DecodeOptions, Message, decode_one, encode_properties};
+use rocketmq_classic_common::message::{
+    DecodeOptions, Message, decode_one, encode_nullable_property_entries,
+};
 use rocketmq_classic_core::route::RouteSnapshot;
 use rocketmq_classic_protocol::{
     codes::SerializeType,
@@ -123,7 +125,8 @@ fn main() {
             message
                 .put_user_property("bench-key", "bench-value")
                 .unwrap();
-            let properties = encode_properties(message.properties());
+            let entries = message.nullable_property_entries().collect::<Vec<_>>();
+            let properties = encode_nullable_property_entries(Some(&entries));
             let header = SendMessageRequestHeaderV1 {
                 producer_group: Some("bench-producer".into()),
                 topic: message.topic().into(),

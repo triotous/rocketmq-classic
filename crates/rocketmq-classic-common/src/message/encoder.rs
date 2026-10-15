@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{compression::compress, sysflag::message};
 
-use super::{MessageExt, MessageHostAddress, encode_properties};
+use super::{MessageExt, MessageHostAddress, encode_nullable_property_entries};
 
 const MESSAGE_MAGIC_CODE: i32 = -626_843_481;
 
@@ -65,12 +65,11 @@ fn encode_message_ext_inner(
         .message()
         .body_nullable()
         .ok_or(MessageExtEncodeError::MissingBody)?;
-    let properties = message_ext
+    let property_entries = message_ext
         .message()
-        .properties_nullable()
-        .map(encode_properties)
-        .unwrap_or_default()
-        .into_bytes();
+        .nullable_property_entries()
+        .collect::<Vec<_>>();
+    let properties = encode_nullable_property_entries(Some(&property_entries)).into_bytes();
     let sys_flag = message_ext.sys_flag();
     let born_host_length = if sys_flag & message::BORNHOST_V6_FLAG == 0 {
         8
