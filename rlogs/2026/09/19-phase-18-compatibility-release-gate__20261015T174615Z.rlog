@@ -52,3 +52,14 @@ generated Java output. Fixture SHA-256:
 GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and
 release version/registry resolution remain open. No plan, push, tag,
 publication, deployment or live Broker action occurred.
+
+2026-10-15 18:11 UTC — corrected one stale Common reverse-API mapping.
+
+The Phase 8 Rust-to-Java table listed `java_to_string` as a public method even
+though the current Rust helpers are private and public formatting is provided
+through `Display`/blanket `ToString`. The table now maps the observable Java
+`Message.toString()` / `MessageExt.toString()` behavior through those public
+traits. `git diff --check` passed; this documentation-only sync needed no test.
+It does not close the broader P18-V01 inherited API, input/control-flow, or
+reverse-export audit. No plan, publication, deployment, or live Broker action
+occurred.

@@ -1261,3 +1261,10 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and release
   version/registry resolution remain open. Fixture SHA-256:
   `7af64d29f396b2e7a1dd70a57066920890559fce1f170844ca8d4e1ba3a453ca`.
+
+- P18-V01 Common formatted-string reverse map (2026-10-15): the Phase 8
+  Rust-to-Java table now lists `Message`/`MessageExt` `Display` and blanket
+  `ToString` as the public mapping for Java `toString()`. It no longer lists
+  private `java_to_string` implementation helpers as public exports. This is
+  a documentation correction only; broader inherited API and reverse-export
+  reconciliation remains open.
