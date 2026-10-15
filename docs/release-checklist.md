@@ -469,6 +469,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   encoder methods only; the remaining decoder overloads and broad P18-V01 audit
   remain open. Current message fixture SHA-256:
   `c7bf73f5baa095242502d97e06953e2ef2a2c4ea774ed69923aeef586fde940a`.
+- Common client decode and `MessageDecoder` constant slice: Rust now exposes
+  client ID fallback helpers, client batch decoding, Java record-offset and
+  magic constants, and the UTF-8 name. Invoked fixture checks `clientDecode`,
+  `decodes`, `isClient` IDs, and all public decoder constants. Regression tests
+  pass for the client decode overloads and constants. This slice does not close
+  the remaining P18-V01 audit. Current message fixture SHA-256:
+  `756381ff5802566bf8236bae22c9e8ea1b1d008a27a728436ed6bb8e384a1746`.
 - [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
   strict all-target/all-feature Clippy, Maven verification (37 scenarios),
   differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,

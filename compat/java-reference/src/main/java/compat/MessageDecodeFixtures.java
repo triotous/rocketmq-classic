@@ -59,6 +59,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
+        root.put("messageDecoderPublicApi", messageDecoderPublicApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         root.put("messageCompactApi", messageCompactApi());
         root.put("messageExtEncodeApi", messageExtEncodeApi());
@@ -343,6 +344,24 @@ public final class MessageDecodeFixtures {
             byteBuf.release();
         }
         return Map.of("cases", cases);
+    }
+
+    private static Map<String, Object> messageDecoderPublicApi() {
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("charsetUtf8", MessageDecoder.CHARSET_UTF8.name());
+        expected.put("messageMagicCode", MessageDecoder.MESSAGE_MAGIC_CODE);
+        expected.put("messageMagicCodeV2", MessageDecoder.MESSAGE_MAGIC_CODE_V2);
+        expected.put("blankMagicCode", MessageDecoder.BLANK_MAGIC_CODE);
+        expected.put("messageMagicCodePosition", MessageDecoder.MESSAGE_MAGIC_CODE_POSITION);
+        expected.put("messageFlagPosition", MessageDecoder.MESSAGE_FLAG_POSITION);
+        expected.put("messagePhysicOffsetPosition", MessageDecoder.MESSAGE_PHYSIC_OFFSET_POSITION);
+        expected.put("messageStoreTimestampPosition", MessageDecoder.MESSAGE_STORE_TIMESTAMP_POSITION);
+        expected.put("phyPosPosition", MessageDecoder.PHY_POS_POSITION);
+        expected.put("queueOffsetPosition", MessageDecoder.QUEUE_OFFSET_POSITION);
+        expected.put("sysflagPosition", MessageDecoder.SYSFLAG_POSITION);
+        expected.put("nameValueSeparator", (int) MessageDecoder.NAME_VALUE_SEPARATOR);
+        expected.put("propertySeparator", (int) MessageDecoder.PROPERTY_SEPARATOR);
+        return expected;
     }
 
     private static Map<String, Object> messageCompactApi() throws Exception {

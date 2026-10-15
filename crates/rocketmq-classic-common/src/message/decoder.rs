@@ -11,6 +11,16 @@ use crate::{
 
 pub const MESSAGE_MAGIC_CODE_V1: i32 = -626_843_481;
 pub const MESSAGE_MAGIC_CODE_V2: i32 = -626_843_477;
+/// Java `MessageDecoder.CHARSET_UTF8`, represented by its encoding name.
+pub const CHARSET_UTF8: &str = "UTF-8";
+pub const MESSAGE_MAGIC_CODE: i32 = MESSAGE_MAGIC_CODE_V1;
+pub const MESSAGE_MAGIC_CODE_POSITION: usize = 4;
+pub const MESSAGE_FLAG_POSITION: usize = 16;
+pub const MESSAGE_PHYSIC_OFFSET_POSITION: usize = 28;
+pub const MESSAGE_STORE_TIMESTAMP_POSITION: usize = 56;
+pub const PHY_POS_POSITION: usize = 28;
+pub const QUEUE_OFFSET_POSITION: usize = 20;
+pub const SYSFLAG_POSITION: usize = 36;
 pub const BLANK_MAGIC_CODE: i32 = -875_286_124;
 
 /// Append the Java `MessageDecoder.createCrc32` property record to a buffer.
@@ -113,6 +123,30 @@ pub fn decode_one(
     options: DecodeOptions,
 ) -> Result<(MessageExt, usize), DecodeError> {
     decode_one_with_limits(record, options, DecodeLimits::default())
+}
+
+/// Decode a record with Java `MessageDecoder` client-message-ID semantics.
+/// The physical ID is retained as `offset_message_id`; `message_id` uses the
+/// `UNIQ_KEY` property when present and otherwise falls back to the physical ID.
+pub fn decode_one_as_client(
+    record: &[u8],
+    options: DecodeOptions,
+) -> Result<(MessageExt, usize), DecodeError> {
+    let (mut message, consumed) = decode_one(record, options)?;
+    assign_client_message_ids(&mut message);
+    Ok((message, consumed))
+}
+
+/// Java `MessageDecoder.clientDecode(ByteBuffer, readBody)` with its default
+/// decompression, property-string, and CRC-check options.
+pub fn client_decode(record: &[u8], read_body: bool) -> Result<(MessageExt, usize), DecodeError> {
+    decode_one_as_client(
+        record,
+        DecodeOptions {
+            read_body,
+            ..DecodeOptions::default()
+        },
+    )
 }
 
 /// Decode only the property map from a Broker message record, matching Java's
@@ -279,6 +313,49 @@ fn decode_one_with_limits(
 /// Decode concatenated Broker records, requiring each iteration to progress.
 pub fn decode_many(records: &[u8], options: DecodeOptions) -> Result<Vec<MessageExt>, DecodeError> {
     decode_many_with_limits(records, options, DecodeLimits::default())
+}
+
+/// Decode concatenated records using Java's `isClient=true` ID behavior.
+pub fn decode_many_as_client(
+    records: &[u8],
+    options: DecodeOptions,
+) -> Result<Vec<MessageExt>, DecodeError> {
+    let mut messages = decode_many(records, options)?;
+    for message in &mut messages {
+        assign_client_message_ids(message);
+    }
+    Ok(messages)
+}
+
+/// Java `MessageDecoder.decodes(ByteBuffer)` with the default body read enabled.
+pub fn client_decodes(records: &[u8]) -> Result<Vec<MessageExt>, DecodeError> {
+    client_decodes_with_body(records, true)
+}
+
+/// Java `MessageDecoder.decodes(ByteBuffer, readBody)`.
+pub fn client_decodes_with_body(
+    records: &[u8],
+    read_body: bool,
+) -> Result<Vec<MessageExt>, DecodeError> {
+    decode_many_as_client(
+        records,
+        DecodeOptions {
+            read_body,
+            ..DecodeOptions::default()
+        },
+    )
+}
+
+fn assign_client_message_ids(message: &mut MessageExt) {
+    let offset_message_id = message.message_id().map(str::to_owned);
+    let client_message_id = message
+        .message()
+        .properties()
+        .get(super::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+        .cloned()
+        .or_else(|| offset_message_id.clone());
+    message.set_offset_message_id(offset_message_id);
+    message.set_message_id(client_message_id);
 }
 
 fn decode_many_with_limits(

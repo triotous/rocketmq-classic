@@ -1,11 +1,16 @@
 use base64::Engine;
 use rocketmq_classic_common::{
     message::{
-        CompactMessageError, DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
-        MessageHostAddressBytesError, MessageId, MessageIdError, TopicFilterType,
-        append_crc32_property, count_inner_messages, create_message_id,
-        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
-        decode_inner_batch, decode_many, decode_message_id, decode_one, decode_record_properties,
+        BLANK_MAGIC_CODE, CHARSET_UTF8, CompactMessageError, DecodeError, DecodeOptions,
+        MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
+        MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION,
+        MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageExt, MessageHostAddress,
+        MessageHostAddressBytesError, MessageId, MessageIdError, PHY_POS_POSITION,
+        PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION, TopicFilterType,
+        append_crc32_property, client_decode, client_decodes, client_decodes_with_body,
+        count_inner_messages, create_message_id, create_message_id_from_host_bytes,
+        decode_compact_message, decode_compact_messages, decode_inner_batch, decode_many,
+        decode_many_as_client, decode_message_id, decode_one, decode_record_properties,
         encode_compact_message, encode_compact_messages, encode_message_ext,
         encode_message_ext_uniquely,
     },
@@ -106,6 +111,73 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         );
         assert_eq!(decoded.store_size() as usize, bytes.len());
     }
+}
+
+#[test]
+fn client_message_decoder_apis_match_java_551() {
+    let fixture = fixture();
+    let cases = fixture["cases"].as_array().unwrap();
+    let mut joined = Vec::new();
+
+    for (index, case) in cases.iter().enumerate() {
+        let bytes = record(case);
+        let (decoded, consumed) =
+            client_decode(&bytes, true).unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
+        assert_eq!(consumed, bytes.len(), "{}", case["name"]);
+        assert_eq!(
+            decoded.message_id(),
+            case["clientDecoded"]["msgId"].as_str()
+        );
+        assert_eq!(
+            decoded.offset_message_id(),
+            case["clientDecoded"]["offsetMsgId"].as_str()
+        );
+
+        if index < 2 {
+            joined.extend_from_slice(&bytes);
+        }
+    }
+
+    let batch_options = DecodeOptions {
+        read_body: false,
+        decompress_body: false,
+        set_properties_string: true,
+        verify_crc: true,
+    };
+    let batch = decode_many_as_client(&joined, batch_options).unwrap();
+    let expected = &cases[..2];
+    assert_eq!(batch.len(), expected.len());
+    for (message, case) in batch.iter().zip(expected) {
+        assert!(message.message().body().is_empty());
+        assert_eq!(
+            message.message_id(),
+            case["clientDecoded"]["msgId"].as_str()
+        );
+        assert_eq!(
+            message.offset_message_id(),
+            case["clientDecoded"]["offsetMsgId"].as_str()
+        );
+        assert_eq!(
+            message
+                .message()
+                .properties()
+                .contains_key("propertiesString"),
+            !case["decoded"]["properties"]
+                .as_object()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    let default_batch = client_decodes(&joined).unwrap();
+    assert_eq!(default_batch.len(), expected.len());
+    let body_skipped_batch = client_decodes_with_body(&joined, false).unwrap();
+    assert_eq!(body_skipped_batch.len(), expected.len());
+    assert!(
+        body_skipped_batch
+            .iter()
+            .all(|message| message.message().body().is_empty())
+    );
 }
 
 #[test]
@@ -387,6 +459,49 @@ fn crc32_property_helpers_match_both_java_buffers() {
         assert_eq!(encoded, case["byteBufferBase64"]);
         assert_eq!(case["byteBufferBase64"], case["byteBufBase64"]);
     }
+}
+
+#[test]
+fn message_decoder_public_constants_match_java_551() {
+    let expected = &fixture()["messageDecoderPublicApi"];
+    assert_eq!(CHARSET_UTF8, expected["charsetUtf8"]);
+    assert_eq!(MESSAGE_MAGIC_CODE, expected["messageMagicCode"]);
+    assert_eq!(MESSAGE_MAGIC_CODE_V1, expected["messageMagicCode"]);
+    assert_eq!(MESSAGE_MAGIC_CODE_V2, expected["messageMagicCodeV2"]);
+    assert_eq!(BLANK_MAGIC_CODE, expected["blankMagicCode"]);
+    assert_eq!(
+        MESSAGE_MAGIC_CODE_POSITION,
+        expected["messageMagicCodePosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        MESSAGE_FLAG_POSITION,
+        expected["messageFlagPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        MESSAGE_PHYSIC_OFFSET_POSITION,
+        expected["messagePhysicOffsetPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        MESSAGE_STORE_TIMESTAMP_POSITION,
+        expected["messageStoreTimestampPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        PHY_POS_POSITION,
+        expected["phyPosPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        QUEUE_OFFSET_POSITION,
+        expected["queueOffsetPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        SYSFLAG_POSITION,
+        expected["sysflagPosition"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        rocketmq_classic_common::message::NAME_VALUE_SEPARATOR as i32,
+        expected["nameValueSeparator"]
+    );
+    assert_eq!(PROPERTY_SEPARATOR as i32, expected["propertySeparator"]);
 }
 
 #[test]
