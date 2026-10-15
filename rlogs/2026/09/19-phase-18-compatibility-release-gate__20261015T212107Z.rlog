@@ -84,3 +84,28 @@ against a Rust `ClientRuntime` before startup fails. The public Java Producer
 API has no matching pre-start registration path. This Rust-only lifecycle case
 remains explicitly open for the broad reverse/API audit; the request/reply
 matrix status remains PARTIAL.
+
+2026-10-15 UTC — P18-V01 oneway completion-boundary follow-up, code commit
+19989176, against pinned Java source
+efa1be59d6fc747ad220f036c86030f05f0419f9. Rust invoke_oneway now returns
+only call-boundary TransportErrors and keeps scheduled transmission
+client-owned; connection, admission, and socket-write completion are not
+returned to the caller. Updated Core call sites, transport tests, and the
+Phase 3 inventory, transport ADR, and Java compatibility overview.
+
+Validation passed:
+- cargo test -p rocketmq-classic-remoting --locked (100 transport tests and
+  7 doctests reported; package command exited successfully).
+- cargo test -p rocketmq-classic-core --locked (159 unit tests, all
+  integration targets, and 13 doctests).
+- cargo clippy -p rocketmq-classic-remoting -p rocketmq-classic-core
+  --all-targets --all-features --locked -- -D warnings.
+- cargo fmt --all -- --check and git diff --check.
+
+This closes only the oneway completion-result difference. Broad P18-V01 remains
+open, including GroupRegistry::clear() producing ProducerShutdown for a
+directly registered pending reply when runtime startup fails. The final
+revision's complete P18-V02 workspace rerun and current-revision GitHub Ubuntu
+address-profile result remain outstanding. P18-V03 is complete; Phase 19's
+Docker/Broker scenarios and pre-publication version/registry checks remain
+separate future work.

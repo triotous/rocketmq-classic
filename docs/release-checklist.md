@@ -1479,3 +1479,18 @@ Before any publication:
   and cancellation mappings only. Rust `ProducerShutdown` on startup-failure
   registry clear remains a ClientRuntime-only path for the broad P18-V01
   reverse audit.
+
+- P18-V01 oneway completion boundary (19989176, 2026-10-15; pinned Java
+  source efa1be59d6fc747ad220f036c86030f05f0419f9): Rust invoke_oneway
+  now returns only call-boundary errors while the client owns scheduled
+  transmission; later connection, admission, and socket-write outcomes are not
+  returned, matching Java's caller-visible boundary. The Core call sites and
+  scripted transport expectations were updated, and the inventory, ADR, and
+  compatibility overview now describe the same contract. Remoting tests pass
+  (100 transport tests and 7 doctests); Core tests pass (159 unit tests, every
+  integration target, and 13 doctests); strict all-target/all-feature Clippy
+  passes for both crates, as do format and diff checks. This closes the scoped
+  oneway result-surface difference only. Broad P18-V01 remains open, including
+  the pre-start ClientRuntime pending-reply ProducerShutdown path. The full
+  final-revision P18-V02 workspace rerun and current-revision GitHub Ubuntu
+  address-profile result remain outstanding.
