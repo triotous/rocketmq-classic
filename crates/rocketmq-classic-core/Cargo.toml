@@ -19,6 +19,7 @@ thiserror.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
 tokio-rustls.workspace = true
+time.workspace = true
 hostname.workspace = true
 rand.workspace = true
 hmac.workspace = true

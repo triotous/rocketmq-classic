@@ -7,6 +7,8 @@ use std::{
     },
     time::{SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
+use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
 use rocketmq_classic_common::message::{
     Message, constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
@@ -14,6 +16,170 @@ use rocketmq_classic_common::message::{
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 static PROCESS_HASH: OnceLock<u32> = OnceLock::new();
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum UniqueIdError {
+    #[error("unique ID must not be empty")]
+    EmptyId,
+    #[error("{method} needs at least {required} decoded bytes, found {actual}")]
+    InsufficientBytes {
+        method: &'static str,
+        required: usize,
+        actual: usize,
+    },
+    #[error("local timezone offset is unavailable")]
+    LocalTimezoneUnavailable,
+    #[error("unique ID timestamp is outside the supported range")]
+    TimestampOutOfRange,
+}
+
+/// Decode the IP bytes at the start of a Java unique message ID.
+pub fn get_ip_from_id(message_id: &str) -> Result<Vec<u8>, UniqueIdError> {
+    let bytes = decode_java_hex(message_id)?;
+    let ip_length = if bytes.len() == 28 { 16 } else { 4 };
+    if bytes.len() < ip_length {
+        return Err(UniqueIdError::InsufficientBytes {
+            method: "getIPFromID",
+            required: ip_length,
+            actual: bytes.len(),
+        });
+    }
+    Ok(bytes[..ip_length].to_vec())
+}
+
+/// Decode the IP address text used by Java's `MessageClientIDSetter`.
+pub fn get_ip_str_from_id(message_id: &str) -> Result<String, UniqueIdError> {
+    let bytes = get_ip_from_id(message_id)?;
+    if bytes.len() == 4 {
+        return Ok(format!(
+            "{}.{}.{}.{}",
+            bytes[0], bytes[1], bytes[2], bytes[3]
+        ));
+    }
+    Ok(bytes
+        .chunks_exact(2)
+        .map(|group| format!("{:02x}{:02x}", group[0], group[1]))
+        .collect::<Vec<_>>()
+        .join(":"))
+}
+
+/// Read Java's unsigned 16-bit process ID field from a unique message ID.
+pub fn get_pid_from_id(message_id: &str) -> Result<u16, UniqueIdError> {
+    let bytes = decode_java_hex(message_id)?;
+    let Some(offset) = bytes.len().checked_sub(12) else {
+        return Err(UniqueIdError::InsufficientBytes {
+            method: "getPidFromID",
+            required: 12,
+            actual: bytes.len(),
+        });
+    };
+    Ok(u16::from_be_bytes([bytes[offset], bytes[offset + 1]]))
+}
+
+/// Return the near creation time in Unix milliseconds, matching Java's
+/// month-relative timestamp inference and the process-local calendar zone.
+pub fn get_nearly_time_from_id(message_id: &str) -> Result<i64, UniqueIdError> {
+    let bytes = decode_java_hex(message_id)?;
+    let ip_length = if bytes.len() == 28 { 16 } else { 4 };
+    let timestamp_offset = ip_length + 6;
+    if bytes.len() < timestamp_offset + 4 {
+        return Err(UniqueIdError::InsufficientBytes {
+            method: "getNearlyTimeFromID",
+            required: timestamp_offset + 4,
+            actual: bytes.len(),
+        });
+    }
+    let span_millis = u32::from_be_bytes(
+        bytes[timestamp_offset..timestamp_offset + 4]
+            .try_into()
+            .expect("four-byte unique ID timestamp"),
+    ) as i64;
+    let now = now_millis();
+    let now_utc = OffsetDateTime::from_unix_timestamp_nanos(i128::from(now) * 1_000_000)
+        .map_err(|_| UniqueIdError::TimestampOutOfRange)?;
+    let local_offset =
+        UtcOffset::local_offset_at(now_utc).map_err(|_| UniqueIdError::LocalTimezoneUnavailable)?;
+    let local_now = now_utc.to_offset(local_offset);
+    let month_start = local_month_start_millis(local_now.year(), local_now.month(), local_offset)?;
+    let selected_month_start = if month_start + span_millis >= now {
+        let (year, month) = previous_month(local_now.year(), local_now.month());
+        local_month_start_millis(year, month, local_offset)?
+    } else {
+        month_start
+    };
+    selected_month_start
+        .checked_add(span_millis)
+        .ok_or(UniqueIdError::TimestampOutOfRange)
+}
+
+/// Generate the four-byte fallback address used by Java's ID generator.
+pub fn create_fake_ip() -> [u8; 4] {
+    let millis = now_millis() as u64;
+    millis.to_be_bytes()[4..]
+        .try_into()
+        .expect("four bytes from the low half of a timestamp")
+}
+
+fn decode_java_hex(input: &str) -> Result<Vec<u8>, UniqueIdError> {
+    if input.is_empty() {
+        return Err(UniqueIdError::EmptyId);
+    }
+    let units: Vec<u16> = input.encode_utf16().collect();
+    Ok(units
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = java_hex_nibble(pair[0]);
+            let low = java_hex_nibble(pair[1]);
+            ((high << 4) | low) as u8
+        })
+        .collect())
+}
+
+fn java_hex_nibble(unit: u16) -> i32 {
+    match unit {
+        0x0030..=0x0039 => i32::from(unit - 0x0030),
+        0x0041..=0x0046 => i32::from(unit - 0x0041 + 10),
+        0x0061..=0x0066 => i32::from(unit - 0x0061 + 10),
+        _ => -1,
+    }
+}
+
+fn previous_month(year: i32, month: Month) -> (i32, Month) {
+    match month {
+        Month::January => (year - 1, Month::December),
+        month => (
+            year,
+            Month::try_from(u8::from(month) - 1).expect("previous month is valid"),
+        ),
+    }
+}
+
+fn local_month_start_millis(
+    year: i32,
+    month: Month,
+    offset_hint: UtcOffset,
+) -> Result<i64, UniqueIdError> {
+    let date =
+        Date::from_calendar_date(year, month, 1).map_err(|_| UniqueIdError::TimestampOutOfRange)?;
+    let local_midnight = PrimitiveDateTime::new(date, Time::MIDNIGHT);
+    let mut offset = offset_hint;
+    for _ in 0..3 {
+        let candidate = local_midnight.assume_offset(offset);
+        let actual = UtcOffset::local_offset_at(candidate)
+            .map_err(|_| UniqueIdError::LocalTimezoneUnavailable)?;
+        if actual == offset {
+            break;
+        }
+        offset = actual;
+    }
+    i64::try_from(
+        local_midnight
+            .assume_offset(offset)
+            .unix_timestamp_nanos()
+            .div_euclid(1_000_000),
+    )
+    .map_err(|_| UniqueIdError::TimestampOutOfRange)
+}
 
 /// Emits the same 16/28-byte hexadecimal layout as Java's
 /// `MessageClientIDSetter`: IP, process ID, process identity, month-relative
@@ -50,7 +216,8 @@ impl UniqueIdGenerator {
 
     pub fn create(&self) -> String {
         let millis = now_millis();
-        let month_start = month_start_millis(millis);
+        let month_start =
+            local_month_start_millis_at(millis).unwrap_or_else(|_| month_start_millis(millis));
         let mut bytes = Vec::with_capacity(self.ip.len() + 12);
         bytes.extend_from_slice(&self.ip);
         bytes.extend_from_slice(&(std::process::id() as u16).to_be_bytes());
@@ -76,7 +243,16 @@ fn process_hash() -> u32 {
 }
 
 fn fake_ip() -> Vec<u8> {
-    now_millis().to_be_bytes()[4..].to_vec()
+    create_fake_ip().to_vec()
+}
+
+fn local_month_start_millis_at(millis: i64) -> Result<i64, UniqueIdError> {
+    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(i128::from(millis) * 1_000_000)
+        .map_err(|_| UniqueIdError::TimestampOutOfRange)?;
+    let offset = UtcOffset::local_offset_at(timestamp)
+        .map_err(|_| UniqueIdError::LocalTimezoneUnavailable)?;
+    let local = timestamp.to_offset(offset);
+    local_month_start_millis(local.year(), local.month(), offset)
 }
 
 fn now_millis() -> i64 {
@@ -212,5 +388,52 @@ mod tests {
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_lowercase())
             );
         }
+    }
+
+    #[test]
+    fn public_unique_id_helpers_match_the_pinned_java_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["uniqueIdHelpers"];
+
+        for prefix in ["ipv4", "ipv6"] {
+            let id = expected[format!("{prefix}Id")].as_str().unwrap();
+            let ip_bytes_key = format!("{prefix}AddressBytes");
+            let address_key = format!("{prefix}Address");
+            let pid_key = format!("{prefix}Pid");
+            let nearly_time_key = format!("{prefix}NearlyTimeMillis");
+            assert_eq!(
+                encode_hex(&get_ip_from_id(id).unwrap()),
+                expected[ip_bytes_key].as_str().unwrap()
+            );
+            assert_eq!(
+                get_ip_str_from_id(id).unwrap(),
+                expected[address_key].as_str().unwrap()
+            );
+            assert_eq!(
+                get_pid_from_id(id).unwrap(),
+                expected[pid_key].as_u64().unwrap() as u16
+            );
+            assert_eq!(
+                get_nearly_time_from_id(id).unwrap(),
+                expected[nearly_time_key].as_i64().unwrap()
+            );
+        }
+
+        assert_eq!(
+            get_ip_from_id(expected["ipv4Id"].as_str().unwrap()).unwrap(),
+            get_ip_from_id("C000020A1").unwrap()
+        );
+        assert_eq!(
+            encode_hex(&get_ip_from_id("G0H0I0J0").unwrap()),
+            expected["invalidHexNibbles"]
+        );
+        assert_eq!(create_fake_ip().len(), expected["fakeIpLength"]);
+        assert!(expected["shortIpThrows"].as_bool().unwrap());
+        assert!(expected["shortPidThrows"].as_bool().unwrap());
+        assert!(expected["shortTimestampThrows"].as_bool().unwrap());
+        assert!(get_ip_from_id("AA").is_err());
+        assert!(get_pid_from_id("AA").is_err());
+        assert!(get_nearly_time_from_id("AA").is_err());
     }
 }

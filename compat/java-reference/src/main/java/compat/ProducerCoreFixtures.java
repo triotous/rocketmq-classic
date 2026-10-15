@@ -357,9 +357,37 @@ public final class ProducerCoreFixtures {
         uniqueIdShape.put("monthTimestampBytes", 4);
         uniqueIdShape.put("counterBytes", 2);
         result.put("uniqueId", uniqueIdShape);
+        result.put("uniqueIdHelpers", uniqueIdHelpers());
 
         result.put("batchValidation", batchCases());
         result.put("batchEncoding", batchEncoding());
+        return result;
+    }
+
+    private static Map<String, Object> uniqueIdHelpers() {
+        String ipv4 = "C000020A123456789ABC010203040005";
+        String ipv6 = "20010DB8000000000000000000000020123456789ABC010203040005";
+        Map<String, Object> result = new TreeMap<>();
+        result.put("ipv4Id", ipv4);
+        result.put("ipv4AddressBytes", toHex(MessageClientIDSetter.getIPFromID(ipv4)));
+        result.put("ipv4Address", MessageClientIDSetter.getIPStrFromID(ipv4));
+        result.put("ipv4Pid", MessageClientIDSetter.getPidFromID(ipv4));
+        result.put("ipv4NearlyTimeMillis", MessageClientIDSetter.getNearlyTimeFromID(ipv4).getTime());
+        result.put("ipv6Id", ipv6);
+        result.put("ipv6AddressBytes", toHex(MessageClientIDSetter.getIPFromID(ipv6)));
+        result.put("ipv6Address", MessageClientIDSetter.getIPStrFromID(ipv6));
+        result.put("ipv6Pid", MessageClientIDSetter.getPidFromID(ipv6));
+        result.put("ipv6NearlyTimeMillis", MessageClientIDSetter.getNearlyTimeFromID(ipv6).getTime());
+        result.put("oddTrailingNibbleIgnored",
+            toHex(MessageClientIDSetter.getIPFromID("C000020A1")));
+        result.put("invalidHexNibbles", toHex(MessageClientIDSetter.getIPFromID("G0H0I0J0")));
+        result.put("fakeIpLength", MessageClientIDSetter.createFakeIP().length);
+        result.put("shortIpThrows", !"none".equals(failureType(
+            () -> MessageClientIDSetter.getIPFromID("AA"))));
+        result.put("shortPidThrows", !"none".equals(failureType(
+            () -> MessageClientIDSetter.getPidFromID("AA"))));
+        result.put("shortTimestampThrows", !"none".equals(failureType(
+            () -> MessageClientIDSetter.getNearlyTimeFromID("AA"))));
         return result;
     }
 
