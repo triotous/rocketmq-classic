@@ -1,3 +1,15 @@
+//! Core RocketMQ client runtime and request APIs.
+//!
+//! Physical message-ID decoding is provided by the Java-mapped Common API.
+//! The Core crate does not expose a second decoder or decoder-specific DTO.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::api::admin::{
+//!     DecodedMessageId, MessageIdDecodeError, decode_message_id,
+//! };
+//! # fn main() {}
+//! ```
+
 pub mod api;
 pub mod auth;
 pub mod config;

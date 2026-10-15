@@ -12,11 +12,11 @@ use std::{
 use std::collections::VecDeque;
 
 use rocketmq_classic_common::{
-    message::{DecodeOptions, MessageExt, MessageQueue},
+    message::{DecodeOptions, MessageExt, MessageQueue, decode_message_id},
     sysflag::pull::{build_pull_sys_flag_with_lite, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::{
-    api::admin::{AdminQueryRequest, QueryResult, decode_message_id},
+    api::admin::{AdminQueryRequest, QueryResult},
     route::{BrokerAddress, RouteSnapshot},
     runtime::{
         ClientRuntime, ClientRuntimeManager, ConsumerOperation, ConsumerRuntime, GroupLease,
@@ -1294,17 +1294,23 @@ impl PullConsumer {
         message_id: &str,
     ) -> Result<Option<MessageExt>, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
-        if let Ok(decoded) = decode_message_id(message_id) {
+        let decoded = decode_message_id(message_id).ok().and_then(|decoded| {
+            decoded
+                .address()?
+                .socket_addr()
+                .map(|address| (address, decoded.offset()))
+        });
+        if let Some((address, offset)) = decoded {
             let header = ViewMessageRequestHeader {
                 topic: Some(topic.to_owned()),
-                offset: decoded.offset,
+                offset,
             };
             let timeout_millis =
                 i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
             if let Ok(message) = runtime
                 .api()
                 .view_message(
-                    &decoded.address.to_string(),
+                    &address.to_string(),
                     &header,
                     Instant::now() + Duration::from_millis(timeout_millis),
                 )

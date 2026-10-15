@@ -871,6 +871,34 @@ async fn push_and_pull_view_message_match_java_unique_key_fallback_and_physical_
     while let Ok(command) = push_requests.try_recv() {
         assert_ne!(command.code, request::QUERY_MESSAGE);
     }
+
+    let mut push_non_hex_id = physical_message_id(&push_broker, 71);
+    push_non_hex_id.pop();
+    push_non_hex_id.push('G');
+    let push_message = push
+        .view_message("orders", &push_non_hex_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(push_message.message_id(), Some("producer-unique-1"));
+    let push_non_hex_view = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = push_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        push_non_hex_view.ext_fields.unwrap().get("offset"),
+        Some(&"255".to_owned())
+    );
+    while let Ok(command) = push_requests.try_recv() {
+        assert_ne!(command.code, request::QUERY_MESSAGE);
+    }
     push.shutdown().await.unwrap();
     push_namesrv_task.abort();
     push_broker_task.abort();
@@ -933,6 +961,34 @@ async fn push_and_pull_view_message_match_java_unique_key_fallback_and_physical_
     let fields = pull_view.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
     assert_eq!(fields.get("offset"), Some(&"72".to_owned()));
+    while let Ok(command) = pull_requests.try_recv() {
+        assert_ne!(command.code, request::QUERY_MESSAGE);
+    }
+
+    let mut pull_non_hex_id = physical_message_id(&pull_broker, 72);
+    pull_non_hex_id.pop();
+    pull_non_hex_id.push('G');
+    let pull_message = pull
+        .view_message("orders", &pull_non_hex_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(pull_message.message_id(), Some("producer-unique-1"));
+    let pull_non_hex_view = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = pull_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        pull_non_hex_view.ext_fields.unwrap().get("offset"),
+        Some(&"255".to_owned())
+    );
     while let Ok(command) = pull_requests.try_recv() {
         assert_ne!(command.code, request::QUERY_MESSAGE);
     }

@@ -10,7 +10,6 @@ use rocketmq_classic_protocol::{
     },
     route::TopicRouteData,
 };
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::{
     task::JoinSet,
     time::{Instant, timeout_at},
@@ -37,91 +36,6 @@ pub struct QueryResult {
 
 /// A mutable list handle corresponding to Java's retained `List<MessageExt>`.
 pub type QueryMessageList = SharedValue<Vec<Option<SharedValue<MessageExt>>>>;
-
-/// A decoded Java RocketMQ physical message ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DecodedMessageId {
-    pub address: SocketAddr,
-    pub offset: i64,
-}
-
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-pub enum MessageIdDecodeError {
-    #[error("message ID contains an odd number of hexadecimal digits")]
-    OddLength,
-    #[error("message ID contains a non-hexadecimal digit at byte {index}")]
-    InvalidHex { index: usize },
-    #[error("message ID is too short for an address, port and offset")]
-    TooShort,
-    #[error("message ID contains an invalid port")]
-    InvalidPort,
-}
-
-/// Decodes Java's offset message ID format: address bytes, network-order port,
-/// then a signed network-order commit-log offset.
-pub fn decode_message_id(value: &str) -> Result<DecodedMessageId, MessageIdDecodeError> {
-    if value.len() % 2 != 0 {
-        return Err(MessageIdDecodeError::OddLength);
-    }
-    let mut bytes = Vec::with_capacity(value.len() / 2);
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let high =
-            hex_nibble(pair[0]).ok_or(MessageIdDecodeError::InvalidHex { index: index * 2 })?;
-        let low = hex_nibble(pair[1]).ok_or(MessageIdDecodeError::InvalidHex {
-            index: index * 2 + 1,
-        })?;
-        bytes.push((high << 4) | low);
-    }
-    let address_length = if value.len() == 32 { 4 } else { 16 };
-    if bytes.len() < address_length + 12 {
-        return Err(MessageIdDecodeError::TooShort);
-    }
-    let address = if address_length == 4 {
-        IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]))
-    } else {
-        IpAddr::V6(Ipv6Addr::new(
-            u16::from_be_bytes([bytes[0], bytes[1]]),
-            u16::from_be_bytes([bytes[2], bytes[3]]),
-            u16::from_be_bytes([bytes[4], bytes[5]]),
-            u16::from_be_bytes([bytes[6], bytes[7]]),
-            u16::from_be_bytes([bytes[8], bytes[9]]),
-            u16::from_be_bytes([bytes[10], bytes[11]]),
-            u16::from_be_bytes([bytes[12], bytes[13]]),
-            u16::from_be_bytes([bytes[14], bytes[15]]),
-        ))
-    };
-    let port_offset = address_length;
-    let port = u32::from_be_bytes([
-        bytes[port_offset],
-        bytes[port_offset + 1],
-        bytes[port_offset + 2],
-        bytes[port_offset + 3],
-    ]);
-    let port = u16::try_from(port).map_err(|_| MessageIdDecodeError::InvalidPort)?;
-    let offset = i64::from_be_bytes([
-        bytes[port_offset + 4],
-        bytes[port_offset + 5],
-        bytes[port_offset + 6],
-        bytes[port_offset + 7],
-        bytes[port_offset + 8],
-        bytes[port_offset + 9],
-        bytes[port_offset + 10],
-        bytes[port_offset + 11],
-    ]);
-    Ok(DecodedMessageId {
-        address: SocketAddr::new(address, port),
-        offset,
-    })
-}
-
-fn hex_nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
-}
 
 /// One Java MQAdmin key or unique-key query across a topic route.
 /// The route topic and logical-topic flag are derived from Java's query inputs
@@ -530,38 +444,7 @@ fn client_decode_message(message: &mut MessageExt) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AdminQueryRequest, DecodedMessageId, MessageExt, MessageIdDecodeError, QueryResult,
-        SharedValue, decode_message_id,
-    };
-    use std::{net::SocketAddr, str::FromStr};
-
-    #[test]
-    fn java_message_id_decoder_handles_ipv4_ipv6_and_malformed_values() {
-        assert_eq!(
-            decode_message_id("C633641400002A9F0000018BCFE56829").unwrap(),
-            DecodedMessageId {
-                address: SocketAddr::from_str("198.51.100.20:10911").unwrap(),
-                offset: 1_700_000_000_041,
-            }
-        );
-        assert_eq!(
-            decode_message_id("20010db800000000000000000000000000002a9f0000000000000000").unwrap(),
-            DecodedMessageId {
-                address: SocketAddr::from_str("[2001:db8::]:10911").unwrap(),
-                offset: 0,
-            }
-        );
-        assert_eq!(decode_message_id("a"), Err(MessageIdDecodeError::OddLength));
-        assert_eq!(
-            decode_message_id("zz"),
-            Err(MessageIdDecodeError::InvalidHex { index: 0 })
-        );
-        assert_eq!(
-            decode_message_id("00000000000100000000000000000000"),
-            Err(MessageIdDecodeError::InvalidPort)
-        );
-    }
+    use super::{AdminQueryRequest, MessageExt, QueryResult, SharedValue};
 
     #[test]
     fn query_result_java_getters_expose_the_stored_values() {

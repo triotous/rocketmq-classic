@@ -616,6 +616,62 @@ async fn view_message_falls_back_to_unique_key_query_after_physical_lookup_failu
 }
 
 #[tokio::test]
+async fn view_message_uses_java_permissive_decoder_for_non_hex_physical_ids() {
+    let (broker, broker_task, mut broker_requests) = query_broker_peer().await;
+    let (namesrv, namesrv_task, _) = name_server_peer(route_body(&[("broker-a", &broker)])).await;
+    let producer = Arc::new(Producer::new(producer_config(namesrv)));
+    producer.start().await.unwrap();
+
+    let mut message_id = physical_message_id(&broker, 77);
+    message_id.pop();
+    message_id.push('G');
+    assert!(matches!(
+        producer.view_message("orders", &message_id).await,
+        Err(ProducerError::AdminQuery(
+            rocketmq_classic_core::api::admin::AdminQueryError::Rpc(RpcError::Response {
+                request_code: request::QUERY_MESSAGE,
+                code: response::NO_MESSAGE,
+                ..
+            })
+        ))
+    ));
+
+    let physical_request = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::VIEW_MESSAGE_BY_ID {
+                break command;
+            }
+            assert_ne!(command.code, request::QUERY_MESSAGE);
+        }
+    })
+    .await
+    .unwrap();
+    let fields = physical_request.ext_fields.unwrap();
+    assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+    assert_eq!(fields.get("offset"), Some(&"255".to_owned()));
+
+    let fallback_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        fallback_query.ext_fields.unwrap().get("key"),
+        Some(&message_id)
+    );
+
+    producer.shutdown().await.unwrap();
+    namesrv_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn create_topic_validates_topic_before_contacting_nameserver() {
     let (broker, broker_task, _) = broker_peer(vec![]).await;
     let (namesrv, namesrv_task, mut namesrv_requests) =
