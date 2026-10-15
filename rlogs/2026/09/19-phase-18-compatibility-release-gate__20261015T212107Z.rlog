@@ -34,3 +34,12 @@ Owner-run production topology, organization credentials/CA, approved fault
 injection, capacity/soak, and platform-specific runtime checks remain manual
 items. No push, tag, publication, deployment, Docker, or live Broker action
 occurred.
+
+2026-10-15 UTC — recorded Remoting reverse-name scan dispositions for
+`ProcessorLease`, `register_owned_processor[_with_executor]`, and
+`TimeoutPhase` in the Phase 3 inventory and Phase 6 audit. Pinned Java source
+confirms registration maps to `RemotingClient.registerProcessor` and the live
+processor table; Java timeout exceptions have no phase enum. Existing Rust
+regression `owned_processor_cleanup_preserves_replacement_even_for_same_handle`
+covers lease replacement/drop behavior. Documentation-only change; no tests
+were run. `git diff --check` passed. Broad P18-V01 remains open.
