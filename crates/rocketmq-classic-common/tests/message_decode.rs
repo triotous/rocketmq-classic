@@ -5,9 +5,9 @@ use rocketmq_classic_common::{
         MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
         MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION,
         MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageExt, MessageHostAddress,
-        MessageHostAddressBytesError, MessageId, MessageIdError, MessageProperties,
-        PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
-        TopicFilterType, append_crc32_property, client_decode, client_decodes,
+        MessageHostAddressBytesError, MessageId, MessageIdError, MessageProperties, MessageVersion,
+        MessageVersionError, PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION,
+        SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
         client_decodes_with_body, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
         decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
@@ -514,6 +514,153 @@ fn message_decoder_public_constants_match_java_551() {
         expected["nameValueSeparator"]
     );
     assert_eq!(PROPERTY_SEPARATOR as i32, expected["propertySeparator"]);
+}
+
+#[test]
+fn message_version_api_matches_java_551_fixture() {
+    let expected = &fixture()["messageVersionApi"];
+    let versions = [MessageVersion::V1, MessageVersion::V2];
+    assert_eq!(expected["values"].as_array().unwrap().len(), versions.len());
+
+    for (index, version) in versions.into_iter().enumerate() {
+        let item = &expected["values"][index];
+        assert_eq!(version.name(), item["name"]);
+        assert_eq!(version.to_string(), item["toString"]);
+        assert_eq!(version.ordinal(), item["ordinal"].as_i64().unwrap() as i32);
+        assert_eq!(version.magic_code(), item["magicCode"]);
+        assert_eq!(version.topic_length_size(), item["topicLengthSize"]);
+        assert_eq!(
+            MessageVersion::value_of_name(Some(item["valueOfName"].as_str().unwrap())).unwrap(),
+            version
+        );
+        assert_eq!(
+            MessageVersion::value_of_magic_code(version.magic_code()).unwrap(),
+            version
+        );
+        assert_eq!(item["valueOfMagicCode"], version.name());
+        let other = if index == 0 {
+            MessageVersion::V2
+        } else {
+            MessageVersion::V1
+        };
+        assert_eq!(
+            version.java_compare_to(other),
+            version.ordinal() - other.ordinal()
+        );
+        if index == 0 {
+            assert!(item["compareToPrevious"].is_null());
+        } else {
+            assert_eq!(
+                version.java_compare_to(versions[index - 1]),
+                item["compareToPrevious"]
+            );
+        }
+
+        let read_bytes: &[u8] = match version {
+            MessageVersion::V1 => &[0x55, 0xff, 0x7f],
+            MessageVersion::V2 => &[0x55, 0xff, 0xfe, 0x7f, 0xff],
+        };
+        let mut relative = &read_bytes[1..];
+        assert_eq!(
+            version.get_topic_length(&mut relative).unwrap(),
+            item["relativeTopicLength"]
+        );
+        assert_eq!(
+            relative.len(),
+            read_bytes.len() - 1 - version.topic_length_size()
+        );
+        assert_eq!(
+            item["relativePositionAfterRead"].as_u64().unwrap() as usize,
+            1 + version.topic_length_size()
+        );
+        let indexed = version
+            .get_topic_length_at(
+                read_bytes,
+                if version == MessageVersion::V1 { 2 } else { 3 },
+            )
+            .unwrap();
+        assert_eq!(indexed, item["indexedTopicLength"]);
+
+        let mut appended = vec![0];
+        version.put_topic_length(&mut appended, 0x123456);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(&appended),
+            item["putBytesBase64"]
+        );
+        assert_eq!(
+            appended.len(),
+            item["positionAfterWrite"].as_u64().unwrap() as usize
+        );
+    }
+
+    for case in expected["narrowingCases"].as_array().unwrap() {
+        let version =
+            MessageVersion::value_of_name(Some(case["version"].as_str().unwrap())).unwrap();
+        let topic_length = case["topicLength"].as_i64().unwrap() as i32;
+        let mut bytes = Vec::new();
+        version.put_topic_length(&mut bytes, topic_length);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(&bytes),
+            case["bytesBase64"]
+        );
+        let mut input = bytes.as_slice();
+        assert_eq!(
+            version.get_topic_length(&mut input).unwrap(),
+            case["readBack"]
+        );
+        assert!(input.is_empty());
+    }
+
+    assert_eq!(
+        MessageVersion::value_of_name(None),
+        Err(MessageVersionError::NullEnumName)
+    );
+    assert_eq!(
+        MessageVersion::value_of_name(Some("MESSAGE_VERSION_V3")),
+        Err(MessageVersionError::UnknownEnumName(
+            "MESSAGE_VERSION_V3".to_owned()
+        ))
+    );
+    assert_eq!(
+        expected["invalidMagicCodeException"],
+        "IllegalArgumentException"
+    );
+    assert!(matches!(
+        MessageVersion::value_of_magic_code(0),
+        Err(MessageVersionError::InvalidMagicCode(0))
+    ));
+    assert_eq!(
+        expected["unknownEnumNameException"],
+        "IllegalArgumentException"
+    );
+    assert_eq!(expected["nullEnumNameException"], "NullPointerException");
+
+    let mut truncated = &[0xff][..];
+    assert!(matches!(
+        MessageVersion::V2.get_topic_length(&mut truncated),
+        Err(MessageVersionError::Truncated {
+            offset: 0,
+            needed: 2,
+            available: 1
+        })
+    ));
+    assert_eq!(truncated, &[0xff]);
+    assert_eq!(
+        expected["relativeUnderflowException"],
+        "BufferUnderflowException"
+    );
+    assert_eq!(
+        expected["indexedOutOfBoundsException"],
+        "IndexOutOfBoundsException"
+    );
+    assert!(matches!(
+        MessageVersion::V2.get_topic_length_at(&[0], 0),
+        Err(MessageVersionError::Truncated {
+            offset: 0,
+            needed: 2,
+            available: 1
+        })
+    ));
 }
 
 #[test]

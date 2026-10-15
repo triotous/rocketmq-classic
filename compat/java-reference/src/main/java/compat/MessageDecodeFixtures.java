@@ -24,6 +24,7 @@ import org.apache.rocketmq.common.message.MessageClientExt;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageId;
+import org.apache.rocketmq.common.message.MessageVersion;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.utils.NetworkUtil;
@@ -61,6 +62,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
+        root.put("messageVersionApi", messageVersionApi());
         root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         root.put("messageCompactApi", messageCompactApi());
@@ -364,6 +366,78 @@ public final class MessageDecodeFixtures {
         expected.put("nameValueSeparator", (int) MessageDecoder.NAME_VALUE_SEPARATOR);
         expected.put("propertySeparator", (int) MessageDecoder.PROPERTY_SEPARATOR);
         return expected;
+    }
+
+    private static Map<String, Object> messageVersionApi() {
+        Map<String, Object> expected = new TreeMap<>();
+        List<Map<String, Object>> versions = new ArrayList<>();
+        MessageVersion[] values = MessageVersion.values();
+        for (int index = 0; index < values.length; index++) {
+            MessageVersion version = values[index];
+            Map<String, Object> item = new TreeMap<>();
+            item.put("name", version.name());
+            item.put("ordinal", version.ordinal());
+            item.put("toString", version.toString());
+            item.put("magicCode", version.getMagicCode());
+            item.put("topicLengthSize", version.getTopicLengthSize());
+            item.put("valueOfName", MessageVersion.valueOf(version.name()).name());
+            item.put("valueOfMagicCode", MessageVersion.valueOfMagicCode(version.getMagicCode()).name());
+            item.put("compareToPrevious", index == 0 ? null : version.compareTo(values[index - 1]));
+
+            byte[] readBytes = version == MessageVersion.MESSAGE_VERSION_V1
+                ? new byte[] {0x55, (byte) 0xFF, 0x7F}
+                : new byte[] {0x55, (byte) 0xFF, (byte) 0xFE, 0x7F, (byte) 0xFF};
+            ByteBuffer relative = ByteBuffer.wrap(readBytes);
+            relative.position(1);
+            item.put("relativeTopicLength", version.getTopicLength(relative));
+            item.put("relativePositionAfterRead", relative.position());
+            item.put("indexedTopicLength", version.getTopicLength(ByteBuffer.wrap(readBytes),
+                version == MessageVersion.MESSAGE_VERSION_V1 ? 2 : 3));
+
+            ByteBuffer output = ByteBuffer.allocate(version.getTopicLengthSize() + 1);
+            output.position(1);
+            version.putTopicLength(output, 0x123456);
+            item.put("putBytesBase64", Base64.getEncoder().encodeToString(output.array()));
+            item.put("positionAfterWrite", output.position());
+            versions.add(item);
+        }
+        expected.put("values", versions);
+
+        List<Map<String, Object>> narrowingCases = new ArrayList<>();
+        for (MessageVersion version : values) {
+            for (int topicLength : new int[] {
+                -32769, -32768, -129, -128, -1, 0, 1, 127, 128, 32767, 32768,
+                Integer.MIN_VALUE, Integer.MAX_VALUE
+            }) {
+                ByteBuffer output = ByteBuffer.allocate(version.getTopicLengthSize());
+                version.putTopicLength(output, topicLength);
+                ByteBuffer input = ByteBuffer.wrap(output.array());
+                Map<String, Object> item = new TreeMap<>();
+                item.put("version", version.name());
+                item.put("topicLength", topicLength);
+                item.put("bytesBase64", Base64.getEncoder().encodeToString(output.array()));
+                item.put("readBack", version.getTopicLength(input));
+                narrowingCases.add(item);
+            }
+        }
+        expected.put("narrowingCases", narrowingCases);
+        expected.put("invalidMagicCodeException", exceptionName(() -> MessageVersion.valueOfMagicCode(0)));
+        expected.put("unknownEnumNameException", exceptionName(() -> MessageVersion.valueOf("MESSAGE_VERSION_V3")));
+        expected.put("nullEnumNameException", exceptionName(() -> MessageVersion.valueOf(null)));
+        expected.put("relativeUnderflowException", exceptionName(() ->
+            MessageVersion.MESSAGE_VERSION_V2.getTopicLength(ByteBuffer.allocate(1))));
+        expected.put("indexedOutOfBoundsException", exceptionName(() ->
+            MessageVersion.MESSAGE_VERSION_V2.getTopicLength(ByteBuffer.allocate(1), 0)));
+        return expected;
+    }
+
+    private static String exceptionName(Runnable action) {
+        try {
+            action.run();
+            return null;
+        } catch (RuntimeException exception) {
+            return exception.getClass().getSimpleName();
+        }
     }
 
     private static Map<String, Object> messageDecoderPropertiesApi() {

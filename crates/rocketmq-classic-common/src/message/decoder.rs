@@ -23,6 +23,145 @@ pub const QUEUE_OFFSET_POSITION: usize = 20;
 pub const SYSFLAG_POSITION: usize = 36;
 pub const BLANK_MAGIC_CODE: i32 = -875_286_124;
 
+/// Java `MessageVersion`, including the signed V1/V2 topic-length widths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageVersion {
+    V1,
+    V2,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum MessageVersionError {
+    #[error("name is null")]
+    NullEnumName,
+    #[error("No enum constant org.apache.rocketmq.common.message.MessageVersion.{0}")]
+    UnknownEnumName(String),
+    #[error("Invalid magicCode {0}")]
+    InvalidMagicCode(i32),
+    #[error(
+        "message version topic length at byte {offset} needs {needed} bytes but only {available} are available"
+    )]
+    Truncated {
+        offset: usize,
+        needed: usize,
+        available: usize,
+    },
+}
+
+impl MessageVersion {
+    pub const fn values() -> [Self; 2] {
+        [Self::V1, Self::V2]
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, MessageVersionError> {
+        match name {
+            None => Err(MessageVersionError::NullEnumName),
+            Some("MESSAGE_VERSION_V1") => Ok(Self::V1),
+            Some("MESSAGE_VERSION_V2") => Ok(Self::V2),
+            Some(other) => Err(MessageVersionError::UnknownEnumName(other.to_owned())),
+        }
+    }
+
+    pub fn value_of_magic_code(magic_code: i32) -> Result<Self, MessageVersionError> {
+        match magic_code {
+            MESSAGE_MAGIC_CODE_V1 => Ok(Self::V1),
+            MESSAGE_MAGIC_CODE_V2 => Ok(Self::V2),
+            other => Err(MessageVersionError::InvalidMagicCode(other)),
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::V1 => "MESSAGE_VERSION_V1",
+            Self::V2 => "MESSAGE_VERSION_V2",
+        }
+    }
+
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Self::V1 => 0,
+            Self::V2 => 1,
+        }
+    }
+
+    pub const fn java_compare_to(self, other: Self) -> i32 {
+        self.ordinal() - other.ordinal()
+    }
+
+    pub const fn magic_code(self) -> i32 {
+        match self {
+            Self::V1 => MESSAGE_MAGIC_CODE_V1,
+            Self::V2 => MESSAGE_MAGIC_CODE_V2,
+        }
+    }
+
+    pub const fn topic_length_size(self) -> usize {
+        match self {
+            Self::V1 => 1,
+            Self::V2 => 2,
+        }
+    }
+
+    /// Read the signed topic length and advance the remaining-byte view.
+    pub fn get_topic_length(self, buffer: &mut &[u8]) -> Result<i32, MessageVersionError> {
+        let width = self.topic_length_size();
+        if buffer.len() < width {
+            return Err(MessageVersionError::Truncated {
+                offset: 0,
+                needed: width,
+                available: buffer.len(),
+            });
+        }
+        let (length_bytes, remaining) = buffer.split_at(width);
+        *buffer = remaining;
+        Ok(match self {
+            Self::V1 => i8::from_be_bytes([length_bytes[0]]) as i32,
+            Self::V2 => i16::from_be_bytes([length_bytes[0], length_bytes[1]]) as i32,
+        })
+    }
+
+    /// Read the signed topic length at `index` without changing the input.
+    pub fn get_topic_length_at(
+        self,
+        buffer: &[u8],
+        index: usize,
+    ) -> Result<i32, MessageVersionError> {
+        let width = self.topic_length_size();
+        let end = index
+            .checked_add(width)
+            .ok_or(MessageVersionError::Truncated {
+                offset: index,
+                needed: width,
+                available: buffer.len().saturating_sub(index),
+            })?;
+        let Some(length_bytes) = buffer.get(index..end) else {
+            return Err(MessageVersionError::Truncated {
+                offset: index,
+                needed: width,
+                available: buffer.len().saturating_sub(index),
+            });
+        };
+        Ok(match self {
+            Self::V1 => i8::from_be_bytes([length_bytes[0]]) as i32,
+            Self::V2 => i16::from_be_bytes([length_bytes[0], length_bytes[1]]) as i32,
+        })
+    }
+
+    /// Append the Java-narrowed V1/V2 topic length to the output buffer.
+    pub fn put_topic_length(self, buffer: &mut Vec<u8>, topic_length: i32) {
+        match self {
+            Self::V1 => buffer.push(topic_length as i8 as u8),
+            Self::V2 => buffer.extend_from_slice(&(topic_length as i16).to_be_bytes()),
+        }
+    }
+}
+
+impl std::fmt::Display for MessageVersion {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
+
 /// Append the Java `MessageDecoder.createCrc32` property record to a buffer.
 /// The ten decimal digits are emitted least-significant first, matching Java.
 pub fn append_crc32_property(output: &mut Vec<u8>, mut crc32: i32) {

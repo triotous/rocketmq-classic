@@ -358,8 +358,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   address profile. A native Ubuntu ARM64 container passes the Core RPC
   integration suite; this does not replace the required GitHub Ubuntu result.
 - [ ] Complete Phase 19 Broker/Docker scenarios before final compatibility or
-  release acceptance. The owner must provide any deployment-only credentials,
-  topology, and maintenance inputs at that phase.
+  release acceptance. The local Docker runner and scenario execution are still
+  implementation/automation work and cannot be reassigned to the manual list.
+  The owner must provide any deployment-only credentials, topology, and
+  maintenance inputs at that phase.
 
 ## Phase 18 verification disposition
 
@@ -485,13 +487,16 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `b4ae563511220dbf008a4ef0bc30d82f2c325005e36eb52b15a5ee87bff59d40`.
 - Common `MessageExt` broker-name accessors now have direct Java fixture and
   Rust getter/setter coverage for default, non-null and cleared values. This
-  closes this accessor slice only; P18-V01 remains open. Current message fixture
+  closes this accessor slice only; P18-V01 remains open. Fixture at this slice
   SHA-256: `bb5fd8ba6d671739bb352e7780f29661e759c53dce7fe3887e1726149660ad1e`.
-- [x] **P18-V02** — Current-worktree default/all-feature workspace tests,
-  strict all-target/all-feature Clippy, Maven verification (37 scenarios),
-  differential self-test and manifest, 16 race/leak cases × 3, fuzz smoke,
-  release examples, benchmark compilation, metadata, and format/diff checks
-  passed on 2026-10-14 before the code/documentation commits.
+- Common `MessageVersion` now exposes Java's enum metadata and V1/V2 signed
+  topic-length reads/writes. The invoked fixture and Rust regression cover enum
+  order/names, magic conversion, signed narrowing, read/write cursors and
+  truncated-read errors. Current message fixture SHA-256:
+  `a0a65db7c922eb9ac3825e235001dff30eaab8af41ac3e080ccd6e3540f138e0`.
+- [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
+  The latest complete run is recorded below for `133d4f54`; later commits are
+  not covered by that full run.
 - [x] Re-run the full server-free P18-V02 gates on current revision `15f8494b`
   after the Push runtime-setting correction (2026-10-14): default and
   all-feature workspace tests, strict all-target/all-feature Clippy, Maven
