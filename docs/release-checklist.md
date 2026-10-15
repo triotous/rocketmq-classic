@@ -913,7 +913,7 @@ Before any publication:
   `cargo package --workspace --list --locked --allow-dirty` lists 7 crate
   archives with per-crate `LICENSE` and `NOTICE`; contents are crate source,
   examples/benches, tests, and synthetic TLS/fuzz fixtures. Locked Cargo
-  metadata reports 207 external crates, all from crates.io registry sources
+  metadata reports 208 external crates, all from crates.io registry sources
   with license metadata and no git/path overrides. The manifest license
   expressions use permissive alternatives. Internal workspace dependencies
   now pair local paths with `0.1.0` version requirements. This does not establish
@@ -980,3 +980,28 @@ Before any publication:
   pass. This closes P18-V02 server-free gates on `95548e49`; broad P18-V01,
   current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
   automation, and pre-publication version/registry resolution remain open.
+
+- P18-V01 Remoting callback executor timing slice (`9881c230`, 2026-10-15):
+  `disableCallbackExecutor` is now read live for the callback-executor getter
+  and callback completion dispatch. Setting a custom executor while disabled
+  retains it; the getter remains hidden and dispatch runs inline until the
+  setting is re-enabled. The Rust regression exercises both completion paths
+  and executor identity; Maven's pinned Java live-config probe verifies the
+  matching getter and retention behavior. This closes that remoting setting
+  slice only; the broad P18-V01 audit remains open.
+- PASS on `9881c230`: formatting, strict all-target/all-feature workspace
+  Clippy, UTC default and all-feature workspace suites, full Remoting tests,
+  Maven verify (37 scenarios and live remoting config probe), differential
+  self-test/37-scenario manifest, deterministic race/leak smoke (16 cases × 3),
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, benchmark compilation, workspace metadata/license/dependency
+  checks, seven package listings, Asia/Taipei unique-ID differential and diff
+  checks. Locked Cargo metadata reports 208 external packages, all registry
+  sourced with license metadata.
+- Remaining non-manual work: complete broad bidirectional P18-V01 source/API,
+  setting, input/error/control-flow, inherited API and reverse-export
+  reconciliation; obtain current-revision GitHub Ubuntu address-profile
+  evidence for P18-V04; and implement/run Phase 19 local Docker/Broker
+  automation. Confirm the release version and registry dependency resolution
+  before publication. Owner-run deployment/live Broker checks remain separate
+  Phase 19 manual validation.
