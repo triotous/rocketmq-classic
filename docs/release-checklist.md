@@ -536,6 +536,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `UNIQ_KEY` getter and mutable offset-ID fallback semantics. Its direct
   fixture/differential closes that subclass API slice only; broader P18-V01
   remains open.
+  The Java `MessageQueue` constructors, fields, copy, equality/hash/text and
+  ordering methods now have a method-level Phase 8 crosswalk to their existing
+  invoked fixtures and Rust differential tests; broad P18-V01 remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.
