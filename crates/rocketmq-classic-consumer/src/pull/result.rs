@@ -8,8 +8,7 @@ use std::{
 use rand::Rng;
 use rocketmq_classic_common::{
     message::{
-        DecodeError, DecodeOptions, Message, MessageExt, MessageQueue, decode_many,
-        decode_properties,
+        DecodeError, DecodeOptions, MessageExt, MessageQueue, decode_many, decode_properties,
     },
     sysflag::message::{INNER_BATCH_FLAG, NEED_UNWRAP_FLAG},
 };
@@ -433,14 +432,13 @@ fn decode_inner_batch(outer: &MessageExt) -> Result<Vec<MessageExt>, ProcessPull
             });
         }
         let properties = String::from_utf8_lossy(&record[properties_start..properties_end]);
-        let mut message = Message::default();
-        message.set_topic(outer.topic().to_owned());
-        message.set_body(record[body_start..body_end].to_vec());
-        message.set_flag(flag);
+        let mut inner = MessageExt::new();
+        inner.set_topic(outer.topic().to_owned());
+        inner.set_body(record[body_start..body_end].to_vec());
+        inner.set_flag(flag);
         for (key, value) in decode_properties(&properties) {
-            let _ = message.set_system_property(key, value);
+            let _ = inner.set_system_property(key, value);
         }
-        let mut inner = MessageExt::new(message);
         inner.set_queue_id(outer.queue_id());
         inner.set_queue_offset(outer.queue_offset().wrapping_add(messages.len() as i64));
         inner.set_sys_flag(outer.sys_flag());

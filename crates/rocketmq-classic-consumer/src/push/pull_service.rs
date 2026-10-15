@@ -884,7 +884,8 @@ mod tests {
     }
 
     fn message(offset: i64, body_size: usize) -> MessageExt {
-        let mut message = MessageExt::new(Message::new("orders", vec![b'x'; body_size]));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("orders", vec![b'x'; body_size]));
         message.set_queue_offset(offset);
         message
     }

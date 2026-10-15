@@ -1717,7 +1717,7 @@ impl LitePullConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rocketmq_classic_common::message::{Message, MessageExt};
+    use rocketmq_classic_common::message::Message;
     use rocketmq_classic_core::api::consumer::{PullResultExt, PullStatus};
     use rocketmq_classic_core::config::AccessChannel;
     use rocketmq_classic_protocol::codes::LanguageCode;
@@ -1839,7 +1839,8 @@ mod tests {
                 paused: false,
             },
         );
-        let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("orders", b"body".to_vec()));
         message.set_queue_offset(0);
         consumer
             .buffer
@@ -2001,9 +2002,11 @@ mod tests {
                 paused: false,
             },
         );
-        let mut first = MessageExt::new(Message::new("orders", b"a".to_vec()));
+        let mut first =
+            crate::test_support::message_ext_from(Message::new("orders", b"a".to_vec()));
         first.set_queue_offset(19);
-        let mut second = MessageExt::new(Message::new("orders", b"b".to_vec()));
+        let mut second =
+            crate::test_support::message_ext_from(Message::new("orders", b"b".to_vec()));
         second.set_queue_offset(20);
         let body_bytes = 2;
         consumer
@@ -2043,7 +2046,8 @@ mod tests {
             messages: offsets
                 .iter()
                 .map(|offset| {
-                    let mut message = MessageExt::new(Message::new("orders", Vec::new()));
+                    let mut message =
+                        crate::test_support::message_ext_from(Message::new("orders", Vec::new()));
                     message.set_queue_offset(*offset);
                     message
                 })

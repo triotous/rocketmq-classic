@@ -1,6 +1,6 @@
 use super::{ClientRuntime, ConsumerOperation, RuntimeState};
 use rocketmq_classic_common::message::{
-    Message, MessageExt, MessageHostAddress,
+    MessageExt, MessageHostAddress,
     constants::{PROPERTY_CORRELATION_ID, PROPERTY_PRODUCER_GROUP},
     decode_properties,
 };
@@ -306,19 +306,18 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
 
         let properties = decode_properties(header.properties.as_deref().unwrap_or_default());
         let correlation_id = properties.get(PROPERTY_CORRELATION_ID).cloned();
-        let mut message = Message::default();
-        message.set_topic(header.topic);
-        message.set_body(body);
-        message.set_flag(header.flag);
+        let mut reply = MessageExt::new();
+        reply.set_topic(header.topic);
+        reply.set_body(body);
+        reply.set_flag(header.flag);
         for (key, value) in properties {
-            let _ = message.set_system_property(key, value);
+            let _ = reply.set_system_property(key, value);
         }
-        let _ = message.set_system_property(
+        let _ = reply.set_system_property(
             rocketmq_classic_common::message::constants::PROPERTY_REPLY_MESSAGE_ARRIVE_TIME,
             epoch_millis_now().to_string(),
         );
 
-        let mut reply = MessageExt::new(message);
         reply.set_queue_id(header.queue_id);
         reply.set_sys_flag(header.sys_flag);
         reply.set_born_timestamp(header.born_timestamp);
@@ -467,6 +466,7 @@ mod tests {
         },
     };
     use base64::Engine;
+    use rocketmq_classic_common::message::Message;
     use rocketmq_classic_protocol::heartbeat::ConsumerData;
     use std::{
         future::Future,
@@ -976,8 +976,10 @@ mod tests {
             let reply_correlation = correlation_id.clone();
             let reply = tokio::spawn(async move {
                 reply_gate.wait().await;
-                let message =
-                    MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec()));
+                let message = crate::test_support::message_ext_from(Message::new(
+                    "orders_REPLY_TOPIC",
+                    b"reply".to_vec(),
+                ));
                 reply_runtime.complete_reply_request(&reply_correlation, message)
             });
 
@@ -1002,7 +1004,10 @@ mod tests {
             }
             assert!(!runtime.complete_reply_request(
                 &correlation_id,
-                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"duplicate".to_vec()))
+                crate::test_support::message_ext_from(Message::new(
+                    "orders_REPLY_TOPIC",
+                    b"duplicate".to_vec(),
+                ))
             ));
             assert_eq!(runtime.groups.expire_pending_replies(deadline), 0);
         }
@@ -1035,7 +1040,10 @@ mod tests {
             reply_gate.wait().await;
             reply_runtime.complete_reply_request(
                 "send-race",
-                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec())),
+                crate::test_support::message_ext_from(Message::new(
+                    "orders_REPLY_TOPIC",
+                    b"reply".to_vec(),
+                )),
             )
         });
         let failure_gate = gate.clone();
@@ -1068,7 +1076,10 @@ mod tests {
             reply_gate.wait().await;
             reply_runtime.complete_reply_request(
                 "cancel-race",
-                MessageExt::new(Message::new("orders_REPLY_TOPIC", b"reply".to_vec())),
+                crate::test_support::message_ext_from(Message::new(
+                    "orders_REPLY_TOPIC",
+                    b"reply".to_vec(),
+                )),
             )
         });
         let cancel_gate = gate.clone();

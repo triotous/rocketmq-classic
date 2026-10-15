@@ -975,7 +975,7 @@ mod pending_reply_admission_tests {
             .unwrap();
         assert!(registry.complete_pending_reply(
             "reply",
-            MessageExt::new(rocketmq_classic_common::message::Message::new(
+            crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
                 "reply-topic",
                 b"reply".to_vec()
             ))

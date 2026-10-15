@@ -6843,8 +6843,8 @@ mod tests {
             fixture["pushPopFilterHookEvents"],
             serde_json::json!(["false:2"])
         );
-        let first = MessageExt::new(Message::new("orders", b"one".to_vec()));
-        let second = MessageExt::new(Message::new("orders", b"two".to_vec()));
+        let first = crate::test_support::message_ext_from(Message::new("orders", b"one".to_vec()));
+        let second = crate::test_support::message_ext_from(Message::new("orders", b"two".to_vec()));
         let (accepted, discarded) =
             consumer.filter_pop_messages(&SubscriptionData::default(), vec![first, second]);
         assert_eq!(*events.lock().unwrap(), ["false:2"]);
@@ -6874,12 +6874,15 @@ mod tests {
         assert_eq!(fixture["parsedSubscribeQueues"], serde_json::json!(parsed));
 
         let mut pop_retry_messages = [
-            MessageExt::new(Message::new(
+            crate::test_support::message_ext_from(Message::new(
                 "%RETRY%phase18-push-topic-helpers_orders",
                 b"".to_vec(),
             )),
-            MessageExt::new(Message::new("%RETRY%other_orders", b"".to_vec())),
-            MessageExt::new(Message::new("orders", b"".to_vec())),
+            crate::test_support::message_ext_from(Message::new(
+                "%RETRY%other_orders",
+                b"".to_vec(),
+            )),
+            crate::test_support::message_ext_from(Message::new("orders", b"".to_vec())),
         ];
         consumer.try_reset_pop_retry_topic(&mut pop_retry_messages, group);
         let pop_retry_topics = pop_retry_messages
@@ -6893,7 +6896,7 @@ mod tests {
 
         let mut reset_messages = [
             {
-                let mut message = MessageExt::new(Message::new(
+                let mut message = crate::test_support::message_ext_from(Message::new(
                     "%RETRY%phase18-push-topic-helpers",
                     b"".to_vec(),
                 ));
@@ -6902,8 +6905,8 @@ mod tests {
                     .unwrap();
                 message
             },
-            MessageExt::new(Message::new("tenant%events", b"".to_vec())),
-            MessageExt::new(Message::new("other%events", b"".to_vec())),
+            crate::test_support::message_ext_from(Message::new("tenant%events", b"".to_vec())),
+            crate::test_support::message_ext_from(Message::new("other%events", b"".to_vec())),
         ];
         consumer.reset_retry_and_namespace(&mut reset_messages, group);
         let reset_topics = reset_messages
@@ -7488,13 +7491,15 @@ mod tests {
     }
 
     fn message(offset: i64) -> MessageExt {
-        let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("orders", b"body".to_vec()));
         message.set_queue_offset(offset);
         message
     }
 
     fn pop_receipt_message(receipt: Option<&str>) -> MessageExt {
-        let mut message = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("orders", b"body".to_vec()));
         if let Some(receipt) = receipt {
             message
                 .set_system_property(PROPERTY_POP_CK, receipt)
@@ -8187,7 +8192,7 @@ mod tests {
         for (key, value) in properties {
             body.set_system_property(key, value).unwrap();
         }
-        let mut message = MessageExt::new(body);
+        let mut message = crate::test_support::message_ext_from(body);
         message.set_queue_offset(offset);
         message.set_broker_name(Some("broker-a".into()));
         message.set_commit_log_offset(offset + 100);
@@ -8215,7 +8220,7 @@ mod tests {
     }
 
     fn retry_topic_message(topic: &str, origin_topic: Option<&str>, offset: i64) -> MessageExt {
-        let mut message = MessageExt::new(Message::new(topic, Vec::new()));
+        let mut message = crate::test_support::message_ext_from(Message::new(topic, Vec::new()));
         message.set_queue_offset(offset);
         if let Some(origin_topic) = origin_topic {
             message

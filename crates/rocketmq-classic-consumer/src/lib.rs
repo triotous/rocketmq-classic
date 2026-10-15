@@ -26,6 +26,8 @@ pub mod rebalance;
 mod service_state;
 mod stack;
 mod stats;
+#[cfg(test)]
+mod test_support;
 
 pub use config::PullConsumerConfig;
 pub use consume::{ConsumeMessageContext, ConsumeMessageHook};

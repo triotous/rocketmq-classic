@@ -1146,6 +1146,21 @@ impl DerefMut for MessageExt {
 /// let _ = MessageExt::default().java_to_string();
 /// ```
 ///
+/// Java `MessageExt` has a no-argument constructor, not a constructor that
+/// wraps an existing `Message`:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{Message, MessageExt};
+/// let _ = MessageExt::new(Message::default());
+/// ```
+///
+/// The internal wrapper helper is not part of the public API:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{Message, MessageExt};
+/// let _ = MessageExt::from_message(Message::default());
+/// ```
+///
 /// Java `MessageExt` inherits identity-based `Object.equals`/`hashCode`;
 /// Rust equality also follows the message identity token instead of comparing
 /// fields. Cloning a `MessageExt` preserves that token:
@@ -1203,7 +1218,12 @@ impl PartialEq for MessageExt {
 impl Eq for MessageExt {}
 
 impl MessageExt {
-    pub fn new(message: Message) -> Self {
+    /// Java's public no-argument `MessageExt` constructor.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn from_message(message: Message) -> Self {
         Self {
             message,
             ..Self::default()
@@ -1860,7 +1880,7 @@ mod tests {
         assert!(message.is_wait_store_msg_ok());
         message.set_tags("tag").unwrap();
         assert_eq!(message.tags(), Some("tag".to_owned()));
-        let mut ext = MessageExt::new(message.clone());
+        let mut ext = MessageExt::from_message(message.clone());
         ext.set_queue_offset(i64::MIN);
         ext.set_commit_log_offset(i64::MAX);
         assert_eq!(ext.topic_nullable(), message.topic_nullable());

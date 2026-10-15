@@ -186,7 +186,8 @@ mod tests {
             .unwrap(),
         );
         let hook = ConsumeTraceHook::new(dispatcher, client_config);
-        let mut message = MessageExt::new(Message::new("tenant%orders", b"body".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("tenant%orders", b"body".to_vec()));
         message.set_message_id(Some("message-1".into()));
         message.set_store_size(4);
         message.set_store_timestamp(1_700);
@@ -244,7 +245,8 @@ mod tests {
                 .is_ok()
         }));
 
-        let mut trace_off = MessageExt::new(Message::new("orders", b"body".to_vec()));
+        let mut trace_off =
+            crate::test_support::message_ext_from(Message::new("orders", b"body".to_vec()));
         trace_off
             .set_system_property(PROPERTY_TRACE_SWITCH, "false")
             .unwrap();

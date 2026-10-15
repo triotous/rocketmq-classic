@@ -19,6 +19,8 @@ mod java_number;
 pub mod namesrv;
 pub mod route;
 pub mod runtime;
+#[cfg(test)]
+mod test_support;
 pub mod trace;
 #[doc(hidden)]
 pub mod unique_id;

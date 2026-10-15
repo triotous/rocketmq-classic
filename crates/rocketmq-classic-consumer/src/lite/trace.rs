@@ -631,7 +631,8 @@ mod tests {
     fn consume_context_builder_obeys_namespace_trace_switch_and_batch_cost() {
         let mut client = ClientConfig::new("lite-trace");
         client.set_namespace(Some("ns".to_owned()));
-        let mut included = MessageExt::new(Message::new("ns%orders", b"body".to_vec()));
+        let mut included =
+            crate::test_support::message_ext_from(Message::new("ns%orders", b"body".to_vec()));
         included.set_message_id(Some("msg-1".to_owned()));
         included.set_store_timestamp(1_700);
         included.set_store_size(4);
@@ -641,7 +642,8 @@ mod tests {
         included
             .set_system_property(PROPERTY_MSG_REGION, "region-a")
             .unwrap();
-        let mut excluded = MessageExt::new(Message::new("ns%orders", b"skip".to_vec()));
+        let mut excluded =
+            crate::test_support::message_ext_from(Message::new("ns%orders", b"skip".to_vec()));
         excluded
             .set_system_property(PROPERTY_TRACE_SWITCH, "false")
             .unwrap();
@@ -665,7 +667,8 @@ mod tests {
         let dispatcher =
             Arc::new(LiteTraceDispatcher::new(&client, "ns%workers", None, None).unwrap());
         let hook = LiteConsumeTraceHook::new(dispatcher.clone(), "ns%workers", client.clone());
-        let mut message = MessageExt::new(Message::new("ns%orders", b"body".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("ns%orders", b"body".to_vec()));
         message.set_message_id(Some("msg-1".to_owned()));
         message
             .set_system_property(PROPERTY_MSG_REGION, "region-a")

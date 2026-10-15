@@ -37,6 +37,20 @@ fn record(case: &Value) -> Vec<u8> {
         .unwrap()
 }
 
+fn message_ext_from(message: Message) -> MessageExt {
+    let mut extended = MessageExt::new();
+    extended.set_topic_nullable(message.topic_nullable().map(str::to_owned));
+    extended.set_body_nullable(message.body_nullable().map(|body| body.to_vec()));
+    extended.set_flag(message.flag());
+    let properties = message
+        .properties_nullable()
+        .is_some()
+        .then(|| message.nullable_property_entries().collect());
+    extended.set_nullable_properties(properties);
+    extended.set_transaction_id(message.transaction_id().map(str::to_owned));
+    extended
+}
+
 fn decoded_snapshot(message: &MessageExt, consumed: usize) -> Value {
     let mut snapshot = json!({
         "messageClass": if message.offset_message_id().is_some() {
@@ -157,7 +171,15 @@ fn java_551_message_records_decode_to_the_pinned_results() {
 #[test]
 fn message_ext_scalar_public_api_matches_java_551_fixture() {
     let expected = &fixture()["messageExtPublicApi"];
-    let defaults = MessageExt::default();
+    assert_eq!(expected["publicConstructorCount"], 2);
+    assert_eq!(
+        expected["publicConstructors"],
+        json!([
+            "()",
+            "(int, long, java.net.SocketAddress, long, java.net.SocketAddress, java.lang.String)"
+        ])
+    );
+    let defaults = MessageExt::new();
     assert_eq!(
         defaults.queue_id(),
         expected["defaultQueueId"].as_i64().unwrap() as i32
@@ -2350,7 +2372,7 @@ fn message_public_api_matches_java_551_fixture() {
         expected["directMapMutation"].as_str()
     );
 
-    let mut extended = MessageExt::new(message);
+    let mut extended = message_ext_from(message);
     extended.set_topic("changed-through-inherited-api");
     assert_eq!(extended.topic(), "changed-through-inherited-api");
 }
@@ -2431,7 +2453,7 @@ fn message_ext_system_flag_helpers_match_java_551() {
     diagnostic.set_body(vec![0, 255, 42]);
     diagnostic.set_flag(5);
     diagnostic.set_system_property("KEY", "value").unwrap();
-    let diagnostic = MessageExt::new(diagnostic);
+    let diagnostic = message_ext_from(diagnostic);
     assert_eq!(
         diagnostic.to_string(),
         expected["messageExtToString"].as_str().unwrap()

@@ -2619,7 +2619,12 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|value| MessageExt::new(Message::new(value.as_str().unwrap(), Vec::new())))
+            .map(|value| {
+                crate::test_support::message_ext_from(Message::new(
+                    value.as_str().unwrap(),
+                    Vec::new(),
+                ))
+            })
             .collect::<Vec<_>>();
         consumer.reset_topic(Some(&mut reset_messages)).unwrap();
         assert_eq!(
@@ -2642,7 +2647,12 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .map(|value| MessageExt::new(Message::new(value.as_str().unwrap(), Vec::new())))
+            .map(|value| {
+                crate::test_support::message_ext_from(Message::new(
+                    value.as_str().unwrap(),
+                    Vec::new(),
+                ))
+            })
             .collect::<Vec<_>>();
         no_namespace_consumer
             .reset_topic(Some(&mut no_namespace_messages))
@@ -3020,7 +3030,8 @@ mod tests {
             scripted.retry_results.push_back(Ok(()));
         }
 
-        let mut message = MessageExt::new(Message::new("orders", b"payload".to_vec()));
+        let mut message =
+            crate::test_support::message_ext_from(Message::new("orders", b"payload".to_vec()));
         message.set_broker_name(Some("broker-a".to_owned()));
         message.set_queue_id(2);
         message.set_commit_log_offset(71);

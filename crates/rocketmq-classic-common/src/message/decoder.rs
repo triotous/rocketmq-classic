@@ -435,7 +435,7 @@ fn decode_one_with_limits(
         }
         decoded_properties
     });
-    let mut message = MessageExt::new(super::Message::from_decoded(
+    let mut message = MessageExt::from_message(super::Message::from_decoded(
         topic,
         body,
         decoded_properties,

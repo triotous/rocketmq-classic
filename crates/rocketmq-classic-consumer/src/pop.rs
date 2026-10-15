@@ -632,7 +632,7 @@ mod tests {
     use rocketmq_classic_common::message::Message;
 
     fn message(topic: &str, queue_id: i32, queue_offset: i64) -> MessageExt {
-        let mut message = MessageExt::new(Message::new(topic, Vec::new()));
+        let mut message = crate::test_support::message_ext_from(Message::new(topic, Vec::new()));
         message.set_queue_id(queue_id);
         message.set_queue_offset(queue_offset);
         message

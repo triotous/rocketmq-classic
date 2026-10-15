@@ -14,11 +14,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageClientExt;
@@ -966,6 +969,15 @@ public final class MessageDecodeFixtures {
     private static Map<String, Object> messageExtPublicApi() {
         MessageExt defaults = new MessageExt();
         Map<String, Object> expected = new TreeMap<>();
+        List<String> publicConstructors = new ArrayList<>();
+        for (java.lang.reflect.Constructor<?> constructor : MessageExt.class.getConstructors()) {
+            publicConstructors.add(Arrays.stream(constructor.getParameterTypes())
+                .map(Class::getTypeName)
+                .collect(Collectors.joining(", ", "(", ")")));
+        }
+        Collections.sort(publicConstructors);
+        expected.put("publicConstructorCount", publicConstructors.size());
+        expected.put("publicConstructors", publicConstructors);
         expected.put("defaultQueueId", defaults.getQueueId());
         expected.put("defaultBornTimestamp", defaults.getBornTimestamp());
         expected.put("defaultStoreTimestamp", defaults.getStoreTimestamp());
