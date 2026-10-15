@@ -48,20 +48,18 @@ fn registered_decryption_strategy() -> DecryptionStrategyRegistration {
 #[derive(Clone)]
 struct TlsPropertyFileSource {
     path: PathBuf,
-    properties: Arc<Mutex<HashMap<String, String>>>,
+    properties: Arc<JavaTlsPropertyState>,
 }
 
 impl TlsPropertyFileSource {
-    fn new(path: PathBuf, properties: HashMap<String, String>) -> Self {
-        Self {
-            path,
-            properties: java_tls_property_state(Some(&properties)),
-        }
+    fn new(path: PathBuf, properties: Arc<JavaTlsPropertyState>) -> Self {
+        Self { path, properties }
     }
 
     fn reload(&self) -> Result<HashMap<String, String>, TransportError> {
         let mut properties = self
             .properties
+            .current_properties
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self.path.is_file() {
@@ -75,23 +73,37 @@ impl TlsPropertyFileSource {
     }
 }
 
+struct JavaTlsPropertyState {
+    initial_system_properties: HashMap<String, String>,
+    current_properties: Mutex<HashMap<String, String>>,
+}
+
+impl JavaTlsPropertyState {
+    fn new(initial_system_properties: HashMap<String, String>) -> Self {
+        Self {
+            current_properties: Mutex::new(initial_system_properties.clone()),
+            initial_system_properties,
+        }
+    }
+}
+
 fn java_tls_property_state(
     initial_properties: Option<&HashMap<String, String>>,
-) -> Arc<Mutex<HashMap<String, String>>> {
+) -> Arc<JavaTlsPropertyState> {
     let initial_properties = initial_properties.cloned().unwrap_or_default();
 
     // Unit tests isolate property sources; the integration suite exercises
     // the production process-wide state across independent TLS configs.
     #[cfg(test)]
     {
-        Arc::new(Mutex::new(initial_properties))
+        Arc::new(JavaTlsPropertyState::new(initial_properties))
     }
 
     #[cfg(not(test))]
     {
-        static JAVA_TLS_PROPERTIES: OnceLock<Arc<Mutex<HashMap<String, String>>>> = OnceLock::new();
+        static JAVA_TLS_PROPERTIES: OnceLock<Arc<JavaTlsPropertyState>> = OnceLock::new();
         JAVA_TLS_PROPERTIES
-            .get_or_init(|| Arc::new(Mutex::new(initial_properties)))
+            .get_or_init(|| Arc::new(JavaTlsPropertyState::new(initial_properties)))
             .clone()
     }
 }
@@ -205,8 +217,9 @@ impl TransportMode {
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
     ) -> Result<Self, TransportError> {
-        let _ = java_tls_property_state(Some(system_properties));
-        let enabled = system_properties
+        let properties = java_tls_property_state(Some(system_properties));
+        let enabled = properties
+            .initial_system_properties
             .get("tls.enable")
             .map(|value| value.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
@@ -324,15 +337,17 @@ impl TlsConfig {
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
     ) -> Result<Self, TransportError> {
+        let property_state = java_tls_property_state(Some(system_properties));
         let configured_path = config_file
             .map(Path::to_owned)
             .or_else(|| {
-                system_properties
+                property_state
+                    .initial_system_properties
                     .get("tls.config.file")
                     .map(|value| Path::new(value).to_owned())
             })
             .unwrap_or_else(|| Path::new("/etc/rocketmq/tls.properties").to_owned());
-        let source = TlsPropertyFileSource::new(configured_path, system_properties.clone());
+        let source = TlsPropertyFileSource::new(configured_path, property_state);
         let properties = source.reload()?;
         let mut config = Self::default();
         config.apply_properties(&properties, Path::new("."))?;

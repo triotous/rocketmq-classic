@@ -228,26 +228,33 @@ public final class TlsSettingsFixtures {
     private static Map<String, Object> inspectPropertyFileAcrossSources() throws Exception {
         String previousConfigFile = TlsSystemConfig.tlsConfigFile;
         String previousAuthServerProperty = System.getProperty("tls.client.authServer");
+        String previousTlsEnableProperty = System.getProperty("tls.enable");
         boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
         boolean previousAuthServer = TlsSystemConfig.tlsClientAuthServer;
+        boolean previousTlsEnable = TlsSystemConfig.tlsEnable;
         Path firstConfigFile = Files.createTempFile("rocketmq-tls-source-first", ".properties");
         Path secondConfigFile = Files.createTempFile("rocketmq-tls-source-second", ".properties");
         List<Boolean> observedTestModes = new ArrayList<>();
         List<Boolean> observedAuthServer = new ArrayList<>();
+        List<Boolean> observedTlsEnable = new ArrayList<>();
         try {
+            TlsSystemConfig.tlsEnable = false;
             TlsSystemConfig.tlsClientAuthServer = true;
             TlsSystemConfig.tlsConfigFile = firstConfigFile.toString();
-            Files.writeString(firstConfigFile, "tls.test.mode.enable=false\n");
+            Files.writeString(firstConfigFile, "tls.test.mode.enable=false\ntls.enable=true\n");
             TlsHelper.buildSslContext(true);
             observedTestModes.add(TlsSystemConfig.tlsTestModeEnable);
             observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
+            observedTlsEnable.add(TlsSystemConfig.tlsEnable);
 
             System.setProperty("tls.client.authServer", "false");
+            System.setProperty("tls.enable", "true");
             TlsSystemConfig.tlsConfigFile = secondConfigFile.toString();
-            Files.writeString(secondConfigFile, "tls.test.mode.enable=false\n");
+            Files.writeString(secondConfigFile, "tls.test.mode.enable=false\ntls.enable=true\n");
             TlsHelper.buildSslContext(true);
             observedTestModes.add(TlsSystemConfig.tlsTestModeEnable);
             observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
+            observedTlsEnable.add(TlsSystemConfig.tlsEnable);
         } finally {
             TlsSystemConfig.tlsConfigFile = previousConfigFile;
             if (previousAuthServerProperty == null) {
@@ -255,8 +262,14 @@ public final class TlsSettingsFixtures {
             } else {
                 System.setProperty("tls.client.authServer", previousAuthServerProperty);
             }
+            if (previousTlsEnableProperty == null) {
+                System.clearProperty("tls.enable");
+            } else {
+                System.setProperty("tls.enable", previousTlsEnableProperty);
+            }
             TlsSystemConfig.tlsTestModeEnable = previousTestMode;
             TlsSystemConfig.tlsClientAuthServer = previousAuthServer;
+            TlsSystemConfig.tlsEnable = previousTlsEnable;
             Files.deleteIfExists(firstConfigFile);
             Files.deleteIfExists(secondConfigFile);
         }
@@ -265,6 +278,10 @@ public final class TlsSettingsFixtures {
         result.put("observedTestModes", observedTestModes);
         result.put("observedAuthServer", observedAuthServer);
         result.put("laterSystemPropertyAuthServer", false);
+        result.put("observedTlsEnable", observedTlsEnable);
+        result.put("laterSystemPropertyTlsEnable", true);
+        result.put("systemPropertyTlsEnableRetained",
+            observedTlsEnable.equals(Arrays.asList(false, false)));
         result.put("omittedPropertiesRetainProcessState",
             observedTestModes.equals(Arrays.asList(false, false))
                 && observedAuthServer.equals(Arrays.asList(true, true)));
