@@ -757,6 +757,40 @@ async fn p3_nameserver_update_shuffles_changed_lists_and_preserves_duplicates() 
 }
 
 #[tokio::test]
+async fn p18_nameserver_getter_exposes_live_nullable_list_with_lock_scope() {
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    assert!(client.with_name_server_address_list(|addresses| addresses.is_none()));
+
+    client.update_name_server_address_list(vec!["127.0.0.1:1001".into(), "127.0.0.1:1002".into()]);
+    client.with_name_server_address_list(|mut addresses| {
+        addresses.as_mut().unwrap().clear();
+    });
+    assert_eq!(client.get_name_server_address_list(), Some(Vec::new()));
+
+    // An empty update is ignored, while a caller mutation of the live Java-style list persists.
+    client.update_name_server_address_list(Vec::new());
+    assert_eq!(client.get_name_server_address_list(), Some(Vec::new()));
+    assert!(matches!(
+        client
+            .invoke_name_server(command(1), Instant::now() + Duration::from_secs(1))
+            .await,
+        Err(TransportError::InvalidConfiguration(_))
+    ));
+
+    client.update_name_server_address_list(vec!["127.0.0.1:1003".into()]);
+    assert_eq!(
+        client.get_name_server_address_list(),
+        Some(vec!["127.0.0.1:1003".into()])
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_nameserver_scan_probes_addresses_concurrently_and_tracks_results() {
     let first_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let first_address = first_listener.local_addr().unwrap();

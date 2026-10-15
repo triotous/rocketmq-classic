@@ -179,7 +179,7 @@ struct ClientInner {
     runtime: Mutex<Option<tokio::runtime::Handle>>,
     started: AtomicBool,
     request_pipeline: Mutex<Option<Arc<dyn RequestPipeline>>>,
-    nameservers: Mutex<Vec<String>>,
+    nameservers: Mutex<Option<Vec<String>>>,
     available_nameservers: Mutex<HashSet<String>>,
     chosen_nameserver: Mutex<Option<String>>,
     nameserver_index: AtomicU64,
@@ -785,7 +785,7 @@ impl RemotingClient {
             runtime: Mutex::new(None),
             started: AtomicBool::new(false),
             request_pipeline: Mutex::new(None),
-            nameservers: Mutex::new(Vec::new()),
+            nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
             nameserver_index: AtomicU64::new(rand::rng().random_range(0..999)),
@@ -1053,7 +1053,7 @@ impl RemotingClient {
             channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
-            nameservers: Mutex::new(Vec::new()),
+            nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
             nameserver_index: AtomicU64::new(0),
@@ -1147,20 +1147,21 @@ impl RemotingClient {
             return;
         }
         let mut nameservers = self.inner.nameservers.lock().unwrap();
-        if nameservers.len() == addresses.len()
-            && addresses
-                .iter()
-                .all(|address| nameservers.contains(address))
-        {
+        if nameservers.as_ref().is_some_and(|configured| {
+            configured.len() == addresses.len()
+                && addresses.iter().all(|address| configured.contains(address))
+        }) {
             return;
         }
         let removed = nameservers
-            .iter()
+            .as_ref()
+            .into_iter()
+            .flatten()
             .filter(|address| !addresses.contains(address))
             .cloned()
             .collect::<HashSet<_>>();
         addresses.shuffle(&mut rand::rng());
-        *nameservers = addresses;
+        *nameservers = Some(addresses);
         let removed_chosen = {
             let mut chosen = self.inner.chosen_nameserver.lock().unwrap();
             if chosen
@@ -1178,8 +1179,21 @@ impl RemotingClient {
     }
 
     pub fn get_name_server_address_list(&self) -> Option<Vec<String>> {
-        let nameservers = self.inner.nameservers.lock().unwrap();
-        (!nameservers.is_empty()).then(|| nameservers.clone())
+        self.inner.nameservers.lock().unwrap().clone()
+    }
+
+    /// Provides lock-protected mutable access to the live nullable NameServer list.
+    ///
+    /// Mutations are visible to later selection and availability scans. The closure receives
+    /// `None` before any non-empty update, matching Java's nullable live-list getter; clearing
+    /// an existing list preserves the configured-but-empty state. Do not call this client again
+    /// from inside the closure.
+    pub fn with_name_server_address_list<R>(
+        &self,
+        operation: impl FnOnce(Option<&mut Vec<String>>) -> R,
+    ) -> R {
+        let mut nameservers = self.inner.nameservers.lock().unwrap();
+        operation(nameservers.as_mut())
     }
 
     pub fn get_available_name_srv_list(&self) -> Vec<String> {
@@ -1257,14 +1271,14 @@ impl RemotingClient {
                 return Err(TransportError::Timeout);
             }
             let address = &addresses[(start + offset) % addresses.len()];
-            if !self
+            let address_is_configured = self
                 .inner
                 .nameservers
                 .lock()
                 .unwrap()
-                .iter()
-                .any(|configured| configured == address)
-            {
+                .as_ref()
+                .is_some_and(|configured| configured.iter().any(|entry| entry == address));
+            if !address_is_configured {
                 continue;
             }
             let connection = match self.inner.connection(address, deadline).await {
@@ -1278,7 +1292,9 @@ impl RemotingClient {
                         .unwrap()
                         .get(address)
                         .is_some_and(|current| !current.is_closed());
-                    if nameservers.iter().any(|configured| configured == address)
+                    if nameservers
+                        .as_ref()
+                        .is_some_and(|configured| configured.iter().any(|entry| entry == address))
                         && !replacement_exists
                     {
                         self.inner
@@ -1293,7 +1309,10 @@ impl RemotingClient {
             };
             let selected = {
                 let nameservers = self.inner.nameservers.lock().unwrap();
-                if nameservers.iter().any(|configured| configured == address) {
+                if nameservers
+                    .as_ref()
+                    .is_some_and(|configured| configured.iter().any(|entry| entry == address))
+                {
                     *self.inner.chosen_nameserver.lock().unwrap() = Some(address.clone());
                     true
                 } else {
@@ -1312,16 +1331,17 @@ impl RemotingClient {
             match result {
                 Ok(response) => {
                     let nameservers = self.inner.nameservers.lock().unwrap();
-                    let connection_is_current =
-                        nameservers.iter().any(|configured| configured == address)
-                            && !connection.is_closed()
-                            && self
-                                .inner
-                                .connections
-                                .lock()
-                                .unwrap()
-                                .get(address)
-                                .is_some_and(|current| current.generation == connection.generation);
+                    let connection_is_current = nameservers
+                        .as_ref()
+                        .is_some_and(|configured| configured.iter().any(|entry| entry == address))
+                        && !connection.is_closed()
+                        && self
+                            .inner
+                            .connections
+                            .lock()
+                            .unwrap()
+                            .get(address)
+                            .is_some_and(|current| current.generation == connection.generation);
                     if connection_is_current {
                         self.inner
                             .available_nameservers
@@ -1334,16 +1354,17 @@ impl RemotingClient {
                 }
                 Err(error) => {
                     let nameservers = self.inner.nameservers.lock().unwrap();
-                    let connection_is_current =
-                        nameservers.iter().any(|configured| configured == address)
-                            && !connection.is_closed()
-                            && self
-                                .inner
-                                .connections
-                                .lock()
-                                .unwrap()
-                                .get(address)
-                                .is_some_and(|current| current.generation == connection.generation);
+                    let connection_is_current = nameservers
+                        .as_ref()
+                        .is_some_and(|configured| configured.iter().any(|entry| entry == address))
+                        && !connection.is_closed()
+                        && self
+                            .inner
+                            .connections
+                            .lock()
+                            .unwrap()
+                            .get(address)
+                            .is_some_and(|current| current.generation == connection.generation);
                     if connection_is_current {
                         self.inner
                             .available_nameservers
@@ -2579,12 +2600,19 @@ async fn scan_available_name_servers(
         tokio::select! {
             _ = interval.tick() => {
                 let Some(inner) = inner.upgrade() else { break };
-                let configured = inner.nameservers.lock().unwrap().clone();
+                let configured = inner
+                    .nameservers
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_default();
                 inner
                     .available_nameservers
                     .lock()
                     .unwrap()
-                    .retain(|address| configured.contains(address));
+                    .retain(|address| {
+                        configured.contains(address)
+                    });
                 if configured.is_empty() {
                     scan_cursor = 0;
                     continue;
@@ -2611,8 +2639,10 @@ async fn scan_available_name_servers(
                             .nameservers
                             .lock()
                             .unwrap()
-                            .iter()
-                            .any(|configured| configured == &address);
+                            .as_ref()
+                            .is_some_and(|configured| {
+                                configured.iter().any(|entry| entry == &address)
+                            });
                         if !address_is_configured {
                             continue;
                         }
@@ -2628,7 +2658,9 @@ async fn scan_available_name_servers(
                                 (!connection.is_closed()).then_some(connection.generation)
                             });
                         let nameservers = inner.nameservers.lock().unwrap();
-                        if nameservers.iter().any(|configured| configured == &address) {
+                        if nameservers.as_ref().is_some_and(|configured| {
+                            configured.iter().any(|entry| entry == &address)
+                        }) {
                             match name_server_probe_availability(probe_generation, current_generation) {
                                 Some(true) => {
                                     inner.available_nameservers.lock().unwrap().insert(address);
@@ -3982,7 +4014,7 @@ mod tests {
             channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
-            nameservers: Mutex::new(Vec::new()),
+            nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
             nameserver_index: AtomicU64::new(0),
