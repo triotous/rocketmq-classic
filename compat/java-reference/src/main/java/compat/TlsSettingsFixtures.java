@@ -62,6 +62,7 @@ public final class TlsSettingsFixtures {
     }
 
     private static Map<String, Object> render() throws Exception {
+        boolean configFilePathSnapshot = inspectConfigFilePathSnapshot();
         String ciphers = TlsSystemConfig.tlsCiphers;
         String protocols = TlsSystemConfig.tlsProtocols;
         Path configFile = Files.createTempFile("rocketmq-tls-settings", ".properties");
@@ -160,6 +161,7 @@ public final class TlsSettingsFixtures {
         result.put("decryptionStrategyApi", inspectDecryptionStrategyApi());
         result.put("propertyFileReload", inspectPropertyFileReload());
         result.put("propertyFileAcrossSources", inspectPropertyFileAcrossSources());
+        result.put("configFilePathSnapshot", configFilePathSnapshot);
         Map<String, Object> propertyNames = new TreeMap<>();
         propertyNames.put("ciphers", TlsSystemConfig.TLS_CIPHERS);
         propertyNames.put("protocols", TlsSystemConfig.TLS_PROTOCOLS);
@@ -188,6 +190,45 @@ public final class TlsSettingsFixtures {
                 || !java.util.Objects.equals(protocols, TlsSystemConfig.tlsProtocols));
         result.put("serverContacted", false);
         return result;
+    }
+
+    private static boolean inspectConfigFilePathSnapshot() throws Exception {
+        Path directory = Files.createTempDirectory("rocketmq-tls-path-snapshot");
+        Path firstConfigFile = directory.resolve("first.properties");
+        Path secondConfigFile = directory.resolve("second.properties");
+        Files.writeString(firstConfigFile, "tls.test.mode.enable=false\n");
+        Files.writeString(secondConfigFile, "tls.test.mode.enable=true\n");
+        String previousConfigProperty = System.getProperty("tls.config.file");
+        String initialConfigFile = null;
+        boolean previousTestMode = true;
+        boolean previousAuthServer = false;
+        boolean initialized = false;
+        try {
+            System.setProperty("tls.config.file", firstConfigFile.toString());
+            initialConfigFile = TlsSystemConfig.tlsConfigFile;
+            previousTestMode = TlsSystemConfig.tlsTestModeEnable;
+            previousAuthServer = TlsSystemConfig.tlsClientAuthServer;
+            initialized = true;
+            System.setProperty("tls.config.file", secondConfigFile.toString());
+            TlsHelper.buildSslContext(true);
+            return firstConfigFile.toString().equals(initialConfigFile)
+                && initialConfigFile.equals(TlsSystemConfig.tlsConfigFile)
+                && !TlsSystemConfig.tlsTestModeEnable;
+        } finally {
+            if (initialized) {
+                TlsSystemConfig.tlsConfigFile = initialConfigFile;
+                TlsSystemConfig.tlsTestModeEnable = previousTestMode;
+                TlsSystemConfig.tlsClientAuthServer = previousAuthServer;
+            }
+            if (previousConfigProperty == null) {
+                System.clearProperty("tls.config.file");
+            } else {
+                System.setProperty("tls.config.file", previousConfigProperty);
+            }
+            Files.deleteIfExists(secondConfigFile);
+            Files.deleteIfExists(firstConfigFile);
+            Files.deleteIfExists(directory);
+        }
     }
 
     private static Map<String, Object> inspectPropertyFileReload() throws Exception {

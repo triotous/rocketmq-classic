@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, sync::Arc, time::Duration};
+use std::{collections::HashMap, fs, process::Command, sync::Arc, time::Duration};
 
 use bytes::BytesMut;
 use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair, date_time_ymd};
@@ -81,6 +81,59 @@ async fn assert_tls_connection_rejected(tls_config: TlsConfig, acceptor: TlsAcce
     );
     client.shutdown().await;
     peer.await.unwrap();
+}
+
+#[test]
+fn tls_config_file_path_uses_initial_system_property_snapshot() {
+    const PROBE: &str = "ROCKETMQ_TLS_CONFIG_PATH_SNAPSHOT_PROBE";
+    const FIRST_FILE: &str = "ROCKETMQ_TLS_CONFIG_PATH_SNAPSHOT_FIRST";
+    const SECOND_FILE: &str = "ROCKETMQ_TLS_CONFIG_PATH_SNAPSHOT_SECOND";
+
+    if std::env::var_os(PROBE).is_some() {
+        let first_file = std::env::var(FIRST_FILE).unwrap();
+        let second_file = std::env::var(SECOND_FILE).unwrap();
+        let initial_properties = HashMap::from([("tls.config.file".to_owned(), first_file)]);
+        let first = TlsConfig::from_java_properties(&initial_properties, None).unwrap();
+        assert!(!first.test_mode, "the first config file must be loaded");
+
+        let later_properties = HashMap::from([("tls.config.file".to_owned(), second_file)]);
+        let later = TlsConfig::from_java_properties(&later_properties, None).unwrap();
+        let java_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/security/tls-settings-defaults.json"
+        ))
+        .unwrap();
+        assert!(
+            !later.test_mode && java_fixture["configFilePathSnapshot"].as_bool() == Some(true),
+            "changing tls.config.file after initial property capture must keep using the first file"
+        );
+        return;
+    }
+
+    let directory = std::env::temp_dir().join(format!(
+        "rocketmq-tls-config-path-snapshot-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let first_file = directory.join("first.properties");
+    let second_file = directory.join("second.properties");
+    fs::write(&first_file, "tls.test.mode.enable=false\n").unwrap();
+    fs::write(&second_file, "tls.test.mode.enable=true\n").unwrap();
+
+    let output = Command::new(std::env::current_exe().unwrap())
+        .arg("--exact")
+        .arg("tls_config_file_path_uses_initial_system_property_snapshot")
+        .arg("--nocapture")
+        .env(PROBE, "1")
+        .env(FIRST_FILE, &first_file)
+        .env(SECOND_FILE, &second_file)
+        .output()
+        .unwrap();
+    fs::remove_dir_all(&directory).unwrap();
+    assert!(
+        output.status.success(),
+        "isolated TLS config path snapshot probe failed:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[tokio::test]
