@@ -154,6 +154,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-remoting-live-config-mutation</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.RemotingLiveConfigProbe</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-hook-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

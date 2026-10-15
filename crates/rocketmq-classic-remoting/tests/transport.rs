@@ -1562,6 +1562,40 @@ async fn p3_sync_timeout_closes_socket_when_java_heuristic_requires_it() {
 }
 
 #[tokio::test]
+async fn p3_sync_timeout_reads_close_socket_setting_after_client_start() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_command(&mut stream).await;
+        let mut byte = [0; 1];
+        tokio::time::timeout(Duration::from_millis(500), stream.read(&mut byte))
+            .await
+            .is_err()
+    });
+    let client = RemotingClient::with_config(ClientConfig {
+        close_socket_if_timeout: true,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    client.set_client_close_socket_if_timeout(false);
+    assert!(!client.get_client_close_socket_if_timeout());
+    assert!(matches!(
+        client
+            .invoke_sync(
+                &address.to_string(),
+                command(request::GET_ROUTEINFO_BY_TOPIC),
+                Duration::from_millis(200),
+            )
+            .await,
+        Err(error) if error.is_timeout()
+    ));
+    assert!(peer.await.unwrap());
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_sync_admission_failure_maps_to_send_request_and_closes_socket() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

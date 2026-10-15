@@ -141,6 +141,7 @@ struct ClientInner {
     security: TransportMode,
     max_frame_size_override: Option<usize>,
     config: ClientConfig,
+    close_socket_if_timeout: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
     oneway_admission: Arc<tokio::sync::Semaphore>,
@@ -623,6 +624,7 @@ impl RemotingClient {
             let _ = tls.connector()?;
         }
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
+        let close_socket_if_timeout = config.close_socket_if_timeout;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -651,6 +653,7 @@ impl RemotingClient {
             tasks: Mutex::new(Vec::new()),
             security: config.transport.clone(),
             max_frame_size_override: None,
+            close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender: callback_sender.clone(),
@@ -681,6 +684,18 @@ impl RemotingClient {
             socks_proxy_routes,
         });
         Ok(Self { inner })
+    }
+
+    /// Returns the live Java `clientCloseSocketIfTimeout` behavior setting.
+    pub fn get_client_close_socket_if_timeout(&self) -> bool {
+        self.inner.close_socket_if_timeout.load(Ordering::Acquire)
+    }
+
+    /// Updates the Java `clientCloseSocketIfTimeout` behavior for later sync calls.
+    pub fn set_client_close_socket_if_timeout(&self, enabled: bool) {
+        self.inner
+            .close_socket_if_timeout
+            .store(enabled, Ordering::Release);
     }
 
     #[cfg(test)]
@@ -717,6 +732,7 @@ impl RemotingClient {
             runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             security: security.clone(),
             max_frame_size_override: Some(max_frame_size),
+            close_socket_if_timeout: AtomicBool::new(true),
             config: ClientConfig {
                 transport: security.clone(),
                 ..ClientConfig::default()
@@ -1649,7 +1665,7 @@ impl RemotingClient {
                     self.inner.cancel_pending(opaque, connection.generation);
                 }
                 if options.close_socket_on_timeout
-                    && self.inner.config.close_socket_if_timeout
+                    && self.inner.close_socket_if_timeout.load(Ordering::Acquire)
                     && (timeout_budget > std::time::Duration::from_millis(100)
                         || timeout_budget > options.timeout_millis / 4)
                 {
@@ -3374,6 +3390,7 @@ mod tests {
             tasks: Mutex::new(Vec::new()),
             security: TransportMode::Plain,
             max_frame_size_override: Some(DEFAULT_MAX_FRAME_SIZE),
+            close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),
