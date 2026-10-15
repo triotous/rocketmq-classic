@@ -1300,3 +1300,14 @@ Before any publication:
   `cd7329a631de04393ceb4fdb7eff701ceec05728213605e9efd07eceaf184ccb`.
   This closes the constructor slice only; broad P18-V01 remains open, and the
   full-workspace P18-V02 gate must be rerun after the remaining code changes.
+
+- P18-V01 Common public inherent-method crosswalk (`e4593202`, 2026-10-15): a
+  re-export-aware Rustdoc JSON name sweep covered 26 public aggregate types.
+  The Common compatibility matrices now explicitly map mutable body access,
+  nullable property lookup/user-property validation, `MessageHostAddress`
+  adapters, `MessageId` setters, and the Java `TopicValidator` mutable-set
+  getters. The scan found no public inherent method name absent from the
+  compatibility docs; it does not close trait/inherited API or input/error/
+  control-flow reconciliation. Common all-feature tests (21 unit, 20
+  message-decode integration, 1 topic-validator and 20 doctests), strict Common
+  Clippy, formatting and diff checks pass.

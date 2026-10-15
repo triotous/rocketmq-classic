@@ -37,3 +37,36 @@ workspace P18-V02 gates must be rerun on the final code revision. GitHub
 Ubuntu evidence, Phase 19 local Docker/Broker automation, and pre-publication
 version/registry checks are still outstanding. No push, tag, publication,
 deployment, Docker or live Broker action occurred.
+
+2026-10-15 18:53 UTC — completed a re-export-aware Common inherent-method
+crosswalk slice.
+
+Generated the all-feature Common Rustdoc JSON with
+`rustup run nightly cargo rustdoc --locked -p rocketmq-classic-common
+--all-features -- -Z unstable-options --output-format json`. Traversing the
+public re-export graph reached 26 aggregate types. Exact method-name search
+initially found 13 names absent from compatibility tables. Source/test review
+confirmed the Java mappings and added explicit rows for mutable `getBody`
+contents, nullable `hasProperty` and `putUserProperty`, `MessageHostAddress`
+to `InetSocketAddress` adapters, `MessageId` setters, and the public
+`TopicValidator` set getters. The final name sweep found no public inherent
+method names absent from compatibility docs. This scan is a name crosswalk;
+it does not prove trait/inherited surfaces or Java overload/input/error/flow
+parity.
+
+Pinned Java source inspection confirmed `TopicValidator.getSystemTopicSet()`
+and `getNotAllowedSendTopicSet()` are public; the underlying fields are
+private. Existing Rust accessors map those public methods, so no code boundary
+change was appropriate.
+
+Code/test/matrix commit: `e4593202`.
+
+Validation passed:
+- `cargo test -p rocketmq-classic-common --all-features --locked` — 21 unit,
+  20 message-decode integration, 1 topic-validator and 20 doctests passed.
+- `cargo clippy -p rocketmq-classic-common --all-targets --all-features --locked -- -D warnings`
+- `cargo fmt --all -- --check`, `git diff --check`.
+
+The constructor slice's earlier Maven verify passed on the same Java fixture;
+this continuation changes no Java source or fixture. Broad P18-V01 remains
+open, and full-workspace P18-V02 must be rerun on the final code revision.
