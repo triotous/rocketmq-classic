@@ -1397,3 +1397,22 @@ Before any publication:
   Phase 19 local Docker/Broker automation, and pre-publication version/registry
   resolution remain open. Owner-run deployment/live Broker checks remain
   Phase 19 manual validation.
+
+- P18-V01 TLS process-wide property state (`2d16427f`, 2026-10-15, pinned Java
+  source `efa1be59d6fc747ad220f036c86030f05f0419f9`): the invoked Java fixture
+  builds contexts from two successive property files; the second omits
+  `tls.client.authServer` and retains `true` from the first. Rust's
+  Java-compatible property sources now share retained values process-wide in
+  normal builds, so distinct `TlsConfig` sources inherit omitted settings;
+  existing RemotingClient instances keep their constructed connector. The
+  new `tls_property_file_settings_are_process_wide_across_config_sources`
+  integration test compares both property values with Java. This closes the
+  TLS cross-source state slice only; broad P18-V01 remains open. TLS fixture
+  SHA-256 values: defaults
+  `48e1ac15883eaa795a7c3a2eefbf71752c3a9415d1f01171348e0a8b4d9d48a6`,
+  system properties
+  `81a4325d704f37713033dc5a6d7f6a2c8ffe5f24aa8e49bececf9ca5c33acd4a`.
+- PASS on `2d16427f`: Remoting all-feature tests (97 unit, 8 codec, 1 fuzz,
+  6 security, 100 transport and 7 doctests); strict all-target/all-feature
+  Remoting Clippy; Maven `verify` (37 scenarios and Java fixture checks),
+  formatting and diff checks.

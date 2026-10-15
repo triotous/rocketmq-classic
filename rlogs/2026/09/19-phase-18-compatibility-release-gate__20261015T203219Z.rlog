@@ -1,0 +1,41 @@
+2026-10-15 20:32 UTC — closed the TLS process-state boundary slice for P18-V01.
+
+Pinned Java source: `efa1be59d6fc747ad220f036c86030f05f0419f9` in the separate
+RocketMQ checkout `/Users/bruce.tsai/Projects/3rd/rocketmq`. `TlsSystemConfig`
+keeps mutable process-static fields; `TlsHelper.buildSslContext` reloads the
+selected property file into those fields, and omitted keys retain prior values.
+Previously, separately created Rust `TlsConfig` property sources kept
+independent maps. Normal Rust builds now share a process-wide retained property
+map across those sources. Existing RemotingClient instances keep the connector
+they constructed.
+
+Added an invoked Java fixture that builds two successive client contexts from
+separate files. The second file omits `tls.client.authServer`; Java records
+`false,false` for test mode and `true,true` for auth-server state. Added the
+Rust integration regression `tls_property_file_settings_are_process_wide_across_config_sources`
+and refreshed both TLS fixtures. Current SHA-256:
+
+- `fixtures/security/tls-settings-defaults.json`:
+  `48e1ac15883eaa795a7c3a2eefbf71752c3a9415d1f01171348e0a8b4d9d48a6`
+- `fixtures/security/tls-settings-system-properties.json`:
+  `81a4325d704f37713033dc5a6d7f6a2c8ffe5f24aa8e49bececf9ca5c33acd4a`
+
+The first direct `exec:java` fixture-generation attempt used the wrong Maven
+entrypoint and invoked `compat.Main` without its fixture subcommand; it changed
+no files. The corrected `compile exec:java` command ran the updated fixture
+successfully for both default and system-property inputs.
+
+PASS:
+
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` — 97 unit,
+  8 codec, 1 fuzz regression, 6 security, 100 transport, 7 doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features --locked -- -D warnings`
+- `mvn -f compat/java-reference/pom.xml verify` — all fixture checks and 37
+  differential scenarios.
+- `cargo fmt --all -- --check` and `git diff --check`.
+
+Code/fixture commit: `2d16427f`. Compatibility matrices and release evidence
+were updated separately. Broad P18-V01 remains open; the latest-revision GitHub
+Ubuntu/P18-V04 result, Phase 19 local Docker/Broker automation, and release
+version/registry resolution remain open. No plan, Java source checkout, Docker,
+Broker, push, tag, publication, or deployment was changed or used.
