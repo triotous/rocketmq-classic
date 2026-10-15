@@ -53,26 +53,10 @@ struct TlsPropertyFileSource {
 
 impl TlsPropertyFileSource {
     fn new(path: PathBuf, properties: HashMap<String, String>) -> Self {
-        // Unit tests isolate property sources; the integration suite exercises
-        // the production process-wide state across independent TLS configs.
-        #[cfg(test)]
-        let properties = Arc::new(Mutex::new(properties));
-
-        #[cfg(not(test))]
-        let properties = {
-            static JAVA_TLS_PROPERTIES: OnceLock<Arc<Mutex<HashMap<String, String>>>> =
-                OnceLock::new();
-            let shared = JAVA_TLS_PROPERTIES
-                .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
-                .clone();
-            shared
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .extend(properties);
-            shared
-        };
-
-        Self { path, properties }
+        Self {
+            path,
+            properties: java_tls_property_state(Some(&properties)),
+        }
     }
 
     fn reload(&self) -> Result<HashMap<String, String>, TransportError> {
@@ -88,6 +72,27 @@ impl TlsPropertyFileSource {
             }
         }
         Ok(properties.clone())
+    }
+}
+
+fn java_tls_property_state(
+    initial_properties: Option<&HashMap<String, String>>,
+) -> Arc<Mutex<HashMap<String, String>>> {
+    let initial_properties = initial_properties.cloned().unwrap_or_default();
+
+    // Unit tests isolate property sources; the integration suite exercises
+    // the production process-wide state across independent TLS configs.
+    #[cfg(test)]
+    {
+        Arc::new(Mutex::new(initial_properties))
+    }
+
+    #[cfg(not(test))]
+    {
+        static JAVA_TLS_PROPERTIES: OnceLock<Arc<Mutex<HashMap<String, String>>>> = OnceLock::new();
+        JAVA_TLS_PROPERTIES
+            .get_or_init(|| Arc::new(Mutex::new(initial_properties)))
+            .clone()
     }
 }
 
@@ -200,6 +205,7 @@ impl TransportMode {
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
     ) -> Result<Self, TransportError> {
+        let _ = java_tls_property_state(Some(system_properties));
         let enabled = system_properties
             .get("tls.enable")
             .map(|value| value.eq_ignore_ascii_case("true"))

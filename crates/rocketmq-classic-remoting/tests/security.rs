@@ -118,12 +118,16 @@ fn tls_property_file_settings_are_process_wide_across_config_sources() {
     fs::create_dir_all(&directory).unwrap();
     let first_file = directory.join("first.properties");
     let second_file = directory.join("second.properties");
-    fs::write(
-        &first_file,
-        "tls.test.mode.enable=false\ntls.client.authServer=true\n",
-    )
-    .unwrap();
+    fs::write(&first_file, "tls.test.mode.enable=false\n").unwrap();
 
+    let initial_system_properties = HashMap::from([
+        ("tls.enable".to_owned(), "false".to_owned()),
+        ("tls.client.authServer".to_owned(), "true".to_owned()),
+    ]);
+    assert!(matches!(
+        TransportMode::from_java_properties(&initial_system_properties, None).unwrap(),
+        TransportMode::Plain
+    ));
     let first = TlsConfig::from_java_properties(&HashMap::new(), Some(&first_file)).unwrap();
     assert!(!first.test_mode);
     assert!(first.auth_server);
@@ -137,7 +141,13 @@ fn tls_property_file_settings_are_process_wide_across_config_sources() {
         .unwrap();
 
     fs::write(&second_file, "tls.test.mode.enable=false\n").unwrap();
-    let second = TlsConfig::from_java_properties(&HashMap::new(), Some(&second_file)).unwrap();
+    let later_system_property = expected["laterSystemPropertyAuthServer"]
+        .as_bool()
+        .unwrap()
+        .to_string();
+    let second_properties =
+        HashMap::from([("tls.client.authServer".to_owned(), later_system_property)]);
+    let second = TlsConfig::from_java_properties(&second_properties, Some(&second_file)).unwrap();
     let observed_test_modes = vec![first_test_mode, second.test_mode];
     let observed_auth_server = vec![first_auth_server, second.auth_server];
 

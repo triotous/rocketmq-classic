@@ -227,6 +227,7 @@ public final class TlsSettingsFixtures {
 
     private static Map<String, Object> inspectPropertyFileAcrossSources() throws Exception {
         String previousConfigFile = TlsSystemConfig.tlsConfigFile;
+        String previousAuthServerProperty = System.getProperty("tls.client.authServer");
         boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
         boolean previousAuthServer = TlsSystemConfig.tlsClientAuthServer;
         Path firstConfigFile = Files.createTempFile("rocketmq-tls-source-first", ".properties");
@@ -234,13 +235,14 @@ public final class TlsSettingsFixtures {
         List<Boolean> observedTestModes = new ArrayList<>();
         List<Boolean> observedAuthServer = new ArrayList<>();
         try {
+            TlsSystemConfig.tlsClientAuthServer = true;
             TlsSystemConfig.tlsConfigFile = firstConfigFile.toString();
-            Files.writeString(firstConfigFile,
-                "tls.test.mode.enable=false\ntls.client.authServer=true\n");
+            Files.writeString(firstConfigFile, "tls.test.mode.enable=false\n");
             TlsHelper.buildSslContext(true);
             observedTestModes.add(TlsSystemConfig.tlsTestModeEnable);
             observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
 
+            System.setProperty("tls.client.authServer", "false");
             TlsSystemConfig.tlsConfigFile = secondConfigFile.toString();
             Files.writeString(secondConfigFile, "tls.test.mode.enable=false\n");
             TlsHelper.buildSslContext(true);
@@ -248,6 +250,11 @@ public final class TlsSettingsFixtures {
             observedAuthServer.add(TlsSystemConfig.tlsClientAuthServer);
         } finally {
             TlsSystemConfig.tlsConfigFile = previousConfigFile;
+            if (previousAuthServerProperty == null) {
+                System.clearProperty("tls.client.authServer");
+            } else {
+                System.setProperty("tls.client.authServer", previousAuthServerProperty);
+            }
             TlsSystemConfig.tlsTestModeEnable = previousTestMode;
             TlsSystemConfig.tlsClientAuthServer = previousAuthServer;
             Files.deleteIfExists(firstConfigFile);
@@ -257,6 +264,7 @@ public final class TlsSettingsFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("observedTestModes", observedTestModes);
         result.put("observedAuthServer", observedAuthServer);
+        result.put("laterSystemPropertyAuthServer", false);
         result.put("omittedPropertiesRetainProcessState",
             observedTestModes.equals(Arrays.asList(false, false))
                 && observedAuthServer.equals(Arrays.asList(true, true)));
