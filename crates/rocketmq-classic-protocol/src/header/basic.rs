@@ -68,7 +68,14 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `QueryConsumerOffsetResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryConsumerOffsetResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<QueryConsumerOffsetResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct QueryConsumerOffsetResponseHeader {
     pub offset: i64,
 }
@@ -308,7 +315,14 @@ impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Pinned Java `SearchOffsetResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SearchOffsetResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<SearchOffsetResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SearchOffsetResponseHeader {
     pub offset: i64,
 }
@@ -325,7 +339,14 @@ impl CommandHeader for SearchOffsetResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Pinned Java `GetMaxOffsetResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMaxOffsetResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<GetMaxOffsetResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GetMaxOffsetResponseHeader {
     pub offset: i64,
 }
@@ -342,7 +363,14 @@ impl CommandHeader for GetMaxOffsetResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Pinned Java `GetMinOffsetResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMinOffsetResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<GetMinOffsetResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GetMinOffsetResponseHeader {
     pub offset: i64,
 }
@@ -359,7 +387,14 @@ impl CommandHeader for GetMinOffsetResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Pinned Java `GetEarliestMsgStoretimeResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetEarliestMsgStoretimeResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<GetEarliestMsgStoretimeResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GetEarliestMsgStoretimeResponseHeader {
     pub timestamp: i64,
 }
@@ -445,7 +480,14 @@ impl CommandHeader for PullMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `PullMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PullMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<PullMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct PullMessageResponseHeader {
     pub suggest_which_broker_id: i64,
     pub next_begin_offset: i64,
@@ -676,7 +718,14 @@ impl CommandHeader for QueryMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `QueryMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<QueryMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct QueryMessageResponseHeader {
     pub index_last_update_timestamp: i64,
     pub index_last_update_phyoffset: i64,
@@ -847,7 +896,14 @@ impl CommandHeader for RecallMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `RecallMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::RecallMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<RecallMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct RecallMessageResponseHeader {
     pub msg_id: String,
 }
@@ -864,7 +920,14 @@ impl CommandHeader for RecallMessageResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `SendMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SendMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<SendMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct SendMessageResponseHeader {
     pub msg_id: String,
     pub queue_id: i32,
@@ -874,7 +937,14 @@ pub struct SendMessageResponseHeader {
     pub recall_handle: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `UnregisterClientResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::UnregisterClientResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<UnregisterClientResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct UnregisterClientResponseHeader;
 
 impl CommandHeader for UnregisterClientResponseHeader {
@@ -960,7 +1030,14 @@ impl CommandHeader for EndTransactionRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `EndTransactionResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::EndTransactionResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<EndTransactionResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct EndTransactionResponseHeader;
 
 impl CommandHeader for EndTransactionResponseHeader {
@@ -1017,7 +1094,14 @@ impl CommandHeader for CheckTransactionStateRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `CheckTransactionStateResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::CheckTransactionStateResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<CheckTransactionStateResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct CheckTransactionStateResponseHeader {
     pub producer_group: String,
     pub transaction_state_table_offset: i64,
@@ -1114,7 +1198,14 @@ impl CommandHeader for NotificationRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `NotificationResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::NotificationResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<NotificationResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct NotificationResponseHeader {
     pub has_msg: bool,
     pub polling_full: bool,
@@ -1287,7 +1378,14 @@ impl CommandHeader for PopMessageRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `PopMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<PopMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct PopMessageResponseHeader {
     pub pop_time: i64,
     pub invisible_time: i64,
@@ -1322,7 +1420,14 @@ impl CommandHeader for PopMessageResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `PopLiteMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopLiteMessageResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<PopLiteMessageResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct PopLiteMessageResponseHeader {
     pub pop_time: i64,
     pub invisible_time: i64,
@@ -1421,7 +1526,14 @@ impl CommandHeader for PollingInfoRequestHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `PollingInfoResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PollingInfoResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<PollingInfoResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct PollingInfoResponseHeader {
     pub polling_num: i32,
 }
@@ -1774,6 +1886,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn response_header_identity_matches_invoked_java() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/protocol/header-response-identity.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["clientArtifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(fixture["serverContacted"], false);
+        let cases = fixture["identityCases"].as_object().unwrap();
+        assert_eq!(cases.len(), 16);
+        for (rust_name, identity) in cases {
+            assert_eq!(
+                identity["javaClass"],
+                format!("org.apache.rocketmq.remoting.protocol.header.{rust_name}")
+            );
+            assert_eq!(
+                identity["equalsDeclaredBy"], "java.lang.Object",
+                "{rust_name}"
+            );
+            assert_eq!(
+                identity["hashCodeDeclaredBy"], "java.lang.Object",
+                "{rust_name}"
+            );
+            assert_eq!(identity["sameObjectEqualsItself"], true, "{rust_name}");
+            assert_eq!(
+                identity["distinctDefaultObjectsEquals"], false,
+                "{rust_name}"
+            );
+        }
+    }
+
+    #[test]
     fn query_offset_preserves_unknown_fields_and_optional_false() {
         let raw = HeaderMap::from([
             ("consumerGroup".into(), "workers".into()),
@@ -1871,17 +2021,16 @@ mod tests {
 
     #[test]
     fn missing_and_invalid_response_header_values_name_the_field() {
-        assert_eq!(
+        assert!(matches!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::new()),
             Err(ProtocolError::MissingField("offset"))
-        );
-        assert_eq!(
-            QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
-                "offset".into(),
-                "12".into()
-            )])),
-            Ok(QueryConsumerOffsetResponseHeader { offset: 12 })
-        );
+        ));
+        let decoded = QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
+            "offset".into(),
+            "12".into(),
+        )]))
+        .unwrap();
+        assert_eq!(decoded.offset, 12);
         assert!(matches!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
                 "offset".into(),
@@ -1918,18 +2067,15 @@ mod tests {
             RecallMessageRequestHeader::decode_fields(&fields),
             Ok(request)
         );
-        assert_eq!(
+        assert!(matches!(
             RecallMessageResponseHeader::decode_fields(&HeaderMap::new()),
             Err(ProtocolError::MissingField("msgId"))
-        );
-        assert_eq!(
-            RecallMessageResponseHeader::decode_fields(&HeaderMap::from([(
-                "msgId".into(),
-                "recalled-id".into()
-            )])),
-            Ok(RecallMessageResponseHeader {
-                msg_id: "recalled-id".into()
-            })
-        );
+        ));
+        let decoded = RecallMessageResponseHeader::decode_fields(&HeaderMap::from([(
+            "msgId".into(),
+            "recalled-id".into(),
+        )]))
+        .unwrap();
+        assert_eq!(decoded.msg_id, "recalled-id");
     }
 }

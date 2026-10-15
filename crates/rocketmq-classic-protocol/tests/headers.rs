@@ -251,16 +251,12 @@ fn java_request_and_response_header_fixtures_decode() {
         PopLiteMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-lite-request"))
             .unwrap();
     assert_eq!(lite.client_id, "client");
-    assert_eq!(
-        UnregisterClientResponseHeader::decode_fields(&HeaderMap::new()),
-        Ok(UnregisterClientResponseHeader)
-    );
-    assert_eq!(
+    assert!(UnregisterClientResponseHeader::decode_fields(&HeaderMap::new()).is_ok());
+    assert!(
         UnregisterClientResponseHeader::decode_fields(&java_ext_fields(
             "header-unregister-response"
         ))
-        .unwrap(),
-        UnregisterClientResponseHeader
+        .is_ok()
     );
     let lock =
         LockBatchMqRequestHeader::decode_fields(&java_ext_fields("header-lock-batch-request"))
@@ -271,12 +267,11 @@ fn java_request_and_response_header_fixtures_decode() {
         UnlockBatchMqRequestHeader::decode_fields(&java_ext_fields("header-unlock-batch-request"))
             .unwrap();
     assert_eq!(unlock.namespace.as_deref(), Some("tenant"));
-    assert_eq!(
+    assert!(
         EndTransactionResponseHeader::decode_fields(&java_ext_fields(
             "header-end-transaction-response"
         ))
-        .unwrap(),
-        EndTransactionResponseHeader
+        .is_ok()
     );
     let lite_ctl = LiteSubscriptionCtlRequestHeader::decode_fields(&java_ext_fields(
         "header-lite-subscription-request",
@@ -309,10 +304,10 @@ fn java_request_and_response_header_fixtures_decode() {
     };
     let mut fields = HeaderMap::new();
     pop_response.encode_fields(&mut fields);
-    assert_eq!(
-        PopMessageResponseHeader::decode_fields(&fields),
-        Ok(pop_response)
-    );
+    let decoded_pop_response = PopMessageResponseHeader::decode_fields(&fields).unwrap();
+    let mut decoded_pop_fields = HeaderMap::new();
+    decoded_pop_response.encode_fields(&mut decoded_pop_fields);
+    assert_eq!(decoded_pop_fields, fields);
 
     let consumers = GetConsumerListByGroupRequestHeader::decode_fields(&java_ext_fields(
         "header-consumer-list-request",
@@ -393,10 +388,10 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     };
     fields.clear();
     response.encode_fields(&mut fields);
-    assert_eq!(
-        CheckTransactionStateResponseHeader::decode_fields(&fields),
-        Ok(response)
-    );
+    let decoded_response = CheckTransactionStateResponseHeader::decode_fields(&fields).unwrap();
+    let mut decoded_response_fields = HeaderMap::new();
+    decoded_response.encode_fields(&mut decoded_response_fields);
+    assert_eq!(decoded_response_fields, fields);
 
     let reply = ReplyMessageRequestHeader {
         producer_group: "producers".into(),

@@ -18,7 +18,7 @@ fn java_frame(stem: &str, code: i32) -> (HeaderMap, Vec<u8>) {
     (fields, frame[8 + header_size..].to_vec())
 }
 
-fn assert_full_fields<T: CommandHeader + std::fmt::Debug + PartialEq>(fields: &HeaderMap) {
+fn assert_full_fields<T: CommandHeader + std::fmt::Debug>(fields: &HeaderMap) {
     let decoded = T::decode_fields(fields).unwrap();
     let mut encoded = HeaderMap::new();
     decoded.encode_fields(&mut encoded);
@@ -26,7 +26,6 @@ fn assert_full_fields<T: CommandHeader + std::fmt::Debug + PartialEq>(fields: &H
         &encoded, fields,
         "all Java fields survive Rust decode/encode"
     );
-    assert_eq!(T::decode_fields(&encoded).unwrap(), decoded);
 }
 
 #[test]

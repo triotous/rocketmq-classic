@@ -54,6 +54,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `ResetOffsetBody`, and `ConsumeMessageDirectlyResult` now also omit Rust
   structural equality, matching inherited Java `Object.equals/hashCode`; their
   invoked identity fixture is `fixtures/protocol/dto-identity.json`.
+  Sixteen typed response-header DTOs now also omit structural equality,
+  matching the pinned Java classes' inherited Object identity; their fixture
+  is `fixtures/protocol/header-response-identity.json`. Request headers inheriting
+  `RpcRequestHeader.equals/hashCode` have a separate base-field mapping and
+  remain in the broad P18-V01 audit.
   `adjustThreadPool` has a direct owner
   mapping and fixture evidence for the pinned built-in services' no-op
   behavior. The raw `executeTask`/`executeTaskLater` methods map to the
@@ -742,6 +747,13 @@ the required full Phase 18 gates on the final revision.
   pinned Maven verify (37 scenarios and fixture/cross-decode checks), format,
   and diff checks pass. The complete workspace P18-V02 gate must still be
   rerun on the final P18 revision.
+- P18-V02 scoped response-header follow-up (2026-10-15): after removing
+  structural equality from 16 Java-identity response headers,
+  `cargo test -p rocketmq-classic-protocol --all-features --locked` passes 116
+  unit tests, all integration targets, and 41 doctests; strict Protocol Clippy,
+  Maven verify (37 scenarios and fixture/cross-decodes), format, and diff
+  checks pass. The complete workspace gate remains pending on the final P18
+  revision.
 
 ## Package graph and metadata
 

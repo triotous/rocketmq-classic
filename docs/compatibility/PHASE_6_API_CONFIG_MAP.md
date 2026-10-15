@@ -1137,6 +1137,14 @@ The invoked Java fixture reflects both inherited methods and confirms that separ
 
 The invoked `ProtocolDtoIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all five classes. Compile-fail doctests guard the Rust trait boundaries. Fixture: `fixtures/protocol/dto-identity.json`, SHA-256 `11f97e14fc3386c4ef61a6d82aa27f8e8b9b723a965fb3ddfb3b30233f0be0d9`.
 
+## Protocol response-header identity traits
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `QueryConsumerOffsetResponseHeader`, `SearchOffsetResponseHeader`, `GetMaxOffsetResponseHeader`, `GetMinOffsetResponseHeader`, `GetEarliestMsgStoretimeResponseHeader`, `PullMessageResponseHeader`, `QueryMessageResponseHeader`, `RecallMessageResponseHeader`, `SendMessageResponseHeader`, `UnregisterClientResponseHeader`, `EndTransactionResponseHeader`, `CheckTransactionStateResponseHeader`, `NotificationResponseHeader`, `PopMessageResponseHeader`, `PopLiteMessageResponseHeader`, and `PollingInfoResponseHeader`; each inherits `Object.equals/hashCode` | Corresponding Rust response-header DTOs intentionally do not implement structural `PartialEq`/`Eq` |
+
+`HeaderResponseIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all 16 Java classes. Compile-fail doctests guard every Rust header boundary. Fixture: `fixtures/protocol/header-response-identity.json`, SHA-256 `d618338067333760a74c956d3ca677d4acf0c44acef87b4f9607395fb96f6e6f`. This row covers response headers; request headers inheriting `RpcRequestHeader.equals/hashCode` have separate base-field behavior and remain under P18-V01 audit.
+
 ## Common public API: TopicValidator
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |

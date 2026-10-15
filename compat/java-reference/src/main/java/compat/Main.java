@@ -134,6 +134,10 @@ public final class Main {
             ProtocolDtoIdentityFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "header-response-identity-fixture".equals(args[0])) {
+            HeaderResponseIdentityFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "acl-fixture".equals(args[0])) {
             AclFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
