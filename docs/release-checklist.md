@@ -1129,3 +1129,21 @@ Before any publication:
   current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
   automation, and release version/registry-resolution checks remain open.
   Owner-run deployment/live Broker checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting callback/channel API slice (`a74171df`, 2026-10-15): Rust
+  callbacks now receive a Java-shaped `ResponseFuture` with mutable response
+  state, Java error-category selection, callback-once execution and owned
+  permit release. Channel event callbacks receive a `ChannelHandle` that can
+  inspect, close and write through its connection; closing a pending handle
+  cancels connection setup. Callback timeout metadata now follows the Java
+  success and exceptional-wrapper paths, and result closures receive connect
+  failures exactly once. This closes these bounded Remoting API/flow rows only.
+- PASS on `a74171df`: Remoting all-feature tests (96 unit, 6 codec, 1 fuzz
+  regression, 5 security, 99 transport, 5 doctests); Core all-feature tests
+  (159 unit and all integration/doctests); strict workspace all-target/all-
+  feature Clippy; Maven `verify` (37 scenarios, Java/Rust cross-decodes and
+  live Remoting config probe); format and diff checks.
+- Broad P18-V01, the final full-workspace P18-V02 rerun, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and release
+  version/registry-resolution checks remain open. Owner-run deployment/live
+  Broker checks remain Phase 19 manual validation.
