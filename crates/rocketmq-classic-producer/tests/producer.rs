@@ -760,7 +760,10 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
             .set_trace_topic(trace_topic.map(str::to_owned));
 
         assert_eq!(config.producer_group(), Some(group));
-        assert_eq!(config.client_config().namespace.as_deref(), namespace);
+        assert_eq!(
+            config.client_config_mut().get_namespace().unwrap(),
+            namespace
+        );
         assert_eq!(
             config
                 .topics()
@@ -805,7 +808,10 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         .set_namespace(Some("constructor-null-group-namespace".to_owned()));
     assert_eq!(null_group_config.producer_group(), None);
     assert_eq!(
-        null_group_config.client_config().namespace.as_deref(),
+        null_group_config
+            .client_config_mut()
+            .get_namespace()
+            .unwrap(),
         Some("constructor-null-group-namespace")
     );
 
@@ -889,7 +895,10 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         config
             .client_config_mut()
             .set_trace_topic(trace_topic.map(str::to_owned));
-        assert_eq!(config.client_config().namespace.as_deref(), namespace);
+        assert_eq!(
+            config.client_config_mut().get_namespace().unwrap(),
+            namespace
+        );
         assert_eq!(config.topics(), None);
         assert_eq!(config.client_config().enable_trace(), trace_enabled);
         assert_eq!(config.client_config().trace_topic(), trace_topic);

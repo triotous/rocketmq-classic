@@ -52,7 +52,7 @@ impl ConsumerRuntime for Consumer {
 #[tokio::test(start_paused = true)]
 async fn stop_cancels_and_joins_pending_rebalance_capability_without_post_stop_ticks() {
     let mut config = ClientConfig::new("pending-rebalance");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -82,7 +82,7 @@ async fn stop_cancels_and_joins_pending_rebalance_capability_without_post_stop_t
 #[tokio::test(start_paused = true)]
 async fn delayed_wakeup_runs_on_owned_scheduler_and_nonpositive_delay_is_immediate() {
     let mut config = ClientConfig::new("delayed-rebalance");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -127,7 +127,7 @@ async fn advance(ms: u64) {
 #[tokio::test(start_paused = true)]
 async fn coalesced_wakeup_respects_minimum_interval_and_visits_all_registered_consumers() {
     let mut config = ClientConfig::new("rebalance-wakeup");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

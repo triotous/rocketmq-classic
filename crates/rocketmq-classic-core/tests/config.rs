@@ -59,36 +59,36 @@ fn client_config_from_java_text_fields(fields: &Value) -> ClientConfig {
     let string = |name: &str| fields[name].as_str().map(str::to_owned);
     let i32_value = |name: &str| i32::try_from(fields[name].as_i64().unwrap()).unwrap();
     let mut config = ClientConfig::new("fixture-ip");
-    config.namesrv_addr = string("namesrvAddr");
-    config.client_ip = string("clientIP");
-    config.instance_name = string("instanceName");
-    config.client_callback_executor_threads = i32_value("clientCallbackExecutorThreads");
-    config.namespace = string("namespace");
-    config.namespace_v2 = string("namespaceV2");
-    config.access_channel = match fields["accessChannel"].as_str() {
+    config.set_namesrv_addr(string("namesrvAddr"));
+    config.set_client_ip(string("clientIP"));
+    config.set_instance_name(string("instanceName"));
+    config.set_client_callback_executor_threads(i32_value("clientCallbackExecutorThreads"));
+    config.set_namespace_v2(string("namespaceV2"));
+    config.set_access_channel(match fields["accessChannel"].as_str() {
         Some("LOCAL") => Some(AccessChannel::Local),
         Some("CLOUD") => Some(AccessChannel::Cloud),
         Some(other) => panic!("unknown Java AccessChannel {other}"),
         None => None,
-    };
-    config.poll_name_server_interval = i32_value("pollNameServerInterval");
-    config.heartbeat_broker_interval = i32_value("heartbeatBrokerInterval");
-    config.persist_consumer_offset_interval = i32_value("persistConsumerOffsetInterval");
-    config.pull_time_delay_millis_when_exception =
-        fields["pullTimeDelayMillsWhenException"].as_i64().unwrap();
-    config.trace_msg_batch_num = i32_value("traceMsgBatchNum");
-    config.unit_mode = fields["unitMode"].as_bool().unwrap();
-    config.unit_name = string("unitName");
-    config.decode_read_body = fields["decodeReadBody"].as_bool().unwrap();
-    config.decode_decompress_body = fields["decodeDecompressBody"].as_bool().unwrap();
-    config.vip_channel_enabled = fields["vipChannelEnabled"].as_bool().unwrap();
-    config.use_heartbeat_v2 = fields["useHeartbeatV2"].as_bool().unwrap();
-    config.use_tls = fields["useTLS"].as_bool().unwrap();
-    config.socks_proxy_config = string("socksProxyConfig");
-    config.mq_client_api_timeout = i32_value("mqClientApiTimeout");
-    config.detect_timeout = i32_value("detectTimeout");
-    config.detect_interval = i32_value("detectInterval");
-    config.language = match fields["language"].as_str() {
+    });
+    config.set_poll_name_server_interval(i32_value("pollNameServerInterval"));
+    config.set_heartbeat_broker_interval(i32_value("heartbeatBrokerInterval"));
+    config.set_persist_consumer_offset_interval(i32_value("persistConsumerOffsetInterval"));
+    config.set_pull_time_delay_millis_when_exception(
+        fields["pullTimeDelayMillsWhenException"].as_i64().unwrap(),
+    );
+    config.set_trace_msg_batch_num(i32_value("traceMsgBatchNum"));
+    config.set_unit_mode(fields["unitMode"].as_bool().unwrap());
+    config.set_unit_name(string("unitName"));
+    config.set_decode_read_body(fields["decodeReadBody"].as_bool().unwrap());
+    config.set_decode_decompress_body(fields["decodeDecompressBody"].as_bool().unwrap());
+    config.set_vip_channel_enabled(fields["vipChannelEnabled"].as_bool().unwrap());
+    config.set_use_heartbeat_v2(fields["useHeartbeatV2"].as_bool().unwrap());
+    config.set_use_tls(fields["useTLS"].as_bool().unwrap());
+    config.set_socks_proxy_config(string("socksProxyConfig"));
+    config.set_mq_client_api_timeout(i32_value("mqClientApiTimeout"));
+    config.set_detect_timeout(i32_value("detectTimeout"));
+    config.set_detect_interval(i32_value("detectInterval"));
+    config.set_language(match fields["language"].as_str() {
         Some("JAVA") => Some(LanguageCode::Java),
         Some("CPP") => Some(LanguageCode::Cpp),
         Some("DOTNET") => Some(LanguageCode::Dotnet),
@@ -105,20 +105,29 @@ fn client_config_from_java_text_fields(fields: &Value) -> ClientConfig {
         Some("NODE_JS") => Some(LanguageCode::NodeJs),
         Some(other) => panic!("unknown Java LanguageCode {other}"),
         None => None,
-    };
-    config.enable_stream_request_type = fields["enableStreamRequestType"].as_bool().unwrap();
-    config.send_latency_enable = fields["sendLatencyEnable"].as_bool().unwrap();
-    config.start_detector_enable = fields["startDetectorEnable"].as_bool().unwrap();
-    config.enable_heartbeat_channel_event_listener = fields["enableHeartbeatChannelEventListener"]
-        .as_bool()
-        .unwrap();
-    config.enable_concurrent_heartbeat = fields["enableConcurrentHeartbeat"].as_bool().unwrap();
-    config.concurrent_heartbeat_thread_pool_size = i32_value("concurrentHeartbeatThreadPoolSize");
-    config.enable_trace = fields["enableTrace"].as_bool().unwrap();
-    config.trace_topic = string("traceTopic");
-    config.max_page_size_in_get_metadata = i32_value("maxPageSizeInGetMetadata");
+    });
+    config.set_enable_stream_request_type(fields["enableStreamRequestType"].as_bool().unwrap());
+    config.set_send_latency_enable(fields["sendLatencyEnable"].as_bool().unwrap());
+    config.set_start_detector_enable(fields["startDetectorEnable"].as_bool().unwrap());
+    config.set_enable_heartbeat_channel_event_listener(
+        fields["enableHeartbeatChannelEventListener"]
+            .as_bool()
+            .unwrap(),
+    );
+    config.set_enable_concurrent_heartbeat(fields["enableConcurrentHeartbeat"].as_bool().unwrap());
+    config
+        .set_concurrent_heartbeat_thread_pool_size(i32_value("concurrentHeartbeatThreadPoolSize"));
+    config.set_enable_trace(fields["enableTrace"].as_bool().unwrap());
+    config.set_trace_topic(string("traceTopic"));
+    config.set_max_page_size_in_get_metadata(i32_value("maxPageSizeInGetMetadata"));
+    let namespace = string("namespace");
     if fields["namespaceInitialized"].as_bool().unwrap() {
-        config.set_namespace(string("namespace"));
+        config.set_namespace(namespace);
+    } else if namespace.is_some() {
+        // Java cloneClientConfig copies namespace but leaves the new object's
+        // private namespaceInitialized flag at its default false.
+        config.set_namespace(namespace);
+        config = config.clone_client_config();
     }
     config
 }
@@ -126,7 +135,7 @@ fn client_config_from_java_text_fields(fields: &Value) -> ClientConfig {
 #[test]
 fn default_constructor_selects_a_local_ip_before_identity_construction() {
     let config = ClientConfig::default();
-    let address = config.client_ip.as_deref().unwrap();
+    let address = config.client_ip().unwrap();
     assert!(!address.is_empty());
     if address.starts_with('[') {
         address
@@ -179,7 +188,7 @@ fn endpoint_namespace_and_resource_helpers_match_invoked_java() {
         "NullPointerException"
     );
     let mut null_instance = ClientConfig::new("null-instance");
-    null_instance.instance_name = None;
+    null_instance.set_instance_name(None);
     assert_eq!(
         null_instance.change_instance_name_to_pid(),
         Err(ConfigError::NullInstanceName)
@@ -307,31 +316,34 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let java = &fixture["nullableSettings"];
     let mut source = ClientConfig::new("nullable-settings");
-    source.namesrv_addr = Some(String::new());
-    source.access_channel = None;
-    source.socks_proxy_config = None;
-    source.language = None;
-    assert_eq!(source.access_channel.is_none(), java["inputAccessNull"]);
-    assert_eq!(source.socks_proxy_config.is_none(), java["inputSocksNull"]);
-    assert_eq!(source.language.is_none(), java["inputLanguageNull"]);
+    source.set_namesrv_addr(Some(String::new()));
+    source.set_access_channel(None);
+    source.set_socks_proxy_config(None);
+    source.set_language(None);
+    assert_eq!(source.access_channel().is_none(), java["inputAccessNull"]);
+    assert_eq!(
+        source.socks_proxy_config().is_none(),
+        java["inputSocksNull"]
+    );
+    assert_eq!(source.language().is_none(), java["inputLanguageNull"]);
     let copy = source.clone_client_config();
-    assert_eq!(copy.access_channel, Some(AccessChannel::Local));
+    assert_eq!(copy.access_channel(), Some(AccessChannel::Local));
     assert_eq!(java["cloneAccess"], "LOCAL");
-    assert_eq!(copy.socks_proxy_config.is_none(), java["cloneSocksNull"]);
-    assert_eq!(copy.language.is_none(), java["cloneLanguageNull"]);
+    assert_eq!(copy.socks_proxy_config().is_none(), java["cloneSocksNull"]);
+    assert_eq!(copy.language().is_none(), java["cloneLanguageNull"]);
     let mut receiver = ClientConfig::new("receiver");
-    receiver.access_channel = Some(AccessChannel::Cloud);
+    receiver.set_access_channel(Some(AccessChannel::Cloud));
     receiver.reset_client_config(&source);
-    assert_eq!(receiver.access_channel, Some(AccessChannel::Cloud));
+    assert_eq!(receiver.access_channel(), Some(AccessChannel::Cloud));
     assert_eq!(java["resetAccess"], "CLOUD");
     assert_eq!(
-        receiver.socks_proxy_config.is_none(),
+        receiver.socks_proxy_config().is_none(),
         java["resetSocksNull"]
     );
-    assert_eq!(receiver.language.is_none(), java["resetLanguageNull"]);
-    receiver.access_channel = None;
+    assert_eq!(receiver.language().is_none(), java["resetLanguageNull"]);
+    receiver.set_access_channel(None);
     receiver.reset_client_config(&source);
-    assert!(receiver.access_channel.is_none());
+    assert!(receiver.access_channel().is_none());
     let runtime = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
         .get_or_create(&source)
         .await;
@@ -342,12 +354,12 @@ async fn nullable_access_and_socks_settings_match_invoked_java_copy_and_construc
             .config()
             .read()
             .unwrap()
-            .socks_proxy_config
+            .socks_proxy_config()
             .is_none(),
         java["runtimeSocksNull"]
     );
     assert_eq!(
-        runtime.config().read().unwrap().language.is_none(),
+        runtime.config().read().unwrap().language().is_none(),
         java["runtimeLanguageNull"]
     );
 }
@@ -359,8 +371,8 @@ async fn callback_thread_constructor_acceptance_and_raw_values_match_invoked_jav
     for java in fixture["callbackThreadsConstruction"].as_array().unwrap() {
         let threads = i32::try_from(java["input"].as_i64().unwrap()).unwrap();
         let mut config = ClientConfig::new(format!("callback-threads-{threads}"));
-        config.namesrv_addr = Some(String::new());
-        config.client_callback_executor_threads = threads;
+        config.set_namesrv_addr(Some(String::new()));
+        config.set_client_callback_executor_threads(threads);
         let result = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
             .get_or_create(&config)
             .await;
@@ -373,7 +385,7 @@ async fn callback_thread_constructor_acceptance_and_raw_values_match_invoked_jav
                     .config()
                     .read()
                     .unwrap()
-                    .client_callback_executor_threads
+                    .client_callback_executor_threads()
             ),
             java["raw"].as_i64().unwrap()
         );
@@ -391,8 +403,8 @@ async fn socks_construction_matches_invoked_java_empty_and_whitespace_boundaries
         .enumerate()
     {
         let mut config = ClientConfig::new(format!("socks-construction-{index}"));
-        config.namesrv_addr = Some(String::new());
-        config.socks_proxy_config = optional(&java["input"]);
+        config.set_namesrv_addr(Some(String::new()));
+        config.set_socks_proxy_config(optional(&java["input"]));
         let result = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
             .get_or_create(&config)
             .await;
@@ -400,8 +412,13 @@ async fn socks_construction_matches_invoked_java_empty_and_whitespace_boundaries
         if let Ok(runtime) = result {
             assert_eq!(java["rawPreserved"], true);
             assert_eq!(
-                runtime.config().read().unwrap().socks_proxy_config.clone(),
-                config.socks_proxy_config
+                runtime
+                    .config()
+                    .read()
+                    .unwrap()
+                    .socks_proxy_config()
+                    .clone(),
+                config.socks_proxy_config()
             );
         }
     }
@@ -420,8 +437,8 @@ async fn runtime_uses_endpoint_address_getter_without_rewriting_raw_configuratio
         ["MQ_INST_a_b.example:9876"]
     );
     assert_eq!(
-        runtime.config().read().unwrap().namesrv_addr,
-        config.namesrv_addr
+        runtime.config().read().unwrap().get_namesrv_addr(),
+        config.get_namesrv_addr()
     );
 }
 
@@ -431,11 +448,11 @@ fn client_identity_matches_invoked_java_including_unicode_blanks_and_nulls() {
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     for case in fixture["identities"].as_array().unwrap() {
         let mut config = ClientConfig::new("192.0.2.4");
-        config.client_ip = optional(&case["ip"]);
-        config.instance_name = optional(&case["instance"]);
-        config.unit_name = optional(&case["unit"]);
-        config.namespace = Some("must-not-affect-id".into());
-        config.enable_stream_request_type = case["stream"].as_bool().unwrap();
+        config.set_client_ip(optional(&case["ip"]));
+        config.set_instance_name(optional(&case["instance"]));
+        config.set_unit_name(optional(&case["unit"]));
+        config.set_namespace(Some("must-not-affect-id".into()));
+        config.set_enable_stream_request_type(case["stream"].as_bool().unwrap());
         assert_eq!(config.build_client_id(), case["id"].as_str().unwrap());
     }
 }
@@ -449,12 +466,12 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let java = &fixture["managed"];
     let mut config = ClientConfig::new("manager-copy");
-    config.trace_msg_batch_num = 99;
-    config.max_page_size_in_get_metadata = 77;
-    config.access_channel = Some(AccessChannel::Cloud);
-    config.namespace_v2 = Some("v2".into());
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 7;
+    config.set_trace_msg_batch_num(99);
+    config.set_max_page_size_in_get_metadata(77);
+    config.set_access_channel(Some(AccessChannel::Cloud));
+    config.set_namespace_v2(Some("v2".into()));
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(7);
     config.set_namesrv_addr(Some("MQ_INST_a_b.example:9876".into()));
     config.set_namespace(None);
     let manager = ClientRuntimeManager::new();
@@ -463,44 +480,51 @@ async fn manager_configuration_copy_matches_invoked_java_without_mutating_caller
     // clone here would reset it again and hide a construction-path mismatch.
     let mut actual = runtime.config().read().unwrap().clone();
     assert_eq!(
-        i64::from(actual.trace_msg_batch_num),
+        i64::from(actual.trace_msg_batch_num()),
         java["traceMsgBatchNum"]
     );
     assert_eq!(
-        i64::from(actual.max_page_size_in_get_metadata),
+        i64::from(actual.max_page_size_in_get_metadata()),
         java["maxPageSizeInGetMetadata"]
     );
-    assert_eq!(actual.access_channel, Some(AccessChannel::Local));
+    assert_eq!(actual.access_channel(), Some(AccessChannel::Local));
     assert_eq!(java["accessChannel"], "LOCAL");
-    assert_eq!(actual.namespace_v2.as_deref(), java["namespaceV2"].as_str());
+    assert_eq!(actual.namespace_v2(), java["namespaceV2"].as_str());
     assert_eq!(
-        actual.enable_concurrent_heartbeat,
+        actual.enable_concurrent_heartbeat(),
         java["enableConcurrentHeartbeat"]
     );
     assert_eq!(
-        i64::from(actual.concurrent_heartbeat_thread_pool_size),
+        i64::from(actual.concurrent_heartbeat_thread_pool_size()),
         java["concurrentHeartbeatThreadPoolSize"]
     );
     assert_eq!(java["configGetterSameObject"], true);
     assert_eq!(java["configMutationVisible"], true);
-    runtime.config().write().unwrap().mq_client_api_timeout = 4321;
-    assert_eq!(runtime.config().read().unwrap().mq_client_api_timeout, 4321);
-    assert_eq!(config.mq_client_api_timeout, 3_000);
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_mq_client_api_timeout(4321);
+    assert_eq!(
+        runtime.config().read().unwrap().mq_client_api_timeout(),
+        4321
+    );
+    assert_eq!(config.mq_client_api_timeout(), 3_000);
     assert_eq!(actual.get_namespace().unwrap(), java["namespace"].as_str());
     assert_eq!(
         config.get_namespace().unwrap().is_none(),
         java["inputNamespaceStillNull"]
     );
-    assert_eq!(config.trace_msg_batch_num, 99);
-    assert_eq!(config.max_page_size_in_get_metadata, 77);
-    assert_eq!(config.access_channel, Some(AccessChannel::Cloud));
+    assert_eq!(config.trace_msg_batch_num(), 99);
+    assert_eq!(config.max_page_size_in_get_metadata(), 77);
+    assert_eq!(config.access_channel(), Some(AccessChannel::Cloud));
     assert_eq!(
         Arc::ptr_eq(&runtime, &manager.get_or_create(&config).await.unwrap()),
         java["sharedIdentity"]
     );
-    config.trace_msg_batch_num = 123;
-    config.max_page_size_in_get_metadata = 456;
-    config.access_channel = Some(AccessChannel::Local);
+    config.set_trace_msg_batch_num(123);
+    config.set_max_page_size_in_get_metadata(456);
+    config.set_access_channel(Some(AccessChannel::Local));
     assert!(Arc::ptr_eq(
         &runtime,
         &manager.get_or_create(&config).await.unwrap()
@@ -515,8 +539,8 @@ async fn runtime_client_id_remains_constructor_snapshot_after_config_mutation() 
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let java = &fixture["managerSharing"];
     let mut config = ClientConfig::new("198.51.100.223");
-    config.instance_name = Some("phase6-manager-sharing".into());
-    config.namesrv_addr = Some(String::new());
+    config.set_instance_name(Some("phase6-manager-sharing".into()));
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -529,9 +553,9 @@ async fn runtime_client_id_remains_constructor_snapshot_after_config_mutation() 
     {
         let retained_config = runtime.config();
         let mut retained = retained_config.write().unwrap();
-        retained.client_ip = Some("203.0.113.44".into());
-        retained.instance_name = Some("mutated-runtime-instance".into());
-        retained.unit_name = Some("mutated-runtime-unit".into());
+        retained.set_client_ip(Some("203.0.113.44".into()));
+        retained.set_instance_name(Some("mutated-runtime-instance".into()));
+        retained.set_unit_name(Some("mutated-runtime-unit".into()));
         assert_eq!(
             retained.build_client_id(),
             java["configDerivedClientIdAfterMutation"].as_str().unwrap()
@@ -556,8 +580,8 @@ async fn active_nameserver_addresses_remain_constructor_snapshot_after_config_mu
         .enumerate()
     {
         let mut config = ClientConfig::new("192.0.2.80");
-        config.instance_name = Some(format!("phase6-nameserver-snapshot-{index}"));
-        config.namesrv_addr = case["configuredAtConstruction"].as_str().map(str::to_owned);
+        config.set_instance_name(Some(format!("phase6-nameserver-snapshot-{index}")));
+        config.set_namesrv_addr(case["configuredAtConstruction"].as_str().map(str::to_owned));
         let runtime = ClientRuntimeManager::new()
             .get_or_create(&config)
             .await
@@ -623,9 +647,9 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
     assert_eq!(java_case["shutdownOutcome"], "OK");
 
     let mut config = ClientConfig::new("192.0.2.80");
-    config.instance_name = Some("phase6-start-nameserver-mutation".into());
-    config.namesrv_addr = None;
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_instance_name(Some("phase6-start-nameserver-mutation".into()));
+    config.set_namesrv_addr(None);
+    config.set_enable_heartbeat_channel_event_listener(false);
     let fetch_calls = Arc::new(AtomicUsize::new(0));
     let runtime = ClientRuntimeManager::with_top_addressing(Arc::new(CountingAddressing(
         fetch_calls.clone(),
@@ -638,7 +662,12 @@ async fn start_uses_live_nameserver_null_check_but_keeps_constructor_address_sna
         java_case["namesrvAddrAtStart"].as_str().unwrap().to_owned(),
     ));
     assert_eq!(
-        runtime.config().read().unwrap().namesrv_addr.as_deref(),
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .get_namesrv_addr()
+            .as_deref(),
         java_case["namesrvAddrAtStart"].as_str()
     );
 
@@ -704,16 +733,23 @@ async fn start_fetches_nameserver_after_live_address_is_cleared_but_keeps_active
         fetch_calls.clone(),
     )));
     let mut config = ClientConfig::new("192.0.2.81");
-    config.instance_name = Some("phase6-start-nameserver-clear".into());
-    config.namesrv_addr = Some(java_addresses[0].clone());
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_instance_name(Some("phase6-start-nameserver-clear".into()));
+    config.set_namesrv_addr(Some(java_addresses[0].clone()));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = manager.get_or_create(&config).await.unwrap();
     assert_eq!(
         runtime.remoting().get_name_server_address_list(),
         Some(java_addresses.clone())
     );
     runtime.config().write().unwrap().set_namesrv_addr(None);
-    assert!(runtime.config().read().unwrap().namesrv_addr.is_none());
+    assert!(
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .get_namesrv_addr()
+            .is_none()
+    );
     assert_eq!(
         runtime.remoting().get_name_server_address_list(),
         Some(java_addresses.clone())
@@ -777,9 +813,9 @@ async fn start_skips_discovery_after_live_nameserver_address_becomes_empty() {
         fetch_calls.clone(),
     )));
     let mut config = ClientConfig::new("192.0.2.82");
-    config.instance_name = Some("phase6-start-nameserver-empty".into());
-    config.namesrv_addr = Some(addresses[0].clone());
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_instance_name(Some("phase6-start-nameserver-empty".into()));
+    config.set_namesrv_addr(Some(addresses[0].clone()));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = manager.get_or_create(&config).await.unwrap();
     assert_eq!(
         runtime.remoting().get_name_server_address_list(),
@@ -791,7 +827,12 @@ async fn start_skips_discovery_after_live_nameserver_address_becomes_empty() {
         .unwrap()
         .set_namesrv_addr(Some(String::new()));
     assert_eq!(
-        runtime.config().read().unwrap().namesrv_addr.as_deref(),
+        runtime
+            .config()
+            .read()
+            .unwrap()
+            .get_namesrv_addr()
+            .as_deref(),
         java_case["namesrvAddrAtStart"].as_str()
     );
 
@@ -817,71 +858,71 @@ fn centralized_defaults_and_java_clone_copy_exact_fields() {
     for (key, actual) in [
         (
             "pollNameServerInterval",
-            i64::from(config.poll_name_server_interval),
+            i64::from(config.poll_name_server_interval()),
         ),
         (
             "heartbeatBrokerInterval",
-            i64::from(config.heartbeat_broker_interval),
+            i64::from(config.heartbeat_broker_interval()),
         ),
         (
             "persistConsumerOffsetInterval",
-            i64::from(config.persist_consumer_offset_interval),
+            i64::from(config.persist_consumer_offset_interval()),
         ),
         (
             "pullTimeDelayMillsWhenException",
-            config.pull_time_delay_millis_when_exception,
+            config.pull_time_delay_millis_when_exception(),
         ),
         (
             "mqClientApiTimeout",
-            i64::from(config.mq_client_api_timeout),
+            i64::from(config.mq_client_api_timeout()),
         ),
-        ("detectTimeout", i64::from(config.detect_timeout)),
-        ("detectInterval", i64::from(config.detect_interval)),
-        ("traceMsgBatchNum", i64::from(config.trace_msg_batch_num)),
+        ("detectTimeout", i64::from(config.detect_timeout())),
+        ("detectInterval", i64::from(config.detect_interval())),
+        ("traceMsgBatchNum", i64::from(config.trace_msg_batch_num())),
         (
             "maxPageSizeInGetMetadata",
-            i64::from(config.max_page_size_in_get_metadata),
+            i64::from(config.max_page_size_in_get_metadata()),
         ),
     ] {
         assert_eq!(actual, defaults[key].as_i64().unwrap(), "{key}");
     }
-    assert_eq!(config.access_channel, Some(AccessChannel::Local));
-    assert!(!config.enable_concurrent_heartbeat);
-    assert!(config.enable_heartbeat_channel_event_listener);
-    config.trace_msg_batch_num = 99;
-    config.max_page_size_in_get_metadata = 77;
-    config.access_channel = Some(AccessChannel::Cloud);
-    config.namespace_v2 = Some("v2".into());
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 7;
+    assert_eq!(config.access_channel(), Some(AccessChannel::Local));
+    assert!(!config.enable_concurrent_heartbeat());
+    assert!(config.enable_heartbeat_channel_event_listener());
+    config.set_trace_msg_batch_num(99);
+    config.set_max_page_size_in_get_metadata(77);
+    config.set_access_channel(Some(AccessChannel::Cloud));
+    config.set_namespace_v2(Some("v2".into()));
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(7);
     let copy = config.clone_client_config();
     let java = &fixture["clone"];
     assert_eq!(
-        i64::from(copy.trace_msg_batch_num),
+        i64::from(copy.trace_msg_batch_num()),
         java["traceMsgBatchNum"].as_i64().unwrap()
     );
     assert_eq!(
-        i64::from(copy.max_page_size_in_get_metadata),
+        i64::from(copy.max_page_size_in_get_metadata()),
         java["maxPageSizeInGetMetadata"].as_i64().unwrap()
     );
-    assert_eq!(copy.access_channel, Some(AccessChannel::Local));
-    assert_eq!(copy.namespace_v2.as_deref(), java["namespaceV2"].as_str());
+    assert_eq!(copy.access_channel(), Some(AccessChannel::Local));
+    assert_eq!(copy.namespace_v2(), java["namespaceV2"].as_str());
     assert_eq!(
-        copy.enable_concurrent_heartbeat,
+        copy.enable_concurrent_heartbeat(),
         java["enableConcurrentHeartbeat"].as_bool().unwrap()
     );
     assert_eq!(
-        i64::from(copy.concurrent_heartbeat_thread_pool_size),
+        i64::from(copy.concurrent_heartbeat_thread_pool_size()),
         java["concurrentHeartbeatThreadPoolSize"].as_i64().unwrap()
     );
     let mut reset = ClientConfig::new("other");
-    reset.trace_msg_batch_num = 42;
-    reset.max_page_size_in_get_metadata = 43;
-    reset.access_channel = Some(AccessChannel::Cloud);
+    reset.set_trace_msg_batch_num(42);
+    reset.set_max_page_size_in_get_metadata(43);
+    reset.set_access_channel(Some(AccessChannel::Cloud));
     reset.reset_client_config(&config);
-    assert_eq!(reset.trace_msg_batch_num, 42);
-    assert_eq!(reset.max_page_size_in_get_metadata, 43);
-    assert_eq!(reset.access_channel, Some(AccessChannel::Cloud));
+    assert_eq!(reset.trace_msg_batch_num(), 42);
+    assert_eq!(reset.max_page_size_in_get_metadata(), 43);
+    assert_eq!(reset.access_channel(), Some(AccessChannel::Cloud));
     assert_eq!(reset.build_client_id(), config.build_client_id());
 }
 
@@ -1123,10 +1164,10 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     let mut expected_clone = source.clone();
     // reset of the source namespace state is part of clone construction, not
     // a plain Rust Clone operation (covered independently by the private test).
-    expected_clone.set_namesrv_addr(source.namesrv_addr.clone());
-    expected_clone.access_channel = Some(AccessChannel::Local);
-    expected_clone.trace_msg_batch_num = 10;
-    expected_clone.max_page_size_in_get_metadata = 2000;
+    expected_clone.set_namesrv_addr(source.get_namesrv_addr().clone());
+    expected_clone.set_access_channel(Some(AccessChannel::Local));
+    expected_clone.set_trace_msg_batch_num(10);
+    expected_clone.set_max_page_size_in_get_metadata(2000);
     let mut copy = source.clone_client_config();
     assert_eq!(copy, expected_clone);
     let clone_snapshot = client_config_snapshot(&mut copy);
@@ -1139,9 +1180,9 @@ fn clone_and_reset_copy_every_public_setting_except_java_omissions() {
     receiver.set_trace_msg_batch_num(42);
     receiver.set_max_page_size_in_get_metadata(43);
     let mut expected_reset = source.clone();
-    expected_reset.access_channel = receiver.access_channel;
-    expected_reset.trace_msg_batch_num = receiver.trace_msg_batch_num;
-    expected_reset.max_page_size_in_get_metadata = receiver.max_page_size_in_get_metadata;
+    expected_reset.set_access_channel(receiver.access_channel());
+    expected_reset.set_trace_msg_batch_num(receiver.trace_msg_batch_num());
+    expected_reset.set_max_page_size_in_get_metadata(receiver.max_page_size_in_get_metadata());
     receiver.reset_client_config(&source);
     assert_eq!(receiver, expected_reset);
     let reset_snapshot = client_config_snapshot(&mut receiver);

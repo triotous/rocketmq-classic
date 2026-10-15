@@ -4,6 +4,16 @@
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:
 
+- ClientConfig field visibility (`2026-10-15`, pinned Java source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): the 33 Rust backing fields are
+  now crate-private, matching Java's private/protected storage boundary while
+  retaining all mapped getter/setter pairs. Cross-crate Consumer running-info
+  serialization uses the hidden read-only bridge for Java
+  `MixAll.object2Properties`; it preserves raw values and null omission. An
+  external compile-fail doctest guards the boundary. The field inventory is now
+  8 public-field structs / 41 fields, down from the historical 9 / 74. Focused
+  Core, Consumer, and Producer checks pass; this closes only this surface slice
+  and does not close P18-V01.
 - Current Phase 18 server-free gates (`3f57e7ec`, 2026-10-14): default and all-feature workspace tests, strict all-target/all-feature Clippy, Producer tests, pinned Maven verify (37 scenarios, fixture drift and Java/Rust cross-decodes), comparator self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples, offline benchmark compilation, workspace metadata, locked Cargo metadata and seven package-content listings pass. This closes P18-V02 at this code revision. P18-V01 remains PARTIAL; current-revision GitHub Ubuntu evidence, Phase 19 Docker/Broker execution and registry dependency resolution remain outstanding.
 - Latest Phase 18 server-free gates (`133d4f54`, 2026-10-15), after the mutable reserved-property correction: sequential default and all-feature workspace tests, strict all-target/all-feature Clippy, formatting/diff checks, Maven verify (37 scenarios, fixture drift and Java/Rust cross-decodes), comparator self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples, offline benchmark compilation, workspace metadata/Cargo metadata and seven package-content listings pass. This closes P18-V02 on this revision. Broad P18-V01 remains PARTIAL; the current-revision GitHub Ubuntu result and Phase 19 Docker/Broker execution remain outstanding.
 - Current Phase 18 server-free gates (`51be0d20`, 2026-10-15), after the nullable reserved-property-set correction: UTC default and all-feature workspace tests, strict all-target/all-feature Clippy, Maven verify (37 scenarios with fixture drift and Java/Rust cross-decodes), comparator self-test and manifest, 16 race/leak cases × 3, fuzz smoke (1,824 mutations), release examples, workspace benchmark compilation, locked Cargo metadata, workspace metadata and seven package-content listings all pass; format and diff checks also pass. P18-V02 server-free gates pass on this revision. P18-V01 remains PARTIAL; current-revision GitHub Ubuntu evidence and Phase 19 Docker/Broker validation remain open.

@@ -119,7 +119,7 @@ fn check_client_body_matches_actual_java_api_payload() {
 async fn tags_empty_subscriptions_and_missing_route_do_not_fetch_or_send() {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("check-client");
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -172,10 +172,10 @@ async fn non_tag_check_uses_registered_key_vip_and_source_error_boundaries() {
         let broker_address = broker.local_addr().unwrap();
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut config = ClientConfig::new("check-client");
-        config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
-        config.vip_channel_enabled = true;
-        config.enable_heartbeat_channel_event_listener = false;
-        config.mq_client_api_timeout = 1234;
+        config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
+        config.set_vip_channel_enabled(true);
+        config.set_enable_heartbeat_channel_event_listener(false);
+        config.set_mq_client_api_timeout(1234);
         let route = serde_json::to_vec(&serde_json::json!({"queueDatas":[],"brokerDatas":[{"cluster":"cluster","brokerName":"broker","brokerAddrs":{"0":format!("127.0.0.1:{}", u32::from(broker_address.port()) + 2)}}],"filterServerTable":{}})).unwrap();
         let name_peer = tokio::spawn(async move {
             let (mut socket, _) = nameserver.accept().await.unwrap();
@@ -318,10 +318,10 @@ async fn vip_mutation_after_runtime_construction_matches_invoked_java_check_api(
         reply(&mut socket, &command, 0, Some(route)).await;
     });
     let mut config = ClientConfig::new("check-client");
-    config.namesrv_addr = Some(nameserver_addr);
-    config.vip_channel_enabled = false;
-    config.enable_heartbeat_channel_event_listener = false;
-    config.mq_client_api_timeout = 1234;
+    config.set_namesrv_addr(Some(nameserver_addr));
+    config.set_vip_channel_enabled(false);
+    config.set_enable_heartbeat_channel_event_listener(false);
+    config.set_mq_client_api_timeout(1234);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -346,7 +346,11 @@ async fn vip_mutation_after_runtime_construction_matches_invoked_java_check_api(
 
     let ordinary_peer = check_peer(ordinary_broker, ordinary_port, expected_body.clone());
     runtime.check_client_in_broker().await.unwrap();
-    runtime.config().write().unwrap().vip_channel_enabled = true;
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_vip_channel_enabled(true);
     let vip_peer = check_peer(vip_broker, vip_port, expected_body);
     runtime.check_client_in_broker().await.unwrap();
 

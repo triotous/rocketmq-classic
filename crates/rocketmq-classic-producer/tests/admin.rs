@@ -314,8 +314,10 @@ fn producer_config(namesrv: String) -> ProducerConfig {
     static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let mut config = ProducerConfig::new(format!("admin-producer-{id}")).unwrap();
-    config.client_config_mut().namesrv_addr = Some(namesrv);
-    config.client_config_mut().instance_name = Some(format!("admin-{}-{id}", std::process::id()));
+    config.client_config_mut().set_namesrv_addr(Some(namesrv));
+    config
+        .client_config_mut()
+        .set_instance_name(Some(format!("admin-{}-{id}", std::process::id())));
     config
 }
 

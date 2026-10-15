@@ -17,7 +17,7 @@ impl ProducerRuntime for Producer {}
 
 fn explicit_config(ip: &str) -> ClientConfig {
     let mut config = ClientConfig::new(ip);
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     config
 }
 
@@ -80,7 +80,7 @@ async fn admin_registration_blocks_shutdown_until_owner_is_unregistered() {
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let expected = &fixture["registryTables"]["adminRegistration"]["shutdownGate"];
     let mut config = explicit_config("admin-shutdown-gate");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let manager = ClientRuntimeManager::new();
     let runtime = manager.get_or_create(&config).await.unwrap();
 
@@ -219,7 +219,7 @@ async fn cancelled_unregister_finishes_before_replacement_registration_and_last_
     let broker_address = broker.local_addr().unwrap().to_string();
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
     let (observed, started) = tokio::sync::oneshot::channel();
     let (release, reply_allowed) = tokio::sync::oneshot::channel();
     let (last_observed, last_started) = tokio::sync::oneshot::channel();

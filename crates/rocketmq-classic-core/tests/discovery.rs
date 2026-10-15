@@ -178,7 +178,7 @@ async fn explicit_nameserver_skips_fetch_but_provider_callbacks_update_like_java
     });
     let manager = ClientRuntimeManager::with_top_addressing(provider.clone());
     let mut config = ClientConfig::new("explicit");
-    config.namesrv_addr = Some("explicit:9876".into());
+    config.set_namesrv_addr(Some("explicit:9876".into()));
     let runtime = manager.get_or_create(&config).await.unwrap();
     runtime.start().await.unwrap();
     assert_eq!(provider.calls.load(Ordering::SeqCst), 0);

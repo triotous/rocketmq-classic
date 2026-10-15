@@ -21,7 +21,7 @@ async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_man
     let target = ClientRuntimeManager::new();
     let live = target.factory_table();
     let mut config = ClientConfig::new("cross-manager-table");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let id = config.build_client_id();
     let hook: Arc<dyn RpcHook> = Arc::new(Hook);
     let first = origin
@@ -53,7 +53,7 @@ async fn live_table_keeps_sharing_hooks_and_identity_cleanup_across_explicit_man
             .unwrap()
     ));
     let mut incompatible = config.clone();
-    incompatible.namespace_v2 = Some("different".into());
+    incompatible.set_namespace_v2(Some("different".into()));
     assert!(Arc::ptr_eq(
         &first,
         &target

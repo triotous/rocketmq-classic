@@ -429,7 +429,9 @@ mod tests {
         assert_eq!(java["timeoutScannerStopsAfterLastProducer"], true);
 
         let mut config = ProducerConfig::new("request-future-shutdown").unwrap();
-        config.client_config_mut().namesrv_addr = Some(String::new());
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
         let producer = Arc::new(Producer::with_runtime_manager(
             config,
             ClientRuntimeManager::new(),

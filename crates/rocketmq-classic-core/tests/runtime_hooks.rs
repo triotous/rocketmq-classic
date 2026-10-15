@@ -49,8 +49,8 @@ async fn nullable_heartbeat_language_reaches_hooks_and_json_wire() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("nullable-language-hook");
-    config.namesrv_addr = Some(address.clone());
-    config.language = None;
+    config.set_namesrv_addr(Some(address.clone()));
+    config.set_language(None);
     let hook = Arc::new(NullableLanguageHook::default());
     let runtime = ClientRuntimeManager::new()
         .get_or_create_with_hook(&config, Some(hook.clone()))
@@ -110,9 +110,9 @@ async fn runtime_config_mutations_reach_heartbeat_language_and_namespace_hook() 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("live-runtime-config");
-    config.namesrv_addr = Some(address.clone());
-    config.namespace_v2 = Some("before".into());
-    config.language = Some(LanguageCode::Java);
+    config.set_namesrv_addr(Some(address.clone()));
+    config.set_namespace_v2(Some("before".into()));
+    config.set_language(Some(LanguageCode::Java));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -120,10 +120,10 @@ async fn runtime_config_mutations_reach_heartbeat_language_and_namespace_hook() 
     let shared = runtime.config();
     {
         let mut config = shared.write().unwrap();
-        config.namespace_v2 = Some("after".into());
-        config.language = Some(LanguageCode::Cpp);
+        config.set_namespace_v2(Some("after".into()));
+        config.set_language(Some(LanguageCode::Cpp));
     }
-    assert_eq!(config.namespace_v2.as_deref(), Some("before"));
+    assert_eq!(config.namespace_v2(), Some("before"));
 
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
@@ -182,10 +182,10 @@ async fn runtime_hooks_reach_nameserver_heartbeat_v1_v2_and_oneway_with_source_s
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(address.clone());
-    config.namespace_v2 = Some("v2".into());
-    config.enable_stream_request_type = true;
-    config.language = Some(LanguageCode::Rust);
+    config.set_namesrv_addr(Some(address.clone()));
+    config.set_namespace_v2(Some("v2".into()));
+    config.set_enable_stream_request_type(true);
+    config.set_language(Some(LanguageCode::Rust));
     let runtime = ClientRuntimeManager::new()
         .get_or_create_with_hook(&config, Some(Arc::new(Signer)))
         .await

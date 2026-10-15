@@ -17,7 +17,7 @@ fn millis() -> i64 {
 #[tokio::test(start_paused = true)]
 async fn boot_timestamp_does_not_follow_simulated_monotonic_clock() {
     let mut config = ClientConfig::new("metadata-clock");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -44,7 +44,7 @@ async fn boot_timestamp_is_constructor_wall_clock_and_stable_across_shared_lifec
 
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("metadata");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let before = millis();
     let runtime = manager.get_or_create(&config).await.unwrap();
     let after = millis();
@@ -74,7 +74,7 @@ async fn explicit_offset_namespace_conversion_matches_invoked_java() {
         serde_json::from_str(include_str!("../../../fixtures/runtime/offsets.json")).unwrap();
     let mut config = ClientConfig::new("offset-client");
     config.set_namespace(Some("ignored-config-namespace".into()));
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -111,7 +111,7 @@ async fn explicit_offset_namespace_conversion_matches_invoked_java() {
             .unwrap();
         assert_eq!(Some(output), rows(&case["output"]));
         assert_eq!(
-            runtime.config().read().unwrap().namespace.as_deref(),
+            runtime.config().write().unwrap().get_namespace().unwrap(),
             Some("ignored-config-namespace")
         );
     }

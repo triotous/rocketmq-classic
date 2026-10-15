@@ -912,7 +912,8 @@ mod tests {
                 .expect("the trace producer group is always configured")
                 .starts_with("_INNER_TRACE_PRODUCER-tenant%orders-producer-PRODUCE-")
         );
-        assert_eq!(producer_config.client_config().namespace, None);
+        let mut client_config = producer_config.client_config().clone();
+        assert_eq!(client_config.get_namespace().unwrap(), None);
         assert_eq!(
             producer_config.client_config().namespace_v2(),
             Some("tenant-v2")

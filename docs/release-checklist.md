@@ -383,6 +383,17 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   The owner must provide any deployment-only credentials, topology, and
   maintenance inputs at that phase.
 
+- P18-V01 ClientConfig reverse-surface follow-up (`2026-10-15`, pinned Java
+  source `efa1be59d6fc747ad220f036c86030f05f0419f9`): all 33 Rust
+  `ClientConfig` backing fields are crate-private; the mapped getter/setter
+  surface remains public. Consumer running-info uses a read-only hidden bridge
+  for Java `MixAll.object2Properties`, retaining raw values and null omission.
+  The external compile-fail doctest passes. Core config differential passes
+  (21/21); Consumer all-feature tests pass (219 unit tests and all integration
+  and doc targets); Producer all-feature tests pass (142 unit tests and all
+  integration/doc targets). This closes the ClientConfig field-visibility
+  discrepancy only; broad P18-V01 remains open.
+
 - P18-V01 Remoting per-channel setting timing (`b37d8522`, 2026-10-15):
   `clientChannelMaxIdleTimeSeconds` and `disableNettyWorkerGroup` now have live
   adapters sampled for each new channel. Rust preserves the initialized idle
@@ -1176,3 +1187,17 @@ Before any publication:
   Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
   local Docker/Broker automation, and release version/registry-resolution
   checks remain open. Owner-run deployment/live Broker checks remain manual.
+
+- Current-tree server-free **P18-V02** rerun after the ClientConfig visibility
+  slice (2026-10-15; `fc8ce548` plus the tested worktree): default and
+  all-feature workspace tests, workspace check, strict all-target/all-feature
+  Clippy, Maven verify (37 scenarios and Java/Rust cross-decodes), comparator
+  self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases
+  × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations),
+  release examples, workspace benchmark compilation, locked Cargo metadata,
+  workspace metadata/license/dependency checks, all seven package listings,
+  UTC and Asia/Taipei unique-ID tests, formatting, and diff checks pass. This
+  closes server-free P18-V02 on the tested tree. Broad P18-V01, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry-resolution checks remain open. Owner-run
+  deployment/live Broker checks remain manual validation.

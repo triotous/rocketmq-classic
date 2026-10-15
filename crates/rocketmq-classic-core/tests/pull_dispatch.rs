@@ -64,7 +64,7 @@ async fn settle() {
 #[tokio::test(start_paused = true)]
 async fn fifo_mode_dispatch_delay_and_group_selection_use_current_registration() {
     let mut config = ClientConfig::new("pull-dispatch");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -133,7 +133,7 @@ async fn fifo_mode_dispatch_delay_and_group_selection_use_current_registration()
 #[tokio::test(start_paused = true)]
 async fn scheduled_tasks_serialize_but_fifo_dispatch_is_independent_and_panic_isolated() {
     let mut config = ClientConfig::new("pull-task-serialization");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -261,7 +261,7 @@ impl ConsumerRuntime for BlockingConsumer {
 async fn shutdown_cancels_both_inflight_workers_and_drops_pending_work() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let mut config = ClientConfig::new("pull-cancellation");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -323,7 +323,7 @@ async fn shutdown_cancels_both_inflight_workers_and_drops_pending_work() {
 async fn normal_shutdown_preserves_java_one_second_scheduled_executor_grace() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let mut config = ClientConfig::new("pull-graceful-stop");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -361,7 +361,7 @@ async fn normal_shutdown_preserves_java_one_second_scheduled_executor_grace() {
 #[tokio::test]
 async fn scheduled_executor_can_run_before_transport_start_without_starting_request_dispatch() {
     let mut config = ClientConfig::new("pull-prestart-executor");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

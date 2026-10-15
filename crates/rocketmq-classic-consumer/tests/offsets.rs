@@ -92,7 +92,7 @@ async fn make_runtime(
     nameserver_address: Option<String>,
 ) -> Arc<rocketmq_classic_core::runtime::ClientRuntime> {
     let mut config = ClientConfig::new("remote-offset-store-test");
-    config.namesrv_addr = nameserver_address;
+    config.set_namesrv_addr(nameserver_address);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

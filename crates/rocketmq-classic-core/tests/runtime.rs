@@ -170,7 +170,7 @@ async fn registered_consumer_rejects_null_ordered_route_queue_list_like_java() {
     let body = serde_json::to_vec(&case["input"]).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("null-ordered-consumer");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -232,7 +232,7 @@ async fn registered_consumer_accepts_null_static_route_queue_list_like_java() {
     let body = serde_json::to_vec(&case["input"]).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("null-static-consumer");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -297,7 +297,7 @@ async fn registered_consumer_nested_route_collection_outcomes_match_invoked_java
         let body = serde_json::to_vec(&case["input"]).unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut config = ClientConfig::new(format!("route-nested-consumer-{id}"));
-        config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+        config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
         let runtime = ClientRuntimeManager::new()
             .get_or_create(&config)
             .await
@@ -444,7 +444,7 @@ async fn all_topic_refresh_unions_registered_topics_and_continues_after_rejectio
     }
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("all-topic-refresh");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -560,7 +560,7 @@ async fn null_subscription_topic_success_route_fails_before_cache_publication() 
     );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("null-topic-success");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -628,13 +628,13 @@ async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
     let java = &fixture["managerSharing"];
     let manager = ClientRuntimeManager::new();
     let mut first_config = ClientConfig::new("198.51.100.223");
-    first_config.instance_name = Some("phase6-manager-sharing".into());
-    first_config.namesrv_addr = Some(String::new());
+    first_config.set_instance_name(Some("phase6-manager-sharing".into()));
+    first_config.set_namesrv_addr(Some(String::new()));
     let mut later_config = first_config.clone();
-    later_config.namesrv_addr = Some("different-nameserver:9876".into());
-    later_config.namespace_v2 = Some("different-namespace".into());
-    later_config.use_tls = true;
-    later_config.mq_client_api_timeout = 1234;
+    later_config.set_namesrv_addr(Some("different-nameserver:9876".into()));
+    later_config.set_namespace_v2(Some("different-namespace".into()));
+    later_config.set_use_tls(true);
+    later_config.set_mq_client_api_timeout(1234);
 
     let first_hook: Arc<dyn RpcHook> = Arc::new(IdentityHook);
     let later_hook: Arc<dyn RpcHook> = Arc::new(IdentityHook);
@@ -650,28 +650,28 @@ async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
     assert_eq!(first.client_id() == later.client_id(), java["sameClientId"]);
     assert_eq!(Arc::ptr_eq(&first, &later), java["sameRuntimeIdentity"]);
     assert_eq!(
-        first.config().read().unwrap().namesrv_addr.as_deref(),
+        first.config().read().unwrap().get_namesrv_addr().as_deref(),
         java["retainedNameserver"].as_str()
     );
     assert_eq!(
-        first.config().read().unwrap().namespace_v2,
-        java["retainedNamespaceV2"].as_str().map(str::to_owned)
+        first.config().read().unwrap().namespace_v2(),
+        java["retainedNamespaceV2"].as_str()
     );
-    assert_eq!(first.config().read().unwrap().use_tls, java["retainedTls"]);
     assert_eq!(
-        first.config().read().unwrap().mq_client_api_timeout,
+        first.config().read().unwrap().use_tls(),
+        java["retainedTls"]
+    );
+    assert_eq!(
+        first.config().read().unwrap().mq_client_api_timeout(),
         java["retainedTimeout"]
     );
     assert_eq!(
-        later_config.namesrv_addr.as_deref(),
+        later_config.get_namesrv_addr().as_deref(),
         Some("different-nameserver:9876")
     );
-    assert_eq!(
-        later_config.namespace_v2.as_deref(),
-        Some("different-namespace")
-    );
-    assert!(later_config.use_tls);
-    assert_eq!(later_config.mq_client_api_timeout, 1234);
+    assert_eq!(later_config.namespace_v2(), Some("different-namespace"));
+    assert!(later_config.use_tls());
+    assert_eq!(later_config.mq_client_api_timeout(), 1234);
     let registered_hooks = first.remoting().get_rpc_hooks();
     assert_eq!(java["firstHookRetained"], true);
     assert_eq!(java["laterHookIgnored"], true);
@@ -691,10 +691,10 @@ async fn p6_v02_same_client_id_reuses_first_java_manager_runtime() {
 async fn p6_v02_failed_construction_can_retry_and_stale_removal_preserves_replacement() {
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 0;
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(0);
     assert!(manager.get_or_create(&config).await.is_err());
-    config.concurrent_heartbeat_thread_pool_size = 1;
+    config.set_concurrent_heartbeat_thread_pool_size(1);
     let first = manager.get_or_create(&config).await.unwrap();
     assert!(
         manager
@@ -727,8 +727,8 @@ async fn concurrent_heartbeat_pool_constructor_matches_pinned_java_boundaries() 
     for case in cases {
         let pool_size = case["poolSize"].as_i64().unwrap() as i32;
         let mut config = ClientConfig::new(format!("heartbeat-pool-{pool_size}"));
-        config.enable_concurrent_heartbeat = true;
-        config.concurrent_heartbeat_thread_pool_size = pool_size;
+        config.set_enable_concurrent_heartbeat(true);
+        config.set_concurrent_heartbeat_thread_pool_size(pool_size);
         match case["outcome"].as_str().unwrap() {
             "OK" => {
                 let runtime = manager.get_or_create(&config).await.unwrap();
@@ -737,7 +737,7 @@ async fn concurrent_heartbeat_pool_constructor_matches_pinned_java_boundaries() 
                         .config()
                         .read()
                         .unwrap()
-                        .concurrent_heartbeat_thread_pool_size,
+                        .concurrent_heartbeat_thread_pool_size(),
                     pool_size
                 );
                 assert_eq!(
@@ -769,12 +769,12 @@ async fn invalid_periodic_intervals_match_java_start_failure_and_rollback() {
         let field = case["field"].as_str().unwrap();
         let interval = case["interval"].as_i64().unwrap() as i32;
         let mut config = ClientConfig::new(format!("invalid-schedule-{field}"));
-        config.namesrv_addr = Some(String::new());
+        config.set_namesrv_addr(Some(String::new()));
         match field {
-            "pollNameServerInterval" => config.poll_name_server_interval = interval,
-            "heartbeatBrokerInterval" => config.heartbeat_broker_interval = interval,
+            "pollNameServerInterval" => config.set_poll_name_server_interval(interval),
+            "heartbeatBrokerInterval" => config.set_heartbeat_broker_interval(interval),
             "persistConsumerOffsetInterval" => {
-                config.persist_consumer_offset_interval = interval;
+                config.set_persist_consumer_offset_interval(interval)
             }
             field => panic!("unexpected Java scheduled field {field}"),
         }
@@ -909,7 +909,7 @@ async fn admin_registration_retains_owner_and_matches_invoked_java() {
 async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         for body in [
@@ -967,7 +967,7 @@ async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() 
 async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
     let body = serde_json::to_vec(&fixture["cases"][0]["input"]).unwrap();
@@ -1072,7 +1072,7 @@ async fn registered_consumer_need_update_republishes_unchanged_route_like_java()
     let body = serde_json::to_vec(&java["input"]).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("route-consumer-need-update");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         for _ in 0..2 {
@@ -1182,7 +1182,7 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
     let recovery_body = serde_json::to_vec(&java["recoveryInput"]).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("route-null-map-consumer");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         for body in [initial_body, invalid_body, recovery_body] {
@@ -1315,7 +1315,7 @@ async fn registered_clients_route_refresh_recovers_after_null_broker_map_failure
 async fn different_topic_refreshes_serialize_wire_fetches_without_blocking_snapshot_readers() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -1424,7 +1424,7 @@ async fn accepted_empty_route_keeps_route_presence_separate_from_publish_queue_o
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let body = serde_json::to_vec(&java["input"]).unwrap();
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
@@ -1544,8 +1544,8 @@ async fn callback_executor_capacity_stays_at_its_construction_value_after_config
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("callback-threads-mutation");
-    config.namesrv_addr = Some(String::new());
-    config.client_callback_executor_threads = 1;
+    config.set_namesrv_addr(Some(String::new()));
+    config.set_client_callback_executor_threads(1);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -1555,20 +1555,20 @@ async fn callback_executor_capacity_stays_at_its_construction_value_after_config
             .config()
             .read()
             .unwrap()
-            .client_callback_executor_threads,
+            .client_callback_executor_threads(),
         java["configuredAtConstruction"].as_i64().unwrap() as i32
     );
     runtime
         .config()
         .write()
         .unwrap()
-        .client_callback_executor_threads = 2;
+        .set_client_callback_executor_threads(2);
     assert_eq!(
         runtime
             .config()
             .read()
             .unwrap()
-            .client_callback_executor_threads,
+            .client_callback_executor_threads(),
         java["configAfterMutation"].as_i64().unwrap() as i32
     );
 
@@ -1644,7 +1644,7 @@ async fn callback_executor_capacity_stays_at_its_construction_value_after_config
 async fn default_route_fetch_uses_auto_create_topic_and_clamps_both_counts_from_read_count() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

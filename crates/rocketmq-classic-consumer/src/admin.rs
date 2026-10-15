@@ -436,7 +436,7 @@ pub(crate) fn pull_consumer_running_info_properties(
     // the inherited ClientConfig.unitMode field therefore wins this duplicate.
     properties.insert(
         "unitMode".into(),
-        config.client_config().unit_mode.to_string(),
+        config.client_config().unit_mode().to_string(),
     );
     // Java 5.5.1's DefaultMQPullConsumer field is fixed at 16.
     properties.insert(
@@ -467,109 +467,7 @@ fn append_client_running_info_properties(
 }
 
 fn client_config_running_info_properties(config: &ClientConfig) -> BTreeMap<String, String> {
-    let mut properties = BTreeMap::new();
-    insert_optional_property(
-        &mut properties,
-        "namesrvAddr",
-        config.namesrv_addr.as_deref(),
-    );
-    insert_optional_property(&mut properties, "clientIP", config.client_ip.as_deref());
-    insert_optional_property(
-        &mut properties,
-        "instanceName",
-        config.instance_name.as_deref(),
-    );
-    properties.insert(
-        "clientCallbackExecutorThreads".into(),
-        config.client_callback_executor_threads.to_string(),
-    );
-    insert_optional_property(&mut properties, "namespace", config.namespace.as_deref());
-    insert_optional_property(
-        &mut properties,
-        "namespaceV2",
-        config.namespace_v2.as_deref(),
-    );
-    if let Some(access_channel) = config.access_channel {
-        properties.insert("accessChannel".into(), access_channel.name().into());
-    }
-    properties.insert(
-        "pollNameServerInterval".into(),
-        config.poll_name_server_interval.to_string(),
-    );
-    properties.insert(
-        "heartbeatBrokerInterval".into(),
-        config.heartbeat_broker_interval.to_string(),
-    );
-    properties.insert(
-        "persistConsumerOffsetInterval".into(),
-        config.persist_consumer_offset_interval.to_string(),
-    );
-    properties.insert(
-        "pullTimeDelayMillsWhenException".into(),
-        config.pull_time_delay_millis_when_exception.to_string(),
-    );
-    properties.insert(
-        "traceMsgBatchNum".into(),
-        config.trace_msg_batch_num.to_string(),
-    );
-    properties.insert("unitMode".into(), config.unit_mode.to_string());
-    insert_optional_property(&mut properties, "unitName", config.unit_name.as_deref());
-    properties.insert("decodeReadBody".into(), config.decode_read_body.to_string());
-    properties.insert(
-        "decodeDecompressBody".into(),
-        config.decode_decompress_body.to_string(),
-    );
-    properties.insert(
-        "vipChannelEnabled".into(),
-        config.vip_channel_enabled.to_string(),
-    );
-    properties.insert("useHeartbeatV2".into(), config.use_heartbeat_v2.to_string());
-    properties.insert("useTLS".into(), config.use_tls.to_string());
-    insert_optional_property(
-        &mut properties,
-        "socksProxyConfig",
-        config.socks_proxy_config.as_deref(),
-    );
-    properties.insert(
-        "mqClientApiTimeout".into(),
-        config.mq_client_api_timeout.to_string(),
-    );
-    properties.insert("detectTimeout".into(), config.detect_timeout.to_string());
-    properties.insert("detectInterval".into(), config.detect_interval.to_string());
-    if let Some(language) = config.language {
-        properties.insert("language".into(), language.name().into());
-    }
-    properties.insert(
-        "enableStreamRequestType".into(),
-        config.enable_stream_request_type.to_string(),
-    );
-    properties.insert(
-        "sendLatencyEnable".into(),
-        config.send_latency_enable.to_string(),
-    );
-    properties.insert(
-        "startDetectorEnable".into(),
-        config.start_detector_enable.to_string(),
-    );
-    properties.insert(
-        "enableHeartbeatChannelEventListener".into(),
-        config.enable_heartbeat_channel_event_listener.to_string(),
-    );
-    properties.insert(
-        "enableConcurrentHeartbeat".into(),
-        config.enable_concurrent_heartbeat.to_string(),
-    );
-    properties.insert(
-        "concurrentHeartbeatThreadPoolSize".into(),
-        config.concurrent_heartbeat_thread_pool_size.to_string(),
-    );
-    properties.insert("enableTrace".into(), config.enable_trace.to_string());
-    insert_optional_property(&mut properties, "traceTopic", config.trace_topic.as_deref());
-    properties.insert(
-        "maxPageSizeInGetMetadata".into(),
-        config.max_page_size_in_get_metadata.to_string(),
-    );
-    properties
+    config.to_java_properties()
 }
 
 fn append_client_runtime_properties(
@@ -586,16 +484,6 @@ fn append_client_runtime_properties(
         nameserver_address.push(';');
     }
     properties.insert("PROP_NAMESERVER_ADDR".into(), nameserver_address);
-}
-
-fn insert_optional_property(
-    properties: &mut BTreeMap<String, String>,
-    key: &str,
-    value: Option<&str>,
-) {
-    if let Some(value) = value {
-        properties.insert(key.to_owned(), value.to_owned());
-    }
 }
 
 impl RequestProcessor for DirectConsumeProcessor {

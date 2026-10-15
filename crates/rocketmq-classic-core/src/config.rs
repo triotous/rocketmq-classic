@@ -86,42 +86,53 @@ impl std::fmt::Display for AccessChannel {
     }
 }
 
+/// Settings corresponding to Java 5.5.1 `ClientConfig`.
+///
+/// Java keeps these values behind methods, so Rust callers use the matching
+/// accessors instead of mutating implementation fields directly.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::config::ClientConfig;
+///
+/// let mut config = ClientConfig::default();
+/// config.client_ip = Some("192.0.2.1".to_owned());
+/// ```
 #[derive(Clone, PartialEq, Eq)]
 pub struct ClientConfig {
-    pub namesrv_addr: Option<String>,
-    pub client_ip: Option<String>,
-    pub instance_name: Option<String>,
-    pub client_callback_executor_threads: i32,
-    pub namespace: Option<String>,
+    pub(crate) namesrv_addr: Option<String>,
+    pub(crate) client_ip: Option<String>,
+    pub(crate) instance_name: Option<String>,
+    pub(crate) client_callback_executor_threads: i32,
+    pub(crate) namespace: Option<String>,
     namespace_initialized: bool,
-    pub namespace_v2: Option<String>,
-    pub access_channel: Option<AccessChannel>,
-    pub poll_name_server_interval: i32,
-    pub heartbeat_broker_interval: i32,
-    pub persist_consumer_offset_interval: i32,
-    pub pull_time_delay_millis_when_exception: i64,
-    pub trace_msg_batch_num: i32,
-    pub unit_mode: bool,
-    pub unit_name: Option<String>,
-    pub decode_read_body: bool,
-    pub decode_decompress_body: bool,
-    pub vip_channel_enabled: bool,
-    pub use_heartbeat_v2: bool,
-    pub use_tls: bool,
-    pub socks_proxy_config: Option<String>,
-    pub mq_client_api_timeout: i32,
-    pub detect_timeout: i32,
-    pub detect_interval: i32,
-    pub language: Option<LanguageCode>,
-    pub enable_stream_request_type: bool,
-    pub send_latency_enable: bool,
-    pub start_detector_enable: bool,
-    pub enable_heartbeat_channel_event_listener: bool,
-    pub enable_concurrent_heartbeat: bool,
-    pub concurrent_heartbeat_thread_pool_size: i32,
-    pub enable_trace: bool,
-    pub trace_topic: Option<String>,
-    pub max_page_size_in_get_metadata: i32,
+    pub(crate) namespace_v2: Option<String>,
+    pub(crate) access_channel: Option<AccessChannel>,
+    pub(crate) poll_name_server_interval: i32,
+    pub(crate) heartbeat_broker_interval: i32,
+    pub(crate) persist_consumer_offset_interval: i32,
+    pub(crate) pull_time_delay_millis_when_exception: i64,
+    pub(crate) trace_msg_batch_num: i32,
+    pub(crate) unit_mode: bool,
+    pub(crate) unit_name: Option<String>,
+    pub(crate) decode_read_body: bool,
+    pub(crate) decode_decompress_body: bool,
+    pub(crate) vip_channel_enabled: bool,
+    pub(crate) use_heartbeat_v2: bool,
+    pub(crate) use_tls: bool,
+    pub(crate) socks_proxy_config: Option<String>,
+    pub(crate) mq_client_api_timeout: i32,
+    pub(crate) detect_timeout: i32,
+    pub(crate) detect_interval: i32,
+    pub(crate) language: Option<LanguageCode>,
+    pub(crate) enable_stream_request_type: bool,
+    pub(crate) send_latency_enable: bool,
+    pub(crate) start_detector_enable: bool,
+    pub(crate) enable_heartbeat_channel_event_listener: bool,
+    pub(crate) enable_concurrent_heartbeat: bool,
+    pub(crate) concurrent_heartbeat_thread_pool_size: i32,
+    pub(crate) enable_trace: bool,
+    pub(crate) trace_topic: Option<String>,
+    pub(crate) max_page_size_in_get_metadata: i32,
 }
 
 /// Shared mutable configuration exposed by a constructed client runtime.
@@ -521,6 +532,82 @@ impl ClientConfig {
     }
     pub fn set_concurrent_heartbeat_thread_pool_size(&mut self, value: i32) {
         self.concurrent_heartbeat_thread_pool_size = value;
+    }
+
+    /// Returns the Java-compatible non-null field snapshot used by
+    /// `MixAll.object2Properties` when building consumer running information.
+    ///
+    /// This is an internal bridge for the separately packaged Consumer crate;
+    /// it does not expose mutable configuration storage.
+    #[doc(hidden)]
+    pub fn to_java_properties(&self) -> std::collections::BTreeMap<String, String> {
+        let mut properties = std::collections::BTreeMap::new();
+        macro_rules! insert_value {
+            ($key:literal, $field:ident) => {
+                properties.insert($key.to_owned(), self.$field.to_string());
+            };
+        }
+        macro_rules! insert_optional {
+            ($key:literal, $field:ident) => {
+                if let Some(value) = &self.$field {
+                    properties.insert($key.to_owned(), value.clone());
+                }
+            };
+        }
+
+        insert_optional!("namesrvAddr", namesrv_addr);
+        insert_optional!("clientIP", client_ip);
+        insert_optional!("instanceName", instance_name);
+        insert_value!(
+            "clientCallbackExecutorThreads",
+            client_callback_executor_threads
+        );
+        insert_optional!("namespace", namespace);
+        insert_optional!("namespaceV2", namespace_v2);
+        if let Some(access_channel) = self.access_channel {
+            properties.insert("accessChannel".to_owned(), access_channel.name().to_owned());
+        }
+        insert_value!("pollNameServerInterval", poll_name_server_interval);
+        insert_value!("heartbeatBrokerInterval", heartbeat_broker_interval);
+        insert_value!(
+            "persistConsumerOffsetInterval",
+            persist_consumer_offset_interval
+        );
+        insert_value!(
+            "pullTimeDelayMillsWhenException",
+            pull_time_delay_millis_when_exception
+        );
+        insert_value!("traceMsgBatchNum", trace_msg_batch_num);
+        insert_value!("unitMode", unit_mode);
+        insert_optional!("unitName", unit_name);
+        insert_value!("decodeReadBody", decode_read_body);
+        insert_value!("decodeDecompressBody", decode_decompress_body);
+        insert_value!("vipChannelEnabled", vip_channel_enabled);
+        insert_value!("useHeartbeatV2", use_heartbeat_v2);
+        insert_value!("useTLS", use_tls);
+        insert_optional!("socksProxyConfig", socks_proxy_config);
+        insert_value!("mqClientApiTimeout", mq_client_api_timeout);
+        insert_value!("detectTimeout", detect_timeout);
+        insert_value!("detectInterval", detect_interval);
+        if let Some(language) = self.language {
+            properties.insert("language".to_owned(), language.name().to_owned());
+        }
+        insert_value!("enableStreamRequestType", enable_stream_request_type);
+        insert_value!("sendLatencyEnable", send_latency_enable);
+        insert_value!("startDetectorEnable", start_detector_enable);
+        insert_value!(
+            "enableHeartbeatChannelEventListener",
+            enable_heartbeat_channel_event_listener
+        );
+        insert_value!("enableConcurrentHeartbeat", enable_concurrent_heartbeat);
+        insert_value!(
+            "concurrentHeartbeatThreadPoolSize",
+            concurrent_heartbeat_thread_pool_size
+        );
+        insert_value!("enableTrace", enable_trace);
+        insert_optional!("traceTopic", trace_topic);
+        insert_value!("maxPageSizeInGetMetadata", max_page_size_in_get_metadata);
+        properties
     }
 
     pub fn set_namesrv_addr(&mut self, address: Option<String>) {

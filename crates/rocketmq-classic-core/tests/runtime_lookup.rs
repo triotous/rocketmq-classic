@@ -63,10 +63,10 @@ async fn setup_for_topic(
 ) -> (Arc<ClientRuntime>, tokio::task::JoinHandle<()>) {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("lookup");
-    config.client_ip = Some("192.0.2.6".into());
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
-    config.vip_channel_enabled = vip;
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_client_ip(Some("192.0.2.6".into()));
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
+    config.set_vip_channel_enabled(vip);
+    config.set_enable_heartbeat_channel_event_listener(false);
     let expected_topic = expected_topic.to_owned();
     let peer = tokio::spawn(async move {
         let (mut socket, _) = nameserver.accept().await.unwrap();
@@ -110,7 +110,7 @@ async fn null_topic_broker_selection_matches_invoked_java_failure() {
         "NullPointerException"
     );
     let mut config = ClientConfig::new("null-broker-topic");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -137,7 +137,7 @@ async fn null_topic_route_lookups_match_invoked_java_control_flow() {
 
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("null-topic-route-lookups");
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -193,7 +193,7 @@ async fn null_topic_consumer_and_assignment_lookups_match_invoked_java() {
     assert_eq!(java["assignment"]["outcome"], "NullPointerException");
 
     let mut config = ClientConfig::new("null-broker-lookup-rpc-topics");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -344,7 +344,11 @@ async fn empty_topic_uses_normal_route_refresh_and_broker_lookup_flow() {
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (runtime, name_peer) =
         setup_for_topic(Some(broker.local_addr().unwrap().to_string()), false, "").await;
-    runtime.config().write().unwrap().mq_client_api_timeout = 150;
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_mq_client_api_timeout(150);
     let broker_peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
 
@@ -688,8 +692,12 @@ async fn query_first_refreshes_and_both_lookup_rpcs_apply_vip_port() {
     let address = broker.local_addr().unwrap();
     let (runtime, name_peer) =
         setup(Some(format!("127.0.0.1:{}", address.port() + 2)), false).await;
-    assert!(!runtime.config().read().unwrap().vip_channel_enabled);
-    runtime.config().write().unwrap().vip_channel_enabled = true;
+    assert!(!runtime.config().read().unwrap().vip_channel_enabled());
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_vip_channel_enabled(true);
     let peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
         let command = read(&mut socket).await;
@@ -796,8 +804,15 @@ async fn consumer_lookup_uses_timeout_mutated_after_runtime_construction() {
 
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (runtime, name_peer) = setup(Some(broker.local_addr().unwrap().to_string()), false).await;
-    assert_eq!(runtime.config().read().unwrap().mq_client_api_timeout, 3000);
-    runtime.config().write().unwrap().mq_client_api_timeout = timeout_ms as i32;
+    assert_eq!(
+        runtime.config().read().unwrap().mq_client_api_timeout(),
+        3000
+    );
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_mq_client_api_timeout(timeout_ms as i32);
     let peer_group = group.clone();
     let peer = tokio::spawn(async move {
         let (mut socket, _) = broker.accept().await.unwrap();
@@ -951,8 +966,8 @@ async fn query_topic_route_refreshes_only_missing_cache_even_for_empty_brokers()
 async fn direct_publish_queue_lookup_does_not_publish_route_cache() {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("direct-publish-queue-lookup");
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -1034,8 +1049,8 @@ async fn default_topic_route_api_matches_invoked_java_api_fixture() {
 
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("default-topic-route-api");
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

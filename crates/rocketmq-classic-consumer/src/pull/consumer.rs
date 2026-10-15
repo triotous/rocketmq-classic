@@ -1506,8 +1506,8 @@ impl PullConsumer {
             .pull_message(&broker_address, &header, deadline)
             .await?;
         let options = DecodeOptions {
-            read_body: client_config.decode_read_body,
-            decompress_body: client_config.decode_decompress_body,
+            read_body: client_config.decode_read_body(),
+            decompress_body: client_config.decode_decompress_body(),
             ..DecodeOptions::default()
         };
         let mut processed =
@@ -1895,7 +1895,9 @@ impl PullConsumer {
 
     fn unregister_deadline(&self) -> Instant {
         Instant::now()
-            + Duration::from_millis(self.config.client_config().mq_client_api_timeout.max(0) as u64)
+            + Duration::from_millis(
+                self.config.client_config().mq_client_api_timeout().max(0) as u64
+            )
     }
 }
 

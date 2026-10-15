@@ -2668,7 +2668,7 @@ async fn group_unregister_matches_invoked_java_consumer_methods_and_removes_curr
 async fn live_table_replacement_invalidates_old_lease_and_retains_owners_without_runtime() {
     let manager = ClientRuntimeManager::new();
     let mut config = ClientConfig::new("registry-lease");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = manager.get_or_create(&config).await.unwrap();
     runtime.start().await.unwrap();
     let table = runtime.consumer_table();
@@ -2811,8 +2811,8 @@ async fn running_table_writes_wait_for_unregister_and_cancelled_queue_writes_do_
         assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
     });
     let mut config = ClientConfig::new("registry-rpc-order");
-    config.namesrv_addr = Some(nameserver_address);
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_namesrv_addr(Some(nameserver_address));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

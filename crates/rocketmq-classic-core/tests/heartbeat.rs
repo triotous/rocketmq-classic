@@ -54,9 +54,9 @@ async fn v2_full_and_simple_wire_preserve_duplicate_consumer_metadata() {
         }
     });
     let mut config = ClientConfig::new("duplicate-wire");
-    config.use_heartbeat_v2 = true;
-    config.vip_channel_enabled = false;
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_use_heartbeat_v2(true);
+    config.set_vip_channel_enabled(false);
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = runtime(config, &[address]).await;
     let first = Arc::new(Consumer(Mutex::new(SubscriptionData {
         topic: Some("topic".into()),
@@ -117,10 +117,10 @@ async fn heartbeat_protocol_mode_reads_live_v2_setting_after_construction() {
         assert_eq!(observed_modes, ["V1", "V2"]);
     });
     let mut config = ClientConfig::new("heartbeat-mode");
-    config.use_heartbeat_v2 = false;
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_use_heartbeat_v2(false);
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = runtime(config, &[address.clone()]).await;
-    assert!(!runtime.config().read().unwrap().use_heartbeat_v2);
+    assert!(!runtime.config().read().unwrap().use_heartbeat_v2());
     let producer = Arc::new(Producer);
     let _lease = runtime
         .register_producer("producer", producer.clone())
@@ -142,7 +142,7 @@ async fn heartbeat_protocol_mode_reads_live_v2_setting_after_construction() {
             .await
             .unwrap()
     );
-    runtime.config().write().unwrap().use_heartbeat_v2 = true;
+    runtime.config().write().unwrap().set_use_heartbeat_v2(true);
     assert!(
         runtime
             .send_heartbeat_to_broker(0, "broker", &address)
@@ -190,9 +190,9 @@ async fn all_broker_wrapper_reads_live_v2_before_concurrent_v1_setting() {
     });
 
     let mut config = ClientConfig::new("all-broker-v2-mode");
-    config.use_heartbeat_v2 = false;
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 2;
+    config.set_use_heartbeat_v2(false);
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(2);
     let runtime = runtime(config, &[address]).await;
     let producer = Arc::new(Producer);
     let _lease = runtime
@@ -206,7 +206,7 @@ async fn all_broker_wrapper_reads_live_v2_before_concurrent_v1_setting() {
             .await
             .unwrap()
     );
-    runtime.config().write().unwrap().use_heartbeat_v2 = true;
+    runtime.config().write().unwrap().set_use_heartbeat_v2(true);
     assert!(runtime.send_heartbeat_to_all_brokers().await.unwrap());
     assert!(
         runtime
@@ -255,9 +255,9 @@ async fn enabled_vip_does_not_rewrite_an_explicit_heartbeat_address() {
         respond(&mut stream, &command, None, false, false).await;
     });
     let mut config = ClientConfig::new("heartbeat-vip-address");
-    config.namesrv_addr = Some(String::new());
-    config.vip_channel_enabled = true;
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_namesrv_addr(Some(String::new()));
+    config.set_vip_channel_enabled(true);
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await
@@ -328,7 +328,7 @@ async fn runtime_with_broker_addrs(
     broker_addrs: serde_json::Value,
 ) -> Arc<ClientRuntime> {
     let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    config.namesrv_addr = Some(nameserver.local_addr().unwrap().to_string());
+    config.set_namesrv_addr(Some(nameserver.local_addr().unwrap().to_string()));
     let route = serde_json::to_vec(&serde_json::json!({
         "queueDatas": [{"brokerName":"broker", "readQueueNums":1,"writeQueueNums":1,"perm":6,"topicSysFlag":0}],
         "brokerDatas": [{"cluster":"cluster", "brokerName":"broker", "brokerAddrs":broker_addrs}], "filterServerTable":{}
@@ -361,7 +361,7 @@ async fn null_broker_value_is_cached_but_never_dialed_for_heartbeat() {
         respond(&mut stream, &command, None, false, false).await;
     });
     let mut config = ClientConfig::new("null-heartbeat-peer");
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime =
         runtime_with_broker_addrs(config, serde_json::json!({"0":null,"1":address})).await;
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
@@ -384,7 +384,7 @@ async fn null_broker_value_is_cached_but_never_dialed_for_heartbeat() {
 #[tokio::test]
 async fn heartbeat_unboxes_nonnull_null_ids_and_skips_null_values() {
     let mut config = ClientConfig::new("null-heartbeat-broker-id");
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime =
         runtime_with_broker_addrs(config, serde_json::json!({"null":"127.0.0.1:1"})).await;
     let producer = Arc::new(Producer);
@@ -427,7 +427,7 @@ async fn heartbeat_unboxes_nonnull_null_ids_and_skips_null_values() {
     runtime.remoting().shutdown().await;
 
     let mut config = ClientConfig::new("null-heartbeat-broker-id-null-value");
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = runtime_with_broker_addrs(config, serde_json::json!({"null":null})).await;
     let producer = Arc::new(Producer);
     let _lease = runtime
@@ -468,7 +468,7 @@ async fn single_peer_sends_to_slave_for_producer_only_and_reports_wire_failure()
             .unwrap();
     });
     let mut config = ClientConfig::new("single-peer");
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_enable_heartbeat_channel_event_listener(false);
     let runtime = runtime(config, std::slice::from_ref(&address)).await;
     assert!(
         !runtime
@@ -624,7 +624,7 @@ async fn disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat() {
         let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = broker.local_addr().unwrap().to_string();
         let mut config = ClientConfig::new(format!("no-active-heartbeat-{enabled}"));
-        config.enable_heartbeat_channel_event_listener = enabled;
+        config.set_enable_heartbeat_channel_event_listener(enabled);
         let runtime = runtime(
             config,
             if enabled {
@@ -647,7 +647,7 @@ async fn disabled_or_unknown_channel_does_not_send_unsolicited_heartbeat() {
             .config()
             .write()
             .unwrap()
-            .enable_heartbeat_channel_event_listener = !enabled;
+            .set_enable_heartbeat_channel_event_listener(!enabled);
         let listener_after_mutation = runtime.remoting().get_channel_event_listener();
         assert_eq!(
             listener_after_mutation.is_some(),
@@ -775,9 +775,9 @@ async fn v2_negotiates_full_simple_subscription_change_version_and_rebalance() {
         assert_ne!(fingerprints[6], fingerprints[0]);
     });
     let mut config = ClientConfig::new("heartbeat");
-    config.use_heartbeat_v2 = false;
+    config.set_use_heartbeat_v2(false);
     let runtime = runtime(config, std::slice::from_ref(&address)).await;
-    runtime.config().write().unwrap().use_heartbeat_v2 = true;
+    runtime.config().write().unwrap().set_use_heartbeat_v2(true);
     let producer = Arc::new(Producer);
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData {
         topic: Some("topic".into()),
@@ -980,13 +980,13 @@ async fn concurrent_v1_uses_parallel_peers_and_busy_heartbeat_gate_skips_a_round
         respond(&mut stream, &command, None, false, false).await;
     });
     let mut config = ClientConfig::new("heartbeat");
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 2;
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(2);
     let runtime = runtime(config, &addresses).await;
     {
         let config = runtime.config();
         let mut config = config.write().unwrap();
-        config.concurrent_heartbeat_thread_pool_size = 1;
+        config.set_concurrent_heartbeat_thread_pool_size(1);
     }
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
     runtime
@@ -1056,13 +1056,13 @@ async fn enabling_concurrent_heartbeat_after_construction_has_no_executor() {
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = broker.local_addr().unwrap().to_string();
     let mut config = ClientConfig::new("late-concurrent-heartbeat");
-    config.enable_concurrent_heartbeat = false;
+    config.set_enable_concurrent_heartbeat(false);
     let runtime = runtime(config, std::slice::from_ref(&address)).await;
     runtime
         .config()
         .write()
         .unwrap()
-        .enable_concurrent_heartbeat = true;
+        .set_enable_concurrent_heartbeat(true);
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
     let _lease = runtime
         .register_consumer("consumer", consumer.clone())
@@ -1135,14 +1135,14 @@ async fn disabling_concurrent_heartbeat_after_construction_uses_serial_path() {
     }
 
     let mut config = ClientConfig::new("serial-after-concurrent-heartbeat");
-    config.enable_concurrent_heartbeat = true;
-    config.concurrent_heartbeat_thread_pool_size = 2;
+    config.set_enable_concurrent_heartbeat(true);
+    config.set_concurrent_heartbeat_thread_pool_size(2);
     let runtime = runtime(config, &addresses).await;
     runtime
         .config()
         .write()
         .unwrap()
-        .enable_concurrent_heartbeat = false;
+        .set_enable_concurrent_heartbeat(false);
     let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
     let _lease = runtime
         .register_consumer("consumer", consumer.clone())
@@ -1215,8 +1215,8 @@ async fn rebalance_wrapper_uses_serial_v1_even_when_concurrent_heartbeat_is_enab
             respond(&mut stream, &command, None, false, false).await;
         });
         let mut config = ClientConfig::new(format!("serial-v1-wrapper-{is_rebalance}"));
-        config.enable_concurrent_heartbeat = true;
-        config.concurrent_heartbeat_thread_pool_size = 2;
+        config.set_enable_concurrent_heartbeat(true);
+        config.set_concurrent_heartbeat_thread_pool_size(2);
         let runtime = runtime(config, &addresses).await;
         let consumer = Arc::new(Consumer(Mutex::new(SubscriptionData::default())));
         runtime
@@ -1283,8 +1283,8 @@ async fn preparation_failure_returns_false_without_socket_and_releases_heartbeat
         let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = broker.local_addr().unwrap().to_string();
         let mut config = ClientConfig::new(format!("failed-preparation-{v2}"));
-        config.use_heartbeat_v2 = v2;
-        config.enable_heartbeat_channel_event_listener = false;
+        config.set_use_heartbeat_v2(v2);
+        config.set_enable_heartbeat_channel_event_listener(false);
         let runtime = runtime(config, std::slice::from_ref(&address)).await;
         let consumer = Arc::new(Failing(AtomicBool::new(true)));
         runtime

@@ -985,7 +985,7 @@ impl Producer {
     }
 
     fn unregister_deadline(&self) -> tokio::time::Instant {
-        let millis = self.config.client.mq_client_api_timeout.max(0) as u64;
+        let millis = self.config.client.mq_client_api_timeout().max(0) as u64;
         tokio::time::Instant::now() + tokio::time::Duration::from_millis(millis)
     }
 
@@ -1650,7 +1650,9 @@ mod tests {
 
         let missing_manager = ClientRuntimeManager::new();
         let mut missing_config = ProducerConfig::new("original-group").unwrap();
-        missing_config.client_config_mut().namesrv_addr = Some(String::new());
+        missing_config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
         let missing = Arc::new(Producer::with_runtime_manager(
             missing_config,
             missing_manager,
@@ -1685,7 +1687,9 @@ mod tests {
 
         let manager = ClientRuntimeManager::new();
         let mut first_config = ProducerConfig::new("original-group-collision").unwrap();
-        first_config.client_config_mut().namesrv_addr = Some(String::new());
+        first_config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
         let mut second_config = ProducerConfig::new("other-group").unwrap();
         *second_config.client_config_mut() = first_config.client_config().clone();
         let first = Arc::new(Producer::with_runtime_manager(

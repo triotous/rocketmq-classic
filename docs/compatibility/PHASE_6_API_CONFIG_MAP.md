@@ -1,10 +1,24 @@
 # Phase 6 API and configuration map
 
+ClientConfig field-visibility reconciliation (2026-10-15, pinned Java source
+`efa1be59d6fc747ad220f036c86030f05f0419f9`): Java 5.5.1 keeps the 33
+configuration values behind getter/setter methods. Rust now keeps the backing
+fields crate-private and preserves the mapped accessors; an external compile-
+fail doctest guards against direct field access. The separate Consumer package
+uses the hidden, read-only `ClientConfig::to_java_properties` bridge to model
+Java `MixAll.object2Properties` without exposing mutable storage. The current
+reverse field inventory is eight public-field structs / 41 public fields; the
+older 9 / 74 count below predates this correction. Core configuration
+differentials (21 tests), Consumer all-feature tests (219 unit tests plus all
+integration/doc targets), and Producer all-feature tests pass. This closes the
+ClientConfig field-visibility slice only; broad P18-V01 source/API/input/flow
+and reverse-export reconciliation remains open.
+
 Heartbeat DTO Fastjson syntax continuation (2026-10-12): the invoked Java corpus now has 276 cases, extending the previous 249-case checkpoint by 27. The additions pin Fastjson 2.0.63's `char1` escape table, `\x` lookup boundaries, and parser-state-specific comment positions. The differential covers accepted `\0`–`\7`, `\v`, `\F`, identity escapes, `\'`, and `\xG1` (U+0001); it also confirms rejection of `\8`, `\q`, and `\xg1`. Single-quoted keys/strings and plain object/array trailing commas accept; unquoted keys reject. Comments are position-sensitive: the recorded object/array starts, object-member boundary, nested-object-value boundary, and root boundaries accept, while comments after a colon, after an array comma, after ordinary values, or after a trailing comma reject. The 276-case Rust differential passes. Current `heartbeat.json` SHA-256: 67b844d3a61ee31ac12c340cf09f30d81083435635d6f17bebc44206b65d37cc. This closes only these corpus cases; broader Fastjson and Phase 6 source/input reconciliation remain open.
 
 Earlier heartbeat DTO syntax checkpoint (2026-10-12; superseded by the 276-case continuation below): eight direct pinned Java cases extend the heartbeat input corpus from 241 to 249. Fastjson accepts single-quoted strings (including escaped apostrophes and embedded double quotes), line/block comments and object/array trailing commas for these DTOs, while an unquoted field name rejects. Comment markers within quoted values remain string content. At this checkpoint, the shared `serde_fastjson` normalizer converted those observed forms before Serde parsing; the 249-case DTO differential and two normalizer unit tests passed. Checkpoint `heartbeat.json` SHA-256: `98b5029aafaa9146a801e3a68d7edc70707f25ba4c17d3ceca40012e4673e0b3`. This closes these grammar cases only; broader Fastjson and Phase 6 source/input reconciliation remain open.
 
-Public struct field reverse scan (`2026-10-10`): the core `api/`, `runtime/`, and `route/` modules plus `config.rs` contain nine named-field public structs and 74 public fields across 22 source files. Every exposed field name now appears explicitly in this map, including the result and `TopicSnapshot` tables below and the complete `ClientConfig` table above. This closes the bounded field-name inventory only; field behavior, remaining source branches, malformed inputs, and platform-specific runtime enumeration remain separately tracked, and P6-V04 remains a Phase 19 handoff.
+Historical public struct field reverse scan (`2026-10-10`): the core `api/`, `runtime/`, and `route/` modules plus `config.rs` contained nine named-field structs and 74 public fields across 22 source files. Every field name appeared in this map, including the result and `TopicSnapshot` tables below and the complete `ClientConfig` table above. The 2026-10-15 correction above removes the 33 `ClientConfig` fields from the public-field count; field behavior, remaining source branches, malformed inputs, and platform-specific runtime enumeration remain separately tracked, and P6-V04 remains a Phase 19 handoff.
 
 Pinned Java public method reverse scan (`2026-10-10`): `javap -public` over the seven phase-reference classes `MQClientManager`, `MQClientInstance`, `ClientConfig`, `TopicPublishInfo`, `ClientRemotingProcessor`, `RebalanceService`, and `PullMessageService` found 169 public method declarations; each method name appears in this map. Constructor declarations are excluded. This closes method-name inventory for those classes only; overload/input behavior, protected/private source branches, and platform runtime evidence remain separately tracked, and P6-V04 remains a Phase 19 handoff.
 
@@ -567,7 +581,8 @@ Initial live-table fixture (`b31a7d9`) SHA-256 `9e1f92f7b622d7509e93b5c143641a2b
 | withNamespace(String/Set), withoutNamespace(String/Set) (deprecated) | `with_namespace/with_namespace_set`, `without_namespace/without_namespace_set`; resource golden and private set-dedup test |
 | queueWithNamespace/queuesWithNamespace (deprecated) | `queue_with_namespace/queues_with_namespace`; six actual collection cases match returned identity, null/empty short-circuiting, failure points, partial mutation and field preservation; [ADR-0011](../architecture/ADR-0011-message-queue-namespace-mutation.md) |
 | cloneClientConfig/resetClientConfig | `clone_client_config/reset_client_config`; `clone_and_reset_copy_every_public_setting_except_java_omissions` differentially checks Java source/clone/reset snapshots for all 33 non-internal fields, plus the private namespace flag test; Rust `Clone` separately copies all fields |
-| remaining field getters/setters | exact Java method names and idiomatic Rust accessors are listed in the complete 33-pair table below; `namesrvAddr` and `namespace` use their cache-aware methods; public fields remain available |
+| remaining field getters/setters | exact Java method names and idiomatic Rust accessors are listed in the complete 33-pair table below; `namesrvAddr` and `namespace` use their cache-aware methods; backing fields are crate-private |
+| Consumer running-info `MixAll.object2Properties` field projection | Hidden, read-only `ClientConfig::to_java_properties` bridge for the separately packaged Consumer crate; preserves Java field names, raw nullable values, and null omission without exposing mutable storage |
 | `toString` | Rust `Display` / `ToString`; 16 actual Java cases match null and populated text, namespace-cache state, unescaped strings, signed values, and all 14 Java `LanguageCode` constants. Java includes raw `socksProxyConfig` and omits `traceMsgBatchNum`/`maxPageSizeInGetMetadata`; Rust `Debug` remains redacted. |
 | SEND_MESSAGE_WITH_VIP_CHANNEL_PROPERTY, SOCKS_PROXY_CONFIG, DECODE_READ_BODY, DECODE_DECOMPRESS_BODY, SEND_LATENCY_ENABLE, START_DETECTOR_ENABLE, HEART_BEAT_V2 | same-named `ClientConfig` associated constants; `public_property_names_match_pinned_client_config_constants` checks exact strings |
 

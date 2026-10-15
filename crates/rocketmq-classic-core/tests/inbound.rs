@@ -101,7 +101,7 @@ async fn inactive_runtime_slots_match_phase_errors_and_no_dispatch_silence() {
         );
     });
     let mut config = ClientConfig::new("inbound");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let manager = ClientRuntimeManager::new();
     let runtime = manager.get_or_create(&config).await.unwrap();
     runtime.start().await.unwrap();
@@ -195,7 +195,7 @@ async fn active_owner_receives_channel_context_and_transport_returns_matching_re
         assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
     });
     let mut config = ClientConfig::new("active-inbound");
-    config.namesrv_addr = Some(String::new());
+    config.set_namesrv_addr(Some(String::new()));
     let runtime = ClientRuntimeManager::new()
         .get_or_create(&config)
         .await

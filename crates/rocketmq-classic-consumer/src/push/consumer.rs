@@ -2340,8 +2340,8 @@ impl PushConsumer {
                 pull_result,
                 subscription,
                 DecodeOptions {
-                    read_body: client_config.decode_read_body,
-                    decompress_body: client_config.decode_decompress_body,
+                    read_body: client_config.decode_read_body(),
+                    decompress_body: client_config.decode_decompress_body(),
                     ..DecodeOptions::default()
                 },
             )
@@ -4151,8 +4151,8 @@ impl PushConsumer {
                 &request,
                 broker_name,
                 DecodeOptions {
-                    read_body: self.config.client_config().decode_read_body,
-                    decompress_body: self.config.client_config().decode_decompress_body,
+                    read_body: self.config.client_config().decode_read_body(),
+                    decompress_body: self.config.client_config().decode_decompress_body(),
                     ..DecodeOptions::default()
                 },
             ) {

@@ -178,8 +178,8 @@ async fn raw_clear_query_refetches_once_and_retained_table_observes_wire_refresh
     let case = &fixture["runtimeTopicRouteTable"];
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("raw-table-wire");
-    config.namesrv_addr = Some(listener.local_addr().unwrap().to_string());
-    config.enable_heartbeat_channel_event_listener = false;
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
+    config.set_enable_heartbeat_channel_event_listener(false);
     let body = serde_json::to_vec(&case["initialInput"]).unwrap();
     let peer = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();

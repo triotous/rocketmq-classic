@@ -66,7 +66,7 @@ impl RemoteBrokerOffsetStore {
         let timeout_millis = config
             .read()
             .map_err(|_| OffsetStoreError::Runtime("client config lock poisoned".into()))?
-            .mq_client_api_timeout
+            .mq_client_api_timeout()
             .max(0) as u64;
         let deadline = Instant::now() + Duration::from_millis(timeout_millis);
         self.runtime

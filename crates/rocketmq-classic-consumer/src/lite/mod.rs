@@ -646,7 +646,7 @@ impl LitePullConsumer {
         }
         self.sync_workers().await;
         if let Some(dispatcher) = trace_dispatcher {
-            let name_server_address = self.config.client_config().namesrv_addr.clone();
+            let name_server_address = self.config.client_config().get_namesrv_addr();
             let access_channel = self
                 .config
                 .client_config()
@@ -1730,39 +1730,39 @@ mod tests {
     async fn inherited_java_client_config_is_copied_to_the_pull_engine() {
         let mut config = LitePullConsumerConfig::new("lite-client-config-copy").unwrap();
         let client = config.client_config_mut();
-        client.namesrv_addr = Some("nameserver:9876".into());
-        client.client_ip = Some("192.0.2.10".into());
-        client.instance_name = Some("lite-client-config-copy-instance".into());
-        client.client_callback_executor_threads = 3;
+        client.set_namesrv_addr(Some("nameserver:9876".into()));
+        client.set_client_ip(Some("192.0.2.10".into()));
+        client.set_instance_name(Some("lite-client-config-copy-instance".into()));
+        client.set_client_callback_executor_threads(3);
         client.set_namespace(Some("tenant".into()));
-        client.namespace_v2 = Some("tenant-v2".into());
-        client.access_channel = Some(AccessChannel::Cloud);
-        client.poll_name_server_interval = 31;
-        client.heartbeat_broker_interval = 32;
-        client.persist_consumer_offset_interval = 33;
-        client.pull_time_delay_millis_when_exception = 34;
-        client.trace_msg_batch_num = 35;
-        client.unit_mode = true;
-        client.unit_name = Some("unit-a".into());
-        client.decode_read_body = false;
-        client.decode_decompress_body = false;
-        client.vip_channel_enabled = true;
-        client.use_heartbeat_v2 = true;
-        client.use_tls = true;
-        client.socks_proxy_config = Some("{}".into());
-        client.mq_client_api_timeout = 36;
-        client.detect_timeout = 37;
-        client.detect_interval = 38;
-        client.language = Some(LanguageCode::Rust);
-        client.enable_stream_request_type = false;
-        client.send_latency_enable = true;
-        client.start_detector_enable = true;
-        client.enable_heartbeat_channel_event_listener = false;
-        client.enable_concurrent_heartbeat = true;
-        client.concurrent_heartbeat_thread_pool_size = 4;
-        client.enable_trace = true;
-        client.trace_topic = Some("client-trace-topic".into());
-        client.max_page_size_in_get_metadata = 39;
+        client.set_namespace_v2(Some("tenant-v2".into()));
+        client.set_access_channel(Some(AccessChannel::Cloud));
+        client.set_poll_name_server_interval(31);
+        client.set_heartbeat_broker_interval(32);
+        client.set_persist_consumer_offset_interval(33);
+        client.set_pull_time_delay_millis_when_exception(34);
+        client.set_trace_msg_batch_num(35);
+        client.set_unit_mode(true);
+        client.set_unit_name(Some("unit-a".into()));
+        client.set_decode_read_body(false);
+        client.set_decode_decompress_body(false);
+        client.set_vip_channel_enabled(true);
+        client.set_use_heartbeat_v2(true);
+        client.set_use_tls(true);
+        client.set_socks_proxy_config(Some("{}".into()));
+        client.set_mq_client_api_timeout(36);
+        client.set_detect_timeout(37);
+        client.set_detect_interval(38);
+        client.set_language(Some(LanguageCode::Rust));
+        client.set_enable_stream_request_type(false);
+        client.set_send_latency_enable(true);
+        client.set_start_detector_enable(true);
+        client.set_enable_heartbeat_channel_event_listener(false);
+        client.set_enable_concurrent_heartbeat(true);
+        client.set_concurrent_heartbeat_thread_pool_size(4);
+        client.set_enable_trace(true);
+        client.set_trace_topic(Some("client-trace-topic".into()));
+        client.set_max_page_size_in_get_metadata(39);
         let expected = config.client_config().clone();
 
         let consumer = LitePullConsumer::new(config).unwrap();
