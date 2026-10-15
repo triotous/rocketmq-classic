@@ -125,6 +125,35 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-netty-frame-limit-default</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.NettyFrameLimitProbe</argument>
+                <argument>${project.basedir}/../../fixtures/runtime/netty-frame-limit.json</argument>
+                <argument>default</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>verify-netty-frame-limit-configured</id>
+            <phase>verify</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <arguments>
+                <argument>-Dcom.rocketmq.remoting.frameMaxLength=4096</argument>
+                <argument>-cp</argument><classpath/>
+                <argument>compat.NettyFrameLimitProbe</argument>
+                <argument>${project.basedir}/../../fixtures/runtime/netty-frame-limit.json</argument>
+                <argument>configured</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-hook-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

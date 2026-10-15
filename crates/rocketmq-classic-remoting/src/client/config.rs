@@ -1,12 +1,43 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Deref;
+use std::sync::OnceLock;
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 use super::TransportMode;
 use crate::error::TransportError;
+
+pub(super) const JAVA_FRAME_MAX_LENGTH_PROPERTY: &str = "com.rocketmq.remoting.frameMaxLength";
+static JAVA_FRAME_MAX_LENGTH: OnceLock<Result<usize, String>> = OnceLock::new();
+
+pub(super) fn java_frame_max_length() -> Result<usize, TransportError> {
+    JAVA_FRAME_MAX_LENGTH
+        .get_or_init(read_java_frame_max_length)
+        .clone()
+        .map_err(TransportError::InvalidConfiguration)
+}
+
+fn read_java_frame_max_length() -> Result<usize, String> {
+    match std::env::var(JAVA_FRAME_MAX_LENGTH_PROPERTY) {
+        Ok(value) => parse_java_frame_max_length(&value),
+        Err(std::env::VarError::NotPresent) => Ok(crate::codec::frame::DEFAULT_MAX_FRAME_SIZE),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!(
+            "Java property {JAVA_FRAME_MAX_LENGTH_PROPERTY} is not valid Unicode"
+        )),
+    }
+}
+
+fn parse_java_frame_max_length(value: &str) -> Result<usize, String> {
+    let length = super::java_number::parse_i32(value).ok_or_else(|| {
+        format!("Java property {JAVA_FRAME_MAX_LENGTH_PROPERTY} is not a signed decimal integer")
+    })?;
+    usize::try_from(length)
+        .ok()
+        .filter(|length| *length > 0)
+        .ok_or_else(|| format!("Java property {JAVA_FRAME_MAX_LENGTH_PROPERTY} must be positive"))
+}
 
 /// SOCKS5 proxy settings corresponding to Java's `SocksProxyConfig`.
 #[derive(Clone, Debug, Default, Deserialize, serde::Serialize, PartialEq, Eq)]
@@ -2033,6 +2064,16 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 #[cfg(test)]
 mod tests {
     use super::{ClientConfig, ParsedProxyRoute, SocksProxyConfig};
+
+    #[test]
+    fn frame_max_length_property_uses_java_integer_and_positive_limit_rules() {
+        assert_eq!(super::parse_java_frame_max_length("4096").unwrap(), 4096);
+        assert_eq!(super::parse_java_frame_max_length("١٢٣").unwrap(), 123);
+        assert!(super::parse_java_frame_max_length("0").is_err());
+        assert!(super::parse_java_frame_max_length("-1").is_err());
+        assert!(super::parse_java_frame_max_length(" 4096").is_err());
+        assert!(super::parse_java_frame_max_length("2147483648").is_err());
+    }
 
     #[test]
     fn signed_time_settings_match_java_normalization() {

@@ -1,6 +1,7 @@
 mod config;
 mod connection;
 mod connection_manager;
+mod java_number;
 mod pending;
 mod processor;
 pub mod tls;
@@ -24,9 +25,7 @@ use tokio::{
     time::{self, Instant},
 };
 
-use crate::{
-    codec::frame::DEFAULT_MAX_FRAME_SIZE, command::RemotingCommand, error::TransportError,
-};
+use crate::{command::RemotingCommand, error::TransportError};
 
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
@@ -140,7 +139,7 @@ struct ClientInner {
     closed: AtomicBool,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     security: TransportMode,
-    max_frame_size: usize,
+    max_frame_size_override: Option<usize>,
     config: ClientConfig,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
@@ -158,6 +157,15 @@ struct ClientInner {
     available_nameservers: Mutex<HashSet<String>>,
     chosen_nameserver: Mutex<Option<String>>,
     nameserver_index: AtomicU64,
+}
+
+impl ClientInner {
+    fn frame_max_length(&self) -> Result<usize, TransportError> {
+        match self.max_frame_size_override {
+            Some(max_frame_size) => Ok(max_frame_size),
+            None => config::java_frame_max_length(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -615,7 +623,6 @@ impl RemotingClient {
             let _ = tls.connector()?;
         }
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
-        let max_frame_size = DEFAULT_MAX_FRAME_SIZE;
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
@@ -643,7 +650,7 @@ impl RemotingClient {
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: config.transport.clone(),
-            max_frame_size,
+            max_frame_size_override: None,
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
             callback_sender: callback_sender.clone(),
@@ -709,7 +716,7 @@ impl RemotingClient {
             }),
             runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             security: security.clone(),
-            max_frame_size,
+            max_frame_size_override: Some(max_frame_size),
             config: ClientConfig {
                 transport: security.clone(),
                 ..ClientConfig::default()
@@ -1520,7 +1527,7 @@ impl RemotingClient {
         let mut pending =
             pending::PendingGuard::new(Arc::downgrade(&self.inner), opaque, connection.generation);
         let frame = connection
-            .encode_command(&command, self.inner.max_frame_size)
+            .encode_command(&command, connection.max_frame_size)
             .map_err(|error| classify_write_error(connection.address(), error))?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         match time::timeout(remaining, connection.send(frame, deadline)).await {
@@ -1717,7 +1724,7 @@ impl RemotingClient {
                         }
                         error => error,
                     })?;
-                let frame = connection.encode_command(&command, client.inner.max_frame_size)?;
+                let frame = connection.encode_command(&command, connection.max_frame_size)?;
                 connection
                     .send(frame, deadline)
                     .await
@@ -2358,6 +2365,64 @@ async fn timeout_scheduler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codec::frame::DEFAULT_MAX_FRAME_SIZE;
+
+    #[tokio::test]
+    async fn java_frame_max_length_property_is_applied_to_new_connections() {
+        const CHILD_MARKER: &str = "ROCKETMQ_FRAME_MAX_LENGTH_CHILD";
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/netty-frame-limit.json"
+        ))
+        .unwrap();
+        let expected = fixture["configured"].as_u64().unwrap() as usize;
+
+        if std::env::var_os(CHILD_MARKER).is_some() {
+            use tokio::io::AsyncReadExt;
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut byte = [0];
+                let _ = stream.read(&mut byte).await;
+            });
+            let client = RemotingClient::with_config(ClientConfig::default()).unwrap();
+            let connection = client
+                .inner
+                .connection(&address, Instant::now() + std::time::Duration::from_secs(3))
+                .await
+                .unwrap();
+            assert_eq!(connection.max_frame_size, expected);
+            let oversized = RemotingCommand {
+                body: Some(vec![0; expected]),
+                ..RemotingCommand::default()
+            };
+            assert!(
+                connection
+                    .encode_command(&oversized, connection.max_frame_size)
+                    .is_err()
+            );
+            connection.close();
+            connection.join().await;
+            peer.await.unwrap();
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("client::tests::java_frame_max_length_property_is_applied_to_new_connections")
+            .arg("--nocapture")
+            .env(config::JAVA_FRAME_MAX_LENGTH_PROPERTY, expected.to_string())
+            .env(CHILD_MARKER, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child test failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn channel_event_peer_address_redacts_uri_userinfo() {
@@ -3302,7 +3367,7 @@ mod tests {
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: TransportMode::Plain,
-            max_frame_size: DEFAULT_MAX_FRAME_SIZE,
+            max_frame_size_override: Some(DEFAULT_MAX_FRAME_SIZE),
             config,
             socks_proxy_routes: config::ProxyRoutes::default(),
             startup: Mutex::new(None),

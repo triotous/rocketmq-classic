@@ -50,6 +50,7 @@ impl Drop for OutboundFrame {
 
 pub(crate) struct Connection {
     pub(crate) generation: u64,
+    pub(crate) max_frame_size: usize,
     sender: mpsc::UnboundedSender<OutboundFrame>,
     address: String,
     pooled_byte_buffer_allocator_enabled: bool,
@@ -101,6 +102,7 @@ impl Connection {
             .is_some_and(|client| client.config.disable_netty_worker_group);
         let connection = Arc::new(Self {
             generation,
+            max_frame_size,
             sender,
             address: address.clone(),
             pooled_byte_buffer_allocator_enabled,
