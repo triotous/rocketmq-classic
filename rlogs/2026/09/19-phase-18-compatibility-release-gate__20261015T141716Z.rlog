@@ -1,0 +1,45 @@
+Session: 2026-10-15 14:17 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Scope: P18-V01 Remoting connectTimeoutMillis Bootstrap timing slice
+
+Source review
+- Compared pinned Java NettyRemotingClient.start(), fetchBootstrap(), and
+  createBootstrap() with Rust RemotingClient startup and connection selection.
+- Java configures direct Bootstrap at start; proxy Bootstrap is created and
+  cached on first use per CIDR, reading the then-current config value.
+- Rust previously used only the start snapshot for direct and proxy dials, and
+  NameServer scans imposed an extra deadline that did not match Bootstrap
+  timeout behavior when the configured value was zero or changed for a proxy.
+
+Implementation
+- Code commit: aca955cd fix(remoting): match proxy bootstrap timeout timing.
+- Rust now snapshots direct timeout at start, caches live timeout on first
+  matched proxy-CIDR use, reuses that value for that CIDR, and reads newer
+  values for later CIDRs. Reachability scans use an optional operation deadline
+  so zero means no separate connect cap.
+- Added Rust tests for post-start proxy timeout capture/cache, proxy scan
+  timeout sampling, and zero-timeout NameServer scanning.
+- Extended Java RemotingLiveConfigProbe to verify direct start-time capture,
+  cached proxy reuse, and first-use capture for another CIDR.
+- Updated the connectTimeoutMillis row in
+  docs/compatibility/PHASE_3_REMOTING_INVENTORY.md and appended this revision's
+  evidence to docs/release-checklist.md. No plan files were edited.
+
+Verification
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: passed;
+  88 unit, 6 codec, 1 fuzz regression, 5 security, 93 transport, 5 doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`: passed.
+- `cargo fmt --all -- --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed; 37 scenarios,
+  Remoting live-config probe, Java/Rust cross-decodes and fixture checks.
+- `git diff --check`: passed before code commit.
+
+Status
+- The connectTimeoutMillis Bootstrap timing row is closed on aca955cd.
+- Broad P18-V01, full-workspace P18-V02 gates on the eventual final revision,
+  current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation, and release version/registry checks remain open. Owner-run
+  deployment/live Broker checks remain manual Phase 19 validation.
+- Branch phase/19-phase-18-compatibility-release-gate is local and ahead of
+  origin; no push, tag, publication, or live Broker action was performed.

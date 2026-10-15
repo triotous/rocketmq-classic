@@ -1043,3 +1043,23 @@ Before any publication:
   automation. Confirm the release version and registry dependency resolution
   before publication. Owner-run deployment/live Broker checks remain separate
   Phase 19 manual validation.
+- P18-V01 Remoting `connectTimeoutMillis` Bootstrap timing slice (`aca955cd`,
+  2026-10-15): direct connections retain the value captured by `start()`;
+  each matched proxy CIDR captures the live timeout on first use and reuses
+  that cached value, while later CIDRs read the newer value. Reachability scans
+  use the selected path's connection timeout without imposing a second
+  operation deadline; zero disables the separate connection cap. Rust tests
+  cover direct start-time capture, proxy first-use/cache behavior, scan timing,
+  and zero-timeout scanning. Java `RemotingLiveConfigProbe` verifies the direct
+  Bootstrap and first/reused/new-CIDR proxy Bootstraps.
+- PASS on `aca955cd`: Remoting all-feature tests (88 unit, 6 codec, 1 fuzz
+  regression, 5 security, 93 transport, 5 doctests), strict Remoting
+  all-target/all-feature Clippy, formatting, Maven `verify` (37 scenarios,
+  live-config probe and cross-decodes), and `git diff --check`.
+- This closes the `connectTimeoutMillis` Bootstrap timing row only. Remaining
+  work includes broad bidirectional P18-V01 reconciliation (including the
+  `clientChannelMaxIdleTimeSeconds` and `disableNettyWorkerGroup` timing rows),
+  full workspace P18-V02 gates on the eventual final revision, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  release version/registry dependency checks. Owner-run deployment/live Broker
+  checks remain Phase 19 manual validation.
