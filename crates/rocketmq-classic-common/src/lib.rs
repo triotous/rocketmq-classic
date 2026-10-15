@@ -14,6 +14,13 @@
 //! use rocketmq_classic_common::sysflag::message::has_compressed_flag;
 //! # fn main() {}
 //! ```
+//!
+//! `PullSysFlag` mask constants are private, as in Java; callers use its helpers.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_common::sysflag::pull::FLAG_COMMIT_OFFSET;
+//! # fn main() {}
+//! ```
 
 pub mod compression;
 pub mod message;

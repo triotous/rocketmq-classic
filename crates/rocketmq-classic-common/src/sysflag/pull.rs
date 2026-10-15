@@ -1,8 +1,8 @@
-pub const FLAG_COMMIT_OFFSET: i32 = 0x1;
-pub const FLAG_SUSPEND: i32 = 1 << 1;
-pub const FLAG_SUBSCRIPTION: i32 = 1 << 2;
-pub const FLAG_CLASS_FILTER: i32 = 1 << 3;
-pub const FLAG_LITE_PULL_MESSAGE: i32 = 1 << 4;
+const FLAG_COMMIT_OFFSET: i32 = 0x1;
+const FLAG_SUSPEND: i32 = 1 << 1;
+const FLAG_SUBSCRIPTION: i32 = 1 << 2;
+const FLAG_CLASS_FILTER: i32 = 1 << 3;
+const FLAG_LITE_PULL_MESSAGE: i32 = 1 << 4;
 
 pub fn build_pull_sys_flag(
     commit_offset: bool,

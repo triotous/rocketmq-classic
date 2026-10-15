@@ -646,7 +646,8 @@ mod tests {
             resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", 0).unwrap(),
             Some("192.0.2.9:10911".to_owned())
         );
-        let filter_flag = rocketmq_classic_common::sysflag::pull::FLAG_CLASS_FILTER;
+        let filter_flag =
+            rocketmq_classic_common::sysflag::pull::build_pull_sys_flag(false, false, false, true);
         let routed = resolve_pull_broker_address(&route, "orders", "192.0.2.9:10911", filter_flag)
             .unwrap()
             .unwrap();

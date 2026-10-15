@@ -73,3 +73,10 @@
 - Removed that public helper, routed Producer compression predicates through `check(flag, COMPRESSED_FLAG)`, and added a compile-fail rustdoc guard. Updated the Phase 8 mapping and release checklist.
 - PASS: Common all-feature tests (21 unit, 16 message decode, 1 topic validator, 12 doctests); Producer all-feature tests (140 unit, 10 admin, 27 producer, 3 request/reply, 17 scripted send, 7 transaction, 6 doctests); strict all-target/all-feature Clippy for Common and Producer; formatting and diff checks.
 - This closes the extra flag-helper export only. Broad P18-V01 reconciliation remains open, along with final-revision workspace P18-V02 gates, current-revision GitHub Ubuntu evidence, and Phase 19 local Docker/Broker scenarios. No plan changed; no push, release, or tag action taken.
+
+## PullSysFlag public surface — 2026-10-15
+
+- Reverse-audited the five `PullSysFlag` masks against pinned Java 5.5.1; Java declares these masks private. Made the Rust constants private, updated Consumer/Core call sites to use the mapped flag-building helpers, and added a compile-fail rustdoc guard.
+- Updated the Phase 8 mapping and release checklist.
+- PASS: `cargo test -p rocketmq-classic-common -p rocketmq-classic-core -p rocketmq-classic-consumer --all-features --locked`; strict all-target/all-feature Clippy for Common, Core and Consumer; `cargo fmt --all -- --check`; `git diff --check`.
+- This closes the audited mask-visibility slice only. Broad P18-V01 reconciliation, full final-revision P18-V02 gates, current-revision GitHub Ubuntu address-profile evidence, and Phase 19 Docker/Broker automation and scenarios remain open. No plan changed; no push, release, or tag action taken.

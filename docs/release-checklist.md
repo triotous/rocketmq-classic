@@ -503,6 +503,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Producer checks use Java's `MessageSysFlag.check(flag, COMPRESSED_FLAG)`
   counterpart, and a compile-fail rustdoc case guards the removed export.
   Broader P18-V01 reconciliation remains open.
+- The five `PullSysFlag` bit masks are private in Rust, matching Java. Consumer
+  and Core call sites now build flags through the mapped Java helper methods;
+  a compile-fail rustdoc case guards the private constants. Broader P18-V01
+  reconciliation remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.
