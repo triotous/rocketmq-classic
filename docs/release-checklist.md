@@ -1322,3 +1322,19 @@ Before any publication:
   A compile-fail rustdoc example protects the absent conversion API. This
   closes the constructor slice only; broad P18-V01 remains open. Fixture SHA-256:
   `9400beefa451ed1e29cdda0cb1171387aacd6929d5e2a144de3a837f6ca840e0`.
+
+- Current-worktree server-free P18-V02 rerun at `bb93560e` (2026-10-15):
+  workspace tests pass with default and all features; workspace all-target
+  check and strict all-target/all-feature Clippy pass; pinned Maven `verify`
+  passes all 37 scenarios and fixture drift checks. Differential self-test and
+  37-scenario manifest validation pass. Offline race/leak smoke passes 16 cases
+  × 3; fuzz smoke passes 105 frame seeds, 11 message seeds and 1,856 bounded
+  mutations. Release examples, workspace benches, locked Cargo metadata,
+  workspace metadata/license/dependency checks and package listings pass; all
+  seven package contents include LICENSE/NOTICE. The Java-backed Unique ID
+  fixture passes under `Asia/Taipei`; the full workspace runs used the host UTC
+  timezone. Formatting and diff checks pass. This closes local server-free
+  P18-V02 only. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment/live Broker checks remain
+  Phase 19 manual validation.

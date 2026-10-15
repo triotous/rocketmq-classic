@@ -100,3 +100,32 @@ current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
 automation, and pre-publication registry resolution remain open. No push,
 publication, Docker, live Broker, tag, or deployment action was taken.
 Code/test/fixture/compatibility-matrix commit: `7665b769`.
+
+2026-10-15 19:24 UTC — reran server-free P18-V02 gates at HEAD `bb93560e`
+(code revision `7665b769`; the later commit records this run).
+
+Passed sequentially on the host UTC timezone:
+- `cargo test --workspace --locked`
+- `cargo test --workspace --all-features --locked`
+- `cargo check --workspace --all-targets --locked`
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+- `mvn -f compat/java-reference/pom.xml verify` — 37 scenarios and fixture drift checks
+- `python3 tests/differential/compare.py --self-test`
+- `python3 tests/differential/compare.py --validate-manifest` — 37 scenarios
+- `bash tests/stress/run-offline-smoke.sh` — 16 race/leak cases × 3
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` — 105 frame seeds, 11 message seeds, 1,856 bounded mutations
+- `cargo build -p rocketmq-classic --examples --release --locked`
+- `cargo bench --workspace --no-run --locked`
+- `cargo metadata --locked --format-version 1 --no-deps`, full locked metadata (215 total packages, 208 registry-sourced), and `python3 scripts/check-workspace-metadata.py`
+- `cargo package --workspace --list --locked --allow-dirty`; individual package-content checks for all seven crates found LICENSE and NOTICE
+- `TZ=Asia/Taipei cargo test -p rocketmq-classic-core --all-features --locked unique_id::tests::` — 4 tests
+- `cargo fmt --all -- --check` and `git diff --check`
+
+This closes the local server-free P18-V02 gate at this revision. Broad P18-V01
+Java/Rust API, settings, overload input/error/control-flow, inherited/trait,
+and reverse-export reconciliation remains open. Current-revision GitHub
+Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automated scenarios,
+pre-publication version/registry resolution, and native Windows/non-macOS BSD/
+real IPv6-only-host evidence remain open. Owner-run deployment and live Broker
+checks remain Phase 19 manual validation. No push, publication, tag, Docker,
+live Broker, or deployment action occurred.
