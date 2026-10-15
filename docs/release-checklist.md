@@ -563,6 +563,17 @@ the required full Phase 18 gates on the final revision.
   pass. P18-V02 server-free gates pass on this revision. P18-V01, the required
   current-revision GitHub Ubuntu address-profile result, and Phase 19
   Broker/Docker validation remain open.
+- Current-revision server-free gate rerun (`133d4f54`, 2026-10-15), after the
+  mutable `MessageConst.STRING_HASH_SET` correction: default and all-feature
+  workspace tests, strict all-target/all-feature workspace Clippy,
+  format/diff checks, Maven `verify` (37 scenarios, fixture drift and
+  Java/Rust cross-decodes), comparator self-test and 37-scenario manifest,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), 16
+  deterministic race/leak cases × 3, release examples, offline benchmark
+  compilation, workspace metadata and locked Cargo metadata, and all seven
+  package-content listings pass. P18-V02 server-free gates pass on this
+  revision. P18-V01, the current-revision GitHub Ubuntu address-profile result,
+  and Phase 19 Broker/Docker validation remain open.
 
 ## Package graph and metadata
 
