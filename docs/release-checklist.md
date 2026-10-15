@@ -46,7 +46,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
   Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
-  fixture-backed running-flow checks. `adjustThreadPool` has a direct owner
+  fixture-backed running-flow checks. Its `ConsumerRunningInfo` body and
+  `ProcessQueueInfo`/`PopProcessQueueInfo`/`ConsumeStatus` models now also match
+  inherited Java object-identity equality instead of exposing structural
+  `PartialEq`/`Eq`. `adjustThreadPool` has a direct owner
   mapping and fixture evidence for the pinned built-in services' no-op
   behavior. The raw `executeTask`/`executeTaskLater` methods map to the
   owner-scoped runtime scheduler and now have invoked-fixture plus lifecycle /

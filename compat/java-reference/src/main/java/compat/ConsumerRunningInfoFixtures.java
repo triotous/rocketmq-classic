@@ -107,7 +107,32 @@ public final class ConsumerRunningInfoFixtures {
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
         fixture.put("serverContacted", false);
+        fixture.put("identitySemantics", identitySemantics());
         fixture.put("body", new String(info.encode(), StandardCharsets.UTF_8));
         return fixture;
+    }
+
+    private static Map<String, Object> identitySemantics() throws Exception {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ConsumerRunningInfo", identityCase(
+            new ConsumerRunningInfo(), new ConsumerRunningInfo()));
+        result.put("ProcessQueueInfo", identityCase(
+            new ProcessQueueInfo(), new ProcessQueueInfo()));
+        result.put("PopProcessQueueInfo", identityCase(
+            new PopProcessQueueInfo(), new PopProcessQueueInfo()));
+        result.put("ConsumeStatus", identityCase(
+            new ConsumeStatus(), new ConsumeStatus()));
+        return result;
+    }
+
+    private static Map<String, Object> identityCase(Object first, Object second) throws Exception {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("equalsDeclaredBy", first.getClass().getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        result.put("hashCodeDeclaredBy", first.getClass().getMethod("hashCode")
+            .getDeclaringClass().getName());
+        result.put("sameObjectEqualsItself", first.equals(first));
+        result.put("distinctDefaultObjectsEquals", first.equals(second));
+        return result;
     }
 }

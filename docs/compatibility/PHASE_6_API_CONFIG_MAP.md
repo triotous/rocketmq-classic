@@ -1121,6 +1121,14 @@ The direct fixture covers all four route-state constants and null, empty, unknow
 
 One hundred forty-three direct Java input cases cover decoded fields, accepted/rejected input shapes and exact body encoding. Additional pinned Java API cases cover constructor defaults, getter/setter values, null setters, and mutation through the assigned and returned outer/nested Maps; Rust preserves outer and non-null nested Map identity through shared handles, with `ptr_eq` and bidirectional mutation checks. `MessageQueue` key identity is not claimed. `BTreeMap` output is deterministic; Java HashMap iteration order is unspecified. See [ADR-0047](../architecture/ADR-0047-consumer-status-fastjson-map-input.md), [ADR-0057](../architecture/ADR-0057-runtime-map-body-public-api.md), and [ADR-0073](../architecture/ADR-0073-shared-runtime-map-body-aliases.md).
 
+## ConsumerRunningInfo DTO identity traits
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `ConsumerRunningInfo`, `ProcessQueueInfo`, `PopProcessQueueInfo`, and `ConsumeStatus`; each inherits `Object.equals/hashCode` | `ConsumerRunningInfoBody`, `ConsumerProcessQueueInfo`, `ConsumerPopProcessQueueInfo`, and `ConsumerConsumeStatus` intentionally do not implement structural `PartialEq`/`Eq` |
+
+The invoked Java fixture reflects both inherited methods and confirms that separately constructed default instances compare unequal for all four classes. Compile-fail doctests guard the Rust trait boundary. The Rust body round-trip differential compares normalized JSON values, preserving the wire/API check without adding value equality. Fixture SHA-256: `a16ba3fd660aa1b8ad6ef2150163a9657283ada56c728f6769f39f98b0a5fbe8`.
+
 ## Common public API: TopicValidator
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |

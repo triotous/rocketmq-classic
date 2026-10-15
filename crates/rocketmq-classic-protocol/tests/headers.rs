@@ -594,6 +594,27 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
         "efa1be59d6fc747ad220f036c86030f05f0419f9"
     );
     assert_eq!(fixture["serverContacted"], false);
+    let identity = &fixture["identitySemantics"];
+    for class in [
+        "ConsumerRunningInfo",
+        "ProcessQueueInfo",
+        "PopProcessQueueInfo",
+        "ConsumeStatus",
+    ] {
+        assert_eq!(
+            identity[class]["equalsDeclaredBy"], "java.lang.Object",
+            "{class}"
+        );
+        assert_eq!(
+            identity[class]["hashCodeDeclaredBy"], "java.lang.Object",
+            "{class}"
+        );
+        assert_eq!(identity[class]["sameObjectEqualsItself"], true, "{class}");
+        assert_eq!(
+            identity[class]["distinctDefaultObjectsEquals"], false,
+            "{class}"
+        );
+    }
 
     let queue = MessageQueue::new("orders", "broker-a", 1);
     let pop_queue = MessageQueue::new("orders", "broker-a", 2);

@@ -3314,7 +3314,14 @@ impl<'de> Deserialize<'de> for GetConsumerStatusBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java `ProcessQueueInfo` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerProcessQueueInfo;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ConsumerProcessQueueInfo>();
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerProcessQueueInfo {
     pub commit_offset: i64,
@@ -3334,7 +3341,14 @@ pub struct ConsumerProcessQueueInfo {
     pub last_consume_timestamp: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java `PopProcessQueueInfo` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerPopProcessQueueInfo;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ConsumerPopProcessQueueInfo>();
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerPopProcessQueueInfo {
     pub wait_ack_count: i32,
@@ -3342,7 +3356,14 @@ pub struct ConsumerPopProcessQueueInfo {
     pub last_pop_timestamp: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+/// Java `ConsumeStatus` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerConsumeStatus;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ConsumerConsumeStatus>();
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerConsumeStatus {
     #[serde(rename = "pullRT")]
@@ -3359,8 +3380,15 @@ pub struct ConsumerConsumeStatus {
 }
 
 /// Pinned Java `ConsumerRunningInfo` JSON body. Fastjson encodes the
-/// `MessageQueue` map keys as object values rather than quoted strings.
-#[derive(Debug, Clone, PartialEq, Default)]
+/// `MessageQueue` map keys as object values rather than quoted strings. The
+/// corresponding Java DTO inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerRunningInfoBody;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ConsumerRunningInfoBody>();
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct ConsumerRunningInfoBody {
     pub properties: BTreeMap<String, String>,
     pub subscription_set: Vec<SubscriptionData>,
