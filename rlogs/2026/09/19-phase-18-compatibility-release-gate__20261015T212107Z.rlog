@@ -130,3 +130,31 @@ Validation passed:
 This closes the identified P15 startup-failure completion path. P18-V01 remains
 open for the full bidirectional public API/settings/flow audit. P18-V02 still
 requires a full workspace rerun on the final P18 revision.
+
+2026-10-15 UTC — completed the current-revision server-free P18-V02 gate on
+code revision `182f8f69` after the oneway and request/reply lifecycle changes.
+The subsequent `dfe08aa6` commit only records the request/reply disposition.
+
+Passed:
+- UTC default and all-feature locked workspace suites.
+- `cargo check --workspace --all-targets --all-features --locked` and strict
+  all-target/all-feature workspace Clippy.
+- Pinned Maven `verify` (37 differential scenarios and Java/Rust cross-decodes),
+  comparator self-test, and 37-scenario manifest validation.
+- `bash tests/stress/run-offline-smoke.sh`: 16 race/leak cases × 3.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`:
+  105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes, and
+  113 message decodes.
+- `cargo build -p rocketmq-classic --examples --release --locked` and
+  `cargo bench --workspace --no-run --locked`.
+- Locked Cargo metadata, workspace metadata/license/dependency checks, and all
+  seven `cargo package --workspace --list --locked --allow-dirty` listings;
+  every package listing includes LICENSE and NOTICE.
+- Java-backed Unique ID fixture under `TZ=Asia/Taipei`, rustfmt, and
+  `git diff --check`.
+
+This closes the server-free P18-V02 gate on `182f8f69`. Broad P18-V01,
+current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+automation, and pre-publication version/registry resolution remain open.
+Owner-run production topology and platform checks remain manual. No push, tag,
+publication, deployment, Docker, or live Broker action occurred.

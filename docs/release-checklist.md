@@ -1506,3 +1506,19 @@ Before any publication:
   passes (Core: 160 unit tests, all integration targets, 13 doctests; Producer:
   142 unit tests, all integration targets, 6 doctests). Strict all-target,
   all-feature Clippy for both crates, format, and diff checks pass.
+
+- Current-revision server-free **P18-V02** rerun on code revision `182f8f69`
+  (2026-10-15): the default and all-feature workspace tests, all-target
+  workspace check, strict all-target/all-feature Clippy, pinned Maven verify
+  (37 scenarios and Java/Rust cross-decodes), comparator self-test and
+  37-scenario manifest validation pass. The 16-case race/leak smoke passes at
+  three repetitions; fuzz smoke covers 105 frame seeds, 11 message seeds, and
+  1,856 bounded mutations; release examples and workspace benchmarks compile.
+  Locked Cargo metadata, workspace metadata/license/dependency checks, all
+  seven package listings (including LICENSE and NOTICE), and the Java-backed
+  Unique ID differential under `TZ=Asia/Taipei` pass. Formatting and diff
+  checks pass. This closes the server-free P18-V02 gate on `182f8f69`;
+  P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local
+  Docker/Broker automation, and pre-publication version/registry resolution
+  remain open. Owner-run deployment and production checks remain Phase 19
+  manual validation.
