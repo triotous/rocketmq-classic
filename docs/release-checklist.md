@@ -49,7 +49,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   fixture-backed running-flow checks. Its `ConsumerRunningInfo` body and
   `ProcessQueueInfo`/`PopProcessQueueInfo`/`ConsumeStatus` models now also match
   inherited Java object-identity equality instead of exposing structural
-  `PartialEq`/`Eq`. `adjustThreadPool` has a direct owner
+  `PartialEq`/`Eq`. `QueryAssignmentRequestBody`,
+  `SetMessageRequestModeRequestBody`, `GetConsumerStatusBody`,
+  `ResetOffsetBody`, and `ConsumeMessageDirectlyResult` now also omit Rust
+  structural equality, matching inherited Java `Object.equals/hashCode`; their
+  invoked identity fixture is `fixtures/protocol/dto-identity.json`.
+  `adjustThreadPool` has a direct owner
   mapping and fixture evidence for the pinned built-in services' no-op
   behavior. The raw `executeTask`/`executeTaskLater` methods map to the
   owner-scoped runtime scheduler and now have invoked-fixture plus lifecycle /
@@ -731,6 +736,12 @@ the required full Phase 18 gates on the final revision.
   server-free gates on this revision only; P18-V01, current-revision GitHub
   Ubuntu address-profile evidence, Phase 19 Broker/Docker validation, and
   release version/registry checks remain open.
+- P18-V02 scoped follow-up (2026-10-15): after protocol DTO identity changes,
+  `cargo test -p rocketmq-classic-protocol --all-features --locked` passes all
+  115 unit tests, integration targets, and 25 doctests; strict Protocol Clippy,
+  pinned Maven verify (37 scenarios and fixture/cross-decode checks), format,
+  and diff checks pass. The complete workspace P18-V02 gate must still be
+  rerun on the final P18 revision.
 
 ## Package graph and metadata
 

@@ -1114,7 +1114,14 @@ impl<'de> Deserialize<'de> for LiteSubscription {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+/// Java `QueryAssignmentRequestBody` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueryAssignmentRequestBody;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<QueryAssignmentRequestBody>();
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1633,7 +1640,14 @@ impl QueryConsumeTimeSpanBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::SetMessageRequestModeRequestBody;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<SetMessageRequestModeRequestBody>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3196,7 +3210,14 @@ impl ConsumerListByGroupResponseBody {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java `GetConsumerStatusBody` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GetConsumerStatusBody;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<GetConsumerStatusBody>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetConsumerStatusBody {
     #[serde(with = "message_queue_offset_table")]
@@ -3705,7 +3726,14 @@ fn previous_json_byte(bytes: &[u8], index: usize) -> Option<u8> {
     bytes.get(previous).copied()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java `ResetOffsetBody` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ResetOffsetBody;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ResetOffsetBody>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetOffsetBody {
     #[serde(
@@ -4197,7 +4225,14 @@ mod optional_message_queue_offset_table {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java `ConsumeMessageDirectlyResult` inherits identity-based `Object.equals`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumeMessageDirectlyResult;
+/// fn requires_partial_eq<T: PartialEq>() {}
+/// requires_partial_eq::<ConsumeMessageDirectlyResult>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeMessageDirectlyResult {
     pub order: bool,
@@ -5175,6 +5210,36 @@ mod tests {
             mode_body.get_pop_share_queue_num(),
             mode_case["primitiveAfterReset"]
         );
+    }
+
+    #[test]
+    fn protocol_dto_identity_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/protocol/dto-identity.json"))
+                .unwrap();
+        assert_eq!(
+            fixture["clientArtifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(fixture["serverContacted"], false);
+
+        for dto in [
+            "QueryAssignmentRequestBody",
+            "SetMessageRequestModeRequestBody",
+            "GetConsumerStatusBody",
+            "ResetOffsetBody",
+            "ConsumeMessageDirectlyResult",
+        ] {
+            let identity = &fixture["identityCases"][dto];
+            assert_eq!(identity["equalsDeclaredBy"], "java.lang.Object", "{dto}");
+            assert_eq!(identity["hashCodeDeclaredBy"], "java.lang.Object", "{dto}");
+            assert_eq!(identity["sameObjectEqualsItself"], true, "{dto}");
+            assert_eq!(identity["distinctDefaultObjectsEquals"], false, "{dto}");
+        }
     }
 
     #[test]

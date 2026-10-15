@@ -1129,6 +1129,14 @@ One hundred forty-three direct Java input cases cover decoded fields, accepted/r
 
 The invoked Java fixture reflects both inherited methods and confirms that separately constructed default instances compare unequal for all four classes. Compile-fail doctests guard the Rust trait boundary. The Rust body round-trip differential compares normalized JSON values, preserving the wire/API check without adding value equality. Fixture SHA-256: `a16ba3fd660aa1b8ad6ef2150163a9657283ada56c728f6769f39f98b0a5fbe8`.
 
+## Protocol body DTO identity traits
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `QueryAssignmentRequestBody`, `SetMessageRequestModeRequestBody`, `GetConsumerStatusBody`, `ResetOffsetBody`, and `ConsumeMessageDirectlyResult`; each inherits `Object.equals/hashCode` | Corresponding Rust protocol DTOs intentionally do not implement structural `PartialEq`/`Eq` |
+
+The invoked `ProtocolDtoIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all five classes. Compile-fail doctests guard the Rust trait boundaries. Fixture: `fixtures/protocol/dto-identity.json`, SHA-256 `11f97e14fc3386c4ef61a6d82aa27f8e8b9b723a965fb3ddfb3b30233f0be0d9`.
+
 ## Common public API: TopicValidator
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |

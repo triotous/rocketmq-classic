@@ -130,6 +130,10 @@ public final class Main {
             ConsumerRunningInfoFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "protocol-dto-identity-fixture".equals(args[0])) {
+            ProtocolDtoIdentityFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "acl-fixture".equals(args[0])) {
             AclFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
