@@ -1338,3 +1338,31 @@ Before any publication:
   Phase 19 local Docker/Broker automation, and pre-publication version/registry
   resolution remain open. Owner-run deployment/live Broker checks remain
   Phase 19 manual validation.
+
+- P18-V01 TLS decryptor registration (`d163a143`, 2026-10-15, pinned Java
+  source `efa1be59d6fc747ad220f036c86030f05f0419f9`): Rust now exposes the
+  Java-shaped process-wide `register_decryption_strategy` API; the callback
+  takes a key path and client/server role, and null registration makes a later
+  key load fail. Invoked Java fixtures pin the public nested interface,
+  registration method, callback signature, default strategy, callback values,
+  and null behavior. TLS configuration no longer exposes per-config strategy
+  injection. This closes the decryptor registration API slice only. Java
+  property-file reload timing and broad P18-V01 reconciliation remain open.
+  TLS fixture SHA-256 values: defaults
+  `1ef41b86ef30bb65c912889b091924c7c15390a460eaf0c74aef6bd10e539db1`,
+  system properties
+  `c0267cd68a2dd32cb6adb9b9bdc17d6340220928d2090d970a5223df9de8b5a7`.
+
+- Current-revision server-free P18-V02 rerun on code revision `d163a143`
+  (2026-10-15): default and all-feature workspace tests, all-target/all-feature
+  workspace check and strict Clippy, Maven `verify` (37 scenarios and fixture
+  checks), comparator self-test and 37-scenario manifest, deterministic
+  race/leak smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message
+  seeds, 1,856 bounded mutations), release examples, offline benchmark
+  compilation, locked Cargo metadata, workspace metadata/license/dependency
+  checks, seven package listings with LICENSE/NOTICE, Asia/Taipei Unique ID
+  fixture, formatting, and diff checks pass. This closes local server-free
+  P18-V02 only. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment/live Broker checks remain
+  Phase 19 manual validation.
