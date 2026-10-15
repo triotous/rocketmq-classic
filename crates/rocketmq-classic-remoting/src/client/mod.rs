@@ -139,6 +139,7 @@ struct ClientInner {
     closed: AtomicBool,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     security: TransportMode,
+    use_tls: AtomicBool,
     max_frame_size_override: Option<usize>,
     config: ClientConfig,
     connect_timeout_millis: AtomicI32,
@@ -734,6 +735,7 @@ impl RemotingClient {
             let _ = tls.connector()?;
         }
         let socks_proxy_routes = config.parse_socks_proxy_config()?;
+        let use_tls = matches!(&config.transport, TransportMode::Tls(_));
         let close_socket_if_timeout = config.close_socket_if_timeout;
         let enable_reconnect_for_go_away = config.enable_reconnect_for_go_away;
         let disable_callback_executor = config.disable_callback_executor;
@@ -765,6 +767,7 @@ impl RemotingClient {
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: config.transport.clone(),
+            use_tls: AtomicBool::new(use_tls),
             max_frame_size_override: None,
             connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
@@ -897,6 +900,17 @@ impl RemotingClient {
             .store(seconds, Ordering::Release);
     }
 
+    /// Returns whether new connections attempt TLS using the context captured at construction.
+    pub fn get_use_tls(&self) -> bool {
+        self.inner.use_tls.load(Ordering::Acquire)
+    }
+
+    /// Updates whether new connections use the TLS context captured at construction.
+    /// Enabling TLS has no effect when the client was constructed without a TLS context.
+    pub fn set_use_tls(&self, enabled: bool) {
+        self.inner.use_tls.store(enabled, Ordering::Release);
+    }
+
     /// Returns the configured Java client socket send-buffer size in bytes.
     pub fn get_client_socket_send_buffer_size(&self) -> usize {
         self.inner
@@ -996,6 +1010,7 @@ impl RemotingClient {
 
     #[cfg(test)]
     fn with_limits(security: TransportMode, max_frame_size: usize, initial_opaque: i32) -> Self {
+        let use_tls = matches!(&security, TransportMode::Tls(_));
         let config = ClientConfig {
             transport: security.clone(),
             ..ClientConfig::default()
@@ -1031,6 +1046,7 @@ impl RemotingClient {
             }),
             runtime: Mutex::new(Some(tokio::runtime::Handle::current())),
             security: security.clone(),
+            use_tls: AtomicBool::new(use_tls),
             max_frame_size_override: Some(max_frame_size),
             connect_timeout_millis: AtomicI32::new(3000),
             active_connect_timeout_millis: AtomicI32::new(3000),
@@ -3955,6 +3971,7 @@ mod tests {
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: TransportMode::Plain,
+            use_tls: AtomicBool::new(false),
             max_frame_size_override: Some(DEFAULT_MAX_FRAME_SIZE),
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),

@@ -20,9 +20,11 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.WriteBufferWaterMark;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
+import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.exception.RemotingTimeoutException;
@@ -70,6 +72,7 @@ public final class RemotingLiveConfigProbe {
         verifyConnectTimeoutSetting();
         verifyProxyConnectTimeoutSetting();
         verifyBootstrapOptionSettings();
+        verifyUseTlsSetting();
         verifyChannelPipelineSettings();
         System.out.println("Remoting live config mutation verified");
     }
@@ -333,6 +336,36 @@ public final class RemotingLiveConfigProbe {
                 "new proxy receive buffer");
         } finally {
             client.shutdown();
+        }
+    }
+
+    private static void verifyUseTlsSetting() throws Exception {
+        boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
+        TlsSystemConfig.tlsTestModeEnable = true;
+        NettyRemotingClient client = null;
+        Thread peer = null;
+        try {
+            NettyClientConfig config = new NettyClientConfig();
+            config.setUseTLS(true);
+            client = new NettyRemotingClient(config);
+            try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                client.start();
+                config.setUseTLS(false);
+                String address = "127.0.0.1:" + server.getLocalPort();
+                peer = respondToOne(server, "live-config-use-tls-peer");
+                verifySuccess(client.invokeSync(address,
+                    RemotingCommand.createRequestCommand(0, null), 2000), "live useTLS setting");
+                Channel channel = channelFor(client, address);
+                if (channel.pipeline().get(SslHandler.class) != null) {
+                    throw new IllegalStateException("new channel ignored the live TLS disable setting");
+                }
+            }
+        } finally {
+            if (client != null) {
+                client.shutdown();
+            }
+            TlsSystemConfig.tlsTestModeEnable = previousTestMode;
+            joinPeer(peer, "live useTLS setting");
         }
     }
 

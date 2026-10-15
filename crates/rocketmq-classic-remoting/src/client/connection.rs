@@ -536,6 +536,7 @@ async fn run_connection(
 pub(super) async fn connect(
     address: &str,
     mode: &TransportMode,
+    use_tls: &AtomicBool,
     proxy: Option<&SocksProxyConfig>,
     send_buffer_size: usize,
     receive_buffer_size: usize,
@@ -625,6 +626,9 @@ pub(super) async fn connect(
             .map_err(|_| TransportError::Timeout)??,
         None => dial.await?,
     };
+    if !use_tls.load(std::sync::atomic::Ordering::Acquire) {
+        return Ok(stream);
+    }
     match mode {
         TransportMode::Plain => Ok(stream),
         TransportMode::Tls(config) => {

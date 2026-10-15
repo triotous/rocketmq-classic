@@ -2222,6 +2222,115 @@ async fn p3_tls_matches_java_trust_all_modes() {
 }
 
 #[tokio::test]
+async fn p18_use_tls_setting_is_live_for_new_channels_with_a_captured_context() {
+    let certificate = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let server_config = tokio_rustls::rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![certificate.cert.der().clone()],
+            tokio_rustls::rustls::pki_types::PrivateKeyDer::Pkcs8(
+                tokio_rustls::rustls::pki_types::PrivatePkcs8KeyDer::from(
+                    certificate.key_pair.serialize_der(),
+                ),
+            ),
+        )
+        .unwrap();
+    let tls_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tls_port = tls_listener.local_addr().unwrap().port();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+    let tls_peer = tokio::spawn(async move {
+        let (socket, _) = tls_listener.accept().await.unwrap();
+        let mut stream = acceptor.accept(socket).await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(request.code);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+
+    let plain_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let plain_address = plain_listener.local_addr().unwrap();
+    let plain_peer = tokio::spawn(async move {
+        let (mut stream, _) = plain_listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(request.code);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+
+    let client = RemotingClient::with_config(ClientConfig {
+        transport: TransportMode::Tls(TlsConfig::default()),
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    assert!(client.get_use_tls());
+    client.start().unwrap();
+    client.set_use_tls(false);
+    assert!(!client.get_use_tls());
+    let plain_response = client
+        .invoke(
+            &plain_address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert!(plain_response.is_response());
+
+    client.set_use_tls(true);
+    assert!(client.get_use_tls());
+    let tls_response = client
+        .invoke(
+            &format!("localhost:{tls_port}"),
+            command(2),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert!(tls_response.is_response());
+    plain_peer.await.unwrap();
+    tls_peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_enabling_use_tls_without_a_captured_context_stays_plain() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(request.code);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+
+    let client = RemotingClient::with_config(ClientConfig {
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    assert!(!client.get_use_tls());
+    client.start().unwrap();
+    client.set_use_tls(true);
+    assert!(client.get_use_tls());
+    let response = client
+        .invoke(
+            &address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert!(response.is_response());
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_nameserver_channel_interval_has_no_implicit_scan_behavior() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

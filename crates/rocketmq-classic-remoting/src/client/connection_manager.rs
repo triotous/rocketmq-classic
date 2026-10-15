@@ -192,6 +192,7 @@ impl ClientInner {
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
+            &self.use_tls,
             proxy,
             connection_settings.send_buffer_size,
             connection_settings.receive_buffer_size,
