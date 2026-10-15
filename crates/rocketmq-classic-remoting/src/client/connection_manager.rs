@@ -187,6 +187,7 @@ impl ClientInner {
             Some(selection) => selection.connect_proxy()?,
             None => None,
         };
+        let (max_idle_time, disable_worker_group) = self.channel_pipeline_settings();
         let mut dial = Box::pin(connection::connect(
             &key,
             &self.security,
@@ -207,7 +208,7 @@ impl ClientInner {
             drop(stream);
             return Err(TransportError::Shutdown);
         }
-        let connection = connection::Connection::spawn(
+        let connection = connection::Connection::spawn_with_channel_settings(
             stream,
             generation,
             Arc::downgrade(self),
@@ -215,6 +216,8 @@ impl ClientInner {
             self.config.write_buffer_watermarks(),
             key.clone(),
             self.config.pooled_byte_buffer_allocator_enabled,
+            max_idle_time,
+            disable_worker_group,
         );
         let mut connections = self.connections.lock().unwrap();
         if self.closed.load(std::sync::atomic::Ordering::Acquire) {

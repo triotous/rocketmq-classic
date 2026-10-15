@@ -43,15 +43,11 @@ pub(super) fn start(
     inner: Weak<ClientInner>,
     mut receiver: mpsc::UnboundedReceiver<InboundRequest>,
     worker_count: usize,
-    disable_worker_group: bool,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let Some(client) = inner.upgrade() else {
         return Vec::new();
     };
     let shutdown_sender = client.shutdown.clone();
-    if disable_worker_group {
-        return Vec::new();
-    }
     let (work, worker_rx) = mpsc::unbounded_channel();
     let worker_rx = Arc::new(tokio::sync::Mutex::new(worker_rx));
     let mut tasks = Vec::with_capacity(worker_count + 1);

@@ -1458,6 +1458,67 @@ async fn p3_disabled_worker_group_dispatches_inbound_request_on_connection_path(
 }
 
 #[tokio::test]
+async fn p18_worker_group_setting_can_change_for_channels_after_start() {
+    async fn peer(listener: TcpListener) -> tokio::task::JoinHandle<RemotingCommand> {
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let outbound = read_command(&mut stream).await;
+            let mut response = command(outbound.code);
+            response.opaque = outbound.opaque;
+            response.mark_response();
+            write_command(&mut stream, &response).await;
+            let mut request = command(900_005);
+            request.opaque = 45;
+            write_command(&mut stream, &request).await;
+            read_command(&mut stream).await
+        })
+    }
+
+    let worker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let worker_address = worker_listener.local_addr().unwrap();
+    let worker_peer = peer(worker_listener).await;
+    let direct_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let direct_address = direct_listener.local_addr().unwrap();
+    let direct_peer = peer(direct_listener).await;
+    let client = RemotingClient::with_config(ClientConfig {
+        disable_netty_worker_group: true,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    client.register_processor(
+        900_005,
+        Arc::new(|_: RemotingCommand| Ok(Some(command(905)))),
+    );
+
+    client.set_disable_netty_worker_group(false);
+    assert!(!client.get_disable_netty_worker_group());
+    client
+        .invoke(
+            &worker_address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(worker_peer.await.unwrap().code, 905);
+
+    client.set_disable_netty_worker_group(true);
+    assert!(client.get_disable_netty_worker_group());
+    client
+        .invoke(
+            &direct_address.to_string(),
+            command(1),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(direct_peer.await.unwrap().code, 905);
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_inbound_oneway_runs_processor_but_never_writes_response() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -2247,6 +2308,66 @@ async fn p3_max_idle_time_observes_partial_read_activity_like_all_idle_timer() {
     assert_eq!(event_address, address.to_string());
     client.shutdown().await;
     peer.abort();
+}
+
+#[tokio::test]
+async fn p18_idle_timeout_setting_applies_to_new_channels_only() {
+    let idle_disabled_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let idle_disabled_address = idle_disabled_listener.local_addr().unwrap();
+    let idle_enabled_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let idle_enabled_address = idle_enabled_listener.local_addr().unwrap();
+    let client = RemotingClient::with_config(ClientConfig {
+        max_idle_time: 0,
+        scan_available_nameserver: false,
+        ..ClientConfig::default()
+    })
+    .unwrap();
+    client.start().unwrap();
+    assert_eq!(client.get_client_channel_max_idle_time_seconds(), 0);
+    assert!(
+        client
+            .is_address_reachable(
+                &idle_disabled_address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let (mut idle_disabled, _) =
+        tokio::time::timeout(Duration::from_secs(1), idle_disabled_listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+
+    client.set_client_channel_max_idle_time_seconds(1);
+    assert_eq!(client.get_client_channel_max_idle_time_seconds(), 1);
+    assert!(
+        client
+            .is_address_reachable(
+                &idle_enabled_address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let (mut idle_enabled, _) =
+        tokio::time::timeout(Duration::from_secs(1), idle_enabled_listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+
+    let mut byte = [0; 1];
+    let new_channel_closed =
+        tokio::time::timeout(Duration::from_secs(2), idle_enabled.read(&mut byte)).await;
+    assert!(
+        new_channel_closed.is_ok(),
+        "new channel did not use the live idle timeout"
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), idle_disabled.read(&mut byte))
+            .await
+            .is_err(),
+        "changing the setting altered an existing channel's idle handler"
+    );
+    client.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

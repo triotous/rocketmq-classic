@@ -1874,6 +1874,7 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    #[cfg(test)]
     pub(super) fn max_idle_time_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.max_idle_time.max(0) as u64)
     }

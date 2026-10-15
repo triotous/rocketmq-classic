@@ -148,6 +148,8 @@ struct ClientInner {
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
     client_worker_threads: AtomicUsize,
+    disable_netty_worker_group: AtomicBool,
+    client_channel_max_idle_time_seconds: AtomicI32,
     scan_available_nameserver: AtomicBool,
     socks_proxy_routes: config::ProxyRoutes,
     async_admission: Arc<tokio::sync::Semaphore>,
@@ -204,6 +206,17 @@ impl ClientInner {
             None => self.active_connect_timeout_millis(),
         };
         Self::deadline_for_connect_timeout(deadline, timeout_millis)
+    }
+
+    fn channel_pipeline_settings(&self) -> (std::time::Duration, bool) {
+        let max_idle_seconds = self
+            .client_channel_max_idle_time_seconds
+            .load(Ordering::Acquire);
+        let disable_worker_group = self.disable_netty_worker_group.load(Ordering::Acquire);
+        (
+            std::time::Duration::from_secs(max_idle_seconds.max(0) as u64),
+            disable_worker_group,
+        )
     }
 
     fn frame_max_length(&self) -> Result<usize, TransportError> {
@@ -708,6 +721,8 @@ impl RemotingClient {
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
             client_worker_threads: AtomicUsize::new(config.worker_threads),
+            disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
+            client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
             scan_available_nameserver: AtomicBool::new(scan_available_nameserver),
             async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
             oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
@@ -791,6 +806,34 @@ impl RemotingClient {
             .store(worker_threads, Ordering::Release);
     }
 
+    /// Returns the worker-group dispatch setting captured by newly created channels.
+    pub fn get_disable_netty_worker_group(&self) -> bool {
+        self.inner
+            .disable_netty_worker_group
+            .load(Ordering::Acquire)
+    }
+
+    /// Updates the dispatch path captured by each channel created after this call.
+    pub fn set_disable_netty_worker_group(&self, disabled: bool) {
+        self.inner
+            .disable_netty_worker_group
+            .store(disabled, Ordering::Release);
+    }
+
+    /// Returns the idle timeout captured by newly created channels, in seconds.
+    pub fn get_client_channel_max_idle_time_seconds(&self) -> i32 {
+        self.inner
+            .client_channel_max_idle_time_seconds
+            .load(Ordering::Acquire)
+    }
+
+    /// Updates the all-idle timeout for channels created after this call.
+    pub fn set_client_channel_max_idle_time_seconds(&self, seconds: i32) {
+        self.inner
+            .client_channel_max_idle_time_seconds
+            .store(seconds, Ordering::Release);
+    }
+
     /// Returns the configured Java `connectTimeoutMillis` value.
     pub fn get_connect_timeout_millis(&self) -> i32 {
         self.inner.connect_timeout_millis.load(Ordering::Acquire)
@@ -857,6 +900,8 @@ impl RemotingClient {
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
             client_worker_threads: AtomicUsize::new(4),
+            disable_netty_worker_group: AtomicBool::new(false),
+            client_channel_max_idle_time_seconds: AtomicI32::new(120),
             scan_available_nameserver: AtomicBool::new(true),
             config: ClientConfig {
                 transport: security.clone(),
@@ -882,7 +927,6 @@ impl RemotingClient {
             Arc::downgrade(&inner),
             inbound_rx,
             inner.config.worker_threads,
-            false,
         );
         for task in processor_tasks {
             inner.spawn(task);
@@ -928,7 +972,6 @@ impl RemotingClient {
             Arc::downgrade(&self.inner),
             startup_state.inbound_receiver,
             worker_threads,
-            self.inner.config.disable_netty_worker_group,
         ) {
             self.inner.spawn(task);
         }
@@ -3609,9 +3652,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn worker_group_toggle_controls_handler_dispatch_path() {
+    async fn channel_pipeline_settings_are_read_from_live_values() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.start().unwrap();
+        assert_eq!(client.get_client_channel_max_idle_time_seconds(), 120);
+        assert!(!client.get_disable_netty_worker_group());
+        assert_eq!(
+            client.inner.channel_pipeline_settings(),
+            (std::time::Duration::from_secs(120), false)
+        );
+
+        client.set_client_channel_max_idle_time_seconds(-1);
+        client.set_disable_netty_worker_group(true);
+        assert_eq!(client.get_client_channel_max_idle_time_seconds(), -1);
+        assert!(client.get_disable_netty_worker_group());
+        assert_eq!(
+            client.inner.channel_pipeline_settings(),
+            (std::time::Duration::ZERO, true)
+        );
+
+        client.set_client_channel_max_idle_time_seconds(2);
+        client.set_disable_netty_worker_group(false);
+        assert_eq!(
+            client.inner.channel_pipeline_settings(),
+            (std::time::Duration::from_secs(2), false)
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn worker_group_pool_is_available_for_live_channel_toggles() {
         let config = ClientConfig {
             disable_netty_worker_group: true,
+            worker_threads: 2,
             ..ClientConfig::default()
         };
         let (inbound, receiver) = mpsc::unbounded_channel();
@@ -3650,6 +3727,8 @@ mod tests {
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
             client_worker_threads: AtomicUsize::new(config.worker_threads),
+            disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
+            client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
             scan_available_nameserver: AtomicBool::new(config.scan_available_nameserver),
             connect_timeout_millis: AtomicI32::new(config.connect_timeout),
             active_connect_timeout_millis: AtomicI32::new(config.connect_timeout),
@@ -3676,9 +3755,12 @@ mod tests {
             Arc::downgrade(&inner),
             receiver,
             inner.config.worker_threads,
-            inner.config.disable_netty_worker_group,
         );
-        assert!(tasks.is_empty());
+        assert_eq!(tasks.len(), inner.config.worker_threads + 1);
+        inner.shutdown.send(true).unwrap();
+        for task in tasks {
+            task.await.unwrap();
+        }
         inner.public_executor.state.shutdown();
     }
 

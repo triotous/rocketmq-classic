@@ -83,6 +83,7 @@ impl Drop for FrameGuard<'_> {
 }
 
 impl Connection {
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn spawn(
         stream: BoxedStream,
@@ -93,12 +94,43 @@ impl Connection {
         address: String,
         pooled_byte_buffer_allocator_enabled: bool,
     ) -> Arc<Self> {
+        let (max_idle_time, disable_worker_group) = inner
+            .upgrade()
+            .map(|client| {
+                (
+                    client.config.max_idle_time_duration(),
+                    client.config.disable_netty_worker_group,
+                )
+            })
+            .unwrap_or_default();
+        Self::spawn_with_channel_settings(
+            stream,
+            generation,
+            inner,
+            max_frame_size,
+            write_watermarks,
+            address,
+            pooled_byte_buffer_allocator_enabled,
+            max_idle_time,
+            disable_worker_group,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn spawn_with_channel_settings(
+        stream: BoxedStream,
+        generation: u64,
+        inner: Weak<ClientInner>,
+        max_frame_size: usize,
+        write_watermarks: (usize, usize),
+        address: String,
+        pooled_byte_buffer_allocator_enabled: bool,
+        max_idle_time: std::time::Duration,
+        disable_worker_group: bool,
+    ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let closed = Arc::new(AtomicBool::new(false));
         let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
-        let disable_worker_group = inner
-            .upgrade()
-            .is_some_and(|client| client.config.disable_netty_worker_group);
         let connection = Arc::new(Self {
             generation,
             sender,
@@ -112,9 +144,6 @@ impl Connection {
             write_watermarks,
             writable: Arc::new(AtomicBool::new(true)),
             frame_pool: Arc::new(std::sync::Mutex::new(Vec::new())),
-        });
-        let max_idle_time = inner.upgrade().map_or(std::time::Duration::ZERO, |client| {
-            client.config.max_idle_time_duration()
         });
         let task = tokio::spawn(run_connection(
             stream,

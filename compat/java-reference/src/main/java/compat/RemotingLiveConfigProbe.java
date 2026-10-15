@@ -9,12 +9,16 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.ByteBuffer;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.IdleStateHandler;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.netty.NettyRemotingClient;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
@@ -63,6 +67,7 @@ public final class RemotingLiveConfigProbe {
         verifyClientWorkerThreadsSetting();
         verifyConnectTimeoutSetting();
         verifyProxyConnectTimeoutSetting();
+        verifyChannelPipelineSettings();
         System.out.println("Remoting live config mutation verified");
     }
 
@@ -200,6 +205,105 @@ public final class RemotingLiveConfigProbe {
             }
         } finally {
             client.shutdown();
+        }
+    }
+
+    private static void verifyChannelPipelineSettings() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setClientChannelMaxIdleTimeSeconds(1);
+        config.setDisableNettyWorkerGroup(false);
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        Thread firstPeer = null;
+        Thread secondPeer = null;
+        try {
+            client.start();
+            config.setClientChannelMaxIdleTimeSeconds(2);
+            config.setDisableNettyWorkerGroup(true);
+            try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                String address = "127.0.0.1:" + server.getLocalPort();
+                firstPeer = respondToOne(server, "live-channel-config-peer-one");
+                verifySuccess(client.invokeSync(address,
+                    RemotingCommand.createRequestCommand(0, null), 2000), "first channel config");
+                Channel channel = channelFor(client, address);
+                IdleStateHandler idle = channel.pipeline().get(IdleStateHandler.class);
+                if (idle == null || idle.getAllIdleTimeInMillis() != 2000) {
+                    throw new IllegalStateException("channel did not use the live idle timeout: "
+                        + (idle == null ? null : idle.getAllIdleTimeInMillis()));
+                }
+                ChannelHandlerContext last = channel.pipeline().lastContext();
+                if (last.executor() != channel.eventLoop()) {
+                    throw new IllegalStateException("disabled worker group still dispatched on an executor group");
+                }
+            }
+
+            config.setClientChannelMaxIdleTimeSeconds(3);
+            config.setDisableNettyWorkerGroup(false);
+            try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+                String address = "127.0.0.1:" + server.getLocalPort();
+                secondPeer = respondToOne(server, "live-channel-config-peer-two");
+                verifySuccess(client.invokeSync(address,
+                    RemotingCommand.createRequestCommand(0, null), 2000), "second channel config");
+                Channel channel = channelFor(client, address);
+                IdleStateHandler idle = channel.pipeline().get(IdleStateHandler.class);
+                if (idle == null || idle.getAllIdleTimeInMillis() != 3000) {
+                    throw new IllegalStateException("new channel did not use the updated idle timeout: "
+                        + (idle == null ? null : idle.getAllIdleTimeInMillis()));
+                }
+                ChannelHandlerContext last = channel.pipeline().lastContext();
+                if (last.executor() == channel.eventLoop()) {
+                    throw new IllegalStateException("enabled worker group did not dispatch on its executor group");
+                }
+            }
+        } finally {
+            client.shutdown();
+            joinPeer(firstPeer, "first channel config");
+            joinPeer(secondPeer, "second channel config");
+        }
+    }
+
+    private static Thread respondToOne(ServerSocket server, String name) {
+        Thread peer = new Thread(() -> {
+            try (Socket socket = server.accept()) {
+                RemotingCommand request = readCommand(socket);
+                RemotingCommand response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                response.setSerializeTypeCurrentRPC(request.getSerializeTypeCurrentRPC());
+                response.setOpaque(request.getOpaque());
+                writeCommand(socket.getOutputStream(), response);
+                socket.getInputStream().read();
+            } catch (IOException error) {
+                throw new RuntimeException(error);
+            }
+        }, name);
+        peer.start();
+        return peer;
+    }
+
+    private static void joinPeer(Thread peer, String label) throws InterruptedException {
+        if (peer == null) {
+            return;
+        }
+        peer.join(3000);
+        if (peer.isAlive()) {
+            throw new IllegalStateException(label + " peer did not terminate after client shutdown");
+        }
+    }
+
+    private static Channel channelFor(NettyRemotingClient client, String address) throws Exception {
+        Field field = NettyRemotingClient.class.getDeclaredField("channelTables");
+        field.setAccessible(true);
+        Map<?, ?> channels = (Map<?, ?>) field.get(client);
+        Object wrapper = channels.get(address);
+        if (wrapper == null) {
+            throw new IllegalStateException("client channel table did not retain " + address);
+        }
+        java.lang.reflect.Method getChannel = wrapper.getClass().getDeclaredMethod("getChannel");
+        getChannel.setAccessible(true);
+        return (Channel) getChannel.invoke(wrapper);
+    }
+
+    private static void verifySuccess(RemotingCommand response, String label) {
+        if (response == null || response.getCode() != ResponseCode.SUCCESS) {
+            throw new IllegalStateException(label + " did not return a successful response");
         }
     }
 
