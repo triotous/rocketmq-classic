@@ -1416,3 +1416,32 @@ Before any publication:
   6 security, 100 transport and 7 doctests); strict all-target/all-feature
   Remoting Clippy; Maven `verify` (37 scenarios and Java fixture checks),
   formatting and diff checks.
+- P18-V01 TLS static-property initialization (`e314b5e1`, 2026-10-15, pinned
+  Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`): the Java fixture
+  initializes its TLS class state, then changes `tls.client.authServer` and
+  verifies later contexts retain the original static value. Rust now seeds its
+  process-wide property state only on first access, including when the first
+  TLS mode selection is Plain; later maps cannot replace it, while subsequent
+  file reloads still update present keys and retain omitted keys. The invoked
+  Java fixture and Rust cross-source regression pass. Fixture SHA-256 values:
+  defaults `4e1603df11cdb4054f8f3950ddc27cb5e219ad89f93d91071c9478d0d80ad648`,
+  system properties `b4ca8ef0433b88014c28168be8bdb335ff93f2eeccae24f467ef5c72cb79c2b9`.
+  Validation on the code commit: Remoting all-feature tests (97 unit, 8 codec,
+  1 fuzz, 6 security, 100 transport, 7 doctests), strict all-target/all-feature
+  Remoting Clippy, pinned Maven `verify` (37 scenarios), formatting and diff
+  checks pass. This closes only the TLS initialization slice; broad P18-V01,
+  final-revision workspace P18-V02, current-revision GitHub Ubuntu/P18-V04,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment and production checks remain
+  Phase 19 manual validation.
+- Current-revision server-free **P18-V02** gate on code revision `e314b5e1`
+  (2026-10-15): `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass;
+  `cargo check --workspace --all-targets --all-features --locked` and strict
+  all-target/all-feature workspace Clippy pass; pinned Maven `verify` passes
+  all 37 differential scenarios and fixtures; comparator self-test, release
+  facade example build, formatting, and diff checks pass. This closes
+  server-free P18-V02 on `e314b5e1`. Broad P18-V01, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry resolution remain open. Owner-run
+  deployment and production checks remain Phase 19 manual validation.

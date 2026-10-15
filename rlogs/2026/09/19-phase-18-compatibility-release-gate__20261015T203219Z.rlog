@@ -39,3 +39,48 @@ were updated separately. Broad P18-V01 remains open; the latest-revision GitHub
 Ubuntu/P18-V04 result, Phase 19 local Docker/Broker automation, and release
 version/registry resolution remain open. No plan, Java source checkout, Docker,
 Broker, push, tag, publication, or deployment was changed or used.
+
+2026-10-15 20:45 UTC — closed the Java TLS static-property initialization slice.
+
+Pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9` reads
+`TlsSystemConfig` values at class initialization. A later JVM property mutation
+does not replace those fields. Rust process state now initializes from the
+first explicit property map, including a first Plain-mode selection, and later
+maps cannot overwrite it; property-file reloads still update present keys and
+retain omitted values across sources. Added Java fixture assertions and Rust
+regression coverage. Code/fixture commit: `e314b5e1`.
+
+PASS on `e314b5e1`:
+
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` — 97 unit,
+  8 codec, 1 fuzz regression, 6 security, 100 transport, 7 doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`.
+- `mvn -f compat/java-reference/pom.xml verify` — all fixtures and 37
+  differential scenarios.
+- `cargo fmt --all -- --check` and `git diff --check`.
+
+Broad P18-V01 and final-revision full-workspace P18-V02 remain open, along with
+current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+automation, and pre-publication version/registry resolution. Owner production
+and topology checks remain the separate final manual validation. The Java
+reference repository remains unmodified; its pre-existing untracked
+`broker/src/test/java/org/apache/rocketmq/broker/aaaa.java` remains present.
+
+2026-10-15 20:56 UTC — closed server-free P18-V02 on code revision `e314b5e1`.
+
+PASS:
+
+- `cargo test --workspace --locked`.
+- `cargo test --workspace --all-features --locked`.
+- `cargo check --workspace --all-targets --all-features --locked`.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- `mvn -f compat/java-reference/pom.xml verify` — 37 scenarios and fixtures.
+- `python3 tests/differential/compare.py --self-test`.
+- `cargo build -p rocketmq-classic --examples --release --locked`.
+- `cargo fmt --all -- --check` and `git diff --check`.
+
+This closes only P18-V02 server-free gates. Broad P18-V01, current-revision
+GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+pre-publication version/registry resolution remain open. Owner production and
+topology checks remain the separate final manual validation.
