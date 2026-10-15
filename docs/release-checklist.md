@@ -790,6 +790,25 @@ the required full Phase 18 gates on the final revision.
   Broker/Docker automation, and pre-publication version/registry resolution
   checks remain open.
 
+- P18-V01 Common API reverse-scan follow-up (`fcab764e`, 2026-10-15): the
+  pinned Java `MessageExt` inherits `Message` methods and exposes no
+  `message()`/`message_mut()` composition accessors. Rust removes those two
+  extra public methods and migrates internal callers to inherited methods via
+  `Deref`/`DerefMut`; compile-fail doctests guard both removed boundaries.
+  Default and all-feature workspace tests, strict all-target/all-feature
+  Clippy, formatting, and diff checks pass. This closes the surfaced
+  `MessageExt` reverse-export discrepancy only; P18-V01 remains open for the
+  complete Java/Rust source, overload/input/error/flow, inherited API, and
+  reverse-export audit.
+
+- P18-V02 fixture isolation follow-up (`21f13891`, 2026-10-15): a final
+  all-features workspace rerun exposed interference between the message
+  constants fixture and the message API fixture, which temporarily mutates
+  Java's process-wide reserved-property set. A test mutex now serializes those
+  two fixtures. The focused 19-test message suite, default and all-features
+  workspace suites, strict all-target/all-feature Clippy, formatting, and diff
+  checks pass on the corrected test harness.
+
 ## Package graph and metadata
 
 Current Cargo metadata reports seven workspace packages, all at version
