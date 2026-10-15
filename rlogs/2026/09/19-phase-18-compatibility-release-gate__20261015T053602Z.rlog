@@ -25,3 +25,14 @@
 - This closes the direct `cloneMessage` method mapping only. Broad P18-V01,
   current-revision full P18-V02, GitHub Ubuntu address-profile evidence, Phase
   19 Broker/Docker automation, and release version/registry checks remain open.
+- P18-V01/P18-V02 follow-up: the workspace UTC run exposed that Java's
+  `getNearlyTimeFromID` fixture stored an absolute epoch tied to the fixture
+  generation month and timezone. Replaced it with the Java result's delta from
+  its selected local month start, which is stable across month rollovers and
+  zones; updated the differential and Producer matrix. Fixture SHA-256:
+  `0e63b403150e979b8d10baae980fcd5283343f9092f63308b9bbed95f250c8b6`.
+- Added an explicit CI run of the near-time differential under
+  `TZ=Asia/Taipei`; the default workspace CI continues to run under Ubuntu UTC.
+  Focused Core tests pass under both UTC and Asia/Taipei, and the regenerated
+  Java Producer fixture verifies under UTC. Full P18-V02 must be rerun after
+  this follow-up commit.

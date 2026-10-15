@@ -401,7 +401,7 @@ mod tests {
             let ip_bytes_key = format!("{prefix}AddressBytes");
             let address_key = format!("{prefix}Address");
             let pid_key = format!("{prefix}Pid");
-            let nearly_time_key = format!("{prefix}NearlyTimeMillis");
+            let nearly_time_key = format!("{prefix}NearlyTimeMonthOffsetMillis");
             assert_eq!(
                 encode_hex(&get_ip_from_id(id).unwrap()),
                 expected[ip_bytes_key].as_str().unwrap()
@@ -414,8 +414,10 @@ mod tests {
                 get_pid_from_id(id).unwrap(),
                 expected[pid_key].as_u64().unwrap() as u16
             );
+            let nearly_time = get_nearly_time_from_id(id).unwrap();
+            let local_month_start = local_month_start_millis_at(nearly_time).unwrap();
             assert_eq!(
-                get_nearly_time_from_id(id).unwrap(),
+                nearly_time - local_month_start,
                 expected[nearly_time_key].as_i64().unwrap()
             );
         }

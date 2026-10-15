@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -372,12 +374,14 @@ public final class ProducerCoreFixtures {
         result.put("ipv4AddressBytes", toHex(MessageClientIDSetter.getIPFromID(ipv4)));
         result.put("ipv4Address", MessageClientIDSetter.getIPStrFromID(ipv4));
         result.put("ipv4Pid", MessageClientIDSetter.getPidFromID(ipv4));
-        result.put("ipv4NearlyTimeMillis", MessageClientIDSetter.getNearlyTimeFromID(ipv4).getTime());
+        result.put("ipv4NearlyTimeMonthOffsetMillis",
+            nearlyTimeMonthOffsetMillis(MessageClientIDSetter.getNearlyTimeFromID(ipv4)));
         result.put("ipv6Id", ipv6);
         result.put("ipv6AddressBytes", toHex(MessageClientIDSetter.getIPFromID(ipv6)));
         result.put("ipv6Address", MessageClientIDSetter.getIPStrFromID(ipv6));
         result.put("ipv6Pid", MessageClientIDSetter.getPidFromID(ipv6));
-        result.put("ipv6NearlyTimeMillis", MessageClientIDSetter.getNearlyTimeFromID(ipv6).getTime());
+        result.put("ipv6NearlyTimeMonthOffsetMillis",
+            nearlyTimeMonthOffsetMillis(MessageClientIDSetter.getNearlyTimeFromID(ipv6)));
         result.put("oddTrailingNibbleIgnored",
             toHex(MessageClientIDSetter.getIPFromID("C000020A1")));
         result.put("invalidHexNibbles", toHex(MessageClientIDSetter.getIPFromID("G0H0I0J0")));
@@ -389,6 +393,17 @@ public final class ProducerCoreFixtures {
         result.put("shortTimestampThrows", !"none".equals(failureType(
             () -> MessageClientIDSetter.getNearlyTimeFromID("AA"))));
         return result;
+    }
+
+    private static long nearlyTimeMonthOffsetMillis(Date nearlyTime) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(nearlyTime);
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return nearlyTime.getTime() - calendar.getTimeInMillis();
     }
 
     private static Map<String, Object> sendInputMutation() {

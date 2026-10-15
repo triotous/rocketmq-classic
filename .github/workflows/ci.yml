@@ -24,6 +24,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo test --workspace --all-features --locked
+      - run: TZ=Asia/Taipei cargo test -p rocketmq-classic-core --lib unique_id::tests::public_unique_id_helpers_match_the_pinned_java_fixture --locked
       - run: python3 tests/differential/compare.py --self-test
       - run: python3 tests/differential/compare.py --validate-manifest
       - run: cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked

@@ -542,8 +542,11 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `MessageClientIDSetter`'s public ID decoding helpers now map to Rust APIs and
   Java differential cases; the generator and near-time reconstruction use the
   process-local month boundary. The focused differential also passes with
-  `TZ=Asia/Taipei`. This closes that helper slice only; broad P18-V01 remains
-  open.
+  `TZ=Asia/Taipei`. The Java fixture now stores the near-time delta from its
+  selected month start instead of an absolute epoch, avoiding timezone and
+  month-rollover drift; the focused Rust differential passes under UTC and
+  `TZ=Asia/Taipei`. CI runs the non-UTC case explicitly. This closes that
+  helper slice only; broad P18-V01 remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.
