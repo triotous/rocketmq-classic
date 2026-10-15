@@ -29,3 +29,24 @@
 - PASS after the synchronization fix: `cargo test --workspace --locked` (exit 0); `cargo test --workspace --all-features --locked` (exit 0); strict all-target/all-feature Clippy (exit 0); format and diff checks.
 - Test-only commit: `21f13891 test(compat): serialize mutable message fixtures`.
 - The first all-features failure was a test-isolation race, not a product behavior failure; the corrected suites now pass. Full current-revision P18-V02 auxiliary gates (Maven/differential manifest, race/fuzz smoke, examples/bench/package checks) still need their final rerun before phase closure.
+
+# Current-revision P18-V02 server-free verification — 20261015T085704Z
+
+- Completed the remaining current-revision gates on `c8bdae9d`:
+  `bash tests/stress/run-offline-smoke.sh` (16 cases × 3, exit 0),
+  `cargo build -p rocketmq-classic --examples --release --locked`,
+  `cargo bench --workspace --no-run --locked`, locked Cargo metadata,
+  `scripts/check-workspace-metadata.py`, and all seven
+  `cargo package --workspace --list --locked --allow-dirty` package listings.
+- PASS: the Java-backed unique-ID helper fixture under `TZ=Asia/Taipei`.
+  Prior final-revision checks also pass: default and all-feature workspace
+  tests, strict all-target/all-feature Clippy, pinned Maven verify (37
+  scenarios and cross-decodes), comparator self-test and 37-scenario manifest,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), formatting,
+  and diff checks.
+- P18-V02 server-free gates are complete on `c8bdae9d`. P18-V01 broad
+  bidirectional Java/Rust source/API/settings/input/error/flow/reverse-export
+  reconciliation, current GitHub Ubuntu/P18-V04 CI evidence, Phase 19 local
+  Broker/Docker automation, and pre-publication version/registry resolution
+  checks remain open. No plan file changed; no push, release, or tag action
+  taken; the Java reference checkout remains read-only.

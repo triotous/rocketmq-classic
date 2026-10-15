@@ -808,6 +808,17 @@ the required full Phase 18 gates on the final revision.
   two fixtures. The focused 19-test message suite, default and all-features
   workspace suites, strict all-target/all-feature Clippy, formatting, and diff
   checks pass on the corrected test harness.
+- Current-revision server-free P18-V02 rerun (`c8bdae9d`, 2026-10-15):
+  default and all-feature workspace tests, strict all-target/all-feature
+  Clippy, Maven verify (37 scenarios and Java/Rust cross-decodes), comparator
+  self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases
+  × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations),
+  release examples, workspace benchmark compilation, locked Cargo metadata,
+  workspace metadata/license/dependency checks, all seven package listings,
+  the `Asia/Taipei` unique-ID fixture, formatting, and diff checks pass.
+  P18-V02 server-free gates are complete on this revision. P18-V01, current
+  GitHub Ubuntu/P18-V04 CI evidence, Phase 19 Broker/Docker automation, and
+  pre-publication version/registry resolution checks remain open.
 
 ## Package graph and metadata
 
