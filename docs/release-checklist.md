@@ -989,6 +989,12 @@ Before any publication:
   and executor identity; Maven's pinned Java live-config probe verifies the
   matching getter and retention behavior. This closes that remoting setting
   slice only; the broad P18-V01 audit remains open.
+- P18-V01 Remoting GO_AWAY reconnect timing slice (`f506067d`, 2026-10-15):
+  the retry decision now reads the live `enableReconnectForGoAway` value when a
+  GO_AWAY response arrives, with a Rust post-start mutation regression and the
+  Java `RemotingLiveConfigProbe`. The current-revision server-free gates on
+  `9881c230` revalidate this slice. The Phase 3 inventory now records the live
+  setting adapter; this closes the setting row only.
 - PASS on `9881c230`: formatting, strict all-target/all-feature workspace
   Clippy, UTC default and all-feature workspace suites, full Remoting tests,
   Maven verify (37 scenarios and live remoting config probe), differential
