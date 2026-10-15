@@ -831,6 +831,13 @@ the required full Phase 18 gates on the final revision.
   separately from the live `UNIQ_KEY` getter, including setter and key-clear
   fallback behavior. Workspace default/all-feature tests and the current-tree
   server-free P18-V02 gates pass; broad P18-V01 remains open.
+- Protocol header helper reverse-export correction (`60a62324`, 2026-10-15):
+  parser helpers and the synthetic `ProofHeader` used only by tests are no
+  longer public. Remoting codec and fuzz tests use the Java-mapped
+  `GetRouteInfoRequestHeader`; a compile-fail doctest guards the removed exports.
+  Default/all-feature workspace tests, strict all-target/all-feature Clippy,
+  formatting, and diff checks pass. This closes those header exports only;
+  broad P18-V01 remains open.
 
 ## Package graph and metadata
 
