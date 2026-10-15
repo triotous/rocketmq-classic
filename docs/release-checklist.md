@@ -1287,3 +1287,16 @@ Before any publication:
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   release version/registry-resolution checks remain open. Owner-run deployment
   and live Broker checks remain Phase 19 manual validation.
+
+- P18-V01 `MessageClientExt` constructor API (`8b91e933`, 2026-10-15): pinned
+  Java 5.5.1 reflection confirms exactly one public no-argument constructor.
+  Rust `MessageClientExt::new()` and `Default` provide that construction path;
+  the Rust-only `new(MessageExt)` and `From<MessageExt>` conversion are removed.
+  Compile-fail doctests guard both absent conversion surfaces, and the invoked
+  Java fixture checks the public constructor count/signature. The constructor
+  parity slice passes Common all-feature tests (21 unit, 20 message-decode
+  integration, 1 topic-validator and 20 doctests), strict Common Clippy,
+  Maven verify (37 scenarios), formatting and diff checks. Fixture SHA-256:
+  `cd7329a631de04393ceb4fdb7eff701ceec05728213605e9efd07eceaf184ccb`.
+  This closes the constructor slice only; broad P18-V01 remains open, and the
+  full-workspace P18-V02 gate must be rerun after the remaining code changes.
