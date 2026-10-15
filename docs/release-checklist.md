@@ -1445,3 +1445,22 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry resolution remain open. Owner-run
   deployment and production checks remain Phase 19 manual validation.
+- P18-V01 TLS mode selection from static properties (`746c35bc`, 2026-10-15):
+  the Java oracle keeps `TlsSystemConfig.tlsEnable=false` after a later
+  `tls.enable=true` system-property change, and ignores `tls.enable` in TLS
+  files. Rust `TransportMode` now reads `tls.enable` from the one-time initial
+  property snapshot; the default `tls.config.file` path uses that same
+  snapshot. The cross-source regression reproduced the mismatch before the
+  fix and passes now. Fixture SHA-256: defaults
+  `223ed13d44d2a448b9c5193435a5dcb8c04940c42a9109196ad55eebeacbbc82`, system
+  properties `67bab119ca6084783ee19bdca2badd2bd62fb9534a3b44382fcf16c5e918dba2`.
+  Broad P18-V01 remains open.
+- Current-revision server-free **P18-V02** gate on code revision `746c35bc`
+  (2026-10-15): default and all-feature locked workspace tests, strict
+  all-target/all-feature workspace Clippy, all-target workspace check, pinned
+  Maven `verify` (37 scenarios and fixture checks), differential self-test,
+  release facade example build, formatting, and diff checks pass. This closes
+  server-free P18-V02 on `746c35bc`. Broad P18-V01, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry resolution remain open. Owner-run
+  deployment and production checks remain Phase 19 manual validation.

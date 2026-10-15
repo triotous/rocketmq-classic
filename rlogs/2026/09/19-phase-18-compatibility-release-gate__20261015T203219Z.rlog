@@ -84,3 +84,32 @@ This closes only P18-V02 server-free gates. Broad P18-V01, current-revision
 GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
 pre-publication version/registry resolution remain open. Owner production and
 topology checks remain the separate final manual validation.
+
+2026-10-15 21:10 UTC — closed the TLS mode-selection static-property slice.
+
+Pinned Java `TlsSystemConfig.tlsEnable` and `tlsConfigFile` are initialized
+from system properties and are excluded from `TlsHelper.extractTlsConfigFromFile`.
+The Java fixture mutates `tls.enable` after initialization and puts it in the
+TLS file; the static mode remains false. The Rust regression first reproduced
+the defect because `TransportMode` reread the later map. The implementation
+now keeps immutable initial system properties separately from file-overlaid
+TLS properties, and both mode selection and default path selection use that
+initial snapshot. Code/fixture commit: `746c35bc`.
+
+PASS on the code content committed as `746c35bc`:
+
+- `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked`.
+- `cargo check --workspace --all-targets --all-features --locked`.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`.
+- `mvn -f compat/java-reference/pom.xml verify` — all fixture checks and 37
+  differential scenarios.
+- `python3 tests/differential/compare.py --self-test`.
+- `cargo build -p rocketmq-classic --examples --release --locked`.
+- `cargo fmt --all -- --check` and `git diff --check`.
+
+This closes server-free P18-V02 on `746c35bc` and only the listed TLS mode
+slice of P18-V01. The rest of broad P18-V01, current-revision GitHub
+Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+pre-publication version/registry resolution remain open. Owner production and
+topology checks remain the separate final manual validation.
