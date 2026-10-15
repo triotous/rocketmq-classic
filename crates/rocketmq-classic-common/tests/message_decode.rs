@@ -1776,6 +1776,38 @@ fn message_public_api_matches_java_551_fixture() {
         expected["deepCopyPropertiesSourceIgnoresCopyMutation"],
         true
     );
+    let mut accessor_clone_source = Message::new("clone-topic", [0, 255, 42]);
+    accessor_clone_source.set_flag(29);
+    accessor_clone_source.set_transaction_id(Some("source-transaction".to_owned()));
+    accessor_clone_source
+        .put_user_property("clone-key", "clone-value")
+        .unwrap();
+    let accessor_clone = accessor_clone_source.clone_message();
+    assert!(!std::ptr::eq(&accessor_clone, &accessor_clone_source));
+    assert_eq!(expected["accessorCloneIsDistinct"], true);
+    assert_eq!(accessor_clone.topic(), expected["accessorCloneTopic"]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(accessor_clone.body()),
+        expected["accessorCloneBodyBase64"]
+    );
+    assert_eq!(accessor_clone.flag(), expected["accessorCloneFlag"]);
+    assert_eq!(
+        accessor_clone.get_property("clone-key"),
+        expected["accessorCloneProperty"].as_str()
+    );
+    assert_eq!(accessor_clone.transaction_id(), None);
+    assert_eq!(expected["accessorCloneTransactionIdIsNull"], true);
+    assert_eq!(
+        accessor_clone_source.transaction_id(),
+        expected["accessorCloneSourceTransactionId"].as_str()
+    );
+    let mut independent_clone = accessor_clone.clone();
+    independent_clone.set_body([9, 8, 7]);
+    independent_clone
+        .put_user_property("copy-only", "copy")
+        .unwrap();
+    assert_eq!(accessor_clone_source.body(), &[0, 255, 42]);
+    assert_eq!(accessor_clone_source.get_property("copy-only"), None);
     let mut copy_source = rocketmq_classic_common::message::NullableMessageProperties::new();
     copy_source.insert(None, None);
     copy_source.insert(Some("present".to_owned()), Some("original".to_owned()));

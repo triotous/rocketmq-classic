@@ -521,7 +521,7 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and `Message::set_nullable_properties`, with nullable lookup/clear APIs and
   encoded-key coverage across compact/stored records, producer send/batch, and
   consumer retry-topic fallback. Current message fixture SHA-256:
-  `195a465e232a4eff25b4b713c4988f3103f1f9835e635371441a83e70b537eeb`.
+  `7c61fee7311b7926b92b845899083e5f80a2ba8e67105ed7656de3d5e3a17a22`.
   The same invoked fixture now calls Java's transfer/correction/origin-ID/MQ2/
   reconsume/max-reconsume/consume-start helper pairs and compares the Rust
   property-constant mappings, including a present null transfer flag. This
@@ -688,6 +688,16 @@ the required full Phase 18 gates on the final revision.
   This closes only the selector snapshot slice; broad P18-V01, the full gate on
   this revision, current-revision GitHub Ubuntu evidence, and Phase 19 local
   Broker/Docker automation remain open.
+- The public `MessageAccessor.cloneMessage` helper now maps directly to
+  `Message::clone_message`. Its invoked Java `messagePublicApi` fixture and Rust
+  differential check copied topic/body/flag/property values, distinct message
+  ownership, omitted transaction ID, and unchanged source transaction ID.
+  Producer selector preparation uses this same projection. The Java reference
+  shares body/property references; Rust represents the snapshot with owned
+  values. Current message fixture SHA-256:
+  `7c61fee7311b7926b92b845899083e5f80a2ba8e67105ed7656de3d5e3a17a22`.
+  This closes that method mapping only; broad P18-V01 and the current-revision
+  P18-V02, GitHub Ubuntu, and Phase 19 gates remain open.
 
 ## Package graph and metadata
 

@@ -1,0 +1,27 @@
+# Phase 18 compatibility release gate — execution log
+
+- P18-V01 follow-up: the pinned Java `MessageAccessor.cloneMessage` helper was
+  covered through Producer selector preparation but had no direct Rust public
+  API mapping. Added `Message::clone_message`, which copies the Java helper's
+  topic/body/flag/property values and leaves the transaction ID unset. Producer
+  selector preparation now uses the same method. Rust-owned snapshots have
+  independent body/property storage; the pinned Java helper shares those
+  references.
+- Added a direct Java `messagePublicApi` invocation and Rust differential for
+  the helper's field projection, distinct result, transaction-ID omission, and
+  source retention. Updated the Phase 8 method matrix and release checklist.
+  Message fixture SHA-256:
+  `7c61fee7311b7926b92b845899083e5f80a2ba8e67105ed7656de3d5e3a17a22`.
+- Fixture generation initially ran Maven's existing compiled class and left the
+  JSON stale; the first Rust differential then failed because the new fixture
+  keys were absent. Recompiled the Java harness with `mvn compile exec:java`,
+  regenerated the fixture, and reran the differential successfully.
+- Validation: Common `message_public_api_matches_java_551_fixture` PASS;
+  Producer `invoke_message_queue_selector_returns_the_namespaced_queue_without_sending`
+  PASS; strict all-target/all-feature Clippy for Common and Producer PASS;
+  `TZ=Asia/Taipei mvn -q -o -f compat/java-reference/pom.xml verify` PASS
+  (37 scenarios, fixture drift checks, and Java/Rust cross-decodes); workspace
+  formatting and `git diff --check` PASS.
+- This closes the direct `cloneMessage` method mapping only. Broad P18-V01,
+  current-revision full P18-V02, GitHub Ubuntu address-profile evidence, Phase
+  19 Broker/Docker automation, and release version/registry checks remain open.

@@ -259,6 +259,20 @@ public final class MessageDecodeFixtures {
         MessageAccessor.setProperties(replacedProperties, null);
         expected.put("setPropertiesNullMapIsNull", replacedProperties.getProperties() == null);
 
+        Message accessorCloneSource = new Message("clone-topic", new byte[] {0, -1, 42});
+        accessorCloneSource.setFlag(29);
+        accessorCloneSource.setTransactionId("source-transaction");
+        MessageAccessor.putProperty(accessorCloneSource, "clone-key", "clone-value");
+        Message accessorClone = MessageAccessor.cloneMessage(accessorCloneSource);
+        expected.put("accessorCloneIsDistinct", accessorClone != accessorCloneSource);
+        expected.put("accessorCloneTopic", accessorClone.getTopic());
+        expected.put("accessorCloneBodyBase64",
+            Base64.getEncoder().encodeToString(accessorClone.getBody()));
+        expected.put("accessorCloneFlag", accessorClone.getFlag());
+        expected.put("accessorCloneProperty", accessorClone.getProperty("clone-key"));
+        expected.put("accessorCloneTransactionIdIsNull", accessorClone.getTransactionId() == null);
+        expected.put("accessorCloneSourceTransactionId", accessorCloneSource.getTransactionId());
+
         Map<String, String> deepCopySource = new HashMap<>();
         deepCopySource.put(null, null);
         deepCopySource.put("present", "original");

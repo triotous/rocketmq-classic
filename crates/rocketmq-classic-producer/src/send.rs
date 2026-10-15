@@ -1739,13 +1739,10 @@ impl Producer {
             .iter()
             .map(|queue| self.queue_without_namespace(queue))
             .collect::<Result<Vec<_>, _>>()?;
-        let mut selector_message = message.clone();
+        let mut selector_message = message.clone_message();
         if let Some(topic) = message.topic_nullable() {
             selector_message.set_topic(self.topic_without_namespace(topic)?);
         }
-        // Java's MessageAccessor.cloneMessage constructs a base Message and
-        // copies topic, body, flag and properties, leaving transactionId null.
-        selector_message.set_transaction_id(None);
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             selector(&logical_queues, &selector_message)
         }))

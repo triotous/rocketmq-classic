@@ -288,6 +288,16 @@ impl Message {
         }
     }
 
+    /// Creates the Rust-owned value snapshot produced by Java's
+    /// `MessageAccessor.cloneMessage`: topic, body, flag, and property values
+    /// are copied, while the transaction ID is left unset. Rust ownership
+    /// gives the snapshot independent body and property storage.
+    pub fn clone_message(&self) -> Self {
+        let mut message = self.clone();
+        message.transaction_id = None;
+        message
+    }
+
     /// Java's two-argument constructor, preserving null topic and body values.
     pub fn new_nullable(topic: Option<String>, body: Option<Vec<u8>>) -> Self {
         Self::with_nullable_fields(topic, None, None, 0, body, true)
