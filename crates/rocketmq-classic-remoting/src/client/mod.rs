@@ -32,7 +32,7 @@ pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
 pub use processor::RequestProcessor;
 pub use response_future::{ChannelHandle, ResponseFuture};
-pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode};
+pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, register_decryption_strategy};
 
 #[cfg(test)]
 const LEGACY_OUTBOUND_QUEUE_CAPACITY: usize = 128;

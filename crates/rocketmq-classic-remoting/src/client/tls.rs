@@ -1,4 +1,10 @@
-use std::{collections::HashMap, fmt, io::BufReader, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt,
+    io::BufReader,
+    path::Path,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use base64::Engine;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit, block_padding::Pkcs7};
@@ -19,6 +25,52 @@ use tokio_rustls::rustls::{
 use rocketmq_classic_protocol::codes::JavaEnumLookupError;
 
 use crate::error::TransportError;
+
+#[derive(Clone)]
+enum DecryptionStrategyRegistration {
+    Default,
+    Null,
+    Custom(Arc<dyn PrivateKeyDecryptionStrategy>),
+}
+
+fn decryption_strategy_registry() -> &'static RwLock<DecryptionStrategyRegistration> {
+    static REGISTRY: OnceLock<RwLock<DecryptionStrategyRegistration>> = OnceLock::new();
+    REGISTRY.get_or_init(|| RwLock::new(DecryptionStrategyRegistration::Default))
+}
+
+fn registered_decryption_strategy() -> DecryptionStrategyRegistration {
+    decryption_strategy_registry()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Registers the process-wide equivalent of Java
+/// `TlsHelper.registerDecryptionStrategy`.
+///
+/// Registration affects subsequent Java-property loads that read a client key.
+/// Passing `None` mirrors Java registration of a null strategy: a later key
+/// load fails instead of using the built-in key-file reader.
+pub fn register_decryption_strategy(strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>) {
+    *decryption_strategy_registry()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = match strategy {
+        Some(strategy) => DecryptionStrategyRegistration::Custom(strategy),
+        None => DecryptionStrategyRegistration::Null,
+    };
+}
+
+#[cfg(test)]
+fn replace_registered_decryption_strategy(
+    strategy: DecryptionStrategyRegistration,
+) -> DecryptionStrategyRegistration {
+    std::mem::replace(
+        &mut *decryption_strategy_registry()
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        strategy,
+    )
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TlsMode {
@@ -102,14 +154,6 @@ impl TransportMode {
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
     ) -> Result<Self, TransportError> {
-        Self::from_java_properties_with_strategy(system_properties, config_file, None)
-    }
-
-    pub fn from_java_properties_with_strategy(
-        system_properties: &HashMap<String, String>,
-        config_file: Option<&Path>,
-        strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
-    ) -> Result<Self, TransportError> {
         let enabled = system_properties
             .get("tls.enable")
             .map(|value| value.eq_ignore_ascii_case("true"))
@@ -117,14 +161,34 @@ impl TransportMode {
         if !enabled {
             return Ok(Self::Plain);
         }
-        Ok(Self::Tls(TlsConfig::from_java_properties_with_strategy(
+        Ok(Self::Tls(TlsConfig::from_java_properties(
             system_properties,
             config_file,
-            strategy,
         )?))
     }
 }
 
+/// Client TLS settings loaded from the Java `TlsSystemConfig` properties.
+///
+/// Key decryption is registered process-wide with
+/// [`register_decryption_strategy`], matching Java `TlsHelper`.
+///
+/// Per-configuration strategy injection is not part of the public API:
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::TlsConfig;
+/// let _ = TlsConfig::from_java_properties_with_strategy(
+///     &std::collections::HashMap::new(), None, None,
+/// );
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::TlsConfig;
+/// let _ = TlsConfig {
+///     decryption_strategy: None,
+///     ..TlsConfig::default()
+/// };
+/// ```
 #[derive(Clone)]
 pub struct TlsConfig {
     pub ca_pem: Option<Vec<u8>>,
@@ -142,33 +206,26 @@ pub struct TlsConfig {
     /// Mirrors Java's `tls.client.authServer` (default `false`); effective only when test mode is disabled.
     /// False disables server trust and hostname checks, matching Java's trust-all behavior.
     pub auth_server: bool,
-    /// Java `tls.client.keyPassword`; used for encrypted PKCS#8 files and configured strategies.
+    /// Java `tls.client.keyPassword`; used for encrypted PKCS#8 files.
     pub key_password: Option<String>,
-    /// Rust equivalent of Java's replaceable `TlsHelper.DecryptionStrategy`.
-    pub decryption_strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
 }
 
-/// Decrypts Java-compatible TLS key files when loading TLS properties.
+/// Reads/decrypts a private-key file for Java `TlsHelper`-compatible loading.
 pub trait PrivateKeyDecryptionStrategy: Send + Sync + 'static {
-    fn decrypt_private_key(
-        &self,
-        path: &Path,
-        for_client: bool,
-        password: Option<&str>,
-    ) -> Result<Vec<u8>, TransportError>;
+    fn decrypt_private_key(&self, path: &Path, for_client: bool)
+    -> Result<Vec<u8>, TransportError>;
 }
 
 impl<F> PrivateKeyDecryptionStrategy for F
 where
-    F: Fn(&Path, bool, Option<&str>) -> Result<Vec<u8>, TransportError> + Send + Sync + 'static,
+    F: Fn(&Path, bool) -> Result<Vec<u8>, TransportError> + Send + Sync + 'static,
 {
     fn decrypt_private_key(
         &self,
         path: &Path,
         for_client: bool,
-        password: Option<&str>,
     ) -> Result<Vec<u8>, TransportError> {
-        self(path, for_client, password)
+        self(path, for_client)
     }
 }
 
@@ -187,10 +244,6 @@ impl fmt::Debug for TlsConfig {
             .field("test_mode", &self.test_mode)
             .field("auth_server", &self.auth_server)
             .field("key_password_configured", &self.key_password.is_some())
-            .field(
-                "decryption_strategy_registered",
-                &self.decryption_strategy.is_some(),
-            )
             .finish()
     }
 }
@@ -206,7 +259,6 @@ impl Default for TlsConfig {
             test_mode: true,
             auth_server: false,
             key_password: None,
-            decryption_strategy: None,
         }
     }
 }
@@ -217,15 +269,6 @@ impl TlsConfig {
     pub fn from_java_properties(
         system_properties: &HashMap<String, String>,
         config_file: Option<&Path>,
-    ) -> Result<Self, TransportError> {
-        Self::from_java_properties_with_strategy(system_properties, config_file, None)
-    }
-
-    /// Variant for applications that must decrypt Java-compatible private-key files.
-    pub fn from_java_properties_with_strategy(
-        system_properties: &HashMap<String, String>,
-        config_file: Option<&Path>,
-        strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
     ) -> Result<Self, TransportError> {
         let mut properties = system_properties.clone();
         let configured_path = config_file
@@ -241,10 +284,7 @@ impl TlsConfig {
                 properties.extend(parse_java_properties(&bytes)?);
             }
         }
-        let mut config = Self {
-            decryption_strategy: strategy,
-            ..Self::default()
-        };
+        let mut config = Self::default();
         config.apply_properties(&properties, Path::new("."))?;
         Ok(config)
     }
@@ -297,26 +337,14 @@ impl TlsConfig {
                     None
                 } else {
                     let path = resolve_tls_path(base_dir, path);
-                    Some(match &self.decryption_strategy {
-                        Some(strategy) => strategy.decrypt_private_key(
-                            &path,
-                            true,
-                            self.key_password.as_deref(),
-                        )?,
-                        None => decrypt_private_key_file(&path, self.key_password.as_deref())?,
-                    })
+                    Some(decrypt_client_private_key(
+                        &path,
+                        self.key_password.as_deref(),
+                    )?)
                 };
             }
         }
         Ok(())
-    }
-
-    /// Registers the Java `TlsHelper.DecryptionStrategy` equivalent for subsequent property loads.
-    pub fn set_decryption_strategy(
-        &mut self,
-        strategy: Option<Arc<dyn PrivateKeyDecryptionStrategy>>,
-    ) {
-        self.decryption_strategy = strategy;
     }
 
     pub fn from_ca_file(path: &std::path::Path) -> Result<Self, TransportError> {
@@ -445,6 +473,22 @@ fn decrypt_private_key_file(
 ) -> Result<Vec<u8>, TransportError> {
     let pem = std::fs::read(path).map_err(|error| TransportError::Tls(error.to_string()))?;
     decrypt_private_key_pem(&pem, password)
+}
+
+fn decrypt_client_private_key(
+    path: &Path,
+    password: Option<&str>,
+) -> Result<Vec<u8>, TransportError> {
+    match registered_decryption_strategy() {
+        DecryptionStrategyRegistration::Default => decrypt_private_key_file(path, password),
+        DecryptionStrategyRegistration::Null => Err(TransportError::Tls(
+            "TlsHelper decryption strategy is null".into(),
+        )),
+        DecryptionStrategyRegistration::Custom(strategy) => {
+            let key_bytes = strategy.decrypt_private_key(path, true)?;
+            decrypt_private_key_pem(&key_bytes, password)
+        }
+    }
 }
 
 fn decrypt_private_key_pem(pem: &[u8], password: Option<&str>) -> Result<Vec<u8>, TransportError> {
@@ -768,11 +812,40 @@ mod tests {
         fs,
         io::BufReader,
         path::PathBuf,
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex, MutexGuard, OnceLock},
     };
 
-    use super::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, decrypt_private_key_pem};
+    use super::{
+        PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, TransportError, decrypt_private_key_pem,
+    };
     use std::collections::HashMap;
+
+    struct DecryptionRegistryTestGuard {
+        previous: Option<super::DecryptionStrategyRegistration>,
+        _serial: MutexGuard<'static, ()>,
+    }
+
+    impl DecryptionRegistryTestGuard {
+        fn new() -> Self {
+            static SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
+            let serial = SERIAL.get_or_init(|| Mutex::new(())).lock().unwrap();
+            let previous = super::replace_registered_decryption_strategy(
+                super::DecryptionStrategyRegistration::Default,
+            );
+            Self {
+                previous: Some(previous),
+                _serial: serial,
+            }
+        }
+    }
+
+    impl Drop for DecryptionRegistryTestGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.take() {
+                super::replace_registered_decryption_strategy(previous);
+            }
+        }
+    }
 
     fn test_dir() -> PathBuf {
         static NEXT_TEST_DIR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -827,22 +900,22 @@ mod tests {
 
     #[test]
     fn java_tls_test_mode_ignores_client_material_and_decryption_strategy() {
+        let _registry = DecryptionRegistryTestGuard::new();
         let calls = Arc::new(Mutex::new(0));
         let observed = calls.clone();
         let strategy: Arc<dyn PrivateKeyDecryptionStrategy> =
-            Arc::new(move |_: &std::path::Path, _: bool, _: Option<&str>| {
+            Arc::new(move |_: &std::path::Path, _: bool| {
                 *observed.lock().unwrap() += 1;
                 panic!("test mode must not decrypt client key material")
             });
+        super::register_decryption_strategy(Some(strategy));
         let properties = HashMap::from([
             ("tls.test.mode.enable".into(), "true".into()),
             ("tls.client.trustCertPath".into(), "missing-ca.pem".into()),
             ("tls.client.certPath".into(), "missing-cert.pem".into()),
             ("tls.client.keyPath".into(), "missing-key.pem".into()),
         ]);
-        let config =
-            TlsConfig::from_java_properties_with_strategy(&properties, None, Some(strategy))
-                .unwrap();
+        let config = TlsConfig::from_java_properties(&properties, None).unwrap();
 
         assert!(config.ca_pem.is_none());
         assert!(config.client_cert_pem.is_none());
@@ -1324,6 +1397,7 @@ mod tests {
 
     #[test]
     fn pbes1_key_is_loaded_from_java_properties_with_key_password() {
+        let _registry = DecryptionRegistryTestGuard::new();
         let directory = test_dir();
         let key_path = directory.join("client.key");
         fs::write(
@@ -1362,6 +1436,7 @@ mod tests {
 
     #[test]
     fn pbes2_encrypted_private_key_is_decrypted() {
+        let _registry = DecryptionRegistryTestGuard::new();
         let pem = include_bytes!("../../tests/fixtures/tls/pbes2-aes256.key");
         let decrypted = decrypt_private_key_pem(pem, Some("rust-test-password")).unwrap();
         assert!(decrypted.starts_with(b"-----BEGIN RSA PRIVATE KEY-----"));
@@ -1425,36 +1500,74 @@ mod tests {
     }
 
     #[test]
-    fn java_tls_key_decryption_strategy_receives_client_and_password_metadata() {
+    fn java_tls_global_decryption_strategy_matches_pinned_surface_and_null_registration() {
+        let _registry = DecryptionRegistryTestGuard::new();
         let directory = test_dir();
         fs::write(directory.join("encrypted.key"), b"ciphertext").unwrap();
         let calls = Arc::new(Mutex::new(Vec::new()));
         let observed = calls.clone();
-        let strategy: Arc<dyn PrivateKeyDecryptionStrategy> = Arc::new(
-            move |path: &std::path::Path, for_client: bool, password: Option<&str>| {
-                observed.lock().unwrap().push((
-                    path.file_name().unwrap().to_owned(),
-                    for_client,
-                    password.map(str::to_owned),
-                ));
-                Ok(b"decrypted-key".to_vec())
-            },
-        );
+        let strategy: Arc<dyn PrivateKeyDecryptionStrategy> =
+            Arc::new(move |path: &std::path::Path, for_client: bool| {
+                observed
+                    .lock()
+                    .unwrap()
+                    .push((path.file_name().unwrap().to_owned(), for_client));
+                Ok(b"-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n".to_vec())
+            });
         let properties = std::collections::HashMap::from([
             ("tls.test.mode.enable".into(), "false".into()),
             ("tls.client.keyPath".into(), "encrypted.key".into()),
             ("tls.client.keyPassword".into(), "secret".into()),
         ]);
-        let config =
-            TlsConfig::from_java_properties_with_strategy(&properties, None, Some(strategy))
-                .unwrap();
+        super::register_decryption_strategy(Some(strategy));
+        let config = TlsConfig::from_java_properties(&properties, None).unwrap();
         assert_eq!(
             config.client_key_pem.as_deref(),
-            Some(b"decrypted-key".as_slice())
+            Some(b"-----BEGIN PRIVATE KEY-----\nAQID\n-----END PRIVATE KEY-----\n".as_slice())
+        );
+        assert_eq!(*calls.lock().unwrap(), vec![("encrypted.key".into(), true)]);
+
+        let java_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/security/tls-settings-defaults.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["decryptMethod"],
+            "java.io.InputStream decryptPrivateKey(java.lang.String, boolean)"
         );
         assert_eq!(
-            *calls.lock().unwrap(),
-            vec![("encrypted.key".into(), true, Some("secret".into()))]
+            java_fixture["decryptionStrategyApi"]["nestedInterfacePublic"],
+            true
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["registerPublicStaticVoid"],
+            true
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["defaultStrategyNonNull"],
+            true
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["registrationAffectsStrategy"],
+            true
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["nullRegistrationRetained"],
+            true
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["nullRegistrationErrorClass"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(
+            java_fixture["decryptionStrategyApi"]["registeredCalls"][0]["forClient"],
+            true
+        );
+
+        super::register_decryption_strategy(None);
+        let null_registration = TlsConfig::from_java_properties(&properties, None);
+        assert!(
+            matches!(null_registration, Err(TransportError::Tls(message)) if message.contains("strategy is null"))
         );
         fs::remove_dir_all(directory).unwrap();
     }

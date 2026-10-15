@@ -19,11 +19,18 @@ package compat;
 import com.alibaba.fastjson2.JSON;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.handler.ssl.SslContext;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import javax.net.ssl.SSLEngine;
@@ -146,8 +153,11 @@ public final class TlsSettingsFixtures {
             "TlsSystemConfig.tlsCiphers/tlsProtocols",
             "TlsHelper.moreTlsConfig",
             "TlsHelper.extractTlsConfigFromFile",
-            "TlsHelper.buildSslContext(true)"
+            "TlsHelper.buildSslContext(true)",
+            "TlsHelper.DecryptionStrategy.decryptPrivateKey(String, boolean)",
+            "TlsHelper.registerDecryptionStrategy(DecryptionStrategy)"
         });
+        result.put("decryptionStrategyApi", inspectDecryptionStrategyApi());
         Map<String, Object> propertyNames = new TreeMap<>();
         propertyNames.put("ciphers", TlsSystemConfig.TLS_CIPHERS);
         propertyNames.put("protocols", TlsSystemConfig.TLS_PROTOCOLS);
@@ -175,6 +185,78 @@ public final class TlsSettingsFixtures {
             !java.util.Objects.equals(ciphers, TlsSystemConfig.tlsCiphers)
                 || !java.util.Objects.equals(protocols, TlsSystemConfig.tlsProtocols));
         result.put("serverContacted", false);
+        return result;
+    }
+
+    private static Map<String, Object> inspectDecryptionStrategyApi() throws Exception {
+        Class<?> strategyType = TlsHelper.DecryptionStrategy.class;
+        Method decrypt = strategyType.getDeclaredMethod("decryptPrivateKey", String.class, boolean.class);
+        Method register = TlsHelper.class.getDeclaredMethod("registerDecryptionStrategy", strategyType);
+        Field strategyField = TlsHelper.class.getDeclaredField("decryptionStrategy");
+        strategyField.setAccessible(true);
+        Object previous = strategyField.get(null);
+
+        List<Map<String, Object>> calls = new ArrayList<>();
+        TlsHelper.DecryptionStrategy strategy = (path, forClient) -> {
+            String key = forClient ? "client-key" : "server-key";
+            Map<String, Object> call = new TreeMap<>();
+            call.put("path", path);
+            call.put("forClient", forClient);
+            call.put("returned", key);
+            calls.add(call);
+            return new ByteArrayInputStream(key.getBytes(StandardCharsets.UTF_8));
+        };
+
+        boolean registered = false;
+        boolean nullRetained = false;
+        String nullRegistrationErrorClass = null;
+        try {
+            register.invoke(null, strategy);
+            TlsHelper.DecryptionStrategy current = (TlsHelper.DecryptionStrategy) strategyField.get(null);
+            try (InputStream client = current.decryptPrivateKey("client.key", true);
+                InputStream server = current.decryptPrivateKey("server.key", false)) {
+                registered = "client-key".equals(new String(client.readAllBytes(), StandardCharsets.UTF_8))
+                    && "server-key".equals(new String(server.readAllBytes(), StandardCharsets.UTF_8));
+            }
+            register.invoke(null, new Object[] {null});
+            nullRetained = strategyField.get(null) == null;
+
+            String previousConfigFile = TlsSystemConfig.tlsConfigFile;
+            String previousClientKeyPath = TlsSystemConfig.tlsClientKeyPath;
+            boolean previousTestMode = TlsSystemConfig.tlsTestModeEnable;
+            Path emptyConfigFile = Files.createTempFile("rocketmq-tls-null-strategy", ".properties");
+            try {
+                TlsSystemConfig.tlsConfigFile = emptyConfigFile.toString();
+                TlsSystemConfig.tlsClientKeyPath = "missing-client.key";
+                TlsSystemConfig.tlsTestModeEnable = false;
+                try {
+                    TlsHelper.buildSslContext(true);
+                } catch (Throwable error) {
+                    nullRegistrationErrorClass = error.getClass().getName();
+                }
+            } finally {
+                TlsSystemConfig.tlsConfigFile = previousConfigFile;
+                TlsSystemConfig.tlsClientKeyPath = previousClientKeyPath;
+                TlsSystemConfig.tlsTestModeEnable = previousTestMode;
+                Files.deleteIfExists(emptyConfigFile);
+            }
+        } finally {
+            register.invoke(null, new Object[] {previous});
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("nestedInterfacePublic", Modifier.isPublic(strategyType.getModifiers()));
+        result.put("decryptMethod", decrypt.getReturnType().getName()
+            + " decryptPrivateKey(java.lang.String, boolean)");
+        result.put("decryptThrowsIOException", Arrays.asList(decrypt.getExceptionTypes())
+            .contains(java.io.IOException.class));
+        result.put("registerPublicStaticVoid", Modifier.isPublic(register.getModifiers())
+            && Modifier.isStatic(register.getModifiers()) && register.getReturnType() == void.class);
+        result.put("defaultStrategyNonNull", previous != null);
+        result.put("registrationAffectsStrategy", registered);
+        result.put("nullRegistrationRetained", nullRetained);
+        result.put("nullRegistrationErrorClass", nullRegistrationErrorClass);
+        result.put("registeredCalls", calls);
         return result;
     }
 

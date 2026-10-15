@@ -32,5 +32,5 @@ pub use rocketmq_classic_producer::{
 pub use rocketmq_classic_producer::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 pub use rocketmq_classic_protocol::NamespaceUtil;
 pub use rocketmq_classic_remoting::client::{
-    PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, TransportMode,
+    PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, TransportMode, register_decryption_strategy,
 };
