@@ -1477,6 +1477,7 @@ impl MessageClientExt {
     pub fn message_id(&self) -> Option<String> {
         self.0
             .get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            .or_else(|| self.0.offset_message_id().map(str::to_owned))
             .or_else(|| self.0.message_id().map(str::to_owned))
     }
 
@@ -1485,12 +1486,12 @@ impl MessageClientExt {
 
     /// Java `MessageClientExt.getOffsetMsgId` returns the inherited `msgId`.
     pub fn offset_message_id(&self) -> Option<&str> {
-        self.0.message_id()
+        self.0.offset_message_id().or_else(|| self.0.message_id())
     }
 
     /// Java `MessageClientExt.setOffsetMsgId` writes the inherited `msgId`.
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
-        self.0.set_message_id(value);
+        self.0.set_offset_message_id(value);
     }
 }
 
