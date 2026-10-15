@@ -1,10 +1,12 @@
 use base64::Engine;
 use rocketmq_classic_common::{
     message::{
-        DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
+        CompactMessageError, DecodeError, DecodeOptions, Message, MessageExt, MessageHostAddress,
         MessageHostAddressBytesError, MessageId, MessageIdError, TopicFilterType,
-        append_crc32_property, create_message_id, create_message_id_from_host_bytes, decode_many,
-        decode_message_id, decode_one, decode_record_properties,
+        append_crc32_property, count_inner_messages, create_message_id,
+        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
+        decode_inner_batch, decode_many, decode_message_id, decode_one, decode_record_properties,
+        encode_compact_message, encode_compact_messages,
     },
     sysflag::message,
 };
@@ -384,6 +386,147 @@ fn crc32_property_helpers_match_both_java_buffers() {
         assert_eq!(encoded, case["byteBufferBase64"]);
         assert_eq!(case["byteBufferBase64"], case["byteBufBase64"]);
     }
+}
+
+#[test]
+fn compact_message_codec_and_inner_batch_match_java_551() {
+    let expected = &fixture()["messageCompactApi"];
+    let mut first = Message::default();
+    first.set_body([0, 255, 42]);
+    first.set_flag(-17);
+    first.set_system_property("k", "v").unwrap();
+    let mut second = Message::default();
+    second.set_body(Vec::new());
+
+    let first_bytes = encode_compact_message(&first).unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&first_bytes),
+        expected["singleEncodedBase64"]
+    );
+    let batch_bytes = encode_compact_messages(&[first, second]).unwrap();
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&batch_bytes),
+        expected["batchEncodedBase64"]
+    );
+    assert_eq!(
+        count_inner_messages(&batch_bytes).unwrap(),
+        expected["innerMessageCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        count_inner_messages(&[]).unwrap(),
+        expected["emptyInnerMessageCount"].as_u64().unwrap() as usize
+    );
+
+    let (decoded_first, consumed) = decode_compact_message(&first_bytes).unwrap();
+    assert_eq!(consumed, first_bytes.len());
+    assert_eq!(decoded_first.topic_nullable(), None);
+    assert_eq!(decoded_first.flag(), expected["singleDecoded"]["flag"]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(decoded_first.body()),
+        expected["singleDecoded"]["bodyBase64"]
+    );
+    assert_eq!(
+        serde_json::to_value(decoded_first.properties_nullable().unwrap()).unwrap(),
+        expected["singleDecoded"]["properties"]
+    );
+
+    let decoded_batch = decode_compact_messages(&batch_bytes).unwrap();
+    assert_eq!(decoded_batch.len(), 2);
+    for (message, case) in decoded_batch
+        .iter()
+        .zip(expected["batchDecoded"].as_array().unwrap())
+    {
+        assert_eq!(message.topic_nullable(), None);
+        assert_eq!(message.flag(), case["flag"]);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(message.body()),
+            case["bodyBase64"]
+        );
+        assert_eq!(
+            serde_json::to_value(message.properties_nullable().unwrap()).unwrap(),
+            case["properties"]
+        );
+    }
+
+    let mut outer = MessageExt::default();
+    outer.message_mut().set_topic("outer-topic");
+    outer.message_mut().set_body(batch_bytes.clone());
+    outer.set_queue_id(7);
+    outer.set_queue_offset(100);
+    outer.set_sys_flag(0x40);
+    outer.set_born_timestamp(11);
+    outer.set_born_host(Some(MessageHostAddress::new("192.0.2.10", 10911)));
+    outer.set_store_timestamp(12);
+    outer.set_store_host(Some(MessageHostAddress::new("198.51.100.20", 10912)));
+    outer.set_commit_log_offset(13);
+    outer.message_mut().set_wait_store_msg_ok(false).unwrap();
+    let expanded = decode_inner_batch(&outer).unwrap();
+    assert_eq!(expanded.len(), 2);
+    for (message, case) in expanded
+        .iter()
+        .zip(expected["expanded"].as_array().unwrap())
+    {
+        assert_eq!(message.message().topic(), case["topic"]);
+        assert_eq!(message.queue_id(), case["queueId"]);
+        assert_eq!(message.queue_offset(), case["queueOffset"]);
+        assert_eq!(message.message().flag(), case["flag"]);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD.encode(message.message().body()),
+            case["bodyBase64"]
+        );
+        assert_eq!(
+            serde_json::to_value(message.message().properties()).unwrap(),
+            case["properties"]
+        );
+        assert_eq!(message.message().is_wait_store_msg_ok(), case["waitStore"]);
+        assert_eq!(message.sys_flag(), case["sysFlag"]);
+        assert_eq!(message.born_timestamp(), case["bornTimestamp"]);
+        assert_eq!(message.born_host().unwrap().to_string(), case["bornHost"]);
+        assert_eq!(message.store_timestamp(), case["storeTimestamp"]);
+        assert_eq!(message.store_host().unwrap().to_string(), case["storeHost"]);
+        assert_eq!(message.commit_log_offset(), case["commitLogOffset"]);
+    }
+
+    assert_eq!(
+        encode_compact_message(&Message::default()),
+        Err(CompactMessageError::MissingBody)
+    );
+    assert!(expected["nullBodyEncodeThrows"].as_bool().unwrap());
+    assert!(
+        expected["shortDecodeThrowsBufferUnderflow"]
+            .as_bool()
+            .unwrap()
+    );
+    assert!(expected["negativeBodyDecodeThrows"].as_bool().unwrap());
+    assert!(
+        expected["incompleteCountThrowsIllegalArgument"]
+            .as_bool()
+            .unwrap()
+    );
+    assert_eq!(
+        decode_compact_message(&[0]).unwrap_err(),
+        CompactMessageError::IncompleteField {
+            field: "total size",
+            length: 4
+        }
+    );
+    let mut negative_body = vec![0; 16];
+    negative_body.extend_from_slice(&(-1_i32).to_be_bytes());
+    assert_eq!(
+        decode_compact_message(&negative_body).unwrap_err(),
+        CompactMessageError::NegativeLength {
+            field: "body",
+            length: -1
+        }
+    );
+    assert_eq!(
+        count_inner_messages(&[0, 0, 0, 5]).unwrap_err(),
+        CompactMessageError::IncompleteInnerMessage {
+            offset: 0,
+            size: 5,
+            available: 4
+        }
+    );
 }
 
 #[test]

@@ -1,3 +1,4 @@
+mod compact;
 pub mod constants;
 pub mod decoder;
 mod host_address;
@@ -5,6 +6,10 @@ mod message_id;
 mod properties;
 mod types;
 
+pub use compact::{
+    CompactMessageError, count_inner_messages, decode_compact_message, decode_compact_messages,
+    decode_inner_batch, encode_compact_message, encode_compact_messages,
+};
 pub use decoder::{
     BLANK_MAGIC_CODE, DecodeError, DecodeOptions, MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2,
     append_crc32_property, decode_many, decode_one, decode_record_properties,

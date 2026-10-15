@@ -60,6 +60,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
+        root.put("messageCompactApi", messageCompactApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
             InetAddress.getByName("192.0.2.10"), 10911,
@@ -341,6 +342,120 @@ public final class MessageDecodeFixtures {
             byteBuf.release();
         }
         return Map.of("cases", cases);
+    }
+
+    private static Map<String, Object> messageCompactApi() throws Exception {
+        Message first = new Message();
+        first.setBody(new byte[] {0, -1, 42});
+        first.setFlag(-17);
+        MessageAccessor.setProperties(first, new java.util.HashMap<>(Map.of("k", "v")));
+        Message second = new Message();
+        second.setBody(new byte[0]);
+        MessageAccessor.setProperties(second, new java.util.HashMap<>());
+
+        byte[] firstBytes = MessageDecoder.encodeMessage(first);
+        byte[] batchBytes = MessageDecoder.encodeMessages(List.of(first, second));
+        Message decodedFirst = MessageDecoder.decodeMessage(ByteBuffer.wrap(firstBytes));
+        List<Message> decodedBatch = MessageDecoder.decodeMessages(ByteBuffer.wrap(batchBytes));
+
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("singleEncodedBase64", Base64.getEncoder().encodeToString(firstBytes));
+        expected.put("batchEncodedBase64", Base64.getEncoder().encodeToString(batchBytes));
+        expected.put("singleDecoded", compactMessageSnapshot(decodedFirst));
+        expected.put("batchDecoded", decodedBatch.stream()
+            .map(MessageDecodeFixtures::compactMessageSnapshot)
+            .collect(java.util.stream.Collectors.toList()));
+        expected.put("innerMessageCount", MessageDecoder.countInnerMsgNum(ByteBuffer.wrap(batchBytes)));
+        expected.put("emptyInnerMessageCount", MessageDecoder.countInnerMsgNum(ByteBuffer.allocate(0)));
+
+        InetSocketAddress bornHost = new InetSocketAddress(InetAddress.getByName("192.0.2.10"), 10911);
+        InetSocketAddress storeHost = new InetSocketAddress(InetAddress.getByName("198.51.100.20"), 10912);
+        MessageExt outer = new MessageExt();
+        outer.setTopic("outer-topic");
+        outer.setBody(batchBytes);
+        outer.setQueueId(7);
+        outer.setQueueOffset(100L);
+        outer.setSysFlag(0x40);
+        outer.setBornTimestamp(11L);
+        outer.setBornHost(bornHost);
+        outer.setStoreTimestamp(12L);
+        outer.setStoreHost(storeHost);
+        outer.setCommitLogOffset(13L);
+        outer.setWaitStoreMsgOK(false);
+        List<MessageExt> expanded = new ArrayList<>();
+        MessageDecoder.decodeMessage(outer, expanded);
+        expected.put("expanded", expanded.stream()
+            .map(MessageDecodeFixtures::compactMessageExtSnapshot)
+            .collect(java.util.stream.Collectors.toList()));
+        expected.put("nullBodyEncodeThrows", throwsNullPointer(
+            () -> MessageDecoder.encodeMessage(new Message())));
+        expected.put("shortDecodeThrowsBufferUnderflow", throwsCompactDecodeBufferUnderflow());
+        expected.put("negativeBodyDecodeThrows", throwsNegativeCompactBodyLength());
+        expected.put("incompleteCountThrowsIllegalArgument", throwsIncompleteCompactCount());
+        return expected;
+    }
+
+    private static Map<String, Object> compactMessageSnapshot(Message message) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topicIsNull", message.getTopic() == null);
+        result.put("flag", message.getFlag());
+        result.put("bodyBase64", Base64.getEncoder().encodeToString(message.getBody()));
+        result.put("properties", message.getProperties() == null
+            ? null : new TreeMap<>(message.getProperties()));
+        result.put("waitStore", message.isWaitStoreMsgOK());
+        return result;
+    }
+
+    private static Map<String, Object> compactMessageExtSnapshot(MessageExt message) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", message.getTopic());
+        result.put("queueId", message.getQueueId());
+        result.put("queueOffset", message.getQueueOffset());
+        result.put("flag", message.getFlag());
+        result.put("bodyBase64", Base64.getEncoder().encodeToString(message.getBody()));
+        result.put("properties", message.getProperties() == null
+            ? null : new TreeMap<>(message.getProperties()));
+        result.put("waitStore", message.isWaitStoreMsgOK());
+        result.put("sysFlag", message.getSysFlag());
+        result.put("bornTimestamp", message.getBornTimestamp());
+        result.put("bornHost", message.getBornHost().toString());
+        result.put("storeTimestamp", message.getStoreTimestamp());
+        result.put("storeHost", message.getStoreHost().toString());
+        result.put("commitLogOffset", message.getCommitLogOffset());
+        return result;
+    }
+
+    private static boolean throwsCompactDecodeBufferUnderflow() {
+        try {
+            MessageDecoder.decodeMessage(ByteBuffer.allocate(1));
+            return false;
+        } catch (java.nio.BufferUnderflowException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
+    private static boolean throwsNegativeCompactBodyLength() {
+        try {
+            ByteBuffer malformed = ByteBuffer.allocate(20);
+            malformed.putInt(0).putInt(0).putInt(0).putInt(0).putInt(-1).flip();
+            MessageDecoder.decodeMessage(malformed);
+            return false;
+        } catch (NegativeArraySizeException expected) {
+            return true;
+        } catch (Exception unexpected) {
+            return false;
+        }
+    }
+
+    private static boolean throwsIncompleteCompactCount() {
+        try {
+            MessageDecoder.countInnerMsgNum(ByteBuffer.wrap(new byte[] {0, 0, 0, 5}));
+            return false;
+        } catch (IllegalArgumentException expected) {
+            return true;
+        }
     }
 
     private static Map<String, Object> numericPropertyInput(String property, String value) {

@@ -19,3 +19,10 @@
 - Extended each of the ten Java-generated message fixtures with a direct call to `decodeProperties`; the Rust message decode regression compares the standalone result for every V1/V2, host and compression case. Fixture SHA-256: `b5f5f89b6e0df7c2e706fd121a91860ea3a4a8f0e923893c9d6c8170704b7744`.
 - PASS: Common all-feature tests (21 unit, 9 message decode, 1 topic validator, 11 doctests); strict Common Clippy; pinned offline Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); format, diff and checksum checks.
 - This closes the record-property extraction slice only. P18-V01 still has additional public decoder/encoder methods and the wider bidirectional API audit open; final-revision P18-V02, GitHub Ubuntu evidence and Phase 19 Docker/Broker scenarios also remain outstanding.
+
+## Compact message and inner-batch API — 2026-10-15
+
+- Added the Common compact codec surface for Java `encodeMessage`, `decodeMessage`, plural encode/decode, `decodeMessage(MessageExt, List<MessageExt>)`, and `countInnerMsgNum`. Inner expansion copies the outer topic, queue, host, timestamp, system flag and commit-log offset and applies the outer wait-store property.
+- The invoked Java `messageCompactApi` fixture checks byte-identical single/batch encoding, decoded messages, expanded metadata, counts and malformed body/count branches. Fixture SHA-256: `f58a8b10bf498cf00e3914a9fbc2a83016fb6b3bcbb8db9933403d834c1c121a`.
+- PASS: Common all-feature tests (21 unit, 10 message decode, 1 topic validator, 11 doctests); strict Common Clippy; pinned offline Maven `verify` (37 scenarios, fixture drift and cross-decodes); format, diff and checksum checks.
+- This closes the compact API slice only. Full `MessageExt` stored-record encode/unique encode, remaining overloads and complete bidirectional P18-V01 audit remain open, as do final-revision P18-V02, Ubuntu evidence and Phase 19 local Broker/Docker validation.

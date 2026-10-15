@@ -236,6 +236,18 @@ impl Message {
         }
     }
 
+    pub(crate) fn from_compact(body: Vec<u8>, flag: i32, properties: MessageProperties) -> Self {
+        Self {
+            topic: None,
+            body: Some(body),
+            flag,
+            properties: Some(properties),
+            null_properties: BTreeSet::new(),
+            properties_read_initialized: AtomicBool::new(false),
+            transaction_id: None,
+        }
+    }
+
     pub fn new(topic: impl Into<String>, body: impl Into<Vec<u8>>) -> Self {
         Self {
             topic: Some(topic.into()),
