@@ -779,6 +779,15 @@ impl DerefMut for MessageExt {
 /// Java `MessageExt.toString()` is exposed through Rust's `Display`/`ToString`;
 /// its formatter helper is not a separate public method:
 ///
+/// Rust's `DerefMut` exposes inherited `Message` setters in place, so there is
+/// no Java-equivalent operation that replaces the whole inherited message:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::MessageExt;
+/// let mut extended = MessageExt::default();
+/// extended.set_message(Default::default());
+/// ```
+///
 /// ```compile_fail
 /// use rocketmq_classic_common::message::MessageExt;
 /// let _ = MessageExt::default().java_to_string();
@@ -885,9 +894,6 @@ impl MessageExt {
     }
     pub fn broker_name(&self) -> Option<&str> {
         self.broker_name.as_deref()
-    }
-    pub fn set_message(&mut self, message: Message) {
-        self.message = message;
     }
     pub fn queue_id(&self) -> i32 {
         self.queue_id

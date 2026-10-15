@@ -507,6 +507,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and Core call sites now build flags through the mapped Java helper methods;
   a compile-fail rustdoc case guards the private constants. Broader P18-V01
   reconciliation remains open.
+- `MessageExt::set_message` is removed: Java inherits `Message` state directly,
+  and Rust already exposes those inherited setters through `DerefMut`. A
+  compile-fail rustdoc case guards the removed Rust-only method; broader P18-V01
+  reverse-export reconciliation remains open.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

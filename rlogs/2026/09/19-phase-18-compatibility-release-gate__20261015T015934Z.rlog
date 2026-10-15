@@ -80,3 +80,10 @@
 - Updated the Phase 8 mapping and release checklist.
 - PASS: `cargo test -p rocketmq-classic-common -p rocketmq-classic-core -p rocketmq-classic-consumer --all-features --locked`; strict all-target/all-feature Clippy for Common, Core and Consumer; `cargo fmt --all -- --check`; `git diff --check`.
 - This closes the audited mask-visibility slice only. Broad P18-V01 reconciliation, full final-revision P18-V02 gates, current-revision GitHub Ubuntu address-profile evidence, and Phase 19 Docker/Broker automation and scenarios remain open. No plan changed; no push, release, or tag action taken.
+
+## MessageExt inherited-message surface — 2026-10-15
+
+- Removed the unused Rust-only `MessageExt::set_message` public method. Java `MessageExt` inherits its `Message` state in place, and Rust already exposes inherited setters through `DerefMut`.
+- Added a compile-fail rustdoc guard and updated the Phase 8 method matrix and release checklist.
+- PASS: Common all-feature tests and doctests; strict all-target/all-feature Common Clippy; formatting and diff checks.
+- This closes that reverse-export method only. Broad P18-V01, full final-revision P18-V02, current-revision GitHub Ubuntu address-profile evidence, and Phase 19 Docker/Broker automation and scenarios remain open. No plan changed; no push, release, or tag action taken.
