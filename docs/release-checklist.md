@@ -1147,3 +1147,18 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and release
   version/registry-resolution checks remain open. Owner-run deployment/live
   Broker checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting NameServer live-list slice (`a5ef99ae`, 2026-10-15): Java
+  returns the nullable backing list from `getNameServerAddressList()` and later
+  selection/scanning observes caller mutations. Rust now preserves `None` versus
+  `Some(empty)` and provides `with_name_server_address_list` for lock-scoped
+  mutation of the stored list. `p18_nameserver_getter_exposes_live_nullable_list_with_lock_scope`
+  checks live mutation, getter state, empty-update behavior, operation behavior,
+  and replacement. Remoting all-feature tests pass (96 unit, 6 codec, 1 fuzz
+  regression, 5 security, 100 transport, 5 doctests); strict Remoting Clippy,
+  formatting and `git diff --check` pass. Phase 3 inventory also now reflects
+  the `ResponseFuture` and `ChannelHandle` callback API slice from `a74171df`.
+  This closes only the listed Remoting rows; broad P18-V01, current-revision
+  full-workspace P18-V02, GitHub Ubuntu/P18-V04 evidence, Phase 19 local
+  Docker/Broker automation, and release version/registry-resolution checks
+  remain open. Owner-run deployment/live Broker checks remain manual.
