@@ -340,6 +340,29 @@ public final class MessageDecodeFixtures {
         expected.put("hasTags", message.hasProperty("TAGS"));
         expected.put("hasMissing", message.hasProperty("missing"));
 
+        Message directSetters = new Message();
+        expected.put("defaultTransactionId", directSetters.getTransactionId());
+        directSetters.setTags("setter-tag");
+        directSetters.setKeys("setter-key");
+        directSetters.setWaitStoreMsgOK(false);
+        directSetters.setTransactionId("transaction-setter");
+        expected.put("setTagsGetter", directSetters.getTags());
+        expected.put("setKeysStringGetter", directSetters.getKeys());
+        expected.put("setWaitStoreMsgOKFalse", directSetters.isWaitStoreMsgOK());
+        expected.put("setWaitStoreMsgOKProperty",
+            directSetters.getProperty(MessageConst.PROPERTY_WAIT_STORE_MSG_OK));
+        expected.put("setTransactionIdGetter", directSetters.getTransactionId());
+        directSetters.setWaitStoreMsgOK(true);
+        expected.put("setWaitStoreMsgOKTrue", directSetters.isWaitStoreMsgOK());
+        directSetters.setTags(null);
+        directSetters.setKeys((String) null);
+        directSetters.setTransactionId(null);
+        expected.put("nullSetterTagsRemainsPresent", directSetters.hasProperty("TAGS"));
+        expected.put("nullSetterTagsGetter", directSetters.getTags());
+        expected.put("nullSetterKeysRemainsPresent", directSetters.hasProperty("KEYS"));
+        expected.put("nullSetterKeysGetter", directSetters.getKeys());
+        expected.put("nullSetterTransactionId", directSetters.getTransactionId());
+
         message.setKeys(List.of("third", "fourth"));
         expected.put("collectionKeys", message.getKeys());
         message.setBuyerId("buyer-1");

@@ -1424,6 +1424,55 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(expected["nullableSetterTopicIsNull"], true);
     assert_eq!(expected["nullableSetterBodyIsNull"], true);
 
+    let mut direct_setters = Message::default();
+    assert_eq!(
+        direct_setters.transaction_id(),
+        expected["defaultTransactionId"].as_str()
+    );
+    assert_eq!(direct_setters.set_tags("setter-tag"), Ok(None));
+    assert_eq!(direct_setters.set_keys("setter-key"), Ok(None));
+    assert_eq!(direct_setters.set_wait_store_msg_ok(false), Ok(None));
+    direct_setters.set_transaction_id(Some("transaction-setter".to_owned()));
+    assert_eq!(direct_setters.tags(), expected["setTagsGetter"].as_str());
+    assert_eq!(
+        direct_setters.keys(),
+        expected["setKeysStringGetter"].as_str()
+    );
+    assert_eq!(
+        direct_setters.is_wait_store_msg_ok(),
+        expected["setWaitStoreMsgOKFalse"]
+    );
+    assert_eq!(
+        direct_setters
+            .get_property(rocketmq_classic_common::message::constants::PROPERTY_WAIT_STORE_MSG_OK),
+        expected["setWaitStoreMsgOKProperty"].as_str()
+    );
+    assert_eq!(
+        direct_setters.transaction_id(),
+        expected["setTransactionIdGetter"].as_str()
+    );
+    assert_eq!(
+        direct_setters.set_wait_store_msg_ok(true),
+        Ok(Some("false".to_owned()))
+    );
+    assert_eq!(
+        direct_setters.is_wait_store_msg_ok(),
+        expected["setWaitStoreMsgOKTrue"]
+    );
+    direct_setters.set_tags_nullable(None);
+    direct_setters.set_keys_nullable(None);
+    direct_setters.set_transaction_id(None);
+    assert!(direct_setters.has_property("TAGS"));
+    assert!(direct_setters.has_property("KEYS"));
+    assert_eq!(direct_setters.tags(), None);
+    assert_eq!(direct_setters.keys(), None);
+    assert_eq!(direct_setters.transaction_id(), None);
+    assert_eq!(expected["nullSetterTagsRemainsPresent"], true);
+    assert_eq!(expected["nullSetterTagsGetter"], serde_json::Value::Null);
+    assert_eq!(expected["nullSetterKeysRemainsPresent"], true);
+    assert_eq!(expected["nullSetterKeysGetter"], serde_json::Value::Null);
+    assert_eq!(expected["nullSetterTransactionId"], serde_json::Value::Null);
+
     let mut nullable_properties = Message::default();
     nullable_properties.set_tags_nullable(None);
     nullable_properties.set_buyer_id_nullable(None);
