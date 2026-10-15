@@ -493,7 +493,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   topic-length reads/writes. The invoked fixture and Rust regression cover enum
   order/names, magic conversion, signed narrowing, read/write cursors and
   truncated-read errors. Current message fixture SHA-256:
-  `a0a65db7c922eb9ac3825e235001dff30eaab8af41ac3e080ccd6e3540f138e0`.
+  `3d867fbd1ace33d2c95561ec12d7ac2f9f709fddc742c754459c7f75e08d563d`.
+- Common message constants now have a direct Java-to-Rust value audit: the
+  fixture reflects all 76 public `MessageConst` string fields, pins the two
+  `MixAll` reply constants, and records the initial mutable reserved-property
+  set. `message_constants_match_java_551` compares every value and reserved
+  name. P18-V01 remains open for the broader source/API/input/flow audit.
 - [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
   The latest complete run is recorded below for `133d4f54`; later commits are
   not covered by that full run.

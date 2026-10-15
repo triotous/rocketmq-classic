@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -25,6 +27,7 @@ import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageId;
 import org.apache.rocketmq.common.message.MessageVersion;
+import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.utils.NetworkUtil;
@@ -62,6 +65,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
+        root.put("messageConstantsApi", messageConstantsApi());
         root.put("messageVersionApi", messageVersionApi());
         root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
@@ -365,6 +369,28 @@ public final class MessageDecodeFixtures {
         expected.put("sysflagPosition", MessageDecoder.SYSFLAG_POSITION);
         expected.put("nameValueSeparator", (int) MessageDecoder.NAME_VALUE_SEPARATOR);
         expected.put("propertySeparator", (int) MessageDecoder.PROPERTY_SEPARATOR);
+        return expected;
+    }
+
+    private static Map<String, Object> messageConstantsApi() throws IllegalAccessException {
+        Map<String, String> messageConst = new TreeMap<>();
+        for (Field field : MessageConst.class.getDeclaredFields()) {
+            int modifiers = field.getModifiers();
+            if (field.getType() == String.class && Modifier.isPublic(modifiers)
+                && Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers)) {
+                messageConst.put(field.getName(), (String) field.get(null));
+            }
+        }
+        Map<String, String> mixAll = new TreeMap<>();
+        mixAll.put("REPLY_TOPIC_POSTFIX", MixAll.REPLY_TOPIC_POSTFIX);
+        mixAll.put("REPLY_MESSAGE_FLAG", MixAll.REPLY_MESSAGE_FLAG);
+
+        List<String> reservedNames = new ArrayList<>(MessageConst.STRING_HASH_SET);
+        reservedNames.sort(String::compareTo);
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("messageConst", messageConst);
+        expected.put("mixAll", mixAll);
+        expected.put("reservedNames", reservedNames);
         return expected;
     }
 

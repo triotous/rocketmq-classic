@@ -18,6 +18,7 @@ use rocketmq_classic_common::{
     sysflag::message,
 };
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 fn fixture() -> Value {
@@ -514,6 +515,238 @@ fn message_decoder_public_constants_match_java_551() {
         expected["nameValueSeparator"]
     );
     assert_eq!(PROPERTY_SEPARATOR as i32, expected["propertySeparator"]);
+}
+
+#[test]
+fn message_constants_match_java_551() {
+    use rocketmq_classic_common::message::constants;
+
+    let expected = &fixture()["messageConstantsApi"];
+    let message_const = [
+        ("PROPERTY_KEYS", constants::PROPERTY_KEYS),
+        ("PROPERTY_TAGS", constants::PROPERTY_TAGS),
+        (
+            "PROPERTY_WAIT_STORE_MSG_OK",
+            constants::PROPERTY_WAIT_STORE_MSG_OK,
+        ),
+        (
+            "PROPERTY_DELAY_TIME_LEVEL",
+            constants::PROPERTY_DELAY_TIME_LEVEL,
+        ),
+        ("PROPERTY_RETRY_TOPIC", constants::PROPERTY_RETRY_TOPIC),
+        ("PROPERTY_ORIGIN_GROUP", constants::PROPERTY_ORIGIN_GROUP),
+        ("PROPERTY_REAL_TOPIC", constants::PROPERTY_REAL_TOPIC),
+        ("PROPERTY_REAL_QUEUE_ID", constants::PROPERTY_REAL_QUEUE_ID),
+        (
+            "PROPERTY_TRANSACTION_PREPARED",
+            constants::PROPERTY_TRANSACTION_PREPARED,
+        ),
+        (
+            "PROPERTY_PRODUCER_GROUP",
+            constants::PROPERTY_PRODUCER_GROUP,
+        ),
+        ("PROPERTY_MIN_OFFSET", constants::PROPERTY_MIN_OFFSET),
+        ("PROPERTY_MAX_OFFSET", constants::PROPERTY_MAX_OFFSET),
+        ("PROPERTY_BUYER_ID", constants::PROPERTY_BUYER_ID),
+        (
+            "PROPERTY_ORIGIN_MESSAGE_ID",
+            constants::PROPERTY_ORIGIN_MESSAGE_ID,
+        ),
+        ("PROPERTY_TRANSFER_FLAG", constants::PROPERTY_TRANSFER_FLAG),
+        (
+            "PROPERTY_CORRECTION_FLAG",
+            constants::PROPERTY_CORRECTION_FLAG,
+        ),
+        ("PROPERTY_MQ2_FLAG", constants::PROPERTY_MQ2_FLAG),
+        (
+            "PROPERTY_RECONSUME_TIME",
+            constants::PROPERTY_RECONSUME_TIME,
+        ),
+        ("PROPERTY_MSG_REGION", constants::PROPERTY_MSG_REGION),
+        ("PROPERTY_TRACE_SWITCH", constants::PROPERTY_TRACE_SWITCH),
+        (
+            "PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX",
+            constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+        ),
+        ("PROPERTY_TRANS_OFFSET", constants::PROPERTY_TRANS_OFFSET),
+        (
+            "PROPERTY_EXTEND_UNIQ_INFO",
+            constants::PROPERTY_EXTEND_UNIQ_INFO,
+        ),
+        (
+            "PROPERTY_MAX_RECONSUME_TIMES",
+            constants::PROPERTY_MAX_RECONSUME_TIMES,
+        ),
+        (
+            "PROPERTY_CONSUME_START_TIMESTAMP",
+            constants::PROPERTY_CONSUME_START_TIMESTAMP,
+        ),
+        ("PROPERTY_PRIORITY", constants::PROPERTY_PRIORITY),
+        ("PROPERTY_INNER_NUM", constants::PROPERTY_INNER_NUM),
+        ("PROPERTY_INNER_BASE", constants::PROPERTY_INNER_BASE),
+        ("DUP_INFO", constants::DUP_INFO),
+        (
+            "PROPERTY_CHECK_IMMUNITY_TIME_IN_SECONDS",
+            constants::PROPERTY_CHECK_IMMUNITY_TIME_IN_SECONDS,
+        ),
+        (
+            "PROPERTY_TRANSACTION_PREPARED_QUEUE_OFFSET",
+            constants::PROPERTY_TRANSACTION_PREPARED_QUEUE_OFFSET,
+        ),
+        (
+            "PROPERTY_TRANSACTION_ID",
+            constants::PROPERTY_TRANSACTION_ID,
+        ),
+        (
+            "PROPERTY_TRANSACTION_CHECK_TIMES",
+            constants::PROPERTY_TRANSACTION_CHECK_TIMES,
+        ),
+        ("PROPERTY_INSTANCE_ID", constants::PROPERTY_INSTANCE_ID),
+        (
+            "PROPERTY_CORRELATION_ID",
+            constants::PROPERTY_CORRELATION_ID,
+        ),
+        (
+            "PROPERTY_MESSAGE_REPLY_TO_CLIENT",
+            constants::PROPERTY_MESSAGE_REPLY_TO_CLIENT,
+        ),
+        ("PROPERTY_MESSAGE_TTL", constants::PROPERTY_MESSAGE_TTL),
+        (
+            "PROPERTY_REPLY_MESSAGE_ARRIVE_TIME",
+            constants::PROPERTY_REPLY_MESSAGE_ARRIVE_TIME,
+        ),
+        (
+            "PROPERTY_PUSH_REPLY_TIME",
+            constants::PROPERTY_PUSH_REPLY_TIME,
+        ),
+        ("PROPERTY_CLUSTER", constants::PROPERTY_CLUSTER),
+        ("PROPERTY_MESSAGE_TYPE", constants::PROPERTY_MESSAGE_TYPE),
+        ("PROPERTY_POP_CK", constants::PROPERTY_POP_CK),
+        ("PROPERTY_POP_CK_OFFSET", constants::PROPERTY_POP_CK_OFFSET),
+        (
+            "PROPERTY_FIRST_POP_TIME",
+            constants::PROPERTY_FIRST_POP_TIME,
+        ),
+        ("PROPERTY_SHARDING_KEY", constants::PROPERTY_SHARDING_KEY),
+        ("PROPERTY_LITE_TOPIC", constants::PROPERTY_LITE_TOPIC),
+        (
+            "PROPERTY_FORWARD_QUEUE_ID",
+            constants::PROPERTY_FORWARD_QUEUE_ID,
+        ),
+        ("PROPERTY_REDIRECT", constants::PROPERTY_REDIRECT),
+        (
+            "PROPERTY_INNER_MULTI_DISPATCH",
+            constants::PROPERTY_INNER_MULTI_DISPATCH,
+        ),
+        (
+            "PROPERTY_INNER_MULTI_QUEUE_OFFSET",
+            constants::PROPERTY_INNER_MULTI_QUEUE_OFFSET,
+        ),
+        ("PROPERTY_TRACE_CONTEXT", constants::PROPERTY_TRACE_CONTEXT),
+        (
+            "PROPERTY_TIMER_DELAY_SEC",
+            constants::PROPERTY_TIMER_DELAY_SEC,
+        ),
+        (
+            "PROPERTY_TIMER_DELIVER_MS",
+            constants::PROPERTY_TIMER_DELIVER_MS,
+        ),
+        ("PROPERTY_BORN_HOST", constants::PROPERTY_BORN_HOST),
+        (
+            "PROPERTY_BORN_TIMESTAMP",
+            constants::PROPERTY_BORN_TIMESTAMP,
+        ),
+        (
+            "PROPERTY_TRANSIENT_PREFIX",
+            constants::PROPERTY_TRANSIENT_PREFIX,
+        ),
+        (
+            "PROPERTY_TRANSIENT_TOPIC_CONFIG",
+            constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+        ),
+        (
+            "PROPERTY_TRANSIENT_GROUP_CONFIG",
+            constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
+        ),
+        ("KEY_SEPARATOR", constants::KEY_SEPARATOR),
+        ("INDEX_KEY_TYPE", constants::INDEX_KEY_TYPE),
+        ("INDEX_UNIQUE_TYPE", constants::INDEX_UNIQUE_TYPE),
+        ("INDEX_TAG_TYPE", constants::INDEX_TAG_TYPE),
+        ("TIMER_ENGINE_TYPE", constants::TIMER_ENGINE_TYPE),
+        (
+            "TIMER_ENGINE_ROCKSDB_TIMELINE",
+            constants::TIMER_ENGINE_ROCKSDB_TIMELINE,
+        ),
+        (
+            "TIMER_ENGINE_FILE_TIME_WHEEL",
+            constants::TIMER_ENGINE_FILE_TIME_WHEEL,
+        ),
+        (
+            "PROPERTY_TIMER_ENQUEUE_MS",
+            constants::PROPERTY_TIMER_ENQUEUE_MS,
+        ),
+        (
+            "PROPERTY_TIMER_DEQUEUE_MS",
+            constants::PROPERTY_TIMER_DEQUEUE_MS,
+        ),
+        (
+            "PROPERTY_TIMER_ROLL_TIMES",
+            constants::PROPERTY_TIMER_ROLL_TIMES,
+        ),
+        ("PROPERTY_TIMER_OUT_MS", constants::PROPERTY_TIMER_OUT_MS),
+        (
+            "PROPERTY_TIMER_DEL_UNIQKEY",
+            constants::PROPERTY_TIMER_DEL_UNIQKEY,
+        ),
+        (
+            "PROPERTY_TIMER_ROLL_LABEL",
+            constants::PROPERTY_TIMER_ROLL_LABEL,
+        ),
+        (
+            "PROPERTY_TIMER_DELAY_LEVEL",
+            constants::PROPERTY_TIMER_DELAY_LEVEL,
+        ),
+        (
+            "PROPERTY_TIMER_DELAY_MS",
+            constants::PROPERTY_TIMER_DELAY_MS,
+        ),
+        ("PROPERTY_CRC32", constants::PROPERTY_CRC32),
+        (
+            "PROPERTY_DLQ_ORIGIN_TOPIC",
+            constants::PROPERTY_DLQ_ORIGIN_TOPIC,
+        ),
+        (
+            "PROPERTY_DLQ_ORIGIN_MESSAGE_ID",
+            constants::PROPERTY_DLQ_ORIGIN_MESSAGE_ID,
+        ),
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+    assert_eq!(message_const.len(), 76);
+    assert_eq!(
+        serde_json::to_value(message_const).unwrap(),
+        expected["messageConst"]
+    );
+
+    let mix_all = BTreeMap::from([
+        ("REPLY_TOPIC_POSTFIX", constants::REPLY_TOPIC_POSTFIX),
+        ("REPLY_MESSAGE_FLAG", constants::REPLY_MESSAGE_FLAG),
+    ]);
+    assert_eq!(serde_json::to_value(mix_all).unwrap(), expected["mixAll"]);
+
+    let mut reserved_names = {
+        constants::STRING_HASH_SET
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    reserved_names.sort();
+    assert_eq!(
+        serde_json::to_value(reserved_names).unwrap(),
+        expected["reservedNames"]
+    );
 }
 
 #[test]
