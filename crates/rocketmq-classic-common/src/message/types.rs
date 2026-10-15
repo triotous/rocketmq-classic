@@ -1250,14 +1250,6 @@ impl MessageClientExt {
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
         self.0.set_message_id(value);
     }
-
-    pub fn as_message_ext(&self) -> &MessageExt {
-        &self.0
-    }
-
-    pub fn as_message_ext_mut(&mut self) -> &mut MessageExt {
-        &mut self.0
-    }
 }
 
 impl From<MessageExt> for MessageClientExt {
