@@ -6,6 +6,8 @@ Phase 5 now persists 148 invoked cases across eight fixture families. The 29 cas
 
 This standalone Maven project pins `org.apache.rocketmq:rocketmq-client:5.5.1`. The local source checkout was inspected read-only at tag `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c86030f05f0419f9` (2026-08-20); the active Java checkout remains unchanged at 5.3.3.
 
+`RemotingLiveConfigProbe` uses a local socket peer to mutate `NettyClientConfig.clientCloseSocketIfTimeout` after `NettyRemotingClient` construction and startup, then verifies that a timed-out synchronous call leaves the socket open when the retained config is false. Maven `verify` runs this check without contacting a Broker.
+
 ## Verified local artifacts and tools
 
 - Client binary SHA-256: `1c39c94a28e59b292e29d699872d693cdc2ce30bd54c4e0f95a4c377fd9dff84`

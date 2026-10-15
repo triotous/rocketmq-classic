@@ -63,3 +63,26 @@
 - Follow-up consistency pass: the Java compatibility summary and known-
   differences index now mark remaining Phase 3 disposition labels as historical
   where P18-V01 still needs to verify current API, setting and behavior parity.
+
+## P18-V01 Remoting live timeout setting — 2026-10-15T12:46:47Z
+
+- Java 5.5.1 `NettyRemotingClient.invokeSync` consults its retained mutable
+  `NettyClientConfig.clientCloseSocketIfTimeout` when handling a response
+  timeout. Rust now exposes live getter/setter methods on `RemotingClient` and
+  reads the atomic setting at that timeout boundary instead of using only the
+  construction snapshot.
+- Added a Java local-socket probe, run by Maven verify, and a Rust loopback
+  regression that both mutate the setting after client construction/start and
+  verify that the timed-out call leaves its socket open.
+- Code commit: `95548e49 fix(remoting): read live sync timeout close setting`.
+- PASS: remoting crate tests, strict Remoting and workspace Clippy, default and
+  all-feature workspace tests, Maven verify (37 scenarios and the live-config
+  probe), differential self-test/manifest, 16-case race/leak smoke × 3, fuzz
+  smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples,
+  workspace benchmark compilation, locked metadata, metadata/license/dependency
+  checks, seven package listings, UTC/Asia-Taipei unique-ID fixture, formatting,
+  and `git diff --check`.
+- This closes the `clientCloseSocketIfTimeout` timing row only. Broad P18-V01,
+  current-revision GitHub Ubuntu address-profile/P18-V04 evidence, Phase 19
+  local Docker/Broker automation, and pre-publication version/registry checks
+  remain open.

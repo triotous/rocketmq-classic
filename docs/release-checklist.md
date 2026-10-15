@@ -390,6 +390,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   work, not final manual validation. Earlier Phase 3 notes that accepted
   unmatched Rust-only APIs, immutable config snapshots, or selected observable
   differences are historical and do not waive the current parity contract.
+  Remoting `clientCloseSocketIfTimeout` now has a live Rust update adapter and
+  Java/Rust post-start timeout evidence; this closes that setting row only.
   The producer send mutation branch is now
   oracle-backed, and surfaced Rust-only publish-info constructors/snapshot
   helpers are crate-private. Producer publish-info queue/cursor/selector and
@@ -964,5 +966,17 @@ Before any publication:
   metadata/license/dependency checks, seven package listings, and the Java
   unique-ID fixture under UTC and Asia/Taipei all pass. `git diff --check`
   passes. This closes P18-V02 server-free gates on `d165ba45`; P18-V01,
+  current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation, and pre-publication version/registry resolution remain open.
+
+- Current-worktree P18-V02 rerun (`95548e49`, 2026-10-15): after the live
+  `clientCloseSocketIfTimeout` setting change, default and all-feature workspace
+  tests, strict workspace Clippy, Maven verify (37 scenarios plus the Java
+  live-config probe), differential self-test/manifest, deterministic race/leak
+  smoke (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824
+  mutations), release examples, benchmark compilation, locked Cargo metadata,
+  workspace metadata/license/dependency checks, seven package listings, UTC
+  and Asia/Taipei unique-ID fixture runs, formatting, and `git diff --check` all
+  pass. This closes P18-V02 server-free gates on `95548e49`; broad P18-V01,
   current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
   automation, and pre-publication version/registry resolution remain open.
