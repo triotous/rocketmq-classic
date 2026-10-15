@@ -547,9 +547,17 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   month-rollover drift; the focused Rust differential passes under UTC and
   `TZ=Asia/Taipei`. CI runs the non-UTC case explicitly. This closes that
   helper slice only; broad P18-V01 remains open.
-- [ ] **P18-V02** — Re-run the complete server-free suite on the final revision.
-  The latest complete run is recorded below for `133d4f54`; later commits are
-  not covered by that full run.
+- [x] **P18-V02** — Re-run the complete server-free suite on revision
+  `1aae4772` (2026-10-15). Default workspace tests under UTC, all-feature
+  workspace tests, strict all-target/all-feature Clippy, Maven `verify` (37
+  scenarios, fixture checks, and Java/Rust cross-decodes), comparator
+  self-test and 37-scenario manifest, 16 deterministic race/leak cases × 3,
+  fuzz smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release
+  examples, workspace benchmark compilation, locked Cargo metadata, workspace
+  metadata/license/dependency checks, seven package-content listings, format,
+  and diff checks pass. The near-time ClientID differential also passes under
+  UTC and Asia/Taipei. P18-V01, current-revision GitHub Ubuntu address-profile
+  evidence, and Phase 19 Broker/Docker validation remain open.
 - [x] Re-run the full server-free P18-V02 gates on current revision `15f8494b`
   after the Push runtime-setting correction (2026-10-14): default and
   all-feature workspace tests, strict all-target/all-feature Clippy, Maven
@@ -699,8 +707,21 @@ the required full Phase 18 gates on the final revision.
   shares body/property references; Rust represents the snapshot with owned
   values. Current message fixture SHA-256:
   `7c61fee7311b7926b92b845899083e5f80a2ba8e67105ed7656de3d5e3a17a22`.
-  This closes that method mapping only; broad P18-V01 and the current-revision
-  P18-V02, GitHub Ubuntu, and Phase 19 gates remain open.
+  This closes that method mapping only. The current-revision P18-V02 rerun is
+  recorded below; broad P18-V01, GitHub Ubuntu evidence, and Phase 19 gates
+  remain open.
+- Current-revision server-free P18-V02 rerun (`1aae4772`, 2026-10-15):
+  `TZ=UTC cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass; strict workspace
+  Clippy, Maven verify (37 scenarios and Java/Rust cross-decodes), comparator
+  self-test and manifest validation, race/leak smoke (16 cases × 3), fuzz
+  smoke (104 frame seeds, 10 message seeds, 1,824 mutations), release examples,
+  workspace benchmark compilation, locked Cargo metadata, workspace metadata,
+  all seven package listings, format and diff checks pass. The near-time
+  ClientID differential passes under UTC and Asia/Taipei. This closes P18-V02
+  server-free gates on this revision only; P18-V01, current-revision GitHub
+  Ubuntu address-profile evidence, Phase 19 Broker/Docker validation, and
+  release version/registry checks remain open.
 
 ## Package graph and metadata
 

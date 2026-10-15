@@ -36,3 +36,19 @@
   Focused Core tests pass under both UTC and Asia/Taipei, and the regenerated
   Java Producer fixture verifies under UTC. Full P18-V02 must be rerun after
   this follow-up commit.
+- P18-V02 server-free verification on current revision `1aae4772` (2026-10-15):
+  `TZ=UTC cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass. Strict workspace
+  Clippy, `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios,
+  fixture drift and Java/Rust cross-decodes), strict
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
+  comparator self-test and
+  37-scenario manifest validation, `bash tests/stress/run-offline-smoke.sh`
+  (16 cases × 3), fuzz smoke (104 frame seeds, 10 message seeds, 1,824
+  mutations), release example build, workspace benchmark compilation, locked
+  Cargo metadata, workspace metadata/license/dependency checks, seven package
+  content listings, formatting and `git diff --check` pass. The near-time
+  ClientID differential passes under UTC and Asia/Taipei. This closes only the
+  current revision's server-free P18-V02 gate; P18-V01, current-revision GitHub
+  Ubuntu address-profile evidence, Phase 19 Broker/Docker validation, and
+  release version/registry checks remain open.
