@@ -257,6 +257,21 @@ public final class MessageDecodeFixtures {
         MessageAccessor.setProperties(replacedProperties, null);
         expected.put("setPropertiesNullMapIsNull", replacedProperties.getProperties() == null);
 
+        Map<String, String> deepCopySource = new HashMap<>();
+        deepCopySource.put(null, null);
+        deepCopySource.put("present", "original");
+        Map<String, String> deepCopy = MessageAccessor.deepCopyProperties(deepCopySource);
+        expected.put("deepCopyPropertiesNullMapIsNull",
+            MessageAccessor.deepCopyProperties(null) == null);
+        expected.put("deepCopyPropertiesReturnsDistinctMap", deepCopy != deepCopySource);
+        expected.put("deepCopyPropertiesPreservesNullKeyAndValue",
+            deepCopy.containsKey(null) && deepCopy.get(null) == null);
+        expected.put("deepCopyPropertiesInitialValue", deepCopy.get("present"));
+        deepCopySource.put("source-only", "source");
+        expected.put("deepCopyPropertiesIgnoresSourceMutation", !deepCopy.containsKey("source-only"));
+        deepCopy.put("copy-only", "copy");
+        expected.put("deepCopyPropertiesSourceIgnoresCopyMutation", !deepCopySource.containsKey("copy-only"));
+
         Message nullKeyProperty = new Message();
         MessageAccessor.putProperty(nullKeyProperty, null, "value");
         expected.put("nullKeyPropertyPresent", nullKeyProperty.hasProperty(null));

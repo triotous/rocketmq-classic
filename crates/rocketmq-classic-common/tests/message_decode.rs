@@ -1533,6 +1533,32 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(replaced_properties.get_properties(), None);
     assert_eq!(expected["setPropertiesNullMapIsNull"], true);
 
+    assert_eq!(expected["deepCopyPropertiesNullMapIsNull"], true);
+    assert_eq!(expected["deepCopyPropertiesReturnsDistinctMap"], true);
+    assert_eq!(expected["deepCopyPropertiesPreservesNullKeyAndValue"], true);
+    assert_eq!(expected["deepCopyPropertiesInitialValue"], "original");
+    assert_eq!(expected["deepCopyPropertiesIgnoresSourceMutation"], true);
+    assert_eq!(
+        expected["deepCopyPropertiesSourceIgnoresCopyMutation"],
+        true
+    );
+    let mut copy_source = rocketmq_classic_common::message::NullableMessageProperties::new();
+    copy_source.insert(None, None);
+    copy_source.insert(Some("present".to_owned()), Some("original".to_owned()));
+    let mut copied_properties = copy_source.clone();
+    copy_source.insert(Some("source-only".to_owned()), Some("source".to_owned()));
+    assert!(!copied_properties.contains_key(&Some("source-only".to_owned())));
+    copied_properties.insert(Some("copy-only".to_owned()), Some("copy".to_owned()));
+    assert!(!copy_source.contains_key(&Some("copy-only".to_owned())));
+    assert_eq!(copied_properties.get(&None), Some(&None));
+    assert_eq!(
+        copied_properties.get(&Some("present".to_owned())),
+        Some(&Some("original".to_owned()))
+    );
+    let absent_properties: Option<rocketmq_classic_common::message::NullableMessageProperties> =
+        None;
+    assert_eq!(absent_properties.clone(), None);
+
     let mut collection_with_null = Message::default();
     collection_with_null
         .set_keys_from_nullable(Some(vec![Some("left"), None, Some("right")]))
