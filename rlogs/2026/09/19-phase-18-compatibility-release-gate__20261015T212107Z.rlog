@@ -43,3 +43,12 @@ processor table; Java timeout exceptions have no phase enum. Existing Rust
 regression `owned_processor_cleanup_preserves_replacement_even_for_same_handle`
 covers lease replacement/drop behavior. Documentation-only change; no tests
 were run. `git diff --check` passed. Broad P18-V01 remains open.
+
+2026-10-15 UTC — extended the P18-V01 reverse-name audit to Core request/reply
+carriers. Pinned Java `RequestResponseFuture` exposes mutable pending state and
+`RequestFutureHolder.getRequestFutureTable()` exposes the live correlation map;
+Rust `PendingReplyRequest`, `PendingReplyControl`, and
+`PendingReplyCompletion` map to those flows through identity-bound ownership.
+Recorded that dropped-future cancellation and the lower-level `ProducerShutdown`
+completion still need a P18-V01 API/flow disposition. Documentation-only change;
+no tests were run. Broad P18-V01 remains open.
