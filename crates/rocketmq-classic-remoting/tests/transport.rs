@@ -14,9 +14,9 @@ use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{
         CallbackExecutor, ChannelEvent, ChannelEventListener, ChannelHandle, ClientConfig,
-        InvokeCallback, NettyEventType, RemotingClient, RequestExecutor, RequestPipeline,
-        RequestPipelineError, RequestProcessor, RpcHook, RpcHookError, TransportMode,
-        tls::TlsConfig,
+        InvokeCallback, NettyEventType, RemotingClient, RequestContext, RequestExecutor,
+        RequestPipeline, RequestPipelineError, RequestProcessor, RpcHook, RpcHookError,
+        TransportMode, tls::TlsConfig,
     },
     codec::frame,
     error::TransportError,
@@ -5504,6 +5504,116 @@ async fn p3_request_pipeline_and_processor_rejection_return_configured_codes() {
     assert!(pipeline_reply.is_response());
     assert_eq!(rejected_reply.code, 2);
     assert!(rejected_reply.is_response());
+}
+
+#[tokio::test]
+async fn p18_request_context_preserves_channel_identity_through_pipeline_and_processor() {
+    struct ContextPipeline {
+        observed: Arc<std::sync::Mutex<Vec<ChannelHandle>>>,
+        write_command: bool,
+    }
+
+    impl RequestPipeline for ContextPipeline {
+        fn execute(&self, _: &RemotingCommand) -> Result<(), i32> {
+            Ok(())
+        }
+
+        fn execute_detailed_with_context(
+            &self,
+            context: &RequestContext,
+            _: &RemotingCommand,
+        ) -> Result<(), RequestPipelineError> {
+            self.observed
+                .lock()
+                .unwrap()
+                .push(context.channel().clone());
+            assert_eq!(context.remote_addr(), context.channel().remote_addr());
+            if self.write_command {
+                let mut command = command(80);
+                command.opaque = 90;
+                drop(
+                    context
+                        .write_and_flush(&command)
+                        .map_err(|error| RequestPipelineError::Failed(error.to_string()))?,
+                );
+            }
+            Ok(())
+        }
+    }
+
+    struct ContextProcessor(Arc<std::sync::Mutex<Vec<ChannelHandle>>>);
+
+    impl RequestProcessor for ContextProcessor {
+        fn process(&self, _: RemotingCommand) -> Result<Option<RemotingCommand>, String> {
+            Ok(None)
+        }
+
+        fn process_with_request_context(
+            &self,
+            context: &RequestContext,
+            _: RemotingCommand,
+        ) -> Result<Option<RemotingCommand>, String> {
+            self.0.lock().unwrap().push(context.channel().clone());
+            Ok(Some(command(81)))
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let outbound = read_command(&mut stream).await;
+        let mut request = command(78);
+        request.opaque = 41;
+        write_command(&mut stream, &request).await;
+        let extra = read_command(&mut stream).await;
+        let response = read_command(&mut stream).await;
+        let mut invoke_reply = command(9);
+        invoke_reply.opaque = outbound.opaque;
+        invoke_reply.mark_response();
+        write_command(&mut stream, &invoke_reply).await;
+        (extra, response)
+    });
+
+    let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    client.register_processor(78, Arc::new(ContextProcessor(observed.clone())));
+    client.set_request_pipeline(Some(Arc::new(ContextPipeline {
+        observed: observed.clone(),
+        write_command: false,
+    })));
+    client.pipe_request_pipeline(Arc::new(ContextPipeline {
+        observed: observed.clone(),
+        write_command: true,
+    }));
+
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .code,
+        9
+    );
+    let (extra, response) = peer.await.unwrap();
+    assert_eq!((extra.code, extra.opaque), (80, 90));
+    assert!(!extra.is_response());
+    assert_eq!((response.code, response.opaque), (81, 41));
+    assert!(response.is_response());
+
+    {
+        let observed = observed.lock().unwrap();
+        assert_eq!(observed.len(), 3);
+        assert!(observed.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(observed[0].remote_addr(), address.to_string());
+        assert_eq!(observed[0].generation(), observed[2].generation());
+    }
+    client.shutdown().await;
 }
 
 struct RejectingProcessor;

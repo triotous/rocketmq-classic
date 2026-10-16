@@ -245,6 +245,31 @@ impl Connection {
         self.send_with_deadline(bytes, None).await
     }
 
+    pub(crate) fn enqueue_without_deadline(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<tokio::sync::oneshot::Receiver<Result<(), TransportError>>, TransportError> {
+        let (written, response) = tokio::sync::oneshot::channel();
+        let length = bytes.len();
+        self.reserve_write_bytes(length);
+        if self
+            .sender
+            .send(OutboundFrame {
+                bytes: Some(bytes),
+                frame_pool: self.frame_pool.clone(),
+                pooled: self.pooled_byte_buffer_allocator_enabled,
+                deadline: None,
+                cancelled: None,
+                written: Some(written),
+            })
+            .is_err()
+        {
+            self.release_write_bytes(length);
+            return Err(TransportError::Closed);
+        }
+        Ok(response)
+    }
+
     async fn send_with_deadline(
         &self,
         bytes: Vec<u8>,
@@ -520,6 +545,7 @@ async fn run_connection(
                                     let request = super::processor::InboundRequest {
                                         generation,
                                         remote_addr: address.clone(),
+                                        channel: channel.clone(),
                                         command,
                                     };
                                     if disable_worker_group {

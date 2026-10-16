@@ -30,7 +30,7 @@ use crate::{command::RemotingCommand, error::TransportError};
 
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
-pub use processor::RequestProcessor;
+pub use processor::{RequestContext, RequestProcessor};
 pub use response_future::{ChannelHandle, ResponseFuture};
 pub use tls::{PrivateKeyDecryptionStrategy, TlsConfig, TlsMode, register_decryption_strategy};
 
@@ -445,6 +445,18 @@ pub trait RequestPipeline: Send + Sync + 'static {
                 remark: Some("request pipeline aborted".into()),
             })
     }
+
+    /// Executes with the channel context for the inbound request.
+    ///
+    /// The default preserves existing implementations. Context-aware pipelines can override this
+    /// method to inspect, close, or write through the request's channel.
+    fn execute_detailed_with_context(
+        &self,
+        _context: &RequestContext,
+        request: &RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.execute_detailed(request)
+    }
 }
 
 impl<F> RequestPipeline for F
@@ -470,6 +482,17 @@ impl RequestPipeline for PipedRequestPipeline {
     fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.source.execute_detailed(request)?;
         self.existing.execute_detailed(request)
+    }
+
+    fn execute_detailed_with_context(
+        &self,
+        context: &RequestContext,
+        request: &RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.source
+            .execute_detailed_with_context(context, request)?;
+        self.existing
+            .execute_detailed_with_context(context, request)
     }
 }
 
@@ -3990,6 +4013,7 @@ mod tests {
                 .send(processor::InboundRequest {
                     generation: 0,
                     remote_addr: "test:0".into(),
+                    channel: ChannelHandle::pending("test:0", 0),
                     command: test_command(),
                 })
                 .unwrap();
@@ -4034,6 +4058,7 @@ mod tests {
             .send(processor::InboundRequest {
                 generation: 0,
                 remote_addr: "test:0".into(),
+                channel: ChannelHandle::pending("test:0", 0),
                 command: test_command(),
             })
             .unwrap();

@@ -1,10 +1,57 @@
-use std::sync::{Arc, Weak};
+use std::{
+    future::Future,
+    sync::{Arc, Weak},
+};
 
+use rocketmq_classic_protocol::codes::response;
 use tokio::sync::mpsc;
 
-use crate::command::RemotingCommand;
+use crate::{command::RemotingCommand, error::TransportError};
 
-use super::{ClientInner, ProcessorRegistration};
+use super::{ChannelHandle, ClientInner, ProcessorRegistration};
+
+/// Request-scoped access to the channel that delivered an inbound command.
+///
+/// The channel handle preserves connection identity and supports address inspection, closing,
+/// and outbound command writes. `write_and_flush` enqueues immediately and returns a future for
+/// the local write result; it has no operation deadline and does not imply remote receipt.
+#[derive(Clone, Debug)]
+pub struct RequestContext {
+    channel: ChannelHandle,
+}
+
+impl RequestContext {
+    pub(super) fn new(channel: ChannelHandle) -> Self {
+        Self { channel }
+    }
+
+    /// Returns the identity-preserving channel handle for the inbound connection.
+    pub fn channel(&self) -> &ChannelHandle {
+        &self.channel
+    }
+
+    /// Returns the peer address recorded for this channel, with URI credentials redacted.
+    pub fn remote_addr(&self) -> &str {
+        self.channel.remote_addr()
+    }
+
+    /// Closes this channel and lets the connection owner complete pending requests.
+    pub fn close(&self) -> bool {
+        self.channel.close()
+    }
+
+    /// Enqueues a command on this channel without an operation deadline.
+    ///
+    /// The returned future reports the local socket write result. Dropping it does not cancel the
+    /// already-enqueued write, matching the fire-and-forget use of Java's `writeAndFlush` future.
+    pub fn write_and_flush(
+        &self,
+        command: &RemotingCommand,
+    ) -> Result<impl Future<Output = Result<(), TransportError>> + Send + 'static, TransportError>
+    {
+        self.channel.enqueue_and_flush(command)
+    }
+}
 
 pub trait RequestProcessor: Send + Sync + 'static {
     fn process(&self, request: RemotingCommand) -> Result<Option<RemotingCommand>, String>;
@@ -16,6 +63,18 @@ pub trait RequestProcessor: Send + Sync + 'static {
         request: RemotingCommand,
     ) -> Result<Option<RemotingCommand>, String> {
         self.process(request)
+    }
+
+    /// Processes a command with its inbound channel context.
+    ///
+    /// The default preserves implementations of `process_with_context` by forwarding the peer
+    /// address. Implementations that need channel operations can override this method.
+    fn process_with_request_context(
+        &self,
+        context: &RequestContext,
+        request: RemotingCommand,
+    ) -> Result<Option<RemotingCommand>, String> {
+        self.process_with_context(context.remote_addr(), request)
     }
 
     fn reject_request(&self) -> bool {
@@ -36,6 +95,7 @@ where
 pub(super) struct InboundRequest {
     pub generation: u64,
     pub remote_addr: String,
+    pub channel: ChannelHandle,
     pub command: RemotingCommand,
 }
 
@@ -162,6 +222,7 @@ fn process_registered(
     mut request: InboundRequest,
     registration: ProcessorRegistration,
 ) {
+    let request_context = RequestContext::new(request.channel.clone());
     let mut response = None;
     let mut run_after_hooks = false;
     let mut request_for_hooks = request.command.clone();
@@ -191,7 +252,7 @@ fn process_registered(
             let pipeline = client.request_pipeline.lock().unwrap().clone();
             let pipeline_result = if let Some(pipeline) = pipeline {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    pipeline.execute_detailed(&request_for_hooks)
+                    pipeline.execute_detailed_with_context(&request_context, &request_for_hooks)
                 }))
                 .unwrap_or_else(|payload| {
                     Err(super::RequestPipelineError::Failed(panic_message(payload)))
@@ -221,9 +282,10 @@ fn process_registered(
                 }
                 Ok(()) => {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        registration
-                            .processor
-                            .process_with_context(&request.remote_addr, request_for_hooks.clone())
+                        registration.processor.process_with_request_context(
+                            &request_context,
+                            request_for_hooks.clone(),
+                        )
                     }));
                     match result {
                         Ok(Ok(processed_response)) => {
@@ -336,4 +398,37 @@ fn error_response(code: i32, remark: &str) -> RemotingCommand {
     }
 }
 
-use rocketmq_classic_protocol::codes::response;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct LegacyProcessor;
+
+    impl RequestProcessor for LegacyProcessor {
+        fn process(&self, _: RemotingCommand) -> Result<Option<RemotingCommand>, String> {
+            panic!("the legacy context method should handle this call")
+        }
+
+        fn process_with_context(
+            &self,
+            remote_addr: &str,
+            _: RemotingCommand,
+        ) -> Result<Option<RemotingCommand>, String> {
+            Ok(Some(RemotingCommand {
+                remark: Some(remote_addr.to_owned()),
+                ..RemotingCommand::default()
+            }))
+        }
+    }
+
+    #[test]
+    fn request_context_adapts_existing_remote_address_processors() {
+        let context = RequestContext::new(ChannelHandle::pending("127.0.0.1:10911", 7));
+        let response = LegacyProcessor
+            .process_with_request_context(&context, RemotingCommand::default())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.remark.as_deref(), Some("127.0.0.1:10911"));
+    }
+}

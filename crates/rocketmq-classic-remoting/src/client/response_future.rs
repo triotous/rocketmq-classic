@@ -133,6 +133,20 @@ impl ChannelHandle {
         connection.send(frame::encode(command)?, deadline).await
     }
 
+    pub(super) fn enqueue_and_flush(
+        &self,
+        command: &RemotingCommand,
+    ) -> Result<
+        impl std::future::Future<Output = Result<(), TransportError>> + Send + 'static,
+        TransportError,
+    > {
+        let Some(connection) = self.connection().filter(|_| self.is_active()) else {
+            return Err(TransportError::Closed);
+        };
+        let written = connection.enqueue_without_deadline(frame::encode(command)?)?;
+        Ok(async move { written.await.map_err(|_| TransportError::Closed)? })
+    }
+
     fn is_closed(&self) -> bool {
         self.state.closed.load(Ordering::Acquire)
     }
