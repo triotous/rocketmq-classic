@@ -169,7 +169,7 @@ struct ClientInner {
     close_socket_if_timeout: AtomicBool,
     enable_reconnect_for_go_away: AtomicBool,
     disable_callback_executor: AtomicBool,
-    client_worker_threads: AtomicUsize,
+    client_worker_threads: AtomicI32,
     disable_netty_worker_group: AtomicBool,
     client_channel_max_idle_time_seconds: AtomicI32,
     client_socket_send_buffer_size: AtomicUsize,
@@ -763,7 +763,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(disable_callback_executor),
-            client_worker_threads: AtomicUsize::new(config.worker_threads),
+            client_worker_threads: AtomicI32::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
             client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
@@ -853,12 +853,12 @@ impl RemotingClient {
     }
 
     /// Returns the worker count used when the client starts its request workers.
-    pub fn get_client_worker_threads(&self) -> usize {
+    pub fn get_client_worker_threads(&self) -> i32 {
         self.inner.client_worker_threads.load(Ordering::Acquire)
     }
 
     /// Updates the worker count that `start()` uses to create request workers.
-    pub fn set_client_worker_threads(&self, worker_threads: usize) {
+    pub fn set_client_worker_threads(&self, worker_threads: i32) {
         self.inner
             .client_worker_threads
             .store(worker_threads, Ordering::Release);
@@ -1046,7 +1046,7 @@ impl RemotingClient {
             close_socket_if_timeout: AtomicBool::new(true),
             enable_reconnect_for_go_away: AtomicBool::new(true),
             disable_callback_executor: AtomicBool::new(false),
-            client_worker_threads: AtomicUsize::new(4),
+            client_worker_threads: AtomicI32::new(4),
             disable_netty_worker_group: AtomicBool::new(false),
             client_channel_max_idle_time_seconds: AtomicI32::new(120),
             client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
@@ -1081,7 +1081,7 @@ impl RemotingClient {
         let processor_tasks = processor::start(
             Arc::downgrade(&inner),
             inbound_rx,
-            inner.config.worker_threads,
+            usize::try_from(inner.config.worker_threads).expect("validated worker count"),
         );
         for task in processor_tasks {
             inner.spawn(task);
@@ -1107,11 +1107,16 @@ impl RemotingClient {
             return Ok(());
         }
         let worker_threads = self.inner.client_worker_threads.load(Ordering::Acquire);
-        if worker_threads == 0 || i32::try_from(worker_threads).is_err() {
+        if worker_threads <= 0 {
             return Err(TransportError::InvalidConfiguration(
                 "client worker thread count must fit a positive Java signed integer".into(),
             ));
         }
+        let worker_count = usize::try_from(worker_threads).map_err(|_| {
+            TransportError::InvalidConfiguration(
+                "client worker thread count must fit the platform thread count".into(),
+            )
+        })?;
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
             TransportError::InvalidConfiguration("start requires an active Tokio runtime".into())
         })?;
@@ -1128,7 +1133,7 @@ impl RemotingClient {
         for task in processor::start(
             Arc::downgrade(&self.inner),
             startup_state.inbound_receiver,
-            worker_threads,
+            worker_count,
         ) {
             self.inner.spawn(task);
         }
@@ -3519,10 +3524,12 @@ mod tests {
         .unwrap();
         let async_property = config::JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY;
         let oneway_property = config::JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY;
+        let worker_property = config::JAVA_CLIENT_WORKER_SIZE_PROPERTY;
         let connect_timeout_property = config::JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY;
         let max_idle_time_property = config::JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY;
         let close_socket_property = config::JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY;
         let configured = &fixture["remotingSemaphoreValues"];
+        let worker_settings = &fixture["remotingWorkerSettings"];
         let timeout_settings = &fixture["remotingTimeoutSettings"];
 
         match std::env::var(CHILD_MARKER).as_deref() {
@@ -3535,6 +3542,10 @@ mod tests {
                 assert_eq!(
                     i64::from(defaults.oneway_semaphore_value),
                     configured["oneway"].as_i64().unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.worker_threads),
+                    worker_settings["workerThreads"].as_i64().unwrap()
                 );
                 assert_eq!(
                     defaults.close_socket_if_timeout,
@@ -3578,6 +3589,10 @@ mod tests {
                 property_values[oneway_property].as_str().unwrap(),
             )
             .env(
+                worker_property,
+                property_values[worker_property].as_str().unwrap(),
+            )
+            .env(
                 close_socket_property,
                 property_values[close_socket_property].as_str().unwrap(),
             )
@@ -3607,6 +3622,10 @@ mod tests {
             .env(
                 oneway_property,
                 property_values[oneway_property].as_str().unwrap(),
+            )
+            .env(
+                worker_property,
+                property_values[worker_property].as_str().unwrap(),
             )
             .env(
                 close_socket_property,
@@ -3989,7 +4008,26 @@ mod tests {
         })
         .unwrap();
         assert_eq!(client.get_client_worker_threads(), 1);
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config-properties.json"
+        ))
+        .unwrap();
+        for case in fixture["remotingWorkerSettings"]["setterCases"]
+            .as_array()
+            .unwrap()
+        {
+            let input = i32::try_from(case["input"].as_i64().unwrap()).unwrap();
+            let expected = i32::try_from(case["getter"].as_i64().unwrap()).unwrap();
+            client.set_client_worker_threads(input);
+            assert_eq!(client.get_client_worker_threads(), expected);
+        }
 
+        client.set_client_worker_threads(-1);
+        assert_eq!(client.get_client_worker_threads(), -1);
+        assert!(matches!(
+            client.start(),
+            Err(TransportError::InvalidConfiguration(_))
+        ));
         client.set_client_worker_threads(0);
         assert!(matches!(
             client.start(),
@@ -4262,7 +4300,7 @@ mod tests {
             close_socket_if_timeout: AtomicBool::new(config.close_socket_if_timeout),
             enable_reconnect_for_go_away: AtomicBool::new(config.enable_reconnect_for_go_away),
             disable_callback_executor: AtomicBool::new(config.disable_callback_executor),
-            client_worker_threads: AtomicUsize::new(config.worker_threads),
+            client_worker_threads: AtomicI32::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
             client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
@@ -4301,9 +4339,12 @@ mod tests {
         let tasks = processor::start(
             Arc::downgrade(&inner),
             receiver,
-            inner.config.worker_threads,
+            usize::try_from(inner.config.worker_threads).expect("validated worker count"),
         );
-        assert_eq!(tasks.len(), inner.config.worker_threads + 1);
+        assert_eq!(
+            tasks.len(),
+            usize::try_from(inner.config.worker_threads).unwrap() + 1
+        );
         inner.shutdown.send(true).unwrap();
         for task in tasks {
             task.await.unwrap();

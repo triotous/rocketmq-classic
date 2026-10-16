@@ -2892,6 +2892,15 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert_eq!(defaults.async_semaphore_value, 65535);
     assert_eq!(defaults.oneway_semaphore_value, 65535);
     assert_eq!(defaults.worker_threads, 4);
+    for worker_threads in [i32::MIN, -1, 0, 1, i32::MAX] {
+        assert!(
+            config_is_accepted(ClientConfig {
+                worker_threads,
+                ..defaults.clone()
+            })
+            .is_ok()
+        );
+    }
     assert!(!defaults.disable_callback_executor);
     assert_eq!(
         defaults.callback_executor_threads,
@@ -3005,13 +3014,9 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             worker_threads: 0,
             ..defaults.clone()
         })
-        .is_err()
+        .is_ok()
     );
     for invalid_capacity in [
-        ClientConfig {
-            worker_threads: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
         ClientConfig {
             callback_executor_threads: i32::MAX as usize + 1,
             ..defaults.clone()

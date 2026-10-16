@@ -3,6 +3,8 @@ package compat;
 import com.alibaba.fastjson2.JSON;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
@@ -20,6 +22,7 @@ public final class ClientConfigPropertiesProbe {
         Map.entry("com.rocketmq.startDetectorEnable", " true "),
         Map.entry("com.rocketmq.remoting.clientAsyncSemaphoreValue", "-17"),
         Map.entry("com.rocketmq.remoting.clientOnewaySemaphoreValue", "2147483647"),
+        Map.entry("com.rocketmq.remoting.client.worker.size", "-3"),
         Map.entry("com.rocketmq.remoting.client.connect.timeout", "-13"),
         Map.entry("com.rocketmq.remoting.client.channel.maxIdleTimeSeconds", "-7"),
         Map.entry("com.rocketmq.remoting.client.closeSocketIfTimeout", "false")
@@ -42,6 +45,7 @@ public final class ClientConfigPropertiesProbe {
         }
         fixture.put("configured", snapshot(new ClientConfig()));
         fixture.put("remotingSemaphoreValues", remotingSemaphoreValues());
+        fixture.put("remotingWorkerSettings", remotingWorkerSettings());
         fixture.put("remotingTimeoutSettings", remotingTimeoutSettings());
 
         Path file = Path.of(args[0]);
@@ -76,6 +80,25 @@ public final class ClientConfigPropertiesProbe {
         Map<String, Object> result = new TreeMap<>();
         result.put("async", config.getClientAsyncSemaphoreValue());
         result.put("oneway", config.getClientOnewaySemaphoreValue());
+        return result;
+    }
+
+    private static Map<String, Object> remotingWorkerSettings() {
+        org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("workerThreads", config.getClientWorkerThreads());
+        List<Object> setterCases = new ArrayList<>();
+        for (int value : new int[] {Integer.MIN_VALUE, -1, 0, 1, Integer.MAX_VALUE}) {
+            org.apache.rocketmq.remoting.netty.NettyClientConfig configured =
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+            configured.setClientWorkerThreads(value);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", value);
+            item.put("getter", configured.getClientWorkerThreads());
+            setterCases.add(item);
+        }
+        result.put("setterCases", setterCases);
         return result;
     }
 

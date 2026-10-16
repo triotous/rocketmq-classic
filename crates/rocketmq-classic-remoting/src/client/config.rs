@@ -14,6 +14,8 @@ pub(super) const JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientAsyncSemaphoreValue";
 pub(super) const JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientOnewaySemaphoreValue";
+pub(super) const JAVA_CLIENT_WORKER_SIZE_PROPERTY: &str =
+    "com.rocketmq.remoting.client.worker.size";
 pub(super) const JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY: &str =
     "com.rocketmq.remoting.client.connect.timeout";
 pub(super) const JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY: &str =
@@ -27,6 +29,7 @@ static JAVA_CLIENT_DEFAULTS: OnceLock<Result<JavaClientDefaults, String>> = Once
 struct JavaClientDefaults {
     async_semaphore_value: i32,
     oneway_semaphore_value: i32,
+    worker_threads: i32,
     connect_timeout: i32,
     max_idle_time: i32,
     close_socket_if_timeout: bool,
@@ -64,6 +67,7 @@ fn java_client_defaults() -> JavaClientDefaults {
                     JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY,
                     65535,
                 )?,
+                worker_threads: read_java_int_property(JAVA_CLIENT_WORKER_SIZE_PROPERTY, 4)?,
                 connect_timeout: read_java_int_property(
                     JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY,
                     3000,
@@ -1960,8 +1964,9 @@ fn watermarks(low: usize, high: usize) -> (usize, usize) {
 #[derive(Clone, Debug)]
 /// Configuration values for a [`RemotingClient`](super::RemotingClient).
 ///
-/// Validation is performed by `RemotingClient::with_config` before the client
-/// is constructed; there is no standalone Java `NettyClientConfig` validator.
+/// Configuration validation occurs when constructing a client, while the
+/// signed worker count is checked by `start()` like Java's worker-group setup.
+/// Java has no standalone `NettyClientConfig` validator.
 ///
 /// ```compile_fail
 /// use rocketmq_classic_remoting::client::ClientConfig;
@@ -1975,7 +1980,8 @@ pub struct ClientConfig {
     pub channel_not_active_interval: i64,
     pub async_semaphore_value: i32,
     pub oneway_semaphore_value: i32,
-    pub worker_threads: usize,
+    /// Java `clientWorkerThreads`; accepts the signed `int` domain and requires a positive value at `start()`.
+    pub worker_threads: i32,
     pub callback_executor_threads: usize,
     pub disable_callback_executor: bool,
     pub client_socket_send_buffer_size: usize,
@@ -2004,7 +2010,7 @@ impl Default for ClientConfig {
             channel_not_active_interval: 60_000,
             async_semaphore_value: defaults.async_semaphore_value,
             oneway_semaphore_value: defaults.oneway_semaphore_value,
-            worker_threads: 4,
+            worker_threads: defaults.worker_threads,
             callback_executor_threads: std::thread::available_parallelism()
                 .map(usize::from)
                 .unwrap_or(1),
@@ -2032,17 +2038,14 @@ impl ClientConfig {
     }
 
     pub(super) fn validate(&self) -> Result<(), TransportError> {
-        if self.worker_threads == 0
-            || i32::try_from(self.worker_threads).is_err()
-            || i32::try_from(self.callback_executor_threads).is_err()
+        if i32::try_from(self.callback_executor_threads).is_err()
             || i32::try_from(self.client_socket_send_buffer_size).is_err()
             || i32::try_from(self.client_socket_receive_buffer_size).is_err()
             || i32::try_from(self.write_buffer_high_water_mark).is_err()
             || i32::try_from(self.write_buffer_low_water_mark).is_err()
         {
             return Err(TransportError::InvalidConfiguration(
-                "integer client settings must fit their Java signed integer ranges; worker count must be nonzero"
-                    .into(),
+                "integer client settings must fit their Java signed integer ranges".into(),
             ));
         }
         if self.write_buffer_low_water_mark > 0
