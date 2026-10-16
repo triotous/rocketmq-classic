@@ -10237,10 +10237,20 @@ mod tests {
             ));
         let manager = ClientRuntimeManager::new();
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let raw_running_info_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
         consumer.subscribe("orders", "blue").await.unwrap();
         consumer.subscribe("empty", "*").await.unwrap();
+        let before_start_running_info = consumer.consumer_running_info().await;
+        assert!(
+            raw_running_info_fixture["runningInfoBeforeStartThrowsNullPointerException"]
+                .as_bool()
+                .unwrap()
+        );
         assert!(matches!(
-            consumer.consumer_running_info().await,
+            before_start_running_info,
             Err(PushConsumerError::NotStarted)
         ));
         let store = Arc::new(RecordingOffsetStore::default());
@@ -10295,10 +10305,6 @@ mod tests {
 
         consumer.consume_core_pool_size.store(7, Ordering::Release);
         let raw_running_info = consumer.consumer_running_info().await.unwrap();
-        let raw_running_info_fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../fixtures/consumer/push-implementation-accessor.json"
-        ))
-        .unwrap();
         assert_eq!(
             raw_running_info.subscription_set.len(),
             raw_running_info_fixture["rawRunningInfoSubscriptionCount"]

@@ -92,6 +92,12 @@ public final class PushImplementationAccessorFixtures {
         Object secondRebalance = first.getRebalanceImpl();
         check(firstRebalance != null, "rebalance implementation accessor non-null");
         check(firstRebalance == secondRebalance, "rebalance implementation identity stable");
+        boolean runningInfoBeforeStartThrowsNullPointerException = false;
+        try {
+            first.consumerRunningInfo();
+        } catch (NullPointerException expectedNullService) {
+            runningInfoBeforeStartThrowsNullPointerException = true;
+        }
 
         String initialServiceState = first.getServiceState().name();
         first.setServiceState(null);
@@ -297,6 +303,8 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("serviceStateSetterAcceptsNull", serviceStateSetterAcceptsNull);
         fixture.put("startFailedStateBlocksStart", startFailedStateBlocksStart);
         fixture.put("serviceStateAfterRejectedStart", serviceStateAfterRejectedStart);
+        fixture.put("runningInfoBeforeStartThrowsNullPointerException",
+            runningInfoBeforeStartThrowsNullPointerException);
         fixture.put("effectiveMaxReconsumeTimesDefault", effectiveMaxReconsumeTimesDefault);
         fixture.put("effectiveMaxReconsumeTimesCustom", effectiveMaxReconsumeTimesCustom);
         fixture.put("groupName", groupName);
