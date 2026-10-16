@@ -2477,3 +2477,17 @@ Before any publication:
   checks, and Maven `verify` (37 scenarios, including the new Java fixture)
   pass. Broad P18-V01 and full workspace P18-V02 remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T190618Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T190618Z.rlog).
+- P18-V01 Remoting `TransportError` construction-helper surface (`c3e669d6`,
+  2026-10-16, pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  `timeout`, `timeout_with_cause`, `connect_source`, and `tls_source` are now
+  crate-internal helpers; the redundant `send_source` factory was removed.
+  Public typed variants remain available. `ErrorSource` is mapped to Java
+  `Throwable` message/cause/type-inspection capability, and the Rust value
+  equality difference is recorded as non-flow diagnostic behavior. Five
+  compile-fail doctests guard helper visibility. Remoting all-feature tests
+  pass (108 unit, 8 codec, 1 fuzz regression, 7 security, 107 transport, and
+  15 doctests); strict all-target/all-feature Remoting Clippy, workspace format
+  check, and diff check pass. This closes only the identified error-factory
+  visibility slice; broad P18-V01 and final-revision full-workspace P18-V02
+  remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T191756Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T191756Z.rlog).
