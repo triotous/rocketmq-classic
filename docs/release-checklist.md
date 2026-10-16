@@ -1641,3 +1641,21 @@ Before any publication:
   Phase 19 Docker/Broker automation, and pre-publication version/registry
   resolution remain open. Owner-run deployment and production checks remain
   Phase 19 manual validation.
+
+- P18-V01 Remoting signed semaphore config follow-up (`e4fd4062`, code
+  `c0f5c13d`, 2026-10-16): Rust async/oneway config fields now use Java's signed
+  `i32` range and accept negative values. The invoked Java fixture records
+  defaults, setter/getter round trips, and timed-acquire outcomes for
+  `Integer.MIN_VALUE`, its neighbor, `-2`, `-1`, zero, one, and `Integer.MAX_VALUE`.
+  Rust maps ordinary negative capacities to closed admission and reproduces
+  Java's `Integer.MIN_VALUE` first-acquire overflow as an effective `2^31`
+  permits. `signed_semaphore_settings_match_java_fixture` checks both async and
+  oneway admission, immediate saturation and positive-deadline timeout.
+  Remoting all-feature tests pass (98 unit, 8 codec, 1 fuzz regression, 7
+  security, 100 transport, 8 doctests); strict Remoting Clippy, formatting,
+  diff checks and Maven verify (37 scenarios and fixture/cross-decode checks)
+  pass. This closes the signed semaphore value/admission slice only. Java
+  system-property seeding for these fields and the broad P18-V01 audit remain
+  open, as do current GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker
+  automation, and release version/registry resolution. Owner-run deployment
+  and production checks remain Phase 19 manual validation.

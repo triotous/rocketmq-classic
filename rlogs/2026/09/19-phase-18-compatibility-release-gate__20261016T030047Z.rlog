@@ -39,3 +39,26 @@ This commit contains oracle evidence only. Next: change Rust semaphore fields to
 signed i32, map Java's negative admission behavior (including MIN_VALUE
 overflow) into the Rust semaphore implementation, add fixture-backed tests, and
 update the Remoting compatibility inventory and release checklist.
+
+Rust signed semaphore implementation (`c0f5c13d`): `ClientConfig` async and
+oneway capacities are now `i32`, accept every Java signed-int value, and feed
+Tokio admission capacities through a helper. Ordinary negative values map to
+zero admission; Java's `Integer.MIN_VALUE` acquire overflow maps to `2^31` on
+this 64-bit host. Fixture-backed tests cover async and oneway immediate
+acquisition, post-acquire permit counts, zero-deadline saturation, and positive
+deadline timeout. The public config values remain signed and unchanged.
+
+Validation on code revision `c0f5c13d`:
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` passed:
+  98 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, and 8 doc
+  tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed, including all 37
+  scenario-manifest validations, runtime fixture drift checks, and Java/Rust
+  cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+This closes only signed semaphore value and admission mapping. The Java system-
+property source for the two defaults remains an open P18-V01 setting source;
+the broad P18-V01 audit and final full-workspace P18-V02 rerun remain open.
