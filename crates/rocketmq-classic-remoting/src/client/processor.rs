@@ -226,6 +226,7 @@ fn process_registered(
     let mut response = None;
     let mut run_after_hooks = false;
     let mut request_for_hooks = request.command.clone();
+    let mut before_failure = None;
     if let Some(client) = inner.upgrade() {
         let hooks = client.rpc_hooks.lock().unwrap().clone();
         let before_result = hooks.iter().try_for_each(|hook| {
@@ -234,7 +235,7 @@ fn process_registered(
             }))
             .unwrap_or_else(|payload| Err(super::RpcHookError::Failed(panic_message(payload))))
         });
-        let before_failure = match before_result {
+        before_failure = match before_result {
             Err(super::RpcHookError::Abort {
                 response_code,
                 remark,
@@ -252,7 +253,8 @@ fn process_registered(
             let pipeline = client.request_pipeline.lock().unwrap().clone();
             let pipeline_result = if let Some(pipeline) = pipeline {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    pipeline.execute_detailed_with_context(&request_context, &request_for_hooks)
+                    pipeline
+                        .execute_detailed_with_context_mut(&request_context, &mut request_for_hooks)
                 }))
                 .unwrap_or_else(|payload| {
                     Err(super::RequestPipelineError::Failed(panic_message(payload)))
@@ -265,19 +267,21 @@ fn process_registered(
                     response_code,
                     remark,
                 }) => {
+                    before_failure = None;
                     response = Some(error_response(
                         response_code,
                         remark.as_deref().unwrap_or("request pipeline aborted"),
                     ));
                 }
                 Err(super::RequestPipelineError::Failed(message)) => {
+                    before_failure = None;
                     response = Some(error_response(response::SYSTEM_ERROR, &message));
                 }
                 Ok(()) if before_failure.is_some() => {
-                    response = Some(error_response(
-                        response::SYSTEM_ERROR,
-                        before_failure.as_deref().unwrap_or_default(),
-                    ));
+                    response = Some(RemotingCommand {
+                        code: response::SYSTEM_ERROR,
+                        ..RemotingCommand::default()
+                    });
                     run_after_hooks = true;
                 }
                 Ok(()) => {
@@ -310,10 +314,10 @@ fn process_registered(
         if let Some(client) = inner.upgrade() {
             for hook in client.rpc_hooks.lock().unwrap().clone() {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    hook.after_response_optional_result(
+                    hook.after_response_optional_mut_result(
                         &request.remote_addr,
-                        &request_for_hooks,
-                        response.as_ref(),
+                        &mut request_for_hooks,
+                        response.as_mut(),
                     )
                 }))
                 .unwrap_or_else(|payload| Err(super::RpcHookError::Failed(panic_message(payload))));
@@ -323,6 +327,7 @@ fn process_registered(
                         response_code,
                         remark,
                     }) => {
+                        before_failure = None;
                         response = Some(error_response(
                             response_code,
                             remark.as_deref().unwrap_or("RPC hook aborted response"),
@@ -330,11 +335,15 @@ fn process_registered(
                         break;
                     }
                     Err(super::RpcHookError::Failed(message)) => {
+                        before_failure = None;
                         response = Some(error_response(response::SYSTEM_ERROR, &message));
                         break;
                     }
                 }
             }
+        }
+        if let Some(message) = before_failure {
+            response = Some(error_response(response::SYSTEM_ERROR, &message));
         }
     }
     request.command = request_for_hooks;

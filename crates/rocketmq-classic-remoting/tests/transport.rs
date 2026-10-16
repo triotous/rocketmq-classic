@@ -1678,6 +1678,45 @@ async fn p3_inbound_oneway_runs_processor_but_never_writes_response() {
 }
 
 #[tokio::test]
+async fn p18_inbound_oneway_processor_failure_never_writes_response() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = command(900_006);
+        request.mark_oneway();
+        write_command(&mut stream, &request).await;
+
+        let mut unexpected = [0; 1];
+        match tokio::time::timeout(Duration::from_millis(250), stream.read(&mut unexpected)).await {
+            Err(_) | Ok(Ok(0)) => true,
+            Ok(Ok(_)) | Ok(Err(_)) => false,
+        }
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let (processed_tx, mut processed_rx) = tokio::sync::mpsc::unbounded_channel();
+    client.register_processor(
+        900_006,
+        Arc::new(move |_: RemotingCommand| {
+            let _ = processed_tx.send(());
+            Err("processor failed".into())
+        }),
+    );
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    processed_rx.recv().await.unwrap();
+    assert!(peer.await.unwrap());
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn p3_default_processor_handles_unknown_codes_but_exact_registration_wins() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -4928,6 +4967,262 @@ impl RequestPipeline for AbortPipeline {
     }
 }
 
+struct FailedPipeline;
+
+impl RequestPipeline for FailedPipeline {
+    fn execute(&self, _: &RemotingCommand) -> Result<(), i32> {
+        Ok(())
+    }
+
+    fn execute_detailed(&self, _: &RemotingCommand) -> Result<(), RequestPipelineError> {
+        Err(RequestPipelineError::Failed("pipeline failed".into()))
+    }
+}
+
+struct MutatingPipelineStage {
+    code: i32,
+    remark: String,
+    opaque: i32,
+    ext_field_key: &'static str,
+    ext_field_value: &'static str,
+}
+
+impl RequestPipeline for MutatingPipelineStage {
+    fn execute(&self, _: &RemotingCommand) -> Result<(), i32> {
+        Ok(())
+    }
+
+    fn execute_detailed_with_context_mut(
+        &self,
+        _: &RequestContext,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        request.code = self.code;
+        request.remark = Some(self.remark.clone());
+        request.opaque = self.opaque;
+        request
+            .ext_fields
+            .get_or_insert_with(Default::default)
+            .insert(self.ext_field_key.into(), self.ext_field_value.into());
+        Ok(())
+    }
+}
+
+struct PipelineRequestObserver(Arc<std::sync::Mutex<Option<RemotingCommand>>>);
+
+impl RequestPipeline for PipelineRequestObserver {
+    fn execute(&self, request: &RemotingCommand) -> Result<(), i32> {
+        *self.0.lock().unwrap() = Some(request.clone());
+        Ok(())
+    }
+}
+
+struct AfterResponseCounter(Arc<AtomicUsize>);
+
+impl RpcHook for AfterResponseCounter {
+    fn after_response_optional_result(
+        &self,
+        _: &str,
+        _: &RemotingCommand,
+        _: Option<&RemotingCommand>,
+    ) -> Result<(), RpcHookError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+struct MutatingAfterResponse {
+    request_code: i32,
+    request_remark: String,
+    code: i32,
+    remark: String,
+    ext_field_key: &'static str,
+    ext_field_value: &'static str,
+}
+
+impl RpcHook for MutatingAfterResponse {
+    fn after_response_mut_result(
+        &self,
+        _: &str,
+        request: &mut RemotingCommand,
+        response: &mut RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        request.code = self.request_code;
+        request.remark = Some(self.request_remark.clone());
+        request
+            .ext_fields
+            .get_or_insert_with(Default::default)
+            .insert("request-hook".into(), "changed".into());
+        response.code = self.code;
+        response.remark = Some(self.remark.clone());
+        response
+            .ext_fields
+            .get_or_insert_with(Default::default)
+            .insert(self.ext_field_key.into(), self.ext_field_value.into());
+        Ok(())
+    }
+}
+
+struct AfterResponseRequestObserver(Arc<std::sync::Mutex<Option<RemotingCommand>>>);
+
+impl RpcHook for AfterResponseRequestObserver {
+    fn after_response_mut_result(
+        &self,
+        _: &str,
+        request: &mut RemotingCommand,
+        _: &mut RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        *self.0.lock().unwrap() = Some(request.clone());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn p18_outbound_after_hook_can_mutate_response_returned_to_caller() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(900_009);
+        response.opaque = request.opaque;
+        response.remark = Some("wire response".into());
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/hooks.json")).unwrap();
+    let java_mutated = &fixture["afterResponseMutation"];
+    let expected_code = java_mutated["code"].as_i64().unwrap() as i32;
+    let expected_remark = java_mutated["remark"].as_str().unwrap().to_owned();
+    let expected_ext_field = java_mutated["extFields"]["hook"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let expected_request_code = java_mutated["requestCode"].as_i64().unwrap() as i32;
+    let expected_request_remark = java_mutated["requestRemark"].as_str().unwrap().to_owned();
+    let expected_request_ext_field = java_mutated["requestExtFields"]["request-hook"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let observed_request = Arc::new(std::sync::Mutex::new(None));
+    client.add_rpc_hook(Arc::new(MutatingAfterResponse {
+        request_code: expected_request_code,
+        request_remark: expected_request_remark.clone(),
+        code: expected_code,
+        remark: expected_remark.clone(),
+        ext_field_key: "hook",
+        ext_field_value: "changed",
+    }));
+    client.add_rpc_hook(Arc::new(AfterResponseRequestObserver(
+        observed_request.clone(),
+    )));
+    let response = client
+        .invoke(
+            &address.to_string(),
+            command(900_008),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.code, expected_code);
+    assert_eq!(response.remark.as_deref(), Some(expected_remark.as_str()));
+    assert_eq!(
+        response.ext_fields.as_ref().unwrap()["hook"],
+        expected_ext_field
+    );
+    {
+        let observed_request = observed_request.lock().unwrap();
+        let observed_request = observed_request.as_ref().unwrap();
+        assert_eq!(observed_request.code, expected_request_code);
+        assert_eq!(
+            observed_request.remark.as_deref(),
+            Some(expected_request_remark.as_str())
+        );
+        assert_eq!(
+            observed_request.ext_fields.as_ref().unwrap()["request-hook"],
+            expected_request_ext_field
+        );
+    }
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_inbound_after_hook_can_mutate_response_written_to_peer() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        write_command(&mut stream, &command(900_011)).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/hooks.json")).unwrap();
+    let java_mutated = &fixture["afterResponseMutation"];
+    let expected_code = java_mutated["code"].as_i64().unwrap() as i32;
+    let expected_remark = java_mutated["remark"].as_str().unwrap().to_owned();
+    let expected_ext_field = java_mutated["extFields"]["hook"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let expected_request_code = java_mutated["requestCode"].as_i64().unwrap() as i32;
+    let expected_request_remark = java_mutated["requestRemark"].as_str().unwrap().to_owned();
+    let expected_request_ext_field = java_mutated["requestExtFields"]["request-hook"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    client.register_processor(
+        900_011,
+        Arc::new(|_: RemotingCommand| Ok(Some(command(900_012)))),
+    );
+    let observed_request = Arc::new(std::sync::Mutex::new(None));
+    client.add_rpc_hook(Arc::new(MutatingAfterResponse {
+        request_code: expected_request_code,
+        request_remark: expected_request_remark.clone(),
+        code: expected_code,
+        remark: expected_remark.clone(),
+        ext_field_key: "hook",
+        ext_field_value: "changed",
+    }));
+    client.add_rpc_hook(Arc::new(AfterResponseRequestObserver(
+        observed_request.clone(),
+    )));
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, expected_code);
+    assert_eq!(response.remark.as_deref(), Some(expected_remark.as_str()));
+    assert_eq!(
+        response.ext_fields.as_ref().unwrap()["hook"],
+        expected_ext_field
+    );
+    {
+        let observed_request = observed_request.lock().unwrap();
+        let observed_request = observed_request.as_ref().unwrap();
+        assert_eq!(observed_request.code, expected_request_code);
+        assert_eq!(
+            observed_request.remark.as_deref(),
+            Some(expected_request_remark.as_str())
+        );
+        assert_eq!(
+            observed_request.ext_fields.as_ref().unwrap()["request-hook"],
+            expected_request_ext_field
+        );
+    }
+    client.shutdown().await;
+}
+
 struct FallibleHook;
 
 impl RpcHook for FallibleHook {
@@ -5187,6 +5482,7 @@ async fn p3_outbound_hook_failures_are_not_ignored() {
 
 struct BeforeHookFailure {
     after_hook_code: Arc<AtomicUsize>,
+    after_hook_remark: Arc<std::sync::Mutex<Option<Option<String>>>>,
 }
 
 impl RpcHook for BeforeHookFailure {
@@ -5194,14 +5490,17 @@ impl RpcHook for BeforeHookFailure {
         Err(RpcHookError::Failed("before hook failed".into()))
     }
 
-    fn after_response_result(
+    fn after_response_optional_result(
         &self,
         _: &str,
         _: &RemotingCommand,
-        response: &RemotingCommand,
+        response: Option<&RemotingCommand>,
     ) -> Result<(), RpcHookError> {
-        self.after_hook_code
-            .store(response.code as usize, Ordering::SeqCst);
+        if let Some(response) = response {
+            self.after_hook_code
+                .store(response.code as usize, Ordering::SeqCst);
+        }
+        *self.after_hook_remark.lock().unwrap() = Some(response.and_then(|r| r.remark.clone()));
         Ok(())
     }
 }
@@ -5221,6 +5520,7 @@ async fn p3_before_hook_failure_runs_pipeline_and_after_hook_but_skips_processor
     client.start().unwrap();
     let pipeline_calls = Arc::new(AtomicUsize::new(0));
     let after_hook_code = Arc::new(AtomicUsize::new(0));
+    let after_hook_remark = Arc::new(std::sync::Mutex::new(None));
     let processor_calls = Arc::new(AtomicUsize::new(0));
     let pipeline_counter = pipeline_calls.clone();
     client.set_request_pipeline(Some(Arc::new(move |_: &RemotingCommand| {
@@ -5236,6 +5536,7 @@ async fn p3_before_hook_failure_runs_pipeline_and_after_hook_but_skips_processor
     });
     client.add_rpc_hook(Arc::new(BeforeHookFailure {
         after_hook_code: after_hook_code.clone(),
+        after_hook_remark: after_hook_remark.clone(),
     }));
     assert!(
         client
@@ -5254,6 +5555,7 @@ async fn p3_before_hook_failure_runs_pipeline_and_after_hook_but_skips_processor
         after_hook_code.load(Ordering::SeqCst),
         response::SYSTEM_ERROR as usize
     );
+    assert_eq!(*after_hook_remark.lock().unwrap(), Some(None));
     client.shutdown().await;
 }
 
@@ -5376,6 +5678,127 @@ async fn p3_pipeline_abort_preserves_java_style_code_and_message() {
     assert_eq!(response.code, 812);
     assert_eq!(response.remark.as_deref(), Some("pipeline stopped request"));
     assert_eq!(response.opaque, 53);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_pipeline_failure_maps_to_system_error_without_running_later_stages() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = command(900_007);
+        request.opaque = 75;
+        write_command(&mut stream, &request).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let processor_calls = Arc::new(AtomicUsize::new(0));
+    let after_hook_calls = Arc::new(AtomicUsize::new(0));
+    let processor_calls_for_handler = processor_calls.clone();
+    client.register_processor(
+        900_007,
+        Arc::new(move |_: RemotingCommand| {
+            processor_calls_for_handler.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(command(900_008)))
+        }),
+    );
+    client.set_request_pipeline(Some(Arc::new(FailedPipeline)));
+    client.add_rpc_hook(Arc::new(AfterResponseCounter(after_hook_calls.clone())));
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, response::SYSTEM_ERROR);
+    assert_eq!(response.remark.as_deref(), Some("pipeline failed"));
+    assert_eq!(response.opaque, 75);
+    assert_eq!(processor_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(after_hook_calls.load(Ordering::SeqCst), 0);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_request_pipeline_mutates_request_before_later_stage_and_processor() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/hooks.json")).unwrap();
+    let java_mutated = &fixture["requestPipelineMutation"];
+    let expected_input_opaque = java_mutated["inputOpaque"].as_i64().unwrap() as i32;
+    let expected_opaque = java_mutated["opaque"].as_i64().unwrap() as i32;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = command(900_014);
+        request.opaque = expected_input_opaque;
+        write_command(&mut stream, &request).await;
+        read_command(&mut stream).await
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let expected_code = java_mutated["code"].as_i64().unwrap() as i32;
+    let expected_remark = java_mutated["remark"].as_str().unwrap().to_owned();
+    let expected_ext_field = java_mutated["extFields"]["pipeline"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let observed_request = Arc::new(std::sync::Mutex::new(None));
+    client.set_request_pipeline(Some(Arc::new(PipelineRequestObserver(
+        observed_request.clone(),
+    ))));
+    client.pipe_request_pipeline(Arc::new(MutatingPipelineStage {
+        code: expected_code,
+        remark: expected_remark.clone(),
+        opaque: expected_opaque,
+        ext_field_key: "pipeline",
+        ext_field_value: "changed",
+    }));
+    client.register_processor(
+        900_014,
+        Arc::new(|request: RemotingCommand| {
+            Ok(Some(RemotingCommand {
+                code: request.code,
+                remark: request.remark,
+                ext_fields: request.ext_fields,
+                ..RemotingCommand::default()
+            }))
+        }),
+    );
+    assert!(
+        client
+            .is_address_reachable(
+                &address.to_string(),
+                Instant::now() + Duration::from_secs(2)
+            )
+            .await
+    );
+    let response = peer.await.unwrap();
+    assert_eq!(response.code, expected_code);
+    assert_eq!(response.opaque, expected_opaque);
+    assert_eq!(response.remark.as_deref(), Some(expected_remark.as_str()));
+    assert_eq!(
+        response.ext_fields.as_ref().unwrap()["pipeline"],
+        expected_ext_field
+    );
+    {
+        let observed_request = observed_request.lock().unwrap();
+        let observed_request = observed_request.as_ref().unwrap();
+        assert_eq!(observed_request.code, expected_code);
+        assert_eq!(observed_request.opaque, expected_opaque);
+        assert_eq!(
+            observed_request.remark.as_deref(),
+            Some(expected_remark.as_str())
+        );
+        assert_eq!(
+            observed_request.ext_fields.as_ref().unwrap()["pipeline"],
+            expected_ext_field
+        );
+    }
     client.shutdown().await;
 }
 

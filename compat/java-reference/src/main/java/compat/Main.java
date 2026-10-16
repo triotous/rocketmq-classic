@@ -246,6 +246,10 @@ public final class Main {
             InvokedRpcFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;
         }
+        if (args.length > 0 && "runtime-hook-fixtures".equals(args[0])) {
+            RuntimeHookFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "invoked-rpc-oracle".equals(args[0])) {
             InvokedRpcOracle.run();
             return;

@@ -8,7 +8,9 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.rpchook.NamespaceRpcHook;
+import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.pipeline.RequestPipeline;
 import org.apache.rocketmq.remoting.rpchook.StreamTypeRPCHook;
 import org.apache.rocketmq.remoting.rpchook.DynamicalExtFieldRPCHook;
 
@@ -52,6 +54,8 @@ public final class RuntimeHookFixtures {
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
         fixture.put("entrypoint", "NamespaceRpcHook/StreamTypeRPCHook/DynamicalExtFieldRPCHook.doBeforeRequest; MQClientAPIImpl constructor order");
+        fixture.put("afterResponseMutation", afterResponseMutation());
+        fixture.put("requestPipelineMutation", requestPipelineMutation());
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -59,5 +63,54 @@ public final class RuntimeHookFixtures {
             if (!json.equals(Files.readString(file))) throw new IllegalStateException("fixture drift: " + file);
         } else { Files.createDirectories(file.getParent()); Files.writeString(file, json); }
         System.out.println("Runtime hook invoked cases verified: " + cases.size());
+    }
+
+    private static Map<String, Object> afterResponseMutation() {
+        RemotingCommand request = RemotingCommand.createRequestCommand(900_008, null);
+        RemotingCommand response = RemotingCommand.createResponseCommand(900_009, "wire response");
+        RPCHook hook = new RPCHook() {
+            @Override
+            public void doBeforeRequest(String remoteAddr, RemotingCommand command) { }
+
+            @Override
+            public void doAfterResponse(String remoteAddr, RemotingCommand command, RemotingCommand result) {
+                command.setCode(900_020);
+                command.setRemark("mutated request by hook");
+                command.addExtField("request-hook", "changed");
+                result.setCode(900_010);
+                result.setRemark("mutated by hook");
+                result.addExtField("hook", "changed");
+            }
+        };
+        hook.doAfterResponse("peer", request, response);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("requestCode", request.getCode());
+        result.put("requestRemark", request.getRemark());
+        result.put("requestExtFields", new TreeMap<>(request.getExtFields()));
+        result.put("code", response.getCode());
+        result.put("remark", response.getRemark());
+        result.put("extFields", new TreeMap<>(response.getExtFields()));
+        return result;
+    }
+
+    private static Map<String, Object> requestPipelineMutation() throws Exception {
+        RemotingCommand request = RemotingCommand.createRequestCommand(900_014, null);
+        request.setOpaque(41);
+        RequestPipeline pipeline = (context, command) -> {
+            command.setCode(900_015);
+            command.setRemark("mutated by pipeline");
+            command.setOpaque(42);
+            command.addExtField("pipeline", "changed");
+        };
+        pipeline.execute(null, request);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("code", request.getCode());
+        result.put("remark", request.getRemark());
+        result.put("inputOpaque", 41);
+        result.put("opaque", request.getOpaque());
+        result.put("extFields", new TreeMap<>(request.getExtFields()));
+        return result;
     }
 }

@@ -386,11 +386,11 @@ fn run_before_rpc_hooks(
 fn run_after_rpc_hooks(
     hooks: &[Arc<dyn RpcHook>],
     remote_addr: &str,
-    request: &RemotingCommand,
-    response: &RemotingCommand,
+    request: &mut RemotingCommand,
+    response: &mut RemotingCommand,
 ) -> Result<(), RpcHookError> {
     for hook in hooks {
-        hook.after_response_result(remote_addr, request, response)?;
+        hook.after_response_mut_result(remote_addr, request, response)?;
     }
     Ok(())
 }
@@ -438,12 +438,27 @@ impl RequestExecutor for TokioRequestExecutor {
 pub trait RequestPipeline: Send + Sync + 'static {
     fn execute(&self, request: &RemotingCommand) -> Result<(), i32>;
 
+    /// Executes the stage with a mutable request, matching Java's `RequestPipeline` capability.
+    ///
+    /// The default preserves existing read-only pipeline implementations.
+    fn execute_mut(&self, request: &mut RemotingCommand) -> Result<(), i32> {
+        self.execute(request)
+    }
+
     fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.execute(request)
             .map_err(|response_code| RequestPipelineError::Abort {
                 response_code,
                 remark: Some("request pipeline aborted".into()),
             })
+    }
+
+    /// Detailed mutable request form for stages that need to update the request.
+    fn execute_detailed_mut(
+        &self,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.execute_detailed(request)
     }
 
     /// Executes with the channel context for the inbound request.
@@ -456,6 +471,15 @@ pub trait RequestPipeline: Send + Sync + 'static {
         request: &RemotingCommand,
     ) -> Result<(), RequestPipelineError> {
         self.execute_detailed(request)
+    }
+
+    /// Context-aware mutable form of `execute`, preserving existing read-only implementations.
+    fn execute_detailed_with_context_mut(
+        &self,
+        context: &RequestContext,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.execute_detailed_with_context(context, request)
     }
 }
 
@@ -479,9 +503,22 @@ impl RequestPipeline for PipedRequestPipeline {
         self.existing.execute(request)
     }
 
+    fn execute_mut(&self, request: &mut RemotingCommand) -> Result<(), i32> {
+        self.source.execute_mut(request)?;
+        self.existing.execute_mut(request)
+    }
+
     fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.source.execute_detailed(request)?;
         self.existing.execute_detailed(request)
+    }
+
+    fn execute_detailed_mut(
+        &self,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.source.execute_detailed_mut(request)?;
+        self.existing.execute_detailed_mut(request)
     }
 
     fn execute_detailed_with_context(
@@ -493,6 +530,17 @@ impl RequestPipeline for PipedRequestPipeline {
             .execute_detailed_with_context(context, request)?;
         self.existing
             .execute_detailed_with_context(context, request)
+    }
+
+    fn execute_detailed_with_context_mut(
+        &self,
+        context: &RequestContext,
+        request: &mut RemotingCommand,
+    ) -> Result<(), RequestPipelineError> {
+        self.source
+            .execute_detailed_with_context_mut(context, request)?;
+        self.existing
+            .execute_detailed_with_context_mut(context, request)
     }
 }
 
@@ -542,6 +590,20 @@ pub trait RpcHook: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Runs after a response arrives and may update it before the caller receives it.
+    ///
+    /// The default preserves hooks that only inspect the response. Java `RPCHook` receives the
+    /// mutable `RemotingCommand`, so implementations that need to rewrite response fields can
+    /// override this method.
+    fn after_response_mut_result(
+        &self,
+        remote_addr: &str,
+        request: &mut RemotingCommand,
+        response: &mut RemotingCommand,
+    ) -> Result<(), RpcHookError> {
+        self.after_response_optional_result(remote_addr, request, Some(response))
+    }
+
     fn after_response_optional_result(
         &self,
         remote_addr: &str,
@@ -552,6 +614,22 @@ pub trait RpcHook: Send + Sync + 'static {
             self.after_response_result(remote_addr, request, response)
         } else {
             Ok(())
+        }
+    }
+
+    /// Runs after an inbound request has been processed and may update its response before it is
+    /// written to the request's channel. The default keeps existing read-only hooks working,
+    /// including hooks that override `after_response_optional_result`.
+    fn after_response_optional_mut_result(
+        &self,
+        remote_addr: &str,
+        request: &mut RemotingCommand,
+        response: Option<&mut RemotingCommand>,
+    ) -> Result<(), RpcHookError> {
+        if let Some(response) = response {
+            self.after_response_mut_result(remote_addr, request, response)
+        } else {
+            self.after_response_optional_result(remote_addr, request, None)
         }
     }
 }
@@ -1874,7 +1952,7 @@ impl RemotingClient {
             let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
             run_before_rpc_hooks(&hooks, addr, &mut command).map_err(rpc_hook_transport_error)?;
         }
-        let request_for_hooks = command.clone();
+        let mut request_for_hooks = command.clone();
         if !options.admitted {
             match self
                 .inner
@@ -1954,7 +2032,7 @@ impl RemotingClient {
         };
         let response_wait = response_deadline.saturating_duration_since(Instant::now());
         match time::timeout(response_wait, receiver).await {
-            Ok(Ok(Ok(response))) => {
+            Ok(Ok(Ok(mut response))) => {
                 pending.disarm();
                 if response.code == rocketmq_classic_protocol::codes::response::GO_AWAY {
                     if self
@@ -1986,10 +2064,10 @@ impl RemotingClient {
                             callback.clone(),
                             admission,
                         ));
-                        let result = retry.as_mut().await;
-                        if let Ok(response) = &result {
+                        let mut result = retry.as_mut().await;
+                        if let Ok(response) = &mut result {
                             let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
-                            run_after_rpc_hooks(&hooks, addr, &request_for_hooks, response)
+                            run_after_rpc_hooks(&hooks, addr, &mut request_for_hooks, response)
                                 .map_err(rpc_hook_transport_error)?;
                             if let Some(callback) = &callback {
                                 let mut request = retry_request;
@@ -2018,7 +2096,7 @@ impl RemotingClient {
                 }
                 if options.run_rpc_hooks && !options.retried_go_away {
                     let hooks = self.inner.rpc_hooks.lock().unwrap().clone();
-                    run_after_rpc_hooks(&hooks, addr, &request_for_hooks, &response)
+                    run_after_rpc_hooks(&hooks, addr, &mut request_for_hooks, &mut response)
                         .map_err(rpc_hook_transport_error)?;
                 }
                 Ok(response)
