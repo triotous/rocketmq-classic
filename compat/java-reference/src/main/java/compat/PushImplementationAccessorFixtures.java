@@ -906,6 +906,10 @@ public final class PushImplementationAccessorFixtures {
             result.put("rawRunningInfoStatusCount", info.getStatusTable().size());
             result.put("rawRunningInfoCorePoolSize",
                 info.getProperties().getProperty("PROP_THREADPOOL_CORE_SIZE"));
+            Map<MessageQueue, ProcessQueue> processQueues = new LinkedHashMap<>(
+                implementation.getRebalanceImpl().getProcessQueueTable());
+            Map<MessageQueue, PopProcessQueue> popProcessQueues = new LinkedHashMap<>(
+                implementation.getRebalanceImpl().getPopProcessQueueTable());
             implementation.getRebalanceImpl().destroy();
             implementation.setServiceState(ServiceState.SHUTDOWN_ALREADY);
             ConsumerRunningInfo afterShutdown = implementation.consumerRunningInfo();
@@ -915,6 +919,8 @@ public final class PushImplementationAccessorFixtures {
             result.put("rawRunningInfoAfterShutdownStatusCount", afterShutdown.getStatusTable().size());
             result.put("rawRunningInfoAfterShutdownCorePoolSize",
                 afterShutdown.getProperties().getProperty("PROP_THREADPOOL_CORE_SIZE"));
+            implementation.getRebalanceImpl().getProcessQueueTable().putAll(processQueues);
+            implementation.getRebalanceImpl().getPopProcessQueueTable().putAll(popProcessQueues);
             implementation.setServiceState(ServiceState.RUNNING);
             return result;
         } finally {
