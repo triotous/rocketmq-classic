@@ -713,6 +713,11 @@ impl Message {
         }
     }
 
+    /// Creates a message while retaining the caller's shared body array.
+    pub fn new_shared(topic: impl Into<String>, body: SharedMessageBody) -> Self {
+        Self::new_nullable_shared(Some(topic.into()), Some(body))
+    }
+
     /// Creates the `MessageAccessor.cloneMessage` projection. Body bytes and
     /// the property map are shared with the source until either message
     /// replaces that field; the transaction ID is left unset.
@@ -736,9 +741,23 @@ impl Message {
         Self::with_nullable_fields(topic, None, None, 0, body, true)
     }
 
+    /// Java's two-argument constructor with nullable topic/body and a shared body array.
+    pub fn new_nullable_shared(topic: Option<String>, body: Option<SharedMessageBody>) -> Self {
+        Self::with_nullable_fields_shared(topic, None, None, 0, body, true)
+    }
+
     /// Java's `Message(topic, tags, body)` constructor, including null inputs.
     pub fn with_tags(topic: Option<String>, tags: Option<String>, body: Option<Vec<u8>>) -> Self {
         Self::with_nullable_fields(topic, tags, None, 0, body, true)
+    }
+
+    /// Java's `Message(topic, tags, body)` constructor with a shared body array.
+    pub fn with_tags_shared(
+        topic: Option<String>,
+        tags: Option<String>,
+        body: Option<SharedMessageBody>,
+    ) -> Self {
+        Self::with_nullable_fields_shared(topic, tags, None, 0, body, true)
     }
 
     /// Java's `Message(topic, tags, keys, body)` constructor, including null inputs.
@@ -749,6 +768,16 @@ impl Message {
         body: Option<Vec<u8>>,
     ) -> Self {
         Self::with_nullable_fields(topic, tags, keys, 0, body, true)
+    }
+
+    /// Java's `Message(topic, tags, keys, body)` constructor with a shared body array.
+    pub fn with_tags_and_keys_shared(
+        topic: Option<String>,
+        tags: Option<String>,
+        keys: Option<String>,
+        body: Option<SharedMessageBody>,
+    ) -> Self {
+        Self::with_nullable_fields_shared(topic, tags, keys, 0, body, true)
     }
 
     /// Java's six-argument `Message(topic, tags, keys, flag, body, waitStoreMsgOK)`
@@ -771,6 +800,25 @@ impl Message {
         )
     }
 
+    /// Java's six-argument constructor while retaining the caller's body array.
+    pub fn with_fields_shared(
+        topic: impl Into<String>,
+        tags: Option<&str>,
+        keys: Option<&str>,
+        flag: i32,
+        body: SharedMessageBody,
+        wait_store_msg_ok: bool,
+    ) -> Self {
+        Self::with_nullable_fields_shared(
+            Some(topic.into()),
+            tags.map(str::to_owned),
+            keys.map(str::to_owned),
+            flag,
+            Some(body),
+            wait_store_msg_ok,
+        )
+    }
+
     /// Java's six-argument constructor, including nullable topic/body inputs.
     pub fn with_nullable_fields(
         topic: Option<String>,
@@ -780,9 +828,46 @@ impl Message {
         body: Option<Vec<u8>>,
         wait_store_msg_ok: bool,
     ) -> Self {
+        Self::with_body_storage(
+            topic,
+            tags,
+            keys,
+            flag,
+            body.map(|body| Arc::new(RwLock::new(body))),
+            wait_store_msg_ok,
+        )
+    }
+
+    /// Java's six-argument constructor with nullable fields and a retained body array.
+    pub fn with_nullable_fields_shared(
+        topic: Option<String>,
+        tags: Option<String>,
+        keys: Option<String>,
+        flag: i32,
+        body: Option<SharedMessageBody>,
+        wait_store_msg_ok: bool,
+    ) -> Self {
+        Self::with_body_storage(
+            topic,
+            tags,
+            keys,
+            flag,
+            body.map(|body| body.storage),
+            wait_store_msg_ok,
+        )
+    }
+
+    fn with_body_storage(
+        topic: Option<String>,
+        tags: Option<String>,
+        keys: Option<String>,
+        flag: i32,
+        body: Option<Arc<RwLock<Vec<u8>>>>,
+        wait_store_msg_ok: bool,
+    ) -> Self {
         let mut message = Self {
             topic,
-            body: body.map(|body| Arc::new(RwLock::new(body))),
+            body,
             flag,
             ..Self::default()
         };

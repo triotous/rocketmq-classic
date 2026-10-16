@@ -34,6 +34,8 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_public_type::<SharedMessageProperties>();
 
     let shared_body = SharedMessageBody::new(b"body".to_vec());
+    let shared_body_message = Message::new_shared("shared-body-constructor", shared_body.clone());
+    assert_eq!(shared_body_message.body().as_ref(), b"body");
     message.set_body_shared(Some(shared_body.clone()));
     shared_body.with_bytes_mut(|bytes| bytes[0] = b'B');
     assert_eq!(message.body().as_ref(), b"Body");

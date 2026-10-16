@@ -2477,6 +2477,53 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(shared_body_message.body()[2], 6);
     assert_eq!(expected["setBodyReplacementDetachesOldArray"], true);
 
+    let two_argument_body = rocketmq_classic_common::message::SharedMessageBody::new([1, 2]);
+    let two_argument_message = Message::new_shared("two-argument", two_argument_body.clone());
+    assert!(two_argument_body.ptr_eq(&two_argument_message.shared_body().unwrap()));
+    assert_eq!(expected["constructorBodyAliasTwoArguments"], true);
+    two_argument_body.with_bytes_mut(|body| body[0] = 9);
+    assert_eq!(two_argument_message.body()[0], 9);
+    assert_eq!(
+        expected["constructorBodyMutationVisibleForTwoArguments"],
+        true
+    );
+
+    let tags_body = rocketmq_classic_common::message::SharedMessageBody::new([3, 4]);
+    let tags_message = Message::with_tags_shared(
+        Some("with-tags".to_owned()),
+        Some("green".to_owned()),
+        Some(tags_body.clone()),
+    );
+    assert!(tags_body.ptr_eq(&tags_message.shared_body().unwrap()));
+    assert_eq!(expected["constructorBodyAliasWithTags"], true);
+
+    let tags_and_keys_body = rocketmq_classic_common::message::SharedMessageBody::new([5, 6]);
+    let tags_and_keys_message = Message::with_tags_and_keys_shared(
+        Some("with-tags-and-keys".to_owned()),
+        Some("blue".to_owned()),
+        Some("key".to_owned()),
+        Some(tags_and_keys_body.clone()),
+    );
+    assert!(tags_and_keys_body.ptr_eq(&tags_and_keys_message.shared_body().unwrap()));
+    assert_eq!(expected["constructorBodyAliasWithTagsAndKeys"], true);
+
+    let full_fields_body = rocketmq_classic_common::message::SharedMessageBody::new([7, 8]);
+    let full_fields_message = Message::with_fields_shared(
+        "with-fields",
+        Some("yellow"),
+        Some("key"),
+        -11,
+        full_fields_body.clone(),
+        false,
+    );
+    assert!(full_fields_body.ptr_eq(&full_fields_message.shared_body().unwrap()));
+    assert_eq!(expected["constructorBodyAliasWithAllFields"], true);
+    let nullable_shared_constructor = Message::new_nullable_shared(None, None);
+    assert!(nullable_shared_constructor.topic_nullable().is_none());
+    assert!(nullable_shared_constructor.body_nullable().is_none());
+    assert_eq!(expected["nullableConstructorTopicIsNull"], true);
+    assert_eq!(expected["nullableConstructorBodyIsNull"], true);
+
     assert_eq!(expected["deepCopyPropertiesNullMapIsNull"], true);
     assert_eq!(expected["deepCopyPropertiesReturnsDistinctMap"], true);
     assert_eq!(expected["deepCopyPropertiesPreservesNullKeyAndValue"], true);
