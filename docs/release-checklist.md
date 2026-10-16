@@ -2299,3 +2299,24 @@ Before any publication:
   Ubuntu/P18-V04 evidence, native Windows runtime CI result, Phase 19
   Docker/Broker automation, `docs/owner-validation.md`, and pre-publication
   version/dependency resolution remain open.
+- P18-V01 Common `Message` constructor body-array aliases (`b03d7fe9`, 2026-10-16;
+  pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`): the invoked
+  fixture verifies the two-argument, tags, tags-and-keys, and six-argument
+  constructors retain their caller's exact array, including mutation after
+  construction. Rust now exposes shared-body variants for each constructor
+  shape and nullable fields. Fixture SHA-256:
+  `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- Current-revision server-free P18-V02 rerun (`b03d7fe9`, 2026-10-16): default
+  and all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, pinned Maven `verify` (37 scenarios and updated fixture/cross-decodes),
+  comparator self-test and 37-scenario manifest, deterministic race/leak smoke
+  (16 cases × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations), release examples, workspace benchmark compilation, locked
+  metadata and seven package listings, Asia/Taipei Unique ID tests (4),
+  formatting and diff checks pass. The first default workspace run exposed a
+  flaky paused-time test; `f04c4384` makes its three-second initial delay and
+  one-second scan period deterministic, and the corrected test passes in the
+  repeated smoke and full workspace suites. Broad P18-V01, current-revision
+  Ubuntu/Windows CI evidence, Phase 19 Docker/Broker automation,
+  `docs/owner-validation.md`, and pre-publication version/dependency resolution
+  remain open.

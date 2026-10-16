@@ -55,3 +55,9 @@
 - PASS on the constructor implementation worktree based on `f04c4384`: default and all-feature workspace tests; all-target/all-feature workspace check and strict Clippy; Maven `verify` (37 scenarios, updated fixture checks, Java/Rust cross-decodes); comparator self-test and 37-scenario manifest; race/leak smoke (16 cases × 3); fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes, 113 message decodes); release examples; workspace benchmark compilation; metadata/dependency checks; seven individual package-content listings; Asia/Taipei Unique ID tests (4); formatting and diff checks.
 - Locked metadata reports 215 packages (7 workspace members) with no missing license metadata; all seven package listings contain `LICENSE` and `NOTICE`. `scripts/check-workspace-metadata.py` passes.
 - These checks remain server-free. Broad P18-V01 reconciliation, current-revision GitHub Ubuntu/Windows CI evidence, Phase 19 Docker/Broker automation, owner-validation documentation, and pre-publication version/dependency resolution remain open. No plan or Java checkout files were changed; no Docker/Broker run, push, publication, tag, or deployment occurred.
+
+## Constructor alias evidence documentation — 2026-10-16
+
+- Updated the Phase 6 API/config map with the four body-bearing Java `Message` constructor aliases and linked the invoked fixture SHA-256 `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- Appended the constructor alias implementation and current-revision server-free P18-V02 results for code revision `b03d7fe9` to `docs/release-checklist.md`; retained the distinction between completed server-free gates and remaining P18-V01, CI, Phase 19 automation, owner-handoff, and release-preflight work.
+- `git diff --check` passes. Documentation changes are isolated from the implementation commits; no plan or Java checkout files were changed.
