@@ -2607,6 +2607,34 @@ mod tests {
                 "{} WriteNonStringValueAsString",
                 case["case"]
             );
+            let boolean_featured = value
+                .java_encode_with_features(&[crate::JavaJsonWriterFeature::WriteBooleanAsNumber])
+                .unwrap();
+            let expected_boolean_featured = case["writerFeatureOverrides"]["WriteBooleanAsNumber"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                boolean_featured,
+                expected_boolean_featured.as_bytes(),
+                "{} WriteBooleanAsNumber",
+                case["case"]
+            );
+            let combined_featured = value
+                .java_encode_with_features(&[
+                    crate::JavaJsonWriterFeature::WriteBooleanAsNumber,
+                    crate::JavaJsonWriterFeature::WriteNonStringValueAsString,
+                ])
+                .unwrap();
+            let expected_combined_featured =
+                case["writerFeatureOverrides"]["WriteBooleanAsNumber+WriteNonStringValueAsString"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                combined_featured,
+                expected_combined_featured.as_bytes(),
+                "{} combined boolean writer features",
+                case["case"]
+            );
             let pretty_featured = value
                 .java_encode_with_features(&[crate::JavaJsonWriterFeature::PrettyFormat])
                 .unwrap();

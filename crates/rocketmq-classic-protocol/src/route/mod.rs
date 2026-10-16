@@ -87,9 +87,11 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     validate_java_writer_features(features)?;
     let indent = java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
-    if features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString) {
-        write_non_string_values_as_strings(&mut value);
-    }
+    apply_java_json_writer_value_features(
+        &mut value,
+        features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
+        features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
+    );
     let mut output = String::new();
     let unquote_numeric_map_keys =
         !features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
@@ -131,22 +133,44 @@ pub(crate) fn validate_java_writer_features(
     Ok(())
 }
 
-pub(crate) fn write_non_string_values_as_strings(value: &mut serde_json::Value) {
+pub(crate) fn apply_java_json_writer_value_features(
+    value: &mut serde_json::Value,
+    write_non_string_values_as_strings: bool,
+    write_boolean_as_number: bool,
+) {
     match value {
         serde_json::Value::Bool(boolean) => {
-            *value = serde_json::Value::String(boolean.to_string());
+            if write_non_string_values_as_strings {
+                *value = serde_json::Value::String(boolean.to_string());
+            } else if write_boolean_as_number {
+                *value = serde_json::Value::Number(serde_json::Number::from(if *boolean {
+                    1
+                } else {
+                    0
+                }));
+            }
         }
         serde_json::Value::Number(number) => {
-            *value = serde_json::Value::String(number.to_string());
+            if write_non_string_values_as_strings {
+                *value = serde_json::Value::String(number.to_string());
+            }
         }
         serde_json::Value::Array(values) => {
             for value in values {
-                write_non_string_values_as_strings(value);
+                apply_java_json_writer_value_features(
+                    value,
+                    write_non_string_values_as_strings,
+                    write_boolean_as_number,
+                );
             }
         }
         serde_json::Value::Object(fields) => {
             for value in fields.values_mut() {
-                write_non_string_values_as_strings(value);
+                apply_java_json_writer_value_features(
+                    value,
+                    write_non_string_values_as_strings,
+                    write_boolean_as_number,
+                );
             }
         }
         serde_json::Value::Null | serde_json::Value::String(_) => {}
@@ -3655,6 +3679,36 @@ mod tests {
                     featured,
                     expected_featured.as_bytes(),
                     "{} WriteNonStringValueAsString",
+                    case["id"]
+                );
+                let boolean_featured = value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::WriteBooleanAsNumber])
+                    .unwrap();
+                let expected_boolean_featured =
+                    case["writerFeatureOverrides"]["WriteBooleanAsNumber"]
+                        .as_str()
+                        .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    boolean_featured,
+                    expected_boolean_featured.as_bytes(),
+                    "{} WriteBooleanAsNumber",
+                    case["id"]
+                );
+                let combined_featured = value
+                    .java_encode_with_features(&[
+                        JavaJsonWriterFeature::WriteBooleanAsNumber,
+                        JavaJsonWriterFeature::WriteNonStringValueAsString,
+                    ])
+                    .unwrap();
+                let expected_combined_featured = case["writerFeatureOverrides"][
+                                "WriteBooleanAsNumber+WriteNonStringValueAsString"
+                            ]
+                                .as_str()
+                                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    combined_featured,
+                    expected_combined_featured.as_bytes(),
+                    "{} combined boolean writer features",
                     case["id"]
                 );
                 let pretty_featured = value

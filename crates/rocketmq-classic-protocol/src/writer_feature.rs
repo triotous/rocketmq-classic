@@ -2,9 +2,10 @@
 /// `RemotingSerializable.encode(JSONWriter.Feature...)` adapters.
 ///
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
-/// adapters currently implement `PrettyFormat`, `PrettyFormatWith2Space`,
-/// `PrettyFormatWith4Space`, and `WriteNonStringValueAsString`; other variants
-/// return an explicit unsupported-feature error until their behavior is mapped.
+/// adapters currently implement `WriteBooleanAsNumber`,
+/// `WriteNonStringValueAsString`, `PrettyFormat`, `PrettyFormatWith2Space`, and
+/// `PrettyFormatWith4Space`; other variants return an explicit
+/// unsupported-feature error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -180,6 +181,7 @@ impl JavaJsonWriterFeature {
             Self::PrettyFormat
                 | Self::PrettyFormatWith2Space
                 | Self::PrettyFormatWith4Space
+                | Self::WriteBooleanAsNumber
                 | Self::WriteNonStringValueAsString
         )
     }

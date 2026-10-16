@@ -769,6 +769,11 @@ public final class RuntimeHeartbeatFixtures {
                 overrides.put(feature.name(), Map.of("error", error.getClass().getSimpleName()));
             }
         }
+        overrides.put("WriteBooleanAsNumber+WriteNonStringValueAsString", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteBooleanAsNumber,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringValueAsString}),
+            java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
     }
 

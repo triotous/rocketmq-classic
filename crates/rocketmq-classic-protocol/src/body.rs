@@ -4864,22 +4864,25 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     crate::route::validate_java_writer_features(features)?;
     let indent = crate::route::java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
-    let write_non_string_values_as_strings =
-        features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
-    if write_non_string_values_as_strings {
-        crate::route::write_non_string_values_as_strings(&mut value);
-    }
+    let value_features = JavaJsonWriterValueFeatures {
+        write_non_string_values_as_strings: features
+            .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
+        write_boolean_as_number: features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
+    };
+    crate::route::apply_java_json_writer_value_features(
+        &mut value,
+        value_features.write_non_string_values_as_strings,
+        value_features.write_boolean_as_number,
+    );
     let mut output = String::new();
-    write_java_remoting_body_json(
-        &value,
-        None,
-        0,
-        indent,
-        false,
-        write_non_string_values_as_strings,
-        &mut output,
-    )?;
+    write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
     Ok(output)
+}
+
+#[derive(Clone, Copy, Default)]
+struct JavaJsonWriterValueFeatures {
+    write_non_string_values_as_strings: bool,
+    write_boolean_as_number: bool,
 }
 
 fn write_java_remoting_body_json(
@@ -4888,7 +4891,7 @@ fn write_java_remoting_body_json(
     depth: usize,
     indent: Option<&str>,
     queue_table: bool,
-    write_non_string_values_as_strings: bool,
+    value_features: JavaJsonWriterValueFeatures,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
@@ -4918,10 +4921,12 @@ fn write_java_remoting_body_json(
                 } else {
                     None
                 };
-                if write_non_string_values_as_strings {
-                    if let Some(queue_key) = &mut queue_key {
-                        crate::route::write_non_string_values_as_strings(queue_key);
-                    }
+                if let Some(queue_key) = &mut queue_key {
+                    crate::route::apply_java_json_writer_value_features(
+                        queue_key,
+                        value_features.write_non_string_values_as_strings,
+                        value_features.write_boolean_as_number,
+                    );
                 }
                 if let Some(queue_key) = queue_key {
                     write_java_remoting_body_json(
@@ -4930,7 +4935,7 @@ fn write_java_remoting_body_json(
                         depth + 1,
                         indent,
                         false,
-                        write_non_string_values_as_strings,
+                        JavaJsonWriterValueFeatures::default(),
                         output,
                     )?;
                 } else {
@@ -4946,7 +4951,7 @@ fn write_java_remoting_body_json(
                     depth + 1,
                     indent,
                     child_is_queue_table,
-                    write_non_string_values_as_strings,
+                    value_features,
                     output,
                 )?;
                 if index + 1 != fields.len() {
@@ -4982,7 +4987,7 @@ fn write_java_remoting_body_json(
                     depth + 1,
                     indent,
                     false,
-                    write_non_string_values_as_strings,
+                    value_features,
                     output,
                 )?;
                 if index + 1 != values.len() {
@@ -5778,6 +5783,34 @@ mod tests {
                 featured,
                 expected_featured.as_bytes(),
                 "{} WriteNonStringValueAsString",
+                case["id"]
+            );
+            let boolean_featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::WriteBooleanAsNumber])
+                .unwrap();
+            let expected_boolean_featured = case["writerFeatureOverrides"]["WriteBooleanAsNumber"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                boolean_featured,
+                expected_boolean_featured.as_bytes(),
+                "{} WriteBooleanAsNumber",
+                case["id"]
+            );
+            let combined_featured = value
+                .java_encode_with_features(&[
+                    JavaJsonWriterFeature::WriteBooleanAsNumber,
+                    JavaJsonWriterFeature::WriteNonStringValueAsString,
+                ])
+                .unwrap();
+            let expected_combined_featured =
+                case["writerFeatureOverrides"]["WriteBooleanAsNumber+WriteNonStringValueAsString"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                combined_featured,
+                expected_combined_featured.as_bytes(),
+                "{} combined boolean writer features",
                 case["id"]
             );
             let pretty_featured = value
@@ -6737,6 +6770,34 @@ mod tests {
                 "{} WriteNonStringValueAsString",
                 case["id"]
             );
+            let boolean_featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::WriteBooleanAsNumber])
+                .unwrap();
+            let expected_boolean_featured = case["writerFeatureOverrides"]["WriteBooleanAsNumber"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                boolean_featured,
+                expected_boolean_featured.as_bytes(),
+                "{} WriteBooleanAsNumber",
+                case["id"]
+            );
+            let combined_featured = value
+                .java_encode_with_features(&[
+                    JavaJsonWriterFeature::WriteBooleanAsNumber,
+                    JavaJsonWriterFeature::WriteNonStringValueAsString,
+                ])
+                .unwrap();
+            let expected_combined_featured =
+                case["writerFeatureOverrides"]["WriteBooleanAsNumber+WriteNonStringValueAsString"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                combined_featured,
+                expected_combined_featured.as_bytes(),
+                "{} combined boolean writer features",
+                case["id"]
+            );
             let pretty_featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::PrettyFormat])
                 .unwrap();
@@ -7000,6 +7061,38 @@ mod tests {
                         featured,
                         expected_featured.as_bytes(),
                         "{} {} WriteNonStringValueAsString",
+                        $name,
+                        case["id"]
+                    );
+                    let boolean_featured = value
+                        .java_encode_with_features(&[JavaJsonWriterFeature::WriteBooleanAsNumber])
+                        .unwrap();
+                    let expected_boolean_featured =
+                        expected["writerFeatureOverrides"]["WriteBooleanAsNumber"]
+                            .as_str()
+                            .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap());
+                    assert_eq!(
+                        boolean_featured,
+                        expected_boolean_featured.as_bytes(),
+                        "{} {} WriteBooleanAsNumber",
+                        $name,
+                        case["id"]
+                    );
+                    let combined_featured = value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::WriteBooleanAsNumber,
+                            JavaJsonWriterFeature::WriteNonStringValueAsString,
+                        ])
+                        .unwrap();
+                    let expected_combined_featured = expected[
+                        "writerFeatureOverrides"
+                    ]["WriteBooleanAsNumber+WriteNonStringValueAsString"]
+                        .as_str()
+                        .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap());
+                    assert_eq!(
+                        combined_featured,
+                        expected_combined_featured.as_bytes(),
+                        "{} {} combined boolean writer features",
                         $name,
                         case["id"]
                     );
