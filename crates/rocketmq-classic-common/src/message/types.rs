@@ -187,6 +187,66 @@ impl std::fmt::Debug for SharedMessageProperties {
     }
 }
 
+/// A cloneable handle to one mutable message body byte array.
+///
+/// Java's `Message.setBody(byte[])` retains the supplied array, and
+/// `Message.getBody()` returns that same array. This handle preserves the
+/// caller/message alias while exposing synchronized byte-slice access.
+#[derive(Clone, Default)]
+pub struct SharedMessageBody {
+    storage: Arc<RwLock<Vec<u8>>>,
+}
+
+impl SharedMessageBody {
+    /// Creates a shared body handle initialized with the supplied bytes.
+    pub fn new(body: impl Into<Vec<u8>>) -> Self {
+        Self {
+            storage: Arc::new(RwLock::new(body.into())),
+        }
+    }
+
+    /// Reads the current bytes while holding a shared lock for the callback.
+    pub fn with_bytes<R>(&self, read: impl FnOnce(&[u8]) -> R) -> R {
+        let body = read_message_state(&self.storage);
+        read(&body)
+    }
+
+    /// Mutates the current bytes while holding an exclusive lock for the callback.
+    pub fn with_bytes_mut<R>(&self, update: impl FnOnce(&mut [u8]) -> R) -> R {
+        let mut body = write_message_state(&self.storage);
+        update(&mut body)
+    }
+
+    /// Returns an owned snapshot of the current bytes.
+    pub fn snapshot(&self) -> Vec<u8> {
+        read_message_state(&self.storage).clone()
+    }
+
+    /// Returns the fixed byte-array length.
+    pub fn len(&self) -> usize {
+        read_message_state(&self.storage).len()
+    }
+
+    /// Returns whether the byte array is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns whether two handles refer to the same body array.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.storage, &other.storage)
+    }
+}
+
+impl std::fmt::Debug for SharedMessageBody {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("SharedMessageBody")
+            .field(&self.snapshot())
+            .finish()
+    }
+}
+
 struct MessageBodyReadView<'a>(Option<RwLockReadGuard<'a, Vec<u8>>>);
 
 impl Deref for MessageBodyReadView<'_> {
@@ -776,6 +836,16 @@ impl Message {
     }
     pub fn set_body_nullable(&mut self, body: Option<Vec<u8>>) {
         self.body = body.map(|body| Arc::new(RwLock::new(body)));
+    }
+    /// Replaces the body with a caller-held handle, preserving byte-array identity.
+    pub fn set_body_shared(&mut self, body: Option<SharedMessageBody>) {
+        self.body = body.map(|body| body.storage);
+    }
+    /// Returns a handle to the live body bytes, when a body is present.
+    pub fn shared_body(&self) -> Option<SharedMessageBody> {
+        self.body.as_ref().map(|storage| SharedMessageBody {
+            storage: storage.clone(),
+        })
     }
     pub fn flag(&self) -> i32 {
         self.flag

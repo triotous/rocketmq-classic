@@ -34,7 +34,7 @@ pub use types::{
     Message, MessageClientExt, MessageExt, MessageKeyCollectionError, MessageProperties,
     MessagePropertyError, MessagePropertyParseError, MessageQueue, MessageQueueCompareError,
     MessageSysFlagParseError, NAME_VALUE_SEPARATOR, NullableMessageProperties, PROPERTY_SEPARATOR,
-    SharedMessageProperties, TopicFilterType,
+    SharedMessageBody, SharedMessageProperties, TopicFilterType,
 };
 pub use utils::{
     MessageUtilsError, delete_property, get_sharding_key_index, get_sharding_key_index_by_msg,

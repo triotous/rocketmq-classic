@@ -1,5 +1,5 @@
 pub use rocketmq_classic_common::message::{
-    Message, MessageExt, MessageQueue, SharedMessageProperties,
+    Message, MessageExt, MessageQueue, SharedMessageBody, SharedMessageProperties,
 };
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_common::topic::{TopicValidator, TopicValidatorError, ValidateResult};

@@ -2447,6 +2447,36 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(nullable_shared_properties.remove(None), Some(None));
     assert!(!nullable_shared_message.has_nullable_property(None));
 
+    let caller_body = rocketmq_classic_common::message::SharedMessageBody::new([1, 2, 3]);
+    let mut shared_body_message = Message::new("shared-body-topic", [0]);
+    shared_body_message.set_body_shared(Some(caller_body.clone()));
+    let attached_body = shared_body_message.shared_body().unwrap();
+    assert!(caller_body.ptr_eq(&attached_body));
+    assert_eq!(expected["setBodyRetainsCallerArray"], true);
+    caller_body.with_bytes_mut(|body| {
+        body[0] = expected["setBodyCallerMutationValue"].as_u64().unwrap() as u8;
+    });
+    assert_eq!(
+        shared_body_message.body()[0],
+        expected["setBodyCallerMutationValue"].as_u64().unwrap() as u8
+    );
+    assert_eq!(expected["setBodyCallerMutationVisibleToMessage"], true);
+    shared_body_message.body_mut().unwrap()[1] =
+        expected["setBodyMessageMutationValue"].as_u64().unwrap() as u8;
+    assert_eq!(
+        caller_body.with_bytes(|body| body[1]),
+        expected["setBodyMessageMutationValue"].as_u64().unwrap() as u8
+    );
+    assert_eq!(expected["setBodyMessageMutationVisibleToCaller"], true);
+
+    let replacement_body = rocketmq_classic_common::message::SharedMessageBody::new([4, 5, 6]);
+    shared_body_message.set_body_shared(Some(replacement_body.clone()));
+    assert!(replacement_body.ptr_eq(&shared_body_message.shared_body().unwrap()));
+    assert_eq!(expected["setBodyReplacementRetainsNewArray"], true);
+    caller_body.with_bytes_mut(|body| body[2] = 10);
+    assert_eq!(shared_body_message.body()[2], 6);
+    assert_eq!(expected["setBodyReplacementDetachesOldArray"], true);
+
     assert_eq!(expected["deepCopyPropertiesNullMapIsNull"], true);
     assert_eq!(expected["deepCopyPropertiesReturnsDistinctMap"], true);
     assert_eq!(expected["deepCopyPropertiesPreservesNullKeyAndValue"], true);
