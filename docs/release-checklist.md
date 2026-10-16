@@ -1592,6 +1592,23 @@ Before any publication:
   pre-publication version/registry resolution remain open. Owner-run deployment
   and production checks remain Phase 19 manual validation.
 
+- P18-V01 Remoting timeout-property follow-up (`b5106ebc`, 2026-10-16): the
+  pinned Java fixture now records `connectTimeoutMillis=-13` and
+  `clientChannelMaxIdleTimeSeconds=-7` from their system properties. Rust
+  seeds these signed values from the same process environment keys on first
+  `ClientConfig::default()`, retaining the process-wide result. The isolated
+  subprocess test checks these values alongside the semaphore and
+  close-socket properties. Remoting all-feature tests pass (99 unit, 8 codec,
+  1 fuzz regression, 7 security, 100 transport, 8 doctests); strict Remoting
+  Clippy, Maven verify (37 scenarios, fixture drift, and Java/Rust
+  cross-decodes), formatting, and diff checks pass. This closes these two
+  property-source rows only. Worker-count, socket-buffer, and write-watermark
+  property sources and broad P18-V01 remain open, as do final-revision
+  full-workspace P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution. Owner-run deployment and production checks remain Phase 19
+  manual validation.
+
 - P18-V01 Remoting close-socket property-source follow-up (`280bcfe0`,
   2026-10-16): the pinned Java fixture now sets
   `com.rocketmq.remoting.client.closeSocketIfTimeout=false` and records the

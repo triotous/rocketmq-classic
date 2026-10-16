@@ -124,3 +124,36 @@ full-workspace P18-V02 rerun, current-revision GitHub Ubuntu/P18-V04 evidence,
 Phase 19 local Docker/Broker automation, and pre-publication version/registry
 resolution also remain open. Owner-run deployment and production checks remain
 Phase 19 manual validation.
+
+P18-V01 Remoting connection-timeout and idle-timeout property-source follow-up
+(`b5106ebc`, 2026-10-16): the invoked Java `ClientConfigPropertiesProbe` now
+sets `com.rocketmq.remoting.client.connect.timeout=-13` and
+`com.rocketmq.remoting.client.channel.maxIdleTimeSeconds=-7`, then records
+`NettyClientConfig.getConnectTimeoutMillis()` and
+`getClientChannelMaxIdleTimeSeconds()` in
+`fixtures/runtime/client-config-properties.json`. Rust reads both values from
+the same process environment keys on first `ClientConfig::default()`, applies
+Java signed-decimal parsing, and retains them in the shared process-wide
+`OnceLock`. The isolated `client_remoting_defaults_follow_java_system_properties`
+test verifies these signed values together with the semaphore and
+close-socket fixture values.
+
+Validation on code revision `b5106ebc`:
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` passed:
+  99 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, and 8 doc
+  tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed, including 37
+  scenario-manifest validations, runtime fixture drift checks, and Java/Rust
+  cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+This closes the `connectTimeoutMillis` and `clientChannelMaxIdleTimeSeconds`
+property-source rows only. Worker-count, socket-buffer, and write-watermark
+property sources and the broad P18-V01 source/API/input/error/control-flow and
+reverse-export audit remain open. A final-revision full-workspace P18-V02
+rerun, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local
+Docker/Broker automation, and pre-publication version/registry resolution also
+remain open. Owner-run deployment and production checks remain Phase 19 manual
+validation.
