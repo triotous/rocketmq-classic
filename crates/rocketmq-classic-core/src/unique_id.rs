@@ -395,6 +395,30 @@ mod tests {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
         let expected = &fixture["uniqueIdHelpers"];
+        let public_api = &expected["publicApi"];
+        assert_eq!(
+            public_api["className"],
+            "org.apache.rocketmq.common.message.MessageClientIDSetter"
+        );
+        assert_eq!(public_api["declaredPublicFields"], serde_json::json!([]));
+        assert_eq!(
+            public_api["publicConstructors"],
+            serde_json::json!(["org.apache.rocketmq.common.message.MessageClientIDSetter()"])
+        );
+        let declared_methods = serde_json::json!([
+            "[B org.apache.rocketmq.common.message.MessageClientIDSetter.createFakeIP()",
+            "[B org.apache.rocketmq.common.message.MessageClientIDSetter.getIPFromID(java.lang.String)",
+            "int org.apache.rocketmq.common.message.MessageClientIDSetter.getPidFromID(java.lang.String)",
+            "java.lang.String org.apache.rocketmq.common.message.MessageClientIDSetter.createUniqID()",
+            "java.lang.String org.apache.rocketmq.common.message.MessageClientIDSetter.getIPStrFromID(java.lang.String)",
+            "java.lang.String org.apache.rocketmq.common.message.MessageClientIDSetter.getUniqID(org.apache.rocketmq.common.message.Message)",
+            "java.util.Date org.apache.rocketmq.common.message.MessageClientIDSetter.getNearlyTimeFromID(java.lang.String)",
+            "void org.apache.rocketmq.common.message.MessageClientIDSetter.setUniqID(org.apache.rocketmq.common.message.Message)"
+        ]);
+        assert_eq!(public_api["declaredPublicMethods"], declared_methods);
+        assert_eq!(public_api["declaredPublicMethodCount"], 8);
+        assert_eq!(public_api["publicMethods"], declared_methods);
+        assert_eq!(public_api["publicMethodCount"], 8);
 
         for prefix in ["ipv4", "ipv6"] {
             let id = expected[format!("{prefix}Id")].as_str().unwrap();

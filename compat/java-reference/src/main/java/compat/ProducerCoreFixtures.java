@@ -376,6 +376,15 @@ public final class ProducerCoreFixtures {
         result.put("ipv4Pid", MessageClientIDSetter.getPidFromID(ipv4));
         result.put("ipv4NearlyTimeMonthOffsetMillis",
             nearlyTimeMonthOffsetMillis(MessageClientIDSetter.getNearlyTimeFromID(ipv4)));
+        Map<String, Object> messageClientIdSetterApi = publicApiSurface(MessageClientIDSetter.class);
+        List<String> publicFields = Arrays.stream(MessageClientIDSetter.class.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> Modifier.toString(field.getModifiers()) + " "
+                + field.getGenericType().getTypeName() + " " + field.getName())
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        messageClientIdSetterApi.put("declaredPublicFields", publicFields);
+        result.put("publicApi", messageClientIdSetterApi);
         result.put("ipv6Id", ipv6);
         result.put("ipv6AddressBytes", toHex(MessageClientIDSetter.getIPFromID(ipv6)));
         result.put("ipv6Address", MessageClientIDSetter.getIPStrFromID(ipv6));
