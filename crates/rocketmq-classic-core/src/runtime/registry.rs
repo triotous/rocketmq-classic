@@ -1,5 +1,7 @@
 use super::RuntimeError;
-use super::request_future::{RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause};
+use super::request_future::{
+    RequestFutureError, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
+};
 use rocketmq_classic_common::message::MessageExt;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
@@ -272,19 +274,28 @@ impl RequestFutureTable {
             .collect())
     }
 
-    fn complete_reply(&self, correlation_id: &str, reply: MessageExt) -> bool {
-        let entry = self
-            .entries
-            .lock()
-            .ok()
-            .and_then(|mut entries| entries.remove(correlation_id));
-        entry.is_some_and(|entry| {
-            entry.future.put_response_message(Some(reply.clone()));
-            entry.future.execute_request_callback();
-            entry
-                .sender
-                .is_none_or(|sender| sender.send(PendingReplyCompletion::Reply(reply)).is_ok())
-        })
+    fn complete_reply(
+        &self,
+        correlation_id: &str,
+        reply: MessageExt,
+    ) -> Result<bool, RequestFutureError> {
+        let entry = {
+            let Ok(mut entries) = self.entries.lock() else {
+                return Ok(false);
+            };
+            let Some(pending) = entries.get(correlation_id) else {
+                return Ok(false);
+            };
+            pending.future.put_response_message(Some(reply.clone()))?;
+            entries.remove(correlation_id)
+        };
+        let Some(entry) = entry else {
+            return Ok(false);
+        };
+        entry.future.execute_request_callback();
+        Ok(entry
+            .sender
+            .is_none_or(|sender| sender.send(PendingReplyCompletion::Reply(reply)).is_ok()))
     }
 
     #[doc(hidden)]
@@ -782,7 +793,11 @@ impl GroupRegistry {
         })
     }
 
-    pub fn complete_pending_reply(&self, correlation_id: &str, reply: MessageExt) -> bool {
+    pub(super) fn try_complete_pending_reply(
+        &self,
+        correlation_id: &str,
+        reply: MessageExt,
+    ) -> Result<bool, RequestFutureError> {
         RequestFutureTable::shared().complete_reply(correlation_id, reply)
     }
 
@@ -1158,13 +1173,19 @@ mod pending_reply_admission_tests {
             .register_pending_reply(&lease, "registry-admission-reply", reply_deadline)
             .await
             .unwrap();
-        assert!(registry.complete_pending_reply(
-            "registry-admission-reply",
-            crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
-                "reply-topic",
-                b"reply".to_vec()
-            ))
-        ));
+        assert!(
+            registry
+                .try_complete_pending_reply(
+                    "registry-admission-reply",
+                    crate::test_support::message_ext_from(
+                        rocketmq_classic_common::message::Message::new(
+                            "reply-topic",
+                            b"reply".to_vec()
+                        )
+                    )
+                )
+                .unwrap()
+        );
         assert!(matches!(
             reply_pending.receive().await.unwrap(),
             PendingReplyCompletion::Reply(_)
@@ -1210,13 +1231,19 @@ mod pending_reply_admission_tests {
                 .await
                 .is_err()
         );
-        assert!(registry.complete_pending_reply(
-            "registry-admission-unregister",
-            crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
-                "reply-topic",
-                b"late reply".to_vec()
-            ))
-        ));
+        assert!(
+            registry
+                .try_complete_pending_reply(
+                    "registry-admission-unregister",
+                    crate::test_support::message_ext_from(
+                        rocketmq_classic_common::message::Message::new(
+                            "reply-topic",
+                            b"late reply".to_vec()
+                        )
+                    )
+                )
+                .unwrap()
+        );
         assert!(matches!(
             unregister_pending.receive().await.unwrap(),
             PendingReplyCompletion::Reply(_)
@@ -1347,7 +1374,11 @@ mod public_request_future_table_tests {
 
         let registry = GroupRegistry::default();
         let reply = MessageExt::default();
-        assert!(registry.complete_pending_reply(correlation_id, reply.clone()));
+        assert!(
+            registry
+                .try_complete_pending_reply(correlation_id, reply.clone())
+                .unwrap()
+        );
         assert_eq!(future.response_msg(), Some(reply));
         assert_eq!(callback.0.load(Ordering::SeqCst), 1);
         assert!(!first_view.contains_key(correlation_id).unwrap());

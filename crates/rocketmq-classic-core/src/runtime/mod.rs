@@ -32,8 +32,8 @@ pub use registry::{
     PendingReplyRequest, ProducerRuntime, RequestFutureTable,
 };
 pub use request_future::{
-    RequestFutureLatch, RequestResponseCallback, RequestResponseFuture, RequestSendFailureCause,
-    RequestTimeoutCause,
+    RequestFutureError, RequestFutureLatch, RequestResponseCallback, RequestResponseFuture,
+    RequestSendFailureCause, RequestTimeoutCause,
 };
 pub use tables::{
     ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,

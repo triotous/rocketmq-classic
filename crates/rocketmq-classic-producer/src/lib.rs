@@ -59,7 +59,8 @@ pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_core::api::admin::QueryResult;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
 pub use rocketmq_classic_core::runtime::{
-    RequestFutureLatch, RequestFutureTable, RequestResponseCallback, RequestResponseFuture,
+    RequestFutureError, RequestFutureLatch, RequestFutureTable, RequestResponseCallback,
+    RequestResponseFuture,
 };
 pub use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 pub use service_state::ProducerServiceState;

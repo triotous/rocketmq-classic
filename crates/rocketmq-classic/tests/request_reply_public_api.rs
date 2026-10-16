@@ -1,5 +1,7 @@
 use rocketmq_classic::{Message, ReplyMessageError, RequestCallback, create_reply_message};
-use rocketmq_classic::{RequestFutureHolder, RequestFutureTable, RequestResponseFuture};
+use rocketmq_classic::{
+    RequestFutureError, RequestFutureHolder, RequestFutureTable, RequestResponseFuture,
+};
 use std::sync::Arc;
 
 #[test]
@@ -60,6 +62,17 @@ fn request_future_holder_returns_the_live_runtime_correlation_table() {
 }
 
 #[test]
+fn nullable_java_count_down_latch_is_represented_in_the_public_rust_api() {
+    let future = RequestResponseFuture::new("nullable-latch-api", 1_000, None);
+    future.set_count_down_latch(None);
+    assert!(future.count_down_latch().is_none());
+    assert!(matches!(
+        future.put_response_message(None),
+        Err(RequestFutureError::MissingCountDownLatch)
+    ));
+}
+
+#[test]
 fn pinned_java_request_reply_callback_surface_is_inventoried() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/producer/request-reply.json"
@@ -106,6 +119,16 @@ fn pinned_java_request_future_mutation_and_holder_table_behavior_is_recorded() {
     assert_eq!(future["responseSetterCanClear"], true);
     assert_eq!(future["sendRequestOkSetter"], false);
     assert_eq!(future["causeSameInstance"], true);
+    assert_eq!(future["nullLatchGetter"], true);
+    assert_eq!(
+        future["nullLatchPutResponseException"],
+        "java.lang.NullPointerException"
+    );
+    assert_eq!(future["nullLatchPutResponseStored"], true);
+    assert_eq!(
+        future["nullLatchWaitResponseException"],
+        "java.lang.NullPointerException"
+    );
     assert_eq!(
         future["callbackEvents"],
         serde_json::json!([

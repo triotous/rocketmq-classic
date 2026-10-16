@@ -19,6 +19,12 @@ pub trait RequestResponseCallback: Send + Sync + 'static {
 #[error("request timeout, no reply message.")]
 pub struct RequestTimeoutCause;
 
+#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
+pub enum RequestFutureError {
+    #[error("request response future has no count down latch")]
+    MissingCountDownLatch,
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct RequestSendFailureCause(pub String);
@@ -64,6 +70,16 @@ impl RequestFutureLatch {
         .await
         .unwrap_or(false)
     }
+
+    /// Waits until the latch reaches zero, matching `CountDownLatch.await()`.
+    pub async fn wait_forever(&self) {
+        let mut count = self.count.subscribe();
+        while *count.borrow_and_update() != 0 {
+            if count.changed().await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 /// State shared by the public request future, the runtime correlation table,
@@ -73,7 +89,7 @@ pub struct RequestResponseFuture {
     timeout_millis: AtomicI64,
     begin_timestamp: i64,
     started_at: Instant,
-    count_down_latch: RwLock<Arc<RequestFutureLatch>>,
+    count_down_latch: RwLock<Option<Arc<RequestFutureLatch>>>,
     response_msg: Mutex<Option<MessageExt>>,
     send_request_ok: AtomicBool,
     cause: Mutex<Option<Arc<dyn Error + Send + Sync>>>,
@@ -92,7 +108,7 @@ impl RequestResponseFuture {
             timeout_millis: AtomicI64::new(timeout_millis),
             begin_timestamp: epoch_millis(SystemTime::now()),
             started_at: Instant::now(),
-            count_down_latch: RwLock::new(Arc::new(RequestFutureLatch::new(1))),
+            count_down_latch: RwLock::new(Some(Arc::new(RequestFutureLatch::new(1)))),
             response_msg: Mutex::new(None),
             send_request_ok: AtomicBool::new(true),
             cause: Mutex::new(None),
@@ -121,14 +137,14 @@ impl RequestResponseFuture {
         self.begin_timestamp
     }
 
-    pub fn count_down_latch(&self) -> Arc<RequestFutureLatch> {
+    pub fn count_down_latch(&self) -> Option<Arc<RequestFutureLatch>> {
         self.count_down_latch
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 
-    pub fn set_count_down_latch(&self, latch: Arc<RequestFutureLatch>) {
+    pub fn set_count_down_latch(&self, latch: Option<Arc<RequestFutureLatch>>) {
         *self
             .count_down_latch
             .write()
@@ -189,15 +205,27 @@ impl RequestResponseFuture {
         now.saturating_duration_since(self.started_at).as_millis() > timeout_millis as u128
     }
 
-    pub async fn wait_response_message(&self, timeout: Duration) -> Option<MessageExt> {
-        let latch = self.count_down_latch();
+    pub async fn wait_response_message(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<MessageExt>, RequestFutureError> {
+        let latch = self
+            .count_down_latch()
+            .ok_or(RequestFutureError::MissingCountDownLatch)?;
         let _ = latch.wait(timeout).await;
-        self.response_msg()
+        Ok(self.response_msg())
     }
 
-    pub fn put_response_message(&self, response: Option<MessageExt>) {
+    pub fn put_response_message(
+        &self,
+        response: Option<MessageExt>,
+    ) -> Result<(), RequestFutureError> {
         self.set_response_msg(response);
-        self.count_down_latch().count_down();
+        let latch = self
+            .count_down_latch()
+            .ok_or(RequestFutureError::MissingCountDownLatch)?;
+        latch.count_down();
+        Ok(())
     }
 
     pub fn execute_request_callback(&self) {
@@ -248,17 +276,23 @@ mod tests {
         assert_eq!(future.timeout_millis(), 10);
         assert!(future.send_request_ok());
         assert!(!future.is_timeout());
-        assert_eq!(future.count_down_latch().count(), 1);
+        assert_eq!(future.count_down_latch().unwrap().count(), 1);
 
         let latch = Arc::new(RequestFutureLatch::new(2));
-        future.set_count_down_latch(latch.clone());
+        future.set_count_down_latch(Some(latch.clone()));
         let response = MessageExt::default();
-        future.put_response_message(Some(response.clone()));
+        future.put_response_message(Some(response.clone())).unwrap();
         assert_eq!(latch.count(), 1);
         assert_eq!(future.response_msg(), Some(response));
         latch.count_down();
         assert!(latch.wait(Duration::ZERO).await);
-        assert!(future.wait_response_message(Duration::ZERO).await.is_some());
+        assert!(
+            future
+                .wait_response_message(Duration::ZERO)
+                .await
+                .unwrap()
+                .is_some()
+        );
 
         future.set_send_request_ok(false);
         future.execute_request_callback();
@@ -267,6 +301,35 @@ mod tests {
 
         future.set_timeout_millis(-1);
         assert!(future.is_timeout());
+    }
+
+    #[tokio::test]
+    async fn nullable_latch_preserves_java_response_before_countdown_failure() {
+        let future = RequestResponseFuture::new("nullable-latch", 10, None);
+        future.set_count_down_latch(None);
+        assert!(future.count_down_latch().is_none());
+
+        let response = MessageExt::default();
+        assert_eq!(
+            future.put_response_message(Some(response.clone())),
+            Err(RequestFutureError::MissingCountDownLatch)
+        );
+        assert_eq!(future.response_msg(), Some(response));
+        assert_eq!(
+            future.wait_response_message(Duration::ZERO).await,
+            Err(RequestFutureError::MissingCountDownLatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn latch_wait_forever_returns_after_countdown() {
+        let latch = Arc::new(RequestFutureLatch::new(1));
+        let waiter = {
+            let latch = latch.clone();
+            tokio::spawn(async move { latch.wait_forever().await })
+        };
+        latch.count_down();
+        waiter.await.unwrap();
     }
 
     #[test]

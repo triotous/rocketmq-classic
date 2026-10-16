@@ -37,8 +37,9 @@ pub use rocketmq_classic_producer::{
 };
 pub use rocketmq_classic_producer::{DEFAULT_PRODUCER_GROUP, TransactionCallbackError};
 pub use rocketmq_classic_producer::{
-    ReplyMessageError, RequestCallback, RequestFutureHolder, RequestFutureLatch,
-    RequestFutureTable, RequestResponseCallback, RequestResponseFuture, create_reply_message,
+    ReplyMessageError, RequestCallback, RequestFutureError, RequestFutureHolder,
+    RequestFutureLatch, RequestFutureTable, RequestResponseCallback, RequestResponseFuture,
+    create_reply_message,
 };
 pub use rocketmq_classic_producer::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 pub use rocketmq_classic_protocol::NamespaceUtil;

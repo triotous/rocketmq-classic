@@ -1289,8 +1289,9 @@ impl ClientRuntime {
         &self,
         correlation_id: &str,
         reply: rocketmq_classic_common::message::MessageExt,
-    ) -> bool {
-        self.groups.complete_pending_reply(correlation_id, reply)
+    ) -> Result<bool, super::RequestFutureError> {
+        self.groups
+            .try_complete_pending_reply(correlation_id, reply)
     }
 
     async fn ensure_reply_timeout_task(&self) {

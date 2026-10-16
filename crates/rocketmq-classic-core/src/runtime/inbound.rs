@@ -330,10 +330,12 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
 
     match result {
         Ok((reply, Some(correlation_id))) => {
-            runtime.complete_reply_request(&correlation_id, reply);
-            RemotingCommand {
-                code: response::SUCCESS,
-                ..Default::default()
+            match runtime.complete_reply_request(&correlation_id, reply) {
+                Ok(_) => RemotingCommand {
+                    code: response::SUCCESS,
+                    ..Default::default()
+                },
+                Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
             }
         }
         Ok((_, None)) => RemotingCommand {
@@ -462,7 +464,7 @@ mod tests {
         config::ClientConfig,
         runtime::{
             ClientRuntimeManager, ConsumerRuntime, GroupLease, PendingReplyCompletion,
-            ProducerRuntime,
+            ProducerRuntime, RequestFutureTable, RequestResponseFuture,
         },
     };
     use base64::Engine;
@@ -992,7 +994,9 @@ mod tests {
                     "orders_REPLY_TOPIC",
                     b"reply".to_vec(),
                 ));
-                reply_runtime.complete_reply_request(&reply_correlation, message)
+                reply_runtime
+                    .complete_reply_request(&reply_correlation, message)
+                    .unwrap()
             });
 
             let timeout_runtime = runtime.clone();
@@ -1014,13 +1018,17 @@ mod tests {
                 PendingReplyCompletion::Timeout { .. } => assert_eq!(expired, 1),
                 other => panic!("unexpected terminal request/reply result: {other:?}"),
             }
-            assert!(!runtime.complete_reply_request(
-                &correlation_id,
-                crate::test_support::message_ext_from(Message::new(
-                    "orders_REPLY_TOPIC",
-                    b"duplicate".to_vec(),
-                ))
-            ));
+            assert!(
+                !runtime
+                    .complete_reply_request(
+                        &correlation_id,
+                        crate::test_support::message_ext_from(Message::new(
+                            "orders_REPLY_TOPIC",
+                            b"duplicate".to_vec(),
+                        ))
+                    )
+                    .unwrap()
+            );
             assert_eq!(runtime.groups.expire_pending_replies(deadline), 0);
         }
 
@@ -1064,7 +1072,7 @@ mod tests {
             send_control.fail_send("scripted send failure".into())
         });
         gate.wait().await;
-        let reply_won = reply_task.await.unwrap();
+        let reply_won = reply_task.await.unwrap().unwrap();
         let failure_won = failure_task.await.unwrap();
         assert_eq!(usize::from(reply_won) + usize::from(failure_won), 1);
         match send_race.receive().await.unwrap() {
@@ -1100,7 +1108,7 @@ mod tests {
             cancel_control.cancel()
         });
         gate.wait().await;
-        let reply_won = reply_task.await.unwrap();
+        let reply_won = reply_task.await.unwrap().unwrap();
         let cancelled = cancel_task.await.unwrap();
         assert_eq!(usize::from(reply_won) + usize::from(cancelled), 1);
         if reply_won {
@@ -1121,6 +1129,16 @@ mod tests {
         correlation_id: &str,
         body: &[u8],
     ) -> RemotingCommand {
+        let result = runtime
+            .inbound
+            .process_with_context("broker:10911", reply_command(correlation_id, body))
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.code, response::SUCCESS);
+        result
+    }
+
+    fn reply_command(correlation_id: &str, body: &[u8]) -> RemotingCommand {
         use rocketmq_classic_common::message::{
             constants::{PROPERTY_CORRELATION_ID, PROPERTY_MESSAGE_TYPE},
             encode_properties,
@@ -1148,21 +1166,35 @@ mod tests {
         };
         let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
         header.encode_fields(&mut fields);
-        let result = runtime
-            .inbound
-            .process_with_context(
-                "broker:10911",
-                RemotingCommand {
-                    code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
-                    ext_fields: Some(fields),
-                    body: Some(body.to_vec()),
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-            .unwrap();
-        assert_eq!(result.code, response::SUCCESS);
-        result
+        RemotingCommand {
+            code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
+            ext_fields: Some(fields),
+            body: Some(body.to_vec()),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn null_latch_reply_returns_system_error_and_keeps_pending_future() {
+        let runtime = runtime("reply-null-latch").await;
+        let correlation_id = "inbound-null-latch";
+        let table = RequestFutureTable::shared();
+        let _ = table.remove(correlation_id).unwrap();
+        let future = Arc::new(RequestResponseFuture::new(correlation_id, 10_000, None));
+        future.set_count_down_latch(None);
+        table.insert(correlation_id, future.clone()).unwrap();
+
+        let response = receive_reply_message(&runtime, &reply_command(correlation_id, b"reply"));
+        assert_eq!(response.code, response::SYSTEM_ERROR);
+        assert_eq!(
+            response.remark.as_deref(),
+            Some("process reply message fail")
+        );
+        assert!(table.contains_key(correlation_id).unwrap());
+        assert_eq!(future.response_msg().unwrap().body().as_ref(), b"reply");
+
+        table.remove(correlation_id).unwrap();
+        assert!(runtime.shutdown().await.unwrap());
     }
 
     fn dispatch_reply_with_hosts(
