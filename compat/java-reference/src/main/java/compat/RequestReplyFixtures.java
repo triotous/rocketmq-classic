@@ -86,6 +86,7 @@ public final class RequestReplyFixtures {
             "RequestFutureHolder.singletonTableBehavior",
             "RequestResponseFuture.publicMethodInventory",
             "RequestResponseFuture.mutableStateAndCallbackBehavior",
+            "RequestResponseFuture.nullableLatchBehavior",
             "RequestCallback.publicMethodInventory",
             "RequestResponseFuture.executeRequestCallback",
             "MessageUtil.createReplyMessage",
@@ -240,6 +241,24 @@ public final class RequestReplyFixtures {
         withoutCallback.executeRequestCallback();
         result.put("nullCallbackGetter", withoutCallback.getRequestCallback() == null);
         result.put("nullCallbackExecution", "completed");
+
+        RequestResponseFuture nullLatchFuture = new RequestResponseFuture("future-null-latch", 30_000, null);
+        nullLatchFuture.setCountDownLatch(null);
+        result.put("nullLatchGetter", nullLatchFuture.getCountDownLatch() == null);
+        Message nullLatchResponse = new Message("null-latch-response", new byte[] {1});
+        try {
+            nullLatchFuture.putResponseMessage(nullLatchResponse);
+            result.put("nullLatchPutResponseException", "none");
+        } catch (NullPointerException exception) {
+            result.put("nullLatchPutResponseException", exception.getClass().getName());
+        }
+        result.put("nullLatchPutResponseStored", nullLatchFuture.getResponseMsg() == nullLatchResponse);
+        try {
+            nullLatchFuture.waitResponseMessage(1);
+            result.put("nullLatchWaitResponseException", "none");
+        } catch (NullPointerException exception) {
+            result.put("nullLatchWaitResponseException", exception.getClass().getName());
+        }
         return result;
     }
 
