@@ -181,6 +181,35 @@ pub enum TimeoutPhase {
     Response,
 }
 
+/// Typed transport outcomes corresponding to the Java remoting exception paths.
+///
+/// Error construction helpers used by the transport remain internal; callers can inspect or
+/// construct the public variants directly.
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::{TimeoutPhase, TransportError};
+/// TransportError::timeout(TimeoutPhase::Response, None, None);
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::{TimeoutPhase, TransportError};
+/// TransportError::timeout_with_cause(TimeoutPhase::Response, None, None, None);
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::TransportError;
+/// TransportError::connect_source(std::io::Error::other("refused"));
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::TransportError;
+/// TransportError::tls_source(std::io::Error::other("handshake"));
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::TransportError;
+/// TransportError::send_source(std::io::Error::other("broken pipe"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum TransportError {
     #[error("connection failed: {0}")]
@@ -252,7 +281,7 @@ impl TransportError {
         matches!(self, Self::Timeout | Self::TimeoutWithContext { .. })
     }
 
-    pub fn timeout(
+    pub(crate) fn timeout(
         phase: TimeoutPhase,
         remote_addr: Option<String>,
         timeout: Option<Duration>,
@@ -265,7 +294,7 @@ impl TransportError {
         }
     }
 
-    pub fn timeout_with_cause(
+    pub(crate) fn timeout_with_cause(
         phase: TimeoutPhase,
         remote_addr: Option<String>,
         timeout: Option<Duration>,
@@ -279,15 +308,11 @@ impl TransportError {
         }
     }
 
-    pub fn connect_source(error: impl Error + Send + Sync + 'static) -> Self {
+    pub(crate) fn connect_source(error: impl Error + Send + Sync + 'static) -> Self {
         Self::ConnectSource(ErrorSource::new(error))
     }
 
-    pub fn send_source(error: impl Error + Send + Sync + 'static) -> Self {
-        Self::SendSource(ErrorSource::new(error))
-    }
-
-    pub fn tls_source(error: impl Error + Send + Sync + 'static) -> Self {
+    pub(crate) fn tls_source(error: impl Error + Send + Sync + 'static) -> Self {
         Self::TlsSource(ErrorSource::new(error))
     }
 }
