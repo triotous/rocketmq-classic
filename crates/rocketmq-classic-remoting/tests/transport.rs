@@ -4521,7 +4521,7 @@ async fn p3_close_channels_closes_go_away_current_and_retired_generations() {
 }
 
 #[tokio::test]
-async fn p3_multiple_go_away_responses_on_retired_connection_only_retry_once() {
+async fn p3_all_requests_on_retired_connection_retry_once_on_shared_replacement() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -4529,22 +4529,34 @@ async fn p3_multiple_go_away_responses_on_retired_connection_only_retry_once() {
         let first = read_command(&mut old_connection).await;
         let second = read_command(&mut old_connection).await;
 
-        let mut go_away = command(response::GO_AWAY);
-        go_away.opaque = first.opaque;
-        go_away.mark_response();
-        write_command(&mut old_connection, &go_away).await;
-
+        let mut first_go_away = command(response::GO_AWAY);
+        first_go_away.opaque = first.opaque;
+        first_go_away.mark_response();
+        write_command(&mut old_connection, &first_go_away).await;
         let (mut replacement, _) = listener.accept().await.unwrap();
-        let retry = read_command(&mut replacement).await;
+        let first_retry = read_command(&mut replacement).await;
+        assert_eq!(first_retry.code, first.code);
+
+        // Java's ChannelWrapper only retries the second old-channel response
+        // after the first reconnect has swapped the wrapper's current channel.
+        // That keeps this assertion independent of the tryLock race while
+        // checking that both requests reuse the same replacement generation.
         let mut second_go_away = command(response::GO_AWAY);
         second_go_away.opaque = second.opaque;
         second_go_away.mark_response();
         write_command(&mut old_connection, &second_go_away).await;
+        let second_retry =
+            tokio::time::timeout(Duration::from_secs(1), read_command(&mut replacement))
+                .await
+                .expect("second GO_AWAY request must retry on the replacement");
+        assert_eq!(second_retry.code, second.code);
 
-        let mut response = command(63);
-        response.opaque = retry.opaque;
-        response.mark_response();
-        write_command(&mut replacement, &response).await;
+        for retry in [first_retry, second_retry] {
+            let mut response = command(60 + retry.code);
+            response.opaque = retry.opaque;
+            response.mark_response();
+            write_command(&mut replacement, &response).await;
+        }
     });
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
@@ -4571,29 +4583,13 @@ async fn p3_multiple_go_away_responses_on_retired_connection_only_retry_once() {
             .await
     });
 
-    let (first, second) = tokio::time::timeout(Duration::from_secs(2), async {
+    let (first, second) = tokio::time::timeout(Duration::from_secs(3), async {
         (first.await.unwrap(), second.await.unwrap())
     })
     .await
     .expect("GO_AWAY requests did not finish");
-    let results = [first, second];
-    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    assert_eq!(
-        results
-            .iter()
-            .filter_map(|result| result.as_ref().ok())
-            .next()
-            .unwrap()
-            .code,
-        63
-    );
-    assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(result, Err(TransportError::SendRequest { .. })))
-            .count(),
-        1
-    );
+    assert_eq!(first.unwrap().code, 61);
+    assert_eq!(second.unwrap().code, 62);
     client.shutdown().await;
     peer.await.unwrap();
 }

@@ -43,31 +43,30 @@ impl ClientInner {
             .unwrap_or_else(|_| address.to_owned());
         let mut retired = self.retired_connections.lock().unwrap();
         if retired.contains_key(&generation) || connection.is_retired() {
-            return false;
+            // Java keeps the old-channel-to-wrapper mapping. After the
+            // wrapper switches to its replacement, later GO_AWAY responses
+            // on this generation retry through that current channel too.
+            return true;
         }
         let mut connections = self.connections.lock().unwrap();
         let current = connections
             .iter()
             .find(|(_, current)| current.generation == generation)
             .map(|(address, current)| (address.clone(), current.clone()));
-        let (address, current) = match current {
-            Some((address, current)) => {
-                connections.remove(&address);
-                (address, current)
-            }
-            None => {
-                if connections.contains_key(&address) {
-                    return false;
-                }
-                connection.mark_retired();
-                if !connection.is_closed() {
-                    retired.insert(generation, (address, connection));
-                }
-                return true;
-            }
+        let address = if let Some((current_address, current)) = current {
+            connections.remove(&current_address);
+            current.mark_retired();
+            current_address
+        } else {
+            // A different generation may already occupy this address. That
+            // means this response came from a stale channel, which Java also
+            // retries through the wrapper's current channel.
+            address
         };
-        current.mark_retired();
-        retired.insert(generation, (address, current));
+        connection.mark_retired();
+        if !connection.is_closed() {
+            retired.insert(generation, (address, connection));
+        }
         true
     }
 
