@@ -537,23 +537,35 @@ impl ResponseFuture {
             });
         }
         if self.is_timeout() {
-            return Err(TransportError::timeout(
+            return Err(TransportError::timeout_with_cause(
                 crate::error::TimeoutPhase::Response,
                 self.channel
                     .as_ref()
                     .map(|channel| channel.remote_addr().to_owned()),
                 Some(Duration::from_millis(self.timeout_millis.max(0) as u64)),
+                cause.map(crate::error::ErrorSource::new),
             ));
         }
-        Err(cause.unwrap_or_else(|| self.default_failure()))
+        let request = self.request_description();
+        Err(match cause {
+            Some(cause) => TransportError::RemotingWithCause {
+                request,
+                cause: crate::error::ErrorSource::new(cause),
+            },
+            None => TransportError::Remoting(request),
+        })
     }
 
     fn default_failure(&self) -> TransportError {
-        let request = self
-            .request_command()
-            .map(|request| format!("{request:?}"))
-            .unwrap_or_else(|| "null".to_owned());
-        TransportError::Remoting(request)
+        TransportError::Remoting(self.request_description())
+    }
+
+    fn request_description(&self) -> String {
+        format!(
+            "{:?}",
+            self.request_command()
+                .expect("Java ResponseFuture formats its request in generic failure")
+        )
     }
 }
 
@@ -605,6 +617,22 @@ mod tests {
     impl InvokeCallback for FailureCallback {
         fn operation_fail(&self, error: &TransportError) {
             *self.0.lock().unwrap() = Some(error.clone());
+        }
+    }
+
+    struct RecordingFailureCallback {
+        events: Arc<Mutex<Vec<&'static str>>>,
+        error: Arc<Mutex<Option<TransportError>>>,
+    }
+
+    impl InvokeCallback for RecordingFailureCallback {
+        fn operation_complete(&self, _future: &ResponseFuture) {
+            self.events.lock().unwrap().push("complete");
+        }
+
+        fn operation_fail(&self, error: &TransportError) {
+            *self.error.lock().unwrap() = Some(error.clone());
+            self.events.lock().unwrap().push("fail");
         }
     }
 
@@ -693,7 +721,7 @@ mod tests {
         let future = ResponseFuture::new(
             None,
             0,
-            None,
+            Some(RemotingCommand::default()),
             1000,
             Some(Arc::new(RecordingCallback(events.clone()))),
         );
@@ -910,6 +938,114 @@ mod tests {
             generic_error.lock().unwrap().as_ref(),
             Some(TransportError::Remoting(request)) if request.contains("code: 42")
         ));
+    }
+
+    #[test]
+    fn response_future_callback_failure_causes_and_null_request_match_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        let java = &fixture["responseFutureCallbackFailureBehavior"];
+        for (name, class) in [
+            (
+                "sendFailure",
+                "org.apache.rocketmq.remoting.exception.RemotingSendRequestException",
+            ),
+            (
+                "timeoutFailure",
+                "org.apache.rocketmq.remoting.exception.RemotingTimeoutException",
+            ),
+            (
+                "genericFailure",
+                "org.apache.rocketmq.remoting.exception.RemotingException",
+            ),
+        ] {
+            assert_eq!(java[name]["failureClass"], class);
+            assert_eq!(java[name]["failureCauseSameInstance"], true);
+            assert_eq!(
+                java[name]["callbackEvents"],
+                serde_json::json!(["fail", "complete"])
+            );
+        }
+        assert_eq!(
+            java["nullRequestGenericFailure"]["throwable"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(
+            java["nullRequestGenericFailure"]["callbackEvents"],
+            serde_json::json!([])
+        );
+
+        let exercise = |timeout_millis, send_request_ok, opaque| {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let error = Arc::new(Mutex::new(None));
+            let future = ResponseFuture::new(
+                Some(ChannelHandle::pending("broker:10911", opaque as u64)),
+                opaque,
+                Some(RemotingCommand {
+                    code: 42,
+                    ..Default::default()
+                }),
+                timeout_millis,
+                Some(Arc::new(RecordingFailureCallback {
+                    events: events.clone(),
+                    error: error.clone(),
+                })),
+            );
+            future.set_cause(Some(TransportError::Closed));
+            future.set_send_request_ok(send_request_ok);
+            future.execute_invoke_callback();
+            let events = events.lock().unwrap().clone();
+            let error = error.lock().unwrap().clone().unwrap();
+            (events, error)
+        };
+
+        let (send_events, send_error) = exercise(1000, false, 51);
+        assert_eq!(send_events, vec!["fail", "complete"]);
+        assert!(matches!(
+            send_error,
+            TransportError::SendRequest {
+                cause: Some(ref cause),
+                ..
+            } if cause.downcast_ref::<TransportError>() == Some(&TransportError::Closed)
+        ));
+
+        let (timeout_events, timeout_error) = exercise(-1, true, 52);
+        assert_eq!(timeout_events, vec!["fail", "complete"]);
+        assert!(matches!(
+            timeout_error,
+            TransportError::TimeoutWithContext {
+                phase: crate::error::TimeoutPhase::Response,
+                cause: Some(ref cause),
+                ..
+            } if cause.downcast_ref::<TransportError>() == Some(&TransportError::Closed)
+        ));
+
+        let (generic_events, generic_error) = exercise(i64::MAX, true, 53);
+        assert_eq!(generic_events, vec!["fail", "complete"]);
+        assert!(matches!(
+            generic_error,
+            TransportError::RemotingWithCause { request, cause }
+                if request.contains("code: 42")
+                    && cause.downcast_ref::<TransportError>() == Some(&TransportError::Closed)
+        ));
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let null_request = ResponseFuture::new(
+            Some(ChannelHandle::pending("broker:10911", 54)),
+            54,
+            None,
+            i64::MAX,
+            Some(Arc::new(RecordingCallback(events.clone()))),
+        );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                null_request.execute_invoke_callback();
+            }))
+            .is_err()
+        );
+        assert!(events.lock().unwrap().is_empty());
     }
 
     #[test]

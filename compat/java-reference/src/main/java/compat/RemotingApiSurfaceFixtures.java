@@ -20,22 +20,43 @@ import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
+import io.netty.channel.Channel;
+import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.common.SemaphoreReleaseOnlyOnce;
 import org.apache.rocketmq.remoting.netty.ResponseFuture;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 /** Public source/API inventory for the Java remoting response-future capability. */
 public final class RemotingApiSurfaceFixtures {
     private static final String SOURCE_COMMIT = "efa1be59d6fc747ad220f036c86030f05f0419f9";
 
     private RemotingApiSurfaceFixtures() { }
+
+    private static final class CallbackTrace implements InvokeCallback {
+        final List<String> events = new ArrayList<>();
+        Throwable failure;
+
+        @Override
+        public void operationComplete(ResponseFuture responseFuture) {
+            events.add("complete");
+        }
+
+        @Override
+        public void operationFail(Throwable throwable) {
+            failure = throwable;
+            events.add("fail");
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) throw new IllegalArgumentException("expected fixture path");
@@ -63,6 +84,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("semaphoreReleaseOnlyOncePublicMethods", publicMethods(SemaphoreReleaseOnlyOnce.class));
         fixture.put("semaphoreReleaseBehavior", semaphoreReleaseBehavior());
         fixture.put("responseFuturePermitReleaseBehavior", responseFuturePermitReleaseBehavior());
+        fixture.put("responseFutureCallbackFailureBehavior", responseFutureCallbackFailureBehavior());
         return fixture;
     }
 
@@ -122,5 +144,75 @@ public final class RemotingApiSurfaceFixtures {
         result.put("opaque", future.getOpaque());
         result.put("permitsAfterRepeatedRelease", semaphore.availablePermits());
         return result;
+    }
+
+    private static Map<String, Object> responseFutureCallbackFailureBehavior() {
+        Map<String, Object> result = new TreeMap<>();
+        Throwable cause = new IllegalStateException("fixture-cause");
+
+        CallbackTrace sendCallback = new CallbackTrace();
+        ResponseFuture sendFuture = new ResponseFuture(remoteChannel(), 51,
+            RemotingCommand.createRequestCommand(1, null),
+            1000, sendCallback, null);
+        sendFuture.setCause(cause);
+        sendFuture.setSendRequestOK(false);
+        sendFuture.executeInvokeCallback();
+        result.put("sendFailure", callbackResult(sendCallback, cause));
+
+        CallbackTrace timeoutCallback = new CallbackTrace();
+        ResponseFuture timeoutFuture = new ResponseFuture(remoteChannel(), 52,
+            RemotingCommand.createRequestCommand(1, null),
+            -1, timeoutCallback, null);
+        timeoutFuture.setCause(cause);
+        timeoutFuture.executeInvokeCallback();
+        result.put("timeoutFailure", callbackResult(timeoutCallback, cause));
+
+        CallbackTrace genericCallback = new CallbackTrace();
+        ResponseFuture genericFuture = new ResponseFuture(remoteChannel(), 53,
+            RemotingCommand.createRequestCommand(1, null),
+            Long.MAX_VALUE, genericCallback, null);
+        genericFuture.setCause(cause);
+        genericFuture.executeInvokeCallback();
+        result.put("genericFailure", callbackResult(genericCallback, cause));
+
+        CallbackTrace nullRequestCallback = new CallbackTrace();
+        ResponseFuture nullRequestFuture = new ResponseFuture(remoteChannel(), 54, Long.MAX_VALUE,
+            nullRequestCallback, null);
+        nullRequestFuture.setCause(cause);
+        String thrown = null;
+        try {
+            nullRequestFuture.executeInvokeCallback();
+        } catch (Throwable error) {
+            thrown = error.getClass().getName();
+        }
+        Map<String, Object> nullRequest = new TreeMap<>();
+        nullRequest.put("throwable", thrown);
+        nullRequest.put("callbackEvents", nullRequestCallback.events);
+        result.put("nullRequestGenericFailure", nullRequest);
+        return result;
+    }
+
+    private static Map<String, Object> callbackResult(CallbackTrace callback, Throwable cause) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("failureClass", callback.failure == null ? null : callback.failure.getClass().getName());
+        result.put("failureCauseSameInstance", callback.failure != null && callback.failure.getCause() == cause);
+        result.put("callbackEvents", callback.events);
+        return result;
+    }
+
+    private static Channel remoteChannel() {
+        return (Channel) java.lang.reflect.Proxy.newProxyInstance(
+            Channel.class.getClassLoader(),
+            new Class<?>[] {Channel.class},
+            (proxy, method, args) -> {
+                if ("remoteAddress".equals(method.getName())) {
+                    return new InetSocketAddress("127.0.0.1", 10911);
+                }
+                Class<?> returnType = method.getReturnType();
+                if (returnType == boolean.class) return false;
+                if (returnType == int.class) return 0;
+                if (returnType == long.class) return 0L;
+                return null;
+            });
     }
 }

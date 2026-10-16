@@ -1912,6 +1912,7 @@ impl RemotingClient {
                 phase: crate::error::TimeoutPhase::Operation,
                 remote_addr: Some(addr.to_owned()),
                 timeout,
+                cause: None,
             });
         }
         let connection = self
@@ -1924,6 +1925,7 @@ impl RemotingClient {
                     phase: crate::error::TimeoutPhase::Connection,
                     remote_addr: Some(addr.to_owned()),
                     timeout,
+                    cause: None,
                 },
                 error => error,
             })?;
@@ -1936,6 +1938,7 @@ impl RemotingClient {
                 phase: crate::error::TimeoutPhase::Admission,
                 remote_addr: Some(addr.to_owned()),
                 timeout,
+                cause: None,
             });
         }
         if options.run_rpc_hooks && !options.retried_go_away && !options.admitted {
@@ -1956,6 +1959,7 @@ impl RemotingClient {
                             phase: crate::error::TimeoutPhase::Admission,
                             remote_addr: Some(addr.to_owned()),
                             timeout,
+                            cause: None,
                         }
                     } else {
                         error
@@ -2012,6 +2016,7 @@ impl RemotingClient {
                     phase: crate::error::TimeoutPhase::Write,
                     remote_addr: Some(addr.to_owned()),
                     timeout,
+                    cause: None,
                 });
             }
         }
@@ -2102,6 +2107,7 @@ impl RemotingClient {
                         phase: crate::error::TimeoutPhase::Response,
                         remote_addr: Some(addr.to_owned()),
                         timeout,
+                        cause: None,
                     })
                 } else {
                     Err(TransportError::Closed)
@@ -2131,6 +2137,7 @@ impl RemotingClient {
                     phase: crate::error::TimeoutPhase::Response,
                     remote_addr: Some(addr.to_owned()),
                     timeout,
+                    cause: None,
                 })
             }
         }

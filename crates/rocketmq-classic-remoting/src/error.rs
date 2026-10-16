@@ -204,6 +204,8 @@ pub enum TransportError {
         phase: TimeoutPhase,
         remote_addr: Option<String>,
         timeout: Option<Duration>,
+        #[source]
+        cause: Option<ErrorSource>,
     },
     #[error("invalid client configuration: {0}")]
     InvalidConfiguration(String),
@@ -221,6 +223,12 @@ pub enum TransportError {
     Interrupted,
     #[error("remoting callback failed: {0}")]
     Remoting(String),
+    #[error("remoting callback failed for {request}: {cause}")]
+    RemotingWithCause {
+        request: String,
+        #[source]
+        cause: ErrorSource,
+    },
     #[error("RPC hook failed: {0}")]
     RpcHook(String),
     #[error("TLS setup or handshake failed: {0}")]
@@ -253,6 +261,21 @@ impl TransportError {
             phase,
             remote_addr,
             timeout,
+            cause: None,
+        }
+    }
+
+    pub fn timeout_with_cause(
+        phase: TimeoutPhase,
+        remote_addr: Option<String>,
+        timeout: Option<Duration>,
+        cause: Option<ErrorSource>,
+    ) -> Self {
+        Self::TimeoutWithContext {
+            phase,
+            remote_addr,
+            timeout,
+            cause,
         }
     }
 
