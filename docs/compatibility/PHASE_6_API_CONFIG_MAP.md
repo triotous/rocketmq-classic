@@ -1240,3 +1240,18 @@ The invoked `request-reply.json` fixture inventories the exact public method sig
 | `INSTANCE_PREFIX`, `INSTANCE_REGEX`, `ENDPOINT_PREFIX`, `NAMESRV_ENDPOINT_PATTERN`, `INST_ENDPOINT_PATTERN`; `getNameServerAddresses`, `validateInstanceEndpoint`, `parseInstanceIdFromEndpoint`, and `getNameSrvAddrFromNamesrvEndpoint` | `utils::name_server_address` exposes the five pattern/value constants and four snake-case methods. Java Pattern fields map to source constants plus Rust matcher functions; null and invalid substring outcomes use typed Rust results. `get_name_server_addresses` reads `rocketmq.namesrv.addr` before `NAMESRV_ADDR`, matching the Rust process-environment mapping for Java properties. |
 
 The invoked `RuntimeConfigFixtures` records every declared public field/method and calls the patterns and helpers over null, empty, malformed, Unicode, path, and line-terminator inputs. The Rust fixture test compares those outcomes. Core's `config/namespace.rs` now delegates address extraction, instance-endpoint validation, and instance-ID parsing to these Common functions, so the direct API and ClientConfig path share the same rules. Current `fixtures/runtime/client-config.json` SHA-256: `39b4944cf67a65dc9c86e203826ceb8e43b3650d72e4ad5cb19af9234f17e19c`. This closes the surfaced NameServerAddressUtils mapping only; broad Common/P18-V01 reconciliation remains open.
+
+## Common public API: MessageAccessor
+
+The pinned Java 5.5.1 `MessageAccessor` declares 20 public static methods. Rust keeps these operations on `Message`, `NullableMessageProperties`, and the message property constants rather than introducing a Java-shaped utility type.
+
+| Java 5.5.1 method | Rust counterpart |
+| --- | --- |
+| `clearProperty(Message, String)` | `Message::clear_property_nullable` and `Message::clear_system_property` |
+| `setProperties(Message, Map)` | `Message::set_properties` and `Message::set_nullable_properties` |
+| `putProperty(Message, String, String)` | `Message::set_property_nullable` |
+| Transfer flag, correction flag, origin message ID, MQ2 flag, reconsume time, max reconsume times, consume start timestamp, and Lite topic getters/setters | `Message::{get_property,set_system_property,set_system_property_nullable}` with the matching `message::constants::PROPERTY_*` key |
+| `cloneMessage(Message)` | `Message::clone_message`, which creates a distinct message while retaining Java's shared body/property handles until replacement |
+| `deepCopyProperties(Map)` | `Clone` on `NullableMessageProperties`, preserving null keys and values in a separately owned map; `Option::clone` preserves a null map |
+
+`message_public_api_matches_java_551_fixture` pins the declared method signatures and compares the property helper values, nullable map behavior, deep-copy independence, and `cloneMessage` aliasing behavior with the invoked Java fixture. The fixture SHA-256 is `85feb19197afb046354bb4c88aed4ad1008dcfe235f7bf781817ffa7eb1edd2f`. This closes the `MessageAccessor` declaration and mapped-behavior slice; the broader Common constructor/property overload, input/error/flow, and reverse-export audit remains open under P18-V01.

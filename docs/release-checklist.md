@@ -2245,3 +2245,10 @@ Before any publication:
   pass. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
   Docker/Broker runner and scenario execution, and pre-publication
   dependency/version resolution remain outstanding.
+- P18-V01 Common `MessageAccessor` reverse-surface slice (2026-10-16):
+  `MessageAccessor`'s 20 public methods now have an explicit Java-to-Rust
+  crosswalk to `Message`, nullable property operations, message property
+  constants, and Rust `Clone`. The existing invoked Java fixture pins every
+  declared signature and its Rust differential covers helper values, nullable
+  maps, deep-copy independence, and `cloneMessage` aliasing. The focused Common
+  API test passes; broad Common/P18-V01 reconciliation remains open.
