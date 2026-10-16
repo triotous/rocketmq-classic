@@ -2572,3 +2572,18 @@ Before any publication:
   fixture SHA-256:
   `b40aca9ee7eecbcfccb272757fd0f7371f953ffece7634352b0bcd91079d24c0`.
   The final-revision full-workspace P18-V02 rerun remains open.
+- P18-V01 inherited RemotingSerializable body adapters (`96756a8e`,
+  2026-10-16, pinned Java source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): adapters now cover the mapped
+  body DTOs, including `GetConsumerStatusBody` and `ResetOffsetBody` through
+  their existing MessageQueue-key codecs. `QueueTimeSpan` timestamp getters
+  and derived JSON fields match Java across UTC and Asia/Taipei, including
+  signed-millisecond extremes. Protocol all-feature tests (120 unit tests,
+  integration targets, and 42 doctests), strict Protocol Clippy, Maven verify
+  (37 scenarios), and the Core focused regression under both timezones pass.
+  Empty `JSONWriter.Feature[]` is covered; non-empty writer features remain
+  unresolved. Fixture SHA-256:
+  `468bcf8a39cfb5f8c9706a474501897f370c42dd8f747b414c3a1d1d91a2402e`.
+  This closes only the no-feature inherited serializer slice. Broad P18-V01,
+  the final-revision full-workspace P18-V02 run, current-revision platform CI
+  evidence, and Phase 19 local Docker/Broker automation remain open.
