@@ -412,6 +412,41 @@ Latest approved model correction: `3d83bef`, [ADR-0005](../architecture/ADR-0005
 | `PullMessageService.executeTask/executeTaskLater/getScheduledExecutorService`, inherited and overridden shutdown; `ThreadUtils.shutdownGracefully` | Rust future scheduling capability; single independent worker, lazy Created activation, serial deadlines, one-second graceful window then cancellation/join | UNIT_VERIFIED task ownership; Java scheduled-executor shutdown is invoked and the one-second grace maps, while inherited thread interrupt/join controls do not; no duplicate JDK executor or tuning settings |
 | P6-V04 live heartbeat/subscription/unregister/shared user | original scenario ID, server 5.3.4 | PENDING_PHASE_19 |
 
+### Pinned lifecycle and thread utility disposition (P18-V01)
+
+The pinned Java 5.5.1 `common.utils.StartAndShutdown` surface is `start()`,
+`shutdown()`, and default no-op `preShutdown()`. `AbstractStartAndShutdown`
+starts registered components in insertion order and invokes `preShutdown()` and
+`shutdown()` in reverse order. The client implementations are
+`MQClientAPIImpl`, `MQClientAPIFactory`, and `MQFaultStrategy`; Rust maps their
+client flows to the owning `ClientRuntime`/`RemotingClient` lifecycle,
+`Producer` fault-strategy ownership, and the consumer/producer service lifecycle
+methods. Rust does not add a second lifecycle trait or expose a mutable Java
+implementation object. `MQFaultStrategy`'s inherited declaration and its
+disposition are pinned in the Phase 7 producer API fixture and matrix.
+
+`AsyncShutdownHelper` declares a constructor, `addTarget(Shutdown)`, chainable
+`shutdown()`, and `await(long, TimeUnit)`. Its only client-source callsite is
+`MQClientAPIFactory.shutdown()`, which starts shutdown on each factory-owned
+remoting API client and waits for completion. The pinned client source contains
+no construction/callsite for `MQClientAPIFactory` outside that class. The
+primary Rust runtime owns one remoting client and shuts it down through the
+runtime control lifecycle, so there is no separate user-facing multi-client
+factory setting or helper API to mirror.
+
+`ThreadUtils` declares 20 public static overloads for executor/thread creation
+and graceful shutdown. Pinned client callsites use it for the four consumer
+consume executors, `PullMessageService`, `AsyncTraceDispatcher`, and the
+Remoting client/server scan or scheduling executors. Rust maps these callsites
+to bounded consumer workers, owned pull/trace/remoting tasks and their owner
+shutdown paths. Evidence includes consumer wait-override coverage,
+`normal_shutdown_preserves_java_one_second_scheduled_executor_grace`, trace
+shutdown delivery coverage, and remoting owned-task shutdown tests. Generic
+JDK `ThreadFactory`, `ExecutorService`, queue and rejection-handler objects do
+not form additional RocketMQ client settings; Rust uses its native task and
+worker owners. This disposition covers the helper callsites and lifecycle
+flow only; the broad bidirectional P18-V01 audit remains open.
+
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 
 Runtime ownership will be an explicit shareable manager, not a process singleton. Runtime-affecting transport/NameServer/security incompatibility is rejected as required by the plan; producer/consumer-specific settings are not silently promoted into manager keys. Private failure-injection seams must not enter the public API.
