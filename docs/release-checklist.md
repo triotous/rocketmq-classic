@@ -2150,3 +2150,16 @@ Before any publication:
   Fixture SHA-256: `85feb19197afb046354bb4c88aed4ad1008dcfe235f7bf781817ffa7eb1edd2f`.
   This closes only the MessageQueue declaration slice; broad P18-V01 remains
   open.
+
+- P18-V01 Producer Common `MessageClientIDSetter` declared-surface inventory
+  (`9329f424`, 2026-10-16): the pinned Java fixture records its public
+  no-argument constructor, no public fields, and all eight declared/callable
+  public methods. The Rust test pins the signatures while retaining the
+  existing IPv4/IPv6, PID, near-time, invalid-hex and fake-IP differentials;
+  the stateless Java constructor maps to the `unique_id` namespace. Core's 168
+  library tests pass, strict all-target/all-feature Core Clippy passes, and
+  pinned Maven `verify` passes all 37 scenarios and fixture drift/cross-decodes.
+  Formatting and diff checks pass. `fixtures/producer/core.json` SHA-256:
+  `af16e63df4a3506daaf22162afdf7b52655861bbf0cffea072983a4dacfa25b6`. This
+  closes only the MessageClientIDSetter declaration slice; broad P18-V01 remains
+  open.
