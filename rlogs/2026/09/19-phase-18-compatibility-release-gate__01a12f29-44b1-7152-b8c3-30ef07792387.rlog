@@ -15,3 +15,9 @@
 - Full locked Cargo metadata reports 215 packages, including 208 registry packages, all with license metadata. All seven `cargo package --workspace --list --locked --allow-dirty` listings contain `LICENSE` and `NOTICE`. `scripts/check-workspace-metadata.py` passes.
 - `python3 tests/differential/compare.py --help` is not supported and prints usage with exit 1; the documented `--self-test` and `--validate-manifest` commands pass.
 - The broad P18-V01 bidirectional Java/Rust audit, current-revision GitHub Ubuntu/P18-V04 result, Phase 19 Docker/Broker runner and scenarios, and pre-publication version/dependency resolution remain open. No push, tag, publication, Docker/Broker run, plan edit, or Java checkout edit occurred.
+
+## Message body caller-array alias oracle — 2026-10-16
+
+- Pinned Java `Message.getBody()` and `setBody(byte[])` return/store the exact byte-array reference at source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Added invoked observations for reference identity, mutation visibility in both directions, and replacement detachment in `MessageDecodeFixtures.messagePublicApi`.
+- Compiled the Java harness, regenerated the message fixture through `compat.Main message-decode-fixtures`, and verified the checked-in fixture with `exec:java@verify-java-message-decode-fixtures` (11 fixtures). SHA-256: `efb8b02c5eb9fec2e78459ec63e97144fdf633d964bd4a2d6e276fc60b13e39d`.
+- The first direct `exec:java` attempt selected the default `compat.Main` command and failed on usage; the first generation before compiling used stale `target/classes`. Re-running with the supported dispatcher after `mvn -DskipTests compile` produced and verified the expected fixture. No Java checkout or plan files were modified.

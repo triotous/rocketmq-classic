@@ -249,6 +249,23 @@ public final class MessageDecodeFixtures {
         expected.put("nullableSetterTopicIsNull", nullableSetters.getTopic() == null);
         expected.put("nullableSetterBodyIsNull", nullableSetters.getBody() == null);
 
+        byte[] callerBody = new byte[] {1, 2, 3};
+        Message bodyAlias = new Message();
+        bodyAlias.setBody(callerBody);
+        expected.put("setBodyRetainsCallerArray", bodyAlias.getBody() == callerBody);
+        callerBody[0] = 9;
+        expected.put("setBodyCallerMutationValue", callerBody[0]);
+        expected.put("setBodyCallerMutationVisibleToMessage",
+            bodyAlias.getBody()[0] == callerBody[0]);
+        bodyAlias.getBody()[1] = 8;
+        expected.put("setBodyMessageMutationValue", bodyAlias.getBody()[1]);
+        expected.put("setBodyMessageMutationVisibleToCaller", callerBody[1] == 8);
+        byte[] replacementBody = new byte[] {4, 5, 6};
+        bodyAlias.setBody(replacementBody);
+        expected.put("setBodyReplacementRetainsNewArray", bodyAlias.getBody() == replacementBody);
+        callerBody[2] = 10;
+        expected.put("setBodyReplacementDetachesOldArray", bodyAlias.getBody()[2] == 6);
+
         Message nullableProperties = new Message();
         nullableProperties.setTags(null);
         nullableProperties.setBuyerId(null);
