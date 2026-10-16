@@ -2402,3 +2402,18 @@ Before any publication:
   scenario execution, `docs/owner-validation.md`, and pre-publication
   version/dependency resolution remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T174604Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T174604Z.rlog).
+- Current-revision server-free P18-V02 rerun (code `15c6ca4f`, 2026-10-16;
+  compatibility-document disposition committed separately as `ebeb6460`):
+  formatting, default and all-features locked workspace tests, strict
+  all-target/all-feature workspace Clippy, pinned Maven `verify` (37 scenarios,
+  Java runtime probes and Java/Rust fixture cross-decodes), comparator self-test,
+  37-scenario manifest validation, offline race/leak smoke (16 cases × 3), fuzz
+  smoke (105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame and
+  113 message decodes), release example build, workspace benchmark compilation,
+  locked Cargo metadata, and final diff checks all pass. This closes the
+  current-revision P18-V02 server-free gates. Broad P18-V01 source/API/settings,
+  overload/input/error/control-flow and reverse-export reconciliation remains
+  open. Current-revision GitHub Ubuntu address-profile and native Windows
+  runtime CI evidence, Phase 19 Docker/Broker automation and live scenario
+  execution, `docs/owner-validation.md`, and pre-publication version/registry
+  dependency resolution remain open.
