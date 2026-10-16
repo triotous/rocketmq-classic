@@ -1861,3 +1861,18 @@ Before any publication:
   `TZ=Asia/Taipei` Unique ID fixture all pass. Broad P18-V01 and the current
   GitHub Ubuntu/P18-V04 result remain open; this entry makes no live Broker,
   release, or compatibility claim.
+
+- P18-V01 Push `updateCorePoolSize` slice (`8105fd3b`, Java fixture SHA-256
+  `29ed1e78da3f3dfe6f0d334d78e8f97e4178537a7105419c6fd907fc0aa9a023`): Rust
+  no longer exposes Java's void operation as a boolean. It ignores invalid
+  facade-bound values, reports an uncreated service as `NotStarted`, maps a
+  raised facade maximum exceeding the constructed executor capacity to
+  `InvalidSetting`, handles concurrent and orderly services, and keeps the
+  effective pool size updateable after shutdown. The pinned fixture checks the
+  Java null-service failure, valid/invalid boundaries, live maximum mutation,
+  executor-capacity exception, and post-shutdown paths. The final consumer
+  suite passes (220 unit tests plus all integration and doc targets); strict
+  all-target/all-feature Consumer Clippy, formatting, diff checks, and pinned
+  Maven `verify` (37 scenarios, fixture drift and cross-decodes) pass. This
+  closes this API slice only; broad P18-V01 remains open, and the complete
+  workspace P18-V02 gate must run again on the final revision.
