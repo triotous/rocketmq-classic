@@ -1809,3 +1809,18 @@ Before any publication:
   `4d49cd7e`. Phase 19 Docker/Broker automation, the owner-validation handoff,
   and pre-publication version/registry checks remain open; owner-run deployment
   and production checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting request-context API disposition (2026-10-16): pinned Java
+  `NettyRemotingAbstract.buildProcessRequestHandler` reads `ctx.channel()` for
+  peer metadata and responses and passes the same context into the
+  `RequestPipeline` and `NettyRequestProcessor` callbacks. Maven dependency
+  resolution pins Netty `netty-transport` 4.1.130.Final. Its generic
+  `ChannelHandlerContext` handler metadata, event propagation, allocator,
+  attributes, raw socket operations, arbitrary-object writes and promise
+  factories are framework facilities; the Rust API instead maps the
+  RocketMQ-level contract through shared `RequestContext`/`ChannelHandle`,
+  typed command writes, `RequestExecutor`, and ordered `RequestPipeline` stages.
+  Existing request-context, pipeline-order and executor-rejection tests cover
+  these mappings. This closes the context framework disposition only; broad
+  P18-V01 source/API/input/error/control-flow and reverse-export reconciliation
+  remains open.
