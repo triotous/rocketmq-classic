@@ -227,6 +227,7 @@ public final class ProducerCoreFixtures {
         autoBatch.put("enabledAfterRuntimeToggle", autoBatchLifecycle.getAutoBatch());
         result.put("autoBatchLifecycle", autoBatch);
         result.put("sendInputMutation", sendInputMutation());
+        result.put("batchSendInputMutation", batchSendInputMutation());
 
         DefaultMQProducer compressorProducer = new DefaultMQProducer("compressor-settings");
         List<Map<String, Object>> compressorTypes = new ArrayList<>();
@@ -448,6 +449,58 @@ public final class ProducerCoreFixtures {
         result.put("sendOutcome", sendOutcome);
         result.put("directUniqueIdPresent", directUniqueId != null);
         result.put("directSendOutcome", directSendOutcome);
+        return result;
+    }
+
+    private static Map<String, Object> batchSendInputMutation() {
+        DefaultMQProducer producer = new DefaultMQProducer("batch-input-mutation");
+        producer.setInstanceName("batch-input-mutation");
+        producer.setNamespace("batch-tenant");
+
+        Message first = new Message("orders", new byte[] {1, 2, 3});
+        Message second = new Message("orders", new byte[] {4, 5, 6});
+        String sendOutcome = "returned";
+        try {
+            producer.send(Arrays.asList(first, second));
+        } catch (Throwable error) {
+            sendOutcome = error.getClass().getSimpleName();
+        }
+
+        Message mixedFirst = new Message("orders", new byte[] {1});
+        Message mixedSecond = new Message("payments", new byte[] {2});
+        String mixedTopicOutcome = "returned";
+        try {
+            producer.send(Arrays.asList(mixedFirst, mixedSecond));
+        } catch (Throwable error) {
+            mixedTopicOutcome = error.getClass().getSimpleName();
+        }
+
+        producer.setMaxMessageSize(2);
+        Message partialFirst = new Message("orders", new byte[] {1});
+        Message partialSecond = new Message("orders", new byte[] {2, 3, 4});
+        String partialValidationOutcome = "returned";
+        try {
+            producer.send(Arrays.asList(partialFirst, partialSecond));
+        } catch (Throwable error) {
+            partialValidationOutcome = error.getClass().getSimpleName();
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("sendOutcome", sendOutcome);
+        result.put("firstTopic", first.getTopic());
+        result.put("secondTopic", second.getTopic());
+        result.put("firstUniqueIdPresent", first.getProperty("UNIQ_KEY") != null);
+        result.put("secondUniqueIdPresent", second.getProperty("UNIQ_KEY") != null);
+        result.put("mixedTopicOutcome", mixedTopicOutcome);
+        result.put("mixedFirstTopic", mixedFirst.getTopic());
+        result.put("mixedSecondTopic", mixedSecond.getTopic());
+        result.put("mixedFirstUniqueIdPresent", mixedFirst.getProperty("UNIQ_KEY") != null);
+        result.put("mixedSecondUniqueIdPresent", mixedSecond.getProperty("UNIQ_KEY") != null);
+        result.put("partialValidationOutcome", partialValidationOutcome);
+        result.put("partialFirstTopic", partialFirst.getTopic());
+        result.put("partialSecondTopic", partialSecond.getTopic());
+        result.put("partialFirstUniqueIdPresent", partialFirst.getProperty("UNIQ_KEY") != null);
+        result.put("partialSecondUniqueIdPresent", partialSecond.getProperty("UNIQ_KEY") != null);
         return result;
     }
 

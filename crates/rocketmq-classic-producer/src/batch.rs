@@ -183,7 +183,6 @@ pub(crate) fn create_batch(
     let topic = first.topic();
     let wait_store_msg_ok = first.is_wait_store_msg_ok();
     let mut encoded_messages = Vec::with_capacity(messages.len());
-    let mut total_size = 0usize;
 
     for message in messages {
         if message.topic() != topic {
@@ -200,15 +199,48 @@ pub(crate) fn create_batch(
 
         let mut copy = message.clone();
         ids.set_if_missing(&mut copy);
-        let encoded = encode_message(&copy)?;
-        total_size = total_size
+        encoded_messages.push(encode_message(&copy)?);
+    }
+
+    finish_batch(topic, wait_store_msg_ok, encoded_messages, config, ids)
+}
+
+pub(crate) fn create_batch_from_prepared(
+    messages: &[Message],
+    config: &ProducerConfig,
+    ids: &UniqueIdGenerator,
+) -> Result<Message, ProducerError> {
+    let Some(first) = messages.first() else {
+        return Err(ProducerError::EmptyBatch);
+    };
+    let topic = first.topic();
+    let wait_store_msg_ok = first.is_wait_store_msg_ok();
+    let mut encoded_messages = Vec::with_capacity(messages.len());
+
+    for message in messages {
+        let mut copy = message.clone();
+        ids.set_if_missing(&mut copy);
+        encoded_messages.push(encode_message(&copy)?);
+    }
+
+    finish_batch(topic, wait_store_msg_ok, encoded_messages, config, ids)
+}
+
+fn finish_batch(
+    topic: &str,
+    wait_store_msg_ok: bool,
+    encoded_messages: Vec<Vec<u8>>,
+    config: &ProducerConfig,
+    ids: &UniqueIdGenerator,
+) -> Result<Message, ProducerError> {
+    let total_size = encoded_messages.iter().try_fold(0usize, |total, encoded| {
+        total
             .checked_add(encoded.len())
             .ok_or(ProducerError::BatchTooLarge {
                 actual: usize::MAX,
                 maximum: config.max_message_size(),
-            })?;
-        encoded_messages.push(encoded);
-    }
+            })
+    })?;
 
     if total_size as i64 > config.max_message_size() as i64 {
         return Err(ProducerError::BatchTooLarge {

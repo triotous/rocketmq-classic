@@ -994,30 +994,37 @@ async fn public_queue_selector_and_batch_modes_use_the_scripted_route() {
         .await
         .unwrap();
 
-    let batch = [
+    let mut batch = [
         Message::new("orders", b"batch-one".to_vec()),
         Message::new("orders", b"batch-two".to_vec()),
     ];
     producer
-        .send_batch_with_timeout(&batch, std::time::Duration::from_secs(1))
+        .send_batch_with_timeout(&mut batch, std::time::Duration::from_secs(1))
         .await
         .unwrap();
-    producer.send_batch_future(&batch).await.unwrap();
+    producer.send_batch_future(&mut batch).await.unwrap();
     producer
-        .send_batch_future_with_timeout(&batch, std::time::Duration::from_secs(1))
-        .await
-        .unwrap();
-    producer.send_batch_to_queue(&batch, &queue).await.unwrap();
-    producer
-        .send_batch_to_queue_with_timeout(&batch, &queue, std::time::Duration::from_secs(1))
+        .send_batch_future_with_timeout(&mut batch, std::time::Duration::from_secs(1))
         .await
         .unwrap();
     producer
-        .send_batch_to_queue_future(&batch, &queue)
+        .send_batch_to_queue(&mut batch, &queue)
         .await
         .unwrap();
     producer
-        .send_batch_to_queue_future_with_timeout(&batch, &queue, std::time::Duration::from_secs(1))
+        .send_batch_to_queue_with_timeout(&mut batch, &queue, std::time::Duration::from_secs(1))
+        .await
+        .unwrap();
+    producer
+        .send_batch_to_queue_future(&mut batch, &queue)
+        .await
+        .unwrap();
+    producer
+        .send_batch_to_queue_future_with_timeout(
+            &mut batch,
+            &queue,
+            std::time::Duration::from_secs(1),
+        )
         .await
         .unwrap();
 

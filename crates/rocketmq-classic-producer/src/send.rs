@@ -22,7 +22,7 @@ use crate::{
     AsyncSenderTask, Producer, ProducerError,
     accumulator::{BatchKey, EnqueueResult, PendingBatchStatus, ReadyBatch},
     backpressure::AdjustablePermit,
-    batch::create_batch,
+    batch::{create_batch, create_batch_from_prepared},
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
     validation,
 };
@@ -823,7 +823,10 @@ impl Producer {
     }
 
     /// Validates, Java-encodes, and sends a batch as one Broker message.
-    pub async fn send_batch(&self, messages: &[Message]) -> Result<SendResult, ProducerError> {
+    ///
+    /// Like Java collection sends, this assigns missing unique IDs and applies
+    /// the configured namespace directly to each input message before dispatch.
+    pub async fn send_batch(&self, messages: &mut [Message]) -> Result<SendResult, ProducerError> {
         self.send_batch_with_timeout(
             messages,
             Duration::from_millis(self.config.send_timeout_millis().max(0) as u64),
@@ -833,12 +836,12 @@ impl Producer {
 
     pub async fn send_batch_with_timeout(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
-        let namespaced_messages = self.messages_with_namespace(messages)?;
-        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.prepare_batch_messages(messages)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
         self.send_default_until(&mut batch, true, SendMode::Sync, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -846,7 +849,7 @@ impl Producer {
 
     pub async fn send_batch_future(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
     ) -> Result<SendResult, ProducerError> {
         self.send_batch_future_with_timeout(
             messages,
@@ -857,12 +860,12 @@ impl Producer {
 
     pub async fn send_batch_future_with_timeout(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
-        let namespaced_messages = self.messages_with_namespace(messages)?;
-        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.prepare_batch_messages(messages)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
         self.send_default_until(&mut batch, true, SendMode::Future, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -870,7 +873,7 @@ impl Producer {
 
     pub async fn send_batch_to_queue(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_batch_to_queue_with_timeout(
@@ -883,7 +886,7 @@ impl Producer {
 
     pub async fn send_batch_to_queue_with_timeout(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -894,7 +897,7 @@ impl Producer {
 
     pub async fn send_batch_to_queue_future(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         queue: &MessageQueue,
     ) -> Result<SendResult, ProducerError> {
         self.send_batch_to_queue_future_with_timeout(
@@ -907,7 +910,7 @@ impl Producer {
 
     pub async fn send_batch_to_queue_future_with_timeout(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         queue: &MessageQueue,
         timeout: Duration,
     ) -> Result<SendResult, ProducerError> {
@@ -918,14 +921,14 @@ impl Producer {
 
     async fn send_batch_to_queue_mode(
         &self,
-        messages: &[Message],
+        messages: &mut [Message],
         queue: &MessageQueue,
         mode: SendMode,
         timeout: Duration,
     ) -> Result<Option<SendResult>, ProducerError> {
         let deadline = deadline_after(timeout);
-        let namespaced_messages = self.messages_with_namespace(messages)?;
-        let mut batch = create_batch(&namespaced_messages, &self.config, &self.ids)?;
+        self.prepare_batch_messages(messages)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
         self.send_to_queue_until(&mut batch, queue, true, mode, deadline)
             .await
     }
@@ -1859,11 +1862,17 @@ impl Producer {
         let _ = wire_message.set_system_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, unique_id);
     }
 
-    fn messages_with_namespace(&self, messages: &[Message]) -> Result<Vec<Message>, ProducerError> {
-        messages
-            .iter()
-            .map(|message| self.message_with_namespace(message))
-            .collect()
+    fn prepare_batch_messages(&self, messages: &mut [Message]) -> Result<(), ProducerError> {
+        crate::batch::MessageBatch::generate_from_list(messages.to_vec())?;
+
+        for message in messages {
+            validation::validate_message(Some(message), &self.config)?;
+            self.ids.set_if_missing(message);
+            let topic = self.topic_with_namespace(message.topic())?;
+            message.set_topic(topic);
+        }
+
+        Ok(())
     }
 
     fn topic_with_namespace(&self, topic: &str) -> Result<String, ProducerError> {
@@ -3998,11 +4007,11 @@ mod tests {
             .responses
             .push_back(Ok(Some(scripted_result("batch-result", "batch-offset", 1))));
 
-        let messages = [
+        let mut messages = [
             Message::new("orders", b"first".to_vec()),
             Message::new("orders", b"second".to_vec()),
         ];
-        producer.send_batch(&messages).await.unwrap();
+        producer.send_batch(&mut messages).await.unwrap();
         {
             let events = events.lock().unwrap();
             assert_eq!(events.len(), 2);
@@ -4483,6 +4492,119 @@ mod tests {
             expected["directSendOutcome"].as_str(),
             Some("MQClientException"),
             "{expected}"
+        );
+    }
+
+    #[tokio::test]
+    async fn collection_send_mutates_batch_messages_before_dispatch_like_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["batchSendInputMutation"];
+        let mut config = crate::ProducerConfig::new("batch-input-mutation").unwrap();
+        config
+            .client_config_mut()
+            .set_namespace(Some("batch-tenant".into()));
+        let producer = Producer::new(config);
+        let mut messages = [
+            Message::new("orders", vec![1, 2, 3]),
+            Message::new("orders", vec![4, 5, 6]),
+        ];
+
+        assert!(matches!(
+            producer.send_batch(&mut messages).await,
+            Err(ProducerError::NotStarted)
+        ));
+        assert_eq!(expected["sendOutcome"].as_str(), Some("MQClientException"));
+        for (message, topic, present) in [
+            (&messages[0], "firstTopic", "firstUniqueIdPresent"),
+            (&messages[1], "secondTopic", "secondUniqueIdPresent"),
+        ] {
+            assert_eq!(message.topic(), expected[topic].as_str().unwrap());
+            let unique_id = message
+                .get_property(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .expect("Java batch send assigns a unique ID before dispatch");
+            assert_eq!(expected[present].as_bool(), Some(true));
+            assert!(matches!(unique_id.len(), 32 | 56));
+        }
+
+        let mut mixed_topics = [
+            Message::new("orders", vec![1]),
+            Message::new("payments", vec![2]),
+        ];
+        assert!(matches!(
+            producer.send_batch(&mut mixed_topics).await,
+            Err(ProducerError::BatchTopicMismatch)
+        ));
+        assert_eq!(
+            expected["mixedTopicOutcome"].as_str(),
+            Some("MQClientException")
+        );
+        assert_eq!(
+            mixed_topics[0].topic(),
+            expected["mixedFirstTopic"].as_str().unwrap()
+        );
+        assert_eq!(
+            mixed_topics[1].topic(),
+            expected["mixedSecondTopic"].as_str().unwrap()
+        );
+        for (message, key) in [
+            (&mixed_topics[0], "mixedFirstUniqueIdPresent"),
+            (&mixed_topics[1], "mixedSecondUniqueIdPresent"),
+        ] {
+            assert_eq!(expected[key].as_bool(), Some(false));
+            assert!(
+                !message
+                    .properties()
+                    .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+            );
+        }
+
+        let mut limited_config = crate::ProducerConfig::new("batch-partial-validation").unwrap();
+        limited_config.set_max_message_size(2);
+        limited_config
+            .client_config_mut()
+            .set_namespace(Some("batch-tenant".into()));
+        let limited_producer = Producer::new(limited_config);
+        let mut partial_validation = [
+            Message::new("orders", vec![1]),
+            Message::new("orders", vec![2, 3, 4]),
+        ];
+        assert!(matches!(
+            limited_producer.send_batch(&mut partial_validation).await,
+            Err(ProducerError::BodyTooLarge {
+                actual: 3,
+                maximum: 2
+            })
+        ));
+        assert_eq!(
+            expected["partialValidationOutcome"].as_str(),
+            Some("MQClientException")
+        );
+        assert_eq!(
+            partial_validation[0].topic(),
+            expected["partialFirstTopic"].as_str().unwrap()
+        );
+        assert_eq!(
+            partial_validation[1].topic(),
+            expected["partialSecondTopic"].as_str().unwrap()
+        );
+        assert!(
+            partial_validation[0]
+                .properties()
+                .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+        );
+        assert!(
+            !partial_validation[1]
+                .properties()
+                .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+        );
+        assert_eq!(
+            expected["partialFirstUniqueIdPresent"].as_bool(),
+            Some(true)
+        );
+        assert_eq!(
+            expected["partialSecondUniqueIdPresent"].as_bool(),
+            Some(false)
         );
     }
 
