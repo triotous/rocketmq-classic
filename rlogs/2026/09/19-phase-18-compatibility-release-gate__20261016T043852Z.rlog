@@ -1,0 +1,18 @@
+P18-V01 ChannelHandle identity slice (2026-10-16)
+
+- Compared pinned Java client source at `efa1be59d6fc747ad220f036c86030f05f0419f9`:
+  `ResponseFuture.getChannel()` returns its stored channel, and every
+  `ChannelEventListener` callback receives a `Channel` object.
+- Rust already exposes the corresponding capability through `ResponseFuture::channel()`
+  and callback/event `ChannelHandle`s. Added identity assertions proving that
+  `ResponseFuture::channel()` retains the supplied handle and that CONNECT and
+  ACTIVE events/callbacks for one connection share the same handle identity.
+- Validation: `cargo test -p rocketmq-classic-remoting --all-features --locked`
+  passed (102 unit, 8 codec, 1 fuzz regression, 7 security, 101 transport,
+  and 8 doctests); `cargo fmt --all -- --check` and `git diff --check` passed.
+- Strict Remoting Clippy first found a test `MutexGuard` held across shutdown
+  await; the guard was scoped before the await. The rerun
+  `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- The Java reference checkout remained read-only. No plan file was changed.
+- Commit pending.

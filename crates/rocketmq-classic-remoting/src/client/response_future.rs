@@ -517,8 +517,9 @@ mod tests {
             opaque: 42,
             ..Default::default()
         };
+        let channel = ChannelHandle::pending("broker:10911", 9);
         let future = ResponseFuture::new(
-            Some(ChannelHandle::pending("broker:10911", 9)),
+            Some(channel.clone()),
             42,
             Some(request),
             1000,
@@ -532,7 +533,9 @@ mod tests {
             &future.invoke_callback().unwrap(),
             &(callback.clone() as Arc<dyn InvokeCallback>)
         ));
-        assert_eq!(future.channel().unwrap().remote_addr(), "broker:10911");
+        let returned_channel = future.channel().unwrap();
+        assert_eq!(returned_channel, channel);
+        assert_eq!(returned_channel.remote_addr(), "broker:10911");
         assert_eq!(future.request_command().unwrap().code, 11);
         future.with_request_command_mut(|mut request| request.as_mut().unwrap().code = 13);
         assert_eq!(future.request_command().unwrap().code, 13);

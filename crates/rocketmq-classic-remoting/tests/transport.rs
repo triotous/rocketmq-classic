@@ -2812,7 +2812,92 @@ async fn p16_channel_events_carry_connection_generation_and_redacted_peer() {
         assert_eq!(active.remote_addr, address.to_string());
         assert_eq!(connect.channel.generation(), connect.generation);
         assert_eq!(active.channel.generation(), active.generation);
+        assert_eq!(connect.channel, active.channel);
         assert_eq!(active.channel.remote_addr(), address.to_string());
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn p18_channel_event_callbacks_retain_channel_identity() {
+    struct Listener(Arc<std::sync::Mutex<Vec<(NettyEventType, ChannelHandle)>>>);
+    impl ChannelEventListener for Listener {
+        fn on_connect(&self, _: &str, channel: &ChannelHandle) {
+            self.0
+                .lock()
+                .unwrap()
+                .push((NettyEventType::Connect, channel.clone()));
+        }
+
+        fn on_active(&self, _: &str, channel: &ChannelHandle) {
+            self.0
+                .lock()
+                .unwrap()
+                .push((NettyEventType::Active, channel.clone()));
+        }
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_command(&mut stream).await;
+        let mut response = command(42);
+        response.opaque = request.opaque;
+        response.mark_response();
+        write_command(&mut stream, &response).await;
+    });
+    let callbacks = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let client = RemotingClient::with_config_and_channel_event_listener(
+        ClientConfig::default(),
+        Some(Arc::new(Listener(callbacks.clone()))),
+    )
+    .unwrap();
+    client.start().unwrap();
+    assert_eq!(
+        client
+            .invoke(
+                &address.to_string(),
+                command(1),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .code,
+        42
+    );
+    peer.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if callbacks
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(event_type, _)| *event_type == NettyEventType::Active)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("active callback was not delivered");
+
+    {
+        let callbacks = callbacks.lock().unwrap();
+        let connect = &callbacks
+            .iter()
+            .find(|(event_type, _)| *event_type == NettyEventType::Connect)
+            .expect("connect callback was not delivered")
+            .1;
+        let active = &callbacks
+            .iter()
+            .find(|(event_type, _)| *event_type == NettyEventType::Active)
+            .expect("active callback was not delivered")
+            .1;
+        assert_eq!(connect, active);
+        assert_eq!(connect.generation(), active.generation());
+        assert_eq!(connect.remote_addr(), address.to_string());
     }
     client.shutdown().await;
 }
