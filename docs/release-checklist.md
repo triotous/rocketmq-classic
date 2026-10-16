@@ -2077,3 +2077,14 @@ Before any publication:
   Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios and
   fixture drift checks. Formatting, checksum, and diff checks pass. This closes
   the declaration-inventory slice only; broad P18-V01 remains open.
+
+- P18-V01 Common `MessageId` declared-surface inventory (`cc961818`,
+  2026-10-16): the pinned Java 5.5.1 fixture now records its public
+  `MessageId(SocketAddress, long)` constructor and all four declared public
+  methods. Rust's `MessageId::new`, address/offset getters, and setters map to
+  those signatures; the fixture test pins the exact sorted lists. Fixture
+  SHA-256: `c2591c4d8f477becd4a96150df971da9ab09dcd6458be83ce0e9cc3c33759bc8`.
+  Common `message_decode` tests pass (21 tests), strict all-target/all-feature
+  Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios and
+  fixture drift checks. Formatting, checksum, and diff checks pass. This closes
+  only the MessageId declaration-inventory slice; broad P18-V01 remains open.
