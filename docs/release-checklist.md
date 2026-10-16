@@ -2280,3 +2280,22 @@ Before any publication:
   UTC and Asia/Taipei Unique ID tests, formatting, and diff checks pass. Broad
   P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, and Phase 19
   Docker/Broker automation and scenario execution remain open.
+- P18-V01 Common `Message.setBody(byte[])` caller-array alias follow-up
+  (`d3532c6e`, 2026-10-16; pinned Java source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): the invoked fixture verifies
+  retained array identity, bidirectional mutation visibility, and detachment
+  after replacement. Rust exposes `SharedMessageBody` with lock-scoped mutable
+  bytes, `Message::set_body_shared`, and `Message::shared_body`; the facade
+  re-exports the handle. Fixture SHA-256:
+  `efb8b02c5eb9fec2e78459ec63e97144fdf633d964bd4a2d6e276fc60b13e39d`.
+- Current-revision server-free P18-V02 rerun (`d3532c6e`, 2026-10-16): default
+  and all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, pinned Maven `verify` (37 scenarios and Java/Rust cross-decodes),
+  comparator self-test and 37-scenario manifest, deterministic race/leak smoke
+  (16 cases × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations), release examples, workspace benchmark compilation, locked
+  metadata and seven package listings, Asia/Taipei Unique ID tests (4),
+  formatting, and diff checks pass. Broad P18-V01, current-revision GitHub
+  Ubuntu/P18-V04 evidence, native Windows runtime CI result, Phase 19
+  Docker/Broker automation, `docs/owner-validation.md`, and pre-publication
+  version/dependency resolution remain open.

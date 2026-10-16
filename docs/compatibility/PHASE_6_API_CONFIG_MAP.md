@@ -1241,6 +1241,14 @@ The invoked `request-reply.json` fixture inventories the exact public method sig
 
 The invoked `RuntimeConfigFixtures` records every declared public field/method and calls the patterns and helpers over null, empty, malformed, Unicode, path, and line-terminator inputs. The Rust fixture test compares those outcomes. Core's `config/namespace.rs` now delegates address extraction, instance-endpoint validation, and instance-ID parsing to these Common functions, so the direct API and ClientConfig path share the same rules. Current `fixtures/runtime/client-config.json` SHA-256: `39b4944cf67a65dc9c86e203826ceb8e43b3650d72e4ad5cb19af9234f17e19c`. This closes the surfaced NameServerAddressUtils mapping only; broad Common/P18-V01 reconciliation remains open.
 
+## Common public API: Message body array aliases
+
+| Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `Message.getBody()` returns the live mutable `byte[]`; `Message.setBody(byte[])` retains the supplied array reference | `Message::body` and `body_mut` expose borrowed read/write views. `SharedMessageBody` with `set_body_shared` and `shared_body` preserves caller/message identity across owned boundaries; `with_bytes` and `with_bytes_mut` provide synchronized live access. `set_body` and `set_body_nullable` replace the message's body storage. |
+
+The invoked `messagePublicApi` fixture checks retained array identity, mutation visibility from caller to message and message to caller, and replacement detachment. `message_public_api_matches_java_551_fixture` compares those behaviors with Rust's shared handle and the replacement setters. Fixture SHA-256: `efb8b02c5eb9fec2e78459ec63e97144fdf633d964bd4a2d6e276fc60b13e39d`. This closes the body-array alias slice only; the broader Common/P18-V01 source, input, error, control-flow, and reverse-export audit remains open.
+
 ## Common public API: MessageAccessor
 
 The pinned Java 5.5.1 `MessageAccessor` declares 20 public static methods. Rust keeps these operations on `Message`, `SharedMessageProperties`, `NullableMessageProperties`, and the message property constants rather than introducing a Java-shaped utility type. Java `Message.getProperties()` returns its live mutable map, and `MessageAccessor.setProperties()` stores the supplied map object. Rust's ordinary `set_properties` remains an owned-map operation; `set_properties_shared` plus cloneable `SharedMessageProperties` preserve caller/message aliasing when that observable behavior is required. `shared_properties` is the mutable live-handle counterpart to Java's `getProperties`; `get_properties` remains a read view.
