@@ -585,7 +585,30 @@ impl fmt::Debug for ResponseFuture {
 
 impl fmt::Display for ResponseFuture {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{:?}", self)
+        let response = self
+            .response_command()
+            .map_or_else(|| "null".to_owned(), |response| format!("{response:?}"));
+        let cause = self
+            .cause()
+            .map_or_else(|| "null".to_owned(), |cause| cause.to_string());
+        let callback = if self.invoke_callback.is_some() {
+            "<Rust callback>"
+        } else {
+            "null"
+        };
+        let latch_count = if *self.response_latch.0.lock().unwrap() {
+            0
+        } else {
+            1
+        };
+        write!(
+            formatter,
+            "ResponseFuture [responseCommand={response}, sendRequestOK={}, cause={cause}, opaque={}, timeoutMillis={}, invokeCallback={callback}, beginTimestamp={}, countDownLatch=CountDownLatch [Count = {latch_count}]]",
+            self.is_send_request_ok(),
+            self.opaque,
+            self.timeout_millis,
+            self.begin_timestamp_millis(),
+        )
     }
 }
 
@@ -687,6 +710,63 @@ mod tests {
         future.execute_invoke_callback();
         future.execute_invoke_callback();
         assert_eq!(*events.lock().unwrap(), vec!["succeed", "complete"]);
+    }
+
+    #[test]
+    fn response_future_display_preserves_java_to_string_state_fields() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        let java = &fixture["responseFutureToStringBehavior"];
+        let future = ResponseFuture::new(None, 42, None, 1000, None);
+        let display = future.to_string();
+
+        assert_eq!(
+            java["responseCommandNull"],
+            display.contains("responseCommand=null")
+        );
+        assert_eq!(java["causeNull"], display.contains("cause=null"));
+        assert_eq!(
+            java["callbackNull"],
+            display.contains("invokeCallback=null")
+        );
+        assert_eq!(java["opaque"], 42);
+        assert_eq!(java["timeoutMillis"], 1000);
+        assert!(display.contains("opaque=42"));
+        assert!(display.contains("timeoutMillis=1000"));
+        assert!(display.contains(&format!(
+            "beginTimestamp={}",
+            future.begin_timestamp_millis()
+        )));
+        assert_eq!(java["latchCount"], 1);
+        assert!(display.contains("countDownLatch=CountDownLatch [Count = 1]"));
+
+        future.put_response(Some(RemotingCommand::default()));
+        assert_eq!(java["latchCountAfterResponse"], 0);
+        assert!(
+            future
+                .to_string()
+                .contains("countDownLatch=CountDownLatch [Count = 0]")
+        );
+    }
+
+    #[test]
+    fn wait_response_timeout_and_internal_interrupt_match_rust_mapping() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        let java = &fixture["responseFutureWaitResponseInterruptionBehavior"];
+        assert_eq!(java["exceptionClass"], "java.lang.InterruptedException");
+        assert_eq!(java["returnedResponseNull"], true);
+        assert_eq!(java["interruptFlagCleared"], true);
+
+        let future = ResponseFuture::new(None, 55, None, 5000, None);
+        assert_eq!(future.wait_response(1), None);
+        assert!(!future.is_interrupted());
+        future.interrupt();
+        assert!(future.is_interrupted());
     }
 
     #[test]

@@ -28,7 +28,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import io.netty.channel.Channel;
 import org.apache.rocketmq.remoting.InvokeCallback;
@@ -73,7 +77,7 @@ public final class RemotingApiSurfaceFixtures {
         }
     }
 
-    private static Map<String, Object> render() {
+    private static Map<String, Object> render() throws Exception {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
@@ -84,6 +88,9 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("semaphoreReleaseOnlyOncePublicMethods", publicMethods(SemaphoreReleaseOnlyOnce.class));
         fixture.put("semaphoreReleaseBehavior", semaphoreReleaseBehavior());
         fixture.put("responseFuturePermitReleaseBehavior", responseFuturePermitReleaseBehavior());
+        fixture.put("responseFutureToStringBehavior", responseFutureToStringBehavior());
+        fixture.put("responseFutureWaitResponseInterruptionBehavior",
+            responseFutureWaitResponseInterruptionBehavior());
         fixture.put("responseFutureCallbackFailureBehavior", responseFutureCallbackFailureBehavior());
         return fixture;
     }
@@ -190,6 +197,61 @@ public final class RemotingApiSurfaceFixtures {
         nullRequest.put("callbackEvents", nullRequestCallback.events);
         result.put("nullRequestGenericFailure", nullRequest);
         return result;
+    }
+
+    private static Map<String, Object> responseFutureToStringBehavior() {
+        ResponseFuture future = new ResponseFuture(null, 42, 1000, null, null);
+        String value = future.toString();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("responseCommandNull", value.contains("responseCommand=null"));
+        result.put("causeNull", value.contains("cause=null"));
+        result.put("callbackNull", value.contains("invokeCallback=null"));
+        result.put("opaque", extractLong(value, "opaque="));
+        result.put("timeoutMillis", extractLong(value, "timeoutMillis="));
+        result.put("beginTimestampPresent", extractLong(value, "beginTimestamp=") > 0);
+        result.put("latchCount", extractLong(value.substring(value.lastIndexOf("countDownLatch=")), "Count = "));
+        future.putResponse(RemotingCommand.createResponseCommand(0, null));
+        String completed = future.toString();
+        result.put("latchCountAfterResponse",
+            extractLong(completed.substring(completed.lastIndexOf("countDownLatch=")), "Count = "));
+        return result;
+    }
+
+    private static long extractLong(String value, String key) {
+        Matcher matcher = Pattern.compile(Pattern.quote(key) + "(-?[0-9]+)").matcher(value);
+        if (!matcher.find()) throw new IllegalStateException("missing " + key + " in " + value);
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private static Map<String, Object> responseFutureWaitResponseInterruptionBehavior() throws Exception {
+        ResponseFuture future = new ResponseFuture(null, 55, 5000, null, null);
+        CompletableFuture<Map<String, Object>> result = new CompletableFuture<>();
+        Thread waiter = new Thread(() -> {
+            Map<String, Object> outcome = new TreeMap<>();
+            try {
+                outcome.put("returnedResponseNull", future.waitResponse(5000) == null);
+                outcome.put("exceptionClass", null);
+            } catch (InterruptedException error) {
+                outcome.put("returnedResponseNull", true);
+                outcome.put("exceptionClass", error.getClass().getName());
+                outcome.put("interruptFlagCleared", !Thread.currentThread().isInterrupted());
+            }
+            result.complete(outcome);
+        }, "response-future-interrupt-fixture");
+        waiter.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (waiter.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+            Thread.yield();
+        }
+        if (waiter.getState() != Thread.State.TIMED_WAITING) {
+            waiter.interrupt();
+            waiter.join(3000);
+            throw new IllegalStateException("waitResponse fixture thread did not enter timed wait");
+        }
+        waiter.interrupt();
+        waiter.join(3000);
+        if (waiter.isAlive()) throw new IllegalStateException("interrupted waitResponse did not return");
+        return result.get(1, TimeUnit.SECONDS);
     }
 
     private static Map<String, Object> callbackResult(CallbackTrace callback, Throwable cause) {
