@@ -2463,3 +2463,17 @@ Before any publication:
   current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker
   automation, and release version/registry checks remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T185506Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T185506Z.rlog).
+- P18-V01 Remoting `ResponseFuture.toString` and `waitResponse` disposition
+  (`db03c206`, 2026-10-16, pinned Java source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): Rust `Display` now includes
+  Java's stable state fields in the same order and follows the response-latch
+  count. The fixture records Java's external-thread `InterruptedException`
+  and cleared interrupt flag; Rust's standard Condvar has no external thread
+  interrupt facility, while the separate `ResponseFuture::interrupt()` remains
+  mapped. Stable display/latch and interruption-boundary fixtures pass.
+  Fixture SHA-256: `4739b82304af6d251fe963f87f90f829215add80632976ccd6d9ef411c6494f4`.
+  Remoting all-feature tests pass (108 unit, 8 codec, 1 fuzz regression, 7
+  security, 107 transport, 10 doctests); strict Remoting Clippy, format/diff
+  checks, and Maven `verify` (37 scenarios, including the new Java fixture)
+  pass. Broad P18-V01 and full workspace P18-V02 remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T190618Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T190618Z.rlog).
