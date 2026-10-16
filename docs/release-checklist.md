@@ -1973,3 +1973,13 @@ Before any publication:
   listings with LICENSE/NOTICE, and the `TZ=Asia/Taipei` Unique ID fixture all
   pass. Broad P18-V01, current GitHub Ubuntu/P18-V04 evidence, Phase 19
   Broker/Docker automation, and release preflight remain open.
+
+- P18-V01 platform cross-target continuation (2026-10-16): the production Core
+  target passes Windows GNU all-target/all-feature `cargo check`, strict
+  Windows-target Clippy, and `cargo test --no-run` with all Core test binaries
+  linked. A temporary crate including the actual local-address module passes
+  FreeBSD-target check and strict Clippy. The full Core FreeBSD check lacks a
+  FreeBSD C sysroot, and neither Windows nor BSD binaries ran. Windows runtime
+  enumeration, non-macOS BSD runtime behavior, and a real IPv6-only host remain
+  open P18-V01 evidence; broad API/source/input/flow reconciliation remains
+  open as well.
