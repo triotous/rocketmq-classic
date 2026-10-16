@@ -2201,3 +2201,17 @@ Before any publication:
   Broad P18-V01 remains open; current-revision GitHub Ubuntu/P18-V04 evidence,
   Phase 19 Docker/Broker automation and scenario execution, and pre-publication
   version/registry resolution remain outstanding.
+- P18-V01 Producer collection-send mutation follow-up (`3624d0b8`, 2026-10-16):
+  the pinned Java 5.5.1 oracle confirms that `send(Collection<Message>)` assigns
+  missing unique IDs and namespaces each caller message before downstream
+  dispatch. Rust `send_batch*` now accepts mutable message slices and preserves
+  Java's structural precheck and per-element validation mutation timing. The
+  fixture covers dispatch failure after preparation, mixed-topic rejection
+  before mutation, and a later element validation failure after an earlier
+  element was mutated. Producer all-feature tests (146 unit, 65 integration,
+  and 6 doc tests), strict Producer Clippy, all-target/all-feature workspace
+  check, Maven `verify` (37 scenarios and fixture/cross-decodes), formatting,
+  and diff checks pass. Current Producer core fixture SHA-256:
+  `fd92f9e88ab615288cfc5b25b8ed594c000fc2b3c07b9952d6bc0fd790cdbde4`. This
+  closes the collection-send mutation slice only; broad P18-V01 and the final
+  full-workspace P18-V02 rerun remain open.
