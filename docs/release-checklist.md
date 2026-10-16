@@ -2703,3 +2703,16 @@ Before any publication:
   evidence, package/pre-publication review, and Phase 19 local Docker/Broker
   automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T230936Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T230936Z.rlog).
+- P18-V01 Fastjson writer feature continuation (commits `c3842532` and
+  `de2d1a8f`, 2026-10-16): `WriteNonStringKeyAsString` now quotes numeric route
+  map keys; `WriteLongAsString` stringifies mapped Java long-valued DTO fields
+  and offset-map values, quotes long-keyed route `brokerAddrs` entries, and
+  leaves integer-keyed `currIdMap` entries numeric. Eleven of 48 writer
+  features now have behavior mappings; the other 37 remain unmapped. Protocol
+  all-feature tests (122 unit tests, all integration targets and 42 doctests),
+  strict all-target/all-feature Protocol Clippy, pinned Maven verify (37
+  scenarios), formatting and `git diff --check` pass on `de2d1a8f`. The final
+  workspace P18-V02 gate, broad P18-V01 audit, current-revision platform CI,
+  package/pre-publication review and Phase 19 Docker/Broker automation remain
+  open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T232526Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T232526Z.rlog).
