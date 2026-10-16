@@ -1774,3 +1774,18 @@ Before any publication:
   final-revision full-workspace P18-V02, GitHub Ubuntu/P18-V04 evidence, Phase
   19 Docker/Broker automation, and release version/registry checks remain
   pending.
+
+- P18-V01 Remoting request-context slice (`eadcdb55`, 2026-10-16): pinned Java
+  `NettyRequestProcessor.processRequest` and `RequestPipeline.execute` both
+  receive `ChannelHandlerContext`. Rust processors and each piped pipeline stage
+  now receive the same identity-preserving `RequestContext`, with peer address,
+  channel close, and immediate no-deadline write enqueue. Existing address-only
+  processor/pipeline implementations keep their default adapters. The loopback
+  regression verifies shared handle identity, an extra context write, and the
+  regular processor response; a unit regression verifies the legacy processor
+  adapter. Default and all-feature workspace tests, strict all-target/all-feature
+  workspace Clippy, formatting and diff checks pass on this change. This closes
+  only this context slice: the broader P18-V01 bidirectional audit, complete
+  Netty context surface, final P18-V02 evidence, GitHub Ubuntu/P18-V04 result,
+  Phase 19 Docker/Broker matrix, and release version/registry resolution remain
+  open.
