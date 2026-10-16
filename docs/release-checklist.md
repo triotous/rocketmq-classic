@@ -2627,3 +2627,13 @@ Before any publication:
   evidence, package/pre-publication review, and Phase 19 local Docker/Broker
   automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T214928Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T214928Z.rlog).
+- P18-V01 inherited RemotingSerializable `PrettyFormat` feature continuation
+  (commit `cf51df04`, 2026-10-16): `java_encode_with_features` now applies the
+  Java tab-indented pretty output on all 15 body DTOs, both route DTOs, and
+  `HeartbeatData`. The Java writer-feature output fixture is compared byte for
+  byte, including `QueryConsumeTimeSpanBody` timezone projections. Protocol
+  all-feature tests (121 unit tests, all integration targets, 42 doctests),
+  strict Protocol Clippy, formatting, and diff checks pass. Two of 48 writer
+  features now have behavior mappings; 46 remain unmapped. The final-revision
+  full-workspace P18-V02 gate must be rerun after this commit. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T220515Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T220515Z.rlog).

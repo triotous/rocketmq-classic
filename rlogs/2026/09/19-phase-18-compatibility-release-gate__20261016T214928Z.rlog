@@ -52,3 +52,34 @@ Implementation commit: 2261c5b1
   resolution and review also remain open.
 - No plan edits, Docker/Broker execution, push, tag, publication, or release
   action occurred.
+
+## P18-V01 `PrettyFormat` writer feature continuation
+
+Timestamp: 2026-10-16 22:05 UTC
+Implementation commit: `cf51df04`
+
+### Changes
+
+- Added `PrettyFormat` as a mapped writer feature. `java_encode_with_features`
+  now emits the same tab-indented JSON as the pinned Java feature overload for
+  all 15 body DTOs, both route DTOs, and `HeartbeatData`.
+- Extended differential assertions across body, route, and heartbeat writer
+  feature fixtures, including timezone-projected `QueryConsumeTimeSpanBody`
+  outputs.
+- Two of 48 writer features are now implemented; the other 46 still return an
+  explicit unsupported-feature error.
+
+### Validation
+
+- `cargo test -p rocketmq-classic-protocol --all-features --locked` passed:
+  121 unit tests, all integration targets, and 42 doctests.
+- Strict all-target/all-feature Protocol Clippy, format check, and diff check
+  passed.
+
+### Status
+
+- The latest full-workspace default/all-feature validation preceded this
+  feature change. Rerun it at the final revision after the next implementation
+  slice.
+- Broad P18-V01 remains open for 46 writer features and source/API/settings/
+  input/error/flow/reverse-export reconciliation.
