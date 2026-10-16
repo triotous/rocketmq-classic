@@ -53,3 +53,38 @@ fn pinned_java_request_reply_callback_surface_is_inventoried() {
         18
     );
 }
+
+#[test]
+fn pinned_java_request_future_mutation_and_holder_table_behavior_is_recorded() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/producer/request-reply.json"
+    ))
+    .unwrap();
+
+    let future = &fixture["requestResponseFutureBehavior"];
+    assert_eq!(future["correlationId"], "future-fixture-01");
+    assert_eq!(future["initialLatchCount"], 1);
+    assert_eq!(future["replacementLatchInitialCount"], 2);
+    assert_eq!(future["putResponseMessageCount"], 1);
+    assert_eq!(future["directLatchCountDownCount"], 0);
+    assert_eq!(future["negativeTimeoutIsExpired"], true);
+    assert_eq!(future["responseSetterCanClear"], true);
+    assert_eq!(future["sendRequestOkSetter"], false);
+    assert_eq!(future["causeSameInstance"], true);
+    assert_eq!(
+        future["callbackEvents"],
+        serde_json::json!([
+            "exception:java.lang.IllegalStateException:fixture-cause",
+            "success:future-response"
+        ])
+    );
+    assert_eq!(future["nullCallbackExecution"], "completed");
+
+    let holder = &fixture["requestFutureHolderBehavior"];
+    assert_eq!(holder["singletonInstance"], true);
+    assert_eq!(holder["tableSameInstance"], true);
+    assert_eq!(holder["insertVisibleThroughSecondView"], true);
+    assert_eq!(holder["removedSameInstance"], true);
+    assert_eq!(holder["sizeAfterInsert"], 1);
+    assert_eq!(holder["sizeAfterRemove"], 0);
+}

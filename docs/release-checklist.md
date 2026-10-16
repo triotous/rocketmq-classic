@@ -1591,3 +1591,13 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry resolution remain open. Owner-run deployment
   and production checks remain Phase 19 manual validation.
+
+- P18-V01 request/reply helper behavior fixture (2026-10-16): the invoked
+  Java 5.5.1 fixture now exercises `RequestResponseFuture` timeout, response,
+  latch, send-status, cause and callback behavior, including its private
+  exactly-once callback guard, and verifies `RequestFutureHolder` singleton/live
+  table identity and mutation. The pinned commit source and Maven 5.5.1 artifact
+  were used because the separate local Java checkout is at `2238256d` and has a
+  newer extra method. Rust fixture assertions and Maven drift verification pass.
+  This adds evidence only: Rust still lacks the public mutable future/table API,
+  so P18-V01 remains open.

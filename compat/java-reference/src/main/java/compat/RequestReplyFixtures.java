@@ -24,6 +24,7 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
@@ -31,6 +32,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.common.ClientErrorCode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -80,7 +83,9 @@ public final class RequestReplyFixtures {
             "CorrelationIdUtil.createCorrelationId",
             "RequestFutureHolder.scanExpiredRequest",
             "RequestFutureHolder.publicMethodInventory",
+            "RequestFutureHolder.singletonTableBehavior",
             "RequestResponseFuture.publicMethodInventory",
+            "RequestResponseFuture.mutableStateAndCallbackBehavior",
             "RequestCallback.publicMethodInventory",
             "RequestResponseFuture.executeRequestCallback",
             "MessageUtil.createReplyMessage",
@@ -106,6 +111,8 @@ public final class RequestReplyFixtures {
         result.put("publicRequestCallbackMethods", publicMethodSignatures(RequestCallback.class));
         result.put("publicRequestFutureHolderMethods", publicMethodSignatures(RequestFutureHolder.class));
         result.put("publicRequestResponseFutureMethods", publicMethodSignatures(RequestResponseFuture.class));
+        result.put("requestResponseFutureBehavior", requestResponseFutureBehavior());
+        result.put("requestFutureHolderBehavior", requestFutureHolderBehavior());
         result.put("requestProperties", List.of(
             MessageConst.PROPERTY_CORRELATION_ID,
             MessageConst.PROPERTY_MESSAGE_REPLY_TO_CLIENT,
@@ -164,6 +171,99 @@ public final class RequestReplyFixtures {
         result.put("unknownReplyAcknowledgement", "SUCCESS");
         result.put("malformedReplyAcknowledgement", sortedMap(
             "code", "SYSTEM_ERROR", "remark", "process reply message fail"));
+        return result;
+    }
+
+    private static Map<String, Object> requestResponseFutureBehavior() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<String> callbackEvents = new ArrayList<>();
+        RequestCallback callback = new RequestCallback() {
+            @Override
+            public void onSuccess(Message response) {
+                callbackEvents.add("success:" + response.getTopic());
+            }
+
+            @Override
+            public void onException(Throwable cause) {
+                callbackEvents.add(cause == null ? "exception:null" :
+                    "exception:" + cause.getClass().getName() + ":" + cause.getMessage());
+            }
+        };
+        long beforeConstruction = System.currentTimeMillis();
+        RequestResponseFuture future = new RequestResponseFuture("future-fixture-01", 30_000, callback);
+        long afterConstruction = System.currentTimeMillis();
+        result.put("correlationId", future.getCorrelationId());
+        result.put("timeoutMillis", future.getTimeoutMillis());
+        result.put("beginTimestampInConstructionWindow",
+            future.getBeginTimestamp() >= beforeConstruction && future.getBeginTimestamp() <= afterConstruction);
+        result.put("requestMessageNull", future.getRequestMsg() == null);
+        result.put("callbackSameInstance", future.getRequestCallback() == callback);
+        result.put("initialSendRequestOk", future.isSendRequestOk());
+        result.put("initialResponseNull", future.getResponseMsg() == null);
+        result.put("initialCauseNull", future.getCause() == null);
+        result.put("initialLatchCount", future.getCountDownLatch().getCount());
+
+        CountDownLatch replacementLatch = new CountDownLatch(2);
+        future.setCountDownLatch(replacementLatch);
+        result.put("replacementLatchSameInstance", future.getCountDownLatch() == replacementLatch);
+        result.put("replacementLatchInitialCount", future.getCountDownLatch().getCount());
+        Message response = new Message("future-response", "response-body".getBytes(StandardCharsets.UTF_8));
+        future.putResponseMessage(response);
+        result.put("putResponseMessageCount", replacementLatch.getCount());
+        result.put("putResponseMessage", messageSnapshot(future.getResponseMsg()));
+        replacementLatch.countDown();
+        result.put("directLatchCountDownCount", replacementLatch.getCount());
+        Message waitedResponse = future.waitResponseMessage(1);
+        result.put("waitResponseReturnsStoredInstance", waitedResponse == response);
+
+        future.setResponseMsg(null);
+        result.put("responseSetterCanClear", future.getResponseMsg() == null);
+        future.setResponseMsg(response);
+        future.setTimeoutMillis(-1);
+        result.put("timeoutSetter", future.getTimeoutMillis());
+        result.put("negativeTimeoutIsExpired", future.isTimeout());
+        future.setTimeoutMillis(30_000);
+        future.setSendRequestOk(false);
+        Throwable cause = new IllegalStateException("fixture-cause");
+        future.setCause(cause);
+        result.put("sendRequestOkSetter", future.isSendRequestOk());
+        result.put("causeSameInstance", future.getCause() == cause);
+        future.executeRequestCallback();
+        future.executeRequestCallback();
+        RequestResponseFuture successFuture = new RequestResponseFuture("future-success", 30_000, callback);
+        successFuture.setResponseMsg(response);
+        successFuture.executeRequestCallback();
+        successFuture.executeRequestCallback();
+        result.put("callbackEvents", callbackEvents);
+
+        RequestResponseFuture withoutCallback = new RequestResponseFuture("future-no-callback", 1, null);
+        withoutCallback.executeRequestCallback();
+        result.put("nullCallbackGetter", withoutCallback.getRequestCallback() == null);
+        result.put("nullCallbackExecution", "completed");
+        return result;
+    }
+
+    private static Map<String, Object> requestFutureHolderBehavior() {
+        Map<String, Object> result = new TreeMap<>();
+        RequestFutureHolder holder = RequestFutureHolder.getInstance();
+        ConcurrentHashMap<String, RequestResponseFuture> first = holder.getRequestFutureTable();
+        ConcurrentHashMap<String, RequestResponseFuture> second = holder.getRequestFutureTable();
+        result.put("singletonInstance", holder == RequestFutureHolder.getInstance());
+        result.put("tableSameInstance", first == second);
+        first.clear();
+        RequestResponseFuture future = new RequestResponseFuture("holder-fixture-01", 1000, null);
+        first.put(future.getCorrelationId(), future);
+        result.put("insertVisibleThroughSecondView", second.get(future.getCorrelationId()) == future);
+        result.put("sizeAfterInsert", second.size());
+        result.put("removedSameInstance", first.remove(future.getCorrelationId()) == future);
+        result.put("sizeAfterRemove", second.size());
+        return result;
+    }
+
+    private static Map<String, Object> messageSnapshot(Message message) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", message.getTopic());
+        result.put("bodyBase64", Base64.getEncoder().encodeToString(message.getBody()));
         return result;
     }
 
