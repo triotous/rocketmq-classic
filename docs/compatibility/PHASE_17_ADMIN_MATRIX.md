@@ -127,7 +127,10 @@ fix remains pending that evidence.
   errors and malformed responses for offset RPCs, create-topic permission
   errors, query failures/malformed bodies, and view-message not-found/malformed
   responses. Native Windows stack runtime execution remains a final platform
-  check; cross-target compile and strict lint evidence is recorded above.
+  check. The GitHub workflow now includes a fail-closed Windows job that runs
+  the native stack capture regression; current-revision runtime evidence is
+  still pending that job. Cross-target compile and strict lint evidence is
+  recorded above.
 - **P17-V03:** Reset fencing has late-pull and slow-callback regressions;
   direct-consume offset isolation, slow-callback status responsiveness, and
   executor shutdown joining also have targeted tests. The full consumer suite

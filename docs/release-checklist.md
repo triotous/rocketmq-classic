@@ -16,8 +16,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   passed; Broker and owner-environment cases remain Phase 19. Phase 17 records
   P17-V01/V03/U01 local evidence; `jstackEnable` enumerates threads on macOS,
   Linux and Windows, with Linux runtime coverage on both architectures and
-  Windows cross-target compile evidence. Native Windows stack runtime and
-  Broker-backed query checks remain later validation. Plans remain unchanged.
+  Windows cross-target compile evidence. The CI workflow now includes a native
+  Windows stack runtime job; its current-revision result and Broker-backed
+  query checks remain pending. Plans remain unchanged.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
@@ -2252,3 +2253,8 @@ Before any publication:
   declared signature and its Rust differential covers helper values, nullable
   maps, deep-copy independence, and `cloneMessage` aliasing. The focused Common
   API test passes; broad Common/P18-V01 reconciliation remains open.
+- P17 native Windows stack runtime CI path (2026-10-16): `.github/workflows/ci.yml`
+  now runs `jstack_includes_current_and_other_named_threads` on
+  `windows-latest` and fails if the exact test does not report one pass. The
+  local host cannot execute Windows binaries; the workflow result remains
+  pending a run on the current revision.

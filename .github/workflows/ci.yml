@@ -33,3 +33,21 @@ jobs:
       - run: cargo build -p rocketmq-classic --examples --release --locked
       - run: cargo bench -p rocketmq-classic --bench offline --locked --no-run
       - run: scripts/check-workspace-metadata.py
+
+  windows-stack-runtime:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.85.0
+      - name: Run the native Windows stack capture regression
+        shell: bash
+        run: |
+          output="$(cargo test --locked -p rocketmq-classic-consumer --lib stack::tests::jstack_includes_current_and_other_named_threads -- --exact 2>&1)" || {
+            printf '%s\n' "$output"
+            exit 1
+          }
+          printf '%s\n' "$output"
+          grep -q 'test result: ok\. 1 passed; 0 failed' <<<"$output"
