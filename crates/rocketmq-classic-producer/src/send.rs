@@ -22,7 +22,7 @@ use crate::{
     AsyncSenderTask, Producer, ProducerError,
     accumulator::{BatchKey, EnqueueResult, PendingBatchStatus, ReadyBatch},
     backpressure::AdjustablePermit,
-    batch::{create_batch, create_batch_from_prepared},
+    batch::encode_prepared_batch,
     hooks::{CheckForbiddenContext, SendMessageContext, SendMessageType},
     validation,
 };
@@ -789,7 +789,7 @@ impl Producer {
         &self,
         accumulated: &ReadyBatch,
     ) -> Result<SendResult, ProducerError> {
-        let mut batch = create_batch(&accumulated.messages, &self.config, &self.ids)?;
+        let mut batch = encode_prepared_batch(&accumulated.messages, &self.config, &self.ids)?;
         let keys = accumulated
             .messages
             .iter()
@@ -845,7 +845,7 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+        let mut batch = encode_prepared_batch(messages, &self.config, &self.ids)
             .map_err(batch_initiation_failure)?;
         self.send_default_until(&mut batch, true, SendMode::Sync, deadline)
             .await?
@@ -870,7 +870,7 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+        let mut batch = encode_prepared_batch(messages, &self.config, &self.ids)
             .map_err(batch_initiation_failure)?;
         self.send_default_until(&mut batch, true, SendMode::Future, deadline)
             .await?
@@ -934,7 +934,7 @@ impl Producer {
     ) -> Result<Option<SendResult>, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+        let mut batch = encode_prepared_batch(messages, &self.config, &self.ids)
             .map_err(batch_initiation_failure)?;
         self.send_to_queue_until(&mut batch, queue, true, mode, deadline)
             .await
@@ -4123,6 +4123,40 @@ mod tests {
         producer.shutdown().await.unwrap();
     }
 
+    #[tokio::test]
+    async fn auto_batch_aggregate_size_is_validated_after_batch_encoding() {
+        let mut config = crate::ProducerConfig::new("auto-batch-aggregate-size").unwrap();
+        config.set_max_message_size(64);
+        let (producer, _) = scripted_producer(config).await;
+        let messages = vec![
+            Message::new("orders", vec![1]),
+            Message::new("orders", vec![2]),
+        ];
+        let batch = ReadyBatch {
+            key: BatchKey::new(&messages[0], None, SendMode::Sync),
+            messages,
+            waiters: Vec::new(),
+            body_bytes: 2,
+        };
+
+        assert!(matches!(
+            producer.send_accumulated_batch(&batch).await,
+            Err(ProducerError::BodyTooLarge {
+                actual,
+                maximum: 64
+            }) if actual > 64
+        ));
+        assert!(
+            producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        producer.shutdown().await.unwrap();
+    }
+
     #[tokio::test(start_paused = true)]
     async fn lowering_runtime_batch_byte_limit_flushes_pending_batch() {
         let mut config = crate::ProducerConfig::new("runtime-batch-byte-limit").unwrap();
@@ -4656,6 +4690,34 @@ mod tests {
             expected["partialSecondUniqueIdPresent"].as_bool(),
             Some(false)
         );
+
+        let mut active_config = crate::ProducerConfig::new("batch-aggregate-size").unwrap();
+        active_config.set_max_message_size(64);
+        let (active_producer, _) = scripted_producer(active_config).await;
+        let mut aggregate_messages = [
+            Message::new("orders", vec![1]),
+            Message::new("orders", vec![2]),
+        ];
+        let aggregate_error = active_producer
+            .send_batch(&mut aggregate_messages)
+            .await
+            .expect_err("the encoded batch is validated after producer start");
+        assert!(matches!(
+            aggregate_error,
+            ProducerError::BodyTooLarge {
+                actual,
+                maximum: 64
+            } if actual > 64
+        ));
+        assert!(
+            active_producer
+                .scripted_transport
+                .lock()
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        active_producer.shutdown().await.unwrap();
     }
 
     #[test]

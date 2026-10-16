@@ -6,7 +6,7 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 
-use crate::{ProducerConfig, ProducerError, validation};
+use crate::{ProducerConfig, ProducerError};
 
 /// A Java-compatible message batch whose metadata uses the same accessors as
 /// `Message`. Iteration preserves nullable Java elements as `Option<Message>`.
@@ -172,47 +172,7 @@ impl std::fmt::Display for MessageBatch {
     }
 }
 
-pub(crate) fn create_batch(
-    messages: &[Message],
-    config: &ProducerConfig,
-    ids: &UniqueIdGenerator,
-) -> Result<Message, ProducerError> {
-    let Some(first) = messages.first() else {
-        return Err(ProducerError::EmptyBatch);
-    };
-    let topic = first.topic();
-    let wait_store_msg_ok = first.is_wait_store_msg_ok();
-    let mut encoded_messages = Vec::with_capacity(messages.len());
-
-    for message in messages {
-        if message.topic() != topic {
-            return Err(ProducerError::BatchTopicMismatch);
-        }
-        if message.is_wait_store_msg_ok() != wait_store_msg_ok {
-            return Err(ProducerError::BatchWaitStoreMismatch);
-        }
-        if topic.starts_with("%RETRY%") {
-            return Err(ProducerError::RetryBatchMessage);
-        }
-        validate_batch_delay(message)?;
-        validation::validate_message(Some(message), config)?;
-
-        let mut copy = message.clone();
-        ids.set_if_missing(&mut copy);
-        encoded_messages.push(encode_message(&copy)?);
-    }
-
-    finish_batch(
-        topic,
-        wait_store_msg_ok,
-        encoded_messages,
-        config,
-        ids,
-        true,
-    )
-}
-
-pub(crate) fn create_batch_from_prepared(
+pub(crate) fn encode_prepared_batch(
     messages: &[Message],
     config: &ProducerConfig,
     ids: &UniqueIdGenerator,
@@ -230,14 +190,7 @@ pub(crate) fn create_batch_from_prepared(
         encoded_messages.push(encode_message(&copy)?);
     }
 
-    finish_batch(
-        topic,
-        wait_store_msg_ok,
-        encoded_messages,
-        config,
-        ids,
-        false,
-    )
+    finish_batch(topic, wait_store_msg_ok, encoded_messages, config, ids)
 }
 
 fn finish_batch(
@@ -246,7 +199,6 @@ fn finish_batch(
     encoded_messages: Vec<Vec<u8>>,
     config: &ProducerConfig,
     ids: &UniqueIdGenerator,
-    enforce_size_limit: bool,
 ) -> Result<Message, ProducerError> {
     let total_size = encoded_messages.iter().try_fold(0usize, |total, encoded| {
         total
@@ -256,13 +208,6 @@ fn finish_batch(
                 maximum: config.max_message_size(),
             })
     })?;
-
-    if enforce_size_limit && total_size as i64 > config.max_message_size() as i64 {
-        return Err(ProducerError::BatchTooLarge {
-            actual: total_size,
-            maximum: config.max_message_size(),
-        });
-    }
 
     let mut body = Vec::with_capacity(total_size);
     for encoded in encoded_messages {
@@ -345,6 +290,8 @@ fn encode_message(message: &Message) -> Result<Vec<u8>, ProducerError> {
 mod tests {
     use rocketmq_classic_common::message::constants::PROPERTY_DELAY_TIME_LEVEL;
 
+    use crate::validation;
+
     use super::*;
 
     fn config() -> ProducerConfig {
@@ -357,7 +304,7 @@ mod tests {
         let ids = UniqueIdGenerator::new(Some("10.10.10.111"));
         let first = Message::new("orders", b"first".to_vec());
         let second = Message::new("orders", b"second".to_vec());
-        let batch = create_batch(&[first.clone(), second.clone()], &config, &ids).unwrap();
+        let batch = encode_prepared_batch(&[first.clone(), second.clone()], &config, &ids).unwrap();
         let batch_body = batch.body();
         assert_eq!(batch.topic(), "orders");
         assert_eq!(first.body().as_ref(), b"first");
@@ -393,35 +340,16 @@ mod tests {
     }
 
     #[test]
-    fn batch_checks_source_supported_rejections_and_aggregate_size() {
-        let config = config();
-        let ids = UniqueIdGenerator::new(Some("10.10.10.111"));
-        assert!(matches!(
-            create_batch(&[], &config, &ids),
-            Err(ProducerError::EmptyBatch)
-        ));
-        let first = Message::new("orders", b"first".to_vec());
-        let second = Message::new("payments", b"second".to_vec());
-        assert!(matches!(
-            create_batch(&[first, second], &config, &ids),
-            Err(ProducerError::BatchTopicMismatch)
-        ));
-
-        let mut delayed = Message::new("orders", b"x".to_vec());
-        delayed
-            .set_system_property(PROPERTY_DELAY_TIME_LEVEL, "1")
-            .unwrap();
-        assert!(matches!(
-            create_batch(&[delayed], &config, &ids),
-            Err(ProducerError::DelayedBatchMessage)
-        ));
-
-        let mut small = ProducerConfig::new("batch-producer").unwrap();
+    fn encoded_batch_size_is_checked_by_send_validation() {
+        let mut small = config();
         small.set_max_message_size(64);
+        let ids = UniqueIdGenerator::new(Some("10.10.10.111"));
         let messages = vec![Message::new("orders", b"x".to_vec()); 2];
+        let batch = encode_prepared_batch(&messages, &small, &ids).unwrap();
+        assert!(batch.body().len() > small.max_message_size() as usize);
         assert!(matches!(
-            create_batch(&messages, &small, &ids),
-            Err(ProducerError::BatchTooLarge { .. })
+            validation::validate_message(Some(&batch), &small),
+            Err(ProducerError::BodyTooLarge { maximum: 64, .. })
         ));
     }
 
@@ -432,18 +360,20 @@ mod tests {
             Message::new("orders", b"second".to_vec()),
         ];
         let ids = UniqueIdGenerator::new(Some("10.10.10.111"));
-        let baseline = create_batch(&messages, &config(), &ids).unwrap();
+        let baseline = encode_prepared_batch(&messages, &config(), &ids).unwrap();
         let encoded_size = baseline.body().len();
 
         let mut exact_limit = config();
         exact_limit.set_max_message_size(encoded_size as i32);
-        assert!(create_batch(&messages, &exact_limit, &ids).is_ok());
+        let exact = encode_prepared_batch(&messages, &exact_limit, &ids).unwrap();
+        assert!(validation::validate_message(Some(&exact), &exact_limit).is_ok());
 
         let mut one_byte_too_small = config();
         one_byte_too_small.set_max_message_size(encoded_size as i32 - 1);
+        let batch = encode_prepared_batch(&messages, &one_byte_too_small, &ids).unwrap();
         assert!(matches!(
-            create_batch(&messages, &one_byte_too_small, &ids),
-            Err(ProducerError::BatchTooLarge { actual, .. }) if actual == encoded_size
+            validation::validate_message(Some(&batch), &one_byte_too_small),
+            Err(ProducerError::BodyTooLarge { actual, .. }) if actual == encoded_size
         ));
     }
 
@@ -710,7 +640,8 @@ mod tests {
         assert_eq!(properties.len(), properties_length);
         assert!(properties.contains(expected));
 
-        let batch = create_batch(&[message], &config(), &UniqueIdGenerator::new(None)).unwrap();
+        let batch =
+            encode_prepared_batch(&[message], &config(), &UniqueIdGenerator::new(None)).unwrap();
         let batch_body = batch.body();
         let first_size = u32::from_be_bytes(batch_body[..4].try_into().unwrap()) as usize;
         let first_body_length = u32::from_be_bytes(batch_body[16..20].try_into().unwrap()) as usize;
@@ -729,28 +660,24 @@ mod tests {
     fn batch_validation_decisions_match_pinned_java_fixtures() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
-        let config = config();
-        let ids = UniqueIdGenerator::new(Some("10.10.10.111"));
         for row in fixture["batchValidation"].as_array().unwrap() {
             let valid = match row["input"].as_str().unwrap() {
-                "empty" => create_batch(&[], &config, &ids).is_ok(),
-                "mixed-topics" => create_batch(
-                    &[
+                "empty" => MessageBatch::generate_from_list(Vec::new()).is_ok(),
+                "mixed-topics" => MessageBatch::generate_from_list(
+                    [
                         Message::new("orders", b"one".to_vec()),
                         Message::new("payments", b"two".to_vec()),
-                    ],
-                    &config,
-                    &ids,
+                    ]
+                    .to_vec(),
                 )
                 .is_ok(),
                 "wait-store-mismatch" => {
                     let mut second = Message::new("orders", b"two".to_vec());
                     second.set_wait_store_msg_ok(false).unwrap();
-                    create_batch(
-                        &[Message::new("orders", b"one".to_vec()), second],
-                        &config,
-                        &ids,
-                    )
+                    MessageBatch::generate_from_list(vec![
+                        Message::new("orders", b"one".to_vec()),
+                        second,
+                    ])
                     .is_ok()
                 }
                 "delayed" => {
@@ -758,20 +685,19 @@ mod tests {
                     message
                         .set_system_property(PROPERTY_DELAY_TIME_LEVEL, "1")
                         .unwrap();
-                    create_batch(&[message], &config, &ids).is_ok()
+                    MessageBatch::generate_from_list(vec![message]).is_ok()
                 }
-                "retry-topic" => create_batch(
-                    &[Message::new("%RETRY%workers", b"one".to_vec())],
-                    &config,
-                    &ids,
-                )
+                "retry-topic" => MessageBatch::generate_from_list(vec![Message::new(
+                    "%RETRY%workers",
+                    b"one".to_vec(),
+                )])
                 .is_ok(),
                 "different-tags-allowed" => {
                     let mut first = Message::new("orders", b"one".to_vec());
                     let mut second = Message::new("orders", b"two".to_vec());
                     first.set_tags("one").unwrap();
                     second.set_tags("two").unwrap();
-                    create_batch(&[first, second], &config, &ids).is_ok()
+                    MessageBatch::generate_from_list(vec![first, second]).is_ok()
                 }
                 other => panic!("unknown Java batch fixture case: {other}"),
             };

@@ -2227,3 +2227,10 @@ Before any publication:
   core fixture SHA-256: `bfa2d5f8f411c4648670d024e44b0e637ab793873a9eeb0c7ff75bb2a82651c5`.
   This closes only these collection-send error/order slices; broad P18-V01 and
   the final full-workspace P18-V02 rerun remain open.
+- P18-V01 Producer auto-batch aggregate-size ordering follow-up (2026-10-16):
+  explicit and auto-batch sends now share the batch encoder and apply aggregate
+  message-size validation after Producer-state validation, before Broker I/O.
+  Producer all-feature tests (147 unit, 65 integration, and 6 doc tests),
+  strict all-target/all-feature workspace Clippy, all-target/all-feature
+  workspace check, formatting, and diff checks pass. The final full-workspace
+  P18-V02 rerun remains open.
