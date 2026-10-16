@@ -26,6 +26,8 @@ pub mod namespace;
 pub mod route;
 pub(crate) mod serde_fastjson;
 pub mod shared;
+pub mod writer_feature;
 
 pub use namespace::NamespaceUtil;
 pub use shared::SharedValue;
+pub use writer_feature::JavaJsonWriterFeature;

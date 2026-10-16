@@ -1,4 +1,7 @@
-use crate::{SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData, serde_fastjson};
+use crate::{
+    JavaJsonWriterFeature, SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData,
+    serde_fastjson,
+};
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct};
 use std::{collections::BTreeMap, hash::Hash};
@@ -72,6 +75,16 @@ macro_rules! impl_java_remoting_serializable_adapters {
 
                 pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
                     Ok(self.java_to_json(false)?.into_bytes())
+                }
+
+                /// Encodes with the supported inherited Fastjson2 writer features.
+                pub fn java_encode_with_features(
+                    &self,
+                    features: &[JavaJsonWriterFeature],
+                ) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(crate::route::java_fastjson_json_with_features(
+                        self, false, features,
+                    )?.into_bytes())
                 }
 
                 pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
@@ -2761,6 +2774,14 @@ impl BatchAckMessageRequestBody {
         Ok(self.java_to_json(false)?.into_bytes())
     }
 
+    /// Encodes with the supported inherited Fastjson2 writer features.
+    pub fn java_encode_with_features(
+        &self,
+        features: &[JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(crate::route::java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
     /// Decodes the inherited Java RemotingSerializable.decode form.
     pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
         serde_fastjson::from_fastjson_slice(data)
@@ -4749,6 +4770,16 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
                     self.encode_java_json()
                 }
 
+                /// Encodes with the supported inherited Fastjson2 writer features.
+                pub fn java_encode_with_features(
+                    &self,
+                    features: &[JavaJsonWriterFeature],
+                ) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(java_fastjson_remoting_body_json_with_features(
+                        self, false, features,
+                    )?.into_bytes())
+                }
+
                 pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
                     Self::decode_java_json(&String::from_utf8_lossy(data))
                 }
@@ -4822,9 +4853,31 @@ fn java_fastjson_remoting_body_json<T: Serialize>(
     value: &T,
     pretty_format: bool,
 ) -> Result<String, serde_json::Error> {
-    let value = serde_json::to_value(value)?;
+    java_fastjson_remoting_body_json_with_features(value, pretty_format, &[])
+}
+
+fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
+    value: &T,
+    pretty_format: bool,
+    features: &[JavaJsonWriterFeature],
+) -> Result<String, serde_json::Error> {
+    crate::route::validate_java_writer_features(features)?;
+    let mut value = serde_json::to_value(value)?;
+    let write_non_string_values_as_strings =
+        features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
+    if write_non_string_values_as_strings {
+        crate::route::write_non_string_values_as_strings(&mut value);
+    }
     let mut output = String::new();
-    write_java_remoting_body_json(&value, None, 0, pretty_format, false, &mut output)?;
+    write_java_remoting_body_json(
+        &value,
+        None,
+        0,
+        pretty_format,
+        false,
+        write_non_string_values_as_strings,
+        &mut output,
+    )?;
     Ok(output)
 }
 
@@ -4834,6 +4887,7 @@ fn write_java_remoting_body_json(
     depth: usize,
     pretty_format: bool,
     queue_table: bool,
+    write_non_string_values_as_strings: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
@@ -4856,13 +4910,18 @@ fn write_java_remoting_body_json(
                     output.push('\n');
                     write_java_remoting_body_indent(output, depth + 1);
                 }
-                let queue_key = if queue_table {
+                let mut queue_key = if queue_table {
                     serde_json::from_str::<serde_json::Value>(key)
                         .ok()
                         .filter(serde_json::Value::is_object)
                 } else {
                     None
                 };
+                if write_non_string_values_as_strings {
+                    if let Some(queue_key) = &mut queue_key {
+                        crate::route::write_non_string_values_as_strings(queue_key);
+                    }
+                }
                 if let Some(queue_key) = queue_key {
                     write_java_remoting_body_json(
                         &queue_key,
@@ -4870,6 +4929,7 @@ fn write_java_remoting_body_json(
                         depth + 1,
                         pretty_format,
                         false,
+                        write_non_string_values_as_strings,
                         output,
                     )?;
                 } else {
@@ -4885,6 +4945,7 @@ fn write_java_remoting_body_json(
                     depth + 1,
                     pretty_format,
                     child_is_queue_table,
+                    write_non_string_values_as_strings,
                     output,
                 )?;
                 if index + 1 != fields.len() {
@@ -4920,6 +4981,7 @@ fn write_java_remoting_body_json(
                     depth + 1,
                     pretty_format,
                     false,
+                    write_non_string_values_as_strings,
                     output,
                 )?;
                 if index + 1 != values.len() {
@@ -5659,6 +5721,12 @@ mod tests {
             let compact = value.java_to_json(false).unwrap();
             let encoded = value.java_encode().unwrap();
             assert_eq!(
+                value.java_encode_with_features(&[]).unwrap(),
+                encoded,
+                "{} empty writer-feature array",
+                case["id"]
+            );
+            assert_eq!(
                 BatchAckMessageRequestBody::java_to_json_optional(Some(&value), false).unwrap(),
                 compact
             );
@@ -5695,6 +5763,18 @@ mod tests {
             assert_eq!(
                 encoded,
                 case["featureEncodedJson"].as_str().unwrap().as_bytes()
+            );
+            let featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
+                .unwrap();
+            let expected_featured = case["writerFeatureOverrides"]["WriteNonStringValueAsString"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                featured,
+                expected_featured.as_bytes(),
+                "{} WriteNonStringValueAsString",
+                case["id"]
             );
 
             let decoded = BatchAckMessageRequestBody::java_decode(&encoded).unwrap();
@@ -6598,9 +6678,27 @@ mod tests {
                     .unwrap();
             let encoded = value.java_encode().unwrap();
             assert_eq!(
+                value.java_encode_with_features(&[]).unwrap(),
+                encoded,
+                "{} empty writer-feature array",
+                case["id"]
+            );
+            assert_eq!(
                 String::from_utf8(encoded.clone()).unwrap(),
                 case["instanceEncodedJson"],
                 "{} encode",
+                case["id"]
+            );
+            let featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
+                .unwrap();
+            let expected_featured = case["writerFeatureOverrides"]["WriteNonStringValueAsString"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                featured,
+                expected_featured.as_bytes(),
+                "{} WriteNonStringValueAsString",
                 case["id"]
             );
             assert_eq!(
@@ -6734,6 +6832,21 @@ mod tests {
                         <$dto>::java_decode(case["rawInput"].as_str().unwrap().as_bytes()).unwrap();
                     let encoded = value.java_encode().unwrap();
                     assert_eq!(
+                        value.java_encode_with_features(&[]).unwrap(),
+                        encoded,
+                        "{} {} empty writer-feature array",
+                        $name,
+                        case["id"]
+                    );
+                    assert!(
+                        value
+                            .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible,])
+                            .is_err(),
+                        "{} {} unmapped writer feature is rejected explicitly",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
                         String::from_utf8(encoded.clone()).unwrap(),
                         expected["instanceEncodedJson"],
                         "{} {} instance encode",
@@ -6805,6 +6918,22 @@ mod tests {
                         expected["featureEncodedJson"], expected["instanceEncodedJson"],
                         "{} {} empty writer features",
                         $name, case["id"]
+                    );
+                    let featured = value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::WriteNonStringValueAsString,
+                        ])
+                        .unwrap();
+                    let expected_featured =
+                        expected["writerFeatureOverrides"]["WriteNonStringValueAsString"]
+                            .as_str()
+                            .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap());
+                    assert_eq!(
+                        featured,
+                        expected_featured.as_bytes(),
+                        "{} {} WriteNonStringValueAsString",
+                        $name,
+                        case["id"]
                     );
                 }
 

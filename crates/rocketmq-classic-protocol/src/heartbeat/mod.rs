@@ -1625,6 +1625,17 @@ impl HeartbeatData {
         Ok(self.java_to_json(false)?.into_bytes())
     }
 
+    /// Encodes with the supported inherited Fastjson2 writer features.
+    pub fn java_encode_with_features(
+        &self,
+        features: &[crate::JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        if features.is_empty() {
+            return self.java_encode();
+        }
+        Ok(crate::route::java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
     /// Java `HeartbeatData.toString`; set ordering is normalized because the
     /// source uses HashSet iteration with unspecified order.
     pub fn java_to_string(&self) -> String {
@@ -2545,6 +2556,19 @@ mod tests {
             let value = HeartbeatData::java_from_json(raw_input).unwrap();
             let native_json = value.java_to_json(false).unwrap();
             assert_eq!(
+                value.java_encode_with_features(&[]).unwrap(),
+                native_json.as_bytes(),
+                "{} empty writer-feature array",
+                case["case"]
+            );
+            assert!(
+                value
+                    .java_encode_with_features(&[crate::JavaJsonWriterFeature::BrowserCompatible,])
+                    .is_err(),
+                "{} unmapped writer feature is rejected explicitly",
+                case["case"]
+            );
+            assert_eq!(
                 native_json, case["instanceJson"],
                 "{} instance encode",
                 case["case"]
@@ -2567,6 +2591,20 @@ mod tests {
             assert_eq!(
                 native_json, case["featureEncodedJson"],
                 "{} feature encode",
+                case["case"]
+            );
+            let featured = value
+                .java_encode_with_features(&[
+                    crate::JavaJsonWriterFeature::WriteNonStringValueAsString,
+                ])
+                .unwrap();
+            let expected_featured = case["writerFeatureOverrides"]["WriteNonStringValueAsString"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                featured,
+                expected_featured.as_bytes(),
+                "{} WriteNonStringValueAsString",
                 case["case"]
             );
             assert_eq!(

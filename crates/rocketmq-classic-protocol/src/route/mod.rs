@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use crate::SharedValue;
 use crate::serde_fastjson;
+use crate::{JavaJsonWriterFeature, SharedValue};
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::DeserializeOwned};
 
@@ -76,10 +76,65 @@ pub(crate) fn java_fastjson_json<T: Serialize>(
     value: &T,
     pretty_format: bool,
 ) -> Result<String, serde_json::Error> {
-    let value = serde_json::to_value(value)?;
+    java_fastjson_json_with_features(value, pretty_format, &[])
+}
+
+pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
+    value: &T,
+    pretty_format: bool,
+    features: &[JavaJsonWriterFeature],
+) -> Result<String, serde_json::Error> {
+    validate_java_writer_features(features)?;
+    let mut value = serde_json::to_value(value)?;
+    if features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString) {
+        write_non_string_values_as_strings(&mut value);
+    }
     let mut output = String::new();
-    write_java_route_json(&value, None, 0, pretty_format, &mut output)?;
+    let unquote_numeric_map_keys =
+        !features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
+    write_java_route_json(
+        &value,
+        None,
+        0,
+        pretty_format,
+        unquote_numeric_map_keys,
+        &mut output,
+    )?;
     Ok(output)
+}
+
+pub(crate) fn validate_java_writer_features(
+    features: &[JavaJsonWriterFeature],
+) -> Result<(), serde_json::Error> {
+    if let Some(feature) = features.iter().find(|feature| !feature.is_implemented()) {
+        return Err(<serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson2 writer feature {} has not been mapped yet",
+            feature.name()
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn write_non_string_values_as_strings(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Bool(boolean) => {
+            *value = serde_json::Value::String(boolean.to_string());
+        }
+        serde_json::Value::Number(number) => {
+            *value = serde_json::Value::String(number.to_string());
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                write_non_string_values_as_strings(value);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for value in fields.values_mut() {
+                write_non_string_values_as_strings(value);
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::String(_) => {}
+    }
 }
 
 fn write_java_route_json(
@@ -87,6 +142,7 @@ fn write_java_route_json(
     field_name: Option<&str>,
     depth: usize,
     pretty_format: bool,
+    unquote_numeric_map_keys: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
@@ -103,7 +159,8 @@ fn write_java_route_json(
             output.push('}');
         }
         serde_json::Value::Object(fields) => {
-            let numeric_keys = matches!(field_name, Some("brokerAddrs" | "currIdMap"));
+            let numeric_keys =
+                unquote_numeric_map_keys && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
             output.push('{');
             for (index, (key, value)) in fields.iter().enumerate() {
                 if pretty_format {
@@ -116,7 +173,14 @@ fn write_java_route_json(
                     output.push_str(&serde_json::to_string(key)?);
                 }
                 output.push(':');
-                write_java_route_json(value, Some(key), depth + 1, pretty_format, output)?;
+                write_java_route_json(
+                    value,
+                    Some(key),
+                    depth + 1,
+                    pretty_format,
+                    unquote_numeric_map_keys,
+                    output,
+                )?;
                 if index + 1 != fields.len() {
                     output.push(',');
                 }
@@ -144,7 +208,14 @@ fn write_java_route_json(
                     output.push('\n');
                     write_java_indent(output, depth + 1);
                 }
-                write_java_route_json(value, None, depth + 1, pretty_format, output)?;
+                write_java_route_json(
+                    value,
+                    None,
+                    depth + 1,
+                    pretty_format,
+                    unquote_numeric_map_keys,
+                    output,
+                )?;
                 if index + 1 != values.len() {
                     output.push(',');
                 }
@@ -1568,6 +1639,14 @@ impl TopicQueueMappingInfo {
         Ok(self.java_to_json(false)?.into_bytes())
     }
 
+    /// Encodes with the supported inherited Fastjson2 writer features.
+    pub fn java_encode_with_features(
+        &self,
+        features: &[JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.decode` form, including
     /// unquoted integer keys emitted for `currIdMap` by Fastjson2.
     pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
@@ -2641,6 +2720,14 @@ impl TopicRouteData {
         Ok(self.java_to_json(false)?.into_bytes())
     }
 
+    /// Encodes with the supported inherited Fastjson2 writer features.
+    pub fn java_encode_with_features(
+        &self,
+        features: &[JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
     /// Decodes the inherited Java `RemotingSerializable.decode` form, including
     /// unquoted integer keys emitted for nested broker and static-topic maps.
     pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
@@ -3499,6 +3586,19 @@ mod tests {
                 let raw_input = case["rawInput"].as_str().unwrap();
                 let value: $type = serde_json::from_str(raw_input).unwrap();
                 let native_json = value.java_to_json(false).unwrap();
+                assert_eq!(
+                    value.java_encode_with_features(&[]).unwrap(),
+                    native_json.as_bytes(),
+                    "{} empty writer-feature array",
+                    case["id"]
+                );
+                assert!(
+                    value
+                        .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible,])
+                        .is_err(),
+                    "{} unmapped writer feature is rejected explicitly",
+                    case["id"]
+                );
                 assert_eq!(native_json, case["instanceJson"], "{} toJson", case["id"]);
                 assert_eq!(
                     native_json, case["staticJson"],
@@ -3521,6 +3621,21 @@ mod tests {
                     native_json.as_bytes(),
                     case["featureEncodedJson"].as_str().unwrap().as_bytes(),
                     "{} feature encode",
+                    case["id"]
+                );
+                let featured = value
+                    .java_encode_with_features(&[
+                        JavaJsonWriterFeature::WriteNonStringValueAsString,
+                    ])
+                    .unwrap();
+                let expected_featured =
+                    case["writerFeatureOverrides"]["WriteNonStringValueAsString"]
+                        .as_str()
+                        .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    featured,
+                    expected_featured.as_bytes(),
+                    "{} WriteNonStringValueAsString",
                     case["id"]
                 );
                 assert_eq!(

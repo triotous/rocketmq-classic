@@ -729,6 +729,7 @@ public final class RuntimeHeartbeatFixtures {
             item.put("staticEncodedJson", new String(HeartbeatData.encode(value),
                 java.nio.charset.StandardCharsets.UTF_8));
             item.put("featureEncodedJson", featureJson);
+            item.put("writerFeatureOverrides", writerFeatureOverrides(value));
             item.put("decodedJson", HeartbeatData.decode(instanceBytes, HeartbeatData.class).toJson());
             item.put("fromJsonJson", HeartbeatData.fromJson(instanceJson, HeartbeatData.class).toJson());
             item.put("decodedListCount", decodedList.size());
@@ -750,6 +751,25 @@ public final class RuntimeHeartbeatFixtures {
         result.put("decodeListPreservesNullMember", nullMemberList.size() == 2
             && nullMemberList.get(0) == null && nullMemberList.get(1) != null);
         return result;
+    }
+
+    private static Map<String, Object> writerFeatureOverrides(HeartbeatData value) {
+        String baseline = new String(value.encode(), java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> overrides = new TreeMap<>();
+        for (com.alibaba.fastjson2.JSONWriter.Feature feature
+                : com.alibaba.fastjson2.JSONWriter.Feature.values()) {
+            try {
+                String encoded = new String(value.encode(
+                    new com.alibaba.fastjson2.JSONWriter.Feature[] {feature}),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                if (!baseline.equals(encoded)) {
+                    overrides.put(feature.name(), encoded);
+                }
+            } catch (RuntimeException error) {
+                overrides.put(feature.name(), Map.of("error", error.getClass().getSimpleName()));
+            }
+        }
+        return overrides;
     }
 
     private static List<Object> heartbeatNullElementCases() {

@@ -3508,11 +3508,32 @@ public final class RuntimeRouteFixtures {
         item.put("instanceEncodedJson", new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8));
         item.put("staticEncodedJson", new String(staticBytes, java.nio.charset.StandardCharsets.UTF_8));
         item.put("featureEncodedJson", new String(featureBytes, java.nio.charset.StandardCharsets.UTF_8));
+        item.put("writerFeatureOverrides", writerFeatureOverrides(value));
         item.put("decodedJson", decoded.toJson());
         item.put("fromJsonJson", fromJson.toJson());
         item.put("decodedListJson", decodedList.get(0).toJson());
         item.put("decodedListCount", decodedList.size());
         return item;
+    }
+
+    private static Map<String, Object> writerFeatureOverrides(
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable value) {
+        String baseline = new String(value.encode(), java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> overrides = new TreeMap<>();
+        for (com.alibaba.fastjson2.JSONWriter.Feature feature
+                : com.alibaba.fastjson2.JSONWriter.Feature.values()) {
+            try {
+                String encoded = new String(value.encode(
+                    new com.alibaba.fastjson2.JSONWriter.Feature[] {feature}),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                if (!baseline.equals(encoded)) {
+                    overrides.put(feature.name(), encoded);
+                }
+            } catch (RuntimeException error) {
+                overrides.put(feature.name(), Map.of("error", error.getClass().getSimpleName()));
+            }
+        }
+        return overrides;
     }
 
     private static List<Object> inheritedSerializationCases() {
