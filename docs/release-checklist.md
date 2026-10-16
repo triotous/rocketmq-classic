@@ -2124,3 +2124,16 @@ Before any publication:
   cross-decodes. Formatting, checksum, and diff checks pass. Fixture SHA-256:
   `be0af6c701fbebef014ba1724670d126d5ec70ff73060c990d934e1721d7a3b9`. This
   closes only the PullSysFlag declaration slice; broad P18-V01 remains open.
+
+- P18-V01 Common `MessageConst` declared-surface inventory (`337160d5`,
+  2026-10-16): the pinned Java fixture now records all 77 public fields (76
+  `String` fields and `HashSet<String> STRING_HASH_SET`), the public
+  no-argument constructor, and zero declared public methods. Rust pins the
+  field signatures, constructor disposition, method list, all 76 constant
+  values, and the initial reserved-property names; the stateless constructor is
+  represented by the `message::constants` namespace. Common `message_decode`
+  passes (23 tests), strict all-target/all-feature Common Clippy passes, and
+  pinned Maven `verify` passes all 37 scenarios, fixture drift, and Java/Rust
+  cross-decodes. Formatting, checksum, and diff checks pass. Fixture SHA-256:
+  `59309d6426aa55b398addea84e0e1fdab886bc8daa3388b32c4e27005eae07c5`. This
+  closes only the MessageConst declaration slice; broad P18-V01 remains open.
