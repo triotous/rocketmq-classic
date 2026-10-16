@@ -135,6 +135,7 @@ struct AdminEntry {
 struct PendingReplyEntry {
     owner: Arc<()>,
     scope: Option<Arc<()>>,
+    runtime_id: Option<tokio::runtime::Id>,
     deadline: Instant,
     send_succeeded: bool,
     sender: Option<oneshot::Sender<PendingReplyCompletion>>,
@@ -197,6 +198,9 @@ impl RequestFutureTable {
                 PendingReplyEntry {
                     owner: Arc::new(()),
                     scope: None,
+                    runtime_id: tokio::runtime::Handle::try_current()
+                        .ok()
+                        .map(|runtime| runtime.id()),
                     deadline: Instant::now()
                         + Duration::from_millis(future.timeout_millis().max(0) as u64),
                     send_succeeded: future.send_request_ok(),
@@ -288,12 +292,24 @@ impl RequestFutureTable {
         self.expire_matching(now, |_| true)
     }
 
+    #[doc(hidden)]
+    pub fn expire_due_for_current_runtime(&self, now: Instant) -> usize {
+        let runtime_id = tokio::runtime::Handle::current().id();
+        self.expire_matching(now, |entry| {
+            entry
+                .runtime_id
+                .is_none_or(|entry_runtime| entry_runtime == runtime_id)
+        })
+    }
+
     fn expire_due_for_scope(&self, scope: &Arc<()>, now: Instant) -> usize {
+        let runtime_id = tokio::runtime::Handle::current().id();
         self.expire_matching(now, |entry| {
             entry
                 .scope
                 .as_ref()
                 .is_some_and(|entry_scope| Arc::ptr_eq(entry_scope, scope))
+                && entry.runtime_id == Some(runtime_id)
         })
     }
 
@@ -746,6 +762,7 @@ impl GroupRegistry {
                 PendingReplyEntry {
                     owner: lease.identity.clone(),
                     scope: Some(self.request_future_scope.clone()),
+                    runtime_id: Some(tokio::runtime::Handle::current().id()),
                     deadline,
                     send_succeeded: false,
                     sender: Some(sender),
@@ -1334,6 +1351,37 @@ mod public_request_future_table_tests {
         assert_eq!(future.response_msg(), Some(reply));
         assert_eq!(callback.0.load(Ordering::SeqCst), 1);
         assert!(!first_view.contains_key(correlation_id).unwrap());
+    }
+
+    #[test]
+    fn timeout_scans_do_not_cross_tokio_runtime_clock_domains() {
+        let correlation_id = "runtime-scoped-request-future-table-test";
+        let table = RequestFutureTable::shared();
+        let _ = table.remove(correlation_id).unwrap();
+        let runtime_a = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        let runtime_b = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+
+        runtime_a.block_on(async {
+            let future = Arc::new(RequestResponseFuture::new(correlation_id, 1, None));
+            assert!(table.insert(correlation_id, future).unwrap().is_none());
+        });
+        runtime_b.block_on(async {
+            tokio::time::advance(Duration::from_secs(2)).await;
+            assert_eq!(table.expire_due_for_current_runtime(Instant::now()), 0);
+        });
+        runtime_a.block_on(async {
+            tokio::time::advance(Duration::from_millis(2)).await;
+            assert_eq!(table.expire_due_for_current_runtime(Instant::now()), 1);
+        });
+        assert!(!table.contains_key(correlation_id).unwrap());
     }
 }
 

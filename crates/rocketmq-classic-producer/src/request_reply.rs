@@ -10,7 +10,7 @@ use rocketmq_classic_core::runtime::{
     RequestResponseCallback, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex, OnceLock},
@@ -77,9 +77,14 @@ impl RequestResponseCallback for ProducerRequestCallback {
 pub struct RequestFutureHolder;
 
 #[derive(Default)]
-struct RequestFutureScheduler {
+struct RequestFutureRuntimeScheduler {
     producers: HashSet<usize>,
     task: Option<tokio::task::JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct RequestFutureScheduler {
+    runtimes: HashMap<tokio::runtime::Id, RequestFutureRuntimeScheduler>,
 }
 
 fn request_future_scheduler() -> &'static tokio::sync::Mutex<RequestFutureScheduler> {
@@ -98,21 +103,39 @@ impl RequestFutureHolder {
     }
 
     /// Starts the shared three-second initial-delay, one-second timeout scan
-    /// for this Producer. Producer startup calls this automatically.
+    /// for this Producer on the current Tokio runtime. Producer startup and
+    /// request preparation call this automatically.
     pub async fn start_scheduled_task(&self, producer: &Producer) {
+        let runtime_id = tokio::runtime::Handle::current().id();
         let producer_id = Arc::as_ptr(&producer.request_future_scheduler_id) as usize;
         let mut scheduler = request_future_scheduler().lock().await;
-        if !scheduler.producers.insert(producer_id) || scheduler.task.is_some() {
+        scheduler.runtimes.retain(|id, runtime| {
+            *id == runtime_id
+                || !runtime
+                    .task
+                    .as_ref()
+                    .is_some_and(tokio::task::JoinHandle::is_finished)
+        });
+        let runtime = scheduler.runtimes.entry(runtime_id).or_default();
+        runtime.producers.insert(producer_id);
+        if runtime
+            .task
+            .as_ref()
+            .is_some_and(tokio::task::JoinHandle::is_finished)
+        {
+            runtime.task.take();
+        }
+        if runtime.task.is_some() {
             return;
         }
         let table = self.get_request_future_table();
-        scheduler.task = Some(tokio::spawn(async move {
+        runtime.task = Some(tokio::spawn(async move {
             let period = tokio::time::Duration::from_secs(1);
             let first_scan = tokio::time::Instant::now() + tokio::time::Duration::from_secs(3);
             let mut interval = tokio::time::interval_at(first_scan, period);
             loop {
                 interval.tick().await;
-                table.expire_due(tokio::time::Instant::now());
+                table.expire_due_for_current_runtime(tokio::time::Instant::now());
             }
         }));
     }
@@ -121,16 +144,23 @@ impl RequestFutureHolder {
     /// after the final Producer shuts down, while pending table entries remain.
     pub async fn shutdown(&self, producer: &Producer) {
         let producer_id = Arc::as_ptr(&producer.request_future_scheduler_id) as usize;
-        let task = {
+        let tasks = {
             let mut scheduler = request_future_scheduler().lock().await;
-            scheduler.producers.remove(&producer_id);
-            if scheduler.producers.is_empty() {
-                scheduler.task.take()
-            } else {
-                None
-            }
+            let mut tasks = Vec::new();
+            scheduler.runtimes.retain(|_, runtime| {
+                runtime.producers.remove(&producer_id);
+                if runtime.producers.is_empty() {
+                    if let Some(task) = runtime.task.take() {
+                        tasks.push(task);
+                    }
+                    false
+                } else {
+                    true
+                }
+            });
+            tasks
         };
-        if let Some(task) = task {
+        for task in tasks {
             task.abort();
             let _ = task.await;
         }
@@ -329,6 +359,9 @@ impl Producer {
         timeout: Duration,
         callback: Option<Arc<dyn RequestResponseCallback>>,
     ) -> Result<(PendingReplyRequest, Instant), ProducerError> {
+        RequestFutureHolder::get_instance()
+            .start_scheduled_task(self)
+            .await;
         let timeout_millis = timeout.as_millis();
         if timeout_millis > i64::MAX as u128 {
             return Err(ProducerError::InvalidRequestTimeout);

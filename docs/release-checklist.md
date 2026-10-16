@@ -1619,3 +1619,13 @@ Before any publication:
   current GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker automation,
   and pre-publication version/registry resolution remain open; owner-run
   deployment and production checks remain Phase 19 manual validation.
+
+- P18-V01 request-future scheduler clock-scope follow-up (2026-10-16): each
+  Producer timeout scanner is associated with its Tokio runtime ID, and each
+  scan expires only entries registered on that runtime. This prevents an
+  independent paused/runtime clock from expiring another runtime's future. A
+  two-runtime paused-clock regression passes. The combined Core/Producer/
+  facade all-feature gate passes (164 Core unit tests, 142 Producer unit tests,
+  and all selected integration/doc targets); strict workspace Clippy,
+  formatting, and diff checks pass. The full current-tree P18-V02 suite and
+  other release gates listed above remain open.
