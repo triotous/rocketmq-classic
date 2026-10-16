@@ -180,6 +180,13 @@ impl Eq for ChannelHandle {}
 ///
 /// The command objects are owned values. Use the `with_*_mut` methods to mutate a command held
 /// by the future, preserving Java's live getter/setter behavior without exposing a lock guard.
+///
+/// The transport's owned-permit constructor is an internal implementation detail:
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::ResponseFuture;
+/// ResponseFuture::new_with_permit(None, 1, None, 1000, None, None);
+/// ```
 pub struct ResponseFuture {
     channel: Option<ChannelHandle>,
     opaque: i32,
@@ -193,8 +200,46 @@ pub struct ResponseFuture {
     send_request_ok: AtomicBool,
     interrupted: AtomicBool,
     callback_executed: AtomicBool,
-    released: Mutex<Option<OwnedSemaphorePermit>>,
+    released: Mutex<Option<PermitRelease>>,
     response_latch: (Mutex<bool>, Condvar),
+}
+
+/// Java-compatible release-once wrapper for a semaphore.
+///
+/// `release` adds one permit at most once. The semaphore handle remains available after release,
+/// matching Java's `SemaphoreReleaseOnlyOnce.getSemaphore()` behavior.
+pub struct SemaphoreReleaseOnlyOnce {
+    semaphore: Option<Arc<tokio::sync::Semaphore>>,
+    released: AtomicBool,
+}
+
+impl SemaphoreReleaseOnlyOnce {
+    /// Retains the supplied semaphore; `None` represents Java's nullable constructor input.
+    pub fn new(semaphore: Option<Arc<tokio::sync::Semaphore>>) -> Self {
+        Self {
+            semaphore,
+            released: AtomicBool::new(false),
+        }
+    }
+
+    /// Adds one semaphore permit once. A missing semaphore is a no-op.
+    pub fn release(&self) {
+        if let Some(semaphore) = &self.semaphore {
+            if !self.released.swap(true, Ordering::AcqRel) {
+                semaphore.add_permits(1);
+            }
+        }
+    }
+
+    /// Returns the same semaphore handle passed to `new`.
+    pub fn semaphore(&self) -> Option<Arc<tokio::sync::Semaphore>> {
+        self.semaphore.clone()
+    }
+}
+
+enum PermitRelease {
+    Owned(Option<OwnedSemaphorePermit>),
+    JavaOnce(Arc<SemaphoreReleaseOnlyOnce>),
 }
 
 impl ResponseFuture {
@@ -217,17 +262,52 @@ impl ResponseFuture {
         )
     }
 
+    /// Constructs a future with Java's nullable semaphore-release helper argument.
+    pub fn new_with_release_once(
+        channel: Option<ChannelHandle>,
+        opaque: i32,
+        request_command: Option<RemotingCommand>,
+        timeout_millis: i64,
+        invoke_callback: Option<Arc<dyn InvokeCallback>>,
+        release_once: Option<Arc<SemaphoreReleaseOnlyOnce>>,
+    ) -> Self {
+        Self::new_with_release(
+            channel,
+            opaque,
+            request_command,
+            timeout_millis,
+            invoke_callback,
+            release_once.map(PermitRelease::JavaOnce),
+        )
+    }
+
     /// Constructs a future that owns an admission permit released by `release`.
-    ///
-    /// This is the Rust-owned equivalent of Java's `SemaphoreReleaseOnlyOnce` constructor
-    /// argument. Dropping the future also releases the permit through RAII.
-    pub fn new_with_permit(
+    /// Dropping the future also releases this transport-owned permit through RAII.
+    fn new_with_permit(
         channel: Option<ChannelHandle>,
         opaque: i32,
         request_command: Option<RemotingCommand>,
         timeout_millis: i64,
         invoke_callback: Option<Arc<dyn InvokeCallback>>,
         permit: Option<OwnedSemaphorePermit>,
+    ) -> Self {
+        Self::new_with_release(
+            channel,
+            opaque,
+            request_command,
+            timeout_millis,
+            invoke_callback,
+            permit.map(|permit| PermitRelease::Owned(Some(permit))),
+        )
+    }
+
+    fn new_with_release(
+        channel: Option<ChannelHandle>,
+        opaque: i32,
+        request_command: Option<RemotingCommand>,
+        timeout_millis: i64,
+        invoke_callback: Option<Arc<dyn InvokeCallback>>,
+        permit: Option<PermitRelease>,
     ) -> Self {
         let begin_timestamp = SystemTime::now();
         Self {
@@ -278,7 +358,7 @@ impl ResponseFuture {
             send_request_ok: AtomicBool::new(true),
             interrupted: AtomicBool::new(false),
             callback_executed: AtomicBool::new(false),
-            released: Mutex::new(permit),
+            released: Mutex::new(permit.map(|permit| PermitRelease::Owned(Some(permit)))),
             response_latch: (Mutex::new(false), Condvar::new()),
         })
     }
@@ -407,7 +487,14 @@ impl ResponseFuture {
 
     /// Releases async admission exactly once.
     pub fn release(&self) {
-        self.released.lock().unwrap().take();
+        let mut released = self.released.lock().unwrap();
+        match released.as_mut() {
+            Some(PermitRelease::Owned(permit)) => {
+                permit.take();
+            }
+            Some(PermitRelease::JavaOnce(release_once)) => release_once.release(),
+            None => {}
+        }
     }
 
     pub(super) fn dispatch_async_callback(&self, channel_established: bool) {
@@ -494,7 +581,7 @@ impl fmt::Display for ResponseFuture {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use super::{ChannelHandle, ResponseFuture};
+    use super::{ChannelHandle, ResponseFuture, SemaphoreReleaseOnlyOnce};
     use crate::{client::InvokeCallback, command::RemotingCommand, error::TransportError};
 
     struct RecordingCallback(Arc<Mutex<Vec<&'static str>>>);
@@ -638,6 +725,135 @@ mod tests {
         assert_eq!(semaphore.available_permits(), 0);
         future.release();
         assert_eq!(semaphore.available_permits(), 1);
+    }
+
+    #[test]
+    fn semaphore_release_once_matches_pinned_java_public_api_and_behavior() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(
+            fixture["responseFuturePublicConstructors"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            fixture["responseFuturePublicMethods"]
+                .as_array()
+                .unwrap()
+                .len(),
+            20
+        );
+        assert_eq!(
+            fixture["semaphoreReleaseOnlyOncePublicConstructors"][0],
+            "org.apache.rocketmq.remoting.common.SemaphoreReleaseOnlyOnce(java.util.concurrent.Semaphore)"
+        );
+        assert_eq!(
+            fixture["semaphoreReleaseOnlyOncePublicMethods"],
+            serde_json::json!([
+                "java.util.concurrent.Semaphore getSemaphore()",
+                "void release()"
+            ])
+        );
+        let response_future_constructors = fixture["responseFuturePublicConstructors"]
+            .as_array()
+            .unwrap();
+        assert!(response_future_constructors.iter().any(|signature| {
+            signature
+                .as_str()
+                .unwrap()
+                .contains("ResponseFuture(io.netty.channel.Channel,int,long,")
+        }));
+        assert!(response_future_constructors.iter().any(|signature| {
+            signature
+                .as_str()
+                .unwrap()
+                .contains("ResponseFuture(io.netty.channel.Channel,int,org.apache.rocketmq.remoting.protocol.RemotingCommand,")
+        }));
+        assert_eq!(
+            fixture["semaphoreReleaseBehavior"]["permitsAfterRepeatedRelease"],
+            1
+        );
+        assert_eq!(
+            fixture["responseFuturePermitReleaseBehavior"]["permitsAfterRepeatedRelease"],
+            1
+        );
+
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        let release_once = Arc::new(SemaphoreReleaseOnlyOnce::new(Some(semaphore.clone())));
+        let returned = release_once.semaphore().unwrap();
+        assert!(Arc::ptr_eq(&returned, &semaphore));
+        release_once.release();
+        release_once.release();
+        assert_eq!(semaphore.available_permits(), 1);
+
+        let future_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        let future_release_once = Arc::new(SemaphoreReleaseOnlyOnce::new(Some(
+            future_semaphore.clone(),
+        )));
+        let future = ResponseFuture::new_with_release_once(
+            None,
+            42,
+            None,
+            1000,
+            None,
+            Some(future_release_once.clone()),
+        );
+        assert_eq!(Arc::strong_count(&future_release_once), 2);
+        future.release();
+        future.release();
+        assert_eq!(future.opaque(), 42);
+        assert_eq!(future_semaphore.available_permits(), 1);
+        assert_eq!(Arc::strong_count(&future_release_once), 2);
+        drop(future);
+        assert_eq!(Arc::strong_count(&future_release_once), 1);
+
+        let dropped_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        let dropped_release_once = Arc::new(SemaphoreReleaseOnlyOnce::new(Some(
+            dropped_semaphore.clone(),
+        )));
+        drop(ResponseFuture::new_with_release_once(
+            None,
+            7,
+            None,
+            1000,
+            None,
+            Some(dropped_release_once),
+        ));
+        assert_eq!(dropped_semaphore.available_permits(), 0);
+
+        let racing_semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+        let racing_release_once = Arc::new(SemaphoreReleaseOnlyOnce::new(Some(
+            racing_semaphore.clone(),
+        )));
+        let barrier = Arc::new(std::sync::Barrier::new(9));
+        let workers = (0..8)
+            .map(|_| {
+                let release_once = racing_release_once.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    release_once.release();
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(racing_semaphore.available_permits(), 1);
+
+        let no_semaphore = SemaphoreReleaseOnlyOnce::new(None);
+        assert!(no_semaphore.semaphore().is_none());
+        no_semaphore.release();
+        no_semaphore.release();
     }
 
     #[test]

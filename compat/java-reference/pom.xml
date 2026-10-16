@@ -528,6 +528,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-remoting-api-surface-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RemotingApiSurfaceFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/response-future-api.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-acl-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

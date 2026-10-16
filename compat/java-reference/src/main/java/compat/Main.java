@@ -126,6 +126,10 @@ public final class Main {
             RequestReplyFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "remoting-api-surface-fixture".equals(args[0])) {
+            RemotingApiSurfaceFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "consumer-running-info-fixture".equals(args[0])) {
             ConsumerRunningInfoFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -300,7 +304,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {
