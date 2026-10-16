@@ -654,9 +654,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
 - [x] **P18-V03** — Facade examples, package graph/content/provenance, license
   files, compatibility baselines, and existing usage/behavior documentation
   have been reviewed. No release or compatibility claim is made.
-- [ ] **P18-V04** — The 37-scenario handoff manifest validates and server-free
-  suites pass locally. A current GitHub Ubuntu result for the address profile
-  is still absent.
+- [ ] **P18-V04** — The 37-scenario handoff manifest and server-free local
+  gates pass on code revision `de2d1a8f` (documentation HEAD `15f9705c`):
+  default/all-feature workspace tests, strict workspace Clippy/check, release
+  examples, offline benchmark compilation, locked metadata for all seven
+  `0.1.0` packages, and package-content listings with `LICENSE`/`NOTICE`.
+  Current-revision GitHub Ubuntu evidence for the Linux address profile and
+  native Windows stack-runtime evidence are still absent, so P18-V04 remains
+  open.
 
 The Push runtime-setting timing rows listed in the prior audit checkpoint were
 reconciled in commit `f0eaf53e`. P18-V01 remains open for the full Java/Rust
