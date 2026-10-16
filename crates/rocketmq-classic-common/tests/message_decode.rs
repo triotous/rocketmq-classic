@@ -1253,6 +1253,20 @@ fn message_constants_match_java_551() {
 #[test]
 fn message_version_api_matches_java_551_fixture() {
     let expected = &fixture()["messageVersionApi"];
+    assert_eq!(expected["publicConstructors"], json!([]));
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "int getMagicCode()",
+            "int getTopicLength(java.nio.ByteBuffer)",
+            "int getTopicLength(java.nio.ByteBuffer, int)",
+            "int getTopicLengthSize()",
+            "org.apache.rocketmq.common.message.MessageVersion valueOf(java.lang.String)",
+            "org.apache.rocketmq.common.message.MessageVersion valueOfMagicCode(int)",
+            "org.apache.rocketmq.common.message.MessageVersion[] values()",
+            "void putTopicLength(java.nio.ByteBuffer, int)"
+        ])
+    );
     let versions = [MessageVersion::V1, MessageVersion::V2];
     assert_eq!(expected["values"].as_array().unwrap().len(), versions.len());
 

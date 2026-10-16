@@ -653,6 +653,8 @@ public final class MessageDecodeFixtures {
 
     private static Map<String, Object> messageVersionApi() {
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("publicConstructors", publicConstructorSignatures(MessageVersion.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageVersion.class));
         List<Map<String, Object>> versions = new ArrayList<>();
         MessageVersion[] values = MessageVersion.values();
         for (int index = 0; index < values.length; index++) {
