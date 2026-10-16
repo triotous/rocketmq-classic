@@ -133,7 +133,11 @@ impl ChannelHandle {
         connection.send(frame::encode(command)?, deadline).await
     }
 
-    pub(super) fn enqueue_and_flush(
+    /// Enqueues a command for this channel without an operation deadline.
+    ///
+    /// The returned future reports the local socket write result. Dropping it does not cancel the
+    /// already-enqueued write; connection shutdown terminates a write that cannot complete.
+    pub fn write_and_flush_without_deadline(
         &self,
         command: &RemotingCommand,
     ) -> Result<

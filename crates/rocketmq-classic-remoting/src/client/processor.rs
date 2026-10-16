@@ -49,7 +49,7 @@ impl RequestContext {
         command: &RemotingCommand,
     ) -> Result<impl Future<Output = Result<(), TransportError>> + Send + 'static, TransportError>
     {
-        self.channel.enqueue_and_flush(command)
+        self.channel.write_and_flush_without_deadline(command)
     }
 }
 

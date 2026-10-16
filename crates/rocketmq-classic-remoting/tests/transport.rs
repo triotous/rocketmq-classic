@@ -2921,8 +2921,9 @@ async fn p18_channel_handle_writes_commands_and_closes_its_connection() {
         response.opaque = request.opaque;
         response.mark_response();
         write_command(&mut stream, &response).await;
-        let direct_write = read_command(&mut stream).await;
-        let _ = written_tx.send(direct_write.code);
+        let deadline_write = read_command(&mut stream).await;
+        let no_deadline_write = read_command(&mut stream).await;
+        let _ = written_tx.send((deadline_write.code, no_deadline_write.code));
         let mut byte = [0; 1];
         let _ = stream.read(&mut byte).await;
     });
@@ -2957,7 +2958,12 @@ async fn p18_channel_handle_writes_commands_and_closes_its_connection() {
         .write_and_flush(&command(77), Instant::now() + Duration::from_secs(1))
         .await
         .unwrap();
-    assert_eq!(written_rx.await.unwrap(), 77);
+    channel
+        .write_and_flush_without_deadline(&command(78))
+        .unwrap()
+        .await
+        .unwrap();
+    assert_eq!(written_rx.await.unwrap(), (77, 78));
     assert!(channel.close());
     assert!(!channel.is_open());
     client.shutdown().await;
