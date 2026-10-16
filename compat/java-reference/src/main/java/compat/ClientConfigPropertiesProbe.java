@@ -20,6 +20,8 @@ public final class ClientConfigPropertiesProbe {
         Map.entry("com.rocketmq.startDetectorEnable", " true "),
         Map.entry("com.rocketmq.remoting.clientAsyncSemaphoreValue", "-17"),
         Map.entry("com.rocketmq.remoting.clientOnewaySemaphoreValue", "2147483647"),
+        Map.entry("com.rocketmq.remoting.client.connect.timeout", "-13"),
+        Map.entry("com.rocketmq.remoting.client.channel.maxIdleTimeSeconds", "-7"),
         Map.entry("com.rocketmq.remoting.client.closeSocketIfTimeout", "false")
     );
 
@@ -81,6 +83,8 @@ public final class ClientConfigPropertiesProbe {
         org.apache.rocketmq.remoting.netty.NettyClientConfig config =
             new org.apache.rocketmq.remoting.netty.NettyClientConfig();
         Map<String, Object> result = new TreeMap<>();
+        result.put("connectTimeoutMillis", config.getConnectTimeoutMillis());
+        result.put("clientChannelMaxIdleTimeSeconds", config.getClientChannelMaxIdleTimeSeconds());
         result.put("closeSocketIfTimeout", config.isClientCloseSocketIfTimeout());
         return result;
     }

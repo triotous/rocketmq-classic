@@ -3519,6 +3519,8 @@ mod tests {
         .unwrap();
         let async_property = config::JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY;
         let oneway_property = config::JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY;
+        let connect_timeout_property = config::JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY;
+        let max_idle_time_property = config::JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY;
         let close_socket_property = config::JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY;
         let configured = &fixture["remotingSemaphoreValues"];
         let timeout_settings = &fixture["remotingTimeoutSettings"];
@@ -3537,6 +3539,16 @@ mod tests {
                 assert_eq!(
                     defaults.close_socket_if_timeout,
                     timeout_settings["closeSocketIfTimeout"]
+                );
+                assert_eq!(
+                    i64::from(defaults.connect_timeout),
+                    timeout_settings["connectTimeoutMillis"].as_i64().unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.max_idle_time),
+                    timeout_settings["clientChannelMaxIdleTimeSeconds"]
+                        .as_i64()
+                        .unwrap()
                 );
                 return;
             }
@@ -3569,6 +3581,14 @@ mod tests {
                 close_socket_property,
                 property_values[close_socket_property].as_str().unwrap(),
             )
+            .env(
+                connect_timeout_property,
+                property_values[connect_timeout_property].as_str().unwrap(),
+            )
+            .env(
+                max_idle_time_property,
+                property_values[max_idle_time_property].as_str().unwrap(),
+            )
             .output()
             .unwrap();
         assert!(
@@ -3591,6 +3611,14 @@ mod tests {
             .env(
                 close_socket_property,
                 property_values[close_socket_property].as_str().unwrap(),
+            )
+            .env(
+                connect_timeout_property,
+                property_values[connect_timeout_property].as_str().unwrap(),
+            )
+            .env(
+                max_idle_time_property,
+                property_values[max_idle_time_property].as_str().unwrap(),
             )
             .output()
             .unwrap();

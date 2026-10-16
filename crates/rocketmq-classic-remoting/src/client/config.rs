@@ -14,10 +14,23 @@ pub(super) const JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientAsyncSemaphoreValue";
 pub(super) const JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientOnewaySemaphoreValue";
+pub(super) const JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY: &str =
+    "com.rocketmq.remoting.client.connect.timeout";
+pub(super) const JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY: &str =
+    "com.rocketmq.remoting.client.channel.maxIdleTimeSeconds";
 pub(super) const JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY: &str =
     "com.rocketmq.remoting.client.closeSocketIfTimeout";
 static JAVA_FRAME_MAX_LENGTH: OnceLock<Result<usize, String>> = OnceLock::new();
-static JAVA_CLIENT_DEFAULTS: OnceLock<Result<(i32, i32, bool), String>> = OnceLock::new();
+static JAVA_CLIENT_DEFAULTS: OnceLock<Result<JavaClientDefaults, String>> = OnceLock::new();
+
+#[derive(Clone, Copy)]
+struct JavaClientDefaults {
+    async_semaphore_value: i32,
+    oneway_semaphore_value: i32,
+    connect_timeout: i32,
+    max_idle_time: i32,
+    close_socket_if_timeout: bool,
+}
 
 fn read_java_int_property(property: &str, default: i32) -> Result<i32, String> {
     match std::env::var(property) {
@@ -39,14 +52,31 @@ fn read_java_bool_property(property: &str, default: bool) -> bool {
     }
 }
 
-fn java_client_defaults() -> (i32, i32, bool) {
+fn java_client_defaults() -> JavaClientDefaults {
     JAVA_CLIENT_DEFAULTS
         .get_or_init(|| {
-            Ok((
-                read_java_int_property(JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY, 65535)?,
-                read_java_int_property(JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY, 65535)?,
-                read_java_bool_property(JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY, true),
-            ))
+            Ok(JavaClientDefaults {
+                async_semaphore_value: read_java_int_property(
+                    JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY,
+                    65535,
+                )?,
+                oneway_semaphore_value: read_java_int_property(
+                    JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY,
+                    65535,
+                )?,
+                connect_timeout: read_java_int_property(
+                    JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY,
+                    3000,
+                )?,
+                max_idle_time: read_java_int_property(
+                    JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY,
+                    120,
+                )?,
+                close_socket_if_timeout: read_java_bool_property(
+                    JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY,
+                    true,
+                ),
+            })
         })
         .clone()
         .unwrap_or_else(|error| panic!("{error}"))
@@ -1967,14 +1997,13 @@ pub struct ClientConfig {
 
 impl Default for ClientConfig {
     fn default() -> Self {
-        let (async_semaphore_value, oneway_semaphore_value, close_socket_if_timeout) =
-            java_client_defaults();
+        let defaults = java_client_defaults();
         Self {
             transport: TransportMode::Plain,
-            connect_timeout: 3000,
+            connect_timeout: defaults.connect_timeout,
             channel_not_active_interval: 60_000,
-            async_semaphore_value,
-            oneway_semaphore_value,
+            async_semaphore_value: defaults.async_semaphore_value,
+            oneway_semaphore_value: defaults.oneway_semaphore_value,
             worker_threads: 4,
             callback_executor_threads: std::thread::available_parallelism()
                 .map(usize::from)
@@ -1986,8 +2015,8 @@ impl Default for ClientConfig {
             write_buffer_low_water_mark: 0,
             pooled_byte_buffer_allocator_enabled: false,
             disable_netty_worker_group: false,
-            max_idle_time: 120,
-            close_socket_if_timeout,
+            max_idle_time: defaults.max_idle_time,
+            close_socket_if_timeout: defaults.close_socket_if_timeout,
             scan_available_nameserver: true,
             enable_reconnect_for_go_away: true,
             max_reconnect_interval_time_seconds: 60,
