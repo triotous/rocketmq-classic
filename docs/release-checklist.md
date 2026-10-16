@@ -1434,6 +1434,7 @@ Before any publication:
   Phase 19 local Docker/Broker automation, and pre-publication version/registry
   resolution remain open. Owner-run deployment and production checks remain
   Phase 19 manual validation.
+
 - Current-revision server-free **P18-V02** gate on code revision `e314b5e1`
   (2026-10-15): `cargo test --workspace --locked` and
   `cargo test --workspace --all-features --locked` pass;
@@ -1566,3 +1567,11 @@ Before any publication:
   Phase 19 Docker/Broker automation, and pre-publication version/registry
   resolution remain open. Owner-run deployment and production checks remain
   Phase 19 manual validation.
+
+- Primary facade mapped-type availability (2026-10-16): the main
+  `rocketmq-classic` crate now re-exports the phase-owned consumer/producer
+  states and default groups, POP result/status, end-transaction hook API,
+  `QueryResult`, Producer publish-info maps/views/adapters, and route DTO/alias
+  handle. `tests/facade_public_types.rs` checks the root import paths and
+  Producer state/table accessors. This closes that facade reachability slice
+  only; broad P18-V01 and current-revision release gates remain open.

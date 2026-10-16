@@ -143,6 +143,14 @@ methods; the scripted regression below checks their sync/future, default/queue,
 and live-setting behavior. Remaining overload/input/branch crosswalks still
 belong to P18-V01.
 
+The primary `rocketmq-classic` facade also re-exports the producer's Java-mapped
+service state, default group, transaction hooks/context, query result, and the
+`TopicPublishInfo` value/table/collection-view types and their Java collection
+adapters. `tests/facade_public_types.rs` checks these root import paths and
+exercises `Producer::service_state` and
+`Producer::get_topic_publish_info_table`; this verifies facade reachability,
+while the behavior mappings remain in this matrix and Phases 14 and 17.
+
 The 11 facade constructor signatures are pinned individually by
 `pinned_java_default_producer_facade_and_inherited_interfaces_are_recorded`.
 `producerConstructorCases` invokes all 11 constructors and records group,
