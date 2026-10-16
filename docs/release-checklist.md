@@ -1880,3 +1880,19 @@ Before any publication:
   Maven `verify` (37 scenarios, fixture drift and cross-decodes) pass. This
   closes this API slice only; broad P18-V01 remains open, and the complete
   workspace P18-V02 gate must run again on the final revision.
+
+- P18-V01 request/reply table removal semantics (`aef6b86a`, `65becc27`,
+  2026-10-16): the pinned Java 5.5.1 fixture confirms that removing a
+  correlation from `RequestFutureHolder` leaves the future latch unsignaled
+  and its own timed wait returns null. Rust now preserves the original
+  `PendingReplyRequest` deadline when public table removal, replacement, or
+  clear drops the lookup sender; explicit owner cancellation and registry
+  clear return `Cancelled`. Regressions cover removal-to-deadline behavior,
+  cancellation, and the Java fixture observations. Core/Producer/facade
+  all-feature tests pass (168 Core unit tests, 142 Producer unit tests, all
+  scoped integration and doc targets); strict all-target/all-feature Clippy,
+  formatting, `git diff --check`, and pinned Maven `verify` (37 scenarios,
+  fixture drift and Java/Rust cross-decodes) pass. Fixture SHA-256:
+  `b5c6e39d24e197d678fd214418f4f18b4fabb9f63ef27e74d3e152c7616ef5ef`.
+  This closes the table-removal waiter slice only; broad P18-V01 and final
+  workspace P18-V02 remain open.

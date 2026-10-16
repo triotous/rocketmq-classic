@@ -40,3 +40,31 @@
 - The Rust running-info regression compares the pinned Java pre-start outcome and continues to verify the running and post-shutdown snapshots. Fixture SHA-256: `fdc94afde6f4fdd74ffeab6fae12fad521a831178e070c4e072c25ef718a1f82`.
 - PASS: focused Java fixture generation; `cargo test -p rocketmq-classic-consumer --all-features --locked running_info_returns_queue_snapshot_and_java_config_properties`; `git diff --check`.
 - This records the lifecycle error mapping for this method only; broad P18-V01, final-revision full workspace P18-V02, current GitHub Ubuntu/P18-V04, Phase 19 local Docker/Broker automation and release version/registry checks remain open. No plan file, live Broker/Docker, publication, push or tag was changed.
+
+## P18-V01 request/reply table removal semantics — 2026-10-16T08:07Z
+
+- The pinned Java `RequestFutureHolder` fixture now verifies that removing a
+  correlation leaves the `RequestResponseFuture` latch at one and its
+  independent timed wait returns null. Fixture SHA-256:
+  `b5c6e39d24e197d678fd214418f4f18b4fabb9f63ef27e74d3e152c7616ef5ef`.
+  Fixture commit: `aef6b86a`.
+- Rust `PendingReplyRequest::receive` now retains the original deadline after
+  the public live table removes, replaces, or clears its entry. Explicit
+  `control.cancel` and registry clear send `Cancelled`; the waiter tracks a
+  closed oneshot so a cancelled receive future can be polled again safely.
+  Added fixture assertions and regressions for removal through deadline,
+  registry clear, and reply/cancel arbitration. Code commit: `65becc27`.
+- The first full scoped suite exposed an old assertion expecting cancellation
+  to close the oneshot as an error. Updated it to assert `Cancelled`; the rerun
+  passes Core (168 unit tests plus integration/doc targets), Producer (142
+  unit tests plus integration/doc targets), and facade (5 request/reply
+  integration tests). Strict scoped all-target/all-feature Clippy, format,
+  diff checks, and pinned Maven `verify` (37 scenarios, fixture drift and
+  cross-decodes) pass.
+- Updated the Phase 15 request/reply matrix and release checklist. This closes
+  the table-removal waiter slice only. Broad P18-V01, final-revision workspace
+  P18-V02, GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+  automation and `docs/owner-validation.md`, and release version/registry
+  checks remain open. Owner-run deployment/live Broker validation remains
+  reserved for Phase 19. No plan file, live Broker/Docker, publication, push,
+  or tag was changed.
