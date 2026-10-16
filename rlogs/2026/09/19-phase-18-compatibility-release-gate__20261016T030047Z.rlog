@@ -157,3 +157,35 @@ rerun, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local
 Docker/Broker automation, and pre-publication version/registry resolution also
 remain open. Owner-run deployment and production checks remain Phase 19 manual
 validation.
+
+P18-V01 Remoting worker-count signed API and property-source follow-up
+(`85dccf7f`, 2026-10-16): the invoked Java `ClientConfigPropertiesProbe` now
+sets `com.rocketmq.remoting.client.worker.size=-3`, records the resulting
+`NettyClientConfig.getClientWorkerThreads()` value, and captures setter/getter
+round trips at `Integer.MIN_VALUE`, `-1`, zero, one, and `Integer.MAX_VALUE`.
+Rust changes the public `ClientConfig.worker_threads` field and live
+`RemotingClient` getter/setter to `i32`, seeds the default from the same
+process environment key on first default construction using Java signed
+decimal parsing, and keeps nonpositive values representable until `start()`,
+where they are rejected before worker creation. The Rust worker count is
+converted to `usize` only after the positive check.
+
+Validation on code revision `85dccf7f`:
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` passed:
+  99 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, and 8 doc
+  tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed, including 37
+  scenario-manifest validations, runtime fixture drift checks, and Java/Rust
+  cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+This closes the `clientWorkerThreads` setting's signed API domain, property
+source, and start-time behavior slice only. Socket-buffer and write-watermark
+property sources and signed API domains, the broad P18-V01
+source/API/input/error/control-flow and reverse-export audit, a final-revision
+full-workspace P18-V02 rerun, current-revision GitHub Ubuntu/P18-V04 evidence,
+Phase 19 local Docker/Broker automation, and pre-publication version/registry
+resolution remain open. Owner-run deployment and production checks remain
+Phase 19 manual validation.

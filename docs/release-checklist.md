@@ -1709,3 +1709,21 @@ Before any publication:
   Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry resolution remain open. Owner-run deployment
   and production checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting worker-thread setting/source follow-up (`85dccf7f`,
+  2026-10-16): Java fixture coverage now includes the `clientWorkerThreads`
+  system-property value `-3` and setter/getter round trips for
+  `Integer.MIN_VALUE`, `-1`, zero, one, and `Integer.MAX_VALUE`. Rust's public
+  `ClientConfig.worker_threads` and live `RemotingClient` getter/setter now use
+  Java's signed `i32` domain; nonpositive values remain observable and fail
+  when `start()` creates workers. The default reads the same process
+  environment key on first construction with Java integer parsing. Remoting
+  all-feature tests pass (99 unit, 8 codec, 1 fuzz regression, 7 security,
+  100 transport, 8 doctests); strict Remoting Clippy, Maven verify (37
+  scenarios, fixture drift, and Java/Rust cross-decodes), formatting, and diff
+  checks pass. This closes the worker-count API/domain/property slice only.
+  Socket-buffer and write-watermark property sources and signed API domains,
+  broad P18-V01, final-revision full-workspace P18-V02, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry resolution remain open. Owner-run deployment
+  and production checks remain Phase 19 manual validation.
