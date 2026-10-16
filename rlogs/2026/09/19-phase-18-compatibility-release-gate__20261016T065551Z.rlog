@@ -33,3 +33,10 @@
 - Rust now retains the runtime identity and NameServer address needed to build the owner snapshot after shutdown; cleared pull/POP queues remain empty while subscriptions, stats and core-pool settings are reported. Commit `30f8e41f`.
 - PASS: `cargo test -p rocketmq-classic-consumer --all-features --locked` (220 unit tests, all integration targets and 12 doctests); strict Consumer Clippy; `cargo fmt --all -- --check`; pinned `mvn -q -f compat/java-reference/pom.xml verify` (37 scenarios, fixture drift and Java/Rust cross-decodes); `git diff --check` before documentation edits.
 - This closes the post-shutdown `consumerRunningInfo` slice only. Broad P18-V01 audit, final-revision full workspace P18-V02, current GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and release version/registry checks remain open. No plan file, live Broker/Docker, publication, push or tag was changed.
+
+## P18-V01 Push consumerRunningInfo pre-start boundary — 2026-10-16T07:45Z
+
+- Extended the pinned Java fixture to invoke `consumerRunningInfo()` before startup and record the `NullPointerException` caused by its null consume service. Rust's owner method returns typed `NotStarted` for the same state; this exception-shape adaptation is now explicit in the Phase 10 matrix and release checklist.
+- The Rust running-info regression compares the pinned Java pre-start outcome and continues to verify the running and post-shutdown snapshots. Fixture SHA-256: `fdc94afde6f4fdd74ffeab6fae12fad521a831178e070c4e072c25ef718a1f82`.
+- PASS: focused Java fixture generation; `cargo test -p rocketmq-classic-consumer --all-features --locked running_info_returns_queue_snapshot_and_java_config_properties`; `git diff --check`.
+- This records the lifecycle error mapping for this method only; broad P18-V01, final-revision full workspace P18-V02, current GitHub Ubuntu/P18-V04, Phase 19 local Docker/Broker automation and release version/registry checks remain open. No plan file, live Broker/Docker, publication, push or tag was changed.

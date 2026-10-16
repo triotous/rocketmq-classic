@@ -47,7 +47,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   signatures are now captured from the pinned Java fixture and count-pinned in
   Rust. Its `consumerRunningInfo` method now has direct Rust owner coverage
   during runtime and after shutdown; the latter compares retained properties,
-  subscription/status state and shutdown-cleared queue tables with Java. Its
+  subscription/status state and shutdown-cleared queue tables with Java. Before
+  startup, the Rust owner returns typed `NotStarted`; pinned Java throws
+  `NullPointerException` for its absent consume service. Its
   `ConsumerRunningInfo` body and
   `ProcessQueueInfo`/`PopProcessQueueInfo`/`ConsumeStatus` models now also match
   inherited Java object-identity equality instead of exposing structural
@@ -701,7 +703,7 @@ the required full Phase 18 gates on the final revision.
   facade mutation. Consumer all-feature tests (219 unit tests, all integration
   targets and doctests), strict Consumer Clippy, Maven verify (37 scenarios,
   fixture drift and Java/Rust cross-decodes), formatting and diff checks pass.
-  Push fixture SHA-256 `1003a2a0ee2cfc8fcd759356a364b9764c36f529b598079772f444ce574ec7a0`;
+  Push fixture SHA-256 `fdc94afde6f4fdd74ffeab6fae12fad521a831178e070c4e072c25ef718a1f82`;
   Pull fixture SHA-256 `1090617637533587bc425acaf1862521b7d2826c8747839a14a6e985fbdd4c78`.
   This closes only the audited group-timing paths; the broad P18-V01 audit and
   full workspace gates on the final revision remain open.
