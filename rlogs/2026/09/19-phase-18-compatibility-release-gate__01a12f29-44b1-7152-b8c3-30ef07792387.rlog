@@ -41,3 +41,9 @@
 - Pinned Java source confirms all four public body-bearing `Message` constructors delegate to the six-argument constructor, which assigns `this.body = body`. Added invoked fixture observations for caller-array identity across the two-argument, tags, tags-and-keys, and all-fields constructors, plus post-construction mutation visibility.
 - Recompiled the Java harness, regenerated and verified all 11 message fixtures with the pinned Maven client. `fixtures/messages/records.json` SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
 - No Java checkout or plan files were modified.
+
+## Deterministic Producer timeout-scan test correction — 2026-10-16
+
+- A full default workspace run failed once in `request_reply::tests::callback_timeout_uses_java_housekeeping_initial_delay_and_period`; an isolated rerun passed. The test relied on Tokio's paused-time runtime not auto-advancing while awaiting an asynchronous send, so workspace scheduling could advance through the scanner's three-second first tick before the assertion.
+- Reworked the test to start the scanner directly, insert two pending futures, and advance virtual time explicitly to 2s, 3s, and 4s. It now verifies the initial delay and one-second scan period without a live send path or busy-loop keepalive.
+- PASS: isolated timeout-schedule test (0.00s), Producer all-target/all-feature strict Clippy, and `bash tests/stress/run-offline-smoke.sh` (16 cases × 3, including the corrected callback schedule test). The complete workspace gate is being rerun after this correction and the Message constructor alias change.

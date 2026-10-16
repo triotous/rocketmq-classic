@@ -885,22 +885,46 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn callback_timeout_uses_java_housekeeping_initial_delay_and_period() {
-        let (producer, _, _) = producer("request-callback-schedule").await;
-        queue_success(&producer, 1);
-        let calls = Arc::new(AtomicUsize::new(0));
-        let (sender, mut receiver) = oneshot::channel();
-        let mut message = Message::new("orders", b"scheduled-callback".to_vec());
-        producer
-            .request_with_callback(
-                &mut message,
-                timeout_callback(calls.clone(), sender),
-                Duration::from_millis(50),
-            )
-            .await
-            .unwrap();
-        wait_for_attempts(&producer, 1).await;
+        let producer = Arc::new(Producer::with_runtime_manager(
+            ProducerConfig::new("request-callback-schedule").unwrap(),
+            ClientRuntimeManager::new(),
+        ));
+        let holder = RequestFutureHolder::get_instance();
+        holder.start_scheduled_task(&producer).await;
+        tokio::task::yield_now().await;
+
+        let table = RequestFutureTable::shared();
+        let first_calls = Arc::new(AtomicUsize::new(0));
+        let second_calls = Arc::new(AtomicUsize::new(0));
+        let (first_sender, mut first_receiver) = oneshot::channel();
+        let (second_sender, mut second_receiver) = oneshot::channel();
+        let add_future =
+            |timeout_millis: i64,
+             calls: Arc<AtomicUsize>,
+             sender: oneshot::Sender<Result<Vec<u8>, ProducerError>>| {
+                let correlation_id = create_correlation_id();
+                let callback: Arc<dyn RequestResponseCallback> =
+                    Arc::new(ProducerRequestCallback {
+                        callback: Mutex::new(Some(timeout_callback(calls, sender))),
+                        topic: "orders".to_owned(),
+                        timeout_millis: timeout_millis as u128,
+                    });
+                let future = Arc::new(RequestResponseFuture::new(
+                    correlation_id.clone(),
+                    timeout_millis,
+                    Some(callback),
+                ));
+                table.insert(correlation_id, future).unwrap();
+            };
+        add_future(50, first_calls.clone(), first_sender);
+        add_future(3_500, second_calls.clone(), second_sender);
+
         assert!(matches!(
-            receiver.try_recv(),
+            first_receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            second_receiver.try_recv(),
             Err(oneshot::error::TryRecvError::Empty)
         ));
 
@@ -909,7 +933,11 @@ mod tests {
             tokio::task::yield_now().await;
         }
         assert!(matches!(
-            receiver.try_recv(),
+            first_receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            second_receiver.try_recv(),
             Err(oneshot::error::TryRecvError::Empty)
         ));
 
@@ -918,11 +946,26 @@ mod tests {
             tokio::task::yield_now().await;
         }
         assert!(matches!(
-            receiver.try_recv().unwrap(),
+            first_receiver.try_recv().unwrap(),
             Err(ProducerError::RequestReplyTimeout { .. })
         ));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        producer.shutdown().await.unwrap();
-        assert!(producer.request_callback_tasks.lock().await.is_empty());
+        assert!(matches!(
+            second_receiver.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 0);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(matches!(
+            second_receiver.try_recv().unwrap(),
+            Err(ProducerError::RequestReplyTimeout { .. })
+        ));
+        assert_eq!(first_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(second_calls.load(Ordering::SeqCst), 1);
+        holder.shutdown(&producer).await;
     }
 }
