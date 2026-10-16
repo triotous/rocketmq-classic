@@ -1220,7 +1220,7 @@ Before any publication:
   Phase 19 local Docker/Broker automation, and release version/registry checks
   remain open. Owner-run deployment/live Broker checks remain Phase 19 manual
   validation. Current message fixture SHA-256:
-  `761ffe884d0a7c907bb694969ce0730fbb60390cc1fa92151c310f6894483dfd`.
+  `d11f8c88e44711cffbd574beab5946943b00a8d350fe05ec40ff1b744320f321`.
 
 - Current-revision server-free **P18-V02** gates on `f14d7c6a` (2026-10-15):
   default and all-feature workspace tests; workspace all-target check; strict
@@ -1983,3 +1983,17 @@ Before any publication:
   enumeration, non-macOS BSD runtime behavior, and a real IPv6-only host remain
   open P18-V01 evidence; broad API/source/input/flow reconciliation remains
   open as well.
+
+- P18-V01 Common `Message`/`MessageAccessor` declared-surface slice (2026-10-16):
+  the pinned Java fixture now records all 5 public `Message` constructors, 34
+  declared public `Message` methods, and 20 declared public `MessageAccessor`
+  methods; Rust pins those signature lists and differentially checks
+  `MessageAccessor.setLiteTopic` through `PROPERTY_LITE_TOPIC`. Fixture SHA-256:
+  `d11f8c88e44711cffbd574beab5946943b00a8d350fe05ec40ff1b744320f321`.
+  Pinned offline Maven `verify` (37 scenarios), the focused Common fixture test,
+  Common all-target/all-feature strict Clippy, formatting, and diff checks pass.
+  This closes only this API inventory slice. Broad P18-V01, a full P18-V02 run
+  on the eventual final revision, current-revision GitHub Ubuntu/P18-V04
+  evidence, Phase 19 local Docker/Broker automation, and release
+  version/registry checks remain open. Owner-run deployment and live Broker
+  checks remain Phase 19 manual validation.

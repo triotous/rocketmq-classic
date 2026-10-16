@@ -1,0 +1,29 @@
+# Phase 18 Common Message API inventory slice — 2026-10-16T11:25:45Z
+
+- Started on branch `phase/19-phase-18-compatibility-release-gate`, source
+  revision `261b0782`; the worktree contained the Message API audit slice from
+  the preceding continuation and no unrelated files.
+- Confirmed the source oracle is pinned Java client 5.5.1 commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`. Its fixture now records all five
+  public `Message` constructors, 34 declared public methods, and 20 declared
+  public `MessageAccessor` methods. The Rust integration test pins those
+  inventories and compares `MessageAccessor.setLiteTopic` via
+  `PROPERTY_LITE_TOPIC`.
+- Updated the message fixture and SHA-256 inventory; refreshed the Phase 6 and
+  Phase 8 API evidence and release checklist. Fixture SHA-256:
+  `d11f8c88e44711cffbd574beab5946943b00a8d350fe05ec40ff1b744320f321`.
+- Validation completed for this slice: `mvn -o -f
+  compat/java-reference/pom.xml verify` (37 scenarios); focused
+  `cargo test -p rocketmq-classic-common --test message_decode --locked
+  message_public_api_matches_java_551_fixture`; `cargo fmt --all -- --check`;
+  `cargo clippy -p rocketmq-classic-common --all-targets --all-features
+  --locked -- -D warnings`; fixture checksum and `git diff --check`.
+- Review status: this closes one bounded P18-V01 inventory slice only. Broad
+  Java/Rust source/API/input/error/flow and reverse-export reconciliation
+  remains open. The full P18-V02 gate must run on the eventual final revision;
+  current-revision GitHub Ubuntu/P18-V04 evidence and Phase 19 local
+  Docker/Broker automation remain open. Windows/BSD runtime and real IPv6-only
+  host checks remain owner manual validation where not locally reproducible.
+- No plan was edited; no Docker/Broker, push, publication, tag, or deployment
+  action was taken. The audit slice is ready for its own commit after final
+  diff review.

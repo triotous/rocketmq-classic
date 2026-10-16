@@ -5,6 +5,8 @@ import com.alibaba.fastjson2.JSONWriter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.lang.reflect.Field;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -157,6 +159,9 @@ public final class MessageDecodeFixtures {
         Message message = new Message("orders", "green", "first second", 17,
             new byte[] {0, -1, 42}, false);
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("messagePublicConstructors", publicConstructorSignatures(Message.class));
+        expected.put("messagePublicMethods", publicMethodSignatures(Message.class));
+        expected.put("messageAccessorPublicMethods", publicMethodSignatures(MessageAccessor.class));
         Message defaultMessage = new Message();
         expected.put("defaultTopicIsNull", defaultMessage.getTopic() == null);
         expected.put("defaultBodyIsNull", defaultMessage.getBody() == null);
@@ -358,6 +363,9 @@ public final class MessageDecodeFixtures {
         MessageAccessor.setConsumeStartTimeStamp(accessorHelperMessage, "1700000000123");
         accessorHelperValues.put("consumeStartTimeStamp",
             MessageAccessor.getConsumeStartTimeStamp(accessorHelperMessage));
+        MessageAccessor.setLiteTopic(accessorHelperMessage, "orders-lite");
+        accessorHelperValues.put("liteTopic",
+            accessorHelperMessage.getProperty(MessageConst.PROPERTY_LITE_TOPIC));
         expected.put("messageAccessorHelperValues", accessorHelperValues);
         MessageAccessor.setTransferFlag(accessorHelperMessage, null);
         accessorHelperValues.put("transferFlagNullIsPresent",
@@ -504,6 +512,38 @@ public final class MessageDecodeFixtures {
         diagnostic.getProperties().put("DIRECT", "through-map");
         expected.put("directMapMutation", diagnostic.getProperty("DIRECT"));
         return expected;
+    }
+
+    private static List<String> publicMethodSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(MessageDecodeFixtures::methodSignature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static List<String> publicConstructorSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(MessageDecodeFixtures::constructorSignature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " " + method.getName() + "("
+            + Arrays.stream(method.getParameterTypes())
+                .map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getSimpleName() + "("
+            + Arrays.stream(constructor.getParameterTypes())
+                .map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
     }
 
     private static Map<String, Object> messageDecoderCrcApi() {

@@ -1655,6 +1655,80 @@ fn message_public_api_matches_java_551_fixture() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let expected = &fixture()["messagePublicApi"];
+    assert_eq!(
+        expected["messagePublicConstructors"],
+        json!([
+            "Message()",
+            "Message(java.lang.String, byte[])",
+            "Message(java.lang.String, java.lang.String, byte[])",
+            "Message(java.lang.String, java.lang.String, java.lang.String, byte[])",
+            "Message(java.lang.String, java.lang.String, java.lang.String, int, byte[], boolean)"
+        ])
+    );
+    assert_eq!(
+        expected["messagePublicMethods"],
+        json!([
+            "boolean hasProperty(java.lang.String)",
+            "boolean isWaitStoreMsgOK()",
+            "byte[] getBody()",
+            "int getDelayTimeLevel()",
+            "int getFlag()",
+            "int getPriority()",
+            "java.lang.String getBuyerId()",
+            "java.lang.String getKeys()",
+            "java.lang.String getProperty(java.lang.String)",
+            "java.lang.String getTags()",
+            "java.lang.String getTopic()",
+            "java.lang.String getTransactionId()",
+            "java.lang.String getUserProperty(java.lang.String)",
+            "java.lang.String toString()",
+            "java.util.Map getProperties()",
+            "long getDelayTimeMs()",
+            "long getDelayTimeSec()",
+            "long getDeliverTimeMs()",
+            "void putUserProperty(java.lang.String, java.lang.String)",
+            "void setBody(byte[])",
+            "void setBuyerId(java.lang.String)",
+            "void setDelayTimeLevel(int)",
+            "void setDelayTimeMs(long)",
+            "void setDelayTimeSec(long)",
+            "void setDeliverTimeMs(long)",
+            "void setFlag(int)",
+            "void setInstanceId(java.lang.String)",
+            "void setKeys(java.lang.String)",
+            "void setKeys(java.util.Collection)",
+            "void setPriority(int)",
+            "void setTags(java.lang.String)",
+            "void setTopic(java.lang.String)",
+            "void setTransactionId(java.lang.String)",
+            "void setWaitStoreMsgOK(boolean)"
+        ])
+    );
+    assert_eq!(
+        expected["messageAccessorPublicMethods"],
+        json!([
+            "java.lang.String getConsumeStartTimeStamp(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getCorrectionFlag(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getMQ2Flag(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getMaxReconsumeTimes(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getOriginMessageId(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getReconsumeTime(org.apache.rocketmq.common.message.Message)",
+            "java.lang.String getTransferFlag(org.apache.rocketmq.common.message.Message)",
+            "java.util.Map deepCopyProperties(java.util.Map)",
+            "org.apache.rocketmq.common.message.Message cloneMessage(org.apache.rocketmq.common.message.Message)",
+            "void clearProperty(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void putProperty(org.apache.rocketmq.common.message.Message, java.lang.String, java.lang.String)",
+            "void setConsumeStartTimeStamp(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setCorrectionFlag(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setLiteTopic(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setMQ2Flag(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setMaxReconsumeTimes(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setOriginMessageId(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setProperties(org.apache.rocketmq.common.message.Message, java.util.Map)",
+            "void setReconsumeTime(org.apache.rocketmq.common.message.Message, java.lang.String)",
+            "void setTransferFlag(org.apache.rocketmq.common.message.Message, java.lang.String)"
+        ])
+    );
     let default_message = Message::default();
     assert_eq!(default_message.topic_nullable(), None);
     assert_eq!(default_message.body_nullable(), None);
@@ -2206,6 +2280,18 @@ fn message_public_api_matches_java_551_fixture() {
             helper_values[key].as_str()
         );
     }
+    accessor_helpers
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_LITE_TOPIC,
+            "orders-lite",
+        )
+        .unwrap();
+    assert_eq!(
+        helper_values["liteTopic"],
+        accessor_helpers
+            .get_property(rocketmq_classic_common::message::constants::PROPERTY_LITE_TOPIC)
+            .unwrap()
+    );
     accessor_helpers.set_system_property_nullable(
         rocketmq_classic_common::message::constants::PROPERTY_TRANSFER_FLAG,
         None,
