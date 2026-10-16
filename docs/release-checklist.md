@@ -2532,3 +2532,13 @@ Before any publication:
   broad P18-V01 and final-revision full-workspace P18-V02 remain open. Execution
   log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195635Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195635Z.rlog).
+- P18-V01 `RequestResponseFuture` method-level crosswalk (2026-10-16): the
+  Phase 15 matrix now maps the constructor and every one of the 18 public Java
+  methods to the exact Rust API, including the `CountDownLatch` adapter and
+  async wait representation. The pinned Java source SHA-256 is
+  `08f2a1eec7e492d95fd9502e3b942960df948674182de5632b7b02d0514d95d4`; the
+  invoked fixture SHA-256 is
+  `295307a1f559b7afa30179b48a83b0ac008716a8a1b421872b440c6ff097153c`.
+  This closes the declared-method crosswalk slice only; broad P18-V01 and the
+  final-revision P18-V02 workspace gate remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195832Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195832Z.rlog).
