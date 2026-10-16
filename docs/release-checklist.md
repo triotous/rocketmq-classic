@@ -2517,3 +2517,18 @@ Before any publication:
   `AclUtils` surface slice only; broad P18-V01 and final-revision full-workspace
   P18-V02 remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T194232Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T194232Z.rlog).
+- P18-V01 request/reply timeout-helper reverse scan (`aa4ce064`, 2026-10-16,
+  pinned Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`): the
+  public Rust `RequestResponseFuture::is_timeout_at(Instant)` helper was only
+  used by the Core runtime registry and had no Java public counterpart. It is
+  now runtime-internal; a Core compile-fail doctest guards the public boundary,
+  and the Phase 15 matrix records the disposition. The pinned Java
+  `RequestResponseFuture.java` SHA-256 is
+  `08f2a1eec7e492d95fd9502e3b942960df948674182de5632b7b02d0514d95d4`; the
+  pinned source and Maven 5.5.1 artifact both omit the newer-worktree-only
+  `acquireCountDownLatch` method. Core all-feature tests (168 unit plus all
+  integration tests and 14 doctests), strict Core Clippy, Core Rustdoc JSON,
+  format and diff checks pass. This closes only this Rust-only helper surface;
+  broad P18-V01 and final-revision full-workspace P18-V02 remain open. Execution
+  log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195635Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195635Z.rlog).
