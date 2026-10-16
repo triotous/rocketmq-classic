@@ -74,3 +74,17 @@
   scenario execution, `docs/owner-validation.md`, and pre-publication
   version/registry dependency resolution remain open. No push, tag, publication,
   deployment, Docker/Broker run or compatibility claim was made.
+
+# Phase 18 offline benchmark — 2026-10-16 18:13 UTC
+
+- Executed `cargo bench -p rocketmq-classic --bench offline --locked` on code
+  revision `15c6ca4f`, macOS AArch64, Apple M5 Max, 18 logical CPUs, Rust
+  `1.85.0 (4d91de4e4 2025-02-17)`, optimized release profile.
+- Measured all five fixed-input operations with configured iteration counts and
+  allocation sampling. The outputs are appended to
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`: frame encode /
+  decode 1,932.5 ns; Zstd message decode 1,162.8 ns; Producer request
+  construction 1,176.4 ns; route lookup 15.1 ns; loopback pending completion
+  59,048.3 ns. Allocation observations are recorded there as well.
+- Treat measurements as host-specific observations only. No performance
+  thresholds exist; no optimization was indicated by this baseline alone.
