@@ -451,7 +451,7 @@ impl Producer {
         };
         drop(completion);
         match result {
-            Ok(PendingReplyCompletion::Reply(reply)) => Ok(reply.into()),
+            Ok(PendingReplyCompletion::Reply(reply)) => Ok(Message::clone(&*reply)),
             Ok(PendingReplyCompletion::Timeout { send_succeeded: _ }) => {
                 Err(ProducerError::RequestReplyTimeout {
                     topic,

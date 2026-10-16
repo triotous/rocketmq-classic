@@ -77,3 +77,34 @@
 - This closes the inherited class method inventory slice only. Broad P18-V01,
   final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and
   Phase 19 automation remain open.
+
+- P18-V01 identity-handle correction (2026-10-16): the first workspace default
+  test run after removing the base conversions exposed a stale Producer
+  `.into()` conversion. Replaced it with a clone through the inherited
+  `Message` dereference. The subsequent Consumer test run exposed that
+  `MessageExt::clone()` is used to snapshot references to the same Java object
+  before filter hooks; `Message` Rust `Clone` now preserves the shared identity
+  token, while the explicit Java `MessageAccessor.cloneMessage` projection
+  keeps its distinct token. Tests and current API documentation were corrected.
+- Initial validation: Producer all-feature tests and strict Producer Clippy
+  passed; the focused Consumer filter-hook regression and Common identity test
+  pass. The full workspace rerun after both corrections is pending. The initial
+  workspace failures are retained here rather than marked as passing evidence.
+
+- Full server-free P18-V02 follow-up after the identity-handle corrections:
+  `cargo test --workspace --locked` and `cargo test --workspace --all-features
+  --locked` pass; strict all-target/all-feature workspace Clippy, workspace
+  formatting, and `git diff --check` pass. Offline Maven `verify` passes all 37
+  scenarios, fixture-drift checks, Java/Rust cross-decodes, and message fixtures.
+  Differential self-test and 37-scenario manifest validation pass. The offline
+  deterministic race/leak script passes 16 cases × 3; fuzz smoke passes 105
+  frame seeds, 11 message seeds, and 1,856 bounded mutations. Release examples
+  and the offline benchmark compile. Locked metadata reports 7 workspace
+  packages and 215 total packages; workspace metadata/license/dependency checks,
+  seven `cargo package --workspace --list --locked --allow-dirty` results, and
+  the Asia/Taipei Unique ID differential pass. Maven reported only upstream
+  `sun.misc.Unsafe` deprecation/reflection warnings. This clears P18-V02's
+  server-free gates on the validated worktree; broad P18-V01, current GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation and owner
+  handoff, and release preflight remain open. No Docker/Broker, push, registry,
+  publication, tag, or deployment action was taken.

@@ -2568,7 +2568,8 @@ fn message_object_identity_traits_match_java_551_fixture() {
     );
 
     let message_clone = message.clone();
-    assert_ne!(message, message_clone);
+    assert_eq!(message, message_clone);
+    assert_eq!(object_hash(&message), object_hash(&message_clone));
     let accessor_clone = message.clone_message();
     assert_ne!(message, accessor_clone);
     let decoded = decode_one(&record(&fixture()["cases"][0]), DecodeOptions::default())
@@ -2602,7 +2603,7 @@ fn message_object_identity_traits_match_java_551_fixture() {
     let serialized_extended = serde_json::to_string(&extended).unwrap();
     let deserialized_extended: MessageExt = serde_json::from_str(&serialized_extended).unwrap();
     assert_ne!(extended, deserialized_extended);
-    assert_ne!(extended, extended.clone());
+    assert_eq!(extended, extended.clone());
     assert_eq!(extended_hash, object_hash(&extended));
 
     assert_eq!(
@@ -2652,7 +2653,7 @@ fn message_object_identity_traits_match_java_551_fixture() {
         serde_json::from_str(&serialized_client_extended).unwrap();
     assert_ne!(client_extended, deserialized_client_extended);
     let client_clone = client_extended.clone();
-    assert_ne!(client_extended, client_clone);
+    assert_eq!(client_extended, client_clone);
 }
 
 #[test]

@@ -2016,12 +2016,13 @@ Before any publication:
   `Message`, `MessageExt`, and `MessageClientExt` inherit identity equality and
   stable identity hash codes from `Object`. Rust now uses a shared hidden
   identity token for `Message`/`MessageExt`/`MessageClientExt` `PartialEq`/`Eq`/
-  `Hash`, including comparisons through base/subclass views. Clone, decode, and
-  deserialization create a new identity; mutation leaves the hash stable. The
+  `Hash`, including comparisons through base/subclass views. Rust `Clone`
+  preserves its handle token; `Message::clone_message`, decode, and
+  deserialization create new identities. Mutation leaves the hash stable. The
   pinned fixture records the declaring class, self/distinct equality, hash
   stability, and inherited-view comparisons; Rust covers the same behavior and
-  checks identity equality for cloned, decoded, and deserialized objects and
-  identity-hash stability across mutation. Fixture SHA-256:
+  checks clone token preservation, distinct `clone_message`/decoded/deserialized
+  identities, and identity-hash stability across mutation. Fixture SHA-256:
   `5158dad83a14f0de57ba842134466e82331716f2c171b963e31ae227d9d66890`.
   Maven `verify` (37 scenarios), Common all-feature tests (23 unit, 21 message
   decode, 6 other integration, 24 doctests), Core all-feature tests (168 unit,
@@ -2039,3 +2040,28 @@ Before any publication:
   unit tests, 21 `message_decode`, six other integration, 24 doctests), as do
   strict Common Clippy, formatting, checksum, and diff checks. This closes the
   method inventory slice only; broad P18-V01 remains open.
+
+- P18-V01 identity-handle follow-up (2026-10-16): the first default workspace
+  rerun after removing `From<MessageExt> for Message` found a stale Producer
+  `.into()` call; after that was fixed, Consumer filter-hook coverage showed
+  that Rust `Clone` must preserve the message identity token when it snapshots
+  the same Java object. Producer now clones through `Deref`, ordinary `Clone`
+  preserves the token, and `Message::clone_message` creates a distinct object.
+  Producer all-feature tests/strict Clippy and the focused Common/Consumer
+  regressions pass; the full workspace rerun is pending.
+
+- P18-V02 identity-handle final-gate follow-up (2026-10-16; worktree based on
+  `0f1435db`): the default and all-feature locked workspace tests, strict
+  workspace Clippy, formatting, and diff checks pass after the Producer clone
+  correction. Offline Maven `verify` passes all 37 scenarios and message fixture
+  drift checks. The differential self-test and 37-scenario manifest pass; the
+  deterministic race/leak smoke passes 16 cases × 3, and fuzz smoke passes 105
+  frame seeds, 11 message seeds, and 1,856 mutations. Release examples and the
+  offline benchmark compile. Workspace metadata reports seven members and 215
+  total packages; metadata/license/dependency checks and seven package-content
+  listings pass. The Asia/Taipei Unique ID fixture passes. This closes the
+  server-free P18-V02 gates on this worktree only; broad P18-V01, current-revision
+  GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker automation and scenario
+  execution, owner-validation instructions, and pre-publication version/registry
+  checks remain open. Owner-run deployment and live Broker checks remain Phase
+  19 manual validation.

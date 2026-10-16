@@ -227,13 +227,15 @@ pub struct MessageSysFlagParseError {
 ///
 /// Java `Message` inherits identity-based `Object.equals`/`hashCode`; Rust
 /// `PartialEq`/`Eq`/`Hash` use an identity token rather than message fields.
-/// Cloning creates a distinct message identity:
+/// Rust `Clone` preserves the token; `clone_message()` creates the distinct
+/// object represented by Java `MessageAccessor.cloneMessage`:
 ///
 /// ```
 /// use rocketmq_classic_common::message::Message;
 /// let message = Message::default();
 /// assert_eq!(message, message);
-/// assert_ne!(message, message.clone());
+/// assert_eq!(message, message.clone());
+/// assert_ne!(message, message.clone_message());
 /// ```
 pub struct Message {
     topic: Option<String>,
@@ -412,7 +414,7 @@ impl Clone for Message {
                     .load(AtomicOrdering::Relaxed),
             ),
             transaction_id: self.transaction_id.clone(),
-            identity: Arc::new(()),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -1218,13 +1220,14 @@ impl DerefMut for MessageExt {
 /// ```
 ///
 /// Java `MessageExt` inherits identity-based `Object.equals`/`hashCode`;
-/// Rust equality and hashing use its `Message` identity token. Cloning creates
-/// a new `MessageExt` identity:
+/// Rust equality and hashing use its `Message` identity token. Rust `Clone`
+/// preserves that token; constructors, decoding, and deserialization create
+/// new identities:
 ///
 /// ```
 /// use rocketmq_classic_common::message::MessageExt;
 /// let message = MessageExt::default();
-/// assert_ne!(message, message.clone());
+/// assert_eq!(message, message.clone());
 /// assert_ne!(message, MessageExt::default());
 /// ```
 #[derive(Clone, Serialize, Deserialize, Default)]
