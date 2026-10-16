@@ -1,0 +1,41 @@
+Session: 2026-10-16T03:00:47Z onward
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Branch: phase/19-phase-18-compatibility-release-gate
+Starting revision: 7a4e7317a4d4d32ad0ac39d5db4a3c86408a8e53
+Java source baseline: efa1be59d6fc747ad220f036c86030f05f0419f9
+Environment: OpenJDK 21.0.12.1, macOS arm64
+
+P18-V01 follow-up — pin signed Remoting semaphore configuration.
+
+Source inspection confirmed Java NettyClientConfig exposes signed-int async
+and oneway semaphore getters/setters and passes those values to
+NettyRemotingAbstract, which constructs fair java.util.concurrent.Semaphore
+instances. Admission calls use timed Semaphore.tryAcquire.
+
+Added invoked RuntimeConfigFixtures evidence for defaults and boundary values
+Integer.MIN_VALUE, Integer.MIN_VALUE + 1, -2, -1, 0, 1, and Integer.MAX_VALUE.
+The Java oracle preserves values through both setters/getters. Timed acquisition
+rejects ordinary negative values, while Integer.MIN_VALUE wraps on the initial
+acquire and succeeds with Integer.MAX_VALUE remaining permits. This overflow
+case was unexpected and is retained as explicit fixture evidence. A probe that
+also released this acquired permit observed Java's Error "Maximum permit count
+exceeded"; the fixture currently records the admission boundary and does not
+assert downstream release-error behavior.
+
+Commands/results:
+- Direct exec:java with only -Dexec.mainClass failed because the repository's
+  configured entrypoint is compat.Main and the required subcommand was omitted;
+  no fixture was written by that attempt.
+- An initial Maven verify compiled the new fixture and correctly failed on the
+  expected client-config.json drift before generation.
+- `mvn -f compat/java-reference/pom.xml compile exec:java -Dexec.args='runtime-config-fixtures /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/runtime/client-config.json'`
+  regenerated the fixture successfully.
+- `mvn -f compat/java-reference/pom.xml -Dexec.args='runtime-config-fixtures /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/runtime/client-config.json --verify' exec:java`
+  passed against the final fixture.
+- `git diff --check` passed.
+- Final fixture SHA-256: e9951f21fa15bbe1bf028e0a95084e42d5a18ae52af9934482eb8fcdd537f952.
+
+This commit contains oracle evidence only. Next: change Rust semaphore fields to
+signed i32, map Java's negative admission behavior (including MIN_VALUE
+overflow) into the Rust semaphore implementation, add fixture-backed tests, and
+update the Remoting compatibility inventory and release checklist.

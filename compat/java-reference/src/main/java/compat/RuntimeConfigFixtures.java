@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -163,13 +164,14 @@ public final class RuntimeConfigFixtures {
         fixture.put("rebalanceLongs", rebalanceLongs);
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerProducer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/getNameServerAddressList/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
+        fixture.put("entrypoint", "ClientConfig.buildMQClientId/toString/cloneClientConfig/resetClientConfig/getNamesrvAddr/getNamespace/withNamespace/withoutNamespace/queuesWithNamespace/changeInstanceNameToPID; NettyClientConfig clientAsync/clientOnewaySemaphoreValue getter/setter; java.util.concurrent.Semaphore negative-permit admission; MessageQueue.setTopic/setBrokerName/setQueueId; MQClientManager.getOrCreateMQClientInstance/removeClientFactory/getFactoryTable; MQClientInstance.constructor/getClientConfig/getNettyClientConfig/getProducerTable/getConsumerTable/selectProducer/selectConsumer/registerProducer/registerConsumer/unregisterConsumer; MQClientAPIImpl.getRemotingClient/getNameServerAddressList/NettyRemotingClient.publicExecutor (reflective capacity observation); NettyRemotingClient.start/invokeSync (local authenticated and no-auth SOCKS5 round trips); RemotingCommand.encode/getType (null language JSON/ROCKETMQ); LanguageCode/SerializeType/TlsMode/RequestType/RemotingCommandType/NettyEventType generated enum and custom value lookups; Long.parseLong (RebalanceService property parser)");
         fixture.put("serverBaselineContacted", false);
         fixture.put("clientConfigAutoIPUsesNetworkUtil", java.util.Objects.equals(
             new ClientConfig().getClientIP(),
             org.apache.rocketmq.common.utils.NetworkUtil.getLocalAddress()));
         fixture.put("identities", identities);
         fixture.put("defaults", defaults);
+        fixture.put("remotingSemaphoreConfig", remotingSemaphoreConfig());
         fixture.put("nameServerAddressCases", nameServerAddressCases());
         fixture.put("clone", clone);
         fixture.put("copyFields", clientConfigCopies());
@@ -231,6 +233,42 @@ public final class RuntimeConfigFixtures {
             Files.writeString(file, json);
         }
         System.out.println("ClientConfig identities/defaults/clone verified: " + identities.size());
+    }
+
+    private static Map<String, Object> remotingSemaphoreConfig() throws InterruptedException {
+        org.apache.rocketmq.remoting.netty.NettyClientConfig defaults =
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+        Map<String, Object> result = new TreeMap<>();
+        Map<String, Object> defaultValues = new TreeMap<>();
+        defaultValues.put("async", defaults.getClientAsyncSemaphoreValue());
+        defaultValues.put("oneway", defaults.getClientOnewaySemaphoreValue());
+        result.put("defaults", defaultValues);
+
+        List<Object> cases = new ArrayList<>();
+        for (int value : new int[] {Integer.MIN_VALUE, Integer.MIN_VALUE + 1, -2, -1, 0, 1, Integer.MAX_VALUE}) {
+            org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+            config.setClientAsyncSemaphoreValue(value);
+            config.setClientOnewaySemaphoreValue(value);
+            Semaphore async = new Semaphore(config.getClientAsyncSemaphoreValue(), true);
+            Semaphore oneway = new Semaphore(config.getClientOnewaySemaphoreValue(), true);
+
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", value);
+            item.put("async", config.getClientAsyncSemaphoreValue());
+            item.put("oneway", config.getClientOnewaySemaphoreValue());
+            item.put("asyncAvailablePermits", async.availablePermits());
+            item.put("onewayAvailablePermits", oneway.availablePermits());
+            boolean asyncAcquired = async.tryAcquire(0, TimeUnit.MILLISECONDS);
+            boolean onewayAcquired = oneway.tryAcquire(0, TimeUnit.MILLISECONDS);
+            item.put("asyncAcquireImmediate", asyncAcquired);
+            item.put("onewayAcquireImmediate", onewayAcquired);
+            item.put("asyncAvailableAfterAcquire", async.availablePermits());
+            item.put("onewayAvailableAfterAcquire", oneway.availablePermits());
+            cases.add(item);
+        }
+        result.put("cases", cases);
+        return result;
     }
 
     private static Map<String, Object> nameServerAddressCases() {
