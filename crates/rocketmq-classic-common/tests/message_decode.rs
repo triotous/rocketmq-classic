@@ -1340,6 +1340,36 @@ fn message_constants_match_java_551() {
 }
 
 #[test]
+fn message_queue_public_api_matches_java_551() {
+    let expected = &fixture()["messageQueuePublicApi"];
+    assert_eq!(expected["declaredPublicFields"], json!([]));
+    assert_eq!(
+        expected["publicConstructors"],
+        json!([
+            "MessageQueue()",
+            "MessageQueue(java.lang.String, java.lang.String, int)",
+            "MessageQueue(org.apache.rocketmq.common.message.MessageQueue)"
+        ])
+    );
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "boolean equals(java.lang.Object)",
+            "int compareTo(java.lang.Object)",
+            "int compareTo(org.apache.rocketmq.common.message.MessageQueue)",
+            "int getQueueId()",
+            "int hashCode()",
+            "java.lang.String getBrokerName()",
+            "java.lang.String getTopic()",
+            "java.lang.String toString()",
+            "void setBrokerName(java.lang.String)",
+            "void setQueueId(int)",
+            "void setTopic(java.lang.String)"
+        ])
+    );
+}
+
+#[test]
 fn message_version_api_matches_java_551_fixture() {
     let expected = &fixture()["messageVersionApi"];
     assert_eq!(expected["publicConstructors"], json!([]));

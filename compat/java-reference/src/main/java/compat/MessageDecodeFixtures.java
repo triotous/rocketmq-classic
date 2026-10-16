@@ -31,6 +31,7 @@ import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageId;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageVersion;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
@@ -72,6 +73,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtHostApi", messageExtHostApi());
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
+        root.put("messageQueuePublicApi", messageQueuePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
         root.put("messageSysFlagPublicApi", messageSysFlagPublicApi());
         root.put("pullSysFlagPublicApi", pullSysFlagPublicApi());
@@ -638,6 +640,14 @@ public final class MessageDecodeFixtures {
         expected.put("sysflagPosition", MessageDecoder.SYSFLAG_POSITION);
         expected.put("nameValueSeparator", (int) MessageDecoder.NAME_VALUE_SEPARATOR);
         expected.put("propertySeparator", (int) MessageDecoder.PROPERTY_SEPARATOR);
+        return expected;
+    }
+
+    private static Map<String, Object> messageQueuePublicApi() {
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("declaredPublicFields", publicFieldSignatures(MessageQueue.class));
+        expected.put("publicConstructors", publicConstructorSignatures(MessageQueue.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageQueue.class));
         return expected;
     }
 
