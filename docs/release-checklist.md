@@ -20,7 +20,13 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Windows stack runtime job; its current-revision result and Broker-backed
   query checks remain pending. Plans remain unchanged.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
-  and reverse-audit all Rust public APIs and settings. The broad Phase 6 audit
+  and reverse-audit all Rust public APIs and settings. Remoting after-response
+  hooks now mutate request/response commands on outbound and inbound paths;
+  request-pipeline stages mutate requests before later stages/processors, with
+  the mutated opaque verified through the response. Java fixture verification
+  and the focused Rust regression pass. The Java `UtilAll.exceptionSimpleDesc`
+  versus Rust error-remark difference remains an explicit open P18-V01 gap.
+  The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
   entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
   `get/setPullAPIWrapper`, and Pull's `get/setServiceState`. The Push
@@ -2376,3 +2382,18 @@ Before any publication:
   Phase 19 Docker/Broker automation and scenario execution,
   `docs/owner-validation.md`, and pre-publication version/dependency resolution
   remain open.
+- Current-revision server-free P18-V02 rerun (code `ff138fa3`, 2026-10-16):
+  default and all-feature locked workspace tests, strict all-target/all-feature
+  Clippy, pinned Maven `verify` (37 scenarios, updated mutable-hook/pipeline
+  fixture and Java/Rust cross-decodes), comparator self-test and manifest,
+  offline race/leak smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11
+  message seeds, 1,856 mutations, 146 frame decodes, 113 message decodes),
+  release examples, workspace bench compilation, formatting, and diff checks
+  pass. Remoting after-response mutation now covers request/response commands;
+  request-pipeline mutation now checks response opaque propagation. Broad
+  P18-V01 remains open, including the exact Java `UtilAll.exceptionSimpleDesc`
+  versus Rust error-remark mismatch. Current-revision GitHub Ubuntu/P18-V04 and
+  native Windows runtime CI evidence, Phase 19 Docker/Broker automation and
+  scenario execution, `docs/owner-validation.md`, and pre-publication
+  version/dependency resolution remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T174604Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T174604Z.rlog).

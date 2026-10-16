@@ -1,0 +1,39 @@
+# Phase 18 current-revision server-free gate — 2026-10-16 17:46 UTC
+
+- Tested code revision: `ff138fa3` (`fix(remoting): preserve mutable Java hook
+  and pipeline semantics`). The compatibility-document edits in this worktree
+  do not change code.
+- `cargo fmt --all -- --check` — passed.
+- `cargo test --workspace --locked -- --test-threads=1` — passed.
+- `cargo test --workspace --all-features --locked -- --test-threads=1` — passed.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — passed.
+- `mvn -f compat/java-reference/pom.xml verify` — BUILD SUCCESS; validated 37
+  scenarios, Java 5.5.1 fixture drift/probes, and Java decoding of Rust-generated
+  Remoting, typed-header and typed-body fixtures. The updated runtime hook
+  fixture, including request-pipeline opaque mutation, matched the pinned Java
+  harness.
+- `python3 tests/differential/compare.py --self-test` and
+  `python3 tests/differential/compare.py --validate-manifest` — passed; 37
+  scenarios validated.
+- Focused Remoting pipeline mutation regression — passed. Full transport suite
+  passed as part of both workspace runs (107 tests).
+- `bash tests/stress/run-offline-smoke.sh` — passed 16 deterministic race/leak
+  cases × 3 repetitions.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked` —
+  passed: 105 frame seeds, 11 message seeds, 1,856 bounded mutations, 146 frame
+  decodes, 113 message decodes.
+- `cargo build -p rocketmq-classic --examples --release --locked` and
+  `cargo bench --workspace --no-run --locked` — passed.
+- `git diff --check` — passed before the code commit; formatting and documentation
+  were checked on this worktree.
+- P18-V02 server-free local gates pass on this code revision. P18-V01 remains
+  open: full bidirectional Java/Rust source/API/input/error/control-flow and
+  reverse-export reconciliation is incomplete. Remoting error remarks remain
+  explicitly unresolved because Java uses `UtilAll.exceptionSimpleDesc` while
+  Rust exposes its typed error text.
+- Current-revision GitHub Ubuntu address-profile and native Windows runtime CI
+  evidence remain pending. Phase 19 Docker/Broker scenarios, `docs/owner-validation.md`,
+  and release-version/registry dependency resolution also remain pending. No
+  Broker/Docker run, push, tag, publication, deployment or compatibility claim
+  was made.
