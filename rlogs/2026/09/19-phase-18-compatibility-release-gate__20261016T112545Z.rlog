@@ -45,3 +45,21 @@
 - This closes one reverse-export discrepancy only. The broader P18-V01 audit,
   final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and
   Phase 19 local Docker/Broker automation remain open.
+
+- P18-V01 Common inherited `Object.equals/hashCode` follow-up (2026-10-16):
+  Rust `Message`, `MessageExt`, and `MessageClientExt` now share a hidden base
+  identity token across equality/hash and dereferenced base/subclass views;
+  clone, decode, and serde deserialization each create a distinct identity.
+  Java reflection/behavior fixture and Rust differentials cover declaring
+  classes, self/distinct objects, base views, and hash stability across
+  mutation. Fixture SHA-256: `5158dad83a14f0de57ba842134466e82331716f2c171b963e31ae227d9d66890`.
+- Validation passed: offline Maven `test-compile`, Java message fixture
+  generation, and `mvn -o -f compat/java-reference/pom.xml verify` (37
+  scenarios); Common all-feature tests (23 unit, 21 `message_decode`, six
+  other integration, 24 doctests); Core all-feature tests (168 unit, all
+  integration targets, 13 doctests); strict Common/Core all-target/all-feature
+  Clippy; `cargo fmt --all -- --check`; fixture checksum and `git diff --check`.
+- This closes one inherited-trait slice only. Broad P18-V01, final-revision
+  P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and Phase 19 local
+  Docker/Broker automation remain open. No plan, Docker/Broker, push,
+  publication, tag, or deployment action was performed.

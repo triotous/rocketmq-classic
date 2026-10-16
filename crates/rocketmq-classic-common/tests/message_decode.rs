@@ -20,6 +20,7 @@ use rocketmq_classic_common::{
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Mutex;
 
@@ -29,6 +30,12 @@ static MESSAGE_CONSTANTS_MUTATION_LOCK: Mutex<()> = Mutex::new(());
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
+}
+
+fn object_hash<T: Hash>(value: &T) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn record(case: &Value) -> Vec<u8> {
@@ -1738,8 +1745,28 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(expected["messageEqualsDistinctSameState"], false);
     assert_eq!(expected["messageExtEqualsSelf"], true);
     assert_eq!(expected["messageExtEqualsDistinctSameState"], false);
+    assert_eq!(expected["messageEqualsDeclaringClass"], "java.lang.Object");
+    assert_eq!(
+        expected["messageHashCodeDeclaringClass"],
+        "java.lang.Object"
+    );
+    assert_eq!(expected["messageHashCodeStableAfterMutation"], true);
+    assert_eq!(
+        expected["messageExtEqualsDeclaringClass"],
+        "java.lang.Object"
+    );
+    assert_eq!(
+        expected["messageExtHashCodeDeclaringClass"],
+        "java.lang.Object"
+    );
+    assert_eq!(expected["messageExtHashCodeStableAfterMutation"], true);
+    assert_eq!(expected["messageExtEqualsBaseView"], true);
+    assert_eq!(expected["baseViewEqualsMessageExt"], true);
+    assert_eq!(expected["messageClientExtEqualsBaseView"], true);
+    assert_eq!(expected["baseViewEqualsMessageClientExt"], true);
+    assert_eq!(expected["messageClientExtEqualsExtView"], true);
     let default_message_ext = MessageExt::default();
-    assert_eq!(default_message_ext, default_message_ext);
+    assert!(PartialEq::eq(&default_message_ext, &default_message_ext));
     assert_ne!(default_message_ext, MessageExt::default());
     let default_after_lookup = default_message.clone();
     assert_eq!(default_after_lookup.get_property("missing"), None);
@@ -2461,6 +2488,113 @@ fn message_public_api_matches_java_551_fixture() {
     let mut extended = message_ext_from(message);
     extended.set_topic("changed-through-inherited-api");
     assert_eq!(extended.topic(), "changed-through-inherited-api");
+}
+
+#[test]
+fn message_object_identity_traits_match_java_551_fixture() {
+    let expected = &fixture()["messagePublicApi"];
+    let mut message = Message::default();
+    let message_hash = object_hash(&message);
+    assert_eq!(
+        PartialEq::eq(&message, &message),
+        expected["messageEqualsSelf"]
+    );
+    assert_eq!(
+        message == Message::default(),
+        expected["messageEqualsDistinctSameState"]
+    );
+    message.set_flag(9);
+    assert_eq!(
+        object_hash(&message) == message_hash,
+        expected["messageHashCodeStableAfterMutation"]
+    );
+
+    let message_clone = message.clone();
+    assert_ne!(message, message_clone);
+    let accessor_clone = message.clone_message();
+    assert_ne!(message, accessor_clone);
+    let decoded = decode_one(&record(&fixture()["cases"][0]), DecodeOptions::default())
+        .unwrap()
+        .0;
+    let decoded_again = decode_one(&record(&fixture()["cases"][0]), DecodeOptions::default())
+        .unwrap()
+        .0;
+    assert_ne!(decoded, decoded_again);
+    let serialized = serde_json::to_string(&message).unwrap();
+    let deserialized: Message = serde_json::from_str(&serialized).unwrap();
+    assert_ne!(message, deserialized);
+
+    let mut extended = MessageExt::default();
+    let extended_hash = object_hash(&extended);
+    extended.set_queue_id(9);
+    let base_from_extended: &Message = &extended;
+    assert_eq!(
+        PartialEq::eq(base_from_extended, &extended),
+        expected["messageExtEqualsBaseView"]
+    );
+    assert_eq!(
+        PartialEq::eq(&extended, base_from_extended),
+        expected["baseViewEqualsMessageExt"]
+    );
+    assert_eq!(object_hash(base_from_extended), object_hash(&extended));
+    assert_eq!(
+        object_hash(&extended) == extended_hash,
+        expected["messageExtHashCodeStableAfterMutation"]
+    );
+    let serialized_extended = serde_json::to_string(&extended).unwrap();
+    let deserialized_extended: MessageExt = serde_json::from_str(&serialized_extended).unwrap();
+    assert_ne!(extended, deserialized_extended);
+    assert_ne!(extended, extended.clone());
+    assert_eq!(extended_hash, object_hash(&extended));
+
+    assert_eq!(
+        expected["messageClientExtHashCodeDeclaringClass"],
+        "java.lang.Object"
+    );
+    assert_eq!(
+        expected["messageClientExtHashCodeStableAfterMutation"],
+        true
+    );
+    let mut client_extended = MessageClientExt::default();
+    let client_hash = object_hash(&client_extended);
+    client_extended.set_topic_nullable(Some("hash-mutated-topic".to_owned()));
+    assert_eq!(
+        object_hash(&client_extended) == client_hash,
+        expected["messageClientExtHashCodeStableAfterMutation"]
+    );
+    let base_from_client: &Message = &client_extended;
+    let extended_from_client: &MessageExt = &client_extended;
+    assert_eq!(
+        PartialEq::eq(base_from_client, &client_extended),
+        expected["messageClientExtEqualsBaseView"]
+    );
+    assert_eq!(
+        PartialEq::eq(&client_extended, base_from_client),
+        expected["baseViewEqualsMessageClientExt"]
+    );
+    assert_eq!(
+        PartialEq::eq(&client_extended, extended_from_client),
+        expected["messageClientExtEqualsExtView"]
+    );
+    assert_eq!(object_hash(base_from_client), object_hash(&client_extended));
+    assert_eq!(
+        object_hash(extended_from_client),
+        object_hash(&client_extended)
+    );
+    assert_eq!(
+        PartialEq::eq(&client_extended, &client_extended),
+        expected["messageClientExtEqualsSelf"]
+    );
+    assert_eq!(
+        PartialEq::eq(&client_extended, &MessageClientExt::default()),
+        expected["messageClientExtEqualsDistinctSameState"]
+    );
+    let serialized_client_extended = serde_json::to_string(&client_extended).unwrap();
+    let deserialized_client_extended: MessageClientExt =
+        serde_json::from_str(&serialized_client_extended).unwrap();
+    assert_ne!(client_extended, deserialized_client_extended);
+    let client_clone = client_extended.clone();
+    assert_ne!(client_extended, client_clone);
 }
 
 #[test]

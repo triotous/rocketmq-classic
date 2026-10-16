@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
@@ -225,13 +226,15 @@ pub struct MessageSysFlagParseError {
 /// ```
 ///
 /// Java `Message` inherits identity-based `Object.equals`/`hashCode`; Rust
-/// does not provide structural `PartialEq`/`Eq` for this type:
+/// `PartialEq`/`Eq`/`Hash` use an identity token rather than message fields.
+/// Cloning creates a distinct message identity:
 ///
-/// ```compile_fail
-/// use rocketmq_classic_common::message::Message;
-/// assert_eq!(Message::default(), Message::default());
 /// ```
-#[derive(Debug)]
+/// use rocketmq_classic_common::message::Message;
+/// let message = Message::default();
+/// assert_eq!(message, message);
+/// assert_ne!(message, message.clone());
+/// ```
 pub struct Message {
     topic: Option<String>,
     body: Option<Arc<RwLock<Vec<u8>>>>,
@@ -239,6 +242,7 @@ pub struct Message {
     properties: Option<Arc<RwLock<MessagePropertyStorage>>>,
     properties_read_initialized: AtomicBool,
     transaction_id: Option<String>,
+    identity: Arc<()>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -354,7 +358,39 @@ impl<'de> Deserialize<'de> for Message {
             properties,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: wire.transaction_id,
+            identity: Arc::new(()),
         })
+    }
+}
+
+impl std::fmt::Debug for Message {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Message")
+            .field("topic", &self.topic)
+            .field("body", &self.body)
+            .field("flag", &self.flag)
+            .field("properties", &self.properties)
+            .field(
+                "properties_read_initialized",
+                &self.properties_read_initialized,
+            )
+            .field("transaction_id", &self.transaction_id)
+            .finish()
+    }
+}
+
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.identity, &other.identity)
+    }
+}
+
+impl Eq for Message {}
+
+impl Hash for Message {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.identity).hash(state);
     }
 }
 
@@ -376,6 +412,7 @@ impl Clone for Message {
                     .load(AtomicOrdering::Relaxed),
             ),
             transaction_id: self.transaction_id.clone(),
+            identity: Arc::new(()),
         }
     }
 }
@@ -389,6 +426,7 @@ impl Default for Message {
             properties: None,
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
+            identity: Arc::new(()),
         }
     }
 }
@@ -416,6 +454,7 @@ impl Message {
             }),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
+            identity: Arc::new(()),
         }
     }
 
@@ -430,6 +469,7 @@ impl Message {
             }))),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
+            identity: Arc::new(()),
         }
     }
 
@@ -447,6 +487,7 @@ impl Message {
             }))),
             properties_read_initialized: AtomicBool::new(false),
             transaction_id: None,
+            identity: Arc::new(()),
         }
     }
 
@@ -464,6 +505,7 @@ impl Message {
                     .load(AtomicOrdering::Relaxed),
             ),
             transaction_id: None,
+            identity: Arc::new(()),
         }
     }
 
@@ -1176,19 +1218,17 @@ impl DerefMut for MessageExt {
 /// ```
 ///
 /// Java `MessageExt` inherits identity-based `Object.equals`/`hashCode`;
-/// Rust equality also follows the message identity token instead of comparing
-/// fields. Cloning a `MessageExt` preserves that token:
+/// Rust equality and hashing use its `Message` identity token. Cloning creates
+/// a new `MessageExt` identity:
 ///
 /// ```
 /// use rocketmq_classic_common::message::MessageExt;
 /// let message = MessageExt::default();
-/// assert_eq!(message, message.clone());
+/// assert_ne!(message, message.clone());
 /// assert_ne!(message, MessageExt::default());
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct MessageExt {
-    #[serde(skip)]
-    identity: Arc<()>,
     #[serde(flatten)]
     message: Message,
     #[serde(rename = "brokerName", skip_serializing_if = "Option::is_none")]
@@ -1225,11 +1265,45 @@ pub struct MessageExt {
 
 impl PartialEq for MessageExt {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.identity, &other.identity)
+        Arc::ptr_eq(&self.message.identity, &other.message.identity)
     }
 }
 
 impl Eq for MessageExt {}
+
+impl Hash for MessageExt {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.message.hash(state);
+    }
+}
+
+impl std::fmt::Debug for MessageExt {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MessageExt")
+            .field("identity", &self.message.identity)
+            .field("message", &self.message)
+            .field("broker_name", &self.broker_name)
+            .field("queue_id", &self.queue_id)
+            .field("store_size", &self.store_size)
+            .field("queue_offset", &self.queue_offset)
+            .field("sys_flag", &self.sys_flag)
+            .field("born_timestamp", &self.born_timestamp)
+            .field("born_host", &self.born_host)
+            .field("store_timestamp", &self.store_timestamp)
+            .field("store_host", &self.store_host)
+            .field("message_id", &self.message_id)
+            .field("offset_message_id", &self.offset_message_id)
+            .field("commit_log_offset", &self.commit_log_offset)
+            .field("body_crc", &self.body_crc)
+            .field("reconsume_times", &self.reconsume_times)
+            .field(
+                "prepared_transaction_offset",
+                &self.prepared_transaction_offset,
+            )
+            .finish()
+    }
+}
 
 impl MessageExt {
     /// Java's public no-argument `MessageExt` constructor.
@@ -1526,6 +1600,12 @@ impl std::fmt::Display for MessageExt {
 #[serde(transparent)]
 pub struct MessageClientExt(MessageExt);
 
+impl Hash for MessageClientExt {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
 impl MessageClientExt {
     pub fn new() -> Self {
         Self(MessageExt::default())
@@ -1563,6 +1643,42 @@ impl Deref for MessageClientExt {
 impl DerefMut for MessageClientExt {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl PartialEq<MessageExt> for Message {
+    fn eq(&self, other: &MessageExt) -> bool {
+        Arc::ptr_eq(&self.identity, &other.message.identity)
+    }
+}
+
+impl PartialEq<Message> for MessageExt {
+    fn eq(&self, other: &Message) -> bool {
+        Arc::ptr_eq(&self.message.identity, &other.identity)
+    }
+}
+
+impl PartialEq<MessageClientExt> for Message {
+    fn eq(&self, other: &MessageClientExt) -> bool {
+        Arc::ptr_eq(&self.identity, &other.0.message.identity)
+    }
+}
+
+impl PartialEq<Message> for MessageClientExt {
+    fn eq(&self, other: &Message) -> bool {
+        Arc::ptr_eq(&self.0.message.identity, &other.identity)
+    }
+}
+
+impl PartialEq<MessageClientExt> for MessageExt {
+    fn eq(&self, other: &MessageClientExt) -> bool {
+        Arc::ptr_eq(&self.message.identity, &other.0.message.identity)
+    }
+}
+
+impl PartialEq<MessageExt> for MessageClientExt {
+    fn eq(&self, other: &MessageExt) -> bool {
+        Arc::ptr_eq(&self.0.message.identity, &other.message.identity)
     }
 }
 

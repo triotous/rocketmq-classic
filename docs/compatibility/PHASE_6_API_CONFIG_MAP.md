@@ -1194,10 +1194,10 @@ Compile-fail rustdoc examples guard the three removed helper exports. `message_p
 
 | Pinned Java 5.5.1 API | Rust counterpart / current boundary |
 | --- | --- |
-| `Message.equals` / `hashCode`, inherited from `Object` | `Message` has no structural `PartialEq`/`Eq` implementation |
-| `MessageExt.equals` / `hashCode`, inherited from `Object` through `Message` | `MessageExt` `PartialEq`/`Eq` compare a hidden identity token, so separately constructed equal-content values are unequal |
+| `Message.equals` / `hashCode`, inherited from `Object` | `Message` implements `PartialEq`/`Eq`/`Hash` with a hidden identity token, not field equality; mutation does not change the hash |
+| `MessageExt` and `MessageClientExt` inherit `Object.equals/hashCode` through `Message` | All three Rust types compare and hash the same base identity token, including cross-type base/subclass views; separate construction, cloning, decoding, and deserialization create new identities |
 
-The invoked `messagePublicApi` fixture checks that each Java object equals itself and that a distinct default instance with identical fields is not equal. The Rust fixture checks the same behavior for fresh `MessageExt` values; its `Clone` retains the identity token. A compile-fail rustdoc example guards `Message`'s lack of structural equality. This closes only the `Message`/`MessageExt` equality-trait reverse-surface slice; the broader Common constructor, property, overload/input, inherited API, and P18-V01 reconciliation remains open.
+The invoked `messagePublicApi` fixture verifies that `equals` and `hashCode` are inherited from `Object`, each Java object equals itself, distinct instances with identical fields are unequal, hash codes remain stable after field mutation, and base/subclass views compare equal for the same object. Rust's `message_object_identity_traits_match_java_551_fixture` covers `Message`, `MessageExt`, and `MessageClientExt`, cross-type inheritance views, identity-preserving hashing across mutation, and distinct equality for cloned, decoded, and deserialized objects. `MessageExt` and `MessageClientExt` share the identity of their inherited message view. This closes only this identity-trait reverse-surface slice; the broader Common constructor, property, overload/input, inherited API, and P18-V01 reconciliation remains open. Fixture SHA-256: `5158dad83a14f0de57ba842134466e82331716f2c171b963e31ae227d9d66890`.
 
 ## Common public API: Message user-property whitespace validation
 
@@ -1213,7 +1213,7 @@ The invoked Java fixture confirms non-breaking-space keys and em-space values ar
 | --- | --- |
 | `MessageConst.STRING_HASH_SET` is a public mutable `HashSet<String>` that may contain null and is consulted before `Message.putUserProperty` validates blank names | `message::constants::STRING_HASH_SET` is a process-wide `LazyLock<RwLock<HashSet<Option<String>>>>`; each insertion checks current membership before Java-compatible blank validation |
 
-The invoked Java fixture adds a custom reserved name, null, and the empty string, then removes `KEYS`; it verifies live membership and that null/empty members reject matching input with the base `RuntimeException` before blank-name validation. Rust represents null membership as `None`, restores each mutation after the differential, and checks membership before validating nullable and non-null keys. Current `fixtures/messages/records.json` SHA-256: `d11f8c88e44711cffbd574beab5946943b00a8d350fe05ec40ff1b744320f321`. This closes the mutable-set null/blank membership and precedence slice only; the remaining Common public API and P18-V01 audit stay open.
+The invoked Java fixture adds a custom reserved name, null, and the empty string, then removes `KEYS`; it verifies live membership and that null/empty members reject matching input with the base `RuntimeException` before blank-name validation. Rust represents null membership as `None`, restores each mutation after the differential, and checks membership before validating nullable and non-null keys. Current `fixtures/messages/records.json` SHA-256: `5158dad83a14f0de57ba842134466e82331716f2c171b963e31ae227d9d66890`. This closes the mutable-set null/blank membership and precedence slice only; the remaining Common public API and P18-V01 audit stay open.
 
 ## Common public API: Message priority
 

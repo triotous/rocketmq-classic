@@ -479,16 +479,16 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Common all-feature tests, strict Clippy, formatting, and diff checks pass.
   Constructor/property accessors and the wider Common/Core/API reconciliation
   remain open P18-V01 work.
-- Common message equality reverse-surface slice: Java `Message` and
-  `MessageExt` inherit identity-based `Object.equals`/`hashCode`; Rust no longer
-  exposes structural equality. `MessageExt` equality now uses a hidden identity
-  token; Java and Rust fixtures cover same-instance/clone and distinct-default
-  outcomes. A compile-fail doctest guards `Message`'s lack of structural
-  equality. Default/all-feature workspace tests, strict workspace Clippy,
-  Maven verify (37 scenarios and cross-decodes), formatting, and diff checks
-  pass for this slice. The full P18-V02 rerun, including race/fuzz, example,
-  benchmark, metadata, and package-content gates, remains required on the final
-  revision. Broader Common/Core/API reconciliation remains open P18-V01 work.
+- Common message equality reverse-surface slice (initial implementation): Java
+  `Message` and `MessageExt` inherit identity-based `Object.equals`/`hashCode`;
+  Rust equality used a hidden `MessageExt` identity token, while `Message` had
+  no equality trait. The later 2026-10-16 identity/hash slice below supersedes
+  this implementation and its compile-fail doctest. Default/all-feature
+  workspace tests, strict workspace Clippy, Maven verify (37 scenarios and
+  cross-decodes), formatting, and diff checks pass for this slice. The full
+  P18-V02 rerun, including race/fuzz, example, benchmark, metadata, and
+  package-content gates, remains required on the final revision. Broader
+  Common/Core/API reconciliation remains open P18-V01 work.
 - Common `putUserProperty` whitespace input slice: Rust now follows Java
   `String.trim()` (U+0000–U+0020 only), preserving Java acceptance of
   non-breaking-space keys and em-space values. Invoked Java and Rust fixture
@@ -2011,3 +2011,20 @@ Before any publication:
   formatting and diff checks. This closes only this reverse-export discrepancy;
   broad P18-V01, final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04,
   Phase 19 local Docker/Broker automation, and release preflight remain open.
+
+- P18-V01 Common inherited `Object.equals/hashCode` parity (2026-10-16): Java
+  `Message`, `MessageExt`, and `MessageClientExt` inherit identity equality and
+  stable identity hash codes from `Object`. Rust now uses a shared hidden
+  identity token for `Message`/`MessageExt`/`MessageClientExt` `PartialEq`/`Eq`/
+  `Hash`, including comparisons through base/subclass views. Clone, decode, and
+  deserialization create a new identity; mutation leaves the hash stable. The
+  pinned fixture records the declaring class, self/distinct equality, hash
+  stability, and inherited-view comparisons; Rust covers the same behavior and
+  checks identity equality for cloned, decoded, and deserialized objects and
+  identity-hash stability across mutation. Fixture SHA-256:
+  `5158dad83a14f0de57ba842134466e82331716f2c171b963e31ae227d9d66890`.
+  Maven `verify` (37 scenarios), Common all-feature tests (23 unit, 21 message
+  decode, 6 other integration, 24 doctests), Core all-feature tests (168 unit,
+  all integration targets, 13 doctests), strict Common/Core Clippy, formatting,
+  and diff checks pass. This closes only this inherited trait slice; broad
+  P18-V01 and final-revision P18-V02 remain open.

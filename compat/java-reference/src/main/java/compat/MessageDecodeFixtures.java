@@ -169,10 +169,53 @@ public final class MessageDecodeFixtures {
         expected.put("defaultToString", defaultMessage.toString());
         expected.put("messageEqualsSelf", defaultMessage.equals(defaultMessage));
         expected.put("messageEqualsDistinctSameState", defaultMessage.equals(new Message()));
+        expected.put("messageEqualsDeclaringClass",
+            Message.class.getMethod("equals", Object.class).getDeclaringClass().getName());
+        expected.put("messageHashCodeDeclaringClass",
+            Message.class.getMethod("hashCode").getDeclaringClass().getName());
+        Message messageHashProbe = new Message();
+        int messageHashBeforeMutation = messageHashProbe.hashCode();
+        messageHashProbe.setTopic("hash-mutated-topic");
+        expected.put("messageHashCodeStableAfterMutation",
+            messageHashBeforeMutation == messageHashProbe.hashCode());
         MessageExt defaultMessageExt = new MessageExt();
         expected.put("messageExtEqualsSelf", defaultMessageExt.equals(defaultMessageExt));
         expected.put("messageExtEqualsDistinctSameState",
             defaultMessageExt.equals(new MessageExt()));
+        expected.put("messageExtEqualsDeclaringClass",
+            MessageExt.class.getMethod("equals", Object.class).getDeclaringClass().getName());
+        expected.put("messageExtHashCodeDeclaringClass",
+            MessageExt.class.getMethod("hashCode").getDeclaringClass().getName());
+        MessageExt messageExtHashProbe = new MessageExt();
+        int messageExtHashBeforeMutation = messageExtHashProbe.hashCode();
+        messageExtHashProbe.setQueueId(9);
+        expected.put("messageExtHashCodeStableAfterMutation",
+            messageExtHashBeforeMutation == messageExtHashProbe.hashCode());
+        Message messageExtBaseView = defaultMessageExt;
+        expected.put("messageExtEqualsBaseView", defaultMessageExt.equals(messageExtBaseView));
+        expected.put("baseViewEqualsMessageExt", messageExtBaseView.equals(defaultMessageExt));
+        MessageClientExt defaultMessageClientExt = new MessageClientExt();
+        expected.put("messageClientExtEqualsSelf",
+            defaultMessageClientExt.equals(defaultMessageClientExt));
+        expected.put("messageClientExtEqualsDistinctSameState",
+            defaultMessageClientExt.equals(new MessageClientExt()));
+        expected.put("messageClientExtEqualsDeclaringClass",
+            MessageClientExt.class.getMethod("equals", Object.class).getDeclaringClass().getName());
+        expected.put("messageClientExtHashCodeDeclaringClass",
+            MessageClientExt.class.getMethod("hashCode").getDeclaringClass().getName());
+        MessageClientExt messageClientHashProbe = new MessageClientExt();
+        int messageClientHashBeforeMutation = messageClientHashProbe.hashCode();
+        messageClientHashProbe.setTopic("hash-mutated-topic");
+        expected.put("messageClientExtHashCodeStableAfterMutation",
+            messageClientHashBeforeMutation == messageClientHashProbe.hashCode());
+        MessageClientExt clientBaseView = defaultMessageClientExt;
+        MessageExt clientExtView = defaultMessageClientExt;
+        expected.put("messageClientExtEqualsBaseView",
+            defaultMessageClientExt.equals(clientBaseView));
+        expected.put("baseViewEqualsMessageClientExt",
+            clientBaseView.equals(defaultMessageClientExt));
+        expected.put("messageClientExtEqualsExtView",
+            defaultMessageClientExt.equals(clientExtView));
         defaultMessage.getProperty("missing");
         expected.put("propertyLookupInitializesProperties",
             defaultMessage.getProperties() != null && defaultMessage.getProperties().isEmpty());
