@@ -1297,8 +1297,24 @@ fn message_constants_match_java_551() {
     .into_iter()
     .collect::<BTreeMap<_, _>>();
     assert_eq!(message_const.len(), 76);
+    let mut message_const_public_fields = message_const
+        .keys()
+        .map(|name| format!("public static final java.lang.String {name}"))
+        .collect::<Vec<_>>();
+    message_const_public_fields
+        .push("public static final java.util.HashSet<java.lang.String> STRING_HASH_SET".to_owned());
+    message_const_public_fields.sort();
     assert_eq!(
-        serde_json::to_value(message_const).unwrap(),
+        expected["messageConstPublicFields"],
+        json!(message_const_public_fields)
+    );
+    assert_eq!(
+        expected["messageConstPublicConstructors"],
+        json!(["MessageConst()"])
+    );
+    assert_eq!(expected["messageConstDeclaredPublicMethods"], json!([]));
+    assert_eq!(
+        serde_json::to_value(&message_const).unwrap(),
         expected["messageConst"]
     );
 

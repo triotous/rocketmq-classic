@@ -568,6 +568,15 @@ public final class MessageDecodeFixtures {
             .collect(Collectors.toList());
     }
 
+    private static List<String> publicFieldSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> Modifier.toString(field.getModifiers()) + " "
+                + field.getGenericType().getTypeName() + " " + field.getName())
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
     private static List<String> publicConstructorSignatures(Class<?> type) {
         return Arrays.stream(type.getDeclaredConstructors())
             .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
@@ -649,6 +658,9 @@ public final class MessageDecodeFixtures {
         reservedNames.sort(String::compareTo);
         Map<String, Object> expected = new TreeMap<>();
         expected.put("messageConst", messageConst);
+        expected.put("messageConstPublicFields", publicFieldSignatures(MessageConst.class));
+        expected.put("messageConstPublicConstructors", publicConstructorSignatures(MessageConst.class));
+        expected.put("messageConstDeclaredPublicMethods", publicMethodSignatures(MessageConst.class));
         expected.put("mixAll", mixAll);
         expected.put("reservedNames", reservedNames);
         return expected;
