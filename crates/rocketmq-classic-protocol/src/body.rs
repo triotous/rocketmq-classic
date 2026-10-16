@@ -104,6 +104,66 @@ impl<'de> Deserialize<'de> for CheckClientRequestBody {
 }
 
 impl CheckClientRequestBody {
+    /// Encodes the inherited Java static `encode(Object)` form, preserving its null result.
+    pub fn java_encode_optional(
+        value: Option<&Self>,
+    ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+        value.map(Self::java_encode).transpose()
+    }
+
+    /// Encodes the inherited Java static `toJson(Object, boolean)` form.
+    pub fn java_to_json_optional(
+        value: Option<&Self>,
+        pretty_format: bool,
+    ) -> Result<String, serde_json::Error> {
+        value.map_or_else(
+            || Ok("null".to_owned()),
+            |value| value.java_to_json(pretty_format),
+        )
+    }
+
+    /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        crate::route::java_fastjson_json(self, pretty_format)
+    }
+
+    /// Encodes inherited Java `RemotingSerializable.encode()` as UTF-8 JSON.
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decode` form.
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes the nullable inherited Java utility, including null bytes and JSON `null`.
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice_nullable(data)
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes a nullable Java list, preserving null roots and members.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        serde_fastjson::from_fastjson_list_nullable(data)
+    }
+
+    /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
+    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_str(json)
+    }
+
+    /// Decodes the nullable inherited Java `fromJson` utility form.
+    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_str_nullable(json)
+    }
+
     pub fn get_client_id(&self) -> Option<&str> {
         self.client_id.as_deref()
     }
@@ -6078,6 +6138,155 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn check_client_inherited_remoting_serialization_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let api = &fixture["checkClientBodyApiCase"];
+        let inherited = api["bodyInheritedSerializableMethods"].as_array().unwrap();
+        for method in [
+            "encode()",
+            "encode([Lcom.alibaba.fastjson2.JSONWriter$Feature;)",
+            "toJson()",
+            "toJson(boolean)",
+            "encode(java.lang.Object)",
+            "toJson(java.lang.Object,boolean)",
+            "decode([B,java.lang.Class)",
+            "decodeList([B,java.lang.Class)",
+            "fromJson(java.lang.String,java.lang.Class)",
+        ] {
+            assert!(
+                inherited.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(method))
+                }),
+                "Java inherited method missing from fixture: {method}"
+            );
+        }
+
+        for case in fixture["checkClientInheritedSerializationCases"]
+            .as_array()
+            .unwrap()
+        {
+            let value =
+                CheckClientRequestBody::java_decode(case["rawInput"].as_str().unwrap().as_bytes())
+                    .unwrap();
+            let encoded = value.java_encode().unwrap();
+            assert_eq!(
+                String::from_utf8(encoded.clone()).unwrap(),
+                case["instanceEncodedJson"],
+                "{} encode",
+                case["id"]
+            );
+            assert_eq!(
+                String::from_utf8(
+                    CheckClientRequestBody::java_encode_optional(Some(&value))
+                        .unwrap()
+                        .unwrap()
+                )
+                .unwrap(),
+                case["staticEncodedJson"],
+                "{} static encode",
+                case["id"]
+            );
+            assert_eq!(
+                value.java_to_json(false).unwrap(),
+                case["instanceJson"],
+                "{} compact JSON",
+                case["id"]
+            );
+            assert_eq!(
+                value.java_to_json(true).unwrap(),
+                case["instancePrettyJson"],
+                "{} pretty JSON",
+                case["id"]
+            );
+            assert_eq!(
+                CheckClientRequestBody::java_to_json_optional(Some(&value), false).unwrap(),
+                case["staticJson"],
+                "{} static JSON",
+                case["id"]
+            );
+            assert_eq!(
+                CheckClientRequestBody::java_decode(&encoded)
+                    .unwrap()
+                    .java_to_json(false)
+                    .unwrap(),
+                case["decodedJson"],
+                "{} decode",
+                case["id"]
+            );
+            assert_eq!(
+                CheckClientRequestBody::java_from_json(case["instanceJson"].as_str().unwrap())
+                    .unwrap()
+                    .java_to_json(false)
+                    .unwrap(),
+                case["fromJsonJson"],
+                "{} fromJson",
+                case["id"]
+            );
+            let list = format!("[{}]", case["instanceJson"].as_str().unwrap());
+            assert_eq!(
+                CheckClientRequestBody::java_decode_list(list.as_bytes()).unwrap()[0]
+                    .java_to_json(false)
+                    .unwrap(),
+                case["decodedListJson"],
+                "{} decodeList",
+                case["id"]
+            );
+        }
+
+        let nulls = &fixture["checkClientInheritedSerializationNullUtilities"];
+        assert_eq!(
+            CheckClientRequestBody::java_encode_optional(None).unwrap(),
+            None
+        );
+        assert_eq!(
+            CheckClientRequestBody::java_to_json_optional(None, false).unwrap(),
+            nulls["staticToJsonNull"]
+        );
+        assert_eq!(
+            CheckClientRequestBody::java_decode_nullable(None)
+                .unwrap()
+                .is_none(),
+            nulls["decodeNullBytesReturnsNull"]
+        );
+        assert_eq!(
+            CheckClientRequestBody::java_decode_nullable(Some(b"null"))
+                .unwrap()
+                .is_none(),
+            nulls["decodeJsonNullReturnsNull"]
+        );
+        assert!(
+            CheckClientRequestBody::java_from_json_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            CheckClientRequestBody::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            CheckClientRequestBody::java_decode_list_nullable(None)
+                .unwrap()
+                .is_none(),
+            nulls["decodeListNullBytesReturnsNull"]
+        );
+        assert_eq!(
+            CheckClientRequestBody::java_decode_list_nullable(Some(b"null"))
+                .unwrap()
+                .is_none(),
+            nulls["decodeListJsonNullReturnsNull"]
+        );
+        let list = CheckClientRequestBody::java_decode_list_nullable(Some(b"[null,{}]"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(list.len(), nulls["decodeListNullMemberCount"]);
+        assert_eq!(list[0].is_none(), nulls["decodeListPreservesNullMember"]);
     }
 
     #[test]

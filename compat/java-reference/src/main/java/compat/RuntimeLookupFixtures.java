@@ -94,6 +94,9 @@ public final class RuntimeLookupFixtures {
         fixture.put("setRequestModeRootCases", setRequestModeRootCases());
         fixture.put("setRequestModeRequestApiCase", setRequestModeRequestApiCase());
         fixture.put("checkClientBodyApiCase", checkClientBodyApiCase());
+        fixture.put("checkClientInheritedSerializationCases", checkClientInheritedSerializationCases());
+        fixture.put("checkClientInheritedSerializationNullUtilities",
+            checkClientInheritedSerializationNullUtilities());
         fixture.put("consumerListApiCase", consumerListApiCase());
         fixture.put("consumerListNullGroupApiCase", consumerListNullGroupApiCase());
         fixture.put("consumerListEmptyGroupApiCase", consumerListEmptyGroupApiCase());
@@ -1262,6 +1265,15 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody();
         Map<String, Object> item = new TreeMap<>();
+        item.put("bodyPublicConstructors", publicConstructorSignatures(body.getClass()));
+        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(body.getClass()));
+        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(body.getClass()));
+        item.put("bodyInheritedSerializableMethods", Arrays.stream(body.getClass().getMethods())
+            .filter(method -> method.getDeclaringClass()
+                == org.apache.rocketmq.remoting.protocol.RemotingSerializable.class)
+            .map(RuntimeLookupFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("clientId", body.getClientId());
         defaults.put("group", body.getGroup());
@@ -1320,6 +1332,79 @@ public final class RuntimeLookupFixtures {
         body.setNamespace(null);
         item.put("nullSettersRemainNull", body.getClientId() == null && body.getGroup() == null
             && body.getSubscriptionData() == null && body.getNamespace() == null);
+        return item;
+    }
+
+    private static List<Object> checkClientInheritedSerializationCases() {
+        String[][] inputs = {
+            {"default", "{}"},
+            {"explicit-null", "{\"clientId\":null,\"group\":null,\"subscriptionData\":null,\"namespace\":null}"},
+            {"populated", "{\"clientId\":\"client-a\",\"group\":\"workers\","
+                + "\"subscriptionData\":{\"topic\":\"orders\",\"subString\":\"*\","
+                + "\"subVersion\":42,\"classFilterMode\":true,\"expressionType\":\"TAG\","
+                + "\"tagsSet\":[\"gold\"]},\"namespace\":\"tenant\"}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        Class<org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody> type =
+            org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.class;
+        for (String[] input : inputs) {
+            byte[] raw = input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody value =
+                org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.decode(raw, type);
+            String instanceJson = value.toJson();
+            byte[] instanceBytes = value.encode();
+            List<org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody> decodedList =
+                org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.decodeList(
+                    com.alibaba.fastjson2.JSON.toJSONBytes(java.util.Collections.singletonList(value)), type);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", input[0]);
+            item.put("rawInput", input[1]);
+            item.put("instanceJson", instanceJson);
+            item.put("instancePrettyJson", value.toJson(true));
+            item.put("staticJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, false));
+            item.put("staticPrettyJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, true));
+            item.put("instanceEncodedJson", new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8));
+            item.put("staticEncodedJson", new String(
+                org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(value),
+                java.nio.charset.StandardCharsets.UTF_8));
+            item.put("featureEncodedJson", new String(value.encode(
+                new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+            item.put("decodedJson", org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.decode(
+                instanceBytes, type).toJson());
+            item.put("fromJsonJson", org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.fromJson(
+                instanceJson, type).toJson());
+            item.put("decodedListJson", decodedList.get(0).toJson());
+            item.put("decodedListCount", decodedList.size());
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> checkClientInheritedSerializationNullUtilities() {
+        Class<org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody> type =
+            org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.class;
+        byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("staticEncodeNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode((Object) null) == null);
+        item.put("staticToJsonNull", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(null, false));
+        item.put("decodeNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(null, type) == null);
+        item.put("decodeJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(jsonNull, type) == null);
+        item.put("fromJsonNullInputReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(null, type) == null);
+        item.put("fromJsonJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson("null", type) == null);
+        item.put("decodeListNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, type) == null);
+        item.put("decodeListJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, type) == null);
+        List<org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody> nullMemberList =
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+                "[null,{}]".getBytes(java.nio.charset.StandardCharsets.UTF_8), type);
+        item.put("decodeListNullMemberCount", nullMemberList.size());
+        item.put("decodeListPreservesNullMember", nullMemberList.get(0) == null);
         return item;
     }
 
