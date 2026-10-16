@@ -2690,3 +2690,16 @@ Before any publication:
   current-revision platform CI evidence, package/pre-publication review, and
   Phase 19 local Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T225647Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T225647Z.rlog).
+- P18-V01 `NotWriteDefaultValue` writer feature (code commit `9f7870fe`,
+  2026-10-16): inherited body, route, and heartbeat serialization now omits
+  Java default-valued bean fields while retaining map entry values and the
+  pinned `autoCommit` output. The Java fixtures cover populated nested DTOs,
+  false/zero primitive defaults, route mapping IDs, and explicit class defaults.
+  Nine of 48 writer features now have behavior mappings; the other 39 remain
+  unmapped. Protocol all-feature tests (122 unit tests, all integration
+  targets, 42 doctests), strict Protocol Clippy, Maven verify (37 scenarios),
+  formatting, and diff checks pass. The final full-workspace P18-V02 gate must
+  be rerun after this code commit. Broad P18-V01, current-revision platform CI
+  evidence, package/pre-publication review, and Phase 19 local Docker/Broker
+  automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T230936Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T230936Z.rlog).
