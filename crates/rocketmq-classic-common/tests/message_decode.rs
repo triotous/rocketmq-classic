@@ -790,6 +790,19 @@ fn message_ext_socket_address_api_matches_java_551() {
 #[test]
 fn message_id_api_matches_java_551() {
     let expected = &fixture()["messageExtHostApi"];
+    assert_eq!(
+        expected["messageIdPublicConstructors"],
+        json!(["MessageId(java.net.SocketAddress, long)"])
+    );
+    assert_eq!(
+        expected["messageIdDeclaredPublicMethods"],
+        json!([
+            "java.net.SocketAddress getAddress()",
+            "long getOffset()",
+            "void setAddress(java.net.SocketAddress)",
+            "void setOffset(long)"
+        ])
+    );
     let ipv4 = MessageHostAddress::from_ip_address(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 10911);
     let ipv6 = MessageHostAddress::from_ip_address(
         IpAddr::V6("2001:db8::20".parse::<Ipv6Addr>().unwrap()),

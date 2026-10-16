@@ -1154,6 +1154,8 @@ public final class MessageDecodeFixtures {
         InetSocketAddress unresolved = InetSocketAddress.createUnresolved("broker.invalid", 10912);
         MessageExt message = new MessageExt();
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("messageIdPublicConstructors", publicConstructorSignatures(MessageId.class));
+        expected.put("messageIdDeclaredPublicMethods", publicMethodSignatures(MessageId.class));
         expected.put("brokerNameDefault", message.getBrokerName());
         message.setBrokerName("broker-a");
         expected.put("brokerNameSet", message.getBrokerName());
