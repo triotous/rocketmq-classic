@@ -4,8 +4,9 @@
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
 /// adapters currently implement `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
-/// `PrettyFormatWith2Space`, and `PrettyFormatWith4Space`; other variants
-/// return an explicit unsupported-feature error until their behavior is mapped.
+/// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
+/// and `IgnoreEmpty`; other variants return an explicit unsupported-feature
+/// error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -184,6 +185,8 @@ impl JavaJsonWriterFeature {
                 | Self::EscapeNoneAscii
                 | Self::WriteBooleanAsNumber
                 | Self::WriteNonStringValueAsString
+                | Self::NotWriteEmptyArray
+                | Self::IgnoreEmpty
         )
     }
 }

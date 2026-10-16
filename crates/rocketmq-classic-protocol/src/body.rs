@@ -4874,6 +4874,12 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         value_features.write_non_string_values_as_strings,
         value_features.write_boolean_as_number,
     );
+    if features.contains(&JavaJsonWriterFeature::NotWriteEmptyArray) {
+        crate::route::omit_empty_writer_values(&mut value, false);
+    }
+    if features.contains(&JavaJsonWriterFeature::IgnoreEmpty) {
+        crate::route::omit_empty_writer_values(&mut value, true);
+    }
     let mut output = String::new();
     write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
@@ -7188,6 +7194,11 @@ mod tests {
                     );
                     for (feature, feature_name) in [
                         (
+                            JavaJsonWriterFeature::NotWriteEmptyArray,
+                            "NotWriteEmptyArray",
+                        ),
+                        (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
+                        (
                             JavaJsonWriterFeature::PrettyFormatWith2Space,
                             "PrettyFormatWith2Space",
                         ),
@@ -7200,7 +7211,7 @@ mod tests {
                             value.java_encode_with_features(&[feature]).unwrap(),
                             expected["writerFeatureOverrides"][feature_name]
                                 .as_str()
-                                .unwrap()
+                                .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap())
                                 .as_bytes(),
                             "{} {} {feature_name}",
                             $name,

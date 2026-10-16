@@ -92,6 +92,12 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
     );
+    if features.contains(&JavaJsonWriterFeature::NotWriteEmptyArray) {
+        omit_empty_writer_values(&mut value, false);
+    }
+    if features.contains(&JavaJsonWriterFeature::IgnoreEmpty) {
+        omit_empty_writer_values(&mut value, true);
+    }
     let mut output = String::new();
     let unquote_numeric_map_keys =
         !features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
@@ -107,6 +113,33 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         Ok(escape_none_ascii_json(&output))
     } else {
         Ok(output)
+    }
+}
+
+pub(crate) fn omit_empty_writer_values(value: &mut serde_json::Value, omit_empty_strings: bool) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for value in fields.values_mut() {
+                omit_empty_writer_values(value, omit_empty_strings);
+            }
+            fields.retain(|_, value| match value {
+                serde_json::Value::Array(values) => !values.is_empty(),
+                serde_json::Value::Object(fields) => !fields.is_empty(),
+                serde_json::Value::String(string) => !omit_empty_strings || !string.is_empty(),
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_) => true,
+            });
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                omit_empty_writer_values(value, omit_empty_strings);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
     }
 }
 
@@ -3788,6 +3821,8 @@ mod tests {
                     case["id"]
                 );
                 for (feature, feature_name) in [
+                    (JavaJsonWriterFeature::NotWriteEmptyArray, "NotWriteEmptyArray"),
+                    (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
                     (
                         JavaJsonWriterFeature::PrettyFormatWith2Space,
                         "PrettyFormatWith2Space",
@@ -3801,7 +3836,7 @@ mod tests {
                         value.java_encode_with_features(&[feature]).unwrap(),
                         case["writerFeatureOverrides"][feature_name]
                             .as_str()
-                            .unwrap()
+                            .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap())
                             .as_bytes(),
                         "{} {feature_name}",
                         case["id"]

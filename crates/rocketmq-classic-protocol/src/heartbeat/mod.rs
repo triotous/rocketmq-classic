@@ -2661,6 +2661,11 @@ mod tests {
             );
             for (feature, feature_name) in [
                 (
+                    crate::JavaJsonWriterFeature::NotWriteEmptyArray,
+                    "NotWriteEmptyArray",
+                ),
+                (crate::JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
+                (
                     crate::JavaJsonWriterFeature::PrettyFormatWith2Space,
                     "PrettyFormatWith2Space",
                 ),
@@ -2673,7 +2678,7 @@ mod tests {
                     value.java_encode_with_features(&[feature]).unwrap(),
                     case["writerFeatureOverrides"][feature_name]
                         .as_str()
-                        .unwrap()
+                        .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap())
                         .as_bytes(),
                     "{} {feature_name}",
                     case["case"]
