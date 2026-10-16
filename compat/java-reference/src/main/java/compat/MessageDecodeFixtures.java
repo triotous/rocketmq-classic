@@ -1061,6 +1061,7 @@ public final class MessageDecodeFixtures {
         Collections.sort(publicConstructors);
         expected.put("publicConstructorCount", publicConstructors.size());
         expected.put("publicConstructors", publicConstructors);
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageExt.class));
         expected.put("defaultQueueId", defaults.getQueueId());
         expected.put("defaultBornTimestamp", defaults.getBornTimestamp());
         expected.put("defaultStoreTimestamp", defaults.getStoreTimestamp());
@@ -1111,6 +1112,7 @@ public final class MessageDecodeFixtures {
         }
         expected.put("publicConstructorCount", publicConstructors.length);
         expected.put("publicNoArgConstructor", hasPublicNoArgConstructor);
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageClientExt.class));
         expected.put("defaultMessageId", message.getMsgId());
         expected.put("defaultOffsetMessageId", message.getOffsetMsgId());
         message.setMsgId("ignored-initial");

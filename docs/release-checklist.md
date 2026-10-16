@@ -2028,3 +2028,14 @@ Before any publication:
   all integration targets, 13 doctests), strict Common/Core Clippy, formatting,
   and diff checks pass. This closes only this inherited trait slice; broad
   P18-V01 and final-revision P18-V02 remain open.
+
+- P18-V01 Common `MessageExt`/`MessageClientExt` declared method inventory
+  (2026-10-16): the pinned Java fixture now records all 44 declared public
+  `MessageExt` methods and all four declared public `MessageClientExt` methods.
+  Rust's Common fixture tests pin both sorted signature lists alongside the
+  constructor, scalar, host-buffer, and client-ID behavior checks. Fixture
+  SHA-256: `2118277b7aad68e1077d92371d5ec14bd8cb77535e272dca406bc3e716d85792`.
+  Maven `verify` passes all 37 scenarios. Common all-feature tests pass (23
+  unit tests, 21 `message_decode`, six other integration, 24 doctests), as do
+  strict Common Clippy, formatting, checksum, and diff checks. This closes the
+  method inventory slice only; broad P18-V01 remains open.

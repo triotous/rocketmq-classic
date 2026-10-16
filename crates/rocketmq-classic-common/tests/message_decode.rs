@@ -186,6 +186,55 @@ fn message_ext_scalar_public_api_matches_java_551_fixture() {
             "(int, long, java.net.SocketAddress, long, java.net.SocketAddress, java.lang.String)"
         ])
     );
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "int getBodyCRC()",
+            "int getQueueId()",
+            "int getReconsumeTimes()",
+            "int getStoreSize()",
+            "int getSysFlag()",
+            "java.lang.Integer getGroupSysFlag()",
+            "java.lang.Integer getTopicSysFlag()",
+            "java.lang.String getBornHostNameString()",
+            "java.lang.String getBornHostString()",
+            "java.lang.String getBrokerName()",
+            "java.lang.String getMsgId()",
+            "java.lang.String toString()",
+            "java.net.SocketAddress getBornHost()",
+            "java.net.SocketAddress getStoreHost()",
+            "java.nio.ByteBuffer getBornHostBytes()",
+            "java.nio.ByteBuffer getBornHostBytes(java.nio.ByteBuffer)",
+            "java.nio.ByteBuffer getStoreHostBytes()",
+            "java.nio.ByteBuffer getStoreHostBytes(java.nio.ByteBuffer)",
+            "java.nio.ByteBuffer socketAddress2ByteBuffer(java.net.SocketAddress)",
+            "java.nio.ByteBuffer socketAddress2ByteBuffer(java.net.SocketAddress, java.nio.ByteBuffer)",
+            "long getBornTimestamp()",
+            "long getCommitLogOffset()",
+            "long getPreparedTransactionOffset()",
+            "long getQueueOffset()",
+            "long getStoreTimestamp()",
+            "org.apache.rocketmq.common.TopicFilterType parseTopicFilterType(int)",
+            "void setBodyCRC(int)",
+            "void setBornHost(java.net.SocketAddress)",
+            "void setBornHostV6Flag()",
+            "void setBornTimestamp(long)",
+            "void setBrokerName(java.lang.String)",
+            "void setCommitLogOffset(long)",
+            "void setGroupSysFlag(java.lang.Integer)",
+            "void setMsgId(java.lang.String)",
+            "void setPreparedTransactionOffset(long)",
+            "void setQueueId(int)",
+            "void setQueueOffset(long)",
+            "void setReconsumeTimes(int)",
+            "void setStoreHost(java.net.SocketAddress)",
+            "void setStoreHostAddressV6Flag()",
+            "void setStoreSize(int)",
+            "void setStoreTimestamp(long)",
+            "void setSysFlag(int)",
+            "void setTopicSysFlag(java.lang.Integer)"
+        ])
+    );
     let defaults = MessageExt::new();
     assert_eq!(
         defaults.queue_id(),
@@ -291,6 +340,15 @@ fn message_client_ext_api_matches_java_551_fixture() {
     let expected = &fixture()["messageClientExtApi"];
     assert_eq!(expected["publicConstructorCount"].as_u64(), Some(1));
     assert_eq!(expected["publicNoArgConstructor"].as_bool(), Some(true));
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "java.lang.String getMsgId()",
+            "java.lang.String getOffsetMsgId()",
+            "void setMsgId(java.lang.String)",
+            "void setOffsetMsgId(java.lang.String)"
+        ])
+    );
     let mut message = MessageClientExt::new();
     assert_eq!(
         message.message_id().as_deref(),

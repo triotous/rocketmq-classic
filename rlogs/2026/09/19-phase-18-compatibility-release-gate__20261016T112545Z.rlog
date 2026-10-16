@@ -63,3 +63,17 @@
   P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and Phase 19 local
   Docker/Broker automation remain open. No plan, Docker/Broker, push,
   publication, tag, or deployment action was performed.
+
+- P18-V01 Common `MessageExt`/`MessageClientExt` declared method inventory
+  (2026-10-16): pinned Java fixtures record the 44 declared public
+  `MessageExt` signatures and all four declared public `MessageClientExt`
+  signatures; Rust fixture tests pin both inventories and the mapped scalar,
+  host-buffer, constructor, and client-ID behavior. Fixture SHA-256:
+  `2118277b7aad68e1077d92371d5ec14bd8cb77535e272dca406bc3e716d85792`.
+- Validation passed: focused Common API tests; Common all-feature tests (23
+  unit, 21 `message_decode`, six other integration, 24 doctests); strict Common
+  all-target/all-feature Clippy; offline Maven `verify` (37 scenarios and Java
+  message fixture drift); formatting, fixture checksum, and `git diff --check`.
+- This closes the inherited class method inventory slice only. Broad P18-V01,
+  final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and
+  Phase 19 automation remain open.
