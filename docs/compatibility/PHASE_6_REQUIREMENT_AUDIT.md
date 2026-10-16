@@ -4,8 +4,10 @@
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:
 
-- Current server-free P18-V02 gate on source commit `ac26a5ae` (2026-10-16,
-  macOS ARM64): default and all-feature locked workspace tests, strict
+- Current server-free P18-V02 gate on source commit `787157a0` (2026-10-16,
+  macOS ARM64), after the Common `MessageUtils`, `CorrelationIdUtil`, and
+  `NameServerAddressUtils` API slices and the lifecycle/thread-helper audit:
+  default and all-feature locked workspace tests, strict
   all-target/all-feature Clippy, workspace formatting, pinned Maven `verify`
   (37 scenarios, fixture drift and Java/Rust cross-decodes), differential
   self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases
