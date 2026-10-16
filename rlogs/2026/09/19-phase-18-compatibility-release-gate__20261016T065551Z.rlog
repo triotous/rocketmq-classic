@@ -11,3 +11,9 @@
 - Extended the invoked Java fixture for both services with that mutation/error boundary and regenerated `fixtures/consumer/push-implementation-accessor.json`; SHA-256 `7cb9248e388ffb283f4b3554364edfc84cd2623ef7ec25a2d38dd638a2f8613d`.
 - PASS: focused Java fixture generation; fixture reports the exception for 9, retained size 6, and accepted size 8 for both services; `git diff --check`.
 - Rust still needs to distinguish the live facade bound from the constructed executor capacity; implementation and differential regression remain in progress.
+
+## P18-V01 Push updateCorePoolSize after shutdown — 2026-10-16T07:14Z
+
+- Extended the Java fixture after shutdown: with live `consumeThreadMax=10` and constructed executor maximum 8, `updateCorePoolSize(9)` still throws `IllegalArgumentException` for both concurrent and orderly services. This confirms the executor capacity and original service survive shutdown for this call path.
+- Regenerated `fixtures/consumer/push-implementation-accessor.json`; SHA-256 `29ed1e78da3f3dfe6f0d334d78e8f97e4178537a7105419c6fd907fc0aa9a023`.
+- PASS: focused Java fixture generation and `git diff --check`. Rust regression now checks the same post-shutdown capacity error; full verification is pending after this extension.

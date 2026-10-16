@@ -419,6 +419,14 @@ public final class PushImplementationAccessorFixtures {
         concurrentConsumer.updateCorePoolSize(8);
         result.put("concurrentCorePoolSizeAtExecutorMaximum", concurrentService.getCorePoolSize());
         concurrentService.shutdown(0);
+        boolean concurrentShutdownRaisedMaxUpdateThrowsIllegalArgumentException = false;
+        try {
+            concurrentConsumer.updateCorePoolSize(9);
+        } catch (IllegalArgumentException expected) {
+            concurrentShutdownRaisedMaxUpdateThrowsIllegalArgumentException = true;
+        }
+        result.put("concurrentShutdownRaisedMaxUpdateThrowsIllegalArgumentException",
+            concurrentShutdownRaisedMaxUpdateThrowsIllegalArgumentException);
         concurrentConsumer.updateCorePoolSize(7);
         result.put("concurrentCorePoolSizeAfterShutdownUpdate", concurrentService.getCorePoolSize());
 
@@ -450,6 +458,14 @@ public final class PushImplementationAccessorFixtures {
         orderlyConsumer.updateCorePoolSize(8);
         result.put("orderlyCorePoolSizeAtExecutorMaximum", orderlyService.getCorePoolSize());
         orderlyService.shutdown(0);
+        boolean orderlyShutdownRaisedMaxUpdateThrowsIllegalArgumentException = false;
+        try {
+            orderlyConsumer.updateCorePoolSize(9);
+        } catch (IllegalArgumentException expected) {
+            orderlyShutdownRaisedMaxUpdateThrowsIllegalArgumentException = true;
+        }
+        result.put("orderlyShutdownRaisedMaxUpdateThrowsIllegalArgumentException",
+            orderlyShutdownRaisedMaxUpdateThrowsIllegalArgumentException);
         orderlyConsumer.updateCorePoolSize(7);
         result.put("orderlyCorePoolSizeAfterShutdownUpdate", orderlyService.getCorePoolSize());
         return result;
