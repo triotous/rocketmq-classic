@@ -67,6 +67,10 @@ fn selector_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "non-string selector panic payload".to_owned())
 }
 
+fn batch_initiation_failure(error: ProducerError) -> ProducerError {
+    ProducerError::BatchInitiationFailed(Box::new(error))
+}
+
 fn client_retries_exhausted(
     error: ProducerError,
     attempts: usize,
@@ -841,7 +845,8 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+            .map_err(batch_initiation_failure)?;
         self.send_default_until(&mut batch, true, SendMode::Sync, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -865,7 +870,8 @@ impl Producer {
     ) -> Result<SendResult, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+            .map_err(batch_initiation_failure)?;
         self.send_default_until(&mut batch, true, SendMode::Future, deadline)
             .await?
             .ok_or(ProducerError::Timeout)
@@ -928,7 +934,8 @@ impl Producer {
     ) -> Result<Option<SendResult>, ProducerError> {
         let deadline = deadline_after(timeout);
         self.prepare_batch_messages(messages)?;
-        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)?;
+        let mut batch = create_batch_from_prepared(messages, &self.config, &self.ids)
+            .map_err(batch_initiation_failure)?;
         self.send_to_queue_until(&mut batch, queue, true, mode, deadline)
             .await
     }
@@ -1863,16 +1870,20 @@ impl Producer {
     }
 
     fn prepare_batch_messages(&self, messages: &mut [Message]) -> Result<(), ProducerError> {
-        crate::batch::MessageBatch::generate_from_list(messages.to_vec())?;
+        let result = (|| -> Result<(), ProducerError> {
+            crate::batch::MessageBatch::generate_from_list(messages.to_vec())?;
 
-        for message in messages {
-            validation::validate_message(Some(message), &self.config)?;
-            self.ids.set_if_missing(message);
-            let topic = self.topic_with_namespace(message.topic())?;
-            message.set_topic(topic);
-        }
+            for message in messages {
+                validation::validate_message(Some(message), &self.config)?;
+                self.ids.set_if_missing(message);
+                let topic = self.topic_with_namespace(message.topic())?;
+                message.set_topic(topic);
+            }
 
-        Ok(())
+            Ok(())
+        })();
+
+        result.map_err(batch_initiation_failure)
     }
 
     fn topic_with_namespace(&self, topic: &str) -> Result<String, ProducerError> {
@@ -4531,10 +4542,19 @@ mod tests {
             Message::new("orders", vec![1]),
             Message::new("payments", vec![2]),
         ];
+        let mixed_topic_error = producer
+            .send_batch(&mut mixed_topics)
+            .await
+            .expect_err("mixed-topic batches are rejected during Java batch preparation");
         assert!(matches!(
-            producer.send_batch(&mut mixed_topics).await,
-            Err(ProducerError::BatchTopicMismatch)
+            &mixed_topic_error,
+            ProducerError::BatchInitiationFailed(source)
+                if matches!(source.as_ref(), ProducerError::BatchTopicMismatch)
         ));
+        assert_eq!(
+            mixed_topic_error.to_string(),
+            expected["mixedTopicErrorMessage"].as_str().unwrap()
+        );
         assert_eq!(
             expected["mixedTopicOutcome"].as_str(),
             Some("MQClientException")
@@ -4565,17 +4585,47 @@ mod tests {
             .client_config_mut()
             .set_namespace(Some("batch-tenant".into()));
         let limited_producer = Producer::new(limited_config);
+        let mut aggregate_size = [Message::new("orders", vec![1])];
+        let aggregate_error = limited_producer
+            .send_batch(&mut aggregate_size)
+            .await
+            .expect_err("the producer state check follows successful batch preparation");
+        assert!(matches!(aggregate_error, ProducerError::NotStarted));
+        assert_eq!(
+            expected["aggregateSizeOutcome"].as_str(),
+            Some("MQClientException")
+        );
+        assert_eq!(
+            aggregate_size[0].topic(),
+            expected["aggregateSizeTopic"].as_str().unwrap()
+        );
+        assert!(
+            aggregate_size[0]
+                .properties()
+                .contains_key(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+        );
+        assert_eq!(
+            expected["aggregateSizeUniqueIdPresent"].as_bool(),
+            Some(true)
+        );
+
         let mut partial_validation = [
             Message::new("orders", vec![1]),
             Message::new("orders", vec![2, 3, 4]),
         ];
+        let partial_validation_error = limited_producer
+            .send_batch(&mut partial_validation)
+            .await
+            .expect_err("per-element validation failures are wrapped during batch preparation");
         assert!(matches!(
-            limited_producer.send_batch(&mut partial_validation).await,
-            Err(ProducerError::BodyTooLarge {
-                actual: 3,
-                maximum: 2
-            })
+            &partial_validation_error,
+            ProducerError::BatchInitiationFailed(source)
+                if matches!(source.as_ref(), ProducerError::BodyTooLarge { actual: 3, maximum: 2 })
         ));
+        assert_eq!(
+            partial_validation_error.to_string(),
+            expected["partialValidationErrorMessage"].as_str().unwrap()
+        );
         assert_eq!(
             expected["partialValidationOutcome"].as_str(),
             Some("MQClientException")

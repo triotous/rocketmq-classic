@@ -202,7 +202,14 @@ pub(crate) fn create_batch(
         encoded_messages.push(encode_message(&copy)?);
     }
 
-    finish_batch(topic, wait_store_msg_ok, encoded_messages, config, ids)
+    finish_batch(
+        topic,
+        wait_store_msg_ok,
+        encoded_messages,
+        config,
+        ids,
+        true,
+    )
 }
 
 pub(crate) fn create_batch_from_prepared(
@@ -223,7 +230,14 @@ pub(crate) fn create_batch_from_prepared(
         encoded_messages.push(encode_message(&copy)?);
     }
 
-    finish_batch(topic, wait_store_msg_ok, encoded_messages, config, ids)
+    finish_batch(
+        topic,
+        wait_store_msg_ok,
+        encoded_messages,
+        config,
+        ids,
+        false,
+    )
 }
 
 fn finish_batch(
@@ -232,6 +246,7 @@ fn finish_batch(
     encoded_messages: Vec<Vec<u8>>,
     config: &ProducerConfig,
     ids: &UniqueIdGenerator,
+    enforce_size_limit: bool,
 ) -> Result<Message, ProducerError> {
     let total_size = encoded_messages.iter().try_fold(0usize, |total, encoded| {
         total
@@ -242,7 +257,7 @@ fn finish_batch(
             })
     })?;
 
-    if total_size as i64 > config.max_message_size() as i64 {
+    if enforce_size_limit && total_size as i64 > config.max_message_size() as i64 {
         return Err(ProducerError::BatchTooLarge {
             actual: total_size,
             maximum: config.max_message_size(),

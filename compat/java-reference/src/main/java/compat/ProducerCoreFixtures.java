@@ -469,20 +469,34 @@ public final class ProducerCoreFixtures {
         Message mixedFirst = new Message("orders", new byte[] {1});
         Message mixedSecond = new Message("payments", new byte[] {2});
         String mixedTopicOutcome = "returned";
+        String mixedTopicErrorMessage = "";
         try {
             producer.send(Arrays.asList(mixedFirst, mixedSecond));
         } catch (Throwable error) {
             mixedTopicOutcome = error.getClass().getSimpleName();
+            mixedTopicErrorMessage = error.getMessage();
         }
 
         producer.setMaxMessageSize(2);
+        Message aggregateSize = new Message("orders", new byte[] {1});
+        String aggregateSizeOutcome = "returned";
+        String aggregateSizeErrorMessage = "";
+        try {
+            producer.send(Arrays.asList(aggregateSize));
+        } catch (Throwable error) {
+            aggregateSizeOutcome = error.getClass().getSimpleName();
+            aggregateSizeErrorMessage = error.getMessage();
+        }
+
         Message partialFirst = new Message("orders", new byte[] {1});
         Message partialSecond = new Message("orders", new byte[] {2, 3, 4});
         String partialValidationOutcome = "returned";
+        String partialValidationErrorMessage = "";
         try {
             producer.send(Arrays.asList(partialFirst, partialSecond));
         } catch (Throwable error) {
             partialValidationOutcome = error.getClass().getSimpleName();
+            partialValidationErrorMessage = error.getMessage();
         }
 
         Map<String, Object> result = new TreeMap<>();
@@ -492,11 +506,17 @@ public final class ProducerCoreFixtures {
         result.put("firstUniqueIdPresent", first.getProperty("UNIQ_KEY") != null);
         result.put("secondUniqueIdPresent", second.getProperty("UNIQ_KEY") != null);
         result.put("mixedTopicOutcome", mixedTopicOutcome);
+        result.put("mixedTopicErrorMessage", mixedTopicErrorMessage);
         result.put("mixedFirstTopic", mixedFirst.getTopic());
         result.put("mixedSecondTopic", mixedSecond.getTopic());
         result.put("mixedFirstUniqueIdPresent", mixedFirst.getProperty("UNIQ_KEY") != null);
         result.put("mixedSecondUniqueIdPresent", mixedSecond.getProperty("UNIQ_KEY") != null);
+        result.put("aggregateSizeOutcome", aggregateSizeOutcome);
+        result.put("aggregateSizeErrorMessage", aggregateSizeErrorMessage);
+        result.put("aggregateSizeTopic", aggregateSize.getTopic());
+        result.put("aggregateSizeUniqueIdPresent", aggregateSize.getProperty("UNIQ_KEY") != null);
         result.put("partialValidationOutcome", partialValidationOutcome);
+        result.put("partialValidationErrorMessage", partialValidationErrorMessage);
         result.put("partialFirstTopic", partialFirst.getTopic());
         result.put("partialSecondTopic", partialSecond.getTopic());
         result.put("partialFirstUniqueIdPresent", partialFirst.getProperty("UNIQ_KEY") != null);

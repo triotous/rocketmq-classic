@@ -133,6 +133,10 @@ pub enum ProducerError {
     InvalidBatchDelay,
     #[error("Retry Group is not supported for batching")]
     RetryBatchMessage,
+    #[error(
+        "Failed to initiate the MessageBatch\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    )]
+    BatchInitiationFailed(#[source] Box<ProducerError>),
     #[error("batch message property encoding exceeds Java's signed-short limit")]
     BatchPropertiesTooLarge,
     #[error("encoded batch size {actual} exceeds configured maximum {maximum}")]
