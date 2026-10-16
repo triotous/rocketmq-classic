@@ -23,3 +23,33 @@ fn request_reply_api_is_available_from_the_facade_crate() {
         Err(ReplyMessageError::NullRequest)
     ));
 }
+
+#[test]
+fn pinned_java_request_reply_callback_surface_is_inventoried() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/producer/request-reply.json"
+    ))
+    .unwrap();
+
+    assert_eq!(
+        fixture["publicRequestCallbackMethods"],
+        serde_json::json!([
+            "void onException(java.lang.Throwable)",
+            "void onSuccess(org.apache.rocketmq.common.message.Message)"
+        ])
+    );
+    assert_eq!(
+        fixture["publicRequestFutureHolderMethods"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        fixture["publicRequestResponseFutureMethods"]
+            .as_array()
+            .unwrap()
+            .len(),
+        18
+    );
+}

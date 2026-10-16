@@ -26,6 +26,7 @@ Java source baseline: `rocketmq-all-5.5.1`, commit `efa1be59d6fc747ad220f036c860
 
 ## Pinned source audit
 
+- The invoked `request-reply.json` fixture inventories the declared public method signatures of Java `RequestCallback` (2), `RequestFutureHolder` (4), and `RequestResponseFuture` (18). Rust request callbacks use `RequestCallback` with a typed `Result`, Producer request methods own the await/callback flow, and `ClientRuntime` owns the correlation table and timeout worker. The facade does not expose mutable future fields or the live table; this internal-helper surface remains part of the broad P18-V01 review.
 - `client/src/main/java/org/apache/rocketmq/client/producer/DefaultMQProducer.java`: six public request overloads namespace the caller topic and delegate to `DefaultMQProducerImpl`.
 - `client/src/main/java/org/apache/rocketmq/client/impl/producer/DefaultMQProducerImpl.java`: request overloads register before async send; one original timeout includes preparation; `requestFail` removes before callback; `prepareSendRequest` writes the three message properties. The async sender uses a 50,000-entry `LinkedBlockingQueue`.
 - `client/src/main/java/org/apache/rocketmq/client/producer/RequestFutureHolder.java`: singleton pending map; timeout scan removes before callback; scheduler starts after 3 seconds and repeats every second; `shutdown(producer)` only updates the producer set and shuts down the scanner after the last producer. It leaves pending entries untouched.

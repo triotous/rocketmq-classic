@@ -35,6 +35,8 @@ import java.util.stream.Collectors;
 import org.apache.rocketmq.client.common.ClientErrorCode;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.RequestCallback;
+import org.apache.rocketmq.client.producer.RequestFutureHolder;
+import org.apache.rocketmq.client.producer.RequestResponseFuture;
 import org.apache.rocketmq.client.utils.MessageUtil;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.message.Message;
@@ -77,6 +79,9 @@ public final class RequestReplyFixtures {
             "DefaultMQProducerImpl.prepareSendRequest",
             "CorrelationIdUtil.createCorrelationId",
             "RequestFutureHolder.scanExpiredRequest",
+            "RequestFutureHolder.publicMethodInventory",
+            "RequestResponseFuture.publicMethodInventory",
+            "RequestCallback.publicMethodInventory",
             "RequestResponseFuture.executeRequestCallback",
             "MessageUtil.createReplyMessage",
             "ClientRemotingProcessor.receiveReplyMessage"));
@@ -98,6 +103,9 @@ public final class RequestReplyFixtures {
             .sorted()
             .collect(Collectors.toList());
         result.put("publicRequestOverloads", overloads);
+        result.put("publicRequestCallbackMethods", publicMethodSignatures(RequestCallback.class));
+        result.put("publicRequestFutureHolderMethods", publicMethodSignatures(RequestFutureHolder.class));
+        result.put("publicRequestResponseFutureMethods", publicMethodSignatures(RequestResponseFuture.class));
         result.put("requestProperties", List.of(
             MessageConst.PROPERTY_CORRELATION_ID,
             MessageConst.PROPERTY_MESSAGE_REPLY_TO_CLIENT,
@@ -179,5 +187,13 @@ public final class RequestReplyFixtures {
     private static String methodSignature(Method method) {
         return method.getReturnType().getTypeName() + " " + method.getName() + "(" +
             Arrays.stream(method.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(",")) + ")";
+    }
+
+    private static List<String> publicMethodSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(RequestReplyFixtures::methodSignature)
+            .sorted()
+            .collect(Collectors.toList());
     }
 }
