@@ -2685,6 +2685,14 @@ mod tests {
                     crate::JavaJsonWriterFeature::PrettyFormatWith4Space,
                     "PrettyFormatWith4Space",
                 ),
+                (
+                    crate::JavaJsonWriterFeature::UseSingleQuotes,
+                    "UseSingleQuotes",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::UnquoteFieldName,
+                    "UnquoteFieldName",
+                ),
             ] {
                 assert_eq!(
                     value.java_encode_with_features(&[feature]).unwrap(),

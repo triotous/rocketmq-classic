@@ -105,19 +105,15 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         apply_java_json_long_as_string(&mut value);
     }
     let mut output = String::new();
-    let unquote_numeric_map_keys = !features
-        .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
-        && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString);
-    let stringify_long_map_keys = features.contains(&JavaJsonWriterFeature::WriteLongAsString);
-    write_java_route_json(
-        &value,
-        None,
-        0,
-        indent,
-        unquote_numeric_map_keys,
-        stringify_long_map_keys,
-        &mut output,
-    )?;
+    let writer_options = JavaRouteWriterOptions {
+        unquote_numeric_map_keys: !features
+            .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
+            && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString),
+        stringify_long_map_keys: features.contains(&JavaJsonWriterFeature::WriteLongAsString),
+        use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
+        unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
+    };
+    write_java_route_json(&value, None, 0, indent, writer_options, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
         Ok(escape_none_ascii_json(&output))
     } else {
@@ -168,7 +164,7 @@ pub(crate) fn omit_default_writer_values(value: &mut serde_json::Value) {
     }
 }
 
-fn is_java_map_property(name: &str) -> bool {
+pub(crate) fn is_java_map_property(name: &str) -> bool {
     matches!(
         name,
         "attachments"
@@ -396,16 +392,16 @@ fn stringify_json_number(value: &mut serde_json::Value) {
 
 pub(crate) fn escape_none_ascii_json(json: &str) -> String {
     let mut output = String::with_capacity(json.len());
-    let mut in_string = false;
+    let mut quote = None;
     let mut escaped = false;
     for character in json.chars() {
-        if !in_string {
+        let Some(delimiter) = quote else {
             output.push(character);
-            if character == '"' {
-                in_string = true;
+            if matches!(character, '"' | '\'') {
+                quote = Some(character);
             }
             continue;
-        }
+        };
 
         if escaped {
             output.push(character);
@@ -414,9 +410,9 @@ pub(crate) fn escape_none_ascii_json(json: &str) -> String {
         }
 
         match character {
-            '"' => {
+            character if character == delimiter => {
                 output.push(character);
-                in_string = false;
+                quote = None;
             }
             '\\' => {
                 output.push(character);
@@ -442,13 +438,88 @@ pub(crate) fn escape_none_ascii_json(json: &str) -> String {
     output
 }
 
+fn is_java_unquoted_field_name(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first == '$' || first.is_ascii_alphabetic())
+        && chars.all(|character| {
+            character == '_' || character == '$' || character.is_ascii_alphanumeric()
+        })
+}
+
+pub(crate) fn is_java_enum_field(name: &str) -> bool {
+    matches!(
+        name,
+        "consumeFromWhere" | "consumeResult" | "consumeType" | "messageModel" | "mode"
+    )
+}
+
+pub(crate) fn write_java_json_string(
+    value: &str,
+    use_single_quotes: bool,
+    output: &mut String,
+) -> Result<(), serde_json::Error> {
+    if !use_single_quotes {
+        output.push_str(&serde_json::to_string(value)?);
+        return Ok(());
+    }
+
+    output.push('\'');
+    for character in value.chars() {
+        match character {
+            '\\' => output.push_str("\\\\"),
+            '\'' => output.push_str("\\'"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            '\u{0008}' => output.push_str("\\b"),
+            '\u{000C}' => output.push_str("\\f"),
+            character if character <= '\u{001F}' => {
+                output.push_str(&format!("\\u{:04X}", character as u32));
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('\'');
+    Ok(())
+}
+
+pub(crate) fn write_java_json_field_name(
+    key: &str,
+    value: &serde_json::Value,
+    is_map_entry: bool,
+    use_single_quotes: bool,
+    unquote_field_names: bool,
+    output: &mut String,
+) -> Result<(), serde_json::Error> {
+    // Fastjson's specialized boolean field writer keeps its normal quoted
+    // property name even when either field-name feature is enabled.
+    let eligible_for_unquote = is_map_entry || !value.is_boolean();
+    let eligible_for_single_quotes =
+        is_map_entry || (!value.is_boolean() && !is_java_enum_field(key));
+    if eligible_for_unquote && unquote_field_names && is_java_unquoted_field_name(key) {
+        output.push_str(key);
+        return Ok(());
+    }
+    write_java_json_string(key, eligible_for_single_quotes && use_single_quotes, output)
+}
+
+#[derive(Clone, Copy, Default)]
+struct JavaRouteWriterOptions {
+    unquote_numeric_map_keys: bool,
+    stringify_long_map_keys: bool,
+    use_single_quotes: bool,
+    unquote_field_names: bool,
+}
+
 fn write_java_route_json(
     value: &serde_json::Value,
     field_name: Option<&str>,
     depth: usize,
     indent: Option<&str>,
-    unquote_numeric_map_keys: bool,
-    stringify_long_map_keys: bool,
+    writer_options: JavaRouteWriterOptions,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
@@ -465,10 +536,10 @@ fn write_java_route_json(
             output.push('}');
         }
         serde_json::Value::Object(fields) => {
-            let numeric_keys =
-                unquote_numeric_map_keys && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
+            let numeric_keys = writer_options.unquote_numeric_map_keys
+                && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
             let long_keys_are_strings =
-                stringify_long_map_keys && field_name == Some("brokerAddrs");
+                writer_options.stringify_long_map_keys && field_name == Some("brokerAddrs");
             output.push('{');
             for (index, (key, value)) in fields.iter().enumerate() {
                 if indent.is_some() {
@@ -478,18 +549,17 @@ fn write_java_route_json(
                 if numeric_keys && !long_keys_are_strings && key.parse::<i64>().is_ok() {
                     output.push_str(key);
                 } else {
-                    output.push_str(&serde_json::to_string(key)?);
+                    write_java_json_field_name(
+                        key,
+                        value,
+                        field_name.is_some_and(is_java_map_property),
+                        writer_options.use_single_quotes,
+                        writer_options.unquote_field_names,
+                        output,
+                    )?;
                 }
                 output.push(':');
-                write_java_route_json(
-                    value,
-                    Some(key),
-                    depth + 1,
-                    indent,
-                    unquote_numeric_map_keys,
-                    stringify_long_map_keys,
-                    output,
-                )?;
+                write_java_route_json(value, Some(key), depth + 1, indent, writer_options, output)?;
                 if index + 1 != fields.len() {
                     output.push(',');
                 }
@@ -517,15 +587,7 @@ fn write_java_route_json(
                     output.push('\n');
                     write_java_indent(output, depth + 1, indent);
                 }
-                write_java_route_json(
-                    value,
-                    None,
-                    depth + 1,
-                    indent,
-                    unquote_numeric_map_keys,
-                    stringify_long_map_keys,
-                    output,
-                )?;
+                write_java_route_json(value, None, depth + 1, indent, writer_options, output)?;
                 if index + 1 != values.len() {
                     output.push(',');
                 }
@@ -535,6 +597,11 @@ fn write_java_route_json(
                 write_java_indent(output, depth, indent);
             }
             output.push(']');
+        }
+        serde_json::Value::String(value) => {
+            let use_single_quotes_for_value = writer_options.use_single_quotes
+                && field_name.is_none_or(|name| !is_java_enum_field(name));
+            write_java_json_string(value, use_single_quotes_for_value, output)?;
         }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
@@ -4025,6 +4092,8 @@ mod tests {
                         JavaJsonWriterFeature::PrettyFormatWith4Space,
                         "PrettyFormatWith4Space",
                     ),
+                    (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
+                    (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                 ] {
                     assert_eq!(
                         value.java_encode_with_features(&[feature]).unwrap(),

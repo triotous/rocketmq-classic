@@ -4868,6 +4868,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         write_non_string_values_as_strings: features
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         write_boolean_as_number: features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
+        ..JavaJsonWriterValueFeatures::default()
     };
     crate::route::apply_java_json_writer_value_features(
         &mut value,
@@ -4886,6 +4887,11 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::WriteLongAsString) {
         crate::route::apply_java_json_long_as_string(&mut value);
     }
+    let value_features = JavaJsonWriterValueFeatures {
+        use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
+        unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
+        ..value_features
+    };
     let mut output = String::new();
     write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
@@ -4899,6 +4905,8 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
 struct JavaJsonWriterValueFeatures {
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
+    use_single_quotes: bool,
+    unquote_field_names: bool,
 }
 
 fn write_java_remoting_body_json(
@@ -4951,11 +4959,22 @@ fn write_java_remoting_body_json(
                         depth + 1,
                         indent,
                         false,
-                        JavaJsonWriterValueFeatures::default(),
+                        JavaJsonWriterValueFeatures {
+                            use_single_quotes: value_features.use_single_quotes,
+                            unquote_field_names: value_features.unquote_field_names,
+                            ..JavaJsonWriterValueFeatures::default()
+                        },
                         output,
                     )?;
                 } else {
-                    output.push_str(&serde_json::to_string(key)?);
+                    crate::route::write_java_json_field_name(
+                        key,
+                        value,
+                        field_name.is_some_and(crate::route::is_java_map_property),
+                        value_features.use_single_quotes,
+                        value_features.unquote_field_names,
+                        output,
+                    )?;
                 }
                 output.push(':');
                 let child_is_queue_table =
@@ -5015,6 +5034,11 @@ fn write_java_remoting_body_json(
                 write_java_remoting_body_indent(output, depth, indent);
             }
             output.push(']');
+        }
+        serde_json::Value::String(value) => {
+            let use_single_quotes = value_features.use_single_quotes
+                && field_name.is_none_or(|name| !crate::route::is_java_enum_field(name));
+            crate::route::write_java_json_string(value, use_single_quotes, output)?;
         }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
@@ -7243,6 +7267,8 @@ mod tests {
                             JavaJsonWriterFeature::PrettyFormatWith4Space,
                             "PrettyFormatWith4Space",
                         ),
+                        (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
+                        (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     ] {
                         assert_eq!(
                             value.java_encode_with_features(&[feature]).unwrap(),

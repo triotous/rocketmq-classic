@@ -5,9 +5,10 @@
 /// adapters currently implement `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
-/// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`, and
-/// `WriteLongAsString`; other variants return an explicit unsupported-feature
-/// error until their behavior is mapped.
+/// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
+/// `WriteLongAsString`, `UseSingleQuotes`, and `UnquoteFieldName`; other
+/// variants return an explicit unsupported-feature error until their behavior
+/// is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -191,6 +192,8 @@ impl JavaJsonWriterFeature {
                 | Self::NotWriteDefaultValue
                 | Self::WriteNonStringKeyAsString
                 | Self::WriteLongAsString
+                | Self::UseSingleQuotes
+                | Self::UnquoteFieldName
         )
     }
 }
@@ -212,5 +215,16 @@ mod tests {
             assert_eq!(feature.name(), java_name.as_str().unwrap());
             assert_eq!(feature.ordinal(), ordinal as i32);
         }
+    }
+
+    #[test]
+    fn single_quoted_strings_match_fastjson_escaping() {
+        let mut output = String::new();
+        crate::route::write_java_json_string("a'b\"c\\d\n漢<>()", true, &mut output).unwrap();
+        assert_eq!(output, r#"'a\'b"c\\d\n漢<>()'"#);
+        assert_eq!(
+            crate::route::escape_none_ascii_json(&output),
+            r#"'a\'b"c\\d\n\u6F22<>()'"#
+        );
     }
 }
