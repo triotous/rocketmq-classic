@@ -2449,3 +2449,17 @@ Before any publication:
   (37 scenarios and the new reflection fixture), formatting, and diff checks.
   This closes the helper and constructor slice only; broad P18-V01 and the
   final-revision workspace gates remain open.
+- P18-V01 Remoting `ResponseFuture` callback failure continuation
+  (`b597ccda`, 2026-10-16):
+  the pinned Java fixture covers cause retention for send, timeout, and generic
+  callback failures, fail-before-complete order, and the null-request generic
+  failure before callback dispatch. Rust now retains the cause in all three
+  typed error paths and preserves the null-request failure. Remoting all-feature
+  tests pass (106 unit, 8 codec, 1 fuzz regression, 7 security, 107 transport,
+  and 10 doctests); strict Remoting Clippy, formatting, diff checks, and full
+  Maven `verify` (37 scenarios and runtime fixtures) pass. This closes this
+  callback-failure slice only. `ResponseFuture.toString`, `waitResponse`
+  interruption semantics, broad P18-V01, final-revision workspace gates,
+  current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker
+  automation, and release version/registry checks remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T185506Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T185506Z.rlog).
