@@ -109,6 +109,7 @@ public final class RequestReplyFixtures {
             .sorted()
             .collect(Collectors.toList());
         result.put("publicRequestOverloads", overloads);
+        result.put("publicCorrelationIdUtilMethods", publicMethodSignatures(CorrelationIdUtil.class));
         result.put("publicRequestCallbackMethods", publicMethodSignatures(RequestCallback.class));
         result.put("publicRequestFutureHolderMethods", publicMethodSignatures(RequestFutureHolder.class));
         result.put("publicRequestResponseFutureMethods", publicMethodSignatures(RequestResponseFuture.class));

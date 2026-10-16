@@ -74,3 +74,36 @@
   owner deployment validation, and release preflight remain later work.
 - No plan files changed. No Docker, Broker, push, tag, publication,
   deployment, or compatibility claim was made.
+
+P18-V01 Common CorrelationIdUtil API slice (2026-10-16)
+
+- Pinned Java client 5.5.1 source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9` declares public static
+  `CorrelationIdUtil.createCorrelationId()` returning
+  `UUID.randomUUID().toString()`. Common now exposes
+  `rocketmq_classic_common::utils::create_correlation_id`; Producer request
+  preparation uses that function, and the duplicate Producer-only
+  implementation/direct `rand` dependency are removed. Common now owns the
+  existing `rand` dependency.
+- `RequestReplyFixtures` inventories the Java method signature in
+  `fixtures/producer/request-reply.json`; Rust checks the inventory and UUID v4
+  lowercase 8-4-4-4-12 format. Fixture SHA-256:
+  `295307a1f559b7afa30179b48a83b0ac008716a8a1b421872b440c6ff097153c`.
+- The new Rust API test first failed because Common had no public `utils`
+  module, then passed after implementation. One initial Maven fixture-generation
+  invocation ran from the workspace root and wrote its relative output outside
+  the repo; that generated file was removed, and fixture generation was rerun
+  successfully from `compat/java-reference`. No unintended external artifact
+  remains.
+- `cargo test -p rocketmq-classic-common --locked` passed (23 unit tests, all
+  integration and doc tests). `cargo test -p rocketmq-classic-producer --locked`
+  passed (142 unit tests and all integration/doc targets). Strict all-target,
+  all-feature Clippy passed for Common and Producer. `mvn -f
+  compat/java-reference/pom.xml verify` passed, including the 37-scenario
+  manifest, fixture drift checks and Java/Rust cross-decodes. Workspace format
+  and diff checks passed.
+- Updated the Phase 8/15 crosswalks, Phase 6 API map/audit, release checklist,
+  and this append-only log. No plan changed. This closes only this Common API
+  slice; broad bidirectional P18-V01 remains open. Full workspace P18-V02 must
+  be rerun after the remaining code audit. No Docker/Broker, push, tag,
+  publication, deployment or compatibility claim was made.

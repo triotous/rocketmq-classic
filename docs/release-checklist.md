@@ -1944,3 +1944,12 @@ Before any publication:
   Asia/Taipei Unique ID fixture all pass. Broad P18-V01 and current-revision
   GitHub Ubuntu/P18-V04 evidence remain open; this makes no Broker, release, or
   compatibility claim.
+
+- P18-V01 Common `CorrelationIdUtil` slice (2026-10-16): Rust Common now exports
+  `utils::create_correlation_id`, Producer request preparation uses it, and the
+  Producer no longer directly depends on `rand`. The invoked Java 5.5.1
+  request/reply fixture records `java.lang.String createCorrelationId()`;
+  the Common integration test checks the signature and lowercase UUID v4 text
+  format. Common and Producer focused tests, Maven fixture generation, and
+  format/diff checks pass. This closes this API slice only; broad P18-V01 and a
+  full P18-V02 rerun on the resulting commit remain open.

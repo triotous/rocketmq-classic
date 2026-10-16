@@ -17,7 +17,6 @@ rocketmq-classic-remoting.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-rand.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true

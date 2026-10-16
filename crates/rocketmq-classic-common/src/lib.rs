@@ -27,3 +27,4 @@ pub mod message;
 mod serde_fastjson;
 pub mod sysflag;
 pub mod topic;
+pub mod utils;

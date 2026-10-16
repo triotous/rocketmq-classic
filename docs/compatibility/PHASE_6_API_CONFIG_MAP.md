@@ -1222,3 +1222,11 @@ The invoked Java fixture adds a custom reserved name, null, and the empty string
 | `Message.setPriority(int)` rejects negative values; `Message.getPriority()` parses `PROPERTY_PRIORITY` with `NumberUtils.toInt(..., -1)` | `Message::set_priority` returns `MessagePropertyError::NegativePriority` for negatives; `Message::priority` returns `-1` for absent, malformed, or overflowing values and uses the Java-compatible decimal parser |
 
 The invoked Java fixture and Rust regression cover absent-property map initialization, zero/positive/negative setter values, no mutation after rejected negative input, signed `i32` boundaries, malformed and whitespace inputs, overflow, and Arabic-Indic decimal digits. This closes the priority accessor slice only; broad Common/P18-V01 reconciliation remains open.
+
+## Common public API: CorrelationIdUtil
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `CorrelationIdUtil.createCorrelationId()` returns `UUID.randomUUID().toString()` | `rocketmq-classic-common::utils::create_correlation_id()` returns lowercase UUID v4 text; Producer request preparation uses this Common API |
+
+The invoked `request-reply.json` fixture inventories the exact public method signature, and the Common integration test checks UUID v4 version/variant, lowercase hexadecimal digits, and the 8-4-4-4-12 hyphen layout. This closes the surfaced CorrelationIdUtil mapping only; broad P18-V01 reconciliation remains open.

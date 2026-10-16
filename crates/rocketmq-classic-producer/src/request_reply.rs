@@ -5,6 +5,7 @@ use rocketmq_classic_common::message::{
         PROPERTY_MESSAGE_TTL, PROPERTY_MESSAGE_TYPE, REPLY_MESSAGE_FLAG, REPLY_TOPIC_POSTFIX,
     },
 };
+use rocketmq_classic_common::utils::create_correlation_id;
 use rocketmq_classic_core::runtime::{
     PendingReplyCompletion, PendingReplyControl, PendingReplyRequest, RequestFutureTable,
     RequestResponseCallback, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
@@ -463,24 +464,6 @@ impl Producer {
             Err(_) => Err(ProducerError::RequestReplyCancelled),
         }
     }
-}
-
-/// Creates the message-level request/reply correlation identifier used by
-/// Java's `CorrelationIdUtil.createCorrelationId`.
-pub(crate) fn create_correlation_id() -> String {
-    let mut bytes = rand::random::<[u8; 16]>();
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(36);
-    for (index, byte) in bytes.into_iter().enumerate() {
-        if matches!(index, 4 | 6 | 8 | 10) {
-            output.push('-');
-        }
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
 }
 
 #[cfg(test)]
