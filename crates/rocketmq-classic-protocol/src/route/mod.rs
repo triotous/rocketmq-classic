@@ -92,6 +92,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
     );
+    if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
+        omit_default_writer_values(&mut value);
+    }
     if features.contains(&JavaJsonWriterFeature::NotWriteEmptyArray) {
         omit_empty_writer_values(&mut value, false);
     }
@@ -113,6 +116,94 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         Ok(escape_none_ascii_json(&output))
     } else {
         Ok(output)
+    }
+}
+
+pub(crate) fn omit_default_writer_values(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, value) in fields.iter_mut() {
+                if is_java_map_property(name) {
+                    // Map entries are values, not bean fields; preserve scalar
+                    // defaults such as zero offsets and queue IDs.
+                    omit_default_writer_map_values(value);
+                } else {
+                    omit_default_writer_values(value);
+                }
+            }
+            fields.retain(|name, value| {
+                if name == "autoCommit" {
+                    // The pinned Java writer keeps this property for both
+                    // boolean values on ConsumeMessageDirectlyResult.
+                    return true;
+                }
+                match value {
+                    serde_json::Value::Null => false,
+                    serde_json::Value::Bool(value) => *value,
+                    serde_json::Value::Number(value) => {
+                        value.as_i64() != Some(0)
+                            && value.as_u64() != Some(0)
+                            && value.as_f64() != Some(0.0)
+                    }
+                    serde_json::Value::String(value) => !value.is_empty(),
+                    serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
+                }
+            });
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                omit_default_writer_values(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
+}
+
+fn is_java_map_property(name: &str) -> bool {
+    matches!(
+        name,
+        "attachments"
+            | "brokerAddrs"
+            | "consumerTable"
+            | "currIdMap"
+            | "filterServerTable"
+            | "messageQueueTable"
+            | "messageRequestModeMap"
+            | "offsetTable"
+            | "properties"
+            | "statusTable"
+            | "topicQueueMappingByBroker"
+            | "userConsumerInfo"
+    )
+}
+
+fn omit_default_writer_map_values(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                match value {
+                    serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                        omit_default_writer_values(value);
+                    }
+                    serde_json::Value::Null
+                    | serde_json::Value::Bool(_)
+                    | serde_json::Value::Number(_)
+                    | serde_json::Value::String(_) => {}
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                omit_default_writer_values(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
     }
 }
 
@@ -3823,6 +3914,10 @@ mod tests {
                 for (feature, feature_name) in [
                     (JavaJsonWriterFeature::NotWriteEmptyArray, "NotWriteEmptyArray"),
                     (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
+                    (
+                        JavaJsonWriterFeature::NotWriteDefaultValue,
+                        "NotWriteDefaultValue",
+                    ),
                     (
                         JavaJsonWriterFeature::PrettyFormatWith2Space,
                         "PrettyFormatWith2Space",

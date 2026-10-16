@@ -2666,6 +2666,10 @@ mod tests {
                 ),
                 (crate::JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
                 (
+                    crate::JavaJsonWriterFeature::NotWriteDefaultValue,
+                    "NotWriteDefaultValue",
+                ),
+                (
                     crate::JavaJsonWriterFeature::PrettyFormatWith2Space,
                     "PrettyFormatWith2Space",
                 ),

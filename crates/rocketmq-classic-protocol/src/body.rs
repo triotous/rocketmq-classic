@@ -4874,6 +4874,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         value_features.write_non_string_values_as_strings,
         value_features.write_boolean_as_number,
     );
+    if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
+        crate::route::omit_default_writer_values(&mut value);
+    }
     if features.contains(&JavaJsonWriterFeature::NotWriteEmptyArray) {
         crate::route::omit_empty_writer_values(&mut value, false);
     }
@@ -7198,6 +7201,10 @@ mod tests {
                             "NotWriteEmptyArray",
                         ),
                         (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
+                        (
+                            JavaJsonWriterFeature::NotWriteDefaultValue,
+                            "NotWriteDefaultValue",
+                        ),
                         (
                             JavaJsonWriterFeature::PrettyFormatWith2Space,
                             "PrettyFormatWith2Space",
