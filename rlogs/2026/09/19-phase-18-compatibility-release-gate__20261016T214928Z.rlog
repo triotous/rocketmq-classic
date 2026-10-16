@@ -83,3 +83,33 @@ Implementation commit: `cf51df04`
   slice.
 - Broad P18-V01 remains open for 46 writer features and source/API/settings/
   input/error/flow/reverse-export reconciliation.
+
+## P18-V01 space-indent writer feature continuation
+
+Timestamp: 2026-10-16 22:11 UTC
+Implementation commit: `c9d502a3`
+
+### Changes
+
+- Added Java `PrettyFormatWith2Space` and `PrettyFormatWith4Space` indentation
+  to inherited serializer adapters across the mapped 15 body DTOs, both route
+  DTOs, and `HeartbeatData`.
+- Reused a shared indentation selector for tab, two-space, and four-space
+  formatting. Fastjson2's source selects four spaces before two spaces when
+  both writer features are enabled; a route DTO regression pins that result.
+- Four of 48 writer features now have behavior mappings; 44 remain unmapped.
+
+### Validation
+
+- `cargo test -p rocketmq-classic-protocol --all-features --locked` passed:
+  121 unit tests, all integration targets, and 42 doctests.
+- Strict all-target/all-feature Protocol Clippy, format check, and diff check
+  passed.
+
+### Status
+
+- The last full-workspace default/all-feature run preceded this space-indent
+  change. Re-run the final full-workspace P18-V02 gate after the next
+  implementation slice.
+- Broad P18-V01 remains open for 44 writer features and Java/Rust source/API/
+  settings/input/error/flow/reverse-export reconciliation.

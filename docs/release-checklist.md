@@ -2637,3 +2637,13 @@ Before any publication:
   features now have behavior mappings; 46 remain unmapped. The final-revision
   full-workspace P18-V02 gate must be rerun after this commit. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T220515Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T220515Z.rlog).
+- P18-V01 Fastjson2 space-indent writer features (commit `c9d502a3`,
+  2026-10-16): `PrettyFormatWith2Space` and `PrettyFormatWith4Space` now match
+  the invoked outputs byte for byte across the 15 body DTOs, both route DTOs,
+  and `HeartbeatData`. The source-backed precedence test confirms 4-space
+  formatting wins when both options are supplied. Protocol all-feature tests
+  (121 unit tests, all integration targets, 42 doctests), strict Protocol
+  Clippy, format, and diff checks pass. Four of 48 features now have behavior
+  mappings; 44 remain unmapped. The final-revision full-workspace P18-V02 gate
+  is still pending after this change. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T221138Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T221138Z.rlog).
