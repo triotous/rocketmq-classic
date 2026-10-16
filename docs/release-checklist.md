@@ -1575,3 +1575,19 @@ Before any publication:
   handle. `tests/facade_public_types.rs` checks the root import paths and
   Producer state/table accessors. This closes that facade reachability slice
   only; broad P18-V01 and current-revision release gates remain open.
+
+- Current-revision server-free **P18-V02** rerun on `fd809302`
+  (2026-10-16, macOS ARM64): UTC default and all-feature locked workspace tests,
+  all-target/all-feature check and strict Clippy pass. Pinned Maven `verify`
+  passes the 37-scenario manifest and all Java/Rust fixture checks; comparator
+  self-test and manifest validation pass. Offline race/leak smoke passes 16
+  cases × 3; fuzz smoke passes 105 frame seeds, 11 message seeds, and 1,856
+  mutations. Release examples and workspace benchmarks compile. Locked
+  metadata reports 7 workspace packages, 215 total packages, and 208 registry
+  packages with license metadata; workspace metadata/dependency/license checks
+  and all seven package listings with LICENSE/NOTICE pass. The Asia/Taipei
+  Unique ID fixture, formatting, and diff checks pass. This closes the
+  server-free P18-V02 gate on `fd809302`. Broad P18-V01, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry resolution remain open. Owner-run deployment
+  and production checks remain Phase 19 manual validation.
