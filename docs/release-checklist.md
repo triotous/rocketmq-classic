@@ -2491,3 +2491,16 @@ Before any publication:
   visibility slice; broad P18-V01 and final-revision full-workspace P18-V02
   remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T191756Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T191756Z.rlog).
+- P18-V01 Remoting `ResponseFuture` declared-method crosswalk (2026-10-16,
+  pinned source `efa1be59d6fc747ad220f036c86030f05f0419f9`): the inventory now
+  lists the Rust mapping for every Java-declared method, including nullable
+  command/channel values, mutable-command closures, timeout/latch methods, and
+  the `Display` mapping for `toString`. The source file at the pinned commit and
+  the current Java worktree have the same SHA-256
+  `63789320d327604995dadfa80ae126f9b321e50571fca68d67d371fb5fa065bf`; the
+  invoked fixture pins both constructors and all 20 declared public methods
+  (fixture SHA-256
+  `4739b82304af6d251fe963f87f90f829215add80632976ccd6d9ef411c6494f4`). This
+  closes the method-crosswalk documentation slice only; broad P18-V01 and the
+  final-revision full-workspace P18-V02 remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T192429Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T192429Z.rlog).
