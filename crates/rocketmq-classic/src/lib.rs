@@ -26,7 +26,7 @@ pub use rocketmq_classic_producer::validation;
 pub use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, BackpressureReadGuard, CallbackExecutor,
     CheckForbiddenContext, CheckForbiddenHook, CommunicationMode, EndTransactionContext,
-    EndTransactionHook, HookException, NullablePublishInfoQueueFilters, Producer,
+    EndTransactionHook, HookException, MessageBatch, NullablePublishInfoQueueFilters, Producer,
     ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, ProducerPublishQueueList,
     ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter, QueryResult,
     RecallMessageHandle, RetryResponseCodes, SendMessageContext, SendMessageHook, SendMessageType,

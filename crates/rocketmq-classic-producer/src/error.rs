@@ -119,6 +119,8 @@ pub enum ProducerError {
     InvalidRetryMetadata,
     #[error("batch must contain at least one message")]
     EmptyBatch,
+    #[error("batch message topic is null")]
+    BatchTopicNull,
     #[error("messages in a batch must have the same topic")]
     BatchTopicMismatch,
     #[error("messages in a batch must have the same waitStoreMsgOK setting")]
@@ -133,6 +135,8 @@ pub enum ProducerError {
     BatchPropertiesTooLarge,
     #[error("encoded batch size {actual} exceeds configured maximum {maximum}")]
     BatchTooLarge { actual: usize, maximum: i32 },
+    #[error(transparent)]
+    BatchEncoding(#[from] rocketmq_classic_common::message::CompactMessageError),
     #[error("batchMaxDelayMs must be between 1ms and 30s, got {0}")]
     InvalidBatchMaxDelay(i32),
     #[error("batchMaxBytes must be between 1B and 2MB, got {0}")]

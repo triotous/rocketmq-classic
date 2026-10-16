@@ -1,7 +1,152 @@
-use rocketmq_classic_common::message::{Message, constants::*, encode_nullable_property_entries};
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, DerefMut};
+
+use rocketmq_classic_common::message::{
+    Message, constants::*, encode_compact_messages, encode_nullable_property_entries,
+};
 use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 
 use crate::{ProducerConfig, ProducerError, validation};
+
+/// A Java-compatible message batch. Its message metadata is available through
+/// the same accessors as `Message`; the owned slice provides Rust iteration.
+pub struct MessageBatch {
+    messages: Vec<Message>,
+    message: Message,
+}
+
+impl MessageBatch {
+    /// Constructs a batch from an owned message vector without validation,
+    /// matching Java's public `MessageBatch(List<Message>)` constructor.
+    pub fn new(messages: Vec<Message>) -> Self {
+        Self {
+            messages,
+            message: Message::default(),
+        }
+    }
+
+    /// Validates the same-topic, wait-store, retry-topic, and delay rules used
+    /// by Java's `MessageBatch.generateFromList`.
+    pub fn generate_from_list(messages: Vec<Message>) -> Result<Self, ProducerError> {
+        if messages.is_empty() {
+            return Err(ProducerError::EmptyBatch);
+        }
+
+        let mut first_topic = None;
+        let mut first_wait_store = None;
+        for message in &messages {
+            if message
+                .delay_time_level()
+                .map_err(|_| ProducerError::InvalidBatchDelay)?
+                > 0
+            {
+                return Err(ProducerError::DelayedBatchMessage);
+            }
+            let topic = message
+                .topic_nullable()
+                .ok_or(ProducerError::BatchTopicNull)?;
+            if topic.starts_with("%RETRY%") {
+                return Err(ProducerError::RetryBatchMessage);
+            }
+            if let Some(first_topic) = first_topic.as_deref() {
+                if first_topic != topic {
+                    return Err(ProducerError::BatchTopicMismatch);
+                }
+                if first_wait_store != Some(message.is_wait_store_msg_ok()) {
+                    return Err(ProducerError::BatchWaitStoreMismatch);
+                }
+            } else {
+                first_topic = Some(topic.to_owned());
+                first_wait_store = Some(message.is_wait_store_msg_ok());
+            }
+        }
+
+        let mut batch = Self::new(messages);
+        batch.message.set_topic_nullable(first_topic);
+        let _ = batch
+            .message
+            .set_wait_store_msg_ok(first_wait_store.expect("a validated batch is non-empty"));
+        Ok(batch)
+    }
+
+    /// Encodes the compact records produced by Java's `MessageBatch.encode`.
+    pub fn encode(&self) -> Result<Vec<u8>, ProducerError> {
+        Ok(encode_compact_messages(&self.messages)?)
+    }
+}
+
+impl IntoIterator for MessageBatch {
+    type Item = Message;
+    type IntoIter = std::vec::IntoIter<Message>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a MessageBatch {
+    type Item = &'a Message;
+    type IntoIter = std::slice::Iter<'a, Message>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut MessageBatch {
+    type Item = &'a mut Message;
+    type IntoIter = std::slice::IterMut<'a, Message>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.messages.iter_mut()
+    }
+}
+
+impl Deref for MessageBatch {
+    type Target = Message;
+
+    fn deref(&self) -> &Self::Target {
+        &self.message
+    }
+}
+
+impl DerefMut for MessageBatch {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.message
+    }
+}
+
+impl PartialEq for MessageBatch {
+    fn eq(&self, other: &Self) -> bool {
+        self.message == other.message
+    }
+}
+
+impl Eq for MessageBatch {}
+
+impl PartialEq<Message> for MessageBatch {
+    fn eq(&self, other: &Message) -> bool {
+        self.message == *other
+    }
+}
+
+impl PartialEq<MessageBatch> for Message {
+    fn eq(&self, other: &MessageBatch) -> bool {
+        *self == other.message
+    }
+}
+
+impl Hash for MessageBatch {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.message.hash(state);
+    }
+}
+
+impl std::fmt::Display for MessageBatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.message, formatter)
+    }
+}
 
 pub(crate) fn create_batch(
     messages: &[Message],
@@ -256,6 +401,85 @@ mod tests {
             actual.len(),
             fixture["batchEncoding"]["length"].as_u64().unwrap() as usize
         );
+
+        let batch = MessageBatch::generate_from_list(messages.to_vec()).unwrap();
+        assert_eq!(batch.topic(), "orders");
+        assert_eq!(batch.encode().unwrap(), actual);
+        assert_eq!(batch.into_iter().count(), messages.len());
+    }
+
+    #[test]
+    fn message_batch_generate_from_list_matches_java_validation_order() {
+        assert!(matches!(
+            MessageBatch::generate_from_list(Vec::new()),
+            Err(ProducerError::EmptyBatch)
+        ));
+
+        let mut delayed = Message::new("orders", b"delayed".to_vec());
+        delayed.set_delay_time_level(1);
+        assert!(matches!(
+            MessageBatch::generate_from_list(vec![delayed]),
+            Err(ProducerError::DelayedBatchMessage)
+        ));
+
+        assert!(matches!(
+            MessageBatch::generate_from_list(vec![
+                Message::new("%RETRY%workers", b"retry".to_vec()),
+                Message::new("orders", b"other".to_vec()),
+            ]),
+            Err(ProducerError::RetryBatchMessage)
+        ));
+
+        assert!(matches!(
+            MessageBatch::generate_from_list(vec![
+                Message::new("orders", b"first".to_vec()),
+                Message::new("payments", b"second".to_vec()),
+            ]),
+            Err(ProducerError::BatchTopicMismatch)
+        ));
+
+        let mut wait_store_mismatch = Message::new("orders", b"second".to_vec());
+        wait_store_mismatch.set_wait_store_msg_ok(false).unwrap();
+        assert!(matches!(
+            MessageBatch::generate_from_list(vec![
+                Message::new("orders", b"first".to_vec()),
+                wait_store_mismatch,
+            ]),
+            Err(ProducerError::BatchWaitStoreMismatch)
+        ));
+
+        let batch = MessageBatch::generate_from_list(vec![
+            Message::new("orders", b"first".to_vec()),
+            Message::new("orders", b"second".to_vec()),
+        ])
+        .unwrap();
+        assert_eq!(batch.topic(), "orders");
+        assert!(batch.is_wait_store_msg_ok());
+    }
+
+    #[test]
+    fn message_batch_public_api_matches_java_551() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let api = &fixture["messageBatchPublicApi"];
+        assert_eq!(
+            api["className"],
+            "org.apache.rocketmq.common.message.MessageBatch"
+        );
+        assert_eq!(api["declaredPublicFields"], serde_json::json!([]));
+        assert_eq!(
+            api["publicConstructors"],
+            serde_json::json!(["org.apache.rocketmq.common.message.MessageBatch(java.util.List)"])
+        );
+        assert_eq!(
+            api["declaredPublicMethods"],
+            serde_json::json!([
+                "[B org.apache.rocketmq.common.message.MessageBatch.encode()",
+                "java.util.Iterator org.apache.rocketmq.common.message.MessageBatch.iterator()",
+                "org.apache.rocketmq.common.message.MessageBatch org.apache.rocketmq.common.message.MessageBatch.generateFromList(java.util.Collection)"
+            ])
+        );
+        assert_eq!(api["declaredPublicMethodCount"], 3);
     }
 
     #[test]

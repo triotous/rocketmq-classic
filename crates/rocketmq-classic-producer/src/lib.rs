@@ -34,6 +34,7 @@ mod transaction;
 pub mod validation;
 
 pub use backpressure::BackpressureReadGuard;
+pub use batch::MessageBatch;
 pub use compressor::ProducerCompressor;
 pub use config::{DEFAULT_PRODUCER_GROUP, ProducerConfig};
 pub use error::ProducerError;

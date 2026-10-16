@@ -1,11 +1,11 @@
 use rocketmq_classic::{
     ConsumerServiceState, DEFAULT_CONSUMER_GROUP, DEFAULT_PRODUCER_GROUP, EndTransactionContext,
-    EndTransactionHook, NullablePublishInfoQueueFilters, OrderlyListenerFuture, PopResult,
-    PopStatus, Producer, ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex,
-    ProducerServiceState, PublishInfoQueueFilter, QueryResult, TopicPublishInfo,
-    TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView,
-    TopicPublishInfoTable, TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData,
-    TopicRouteDataHandle,
+    EndTransactionHook, Message, MessageBatch, NullablePublishInfoQueueFilters,
+    OrderlyListenerFuture, PopResult, PopStatus, Producer, ProducerConfig,
+    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter,
+    QueryResult, TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
+    TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
+    TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
 
 fn assert_public_type<T: ?Sized>() {}
@@ -18,6 +18,11 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     let producer = Producer::new(ProducerConfig::new("facade-api-probe").unwrap());
     let _: Option<ProducerServiceState> = producer.service_state();
     let _: TopicPublishInfoTable = producer.get_topic_publish_info_table();
+    let batch =
+        MessageBatch::generate_from_list(vec![Message::new("orders", b"body".to_vec())]).unwrap();
+    assert_eq!(batch.topic(), "orders");
+    assert!(!batch.encode().unwrap().is_empty());
+    assert_public_type::<MessageBatch>();
 
     assert_public_type::<ConsumerServiceState>();
     assert_public_type::<OrderlyListenerFuture>();

@@ -142,6 +142,7 @@ public final class ProducerCoreFixtures {
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
+        result.put("messageBatchPublicApi", messageBatchPublicApi());
         result.put("topicPublishInfoApi", publicApiSurface(TopicPublishInfo.class));
         result.put("topicPublishInfoQueueFilterApi",
             publicApiSurface(TopicPublishInfo.QueueFilter.class));
@@ -475,6 +476,18 @@ public final class ProducerCoreFixtures {
         result.put("DefaultMQProducer", publicApiSurface(DefaultMQProducer.class));
         result.put("MQProducer", publicApiSurface(MQProducer.class));
         result.put("MQAdmin", publicApiSurface(MQAdmin.class));
+        return result;
+    }
+
+    private static Map<String, Object> messageBatchPublicApi() {
+        Map<String, Object> result = publicApiSurface(MessageBatch.class);
+        List<String> fields = Arrays.stream(MessageBatch.class.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> Modifier.toString(field.getModifiers()) + " "
+                + field.getGenericType().getTypeName() + " " + field.getName())
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+        result.put("declaredPublicFields", fields);
         return result;
     }
 
