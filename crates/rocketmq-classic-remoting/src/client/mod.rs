@@ -40,6 +40,19 @@ const CHANNEL_EVENT_QUEUE_CAPACITY: usize = 10001;
 const NAME_SERVER_SCAN_MAX_IN_FLIGHT: usize = 42;
 const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
+fn semaphore_admission_capacity(configured: i32) -> usize {
+    // Java's Semaphore stores permits as a signed int. Its first acquire from
+    // Integer.MIN_VALUE wraps to Integer.MAX_VALUE, so the observable admission
+    // capacity for that one value is MAX_VALUE + 1. Other negative values never
+    // acquire and are represented by a closed Tokio semaphore.
+    let capacity = if configured == i32::MIN {
+        i32::MAX as usize + 1
+    } else {
+        configured.max(0) as usize
+    };
+    capacity.min(tokio::sync::Semaphore::MAX_PERMITS)
+}
+
 #[derive(Clone)]
 pub struct ProcessorRegistration {
     pub processor: Arc<dyn RequestProcessor>,
@@ -765,8 +778,12 @@ impl RemotingClient {
             active_connection_settings: Mutex::new(None),
             proxy_connection_settings: Mutex::new(HashMap::new()),
             scan_available_nameserver: AtomicBool::new(scan_available_nameserver),
-            async_admission: Arc::new(tokio::sync::Semaphore::new(config.async_semaphore_value)),
-            oneway_admission: Arc::new(tokio::sync::Semaphore::new(config.oneway_semaphore_value)),
+            async_admission: Arc::new(tokio::sync::Semaphore::new(semaphore_admission_capacity(
+                config.async_semaphore_value,
+            ))),
+            oneway_admission: Arc::new(tokio::sync::Semaphore::new(semaphore_admission_capacity(
+                config.oneway_semaphore_value,
+            ))),
             callback_sender: callback_sender.clone(),
             callback_executor: Mutex::new(Some(default_callback_executor)),
             public_executor: Arc::new(TokioRequestExecutor {
@@ -3404,6 +3421,93 @@ mod tests {
             TransportError::TooManyRequests
         );
         client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn signed_semaphore_settings_match_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        let defaults = ClientConfig::default();
+        assert_eq!(
+            fixture["remotingSemaphoreConfig"]["defaults"]["async"].as_i64(),
+            Some(i64::from(defaults.async_semaphore_value))
+        );
+        assert_eq!(
+            fixture["remotingSemaphoreConfig"]["defaults"]["oneway"].as_i64(),
+            Some(i64::from(defaults.oneway_semaphore_value))
+        );
+
+        for case in fixture["remotingSemaphoreConfig"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let value = i32::try_from(case["input"].as_i64().unwrap()).unwrap();
+            assert_eq!(case["async"].as_i64(), Some(i64::from(value)));
+            assert_eq!(case["oneway"].as_i64(), Some(i64::from(value)));
+            let client = RemotingClient::with_config(ClientConfig {
+                async_semaphore_value: value,
+                oneway_semaphore_value: value,
+                ..ClientConfig::default()
+            })
+            .unwrap();
+            let expected_capacity = if value == i32::MIN {
+                i32::MAX as usize + 1
+            } else {
+                value.max(0) as usize
+            }
+            .min(tokio::sync::Semaphore::MAX_PERMITS);
+
+            for (semaphore, acquired_key, after_key) in [
+                (
+                    &client.inner.async_admission,
+                    "asyncAcquireImmediate",
+                    "asyncAvailableAfterAcquire",
+                ),
+                (
+                    &client.inner.oneway_admission,
+                    "onewayAcquireImmediate",
+                    "onewayAvailableAfterAcquire",
+                ),
+            ] {
+                assert_eq!(semaphore.available_permits(), expected_capacity);
+                let java_acquired = case[acquired_key].as_bool().unwrap();
+                if java_acquired {
+                    let permit = client
+                        .inner
+                        .acquire_admission(semaphore.clone(), Instant::now())
+                        .await
+                        .unwrap();
+                    assert_eq!(
+                        semaphore.available_permits() as i64,
+                        case[after_key].as_i64().unwrap()
+                    );
+                    drop(permit);
+                } else {
+                    assert_eq!(
+                        client
+                            .inner
+                            .acquire_admission(semaphore.clone(), Instant::now())
+                            .await
+                            .unwrap_err(),
+                        TransportError::TooManyRequests
+                    );
+                    assert!(
+                        client
+                            .inner
+                            .acquire_admission(
+                                semaphore.clone(),
+                                Instant::now() + std::time::Duration::from_millis(2),
+                            )
+                            .await
+                            .unwrap_err()
+                            .is_timeout()
+                    );
+                }
+            }
+            client.shutdown().await;
+        }
     }
 
     #[tokio::test]

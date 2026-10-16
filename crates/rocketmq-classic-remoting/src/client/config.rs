@@ -1903,8 +1903,8 @@ pub struct ClientConfig {
     pub connect_timeout: i32,
     /// Java `channelNotActiveInterval` in milliseconds; inert in the pinned client's normal flow.
     pub channel_not_active_interval: i64,
-    pub async_semaphore_value: usize,
-    pub oneway_semaphore_value: usize,
+    pub async_semaphore_value: i32,
+    pub oneway_semaphore_value: i32,
     pub worker_threads: usize,
     pub callback_executor_threads: usize,
     pub disable_callback_executor: bool,
@@ -1964,10 +1964,6 @@ impl ClientConfig {
         if self.worker_threads == 0
             || i32::try_from(self.worker_threads).is_err()
             || i32::try_from(self.callback_executor_threads).is_err()
-            || i32::try_from(self.async_semaphore_value).is_err()
-            || i32::try_from(self.oneway_semaphore_value).is_err()
-            || self.async_semaphore_value > tokio::sync::Semaphore::MAX_PERMITS
-            || self.oneway_semaphore_value > tokio::sync::Semaphore::MAX_PERMITS
             || i32::try_from(self.client_socket_send_buffer_size).is_err()
             || i32::try_from(self.client_socket_receive_buffer_size).is_err()
             || i32::try_from(self.write_buffer_high_water_mark).is_err()

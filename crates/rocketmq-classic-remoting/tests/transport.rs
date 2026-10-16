@@ -2930,6 +2930,22 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     ] {
         assert!(config_is_accepted(zero_capacity).is_ok());
     }
+    for semaphore_value in [i32::MIN, -1, 0, i32::MAX] {
+        assert!(
+            config_is_accepted(ClientConfig {
+                async_semaphore_value: semaphore_value,
+                ..defaults.clone()
+            })
+            .is_ok()
+        );
+        assert!(
+            config_is_accepted(ClientConfig {
+                oneway_semaphore_value: semaphore_value,
+                ..defaults.clone()
+            })
+            .is_ok()
+        );
+    }
     assert_eq!(defaults.client_socket_send_buffer_size, 0);
     assert_eq!(defaults.client_socket_receive_buffer_size, 0);
     assert_eq!(defaults.write_buffer_high_water_mark, 0);
@@ -2998,22 +3014,6 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         },
         ClientConfig {
             callback_executor_threads: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            async_semaphore_value: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            oneway_semaphore_value: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            async_semaphore_value: tokio::sync::Semaphore::MAX_PERMITS.saturating_add(1),
-            ..defaults.clone()
-        },
-        ClientConfig {
-            oneway_semaphore_value: tokio::sync::Semaphore::MAX_PERMITS.saturating_add(1),
             ..defaults.clone()
         },
         ClientConfig {
