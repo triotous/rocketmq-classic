@@ -45,8 +45,10 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   fencing; paused-time reset regressions cover the timeout and removal paths.
   The returned Push implementation's 71 declared public
   signatures are now captured from the pinned Java fixture and count-pinned in
-  Rust. Its `consumerRunningInfo` method now has a direct Rust owner API and
-  fixture-backed running-flow checks. Its `ConsumerRunningInfo` body and
+  Rust. Its `consumerRunningInfo` method now has direct Rust owner coverage
+  during runtime and after shutdown; the latter compares retained properties,
+  subscription/status state and shutdown-cleared queue tables with Java. Its
+  `ConsumerRunningInfo` body and
   `ProcessQueueInfo`/`PopProcessQueueInfo`/`ConsumeStatus` models now also match
   inherited Java object-identity equality instead of exposing structural
   `PartialEq`/`Eq`. `QueryAssignmentRequestBody`,
@@ -699,7 +701,7 @@ the required full Phase 18 gates on the final revision.
   facade mutation. Consumer all-feature tests (219 unit tests, all integration
   targets and doctests), strict Consumer Clippy, Maven verify (37 scenarios,
   fixture drift and Java/Rust cross-decodes), formatting and diff checks pass.
-  Push fixture SHA-256 `4d98b6989130933d91831cbe20c671ba389e4e61f129153843d5fe5be8c981e5`;
+  Push fixture SHA-256 `1003a2a0ee2cfc8fcd759356a364b9764c36f529b598079772f444ce574ec7a0`;
   Pull fixture SHA-256 `1090617637533587bc425acaf1862521b7d2826c8747839a14a6e985fbdd4c78`.
   This closes only the audited group-timing paths; the broad P18-V01 audit and
   full workspace gates on the final revision remain open.
