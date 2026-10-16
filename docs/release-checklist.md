@@ -1538,3 +1538,31 @@ Before any publication:
   broad P18-V01, Phase 19 Docker/Broker automation, and pre-publication
   version/registry resolution remain open. Owner-run deployment and production
   checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting config validator reverse-surface follow-up (`375aeff5`,
+  2026-10-16, pinned Java source
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): `ClientConfig::validate` is
+  internal because Java `NettyClientConfig` has no public standalone
+  validator; `RemotingClient::with_config` still validates before construction.
+  A compile-fail rustdoc example protects the public boundary, and transport
+  validation tests now exercise the public constructor. Remoting all-feature
+  tests pass (97 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport,
+  8 doctests), as do strict all-target/all-feature Remoting Clippy, formatting,
+  and diff checks. This closes this API mismatch only; broad P18-V01 remains
+  open.
+
+- Current-revision server-free **P18-V02** rerun on `375aeff5`
+  (2026-10-16, macOS ARM64): default and all-feature locked workspace tests,
+  all-target/all-feature workspace check and strict Clippy, pinned Maven
+  `verify` (37 scenarios and Java/Rust cross-decodes), differential self-test
+  and 37-scenario manifest validation all pass. Race/leak smoke passes (16
+  cases × 3); fuzz smoke covers 105 frame seeds, 11 message seeds, and 1,856
+  bounded mutations. Release examples and workspace benchmarks compile.
+  Locked Cargo metadata reports 215 packages, including 208 registry packages
+  with license metadata; workspace metadata/license/dependency checks and all
+  seven package listings with LICENSE/NOTICE pass. The Asia/Taipei Unique ID
+  fixture, formatting and diff checks pass. This closes server-free P18-V02 on
+  `375aeff5`. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment and production checks remain
+  Phase 19 manual validation.
