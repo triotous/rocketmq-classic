@@ -1483,6 +1483,18 @@ impl std::fmt::Display for MessageExt {
     }
 }
 
+impl From<MessageExt> for Message {
+    fn from(message: MessageExt) -> Self {
+        message.message
+    }
+}
+
+impl From<&MessageExt> for Message {
+    fn from(message: &MessageExt) -> Self {
+        message.message.clone()
+    }
+}
+
 /// Client-decoded `MessageExt` view corresponding to Java's
 /// `MessageClientExt`. The wrapped base message retains its physical ID;
 /// `message_id()` resolves the live `UNIQ_KEY` property first, and the Java
@@ -1807,6 +1819,21 @@ fn java_trim_is_empty(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_ext_upcasts_to_java_message_surface() {
+        let mut extended = MessageExt::new();
+        extended.set_topic("reply-topic");
+        extended.set_body(b"reply-body".to_vec());
+
+        let borrowed: Message = (&extended).into();
+        assert_eq!(borrowed.topic(), "reply-topic");
+        assert_eq!(borrowed.body().as_ref(), b"reply-body");
+
+        let owned: Message = extended.into();
+        assert_eq!(owned.topic(), "reply-topic");
+        assert_eq!(owned.body().as_ref(), b"reply-body");
+    }
 
     #[test]
     fn message_queue_fastjson_inputs_match_invoked_java() {

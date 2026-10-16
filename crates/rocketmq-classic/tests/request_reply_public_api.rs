@@ -1,4 +1,6 @@
-use rocketmq_classic::{Message, ReplyMessageError, RequestCallback, create_reply_message};
+use rocketmq_classic::{
+    Message, ProducerError, ReplyMessageError, RequestCallback, create_reply_message,
+};
 use rocketmq_classic::{
     RequestFutureError, RequestFutureHolder, RequestFutureTable, RequestResponseFuture,
 };
@@ -6,7 +8,10 @@ use std::sync::Arc;
 
 #[test]
 fn request_reply_api_is_available_from_the_facade_crate() {
-    let _: RequestCallback = Box::new(|_| {});
+    let callback: RequestCallback = Box::new(|result| {
+        let _: Result<Message, ProducerError> = result;
+    });
+    let _: RequestCallback = callback;
 
     let mut request = Message::new("orders", b"request".to_vec());
     request
@@ -64,6 +69,12 @@ fn request_future_holder_returns_the_live_runtime_correlation_table() {
 #[test]
 fn nullable_java_count_down_latch_is_represented_in_the_public_rust_api() {
     let future = RequestResponseFuture::new("nullable-latch-api", 1_000, None);
+    future.set_response_msg(Some(Message::new("plain-response", b"body".to_vec())));
+    assert_eq!(
+        future.response_msg().unwrap().topic(),
+        "plain-response",
+        "Java RequestResponseFuture accepts and returns the base Message type"
+    );
     future.set_count_down_latch(None);
     assert!(future.count_down_latch().is_none());
     assert!(matches!(

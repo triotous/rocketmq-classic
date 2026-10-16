@@ -2,8 +2,8 @@ use super::RuntimeError;
 use super::request_future::{
     RequestFutureError, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
 };
-use rocketmq_classic_common::message::MessageExt;
 use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::message::{Message, MessageExt};
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -286,7 +286,9 @@ impl RequestFutureTable {
             let Some(pending) = entries.get(correlation_id) else {
                 return Ok(false);
             };
-            pending.future.put_response_message(Some(reply.clone()))?;
+            pending
+                .future
+                .put_response_message(Some(Message::from(&reply)))?;
             entries.remove(correlation_id)
         };
         let Some(entry) = entry else {
@@ -1338,7 +1340,7 @@ mod public_request_future_table_tests {
     struct RecordingCallback(AtomicUsize);
 
     impl RequestResponseCallback for RecordingCallback {
-        fn on_success(&self, response: Option<MessageExt>) {
+        fn on_success(&self, response: Option<Message>) {
             assert!(response.is_some());
             self.0.fetch_add(1, Ordering::SeqCst);
         }
@@ -1379,7 +1381,7 @@ mod public_request_future_table_tests {
                 .try_complete_pending_reply(correlation_id, reply.clone())
                 .unwrap()
         );
-        assert_eq!(future.response_msg(), Some(reply));
+        assert_eq!(future.response_msg().unwrap().topic(), reply.topic());
         assert_eq!(callback.0.load(Ordering::SeqCst), 1);
         assert!(!first_view.contains_key(correlation_id).unwrap());
     }

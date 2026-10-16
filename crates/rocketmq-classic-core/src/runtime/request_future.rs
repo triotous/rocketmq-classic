@@ -1,4 +1,4 @@
-use rocketmq_classic_common::message::{Message, MessageExt};
+use rocketmq_classic_common::message::Message;
 use std::{
     error::Error,
     sync::{
@@ -11,7 +11,7 @@ use tokio::{sync::watch, time::Instant};
 
 /// Callback contract attached to a Java-compatible request future.
 pub trait RequestResponseCallback: Send + Sync + 'static {
-    fn on_success(&self, response: Option<MessageExt>);
+    fn on_success(&self, response: Option<Message>);
     fn on_exception(&self, cause: Option<Arc<dyn Error + Send + Sync>>);
 }
 
@@ -90,7 +90,7 @@ pub struct RequestResponseFuture {
     begin_timestamp: i64,
     started_at: Instant,
     count_down_latch: RwLock<Option<Arc<RequestFutureLatch>>>,
-    response_msg: Mutex<Option<MessageExt>>,
+    response_msg: Mutex<Option<Message>>,
     send_request_ok: AtomicBool,
     cause: Mutex<Option<Arc<dyn Error + Send + Sync>>>,
     request_callback: Option<Arc<dyn RequestResponseCallback>>,
@@ -151,14 +151,14 @@ impl RequestResponseFuture {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = latch;
     }
 
-    pub fn response_msg(&self) -> Option<MessageExt> {
+    pub fn response_msg(&self) -> Option<Message> {
         self.response_msg
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 
-    pub fn set_response_msg(&self, response: Option<MessageExt>) {
+    pub fn set_response_msg(&self, response: Option<Message>) {
         *self
             .response_msg
             .lock()
@@ -208,7 +208,7 @@ impl RequestResponseFuture {
     pub async fn wait_response_message(
         &self,
         timeout: Duration,
-    ) -> Result<Option<MessageExt>, RequestFutureError> {
+    ) -> Result<Option<Message>, RequestFutureError> {
         let latch = self
             .count_down_latch()
             .ok_or(RequestFutureError::MissingCountDownLatch)?;
@@ -218,7 +218,7 @@ impl RequestResponseFuture {
 
     pub fn put_response_message(
         &self,
-        response: Option<MessageExt>,
+        response: Option<Message>,
     ) -> Result<(), RequestFutureError> {
         self.set_response_msg(response);
         let latch = self
@@ -259,7 +259,7 @@ mod tests {
     struct Callback(AtomicUsize);
 
     impl RequestResponseCallback for Callback {
-        fn on_success(&self, _response: Option<MessageExt>) {
+        fn on_success(&self, _response: Option<Message>) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
 
@@ -280,19 +280,20 @@ mod tests {
 
         let latch = Arc::new(RequestFutureLatch::new(2));
         future.set_count_down_latch(Some(latch.clone()));
-        let response = MessageExt::default();
+        let response = Message::new("future-response", b"response".to_vec());
         future.put_response_message(Some(response.clone())).unwrap();
         assert_eq!(latch.count(), 1);
-        assert_eq!(future.response_msg(), Some(response));
+        let stored = future.response_msg().unwrap();
+        assert_eq!(stored.topic(), "future-response");
+        assert_eq!(stored.body().as_ref(), b"response");
         latch.count_down();
         assert!(latch.wait(Duration::ZERO).await);
-        assert!(
-            future
-                .wait_response_message(Duration::ZERO)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        let waited = future
+            .wait_response_message(Duration::ZERO)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(waited.topic(), "future-response");
 
         future.set_send_request_ok(false);
         future.execute_request_callback();
@@ -309,16 +310,18 @@ mod tests {
         future.set_count_down_latch(None);
         assert!(future.count_down_latch().is_none());
 
-        let response = MessageExt::default();
+        let response = Message::new("nullable-latch", b"stored".to_vec());
         assert_eq!(
             future.put_response_message(Some(response.clone())),
             Err(RequestFutureError::MissingCountDownLatch)
         );
-        assert_eq!(future.response_msg(), Some(response));
-        assert_eq!(
+        let stored = future.response_msg().unwrap();
+        assert_eq!(stored.topic(), "nullable-latch");
+        assert_eq!(stored.body().as_ref(), b"stored");
+        assert!(matches!(
             future.wait_response_message(Duration::ZERO).await,
             Err(RequestFutureError::MissingCountDownLatch)
-        );
+        ));
     }
 
     #[tokio::test]

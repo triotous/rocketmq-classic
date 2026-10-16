@@ -1,5 +1,5 @@
 use rocketmq_classic_common::message::{
-    Message, MessageExt, MessageQueue,
+    Message, MessageQueue,
     constants::{
         PROPERTY_CLUSTER, PROPERTY_CORRELATION_ID, PROPERTY_MESSAGE_REPLY_TO_CLIENT,
         PROPERTY_MESSAGE_TTL, PROPERTY_MESSAGE_TYPE, REPLY_MESSAGE_FLAG, REPLY_TOPIC_POSTFIX,
@@ -22,7 +22,7 @@ use tokio::time::Instant;
 use crate::{Producer, ProducerError};
 
 /// Java `RequestCallback` expressed as a single Rust result callback.
-pub type RequestCallback = Box<dyn FnOnce(Result<MessageExt, ProducerError>) + Send + 'static>;
+pub type RequestCallback = Box<dyn FnOnce(Result<Message, ProducerError>) + Send + 'static>;
 
 struct ProducerRequestCallback {
     callback: Mutex<Option<RequestCallback>>,
@@ -31,7 +31,7 @@ struct ProducerRequestCallback {
 }
 
 impl RequestResponseCallback for ProducerRequestCallback {
-    fn on_success(&self, response: Option<MessageExt>) {
+    fn on_success(&self, response: Option<Message>) {
         let callback = self
             .callback
             .lock()
@@ -228,7 +228,7 @@ impl Producer {
         &self,
         message: &mut Message,
         timeout: Duration,
-    ) -> Result<MessageExt, ProducerError> {
+    ) -> Result<Message, ProducerError> {
         self.request_with_route(message, timeout, RequestRoute::Default)
             .await
     }
@@ -239,7 +239,7 @@ impl Producer {
         message: &'a mut Message,
         selector: F,
         timeout: Duration,
-    ) -> Result<MessageExt, ProducerError>
+    ) -> Result<Message, ProducerError>
     where
         F: FnOnce(&[MessageQueue], &Message) -> Option<MessageQueue> + Send + 'a,
     {
@@ -253,7 +253,7 @@ impl Producer {
         message: &mut Message,
         queue: &MessageQueue,
         timeout: Duration,
-    ) -> Result<MessageExt, ProducerError> {
+    ) -> Result<Message, ProducerError> {
         self.request_with_route(message, timeout, RequestRoute::Queue(queue.clone()))
             .await
     }
@@ -347,7 +347,7 @@ impl Producer {
         message: &'a mut Message,
         timeout: Duration,
         route: RequestRoute<'a>,
-    ) -> Result<MessageExt, ProducerError> {
+    ) -> Result<Message, ProducerError> {
         let (pending, deadline) = self.prepare_request(message, timeout, None).await?;
         self.wait_for_reply(message, pending, deadline, timeout, true, route)
             .await
@@ -412,7 +412,7 @@ impl Producer {
         timeout: Duration,
         expire_waiter_at_deadline: bool,
         route: RequestRoute<'_>,
-    ) -> Result<MessageExt, ProducerError> {
+    ) -> Result<Message, ProducerError> {
         let timeout_millis = timeout.as_millis();
         let topic = message.topic().to_owned();
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -450,7 +450,7 @@ impl Producer {
         };
         drop(completion);
         match result {
-            Ok(PendingReplyCompletion::Reply(reply)) => Ok(reply),
+            Ok(PendingReplyCompletion::Reply(reply)) => Ok(reply.into()),
             Ok(PendingReplyCompletion::Timeout { send_succeeded: _ }) => {
                 Err(ProducerError::RequestReplyTimeout {
                     topic,
