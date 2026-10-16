@@ -2605,3 +2605,25 @@ Before any publication:
   final-revision P18-V02 workspace gate, current-revision platform CI evidence,
   and Phase 19 local Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T210508Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T210508Z.rlog).
+- P18-V01 inherited RemotingSerializable writer-feature implementation
+  (commit `2261c5b1`, 2026-10-16; pinned Java source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): added the public
+  `JavaJsonWriterFeature` inventory with all 48 Java names and ordinals, and
+  `java_encode_with_features` adapters for 15 body DTOs, both route DTOs, and
+  `HeartbeatData`. `WriteNonStringValueAsString` now matches invoked Java
+  output, including special `MessageQueue` and route numeric map keys. The
+  other 47 features are explicitly rejected as unmapped; enum inventory and
+  probe coverage do not close their behavior. The current worktree passes
+  `cargo test -p rocketmq-classic-protocol --all-features --locked` (121 unit
+  tests, integration targets, 42 doctests), strict all-target/all-feature
+  Protocol Clippy, pinned Maven `verify` (37 scenarios), `cargo fmt --all
+  -- --check`, and `git diff --check`. Fixture SHA-256 values: `lookup.json`
+  `5a10759a1b73504c0476b0d08c0f922ab74c5aa04f41b9203e6bfd8a8a7d2d6c`,
+  `route.json` `189b34d28d4719b44839a7cc08ab8e209f711b613285a6a6baad194378829cd4`,
+  and `heartbeat.json`
+  `459adaf81a93ca4d1cb08075fcc65c4db7b75c6a9582ffd0500b499283585bda`.
+  This closes one writer-feature behavior slice only. Broad P18-V01, the
+  final-revision full-workspace P18-V02 gate, current-revision platform CI
+  evidence, package/pre-publication review, and Phase 19 local Docker/Broker
+  automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T214928Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T214928Z.rlog).
