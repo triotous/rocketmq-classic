@@ -2344,3 +2344,19 @@ Before any publication:
   `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
   This closes the named alias-handle reverse-export slice only; broad P18-V01
   reconciliation remains open.
+- P18-V01 Remoting GO_AWAY post-swap retry follow-up (`bc970e10`, 2026-10-16,
+  pinned Java
+  client source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  `NettyRemotingClient.invokeImpl` looks up the wrapper by the responding old
+  channel; after `ChannelWrapper.reconnect` swaps its current future, a later
+  GO_AWAY from that old channel sees the wrapper's different current channel
+  and retries through it. Rust now retries that retired generation through the
+  shared replacement. The regression receives the first replacement retry
+  before sending the second old-channel GO_AWAY, then verifies both requests
+  complete through that one replacement. Java's `tryLock` can still fail for
+  a callback racing before the current-channel swap; this test does not claim
+  that every simultaneous ordering retries. Remoting all-features tests pass
+  (104 unit, 8 codec, 1 fuzz regression, 7 security, 102 transport, 8 doctests),
+  as do strict Remoting Clippy, formatting, and diff checks. This closes the
+  deterministic post-swap behavior slice only; broad P18-V01 and final-revision
+  full-workspace P18-V02 remain open.
