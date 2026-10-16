@@ -34,3 +34,6 @@ P18-V01 request/reply helper behavior evidence:
 - The known gap is now behavior-backed but not implemented: public mutable
   future/table API and integration with the runtime-owned correlation store
   remain P18-V01 work. Commit status: pending.
+- Fixture, matrix, and focused test evidence commit: `8ca6a205 test(compat):
+  cover request future mutable behavior`. The commit leaves the implementation
+  gap explicitly open for the next P18-V01 change.
