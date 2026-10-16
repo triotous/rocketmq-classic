@@ -88,3 +88,22 @@
   59,048.3 ns. Allocation observations are recorded there as well.
 - Treat measurements as host-specific observations only. No performance
   thresholds exist; no optimization was indicated by this baseline alone.
+
+# P18-V01 Remoting public surface slice — 2026-10-16 18:26 UTC
+
+- Generated all-feature Remoting Rustdoc JSON with the installed nightly toolchain
+  and enumerated the public inherent methods on `RemotingClient`. Before the
+  change the scan found the public `invoke_name_server_with_peer`, which had no
+  Java public operation counterpart and was only called by the response-only
+  `invoke_name_server` wrapper. Commit `f853cb69` makes that implementation
+  helper private and adds a compile-fail doctest.
+- Updated the Phase 3 Remoting crosswalk with exact Rust method names for live
+  connect-timeout and GO_AWAY setting adapters, both owned-processor methods,
+  the private response-only helper, and the cross-crate sync peer adapter used
+  by Core's NameServer route errors. The latest scan enumerates 64 public
+  inherent methods and finds zero exact method names absent from the crosswalk.
+- Verification on `f853cb69`: `cargo fmt --all -- --check`, all-feature Remoting
+  doctests (9), strict all-target/all-feature Remoting Clippy, and Core `rpc`
+  route tests (5) pass. This closes a bounded Remoting method-name/public
+  surface slice only; P18-V01 remains open for the full Java/Rust source,
+  settings, overload/input/error/flow, inherited API, and reverse-export audit.

@@ -2423,3 +2423,15 @@ Before any publication:
   iteration counts, timing and allocation results are recorded in
   [PHASE_18_OFFLINE_BENCHMARK_BASELINE.md](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
   These are machine-specific observations without a pass/fail threshold.
+- P18-V01 Remoting `RemotingClient` public inherent-method scan (`f853cb69`,
+  2026-10-16): all-feature Rustdoc JSON enumerated 64 public inherent methods.
+  The unused public `invoke_name_server_with_peer` helper was made private; a
+  compile-fail doctest guards that boundary. The compatibility crosswalk now
+  names every remaining inherent method, including the connect-timeout and
+  GO_AWAY live accessors and both owned-processor registration methods. The
+  exact-name scan reports zero unlisted `RemotingClient` methods. Remoting
+  doctests (9), strict Remoting Clippy, and Core route RPC regressions (5) pass.
+  This closes that bounded method-name/public-surface slice only; the broader
+  Java/Rust source, overload/input/error/control-flow, inherited API, and
+  cross-crate reverse-export audit remains open. See
+  [PHASE_3_REMOTING_INVENTORY.md](compatibility/PHASE_3_REMOTING_INVENTORY.md).
