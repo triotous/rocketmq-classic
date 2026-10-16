@@ -4876,7 +4876,11 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     );
     let mut output = String::new();
     write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
-    Ok(output)
+    if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
+        Ok(crate::route::escape_none_ascii_json(&output))
+    } else {
+        Ok(output)
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -5811,6 +5815,18 @@ mod tests {
                 combined_featured,
                 expected_combined_featured.as_bytes(),
                 "{} combined boolean writer features",
+                case["id"]
+            );
+            let escaped_featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                .unwrap();
+            let expected_escaped_featured = case["writerFeatureOverrides"]["EscapeNoneAscii"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                escaped_featured,
+                expected_escaped_featured.as_bytes(),
+                "{} EscapeNoneAscii",
                 case["id"]
             );
             let pretty_featured = value
@@ -6798,6 +6814,18 @@ mod tests {
                 "{} combined boolean writer features",
                 case["id"]
             );
+            let escaped_featured = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                .unwrap();
+            let expected_escaped_featured = case["writerFeatureOverrides"]["EscapeNoneAscii"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                escaped_featured,
+                expected_escaped_featured.as_bytes(),
+                "{} EscapeNoneAscii",
+                case["id"]
+            );
             let pretty_featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::PrettyFormat])
                 .unwrap();
@@ -6936,6 +6964,39 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), nulls["decodeListNullMemberCount"]);
         assert_eq!(list[0].is_none(), nulls["decodeListPreservesNullMember"]);
+    }
+
+    #[test]
+    fn escape_none_ascii_matches_invoked_java_for_inherited_body_serializers() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let case = &fixture["remotingSerializableWriterEscapingCase"];
+        let raw_input = case["rawInput"].as_str().unwrap();
+        let value = CheckClientRequestBody::java_decode(raw_input.as_bytes()).unwrap();
+        assert_eq!(
+            String::from_utf8(value.java_encode().unwrap()).unwrap(),
+            case["instanceEncodedJson"]
+        );
+        assert_eq!(
+            String::from_utf8(
+                value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                    .unwrap()
+            )
+            .unwrap(),
+            case["escapeNoneAsciiJson"]
+        );
+
+        let generic_body: serde_json::Value = serde_json::from_str(raw_input).unwrap();
+        assert_eq!(
+            java_fastjson_remoting_body_json_with_features(
+                &generic_body,
+                false,
+                &[JavaJsonWriterFeature::EscapeNoneAscii],
+            )
+            .unwrap(),
+            case["escapeNoneAsciiJson"]
+        );
     }
 
     #[test]
@@ -7093,6 +7154,21 @@ mod tests {
                         combined_featured,
                         expected_combined_featured.as_bytes(),
                         "{} {} combined boolean writer features",
+                        $name,
+                        case["id"]
+                    );
+                    let escaped_featured = value
+                        .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                        .unwrap();
+                    let expected_escaped_featured = expected["writerFeatureOverrides"][
+                        "EscapeNoneAscii"
+                    ]
+                        .as_str()
+                        .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap());
+                    assert_eq!(
+                        escaped_featured,
+                        expected_escaped_featured.as_bytes(),
+                        "{} {} EscapeNoneAscii",
                         $name,
                         case["id"]
                     );

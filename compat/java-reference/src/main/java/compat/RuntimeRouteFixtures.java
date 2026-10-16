@@ -3846,6 +3846,10 @@ public final class RuntimeRouteFixtures {
         fixture.put("routeDtoReferenceAliases", routeDtoReferenceAliasCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
+        fixture.put("writerFeatureEscapingCase", inheritedSerializationCase(
+            "writer-unicode",
+            "{\"orderTopicConf\":\"café-漢字-😀-𝄞\"}",
+            TopicRouteData.class));
         fixture.put("inheritedSerializationNullUtilities", inheritedSerializationNullUtilities());
         fixture.put("brokerDataCompareTo", brokerDataCompareToCases());
         fixture.put("topicRouteDataChanged", topicRouteDataChangedCases());

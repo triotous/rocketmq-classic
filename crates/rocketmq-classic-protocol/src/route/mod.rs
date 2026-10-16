@@ -103,7 +103,11 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         unquote_numeric_map_keys,
         &mut output,
     )?;
-    Ok(output)
+    if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
+        Ok(escape_none_ascii_json(&output))
+    } else {
+        Ok(output)
+    }
 }
 
 pub(crate) fn java_json_indent(
@@ -175,6 +179,54 @@ pub(crate) fn apply_java_json_writer_value_features(
         }
         serde_json::Value::Null | serde_json::Value::String(_) => {}
     }
+}
+
+pub(crate) fn escape_none_ascii_json(json: &str) -> String {
+    let mut output = String::with_capacity(json.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for character in json.chars() {
+        if !in_string {
+            output.push(character);
+            if character == '"' {
+                in_string = true;
+            }
+            continue;
+        }
+
+        if escaped {
+            output.push(character);
+            escaped = false;
+            continue;
+        }
+
+        match character {
+            '"' => {
+                output.push(character);
+                in_string = false;
+            }
+            '\\' => {
+                output.push(character);
+                escaped = true;
+            }
+            character if character.is_ascii() => output.push(character),
+            character => {
+                let value = character as u32;
+                if value < 0x800 {
+                    // Fastjson2's pinned UTF-16 writer leaves two-byte code units unescaped.
+                    output.push(character);
+                } else if value <= 0xFFFF {
+                    output.push_str(&format!("\\u{value:04X}"));
+                } else {
+                    let supplementary = value - 0x1_0000;
+                    let high_surrogate = 0xD800 + (supplementary >> 10);
+                    let low_surrogate = 0xDC00 + (supplementary & 0x3FF);
+                    output.push_str(&format!("\\u{high_surrogate:04X}\\u{low_surrogate:04X}"));
+                }
+            }
+        }
+    }
+    output
 }
 
 fn write_java_route_json(
@@ -3711,6 +3763,18 @@ mod tests {
                     "{} combined boolean writer features",
                     case["id"]
                 );
+                let escaped_featured = value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                    .unwrap();
+                let expected_escaped_featured = case["writerFeatureOverrides"]["EscapeNoneAscii"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    escaped_featured,
+                    expected_escaped_featured.as_bytes(),
+                    "{} EscapeNoneAscii",
+                    case["id"]
+                );
                 let pretty_featured = value
                     .java_encode_with_features(&[JavaJsonWriterFeature::PrettyFormat])
                     .unwrap();
@@ -3806,6 +3870,23 @@ mod tests {
                 check_case!(TopicQueueMappingInfo, case);
             }
         }
+
+        let case = &fixture["writerFeatureEscapingCase"];
+        let value: TopicRouteData =
+            serde_json::from_str(case["rawInput"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            value.java_encode().unwrap(),
+            case["instanceEncodedJson"].as_str().unwrap().as_bytes()
+        );
+        assert_eq!(
+            value
+                .java_encode_with_features(&[JavaJsonWriterFeature::EscapeNoneAscii])
+                .unwrap(),
+            case["writerFeatureOverrides"]["EscapeNoneAscii"]
+                .as_str()
+                .unwrap()
+                .as_bytes()
+        );
     }
 
     #[test]

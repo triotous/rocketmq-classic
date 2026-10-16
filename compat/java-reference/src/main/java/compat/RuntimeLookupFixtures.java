@@ -60,6 +60,7 @@ public final class RuntimeLookupFixtures {
             Arrays.stream(com.alibaba.fastjson2.JSONWriter.Feature.values())
                 .map(Enum::name)
                 .collect(java.util.stream.Collectors.toList()));
+        fixture.put("remotingSerializableWriterEscapingCase", remotingSerializableWriterEscapingCase());
         fixture.put("bootTimestampInsideConstructorWindow",
             bootTimestamp >= bootTimestampWindowStart && bootTimestamp <= bootTimestampWindowEnd);
         fixture.put("bootTimestampStableAfterFixtureCalls", runtime.getBootTimestamp() == bootTimestamp);
@@ -1577,6 +1578,21 @@ public final class RuntimeLookupFixtures {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringValueAsString}),
             java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
+    }
+
+    private static Map<String, Object> remotingSerializableWriterEscapingCase() {
+        String rawInput = "{\"clientId\":\"café-漢字-😀\",\"group\":\"scope-𝄞-line\\nquote\\\"\"}";
+        org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody value =
+            com.alibaba.fastjson2.JSON.parseObject(rawInput,
+                org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.class);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("rawInput", rawInput);
+        result.put("instanceEncodedJson", new String(value.encode(), java.nio.charset.StandardCharsets.UTF_8));
+        result.put("escapeNoneAsciiJson", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.EscapeNoneAscii}),
+            java.nio.charset.StandardCharsets.UTF_8));
+        return result;
     }
 
     private static Map<String, Object> remotingSerializableBodyNullUtilities() {

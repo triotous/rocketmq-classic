@@ -2635,6 +2635,18 @@ mod tests {
                 "{} combined boolean writer features",
                 case["case"]
             );
+            let escaped_featured = value
+                .java_encode_with_features(&[crate::JavaJsonWriterFeature::EscapeNoneAscii])
+                .unwrap();
+            let expected_escaped_featured = case["writerFeatureOverrides"]["EscapeNoneAscii"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                escaped_featured,
+                expected_escaped_featured.as_bytes(),
+                "{} EscapeNoneAscii",
+                case["case"]
+            );
             let pretty_featured = value
                 .java_encode_with_features(&[crate::JavaJsonWriterFeature::PrettyFormat])
                 .unwrap();
