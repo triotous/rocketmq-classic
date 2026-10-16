@@ -611,6 +611,8 @@ public final class MessageDecodeFixtures {
 
     private static Map<String, Object> messageDecoderPublicApi() {
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("declaredPublicConstructors", publicConstructorSignatures(MessageDecoder.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageDecoder.class));
         expected.put("charsetUtf8", MessageDecoder.CHARSET_UTF8.name());
         expected.put("messageMagicCode", MessageDecoder.MESSAGE_MAGIC_CODE);
         expected.put("messageMagicCodeV2", MessageDecoder.MESSAGE_MAGIC_CODE_V2);

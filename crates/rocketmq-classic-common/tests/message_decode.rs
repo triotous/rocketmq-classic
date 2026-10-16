@@ -927,6 +927,41 @@ fn crc32_property_helpers_match_both_java_buffers() {
 #[test]
 fn message_decoder_public_constants_match_java_551() {
     let expected = &fixture()["messageDecoderPublicApi"];
+    assert_eq!(
+        expected["declaredPublicConstructors"],
+        json!(["MessageDecoder()"])
+    );
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "byte[] encode(org.apache.rocketmq.common.message.MessageExt, boolean)",
+            "byte[] encodeMessage(org.apache.rocketmq.common.message.Message)",
+            "byte[] encodeMessages(java.util.List)",
+            "byte[] encodeUniquely(org.apache.rocketmq.common.message.MessageExt, boolean)",
+            "int countInnerMsgNum(java.nio.ByteBuffer)",
+            "java.lang.String createMessageId(java.net.SocketAddress, long)",
+            "java.lang.String createMessageId(java.nio.ByteBuffer, java.nio.ByteBuffer, long)",
+            "java.lang.String messageProperties2String(java.util.Map)",
+            "java.util.List decodeMessages(java.nio.ByteBuffer)",
+            "java.util.List decodes(java.nio.ByteBuffer)",
+            "java.util.List decodes(java.nio.ByteBuffer, boolean)",
+            "java.util.List decodesBatch(java.nio.ByteBuffer, boolean, boolean, boolean)",
+            "java.util.Map decodeProperties(java.nio.ByteBuffer)",
+            "java.util.Map string2messageProperties(java.lang.String)",
+            "org.apache.rocketmq.common.message.Message decodeMessage(java.nio.ByteBuffer)",
+            "org.apache.rocketmq.common.message.MessageExt clientDecode(java.nio.ByteBuffer, boolean)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer, boolean)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer, boolean, boolean)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer, boolean, boolean, boolean)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer, boolean, boolean, boolean, boolean)",
+            "org.apache.rocketmq.common.message.MessageExt decode(java.nio.ByteBuffer, boolean, boolean, boolean, boolean, boolean)",
+            "org.apache.rocketmq.common.message.MessageId decodeMessageId(java.lang.String)",
+            "void createCrc32(io.netty.buffer.ByteBuf, int)",
+            "void createCrc32(java.nio.ByteBuffer, int)",
+            "void decodeMessage(org.apache.rocketmq.common.message.MessageExt, java.util.List)"
+        ])
+    );
     assert_eq!(CHARSET_UTF8, expected["charsetUtf8"]);
     assert_eq!(MESSAGE_MAGIC_CODE, expected["messageMagicCode"]);
     assert_eq!(MESSAGE_MAGIC_CODE_V1, expected["messageMagicCode"]);
