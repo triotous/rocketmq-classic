@@ -14,8 +14,10 @@ pub(super) const JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientAsyncSemaphoreValue";
 pub(super) const JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY: &str =
     "com.rocketmq.remoting.clientOnewaySemaphoreValue";
+pub(super) const JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY: &str =
+    "com.rocketmq.remoting.client.closeSocketIfTimeout";
 static JAVA_FRAME_MAX_LENGTH: OnceLock<Result<usize, String>> = OnceLock::new();
-static JAVA_CLIENT_SEMAPHORE_DEFAULTS: OnceLock<Result<(i32, i32), String>> = OnceLock::new();
+static JAVA_CLIENT_DEFAULTS: OnceLock<Result<(i32, i32, bool), String>> = OnceLock::new();
 
 fn read_java_int_property(property: &str, default: i32) -> Result<i32, String> {
     match std::env::var(property) {
@@ -29,12 +31,21 @@ fn read_java_int_property(property: &str, default: i32) -> Result<i32, String> {
     }
 }
 
-fn java_client_semaphore_defaults() -> (i32, i32) {
-    JAVA_CLIENT_SEMAPHORE_DEFAULTS
+fn read_java_bool_property(property: &str, default: bool) -> bool {
+    match std::env::var(property) {
+        Ok(value) => value.eq_ignore_ascii_case("true"),
+        Err(std::env::VarError::NotPresent) => default,
+        Err(std::env::VarError::NotUnicode(_)) => false,
+    }
+}
+
+fn java_client_defaults() -> (i32, i32, bool) {
+    JAVA_CLIENT_DEFAULTS
         .get_or_init(|| {
             Ok((
                 read_java_int_property(JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY, 65535)?,
                 read_java_int_property(JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY, 65535)?,
+                read_java_bool_property(JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY, true),
             ))
         })
         .clone()
@@ -1956,7 +1967,8 @@ pub struct ClientConfig {
 
 impl Default for ClientConfig {
     fn default() -> Self {
-        let (async_semaphore_value, oneway_semaphore_value) = java_client_semaphore_defaults();
+        let (async_semaphore_value, oneway_semaphore_value, close_socket_if_timeout) =
+            java_client_defaults();
         Self {
             transport: TransportMode::Plain,
             connect_timeout: 3000,
@@ -1975,7 +1987,7 @@ impl Default for ClientConfig {
             pooled_byte_buffer_allocator_enabled: false,
             disable_netty_worker_group: false,
             max_idle_time: 120,
-            close_socket_if_timeout: true,
+            close_socket_if_timeout,
             scan_available_nameserver: true,
             enable_reconnect_for_go_away: true,
             max_reconnect_interval_time_seconds: 60,

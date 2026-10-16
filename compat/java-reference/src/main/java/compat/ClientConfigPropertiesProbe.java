@@ -9,17 +9,18 @@ import org.apache.rocketmq.client.ClientConfig;
 
 /** Fresh-process oracle for ClientConfig fields initialized from system properties. */
 public final class ClientConfigPropertiesProbe {
-    private static final Map<String, String> VALUES = Map.of(
-        "rocketmq.client.name", "fixture-client",
-        "com.rocketmq.read.body", "TrUe",
-        "com.rocketmq.decompress.body", " true ",
-        "com.rocketmq.sendMessageWithVIPChannel", "TRUE",
-        "com.rocketmq.heartbeat.v2", "true",
-        "com.rocketmq.socks.proxy.config", "",
-        "com.rocketmq.sendLatencyEnable", "true",
-        "com.rocketmq.startDetectorEnable", " true ",
-        "com.rocketmq.remoting.clientAsyncSemaphoreValue", "-17",
-        "com.rocketmq.remoting.clientOnewaySemaphoreValue", "2147483647"
+    private static final Map<String, String> VALUES = Map.ofEntries(
+        Map.entry("rocketmq.client.name", "fixture-client"),
+        Map.entry("com.rocketmq.read.body", "TrUe"),
+        Map.entry("com.rocketmq.decompress.body", " true "),
+        Map.entry("com.rocketmq.sendMessageWithVIPChannel", "TRUE"),
+        Map.entry("com.rocketmq.heartbeat.v2", "true"),
+        Map.entry("com.rocketmq.socks.proxy.config", ""),
+        Map.entry("com.rocketmq.sendLatencyEnable", "true"),
+        Map.entry("com.rocketmq.startDetectorEnable", " true "),
+        Map.entry("com.rocketmq.remoting.clientAsyncSemaphoreValue", "-17"),
+        Map.entry("com.rocketmq.remoting.clientOnewaySemaphoreValue", "2147483647"),
+        Map.entry("com.rocketmq.remoting.client.closeSocketIfTimeout", "false")
     );
 
     private ClientConfigPropertiesProbe() { }
@@ -39,6 +40,7 @@ public final class ClientConfigPropertiesProbe {
         }
         fixture.put("configured", snapshot(new ClientConfig()));
         fixture.put("remotingSemaphoreValues", remotingSemaphoreValues());
+        fixture.put("remotingTimeoutSettings", remotingTimeoutSettings());
 
         Path file = Path.of(args[0]);
         String json = JSON.toJSONString(fixture) + "\n";
@@ -72,6 +74,14 @@ public final class ClientConfigPropertiesProbe {
         Map<String, Object> result = new TreeMap<>();
         result.put("async", config.getClientAsyncSemaphoreValue());
         result.put("oneway", config.getClientOnewaySemaphoreValue());
+        return result;
+    }
+
+    private static Map<String, Object> remotingTimeoutSettings() {
+        org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("closeSocketIfTimeout", config.isClientCloseSocketIfTimeout());
         return result;
     }
 }

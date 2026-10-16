@@ -3511,15 +3511,17 @@ mod tests {
     }
 
     #[test]
-    fn client_semaphore_defaults_follow_java_system_properties() {
-        const CHILD_MARKER: &str = "ROCKETMQ_SEMAPHORE_PROPERTY_CHILD";
+    fn client_remoting_defaults_follow_java_system_properties() {
+        const CHILD_MARKER: &str = "ROCKETMQ_REMOTING_PROPERTY_CHILD";
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/client-config-properties.json"
         ))
         .unwrap();
         let async_property = config::JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY;
         let oneway_property = config::JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY;
+        let close_socket_property = config::JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY;
         let configured = &fixture["remotingSemaphoreValues"];
+        let timeout_settings = &fixture["remotingTimeoutSettings"];
 
         match std::env::var(CHILD_MARKER).as_deref() {
             Ok("valid") => {
@@ -3531,6 +3533,10 @@ mod tests {
                 assert_eq!(
                     i64::from(defaults.oneway_semaphore_value),
                     configured["oneway"].as_i64().unwrap()
+                );
+                assert_eq!(
+                    defaults.close_socket_if_timeout,
+                    timeout_settings["closeSocketIfTimeout"]
                 );
                 return;
             }
@@ -3548,7 +3554,7 @@ mod tests {
         let property_values = &fixture["systemProperties"];
         let valid = Command::new(&executable)
             .arg("--exact")
-            .arg("client::tests::client_semaphore_defaults_follow_java_system_properties")
+            .arg("client::tests::client_remoting_defaults_follow_java_system_properties")
             .arg("--nocapture")
             .env(CHILD_MARKER, "valid")
             .env(
@@ -3558,6 +3564,10 @@ mod tests {
             .env(
                 oneway_property,
                 property_values[oneway_property].as_str().unwrap(),
+            )
+            .env(
+                close_socket_property,
+                property_values[close_socket_property].as_str().unwrap(),
             )
             .output()
             .unwrap();
@@ -3570,13 +3580,17 @@ mod tests {
 
         let invalid = Command::new(executable)
             .arg("--exact")
-            .arg("client::tests::client_semaphore_defaults_follow_java_system_properties")
+            .arg("client::tests::client_remoting_defaults_follow_java_system_properties")
             .arg("--nocapture")
             .env(CHILD_MARKER, "invalid")
             .env(async_property, " 1")
             .env(
                 oneway_property,
                 property_values[oneway_property].as_str().unwrap(),
+            )
+            .env(
+                close_socket_property,
+                property_values[close_socket_property].as_str().unwrap(),
             )
             .output()
             .unwrap();
