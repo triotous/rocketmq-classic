@@ -72,6 +72,7 @@ public final class MessageDecodeFixtures {
         root.put("messageExtSystemFlagsApi", messageExtSystemFlagsApi());
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
+        root.put("messageSysFlagPublicApi", messageSysFlagPublicApi());
         root.put("messageConstantsApi", messageConstantsApi());
         root.put("messageVersionApi", messageVersionApi());
         root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
@@ -648,6 +649,22 @@ public final class MessageDecodeFixtures {
         expected.put("messageConst", messageConst);
         expected.put("mixAll", mixAll);
         expected.put("reservedNames", reservedNames);
+        return expected;
+    }
+
+    private static Map<String, Object> messageSysFlagPublicApi() throws IllegalAccessException {
+        Map<String, Object> expected = new TreeMap<>();
+        Map<String, Integer> constants = new TreeMap<>();
+        for (Field field : MessageSysFlag.class.getDeclaredFields()) {
+            int modifiers = field.getModifiers();
+            if (field.getType() == int.class && Modifier.isPublic(modifiers)
+                && Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers)) {
+                constants.put(field.getName(), field.getInt(null));
+            }
+        }
+        expected.put("publicConstants", constants);
+        expected.put("publicConstructors", publicConstructorSignatures(MessageSysFlag.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageSysFlag.class));
         return expected;
     }
 

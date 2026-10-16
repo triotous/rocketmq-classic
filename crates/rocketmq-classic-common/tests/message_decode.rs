@@ -1016,6 +1016,41 @@ fn message_decoder_public_constants_match_java_551() {
 }
 
 #[test]
+fn message_sys_flag_public_api_matches_java_551() {
+    let expected = &fixture()["messageSysFlagPublicApi"];
+    assert_eq!(expected["publicConstructors"], json!(["MessageSysFlag()"]));
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "boolean check(int, int)",
+            "int clearCompressedFlag(int)",
+            "int getTransactionValue(int)",
+            "int resetTransactionValue(int, int)",
+            "org.apache.rocketmq.common.compression.CompressionType getCompressionType(int)"
+        ])
+    );
+    assert_eq!(
+        expected["publicConstants"],
+        json!({
+            "BORNHOST_V6_FLAG": message::BORNHOST_V6_FLAG,
+            "COMPRESSED_FLAG": message::COMPRESSED_FLAG,
+            "COMPRESSION_LZ4_TYPE": message::COMPRESSION_LZ4_TYPE,
+            "COMPRESSION_TYPE_COMPARATOR": message::COMPRESSION_TYPE_COMPARATOR,
+            "COMPRESSION_ZLIB_TYPE": message::COMPRESSION_ZLIB_TYPE,
+            "COMPRESSION_ZSTD_TYPE": message::COMPRESSION_ZSTD_TYPE,
+            "INNER_BATCH_FLAG": message::INNER_BATCH_FLAG,
+            "MULTI_TAGS_FLAG": message::MULTI_TAGS_FLAG,
+            "NEED_UNWRAP_FLAG": message::NEED_UNWRAP_FLAG,
+            "STOREHOSTADDRESS_V6_FLAG": message::STOREHOSTADDRESS_V6_FLAG,
+            "TRANSACTION_COMMIT_TYPE": message::TRANSACTION_COMMIT_TYPE,
+            "TRANSACTION_NOT_TYPE": message::TRANSACTION_NOT_TYPE,
+            "TRANSACTION_PREPARED_TYPE": message::TRANSACTION_PREPARED_TYPE,
+            "TRANSACTION_ROLLBACK_TYPE": message::TRANSACTION_ROLLBACK_TYPE
+        })
+    );
+}
+
+#[test]
 fn message_constants_match_java_551() {
     let _guard = MESSAGE_CONSTANTS_MUTATION_LOCK
         .lock()
