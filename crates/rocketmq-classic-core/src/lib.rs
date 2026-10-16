@@ -9,6 +9,17 @@
 //! };
 //! # fn main() {}
 //! ```
+//!
+//! Runtime clock injection for request-future expiration is internal.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::runtime::RequestResponseFuture;
+//! use tokio::time::Instant;
+//! # fn main() {
+//! let future = RequestResponseFuture::new("correlation", 1_000, None);
+//! let _ = future.is_timeout_at(Instant::now());
+//! # }
+//! ```
 
 pub mod api;
 pub mod auth;

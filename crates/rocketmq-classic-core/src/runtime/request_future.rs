@@ -197,7 +197,7 @@ impl RequestResponseFuture {
         epoch_millis(SystemTime::now()).wrapping_sub(self.begin_timestamp) > self.timeout_millis()
     }
 
-    pub fn is_timeout_at(&self, now: Instant) -> bool {
+    pub(super) fn is_timeout_at(&self, now: Instant) -> bool {
         let timeout_millis = self.timeout_millis();
         if timeout_millis < 0 {
             return true;
