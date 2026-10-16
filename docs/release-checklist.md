@@ -25,7 +25,9 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   request-pipeline stages mutate requests before later stages/processors, with
   the mutated opaque verified through the response. Java fixture verification
   and the focused Rust regression pass. The Java `UtilAll.exceptionSimpleDesc`
-  versus Rust error-remark difference remains an explicit open P18-V01 gap.
+  versus Rust error-remark difference is accepted as diagnostic text only under
+  the core flow-parity rule; response code and control-flow paths are mapped,
+  while text-for-text equivalence is not claimed.
   The broad Phase 6 audit
   remains `PARTIAL`; Phase 9 now has fixture/unit coverage for raw Pull offset
   entrypoints, `consumerRunningInfo`, the construction-time start timestamp,
@@ -2337,8 +2339,9 @@ Before any publication:
   disposition. Remoting all-feature `p18_` tests pass (11), including context
   identity and no-deadline channel writes; processor executor/rejection and
   pipeline-order regressions pass (1 each). This closes the Netty context
-  capability question only; processor error-remark formatting and broad
-  P18-V01 reconciliation remain open.
+  capability question only; processor error-remark formatting is accepted as
+  diagnostic-only under the core flow-parity rule. Broad P18-V01 reconciliation
+  remains open.
 - P18-V01 Common shared-alias reverse-export disposition (`b03d7fe9`,
   2026-10-16, pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
   the Phase 8 method matrix now records all public `SharedMessageBody` and
@@ -2391,8 +2394,10 @@ Before any publication:
   release examples, workspace bench compilation, formatting, and diff checks
   pass. Remoting after-response mutation now covers request/response commands;
   request-pipeline mutation now checks response opaque propagation. Broad
-  P18-V01 remains open, including the exact Java `UtilAll.exceptionSimpleDesc`
-  versus Rust error-remark mismatch. Current-revision GitHub Ubuntu/P18-V04 and
+  P18-V01 remains open for the broad public API/settings and source-flow audit.
+  The Java `UtilAll.exceptionSimpleDesc` versus Rust error-remark difference is
+  accepted as diagnostic text only; text-for-text equivalence is not claimed.
+  Current-revision GitHub Ubuntu/P18-V04 and
   native Windows runtime CI evidence, Phase 19 Docker/Broker automation and
   scenario execution, `docs/owner-validation.md`, and pre-publication
   version/dependency resolution remain open. Execution log:

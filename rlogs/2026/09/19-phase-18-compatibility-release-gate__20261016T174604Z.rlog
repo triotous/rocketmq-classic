@@ -37,3 +37,19 @@
   and release-version/registry dependency resolution also remain pending. No
   Broker/Docker run, push, tag, publication, deployment or compatibility claim
   was made.
+
+# Continuation — 2026-10-16 17:58 UTC
+
+- Reviewed the pending compatibility/release documentation changes across
+  `KNOWN_DIFFERENCES.md`, `PHASE_3_REMOTING_INVENTORY.md`,
+  `PHASE_6_REQUIREMENT_AUDIT.md`, and `release-checklist.md` against the user
+  parity rule: public API/settings remain exact; other observable behavior is
+  assessed by flow logic, without requiring Java library components to be
+  duplicated in Rust.
+- Recorded Java `UtilAll.exceptionSimpleDesc` versus Rust error-remark text as
+  diagnostic-only variation. Error category, response code, ordering and
+  terminal path remain parity requirements. This resolves the status wording,
+  not the broader P18-V01 audit.
+- `git diff --check` passed. These documentation edits are committed separately
+  from code changes. Broad P18-V01, current-revision P18-V02 rerun, P18-V04
+  remote CI evidence, and Phase 19 automation/scenario execution remain open.

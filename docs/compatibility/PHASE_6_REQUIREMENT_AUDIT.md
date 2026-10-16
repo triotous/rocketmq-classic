@@ -4,6 +4,8 @@
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:
 
+The governing parity rule is exact equality for public APIs and settings, with flow-logic parity for other behavior; Java and Rust need not use the same implementation components. Under that rule, Java's `UtilAll.exceptionSimpleDesc` versus Rust's error-text formatting is an accepted diagnostic-only variation when error category, response code, and processing order match. This does not waive any public surface, setting, category, or flow gap recorded below.
+
 - Current server-free P18-V02 gate on source commit `787157a0` (2026-10-16,
   macOS ARM64), after the Common `MessageUtils`, `CorrelationIdUtil`, and
   `NameServerAddressUtils` API slices and the lifecycle/thread-helper audit:
