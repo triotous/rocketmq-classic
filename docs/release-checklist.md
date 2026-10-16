@@ -1540,6 +1540,20 @@ Before any publication:
   version/registry resolution remain open. Owner-run deployment and production
   checks remain Phase 19 manual validation.
 
+- Current-revision server-free **P18-V02** gate on `526a0b34` (2026-10-16,
+  macOS ARM64): default and all-feature locked workspace tests, strict
+  all-target/all-feature workspace Clippy, formatting, and diff checks pass.
+  The pinned Maven `verify` passes its 37-scenario manifest, Java fixture
+  probes, fixture drift checks, and Java/Rust cross-decodes. Comparator
+  self-test and manifest validation pass; deterministic race/leak smoke passes
+  16 cases × 3; fuzz smoke covers 105 frame seeds, 11 message seeds, and 1,856
+  bounded mutations. Release examples, offline benchmark compilation, and
+  workspace metadata/license/dependency checks pass. This closes server-free
+  P18-V02 on `526a0b34`. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04
+  evidence, Phase 19 local Docker/Broker automation, and pre-publication
+  version/registry resolution remain open. Owner-run deployment and production
+  checks remain Phase 19 manual validation.
+
 - P18-V01 Remoting config validator reverse-surface follow-up (`375aeff5`,
   2026-10-16, pinned Java source
   `efa1be59d6fc747ad220f036c86030f05f0419f9`): `ClientConfig::validate` is
