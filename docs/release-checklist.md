@@ -2417,3 +2417,9 @@ Before any publication:
   runtime CI evidence, Phase 19 Docker/Broker automation and live scenario
   execution, `docs/owner-validation.md`, and pre-publication version/registry
   dependency resolution remain open.
+- Phase 18 offline performance measurement (`15c6ca4f`, 2026-10-16): ran the
+  release benchmark on the recorded Apple M5 Max / Rust 1.85.0 environment for
+  all five fixed-input operations and allocation sampling. Input sizes,
+  iteration counts, timing and allocation results are recorded in
+  [PHASE_18_OFFLINE_BENCHMARK_BASELINE.md](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+  These are machine-specific observations without a pass/fail threshold.
