@@ -5508,8 +5508,11 @@ async fn p3_request_pipeline_and_processor_rejection_return_configured_codes() {
 
 #[tokio::test]
 async fn p18_request_context_preserves_channel_identity_through_pipeline_and_processor() {
+    type WriteCompletion = tokio::task::JoinHandle<Result<(), TransportError>>;
+
     struct ContextPipeline {
         observed: Arc<std::sync::Mutex<Vec<ChannelHandle>>>,
+        write_completions: Arc<std::sync::Mutex<Vec<WriteCompletion>>>,
         write_command: bool,
     }
 
@@ -5528,14 +5531,19 @@ async fn p18_request_context_preserves_channel_identity_through_pipeline_and_pro
                 .unwrap()
                 .push(context.channel().clone());
             assert_eq!(context.remote_addr(), context.channel().remote_addr());
+            assert!(context.channel().is_open());
+            assert!(context.channel().is_active());
+            assert!(context.channel().is_writable());
             if self.write_command {
                 let mut command = command(80);
                 command.opaque = 90;
-                drop(
-                    context
-                        .write_and_flush(&command)
-                        .map_err(|error| RequestPipelineError::Failed(error.to_string()))?,
-                );
+                let completion = context
+                    .write_and_flush(&command)
+                    .map_err(|error| RequestPipelineError::Failed(error.to_string()))?;
+                self.write_completions
+                    .lock()
+                    .unwrap()
+                    .push(tokio::spawn(completion));
             }
             Ok(())
         }
@@ -5576,15 +5584,18 @@ async fn p18_request_context_preserves_channel_identity_through_pipeline_and_pro
     });
 
     let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let write_completions = Arc::new(std::sync::Mutex::new(Vec::new()));
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
     client.register_processor(78, Arc::new(ContextProcessor(observed.clone())));
     client.set_request_pipeline(Some(Arc::new(ContextPipeline {
         observed: observed.clone(),
+        write_completions: write_completions.clone(),
         write_command: false,
     })));
     client.pipe_request_pipeline(Arc::new(ContextPipeline {
         observed: observed.clone(),
+        write_completions: write_completions.clone(),
         write_command: true,
     }));
 
@@ -5605,6 +5616,17 @@ async fn p18_request_context_preserves_channel_identity_through_pipeline_and_pro
     assert!(!extra.is_response());
     assert_eq!((response.code, response.opaque), (81, 41));
     assert!(response.is_response());
+    let write_completions = std::mem::take(&mut *write_completions.lock().unwrap());
+    assert_eq!(write_completions.len(), 1);
+    assert!(
+        write_completions
+            .into_iter()
+            .next()
+            .unwrap()
+            .await
+            .unwrap()
+            .is_ok()
+    );
 
     {
         let observed = observed.lock().unwrap();

@@ -431,4 +431,20 @@ mod tests {
 
         assert_eq!(response.remark.as_deref(), Some("127.0.0.1:10911"));
     }
+
+    #[test]
+    fn request_context_exposes_channel_state_and_closes_its_channel() {
+        let channel = ChannelHandle::pending("127.0.0.1:10911", 7);
+        let context = RequestContext::new(channel.clone());
+
+        assert_eq!(context.channel(), &channel);
+        assert_eq!(context.remote_addr(), "127.0.0.1:10911");
+        assert!(channel.is_open());
+        assert!(!channel.is_active());
+        assert!(!channel.is_writable());
+
+        assert!(context.close());
+        assert!(!context.channel().is_open());
+        assert!(!context.close());
+    }
 }
