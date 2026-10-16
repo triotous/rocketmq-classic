@@ -56,6 +56,10 @@ public final class RuntimeLookupFixtures {
         fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/getBootTimestamp/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/CheckClientRequestBody and client remoting DTO inherited RemotingSerializable methods/QueueTimeSpan timestamp-string getters and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
+        fixture.put("remotingSerializationWriterFeatures",
+            Arrays.stream(com.alibaba.fastjson2.JSONWriter.Feature.values())
+                .map(Enum::name)
+                .collect(java.util.stream.Collectors.toList()));
         fixture.put("bootTimestampInsideConstructorWindow",
             bootTimestamp >= bootTimestampWindowStart && bootTimestamp <= bootTimestampWindowEnd);
         fixture.put("bootTimestampStableAfterFixtureCalls", runtime.getBootTimestamp() == bootTimestamp);
@@ -1372,6 +1376,7 @@ public final class RuntimeLookupFixtures {
                 java.nio.charset.StandardCharsets.UTF_8));
             item.put("featureEncodedJson", new String(value.encode(
                 new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+            item.put("writerFeatureOverrides", writerFeatureOverrides(value));
             item.put("decodedJson", org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.decode(
                 instanceBytes, type).toJson());
             item.put("fromJsonJson", org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody.fromJson(
@@ -1539,6 +1544,7 @@ public final class RuntimeLookupFixtures {
             java.nio.charset.StandardCharsets.UTF_8));
         item.put("featureEncodedJson", new String(value.encode(
             new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+        item.put("writerFeatureOverrides", writerFeatureOverrides(value));
         item.put("decodedJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable
             .decode(instanceBytes, type).toJson());
         item.put("fromJsonJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable
@@ -1546,6 +1552,26 @@ public final class RuntimeLookupFixtures {
         item.put("decodedListJson", decodedList.get(0).toJson());
         item.put("decodedListCount", decodedList.size());
         return item;
+    }
+
+    private static Map<String, Object> writerFeatureOverrides(
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable value) {
+        String baseline = new String(value.encode(), java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> overrides = new TreeMap<>();
+        for (com.alibaba.fastjson2.JSONWriter.Feature feature
+                : com.alibaba.fastjson2.JSONWriter.Feature.values()) {
+            try {
+                String encoded = new String(value.encode(
+                    new com.alibaba.fastjson2.JSONWriter.Feature[] {feature}),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                if (!baseline.equals(encoded)) {
+                    overrides.put(feature.name(), encoded);
+                }
+            } catch (RuntimeException error) {
+                overrides.put(feature.name(), Map.of("error", error.getClass().getSimpleName()));
+            }
+        }
+        return overrides;
     }
 
     private static Map<String, Object> remotingSerializableBodyNullUtilities() {
@@ -2956,6 +2982,7 @@ public final class RuntimeLookupFixtures {
                 java.nio.charset.StandardCharsets.UTF_8));
             item.put("featureEncodedJson", new String(value.encode(
                 new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+            item.put("writerFeatureOverrides", writerFeatureOverrides(value));
             item.put("decodedJson",
                 org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.decode(
                     instanceBytes,
