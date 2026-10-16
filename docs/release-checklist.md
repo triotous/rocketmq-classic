@@ -1850,3 +1850,14 @@ Before any publication:
   broad P18-V01 and the full P18-V02 gate suite remain open, along with the
   Ubuntu/P18-V04 result, Phase 19 Docker/Broker automation, owner-validation
   instructions, and pre-publication version/registry checks.
+- [x] **P18-V02** — Complete server-free gate rerun on revision `3b0af61d`
+  (2026-10-16, macOS ARM64): default/all-feature locked workspace tests,
+  strict all-target/all-feature Clippy, format/diff checks, pinned Maven verify
+  (37 scenarios, fixture drift and cross-decodes), differential self-test and
+  37-scenario manifest, deterministic race/leak smoke (16 cases × 3), fuzz
+  smoke (105 frame seeds, 11 message seeds, 1,856 mutations), release examples,
+  offline benchmark compilation, Cargo/workspace metadata and dependency/license
+  checks, all seven package listings with LICENSE/NOTICE, and the
+  `TZ=Asia/Taipei` Unique ID fixture all pass. Broad P18-V01 and the current
+  GitHub Ubuntu/P18-V04 result remain open; this entry makes no live Broker,
+  release, or compatibility claim.
