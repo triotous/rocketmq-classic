@@ -2663,3 +2663,17 @@ Before any publication:
   platform CI evidence, package/pre-publication review, and Phase 19 local
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T222453Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T222453Z.rlog).
+- P18-V01 `EscapeNoneAscii` writer feature (commit `2dcbb98e`, 2026-10-16):
+  inherited body, route, and heartbeat serializers now match the pinned Java
+  output. Invoked Unicode cases cover a Latin-1 character that remains raw, a
+  high BMP character escaped as `\uXXXX`, and supplementary characters emitted
+  as surrogate pairs. Six of 48 writer features now have behavior mappings;
+  the other 42 remain unmapped. Protocol all-feature tests (122 unit tests, all
+  integration targets, 42 doctests), strict Protocol Clippy, Maven verify (37
+  scenarios), format, and diff checks pass. Fixture SHA-256 values: `lookup.json`
+  `ad6ab8868be11ad924d10ff34a9542e59018fb883a355dc6ac2fe0fca7182977`,
+  `route.json` `e7199dea0c92a60fecbc569a048981511c74ba6281e873e2a7d1ea84135d7e56`.
+  Broad P18-V01, final-revision full-workspace P18-V02, current-revision
+  platform CI evidence, package/pre-publication review, and Phase 19 local
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T223610Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T223610Z.rlog).
