@@ -2670,6 +2670,10 @@ mod tests {
                     "WriteNonStringKeyAsString",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::WriteLongAsString,
+                    "WriteLongAsString",
+                ),
+                (
                     crate::JavaJsonWriterFeature::NotWriteDefaultValue,
                     "NotWriteDefaultValue",
                 ),

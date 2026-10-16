@@ -4883,6 +4883,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreEmpty) {
         crate::route::omit_empty_writer_values(&mut value, true);
     }
+    if features.contains(&JavaJsonWriterFeature::WriteLongAsString) {
+        crate::route::apply_java_json_long_as_string(&mut value);
+    }
     let mut output = String::new();
     write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
@@ -5848,6 +5851,17 @@ mod tests {
                 pretty_featured,
                 expected_pretty_featured.as_bytes(),
                 "{} PrettyFormat",
+                case["id"]
+            );
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::WriteLongAsString])
+                    .unwrap(),
+                case["writerFeatureOverrides"]["WriteLongAsString"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap())
+                    .as_bytes(),
+                "{} WriteLongAsString",
                 case["id"]
             );
             for (feature, feature_name) in [
@@ -6847,6 +6861,17 @@ mod tests {
                 "{} PrettyFormat",
                 case["id"]
             );
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::WriteLongAsString])
+                    .unwrap(),
+                case["writerFeatureOverrides"]["WriteLongAsString"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap())
+                    .as_bytes(),
+                "{} WriteLongAsString",
+                case["id"]
+            );
             for (feature, feature_name) in [
                 (
                     JavaJsonWriterFeature::PrettyFormatWith2Space,
@@ -7205,6 +7230,7 @@ mod tests {
                             JavaJsonWriterFeature::WriteNonStringKeyAsString,
                             "WriteNonStringKeyAsString",
                         ),
+                        (JavaJsonWriterFeature::WriteLongAsString, "WriteLongAsString"),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
                             "NotWriteDefaultValue",

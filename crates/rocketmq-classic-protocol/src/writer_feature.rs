@@ -5,9 +5,9 @@
 /// adapters currently implement `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
-/// `IgnoreEmpty`, `NotWriteDefaultValue`, and `WriteNonStringKeyAsString`; other
-/// variants return an explicit unsupported-feature error until their behavior
-/// is mapped.
+/// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`, and
+/// `WriteLongAsString`; other variants return an explicit unsupported-feature
+/// error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -190,6 +190,7 @@ impl JavaJsonWriterFeature {
                 | Self::IgnoreEmpty
                 | Self::NotWriteDefaultValue
                 | Self::WriteNonStringKeyAsString
+                | Self::WriteLongAsString
         )
     }
 }

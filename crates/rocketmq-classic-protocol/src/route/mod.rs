@@ -101,16 +101,21 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreEmpty) {
         omit_empty_writer_values(&mut value, true);
     }
+    if features.contains(&JavaJsonWriterFeature::WriteLongAsString) {
+        apply_java_json_long_as_string(&mut value);
+    }
     let mut output = String::new();
     let unquote_numeric_map_keys = !features
         .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
         && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString);
+    let stringify_long_map_keys = features.contains(&JavaJsonWriterFeature::WriteLongAsString);
     write_java_route_json(
         &value,
         None,
         0,
         indent,
         unquote_numeric_map_keys,
+        stringify_long_map_keys,
         &mut output,
     )?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
@@ -306,6 +311,89 @@ pub(crate) fn apply_java_json_writer_value_features(
     }
 }
 
+pub(crate) fn apply_java_json_long_as_string(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, value) in fields {
+                if matches!(
+                    name.as_str(),
+                    "consumerTable" | "messageQueueTable" | "offsetTable"
+                ) {
+                    apply_java_json_long_map_values(value);
+                } else if is_java_long_property(name) {
+                    stringify_json_number(value);
+                } else {
+                    apply_java_json_long_as_string(value);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                apply_java_json_long_as_string(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
+}
+
+fn is_java_long_property(name: &str) -> bool {
+    matches!(
+        name,
+        "consumeTimeStamp"
+            | "delayTime"
+            | "epoch"
+            | "invisibleTime"
+            | "maxTimeStamp"
+            | "minTimeStamp"
+            | "popTime"
+            | "spentTimeMills"
+            | "startOffset"
+            | "subVersion"
+            | "updateTime"
+            | "value"
+            | "version"
+            | "so"
+            | "pt"
+            | "it"
+    )
+}
+
+fn apply_java_json_long_map_values(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                match value {
+                    serde_json::Value::Number(_) => stringify_json_number(value),
+                    serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                        apply_java_json_long_map_values(value);
+                    }
+                    serde_json::Value::Null
+                    | serde_json::Value::Bool(_)
+                    | serde_json::Value::String(_) => {}
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                apply_java_json_long_map_values(value);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
+}
+
+fn stringify_json_number(value: &mut serde_json::Value) {
+    if let serde_json::Value::Number(number) = value {
+        *value = serde_json::Value::String(number.to_string());
+    }
+}
+
 pub(crate) fn escape_none_ascii_json(json: &str) -> String {
     let mut output = String::with_capacity(json.len());
     let mut in_string = false;
@@ -360,6 +448,7 @@ fn write_java_route_json(
     depth: usize,
     indent: Option<&str>,
     unquote_numeric_map_keys: bool,
+    stringify_long_map_keys: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
@@ -378,13 +467,15 @@ fn write_java_route_json(
         serde_json::Value::Object(fields) => {
             let numeric_keys =
                 unquote_numeric_map_keys && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
+            let long_keys_are_strings =
+                stringify_long_map_keys && field_name == Some("brokerAddrs");
             output.push('{');
             for (index, (key, value)) in fields.iter().enumerate() {
                 if indent.is_some() {
                     output.push('\n');
                     write_java_indent(output, depth + 1, indent);
                 }
-                if numeric_keys && key.parse::<i64>().is_ok() {
+                if numeric_keys && !long_keys_are_strings && key.parse::<i64>().is_ok() {
                     output.push_str(key);
                 } else {
                     output.push_str(&serde_json::to_string(key)?);
@@ -396,6 +487,7 @@ fn write_java_route_json(
                     depth + 1,
                     indent,
                     unquote_numeric_map_keys,
+                    stringify_long_map_keys,
                     output,
                 )?;
                 if index + 1 != fields.len() {
@@ -431,6 +523,7 @@ fn write_java_route_json(
                     depth + 1,
                     indent,
                     unquote_numeric_map_keys,
+                    stringify_long_map_keys,
                     output,
                 )?;
                 if index + 1 != values.len() {
@@ -3919,6 +4012,7 @@ mod tests {
                         JavaJsonWriterFeature::WriteNonStringKeyAsString,
                         "WriteNonStringKeyAsString",
                     ),
+                    (JavaJsonWriterFeature::WriteLongAsString, "WriteLongAsString"),
                     (
                         JavaJsonWriterFeature::NotWriteDefaultValue,
                         "NotWriteDefaultValue",
