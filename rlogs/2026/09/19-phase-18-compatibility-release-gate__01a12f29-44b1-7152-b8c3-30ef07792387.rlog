@@ -1,0 +1,7 @@
+# Phase 18 MessageAccessor setProperties alias oracle — 01a12f29-44b1-7152-b8c3-30ef07792387
+
+- Inspected the pinned Java client source at `efa1be59d6fc747ad220f036c86030f05f0419f9`. `MessageAccessor.setProperties` assigns the caller's `Map` reference directly to `Message`; mutations through either reference are visible through the other.
+- Added invoked Java observations for retained map identity, caller-to-message mutation, and message-to-caller mutation in `MessageDecodeFixtures.messagePublicApi`. The fixture is generated with the Maven-pinned `org.apache.rocketmq:rocketmq-client:5.5.1` dependency and retains the source commit metadata.
+- First standalone generation attempt used a compile-scope classpath and failed because `commons-validator` was absent. Rebuilt the generated classpath with `includeScope=test`, then generated the fixture successfully. `mvn -q -f compat/java-reference/pom.xml exec:java@verify-java-message-decode-fixtures` passes with all 11 message fixtures.
+- Updated `fixtures/messages/records.json`; SHA-256: `02be176d528051f874a159a7fc2867484a8e1c2f8a7cffcf92c588ec8853db91`.
+- No files in `/Users/bruce.tsai/Projects/3rd/rocketmq` were changed. No plan files were changed.

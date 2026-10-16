@@ -336,6 +336,18 @@ public final class MessageDecodeFixtures {
         MessageAccessor.setProperties(replacedProperties, null);
         expected.put("setPropertiesNullMapIsNull", replacedProperties.getProperties() == null);
 
+        Message sharedPropertiesMessage = new Message("shared-properties-topic", new byte[] {1});
+        Map<String, String> callerProperties = new HashMap<>();
+        callerProperties.put("initial", "caller");
+        MessageAccessor.setProperties(sharedPropertiesMessage, callerProperties);
+        expected.put("setPropertiesRetainsCallerMap", sharedPropertiesMessage.getProperties() == callerProperties);
+        callerProperties.put("caller-mutation", "visible-to-message");
+        expected.put("setPropertiesCallerMutationVisible",
+            sharedPropertiesMessage.getProperty("caller-mutation"));
+        sharedPropertiesMessage.getProperties().put("message-mutation", "visible-to-caller");
+        expected.put("setPropertiesMessageMutationVisible",
+            callerProperties.get("message-mutation"));
+
         Message accessorCloneSource = new Message("clone-topic", new byte[] {0, -1, 42});
         accessorCloneSource.setFlag(29);
         accessorCloneSource.setTransactionId("source-transaction");
