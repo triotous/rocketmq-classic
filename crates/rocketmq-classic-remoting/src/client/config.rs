@@ -10,7 +10,36 @@ use super::TransportMode;
 use crate::error::TransportError;
 
 pub(super) const JAVA_FRAME_MAX_LENGTH_PROPERTY: &str = "com.rocketmq.remoting.frameMaxLength";
+pub(super) const JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY: &str =
+    "com.rocketmq.remoting.clientAsyncSemaphoreValue";
+pub(super) const JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY: &str =
+    "com.rocketmq.remoting.clientOnewaySemaphoreValue";
 static JAVA_FRAME_MAX_LENGTH: OnceLock<Result<usize, String>> = OnceLock::new();
+static JAVA_CLIENT_SEMAPHORE_DEFAULTS: OnceLock<Result<(i32, i32), String>> = OnceLock::new();
+
+fn read_java_int_property(property: &str, default: i32) -> Result<i32, String> {
+    match std::env::var(property) {
+        Ok(value) => super::java_number::parse_i32(&value).ok_or_else(|| {
+            format!("Java system property {property} is not a signed decimal integer")
+        }),
+        Err(std::env::VarError::NotPresent) => Ok(default),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!(
+            "Java system property {property} is not valid Unicode"
+        )),
+    }
+}
+
+fn java_client_semaphore_defaults() -> (i32, i32) {
+    JAVA_CLIENT_SEMAPHORE_DEFAULTS
+        .get_or_init(|| {
+            Ok((
+                read_java_int_property(JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY, 65535)?,
+                read_java_int_property(JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY, 65535)?,
+            ))
+        })
+        .clone()
+        .unwrap_or_else(|error| panic!("{error}"))
+}
 
 pub(super) fn java_frame_max_length() -> Result<usize, TransportError> {
     JAVA_FRAME_MAX_LENGTH
@@ -1927,12 +1956,13 @@ pub struct ClientConfig {
 
 impl Default for ClientConfig {
     fn default() -> Self {
+        let (async_semaphore_value, oneway_semaphore_value) = java_client_semaphore_defaults();
         Self {
             transport: TransportMode::Plain,
             connect_timeout: 3000,
             channel_not_active_interval: 60_000,
-            async_semaphore_value: 65535,
-            oneway_semaphore_value: 65535,
+            async_semaphore_value,
+            oneway_semaphore_value,
             worker_threads: 4,
             callback_executor_threads: std::thread::available_parallelism()
                 .map(usize::from)

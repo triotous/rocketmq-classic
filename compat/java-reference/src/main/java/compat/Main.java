@@ -194,6 +194,10 @@ public final class Main {
             RuntimeConfigFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "client-config-properties-fixture".equals(args[0])) {
+            ClientConfigPropertiesProbe.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-address-fixtures".equals(args[0])) {
             RuntimeAddressFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -288,7 +292,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {

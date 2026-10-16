@@ -3510,6 +3510,84 @@ mod tests {
         }
     }
 
+    #[test]
+    fn client_semaphore_defaults_follow_java_system_properties() {
+        const CHILD_MARKER: &str = "ROCKETMQ_SEMAPHORE_PROPERTY_CHILD";
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config-properties.json"
+        ))
+        .unwrap();
+        let async_property = config::JAVA_CLIENT_ASYNC_SEMAPHORE_VALUE_PROPERTY;
+        let oneway_property = config::JAVA_CLIENT_ONEWAY_SEMAPHORE_VALUE_PROPERTY;
+        let configured = &fixture["remotingSemaphoreValues"];
+
+        match std::env::var(CHILD_MARKER).as_deref() {
+            Ok("valid") => {
+                let defaults = ClientConfig::default();
+                assert_eq!(
+                    i64::from(defaults.async_semaphore_value),
+                    configured["async"].as_i64().unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.oneway_semaphore_value),
+                    configured["oneway"].as_i64().unwrap()
+                );
+                return;
+            }
+            Ok("invalid") => {
+                let error = std::panic::catch_unwind(ClientConfig::default).unwrap_err();
+                let message = error.downcast_ref::<String>().unwrap();
+                assert!(message.contains(async_property));
+                return;
+            }
+            _ => {}
+        }
+
+        use std::process::Command;
+        let executable = std::env::current_exe().unwrap();
+        let property_values = &fixture["systemProperties"];
+        let valid = Command::new(&executable)
+            .arg("--exact")
+            .arg("client::tests::client_semaphore_defaults_follow_java_system_properties")
+            .arg("--nocapture")
+            .env(CHILD_MARKER, "valid")
+            .env(
+                async_property,
+                property_values[async_property].as_str().unwrap(),
+            )
+            .env(
+                oneway_property,
+                property_values[oneway_property].as_str().unwrap(),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            valid.status.success(),
+            "valid child failed: {}{}",
+            String::from_utf8_lossy(&valid.stdout),
+            String::from_utf8_lossy(&valid.stderr)
+        );
+
+        let invalid = Command::new(executable)
+            .arg("--exact")
+            .arg("client::tests::client_semaphore_defaults_follow_java_system_properties")
+            .arg("--nocapture")
+            .env(CHILD_MARKER, "invalid")
+            .env(async_property, " 1")
+            .env(
+                oneway_property,
+                property_values[oneway_property].as_str().unwrap(),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            invalid.status.success(),
+            "invalid child failed: {}{}",
+            String::from_utf8_lossy(&invalid.stdout),
+            String::from_utf8_lossy(&invalid.stderr)
+        );
+    }
+
     #[tokio::test]
     async fn start_and_shutdown_race_leaves_no_owned_tasks_or_connections() {
         for _ in 0..16 {

@@ -17,7 +17,9 @@ public final class ClientConfigPropertiesProbe {
         "com.rocketmq.heartbeat.v2", "true",
         "com.rocketmq.socks.proxy.config", "",
         "com.rocketmq.sendLatencyEnable", "true",
-        "com.rocketmq.startDetectorEnable", " true "
+        "com.rocketmq.startDetectorEnable", " true ",
+        "com.rocketmq.remoting.clientAsyncSemaphoreValue", "-17",
+        "com.rocketmq.remoting.clientOnewaySemaphoreValue", "2147483647"
     );
 
     private ClientConfigPropertiesProbe() { }
@@ -36,6 +38,7 @@ public final class ClientConfigPropertiesProbe {
             System.setProperty(entry.getKey(), entry.getValue());
         }
         fixture.put("configured", snapshot(new ClientConfig()));
+        fixture.put("remotingSemaphoreValues", remotingSemaphoreValues());
 
         Path file = Path.of(args[0]);
         String json = JSON.toJSONString(fixture) + "\n";
@@ -60,6 +63,15 @@ public final class ClientConfigPropertiesProbe {
         result.put("socksProxyConfig", config.getSocksProxyConfig());
         result.put("sendLatencyEnable", config.isSendLatencyEnable());
         result.put("startDetectorEnable", config.isStartDetectorEnable());
+        return result;
+    }
+
+    private static Map<String, Object> remotingSemaphoreValues() {
+        org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("async", config.getClientAsyncSemaphoreValue());
+        result.put("oneway", config.getClientOnewaySemaphoreValue());
         return result;
     }
 }
