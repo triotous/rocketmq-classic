@@ -2100,3 +2100,15 @@ Before any publication:
   fixture drift checks. Formatting, checksum, and diff checks pass. This closes
   only the MessageVersion declaration-inventory slice; broad P18-V01 remains
   open.
+
+- P18-V01 Common `MessageSysFlag` declared-surface inventory (`1e6b07bd`,
+  2026-10-16): the pinned Java fixture records all 14 public integer constants,
+  the no-argument utility constructor, and all five declared public methods.
+  Rust's `sysflag::message` constants and functions match the listed values and
+  method behavior; the stateless Java constructor is represented by this Rust
+  namespace rather than a constructible object. Common `message_decode` tests
+  pass (22 tests), strict all-target/all-feature Common Clippy passes, and
+  pinned Maven `verify` passes all 37 scenarios and fixture drift checks.
+  Fixture SHA-256: `1b9590233baae11bb8705795bc357c84b12fa8cf2be978d69267d2f4e2fc1fe2`.
+  Formatting, checksum, and diff checks pass. This closes only this utility
+  declaration slice; broad P18-V01 remains open.
