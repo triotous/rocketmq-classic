@@ -632,7 +632,7 @@ impl ClientConfig {
                 .as_deref()
                 .filter(|raw| namespace::instance_endpoint(raw))
             {
-                self.namespace = Some(namespace::instance(raw)?.into());
+                self.namespace = Some(namespace::instance(raw)?);
             }
             self.namespace_initialized = true;
         }

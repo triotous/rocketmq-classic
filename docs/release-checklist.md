@@ -1953,3 +1953,10 @@ Before any publication:
   format. Common and Producer focused tests, Maven fixture generation, and
   format/diff checks pass. This closes this API slice only; broad P18-V01 and a
   full P18-V02 rerun on the resulting commit remain open.
+
+- P18-V01 Common `NameServerAddressUtils` slice (2026-10-16): Common now
+  exposes all five Java public values and four methods, with direct Java fixture
+  inventory and Rust input/output checks. Core ClientConfig shares the Common
+  matcher and extraction implementation. Common fixture tests, all Core
+  configuration and library tests, and Java fixture generation pass. This
+  closes this utility slice only; broad P18-V01 remains open.

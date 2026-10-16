@@ -1,5 +1,9 @@
 //! Private ClientConfig adapters for the public pinned NamespaceUtil helpers.
 
+use rocketmq_classic_common::utils::name_server_address::{
+    NameServerAddressError, get_name_srv_addr_from_namesrv_endpoint, matches_namesrv_endpoint,
+    parse_instance_id_from_endpoint, validate_instance_endpoint,
+};
 use rocketmq_classic_protocol::NamespaceUtil;
 
 pub(super) fn wrap(namespace: Option<&str>, resource: Option<&str>) -> Option<String> {
@@ -10,50 +14,27 @@ pub(crate) fn unwrap(namespace: Option<&str>, resource: Option<&str>) -> Option<
     NamespaceUtil::without_namespace_for(resource, namespace)
 }
 
-fn line_terminator(value: char) -> bool {
-    matches!(value, '\n' | '\r' | '\u{0085}' | '\u{2028}' | '\u{2029}')
-}
-
 pub(super) fn address(raw: &str) -> String {
     let trimmed = raw.trim_matches(|value: char| value <= '\u{0020}');
-    if trimmed.starts_with("http://") && !trimmed.chars().any(line_terminator) {
+    if matches_namesrv_endpoint(Some(trimmed)).unwrap_or(false) {
         // Validation trims, but Java substring extraction uses the raw string.
-        raw.rsplit('/').next().unwrap_or_default().into()
+        get_name_srv_addr_from_namesrv_endpoint(Some(raw)).unwrap_or_default()
     } else {
         raw.into()
     }
 }
 
 pub(super) fn instance_endpoint(raw: &str) -> bool {
-    let word = |value: &str| {
-        !value.is_empty()
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    };
-    let host = match raw.split_once("://") {
-        Some((scheme, host)) if word(scheme) => host,
-        _ => raw,
-    };
-    let Some((instance, _)) = host.split_once('.') else {
-        return false;
-    };
-    let Some(suffix) = instance.strip_prefix("MQ_INST_") else {
-        return false;
-    };
-    word(suffix)
-        && suffix
-            .bytes()
-            .enumerate()
-            .any(|(index, byte)| byte == b'_' && index > 0 && index + 1 < suffix.len())
-        && !raw.chars().any(line_terminator)
+    validate_instance_endpoint(Some(raw)).unwrap_or(false)
 }
 
-pub(super) fn instance(raw: &str) -> Result<&str, super::ConfigError> {
-    let start = raw.rfind('/').map_or(0, |index| index + 1);
-    let end = raw
-        .find('.')
-        .ok_or(super::ConfigError::InvalidInstanceEndpoint)?;
-    raw.get(start..end)
+pub(super) fn instance(raw: &str) -> Result<String, super::ConfigError> {
+    parse_instance_id_from_endpoint(Some(raw))
+        .map_err(|error| match error {
+            NameServerAddressError::NullEndpoint
+            | NameServerAddressError::InvalidInstanceIdBounds => {
+                super::ConfigError::InvalidInstanceEndpoint
+            }
+        })?
         .ok_or(super::ConfigError::InvalidInstanceEndpoint)
 }

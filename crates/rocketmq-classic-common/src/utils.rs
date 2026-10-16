@@ -1,5 +1,14 @@
 //! Public utilities shared by RocketMQ Classic client components.
 
+pub mod name_server_address;
+
+pub use name_server_address::{
+    ENDPOINT_PREFIX, INST_ENDPOINT_PATTERN, INSTANCE_PREFIX, INSTANCE_REGEX,
+    NAMESRV_ENDPOINT_PATTERN, NameServerAddressError, get_name_server_addresses,
+    get_name_srv_addr_from_namesrv_endpoint, matches_namesrv_endpoint,
+    parse_instance_id_from_endpoint, validate_instance_endpoint,
+};
+
 /// Creates a lowercase UUID v4 correlation ID for request/reply messages.
 ///
 /// This matches Java's `CorrelationIdUtil.createCorrelationId()` text format.

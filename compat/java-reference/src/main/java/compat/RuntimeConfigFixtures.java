@@ -1,8 +1,11 @@
 package compat;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,8 +16,10 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import java.lang.ref.WeakReference;
 import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.utils.NameServerAddressUtils;
 import org.apache.rocketmq.client.ClientConfig;
 
 /** Executes pinned ClientConfig methods and local SOCKS transport paths without a Broker. */
@@ -173,6 +178,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("defaults", defaults);
         fixture.put("remotingSemaphoreConfig", remotingSemaphoreConfig());
         fixture.put("nameServerAddressCases", nameServerAddressCases());
+        fixture.put("nameServerAddressUtils", nameServerAddressUtils());
         fixture.put("clone", clone);
         fixture.put("copyFields", clientConfigCopies());
         fixture.put("clientConfigToString", clientConfigToString());
@@ -278,8 +284,10 @@ public final class RuntimeConfigFixtures {
         String previous = System.getProperty(MixAll.NAMESRV_ADDR_PROPERTY);
         try {
             System.setProperty(MixAll.NAMESRV_ADDR_PROPERTY, "system:9876");
+            cases.put("directGetterSystemPropertyValue", NameServerAddressUtils.getNameServerAddresses());
             cases.put("systemPropertyValue", new ClientConfig().getNamesrvAddr());
             System.setProperty(MixAll.NAMESRV_ADDR_PROPERTY, "");
+            cases.put("directGetterExplicitBlankValue", NameServerAddressUtils.getNameServerAddresses());
             cases.put("explicitBlankPropertyValue", new ClientConfig().getNamesrvAddr());
         } finally {
             if (previous == null) {
@@ -289,6 +297,88 @@ public final class RuntimeConfigFixtures {
             }
         }
         return cases;
+    }
+
+    private static Map<String, Object> nameServerAddressUtils() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicFields", Arrays.stream(NameServerAddressUtils.class.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> field.getType().getTypeName() + " " + field.getName())
+            .sorted().collect(Collectors.toList()));
+        result.put("publicMethods", Arrays.stream(NameServerAddressUtils.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(RuntimeConfigFixtures::methodSignature)
+            .sorted().collect(Collectors.toList()));
+        Map<String, Object> patterns = new TreeMap<>();
+        patterns.put("INSTANCE_PREFIX", NameServerAddressUtils.INSTANCE_PREFIX);
+        patterns.put("INSTANCE_REGEX", NameServerAddressUtils.INSTANCE_REGEX);
+        patterns.put("ENDPOINT_PREFIX", NameServerAddressUtils.ENDPOINT_PREFIX);
+        patterns.put("NAMESRV_ENDPOINT_PATTERN", NameServerAddressUtils.NAMESRV_ENDPOINT_PATTERN.pattern());
+        patterns.put("INST_ENDPOINT_PATTERN", NameServerAddressUtils.INST_ENDPOINT_PATTERN.pattern());
+        result.put("publicValues", patterns);
+
+        List<Object> nameserverPatterns = new ArrayList<>();
+        for (String endpoint : new String[] {null, "http://broker:9876", "http://", "http://broker:9876\n",
+            "http://broker:9876\r", "http://broker:9876\u0085", " http://broker:9876",
+            "https://broker:9876", "http://broker:9876/path"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", endpoint);
+            try {
+                item.put("matches", NameServerAddressUtils.NAMESRV_ENDPOINT_PATTERN.matcher(endpoint).matches());
+                item.put("outcome", "OK");
+            } catch (Throwable error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            nameserverPatterns.add(item);
+        }
+        result.put("namesrvPatternCases", nameserverPatterns);
+
+        List<Object> instanceEndpoints = new ArrayList<>();
+        for (String endpoint : new String[] {null, "MQ_INST_a_b.example", "https://MQ_INST_a_b.example",
+            "http://MQ_INST_a_b.example", "http-MQ_INST_a_b.example", "MQ_INST__b.example",
+            "MQ_INST__a_b.example", "MQ_INST_a__b.example", "MQ_INST_a_.example", "MQ_INST_a_b",
+            "MQ_INST_a_b.example://path", "MQ_INST_é_b.example", "MQ_INST_a_b.example\u2028"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", endpoint);
+            try {
+                item.put("valid", NameServerAddressUtils.validateInstanceEndpoint(endpoint));
+                item.put("outcome", "OK");
+            } catch (Throwable error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            instanceEndpoints.add(item);
+        }
+        result.put("instanceEndpointCases", instanceEndpoints);
+
+        List<Object> instanceIds = new ArrayList<>();
+        for (String endpoint : new String[] {null, "", "MQ_INST_a_b.example", "https://MQ_INST_a_b.example:80",
+            "prefix/path/MQ_INST_a_b.example/path", ".empty", "nodot", "path/.first"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", endpoint);
+            try {
+                item.put("value", NameServerAddressUtils.parseInstanceIdFromEndpoint(endpoint));
+                item.put("outcome", "OK");
+            } catch (Throwable error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            instanceIds.add(item);
+        }
+        result.put("instanceIdCases", instanceIds);
+
+        List<Object> nameserverAddresses = new ArrayList<>();
+        for (String endpoint : new String[] {null, "", "http://broker:9876", "path/to/addr", "trailing/", "plain"}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", endpoint);
+            item.put("value", NameServerAddressUtils.getNameSrvAddrFromNamesrvEndpoint(endpoint));
+            nameserverAddresses.add(item);
+        }
+        result.put("namesrvAddressCases", nameserverAddresses);
+        return result;
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " " + method.getName() + "(" +
+            Arrays.stream(method.getParameterTypes()).map(Class::getTypeName).collect(Collectors.joining(",")) + ")";
     }
 
     private static Map<String, Object> managerRemoval(ClientConfig config) throws Exception {
