@@ -284,6 +284,7 @@ public final class PushImplementationAccessorFixtures {
         processPopResult.invoke(first, new PopResult(PopStatus.FOUND, popMessages), new SubscriptionData());
 
         Map<String, Object> topicHelpers = topicHelperResults();
+        Map<String, Object> corePoolSize = corePoolSizeResults();
 
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("consumerStatsManagersAreInstanceScoped", consumerStatsManagersAreInstanceScoped());
@@ -350,6 +351,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("queryConsumeTimeSpanNullGroupOmitted", queryConsumeTimeSpanNullGroupOmitted);
         fixture.put("hasConsumeHookAfterRegistration", hasConsumeHookAfterRegistration);
         fixture.put("pushPopFilterHookEvents", filterHookEvents);
+        fixture.putAll(corePoolSize);
         fixture.put("rawImplementationPublicMethodSignatures", publicMethodSignatures());
         fixture.putAll(classFilterSubscribeResults());
         fixture.put("pushConsumeInitModes", pushConsumeInitModes());
@@ -367,6 +369,66 @@ public final class PushImplementationAccessorFixtures {
             Files.writeString(path, json);
         }
         System.out.println("Push implementation accessor verified");
+    }
+
+    private static Map<String, Object> corePoolSizeResults() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        try {
+            result.put("updateCorePoolSizeReturnType",
+                DefaultMQPushConsumer.class.getMethod("updateCorePoolSize", int.class)
+                    .getReturnType().getSimpleName());
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("missing updateCorePoolSize facade method", error);
+        }
+
+        DefaultMQPushConsumer unstartedConsumer = new DefaultMQPushConsumer("phase18-core-size-null");
+        boolean nullServiceThrowsNullPointerException = false;
+        try {
+            unstartedConsumer.updateCorePoolSize(3);
+        } catch (NullPointerException expected) {
+            nullServiceThrowsNullPointerException = true;
+        }
+        result.put("updateCorePoolSizeNullServiceThrowsNullPointerException",
+            nullServiceThrowsNullPointerException);
+
+        DefaultMQPushConsumer concurrentConsumer = new DefaultMQPushConsumer("phase18-core-size-concurrent");
+        concurrentConsumer.setConsumeThreadMin(2);
+        concurrentConsumer.setConsumeThreadMax(8);
+        DefaultMQPushConsumerImpl concurrentImplementation =
+            concurrentConsumer.getDefaultMQPushConsumerImpl();
+        ConsumeMessageConcurrentlyService concurrentService = new ConsumeMessageConcurrentlyService(
+            concurrentImplementation,
+            (messages, context) -> ConsumeConcurrentlyStatus.CONSUME_SUCCESS);
+        concurrentImplementation.setConsumeMessageService(concurrentService);
+        result.put("concurrentCorePoolSizeBefore", concurrentService.getCorePoolSize());
+        concurrentConsumer.updateCorePoolSize(6);
+        result.put("concurrentCorePoolSizeAfterValid", concurrentService.getCorePoolSize());
+        concurrentConsumer.updateCorePoolSize(8);
+        concurrentConsumer.updateCorePoolSize(0);
+        result.put("concurrentCorePoolSizeAfterInvalid", concurrentService.getCorePoolSize());
+        concurrentService.shutdown(0);
+        concurrentConsumer.updateCorePoolSize(7);
+        result.put("concurrentCorePoolSizeAfterShutdownUpdate", concurrentService.getCorePoolSize());
+
+        DefaultMQPushConsumer orderlyConsumer = new DefaultMQPushConsumer("phase18-core-size-orderly");
+        orderlyConsumer.setConsumeThreadMin(2);
+        orderlyConsumer.setConsumeThreadMax(8);
+        orderlyConsumer.setMessageModel(MessageModel.BROADCASTING);
+        DefaultMQPushConsumerImpl orderlyImplementation = orderlyConsumer.getDefaultMQPushConsumerImpl();
+        ConsumeMessageOrderlyService orderlyService = new ConsumeMessageOrderlyService(
+            orderlyImplementation,
+            (messages, context) -> ConsumeOrderlyStatus.SUCCESS);
+        orderlyImplementation.setConsumeMessageService(orderlyService);
+        result.put("orderlyCorePoolSizeBefore", orderlyService.getCorePoolSize());
+        orderlyConsumer.updateCorePoolSize(6);
+        result.put("orderlyCorePoolSizeAfterValid", orderlyService.getCorePoolSize());
+        orderlyConsumer.updateCorePoolSize(8);
+        orderlyConsumer.updateCorePoolSize(-1);
+        result.put("orderlyCorePoolSizeAfterInvalid", orderlyService.getCorePoolSize());
+        orderlyService.shutdown(0);
+        orderlyConsumer.updateCorePoolSize(7);
+        result.put("orderlyCorePoolSizeAfterShutdownUpdate", orderlyService.getCorePoolSize());
+        return result;
     }
 
     private static List<String> publicMethodSignatures() {

@@ -1,0 +1,6 @@
+## P18-V01 Push updateCorePoolSize Java oracle — 2026-10-16T06:55Z
+
+- Rechecked the pinned RocketMQ Java client 5.5.1 source JAR (source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`). `DefaultMQPushConsumer.updateCorePoolSize(int)` returns `void` and delegates to the implementation; the implementation delegates unconditionally to the consume service. The concurrent and orderly services update only when `0 < corePoolSize <= Short.MAX_VALUE` and `corePoolSize < consumeThreadMax`. A missing service throws `NullPointerException`; valid updates remain possible through the retained service after shutdown.
+- Extended `PushImplementationAccessorFixtures` to invoke the null-service facade path and both concrete services, checking void return type, valid/invalid updates, and post-shutdown updates. Regenerated `fixtures/consumer/push-implementation-accessor.json`; SHA-256 `ed491b81cc44386ba5644b668fc4bcb0b0da0af67659c86668f7b5fca0ffa265`.
+- PASS: `mvn -q -f compat/java-reference/pom.xml -Dexec.args='push-implementation-accessor-fixture /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/consumer/push-implementation-accessor.json' compile exec:java`; `git diff --check`.
+- Rust facade parity regression and implementation are pending. No plan file, Docker/live Broker, publication, or tag was changed.
