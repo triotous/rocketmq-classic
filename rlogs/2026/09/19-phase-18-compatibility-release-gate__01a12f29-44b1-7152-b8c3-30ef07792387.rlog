@@ -68,3 +68,9 @@
 - The RocketMQ dispatch contract's peer/channel-state, close, and typed-command write operations map to Rust/Tokio APIs. Generic Netty allocator, handler propagation, arbitrary-object write, promise, and raw-channel operations are framework-specific and are not reimplemented. The separate exception-remark formatting mismatch remains open.
 - Updated the Phase 6 API map and `KNOWN_DIFFERENCES.md` to record the source-backed disposition; appended the bounded result and focused test evidence to the release checklist.
 - PASS: `cargo test -p rocketmq-classic-remoting --all-features --locked p18_` (11 tests); executor/rejection and pipeline-order regressions (1 each). No Java checkout or plan files were modified.
+
+## Common shared-message alias reverse-export map — 2026-10-16
+
+- The Phase 8 method matrix did not yet list the public `SharedMessageBody`/`SharedMessageProperties` operations or the `Message` shared constructor/accessor variants added to preserve Java caller/message aliasing. Added the Java API mapping, documented these as ownership representations of existing array/Map capabilities, and recorded their complete public method inventory.
+- PASS: `cargo test -p rocketmq-classic-common --all-features --locked --test message_decode message_public_api_matches_java_551_fixture` and the facade `phase_owned_public_types_are_available_from_the_facade_crate` test (1 each). Fixture SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- The broad Common/API/error/control-flow and reverse-export audit remains open. No implementation or Java checkout files were changed.

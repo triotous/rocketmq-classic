@@ -2333,3 +2333,14 @@ Before any publication:
   pipeline-order regressions pass (1 each). This closes the Netty context
   capability question only; processor error-remark formatting and broad
   P18-V01 reconciliation remain open.
+- P18-V01 Common shared-alias reverse-export disposition (`b03d7fe9`,
+  2026-10-16, pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  the Phase 8 method matrix now records all public `SharedMessageBody` and
+  `SharedMessageProperties` operations, the shared `Message` constructors and
+  accessors, and their mapping to Java array/Map alias behavior. These are
+  synchronized Rust ownership handles for existing Java capabilities, not
+  additional RocketMQ operations. The Common fixture differential and facade
+  public-type test pass (1 each); fixture SHA-256:
+  `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+  This closes the named alias-handle reverse-export slice only; broad P18-V01
+  reconciliation remains open.
