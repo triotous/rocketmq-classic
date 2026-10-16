@@ -438,27 +438,12 @@ impl RequestExecutor for TokioRequestExecutor {
 pub trait RequestPipeline: Send + Sync + 'static {
     fn execute(&self, request: &RemotingCommand) -> Result<(), i32>;
 
-    /// Executes the stage with a mutable request, matching Java's `RequestPipeline` capability.
-    ///
-    /// The default preserves existing read-only pipeline implementations.
-    fn execute_mut(&self, request: &mut RemotingCommand) -> Result<(), i32> {
-        self.execute(request)
-    }
-
     fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.execute(request)
             .map_err(|response_code| RequestPipelineError::Abort {
                 response_code,
                 remark: Some("request pipeline aborted".into()),
             })
-    }
-
-    /// Detailed mutable request form for stages that need to update the request.
-    fn execute_detailed_mut(
-        &self,
-        request: &mut RemotingCommand,
-    ) -> Result<(), RequestPipelineError> {
-        self.execute_detailed(request)
     }
 
     /// Executes with the channel context for the inbound request.
@@ -503,22 +488,9 @@ impl RequestPipeline for PipedRequestPipeline {
         self.existing.execute(request)
     }
 
-    fn execute_mut(&self, request: &mut RemotingCommand) -> Result<(), i32> {
-        self.source.execute_mut(request)?;
-        self.existing.execute_mut(request)
-    }
-
     fn execute_detailed(&self, request: &RemotingCommand) -> Result<(), RequestPipelineError> {
         self.source.execute_detailed(request)?;
         self.existing.execute_detailed(request)
-    }
-
-    fn execute_detailed_mut(
-        &self,
-        request: &mut RemotingCommand,
-    ) -> Result<(), RequestPipelineError> {
-        self.source.execute_detailed_mut(request)?;
-        self.existing.execute_detailed_mut(request)
     }
 
     fn execute_detailed_with_context(
