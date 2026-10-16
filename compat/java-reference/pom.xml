@@ -624,6 +624,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-message-utils-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.MessageUtilsFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/messages/message-utils.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-ext-more-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

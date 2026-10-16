@@ -1921,3 +1921,26 @@ Before any publication:
   pass. P18-V01, current GitHub Ubuntu/P18-V04 evidence, Phase 19 automation,
   and release preflight remain open; this makes no live Broker, release, or
   compatibility claim.
+
+- P18-V01 Common `MessageUtils` slice (2026-10-16): the four pinned Java
+  public methods now map to Rust Common helpers. Invoked Java fixture coverage
+  and the Rust differential cover Murmur3 sharding indexes, message-property
+  fallback, index deduplication, and Java encoded-property deletion. Fixture
+  SHA-256: `e01bed78a2a2290a82991fd68d308d77c283475e82b32d32d3939d045099f5f8`.
+  Default/all-feature locked workspace tests, strict all-target/all-feature
+  Clippy, formatting, diff checks, and pinned Maven `verify` (37 scenarios and
+  the new fixture) pass on the current worktree. This closes that API slice
+  only; broad P18-V01 and current-revision GitHub Ubuntu/P18-V04 evidence remain
+  open.
+
+- [x] **P18-V02** — Revalidated the full server-free gate on the worktree
+  based on `12db9def` with the Common `MessageUtils` parity update. Default and
+  all-feature locked workspace tests, strict all-target/all-feature Clippy,
+  formatting and diff checks, Maven `verify` (37 scenarios and fixture
+  cross-decodes), differential self-test and manifest, deterministic race/leak
+  smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations), release examples, offline benchmark compilation, workspace
+  metadata/license/dependency checks, seven package listings, and the
+  Asia/Taipei Unique ID fixture all pass. Broad P18-V01 and current-revision
+  GitHub Ubuntu/P18-V04 evidence remain open; this makes no Broker, release, or
+  compatibility claim.

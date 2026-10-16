@@ -33,3 +33,44 @@
   credential, and topology checks remain owner validation.
 - No plan files changed. No Docker, live Broker, push, tag, publication,
   deployment, or compatibility claim was made.
+
+# Phase 18 Common MessageUtils parity follow-up — 2026-10-16T08:50Z
+
+- Baseline revision: `12db9def`; pinned Java 5.5.1 source commit:
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- P18-V01 source review found the four public Common `MessageUtils` methods
+  missing from Rust: the Murmur3-32 sharding index helper, message and
+  collection adapters, and encoded-property deletion. Added the Rust mappings,
+  a pure Guava-compatible Murmur3-32 implementation, Java invoked fixture
+  generation/verification, a Rust differential test, and Phase 8 / P18 audit
+  documentation. Fixture SHA-256:
+  `e01bed78a2a2290a82991fd68d308d77c283475e82b32d32d3939d045099f5f8`.
+- `cargo test -p rocketmq-classic-common --locked` passed, including the new
+  fixture differential. Full `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` passed. Strict
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D
+  warnings`, `cargo fmt --all -- --check`, and `git diff --check` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed all 37 scenarios,
+  fixture checks, Java probes and cross-decodes; the new MessageUtils fixture
+  was verified. Differential self-test and 37-scenario manifest validation
+  passed.
+- `bash tests/stress/run-offline-smoke.sh` passed 16 cases × 3 repetitions.
+  The bounded fuzz smoke passed with 105 frame seeds, 11 message seeds and
+  1,856 mutations. Release examples and the offline benchmark compiled. The
+  Asia/Taipei Unique ID fixture passed.
+- Workspace metadata/license/dependency checks passed. All seven
+  `cargo package --list --locked --allow-dirty` listings contained `LICENSE`
+  and `NOTICE`; `--allow-dirty` was needed because the new Common sources were
+  not committed yet.
+- During setup, direct Maven main-class override selected the configured
+  `compat.Main`; the fixture was then generated through its new
+  `message-utils-fixture` dispatch and Maven verification passed. The first
+  Common integration build used the wrong public path for
+  `PROPERTY_SHARDING_KEY`; corrected it to `message::constants` and the scoped
+  plus workspace tests passed. Neither issue was a product failure.
+- This closes only the surfaced `MessageUtils` declaration and behavior slice.
+  The broad bidirectional P18-V01 audit remains open. Current-revision GitHub
+  Ubuntu/P18-V04 evidence is still absent; Phase 19 Docker/Broker execution,
+  owner deployment validation, and release preflight remain later work.
+- No plan files changed. No Docker, Broker, push, tag, publication,
+  deployment, or compatibility claim was made.

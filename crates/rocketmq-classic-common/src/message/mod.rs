@@ -6,6 +6,7 @@ mod host_address;
 mod message_id;
 mod properties;
 mod types;
+mod utils;
 
 pub use compact::{
     CompactMessageError, count_inner_messages, decode_compact_message, decode_compact_messages,
@@ -34,4 +35,8 @@ pub use types::{
     MessagePropertyError, MessagePropertyParseError, MessageQueue, MessageQueueCompareError,
     MessageSysFlagParseError, NAME_VALUE_SEPARATOR, NullableMessageProperties, PROPERTY_SEPARATOR,
     TopicFilterType,
+};
+pub use utils::{
+    MessageUtilsError, delete_property, get_sharding_key_index, get_sharding_key_index_by_msg,
+    get_sharding_key_indexes,
 };
