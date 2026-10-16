@@ -2163,3 +2163,22 @@ Before any publication:
   `af16e63df4a3506daaf22162afdf7b52655861bbf0cffea072983a4dacfa25b6`. This
   closes only the MessageClientIDSetter declaration slice; broad P18-V01 remains
   open.
+
+- P18-V01 Producer `MessageBatch` declared-surface inventory and implementation
+  (`28253d80`, 2026-10-16): the pinned Java 5.5.1 fixture records the public
+  `List<Message>` constructor and all three declared methods. Rust exposes
+  `MessageBatch::{new,generate_from_list,encode}`, inherited `Message` access,
+  and `IntoIterator`; Java-compatible validation and encoded record bytes are
+  covered by Producer tests and a facade import test. Fixture SHA-256:
+  `f8acdeae600bef3a56250c4f07c144860c6c22fbd9f84fe8bfe14d930a497b8d`.
+  Producer/facade tests, strict crate Clippy, and Maven `verify` (37 scenarios,
+  fixture drift, and Java/Rust cross-decodes) pass.
+- The server-free P18-V02 gate passes on `28253d80`: default and all-feature
+  workspace tests, all-target workspace check and strict Clippy, comparator
+  self-test and 37-scenario manifest validation, 16 race/leak cases × 3,
+  bounded fuzz smoke, release-example and benchmark compilation, locked
+  metadata and package-content checks, and the Asia/Taipei Unique ID check all
+  pass. Maven `verify`, formatting, and diff checks pass. This is server-free
+  evidence only; it does not close broad P18-V01, current-revision Ubuntu CI /
+  P18-V04, Phase 19 Docker/Broker automation, or pre-publication registry
+  resolution. Owner deployment and production checks remain manual.
