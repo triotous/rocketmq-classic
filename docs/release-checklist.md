@@ -2721,3 +2721,17 @@ Before any publication:
   package/pre-publication review and Phase 19 Docker/Broker automation remain
   open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T232526Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T232526Z.rlog).
+- P18-V01 Fastjson field-name writer features (code commit `9026c715`,
+  2026-10-16): `UseSingleQuotes` and `UnquoteFieldName` now match the invoked
+  outputs for all mapped body DTOs, route DTOs, and `HeartbeatData`. The writer
+  preserves Fastjson's boolean/enum property-name behavior, distinguishes map
+  entries from bean properties, and handles single-quote escaping together
+  with `EscapeNoneAscii`. Thirteen of 48 writer features now have behavior
+  mappings; the other 35 remain unmapped. Protocol all-feature tests (123 unit
+  tests, all integration targets, 42 doctests), strict all-target/all-feature
+  Protocol Clippy, Maven verify (37 scenarios), formatting, and diff checks
+  pass. The final-revision workspace P18-V02 rerun remains due after the
+  remaining Phase 18 code changes. Broad P18-V01, current-revision platform CI,
+  Phase 19 Docker/Broker automation, owner-validation handoff, and pre-release
+  version/registry checks remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T235429Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T235429Z.rlog).
