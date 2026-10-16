@@ -1840,3 +1840,13 @@ Before any publication:
   `docs/owner-validation.md`, and pre-publication version/registry checks
   remain incomplete. Owner deployment and production checks remain Phase 19
   manual validation.
+- P18-V01 request/reply public message type (`c6d852df`, 2026-10-16): the
+  pinned Java signatures use base `Message` for Producer request results,
+  `RequestCallback.onSuccess`, and `RequestResponseFuture` response methods.
+  Rust now uses `Message` on those public boundaries and keeps inbound
+  `MessageExt` conversion internal. `cargo fmt --all -- --check`, strict
+  workspace all-target/all-feature Clippy, default and all-feature workspace
+  tests, and `git diff --check` pass on this revision. This closes that type slice only;
+  broad P18-V01 and the full P18-V02 gate suite remain open, along with the
+  Ubuntu/P18-V04 result, Phase 19 Docker/Broker automation, owner-validation
+  instructions, and pre-publication version/registry checks.
