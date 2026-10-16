@@ -51,11 +51,16 @@ pub use publish_info::{
     TopicPublishInfoTableError, TopicPublishInfoValuesView,
 };
 pub use recall::RecallMessageHandle;
-pub use request_reply::{ReplyMessageError, RequestCallback, create_reply_message};
+pub use request_reply::{
+    ReplyMessageError, RequestCallback, RequestFutureHolder, create_reply_message,
+};
 pub use retry_response_codes::RetryResponseCodes;
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_core::api::admin::QueryResult;
 pub use rocketmq_classic_core::api::producer::{SendResult, SendStatus};
+pub use rocketmq_classic_core::runtime::{
+    RequestFutureLatch, RequestFutureTable, RequestResponseCallback, RequestResponseFuture,
+};
 pub use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 pub use service_state::ProducerServiceState;
 pub use trace::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};

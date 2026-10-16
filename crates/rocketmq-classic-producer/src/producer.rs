@@ -17,6 +17,7 @@ use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 #[cfg(test)]
 use rocketmq_classic_core::api::producer::{SendMode, SendResult};
 
+use crate::request_reply::RequestFutureHolder;
 use crate::{
     AsyncSenderExecutor, CheckForbiddenContext, EndTransactionContext, EndTransactionHook,
     ProducerCompressor, ProducerConfig, ProducerError, ProducerLongArray, ProducerServiceState,
@@ -87,6 +88,7 @@ pub struct Producer {
     accumulator_settings_changed: tokio::sync::watch::Sender<u64>,
     pub(crate) auto_batch_tasks: tokio::sync::Mutex<Vec<JoinHandle<()>>>,
     pub(crate) self_weak: OnceLock<Weak<Producer>>,
+    pub(crate) request_future_scheduler_id: Arc<()>,
     pub(crate) transaction: OnceLock<Arc<crate::transaction::TransactionRuntime>>,
     pub(crate) trace_dispatcher: OnceLock<Arc<crate::trace::TraceDispatcher>>,
     recall_trace_hook: tokio::sync::Mutex<Option<Arc<dyn RpcHook>>>,
@@ -338,6 +340,7 @@ impl Producer {
             accumulator_settings_changed,
             auto_batch_tasks: tokio::sync::Mutex::new(Vec::new()),
             self_weak: OnceLock::new(),
+            request_future_scheduler_id: Arc::new(()),
             transaction: OnceLock::new(),
             trace_dispatcher: OnceLock::new(),
             recall_trace_hook: tokio::sync::Mutex::new(None),
@@ -1052,6 +1055,9 @@ impl Producer {
             runtime: Arc::downgrade(&runtime),
             lease,
         };
+        RequestFutureHolder::get_instance()
+            .start_scheduled_task(self)
+            .await;
         self.start_trace_dispatcher(&runtime, &producer_group).await;
         let task = self.spawn_detector_task(Arc::downgrade(&runtime));
         *self.detector_task.lock().await = Some(task);
@@ -1138,6 +1144,7 @@ impl Producer {
             }
             State::Started { runtime, lease } => {
                 let Some(runtime_arc) = runtime.upgrade() else {
+                    RequestFutureHolder::get_instance().shutdown(self).await;
                     self.remove_recall_trace_hook(None).await;
                     self.stop_auto_batch().await;
                     self.stop_detector_task().await;
@@ -1169,6 +1176,7 @@ impl Producer {
                     }
                 }
                 self.remove_recall_trace_hook(Some(&runtime_arc)).await;
+                RequestFutureHolder::get_instance().shutdown(self).await;
                 self.stop_auto_batch().await;
                 self.stop_detector_task().await;
                 self.retire_request_callback_tasks().await;

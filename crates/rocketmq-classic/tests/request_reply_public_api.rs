@@ -1,4 +1,6 @@
 use rocketmq_classic::{Message, ReplyMessageError, RequestCallback, create_reply_message};
+use rocketmq_classic::{RequestFutureHolder, RequestFutureTable, RequestResponseFuture};
+use std::sync::Arc;
 
 #[test]
 fn request_reply_api_is_available_from_the_facade_crate() {
@@ -22,6 +24,39 @@ fn request_reply_api_is_available_from_the_facade_crate() {
         create_reply_message(None, b"reply".to_vec()),
         Err(ReplyMessageError::NullRequest)
     ));
+}
+
+#[test]
+fn request_future_holder_returns_the_live_runtime_correlation_table() {
+    let holder = RequestFutureHolder::get_instance();
+    let table = holder.get_request_future_table();
+    let runtime_table = RequestFutureTable::shared();
+    let correlation_id = "facade-request-future-table";
+    let _ = table.remove(correlation_id).unwrap();
+    let future = Arc::new(RequestResponseFuture::new(correlation_id, 30_000, None));
+
+    assert!(
+        table
+            .insert(correlation_id, future.clone())
+            .unwrap()
+            .is_none()
+    );
+    let mapped = runtime_table.get(correlation_id).unwrap().unwrap();
+    assert!(Arc::ptr_eq(&mapped, &future));
+    assert_eq!(mapped.correlation_id(), correlation_id);
+    assert!(Arc::ptr_eq(
+        &holder
+            .get_request_future_table()
+            .get(correlation_id)
+            .unwrap()
+            .unwrap(),
+        &future
+    ));
+    assert!(Arc::ptr_eq(
+        &table.remove(correlation_id).unwrap().unwrap(),
+        &future
+    ));
+    assert!(table.is_empty().unwrap());
 }
 
 #[test]

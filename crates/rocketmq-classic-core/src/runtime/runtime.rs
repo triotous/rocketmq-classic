@@ -8,7 +8,8 @@ use rocketmq_classic_remoting::client::{
 };
 
 use super::{
-    ConsumerRuntime, GroupLease, ProducerRuntime, RuntimeError, RuntimeState,
+    ConsumerRuntime, GroupLease, ProducerRuntime, RequestResponseFuture, RuntimeError,
+    RuntimeState,
     control::{Command, ControlPlane},
     manager::ManagerLink,
     registry::{GroupKind, GroupRegistry},
@@ -1264,6 +1265,23 @@ impl ClientRuntime {
         if lease.group() != super::control::INNER_PRODUCER {
             self.ensure_reply_timeout_task().await;
         }
+        Ok(pending)
+    }
+
+    pub async fn register_reply_request_with_future(
+        &self,
+        lease: &GroupLease,
+        future: Arc<RequestResponseFuture>,
+        deadline: tokio::time::Instant,
+    ) -> Result<super::PendingReplyRequest, RuntimeError> {
+        let state = self.state();
+        if state != RuntimeState::Running {
+            return Err(RuntimeError::InvalidState(state));
+        }
+        let pending = self
+            .groups
+            .register_pending_future(lease, future, deadline)
+            .await?;
         Ok(pending)
     }
 

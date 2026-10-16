@@ -9,6 +9,7 @@ mod manager;
 mod pull;
 mod rebalance;
 mod registry;
+mod request_future;
 mod tables;
 mod tasks;
 
@@ -28,7 +29,11 @@ pub use manager::{
 pub use pull::MessageRequest;
 pub use registry::{
     ConsumerOperation, ConsumerRuntime, GroupLease, PendingReplyCompletion, PendingReplyControl,
-    PendingReplyRequest, ProducerRuntime,
+    PendingReplyRequest, ProducerRuntime, RequestFutureTable,
+};
+pub use request_future::{
+    RequestFutureLatch, RequestResponseCallback, RequestResponseFuture, RequestSendFailureCause,
+    RequestTimeoutCause,
 };
 pub use tables::{
     ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,

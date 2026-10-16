@@ -882,11 +882,11 @@ mod tests {
 
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
         let mut first_pending = runtime
-            .register_reply_request(&first_lease, "first", deadline)
+            .register_reply_request(&first_lease, "inbound-correlation-first", deadline)
             .await
             .unwrap();
         let mut second_pending = runtime
-            .register_reply_request(&second_lease, "second", deadline)
+            .register_reply_request(&second_lease, "inbound-correlation-second", deadline)
             .await
             .unwrap();
         let late_send_completion = second_pending.control();
@@ -898,7 +898,7 @@ mod tests {
             "producer unregister must leave the pending correlation available"
         );
 
-        let late_reply = dispatch_reply(&runtime, "first", b"late reply");
+        let late_reply = dispatch_reply(&runtime, "inbound-correlation-first", b"late reply");
         assert_eq!(late_reply.code, response::SUCCESS);
         let PendingReplyCompletion::Reply(first_reply) = first_pending.receive().await.unwrap()
         else {
@@ -906,7 +906,7 @@ mod tests {
         };
         assert_eq!(first_reply.body().as_ref(), b"late reply");
 
-        let reply = dispatch_reply(&runtime, "second", b"reply-body");
+        let reply = dispatch_reply(&runtime, "inbound-correlation-second", b"reply-body");
         assert_eq!(reply.code, response::SUCCESS);
         assert!(reply.remark.is_none());
         // A Broker reply can beat the async send completion callback. The
@@ -920,7 +920,7 @@ mod tests {
         assert_eq!(reply_message.body().as_ref(), b"reply-body");
         assert_eq!(
             reply_message.properties()[PROPERTY_CORRELATION_ID],
-            "second"
+            "inbound-correlation-second"
         );
         assert!(
             reply_message.properties()["ARRIVE_TIME"]
@@ -929,7 +929,7 @@ mod tests {
         );
 
         assert_eq!(
-            dispatch_reply(&runtime, "second", b"duplicate").code,
+            dispatch_reply(&runtime, "inbound-correlation-second", b"duplicate").code,
             response::SUCCESS
         );
         assert_eq!(
@@ -938,13 +938,15 @@ mod tests {
         );
         let late_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         let mut late_pending = runtime
-            .register_reply_request(&second_lease, "expired", late_deadline)
+            .register_reply_request(&second_lease, "inbound-correlation-expired", late_deadline)
             .await
             .unwrap();
         assert_eq!(
-            runtime.groups.expire_pending_replies(late_deadline),
+            runtime
+                .groups
+                .expire_pending_replies(late_deadline + Duration::from_millis(1)),
             1,
-            "the injected clock expires exactly this request"
+            "the injected clock expires the request after its deadline"
         );
         assert!(matches!(
             late_pending.receive().await.unwrap(),
@@ -953,7 +955,7 @@ mod tests {
             }
         ));
         assert_eq!(
-            dispatch_reply(&runtime, "expired", b"late reply").code,
+            dispatch_reply(&runtime, "inbound-correlation-expired", b"late reply").code,
             response::SUCCESS,
             "late replies are acknowledged without resurrecting their correlation"
         );
@@ -973,7 +975,7 @@ mod tests {
             .unwrap();
 
         for iteration in 0..100 {
-            let correlation_id = format!("race-{iteration}");
+            let correlation_id = format!("inbound-reply-timeout-race-{iteration}");
             let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
             let mut pending = runtime
                 .register_reply_request(&lease, &correlation_id, deadline)
@@ -1039,7 +1041,7 @@ mod tests {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
 
         let mut send_race = runtime
-            .register_reply_request(&lease, "send-race", deadline)
+            .register_reply_request(&lease, "inbound-send-race", deadline)
             .await
             .unwrap();
         let send_control = send_race.control();
@@ -1049,7 +1051,7 @@ mod tests {
         let reply_task = tokio::spawn(async move {
             reply_gate.wait().await;
             reply_runtime.complete_reply_request(
-                "send-race",
+                "inbound-send-race",
                 crate::test_support::message_ext_from(Message::new(
                     "orders_REPLY_TOPIC",
                     b"reply".to_vec(),
@@ -1075,7 +1077,7 @@ mod tests {
         }
 
         let mut cancel_race = runtime
-            .register_reply_request(&lease, "cancel-race", deadline)
+            .register_reply_request(&lease, "inbound-cancel-race", deadline)
             .await
             .unwrap();
         let cancel_control = cancel_race.control();
@@ -1085,7 +1087,7 @@ mod tests {
         let reply_task = tokio::spawn(async move {
             reply_gate.wait().await;
             reply_runtime.complete_reply_request(
-                "cancel-race",
+                "inbound-cancel-race",
                 crate::test_support::message_ext_from(Message::new(
                     "orders_REPLY_TOPIC",
                     b"reply".to_vec(),

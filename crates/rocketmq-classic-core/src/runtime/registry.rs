@@ -1,4 +1,5 @@
 use super::RuntimeError;
+use super::request_future::{RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause};
 use rocketmq_classic_common::message::MessageExt;
 use rocketmq_classic_common::message::MessageQueue;
 use rocketmq_classic_protocol::heartbeat::ConsumerData;
@@ -6,7 +7,8 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, OnceLock, Weak},
+    time::Duration,
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, Semaphore, oneshot},
@@ -132,10 +134,200 @@ struct AdminEntry {
 
 struct PendingReplyEntry {
     owner: Arc<()>,
+    scope: Option<Arc<()>>,
     deadline: Instant,
     send_succeeded: bool,
-    sender: oneshot::Sender<PendingReplyCompletion>,
-    _admission: OwnedSemaphorePermit,
+    sender: Option<oneshot::Sender<PendingReplyCompletion>>,
+    _admission: Option<OwnedSemaphorePermit>,
+    future: Arc<RequestResponseFuture>,
+}
+
+type PendingReplyEntries = HashMap<String, PendingReplyEntry>;
+
+fn shared_pending_reply_entries() -> Arc<Mutex<PendingReplyEntries>> {
+    static ENTRIES: OnceLock<Arc<Mutex<PendingReplyEntries>>> = OnceLock::new();
+    ENTRIES.get_or_init(|| Arc::new(Mutex::default())).clone()
+}
+
+/// Live process-wide view of request futures, corresponding to Java's
+/// `RequestFutureHolder.getRequestFutureTable()`.
+#[derive(Clone)]
+pub struct RequestFutureTable {
+    entries: Arc<Mutex<PendingReplyEntries>>,
+}
+
+impl Default for RequestFutureTable {
+    fn default() -> Self {
+        Self::shared()
+    }
+}
+
+impl RequestFutureTable {
+    pub fn shared() -> Self {
+        Self {
+            entries: shared_pending_reply_entries(),
+        }
+    }
+
+    pub fn get(
+        &self,
+        correlation_id: &str,
+    ) -> Result<Option<Arc<RequestResponseFuture>>, RuntimeError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .get(correlation_id)
+            .map(|entry| entry.future.clone()))
+    }
+
+    pub fn insert(
+        &self,
+        correlation_id: impl Into<String>,
+        future: Arc<RequestResponseFuture>,
+    ) -> Result<Option<Arc<RequestResponseFuture>>, RuntimeError> {
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        Ok(entries
+            .insert(
+                correlation_id.into(),
+                PendingReplyEntry {
+                    owner: Arc::new(()),
+                    scope: None,
+                    deadline: Instant::now()
+                        + Duration::from_millis(future.timeout_millis().max(0) as u64),
+                    send_succeeded: future.send_request_ok(),
+                    sender: None,
+                    _admission: None,
+                    future,
+                },
+            )
+            .map(|entry| entry.future))
+    }
+
+    pub fn remove(
+        &self,
+        correlation_id: &str,
+    ) -> Result<Option<Arc<RequestResponseFuture>>, RuntimeError> {
+        Ok(self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .remove(correlation_id)
+            .map(|entry| entry.future))
+    }
+
+    pub fn clear(&self) -> Result<(), RuntimeError> {
+        self.entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .clear();
+        Ok(())
+    }
+
+    pub fn contains_key(&self, correlation_id: &str) -> Result<bool, RuntimeError> {
+        Ok(self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .contains_key(correlation_id))
+    }
+
+    pub fn len(&self) -> Result<usize, RuntimeError> {
+        Ok(self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .len())
+    }
+
+    pub fn is_empty(&self) -> Result<bool, RuntimeError> {
+        Ok(self.len()? == 0)
+    }
+
+    pub fn keys(&self) -> Result<Vec<String>, RuntimeError> {
+        Ok(self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .keys()
+            .cloned()
+            .collect())
+    }
+
+    pub fn values(&self) -> Result<Vec<Arc<RequestResponseFuture>>, RuntimeError> {
+        Ok(self
+            .entries
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .values()
+            .map(|entry| entry.future.clone())
+            .collect())
+    }
+
+    fn complete_reply(&self, correlation_id: &str, reply: MessageExt) -> bool {
+        let entry = self
+            .entries
+            .lock()
+            .ok()
+            .and_then(|mut entries| entries.remove(correlation_id));
+        entry.is_some_and(|entry| {
+            entry.future.put_response_message(Some(reply.clone()));
+            entry.future.execute_request_callback();
+            entry
+                .sender
+                .is_none_or(|sender| sender.send(PendingReplyCompletion::Reply(reply)).is_ok())
+        })
+    }
+
+    #[doc(hidden)]
+    pub fn expire_due(&self, now: Instant) -> usize {
+        self.expire_matching(now, |_| true)
+    }
+
+    fn expire_due_for_scope(&self, scope: &Arc<()>, now: Instant) -> usize {
+        self.expire_matching(now, |entry| {
+            entry
+                .scope
+                .as_ref()
+                .is_some_and(|entry_scope| Arc::ptr_eq(entry_scope, scope))
+        })
+    }
+
+    fn expire_matching(
+        &self,
+        now: Instant,
+        in_scope: impl Fn(&PendingReplyEntry) -> bool,
+    ) -> usize {
+        let expired = {
+            let Ok(mut entries) = self.entries.lock() else {
+                return 0;
+            };
+            let expired_ids = entries
+                .iter()
+                .filter(|(_, entry)| in_scope(entry) && entry.future.is_timeout_at(now))
+                .map(|(correlation_id, _)| correlation_id.clone())
+                .collect::<Vec<_>>();
+            expired_ids
+                .into_iter()
+                .filter_map(|correlation_id| entries.remove(&correlation_id))
+                .collect::<Vec<_>>()
+        };
+        let count = expired.len();
+        for entry in expired {
+            entry.future.set_cause(Some(Arc::new(RequestTimeoutCause)));
+            entry.future.execute_request_callback();
+            if let Some(sender) = entry.sender {
+                let _ = sender.send(PendingReplyCompletion::Timeout {
+                    send_succeeded: entry.send_succeeded,
+                });
+            }
+        }
+        count
+    }
 }
 
 #[derive(Default)]
@@ -143,7 +335,6 @@ struct Entries {
     producers: BTreeMap<String, ProducerEntry>,
     consumers: BTreeMap<String, ConsumerEntry>,
     admins: BTreeMap<String, AdminEntry>,
-    pending_replies: HashMap<String, PendingReplyEntry>,
 }
 
 /// Terminal result delivered to the owner of one pending request/reply entry.
@@ -157,20 +348,18 @@ pub enum PendingReplyCompletion {
 /// Identity-bound operations for the currently pending correlation entry.
 #[derive(Clone)]
 pub struct PendingReplyControl {
-    registry: Weak<GroupRegistry>,
+    table: RequestFutureTable,
     correlation_id: String,
     owner: Arc<()>,
 }
 
 impl PendingReplyControl {
     pub fn mark_send_succeeded(&self) {
-        let Some(registry) = self.registry.upgrade() else {
-            return;
-        };
-        if let Ok(mut entries) = registry.entries.lock() {
-            if let Some(entry) = entries.pending_replies.get_mut(&self.correlation_id) {
+        if let Ok(mut entries) = self.table.entries.lock() {
+            if let Some(entry) = entries.get_mut(&self.correlation_id) {
                 if Arc::ptr_eq(&entry.owner, &self.owner) {
                     entry.send_succeeded = true;
+                    entry.future.set_send_request_ok(true);
                 }
             }
         }
@@ -178,27 +367,28 @@ impl PendingReplyControl {
 
     /// Returns false when another terminal path already claimed the entry.
     pub fn fail_send(&self, cause: String) -> bool {
-        let Some(registry) = self.registry.upgrade() else {
-            return false;
-        };
-        let sender = {
-            let Ok(mut entries) = registry.entries.lock() else {
+        let entry = {
+            let Ok(mut entries) = self.table.entries.lock() else {
                 return false;
             };
             let owned = entries
-                .pending_replies
                 .get(&self.correlation_id)
                 .is_some_and(|entry| Arc::ptr_eq(&entry.owner, &self.owner));
             if owned {
-                entries
-                    .pending_replies
-                    .remove(&self.correlation_id)
-                    .map(|entry| entry.sender)
+                entries.remove(&self.correlation_id)
             } else {
                 None
             }
         };
-        sender.is_some_and(|sender| {
+        let Some(entry) = entry else {
+            return false;
+        };
+        entry.future.set_send_request_ok(false);
+        entry
+            .future
+            .set_cause(Some(Arc::new(RequestSendFailureCause(cause.clone()))));
+        entry.future.execute_request_callback();
+        entry.sender.is_none_or(|sender| {
             sender
                 .send(PendingReplyCompletion::SendFailed(cause))
                 .is_ok()
@@ -206,41 +396,28 @@ impl PendingReplyControl {
     }
 
     pub fn cancel(&self) -> bool {
-        let Some(registry) = self.registry.upgrade() else {
-            return false;
-        };
-        let Ok(mut entries) = registry.entries.lock() else {
+        let Ok(mut entries) = self.table.entries.lock() else {
             return false;
         };
         let owned = entries
-            .pending_replies
             .get(&self.correlation_id)
             .is_some_and(|entry| Arc::ptr_eq(&entry.owner, &self.owner));
-        owned
-            && entries
-                .pending_replies
-                .remove(&self.correlation_id)
-                .is_some()
+        owned && entries.remove(&self.correlation_id).is_some()
     }
 
     /// Complete the owned entry with timeout only when its monotonic deadline
     /// has elapsed. A reply or shared-scheduler scan may already own it.
     pub fn expire_if_due(&self, now: Instant) -> bool {
-        let Some(registry) = self.registry.upgrade() else {
-            return false;
-        };
         let expired = {
-            let Ok(mut entries) = registry.entries.lock() else {
+            let Ok(mut entries) = self.table.entries.lock() else {
                 return false;
             };
-            let expired = entries
-                .pending_replies
-                .get(&self.correlation_id)
-                .is_some_and(|entry| {
-                    Arc::ptr_eq(&entry.owner, &self.owner) && entry.deadline <= now
-                });
+            let expired = entries.get(&self.correlation_id).is_some_and(|entry| {
+                Arc::ptr_eq(&entry.owner, &self.owner)
+                    && (entry.deadline <= now || entry.future.is_timeout_at(now))
+            });
             if expired {
-                entries.pending_replies.remove(&self.correlation_id)
+                entries.remove(&self.correlation_id)
             } else {
                 None
             }
@@ -248,9 +425,13 @@ impl PendingReplyControl {
         let Some(entry) = expired else {
             return false;
         };
-        let _ = entry.sender.send(PendingReplyCompletion::Timeout {
-            send_succeeded: entry.send_succeeded,
-        });
+        entry.future.set_cause(Some(Arc::new(RequestTimeoutCause)));
+        entry.future.execute_request_callback();
+        if let Some(sender) = entry.sender {
+            let _ = sender.send(PendingReplyCompletion::Timeout {
+                send_succeeded: entry.send_succeeded,
+            });
+        }
         true
     }
 }
@@ -259,11 +440,16 @@ impl PendingReplyControl {
 pub struct PendingReplyRequest {
     receiver: oneshot::Receiver<PendingReplyCompletion>,
     control: PendingReplyControl,
+    future: Arc<RequestResponseFuture>,
 }
 
 impl PendingReplyRequest {
     pub fn control(&self) -> PendingReplyControl {
         self.control.clone()
+    }
+
+    pub fn future(&self) -> Arc<RequestResponseFuture> {
+        self.future.clone()
     }
 
     pub async fn receive(&mut self) -> Result<PendingReplyCompletion, oneshot::error::RecvError> {
@@ -285,6 +471,7 @@ pub(super) struct GroupRegistry {
     entries: Mutex<Entries>,
     table_mutation_gates: TableMutationGates,
     pending_reply_admission: Arc<Semaphore>,
+    request_future_scope: Arc<()>,
 }
 
 impl Default for GroupRegistry {
@@ -306,6 +493,7 @@ impl GroupRegistry {
             entries: Mutex::default(),
             table_mutation_gates: Mutex::default(),
             pending_reply_admission: Arc::new(Semaphore::new(capacity.max(1))),
+            request_future_scope: Arc::new(()),
         }
     }
 
@@ -452,13 +640,36 @@ impl GroupRegistry {
     }
 
     pub fn clear(&self) -> Result<(), RuntimeError> {
-        let (previous, pending) = {
+        let (previous, producer_ids) = {
             let mut entries = self
                 .entries
                 .lock()
                 .map_err(|_| RuntimeError::RegistryPoisoned)?;
-            let pending = std::mem::take(&mut entries.pending_replies);
-            (std::mem::take(&mut *entries), pending)
+            let producer_ids = entries
+                .producers
+                .values()
+                .map(|entry| entry.identity.clone())
+                .collect::<Vec<_>>();
+            (std::mem::take(&mut *entries), producer_ids)
+        };
+        let pending = {
+            let table = RequestFutureTable::shared();
+            let mut futures = table
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let ids = futures
+                .iter()
+                .filter(|(_, entry)| {
+                    producer_ids
+                        .iter()
+                        .any(|identity| Arc::ptr_eq(identity, &entry.owner))
+                })
+                .map(|(correlation_id, _)| correlation_id.clone())
+                .collect::<Vec<_>>();
+            ids.into_iter()
+                .filter_map(|correlation_id| futures.remove(&correlation_id))
+                .collect::<Vec<_>>()
         };
         drop(pending);
         drop(previous);
@@ -469,6 +680,24 @@ impl GroupRegistry {
         self: &Arc<Self>,
         lease: &GroupLease,
         correlation_id: &str,
+        deadline: Instant,
+    ) -> Result<PendingReplyRequest, RuntimeError> {
+        let timeout_millis = deadline
+            .saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(i64::MAX as u128) as i64;
+        let future = Arc::new(RequestResponseFuture::new(
+            correlation_id,
+            timeout_millis,
+            None,
+        ));
+        self.register_pending_future(lease, future, deadline).await
+    }
+
+    pub async fn register_pending_future(
+        self: &Arc<Self>,
+        lease: &GroupLease,
+        future: Arc<RequestResponseFuture>,
         deadline: Instant,
     ) -> Result<PendingReplyRequest, RuntimeError> {
         if lease.kind != GroupKind::Producer {
@@ -487,8 +716,9 @@ impl GroupRegistry {
             return Err(RuntimeError::RequestReplyAdmissionTimeout);
         }
         let (sender, receiver) = oneshot::channel();
+        let table = RequestFutureTable::shared();
         {
-            let mut entries = self
+            let entries = self
                 .entries
                 .lock()
                 .map_err(|_| RuntimeError::RegistryPoisoned)?;
@@ -501,72 +731,46 @@ impl GroupRegistry {
                     "producer registration is no longer active",
                 ));
             }
-            if entries.pending_replies.contains_key(correlation_id) {
+            let mut futures = table
+                .entries
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            let correlation_id = future.correlation_id();
+            if futures.contains_key(correlation_id) {
                 return Err(RuntimeError::DuplicateCorrelation {
                     correlation_id: correlation_id.to_owned(),
                 });
             }
-            entries.pending_replies.insert(
+            futures.insert(
                 correlation_id.to_owned(),
                 PendingReplyEntry {
                     owner: lease.identity.clone(),
+                    scope: Some(self.request_future_scope.clone()),
                     deadline,
                     send_succeeded: false,
-                    sender,
-                    _admission: admission,
+                    sender: Some(sender),
+                    _admission: Some(admission),
+                    future: future.clone(),
                 },
             );
         }
         Ok(PendingReplyRequest {
             receiver,
             control: PendingReplyControl {
-                registry: Arc::downgrade(self),
-                correlation_id: correlation_id.to_owned(),
+                table,
+                correlation_id: future.correlation_id().to_owned(),
                 owner: lease.identity.clone(),
             },
+            future,
         })
     }
 
     pub fn complete_pending_reply(&self, correlation_id: &str, reply: MessageExt) -> bool {
-        let entry = self
-            .entries
-            .lock()
-            .ok()
-            .and_then(|mut entries| entries.pending_replies.remove(correlation_id));
-        entry.is_some_and(|entry| {
-            entry
-                .sender
-                .send(PendingReplyCompletion::Reply(reply))
-                .is_ok()
-        })
+        RequestFutureTable::shared().complete_reply(correlation_id, reply)
     }
 
     pub fn expire_pending_replies(&self, now: Instant) -> usize {
-        let expired = {
-            let Ok(mut entries) = self.entries.lock() else {
-                return 0;
-            };
-            let expired_ids = entries
-                .pending_replies
-                .iter()
-                .filter(|(_, entry)| entry.deadline <= now)
-                .map(|(correlation_id, _)| correlation_id.clone())
-                .collect::<Vec<_>>();
-            expired_ids
-                .into_iter()
-                .filter_map(|correlation_id| {
-                    entries
-                        .pending_replies
-                        .remove(&correlation_id)
-                        .map(|entry| (entry.sender, entry.send_succeeded))
-                })
-                .collect::<Vec<_>>()
-        };
-        let count = expired.len();
-        for (sender, send_succeeded) in expired {
-            let _ = sender.send(PendingReplyCompletion::Timeout { send_succeeded });
-        }
-        count
+        RequestFutureTable::shared().expire_due_for_scope(&self.request_future_scope, now)
     }
     pub fn register_producer(
         &self,
@@ -919,14 +1123,14 @@ mod pending_reply_admission_tests {
             .unwrap();
         let first_deadline = Instant::now() + Duration::from_secs(2);
         let first = registry
-            .register_pending_reply(&lease, "first", first_deadline)
+            .register_pending_reply(&lease, "registry-admission-first", first_deadline)
             .await
             .unwrap();
 
         let second_deadline = Instant::now() + Duration::from_millis(25);
         assert!(matches!(
             registry
-                .register_pending_reply(&lease, "second", second_deadline)
+                .register_pending_reply(&lease, "registry-admission-second", second_deadline)
                 .await,
             Err(RuntimeError::RequestReplyAdmissionTimeout)
         ));
@@ -934,11 +1138,11 @@ mod pending_reply_admission_tests {
         drop(first);
         let reply_deadline = Instant::now() + Duration::from_secs(2);
         let mut reply_pending = registry
-            .register_pending_reply(&lease, "reply", reply_deadline)
+            .register_pending_reply(&lease, "registry-admission-reply", reply_deadline)
             .await
             .unwrap();
         assert!(registry.complete_pending_reply(
-            "reply",
+            "registry-admission-reply",
             crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
                 "reply-topic",
                 b"reply".to_vec()
@@ -951,7 +1155,7 @@ mod pending_reply_admission_tests {
 
         let failure_deadline = Instant::now() + Duration::from_secs(2);
         let mut failure_pending = registry
-            .register_pending_reply(&lease, "failure", failure_deadline)
+            .register_pending_reply(&lease, "registry-admission-failure", failure_deadline)
             .await
             .unwrap();
         assert!(
@@ -966,10 +1170,13 @@ mod pending_reply_admission_tests {
 
         let timeout_deadline = Instant::now() + Duration::from_secs(2);
         let mut timeout_pending = registry
-            .register_pending_reply(&lease, "timeout", timeout_deadline)
+            .register_pending_reply(&lease, "registry-admission-timeout", timeout_deadline)
             .await
             .unwrap();
-        assert_eq!(registry.expire_pending_replies(timeout_deadline), 1);
+        assert_eq!(
+            registry.expire_pending_replies(timeout_deadline + Duration::from_millis(1)),
+            1
+        );
         assert!(matches!(
             timeout_pending.receive().await.unwrap(),
             PendingReplyCompletion::Timeout { .. }
@@ -977,7 +1184,7 @@ mod pending_reply_admission_tests {
 
         let unregister_deadline = Instant::now() + Duration::from_secs(2);
         let mut unregister_pending = registry
-            .register_pending_reply(&lease, "unregister", unregister_deadline)
+            .register_pending_reply(&lease, "registry-admission-unregister", unregister_deadline)
             .await
             .unwrap();
         assert!(registry.unregister(&lease, GroupKind::Producer).unwrap());
@@ -987,7 +1194,7 @@ mod pending_reply_admission_tests {
                 .is_err()
         );
         assert!(registry.complete_pending_reply(
-            "unregister",
+            "registry-admission-unregister",
             crate::test_support::message_ext_from(rocketmq_classic_common::message::Message::new(
                 "reply-topic",
                 b"late reply".to_vec()
@@ -1006,7 +1213,7 @@ mod pending_reply_admission_tests {
         let mut group_unregistered_pending = registry
             .register_pending_reply(
                 &group_lease,
-                "group-unregistered",
+                "registry-admission-group-unregistered",
                 group_unregistered_deadline,
             )
             .await
@@ -1040,7 +1247,11 @@ mod pending_reply_admission_tests {
             .unwrap();
         let available_deadline = Instant::now() + Duration::from_secs(2);
         let available = registry
-            .register_pending_reply(&replacement_lease, "available", available_deadline)
+            .register_pending_reply(
+                &replacement_lease,
+                "registry-admission-available",
+                available_deadline,
+            )
             .await
             .unwrap();
         drop(available);
@@ -1059,7 +1270,11 @@ mod pending_reply_admission_tests {
             .register_producer("request-owner", producer)
             .unwrap();
         let mut pending = registry
-            .register_pending_reply(&lease, "cleared", Instant::now() + Duration::from_secs(2))
+            .register_pending_reply(
+                &lease,
+                "registry-clear-cleared",
+                Instant::now() + Duration::from_secs(2),
+            )
             .await
             .unwrap();
 
@@ -1067,6 +1282,58 @@ mod pending_reply_admission_tests {
 
         assert!(pending.receive().await.is_err());
         assert!(registry.snapshot().unwrap().producers.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod public_request_future_table_tests {
+    use super::*;
+    use crate::runtime::RequestResponseCallback;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct RecordingCallback(AtomicUsize);
+
+    impl RequestResponseCallback for RecordingCallback {
+        fn on_success(&self, response: Option<MessageExt>) {
+            assert!(response.is_some());
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_exception(&self, _cause: Option<Arc<dyn std::error::Error + Send + Sync>>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn public_live_table_is_the_inbound_correlation_table() {
+        let correlation_id = "public-request-future-table-test";
+        let first_view = RequestFutureTable::shared();
+        let second_view = RequestFutureTable::shared();
+        let _ = first_view.remove(correlation_id).unwrap();
+        let callback = Arc::new(RecordingCallback(AtomicUsize::new(0)));
+        let future = Arc::new(RequestResponseFuture::new(
+            correlation_id,
+            10_000,
+            Some(callback.clone()),
+        ));
+
+        assert!(
+            first_view
+                .insert(correlation_id, future.clone())
+                .unwrap()
+                .is_none()
+        );
+        assert!(Arc::ptr_eq(
+            &second_view.get(correlation_id).unwrap().unwrap(),
+            &future
+        ));
+
+        let registry = GroupRegistry::default();
+        let reply = MessageExt::default();
+        assert!(registry.complete_pending_reply(correlation_id, reply.clone()));
+        assert_eq!(future.response_msg(), Some(reply));
+        assert_eq!(callback.0.load(Ordering::SeqCst), 1);
+        assert!(!first_view.contains_key(correlation_id).unwrap());
     }
 }
 

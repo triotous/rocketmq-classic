@@ -1601,3 +1601,21 @@ Before any publication:
   newer extra method. Rust fixture assertions and Maven drift verification pass.
   This adds evidence only: Rust still lacks the public mutable future/table API,
   so P18-V01 remains open.
+
+- P18-V01 request/reply future/table implementation follow-up (2026-10-16):
+  Core now exposes mutable `RequestResponseFuture` state and a live
+  `RequestFutureTable` over the same process-wide correlation entries used by
+  Producer registration, inbound replies, send failures, and timeout scans.
+  Producer callback requests use the future callback guard, while Producer
+  startup/shutdown manages the shared three-second/one-second scanner. Scoped
+  runtime timeout scans preserve registry isolation; the latch countdown is
+  atomic under concurrent callers. The focused Core all-feature suite passes
+  (163 unit tests and all Core integration/doc targets); Producer and facade
+  all-feature suites pass (142 Producer unit tests, request/reply timeout/send
+  failure/shutdown tests, facade table tests, all Producer integration/doc
+  targets); strict workspace all-target/all-feature Clippy, formatting and
+  diff checks pass. This closes the public mutable future/live-table request/
+  reply slice only. Broad P18-V01, a full current-revision P18-V02 rerun,
+  current GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker automation,
+  and pre-publication version/registry resolution remain open; owner-run
+  deployment and production checks remain Phase 19 manual validation.

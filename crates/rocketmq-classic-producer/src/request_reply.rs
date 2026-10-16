@@ -6,9 +6,16 @@ use rocketmq_classic_common::message::{
     },
 };
 use rocketmq_classic_core::runtime::{
-    PendingReplyCompletion, PendingReplyControl, PendingReplyRequest,
+    PendingReplyCompletion, PendingReplyControl, PendingReplyRequest, RequestFutureTable,
+    RequestResponseCallback, RequestResponseFuture, RequestSendFailureCause, RequestTimeoutCause,
 };
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex, OnceLock},
+    time::Duration,
+};
 use thiserror::Error;
 use tokio::time::Instant;
 
@@ -16,6 +23,119 @@ use crate::{Producer, ProducerError};
 
 /// Java `RequestCallback` expressed as a single Rust result callback.
 pub type RequestCallback = Box<dyn FnOnce(Result<MessageExt, ProducerError>) + Send + 'static>;
+
+struct ProducerRequestCallback {
+    callback: Mutex<Option<RequestCallback>>,
+    topic: String,
+    timeout_millis: u128,
+}
+
+impl RequestResponseCallback for ProducerRequestCallback {
+    fn on_success(&self, response: Option<MessageExt>) {
+        let callback = self
+            .callback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(callback) = callback {
+            callback(response.ok_or(ProducerError::RequestReplyCancelled));
+        }
+    }
+
+    fn on_exception(&self, cause: Option<Arc<dyn std::error::Error + Send + Sync>>) {
+        let error = match cause {
+            Some(cause) if cause.downcast_ref::<RequestTimeoutCause>().is_some() => {
+                ProducerError::RequestReplyTimeout {
+                    topic: self.topic.clone(),
+                    timeout_millis: self.timeout_millis,
+                }
+            }
+            Some(cause) => match cause.downcast_ref::<RequestSendFailureCause>() {
+                Some(cause) => ProducerError::RequestSendFailed {
+                    topic: self.topic.clone(),
+                    cause: cause.0.clone(),
+                },
+                None => ProducerError::RequestSendFailed {
+                    topic: self.topic.clone(),
+                    cause: cause.to_string(),
+                },
+            },
+            None => ProducerError::RequestReplyCancelled,
+        };
+        let callback = self
+            .callback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(callback) = callback {
+            callback(Err(error));
+        }
+    }
+}
+
+/// Singleton access to the process-wide request/reply correlation table.
+pub struct RequestFutureHolder;
+
+#[derive(Default)]
+struct RequestFutureScheduler {
+    producers: HashSet<usize>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+fn request_future_scheduler() -> &'static tokio::sync::Mutex<RequestFutureScheduler> {
+    static SCHEDULER: OnceLock<tokio::sync::Mutex<RequestFutureScheduler>> = OnceLock::new();
+    SCHEDULER.get_or_init(Default::default)
+}
+
+impl RequestFutureHolder {
+    pub fn get_instance() -> &'static Self {
+        static HOLDER: RequestFutureHolder = RequestFutureHolder;
+        &HOLDER
+    }
+
+    pub fn get_request_future_table(&self) -> RequestFutureTable {
+        RequestFutureTable::shared()
+    }
+
+    /// Starts the shared three-second initial-delay, one-second timeout scan
+    /// for this Producer. Producer startup calls this automatically.
+    pub async fn start_scheduled_task(&self, producer: &Producer) {
+        let producer_id = Arc::as_ptr(&producer.request_future_scheduler_id) as usize;
+        let mut scheduler = request_future_scheduler().lock().await;
+        if !scheduler.producers.insert(producer_id) || scheduler.task.is_some() {
+            return;
+        }
+        let table = self.get_request_future_table();
+        scheduler.task = Some(tokio::spawn(async move {
+            let period = tokio::time::Duration::from_secs(1);
+            let first_scan = tokio::time::Instant::now() + tokio::time::Duration::from_secs(3);
+            let mut interval = tokio::time::interval_at(first_scan, period);
+            loop {
+                interval.tick().await;
+                table.expire_due(tokio::time::Instant::now());
+            }
+        }));
+    }
+
+    /// Removes this Producer from the scheduler set. The shared scanner stops
+    /// after the final Producer shuts down, while pending table entries remain.
+    pub async fn shutdown(&self, producer: &Producer) {
+        let producer_id = Arc::as_ptr(&producer.request_future_scheduler_id) as usize;
+        let task = {
+            let mut scheduler = request_future_scheduler().lock().await;
+            scheduler.producers.remove(&producer_id);
+            if scheduler.producers.is_empty() {
+                scheduler.task.take()
+            } else {
+                None
+            }
+        };
+        if let Some(task) = task {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
 
 type RequestSendFuture<'a> =
     Pin<Box<dyn Future<Output = Result<crate::SendResult, ProducerError>> + Send + 'a>>;
@@ -164,11 +284,19 @@ impl Producer {
         route: RequestRoute<'static>,
         callback: RequestCallback,
     ) -> Result<(), ProducerError> {
-        let (pending, deadline) = self.prepare_request(message, timeout).await?;
+        let request_callback = Arc::new(ProducerRequestCallback {
+            callback: Mutex::new(Some(callback)),
+            topic: message.topic().to_owned(),
+            timeout_millis: timeout.as_millis(),
+        });
+        let callback: Arc<dyn RequestResponseCallback> = request_callback;
+        let (pending, deadline) = self
+            .prepare_request(message, timeout, Some(callback))
+            .await?;
         let mut request_message = message.clone();
         let producer = self.clone();
         let task = tokio::spawn(async move {
-            let result = producer
+            let _ = producer
                 .wait_for_reply(
                     &mut request_message,
                     pending,
@@ -179,7 +307,6 @@ impl Producer {
                 )
                 .await;
             drop(producer);
-            callback(result);
         });
         self.track_request_callback_task(task).await;
         Ok(())
@@ -191,7 +318,7 @@ impl Producer {
         timeout: Duration,
         route: RequestRoute<'a>,
     ) -> Result<MessageExt, ProducerError> {
-        let (pending, deadline) = self.prepare_request(message, timeout).await?;
+        let (pending, deadline) = self.prepare_request(message, timeout, None).await?;
         self.wait_for_reply(message, pending, deadline, timeout, true, route)
             .await
     }
@@ -200,6 +327,7 @@ impl Producer {
         &self,
         message: &mut Message,
         timeout: Duration,
+        callback: Option<Arc<dyn RequestResponseCallback>>,
     ) -> Result<(PendingReplyRequest, Instant), ProducerError> {
         let timeout_millis = timeout.as_millis();
         if timeout_millis > i64::MAX as u128 {
@@ -213,11 +341,16 @@ impl Producer {
         let ttl = timeout_millis.to_string();
         for _ in 0..3 {
             let correlation_id = create_correlation_id();
+            let future = Arc::new(RequestResponseFuture::new(
+                correlation_id.clone(),
+                timeout_millis as i64,
+                callback.clone(),
+            ));
             let _ = message.set_system_property(PROPERTY_CORRELATION_ID, correlation_id.clone());
             let _ = message.set_system_property(PROPERTY_MESSAGE_REPLY_TO_CLIENT, reply_to.clone());
             let _ = message.set_system_property(PROPERTY_MESSAGE_TTL, ttl.clone());
             match runtime
-                .register_reply_request(&lease, &correlation_id, deadline)
+                .register_reply_request_with_future(&lease, future, deadline)
                 .await
             {
                 Ok(pending) => return Ok((pending, deadline)),
