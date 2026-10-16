@@ -2182,3 +2182,22 @@ Before any publication:
   evidence only; it does not close broad P18-V01, current-revision Ubuntu CI /
   P18-V04, Phase 19 Docker/Broker automation, or pre-publication registry
   resolution. Owner deployment and production checks remain manual.
+
+- P18-V01 Producer `MessageBatch` nullability/validation follow-up
+  (`8f94b206`, 2026-10-16): pinned Java 5.5.1 fixtures now invoke null and empty
+  collections, null elements, and all four delay properties, recording exact
+  exception classes/messages. Rust's nullable adapters preserve constructor
+  failure timing and iterator null elements; batch generation matches the
+  delay, retry-topic, topic and wait-store rejection messages. Producer tests,
+  facade import test, strict Producer Clippy, and pinned Maven `verify` pass.
+  Fixture SHA-256: `3d8ae4a75e76e1c2636de3633dbf2f04c61c8058076e2c639d63fec17fc5c88d`.
+- Current-revision server-free P18-V02 rerun (`8f94b206`, 2026-10-16): default
+  and all-feature workspace tests, all-target workspace check and strict
+  Clippy, Maven `verify` (37 scenarios and fixture/cross-decode checks),
+  differential self-test and 37-scenario manifest, 16 deterministic race/leak
+  cases × 3, fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations),
+  release examples, workspace benchmark compilation, locked metadata and
+  package-content checks, and the Asia/Taipei Unique ID differential pass.
+  Broad P18-V01 remains open; current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 Docker/Broker automation and scenario execution, and pre-publication
+  version/registry resolution remain outstanding.
