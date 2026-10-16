@@ -2360,3 +2360,19 @@ Before any publication:
   as do strict Remoting Clippy, formatting, and diff checks. This closes the
   deterministic post-swap behavior slice only; broad P18-V01 and final-revision
   full-workspace P18-V02 remain open.
+- Current-revision server-free P18-V02 rerun (code `bc970e10`; evidence tree
+  `464fad73`, 2026-10-16): default and all-features locked workspace tests,
+  all-target/all-feature locked check and strict Clippy, pinned Maven `verify`
+  (37 scenarios, Java fixture checks and Java/Rust cross-decodes), comparator
+  self-test and 37-scenario manifest, offline race/leak smoke (16 cases × 3),
+  and fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame
+  decodes, 113 message decodes) pass. Release examples and workspace benches
+  compile; locked metadata resolves 215 packages including 208 registry
+  packages with license metadata; all seven package listings include LICENSE
+  and NOTICE; workspace metadata/dependency checks pass. UTC and Asia/Taipei
+  Unique ID fixture tests pass (4 each); formatting and diff checks pass. This
+  closes P18-V02 server-free gates on the tested code. Broad P18-V01,
+  current-revision GitHub Ubuntu/P18-V04 and native Windows runtime CI evidence,
+  Phase 19 Docker/Broker automation and scenario execution,
+  `docs/owner-validation.md`, and pre-publication version/dependency resolution
+  remain open.
