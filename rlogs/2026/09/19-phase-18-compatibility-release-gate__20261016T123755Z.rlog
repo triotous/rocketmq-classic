@@ -1,0 +1,10 @@
+# Phase 18 compatibility release gate — 2026-10-16T12:37:55Z
+
+- Base revision: `3824313a` on `phase/19-phase-18-compatibility-release-gate`; working tree was clean. Java behavior baseline remains client 5.5.1, source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. The separate Java checkout was not read or modified.
+- P18-V01 inspection found that `messageDecoderPublicApi` pinned decoder constants but not the class's declared public methods/constructors. Existing reflection helpers already produce sorted signatures, so extended this fixture instead of adding a new generator path.
+- Added the fixture's public no-argument constructor and 26 declared public method signatures, regenerated `fixtures/messages/records.json`, and pinned the exact lists in Common's `message_decode` integration test. Updated the Phase 8 method matrix and fixture checksum, and appended scoped evidence to `docs/release-checklist.md`; plans were not changed.
+- The first `exec:java` invocation used stale compiled harness classes and left the fixture unchanged. `mvn -f compat/java-reference/pom.xml compile` rebuilt the harness; the repeated generation then included the inventory. No production source or behavior changed.
+- Fixture SHA-256: `6cead986404276aa6ff3f11e73c04ba69d936619160351703e3e782205a6a73d`.
+- PASS: `cargo test -p rocketmq-classic-common --test message_decode --locked` (21 tests); `cargo clippy -p rocketmq-classic-common --all-targets --all-features --locked -- -D warnings`; `mvn -f compat/java-reference/pom.xml verify` (37 scenarios, message fixture drift, Java/Rust cross-decodes); `cargo fmt --all -- --check`; fixture checksum and `git diff --check`.
+- Implementation/test/fixture commit: `9004bcc9` (`test(common): inventory MessageDecoder Java API`). Documentation/checksum/log commit is pending.
+- This closes only the MessageDecoder declaration-inventory slice. Broad P18-V01 source/API/input/error/control-flow and reverse-export reconciliation remains open. No Broker/Docker or release acceptance is claimed.

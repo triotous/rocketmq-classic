@@ -2065,3 +2065,15 @@ Before any publication:
   execution, owner-validation instructions, and pre-publication version/registry
   checks remain open. Owner-run deployment and live Broker checks remain Phase
   19 manual validation.
+
+- P18-V01 Common `MessageDecoder` declared-surface inventory (`9004bcc9`,
+  2026-10-16): the pinned Java 5.5.1 fixture now records its public no-argument
+  constructor and all 26 declared public method signatures. The Common
+  differential pins both sorted lists alongside the existing constant checks;
+  the Phase 8 matrix maps each method family to its Rust owner and behavior
+  evidence. Fixture SHA-256:
+  `6cead986404276aa6ff3f11e73c04ba69d936619160351703e3e782205a6a73d`.
+  Common `message_decode` tests pass (21 tests), strict all-target/all-feature
+  Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios and
+  fixture drift checks. Formatting, checksum, and diff checks pass. This closes
+  the declaration-inventory slice only; broad P18-V01 remains open.
