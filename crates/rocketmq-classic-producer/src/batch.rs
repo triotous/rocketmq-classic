@@ -8,10 +8,10 @@ use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 
 use crate::{ProducerConfig, ProducerError, validation};
 
-/// A Java-compatible message batch. Its message metadata is available through
-/// the same accessors as `Message`; the owned slice provides Rust iteration.
+/// A Java-compatible message batch whose metadata uses the same accessors as
+/// `Message`. Iteration preserves nullable Java elements as `Option<Message>`.
 pub struct MessageBatch {
-    messages: Vec<Message>,
+    messages: Option<Vec<Option<Message>>>,
     message: Message,
 }
 
@@ -19,6 +19,12 @@ impl MessageBatch {
     /// Constructs a batch from an owned message vector without validation,
     /// matching Java's public `MessageBatch(List<Message>)` constructor.
     pub fn new(messages: Vec<Message>) -> Self {
+        Self::new_nullable(Some(messages.into_iter().map(Some).collect()))
+    }
+
+    /// Constructs a batch from a nullable Java-style list, including nullable
+    /// list elements. This preserves the constructor's deferred null failures.
+    pub fn new_nullable(messages: Option<Vec<Option<Message>>>) -> Self {
         Self {
             messages,
             message: Message::default(),
@@ -28,20 +34,23 @@ impl MessageBatch {
     /// Validates the same-topic, wait-store, retry-topic, and delay rules used
     /// by Java's `MessageBatch.generateFromList`.
     pub fn generate_from_list(messages: Vec<Message>) -> Result<Self, ProducerError> {
+        Self::generate_from_list_nullable(Some(messages.into_iter().map(Some).collect()))
+    }
+
+    /// Nullable adapter for Java's `generateFromList(Collection)` boundary.
+    pub fn generate_from_list_nullable(
+        messages: Option<Vec<Option<Message>>>,
+    ) -> Result<Self, ProducerError> {
+        let messages = messages.ok_or(ProducerError::BatchListNull)?;
         if messages.is_empty() {
             return Err(ProducerError::EmptyBatch);
         }
 
         let mut first_topic = None;
         let mut first_wait_store = None;
-        for message in &messages {
-            if message
-                .delay_time_level()
-                .map_err(|_| ProducerError::InvalidBatchDelay)?
-                > 0
-            {
-                return Err(ProducerError::DelayedBatchMessage);
-            }
+        for maybe_message in &messages {
+            let message = maybe_message.as_ref().ok_or(ProducerError::NullMessage)?;
+            validate_batch_delay(message)?;
             let topic = message
                 .topic_nullable()
                 .ok_or(ProducerError::BatchTopicNull)?;
@@ -61,7 +70,7 @@ impl MessageBatch {
             }
         }
 
-        let mut batch = Self::new(messages);
+        let mut batch = Self::new_nullable(Some(messages));
         batch.message.set_topic_nullable(first_topic);
         let _ = batch
             .message
@@ -71,34 +80,49 @@ impl MessageBatch {
 
     /// Encodes the compact records produced by Java's `MessageBatch.encode`.
     pub fn encode(&self) -> Result<Vec<u8>, ProducerError> {
-        Ok(encode_compact_messages(&self.messages)?)
+        let messages = self
+            .messages
+            .as_ref()
+            .ok_or(ProducerError::BatchListNull)?
+            .iter()
+            .map(|message| message.clone().ok_or(ProducerError::NullMessage))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(encode_compact_messages(&messages)?)
     }
 }
 
 impl IntoIterator for MessageBatch {
-    type Item = Message;
-    type IntoIter = std::vec::IntoIter<Message>;
+    type Item = Option<Message>;
+    type IntoIter = std::vec::IntoIter<Option<Message>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.messages.into_iter()
+        self.messages
+            .expect("Java MessageBatch.iterator() fails when its list is null")
+            .into_iter()
     }
 }
 
 impl<'a> IntoIterator for &'a MessageBatch {
-    type Item = &'a Message;
-    type IntoIter = std::slice::Iter<'a, Message>;
+    type Item = &'a Option<Message>;
+    type IntoIter = std::slice::Iter<'a, Option<Message>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.messages.iter()
+        self.messages
+            .as_ref()
+            .expect("Java MessageBatch.iterator() fails when its list is null")
+            .iter()
     }
 }
 
 impl<'a> IntoIterator for &'a mut MessageBatch {
-    type Item = &'a mut Message;
-    type IntoIter = std::slice::IterMut<'a, Message>;
+    type Item = &'a mut Option<Message>;
+    type IntoIter = std::slice::IterMut<'a, Option<Message>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.messages.iter_mut()
+        self.messages
+            .as_mut()
+            .expect("Java MessageBatch.iterator() fails when its list is null")
+            .iter_mut()
     }
 }
 
@@ -410,10 +434,16 @@ mod tests {
 
     #[test]
     fn message_batch_generate_from_list_matches_java_validation_order() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
         assert!(matches!(
             MessageBatch::generate_from_list(Vec::new()),
             Err(ProducerError::EmptyBatch)
         ));
+        assert_eq!(
+            ProducerError::EmptyBatch.to_string(),
+            fixture["messageBatchValidationFailures"]["empty"]["message"]
+        );
 
         let mut delayed = Message::new("orders", b"delayed".to_vec());
         delayed.set_delay_time_level(1);
@@ -421,6 +451,36 @@ mod tests {
             MessageBatch::generate_from_list(vec![delayed]),
             Err(ProducerError::DelayedBatchMessage)
         ));
+        assert_eq!(
+            fixture["messageBatchValidationFailures"]["delayed"]["class"],
+            "java.lang.UnsupportedOperationException"
+        );
+        assert_eq!(
+            ProducerError::DelayedBatchMessage.to_string(),
+            fixture["messageBatchValidationFailures"]["delayed"]["message"]
+        );
+
+        type DelaySetter = fn(&mut Message, i64);
+        let timer_cases: [(&str, DelaySetter); 3] = [
+            ("timerDelayMs", Message::set_delay_time_ms),
+            ("timerDelaySec", Message::set_delay_time_sec),
+            ("timerDeliverMs", Message::set_deliver_time_ms),
+        ];
+        for (case, set_delay) in timer_cases {
+            let mut timer_delayed = Message::new("orders", b"timer-delayed".to_vec());
+            set_delay(&mut timer_delayed, 1);
+            let error = match MessageBatch::generate_from_list(vec![timer_delayed]) {
+                Err(error) => error,
+                Ok(_) => panic!("{case} must be rejected for batching"),
+            };
+            assert!(matches!(error, ProducerError::DelayedBatchMessage));
+            let java_error = &fixture["messageBatchValidationFailures"][case];
+            assert_eq!(
+                java_error["class"],
+                "java.lang.UnsupportedOperationException"
+            );
+            assert_eq!(java_error["message"], error.to_string());
+        }
 
         assert!(matches!(
             MessageBatch::generate_from_list(vec![
@@ -429,6 +489,14 @@ mod tests {
             ]),
             Err(ProducerError::RetryBatchMessage)
         ));
+        assert_eq!(
+            fixture["messageBatchValidationFailures"]["retryTopic"]["class"],
+            "java.lang.UnsupportedOperationException"
+        );
+        assert_eq!(
+            ProducerError::RetryBatchMessage.to_string(),
+            fixture["messageBatchValidationFailures"]["retryTopic"]["message"]
+        );
 
         assert!(matches!(
             MessageBatch::generate_from_list(vec![
@@ -437,6 +505,14 @@ mod tests {
             ]),
             Err(ProducerError::BatchTopicMismatch)
         ));
+        assert_eq!(
+            fixture["messageBatchValidationFailures"]["mixedTopics"]["class"],
+            "java.lang.UnsupportedOperationException"
+        );
+        assert_eq!(
+            ProducerError::BatchTopicMismatch.to_string(),
+            fixture["messageBatchValidationFailures"]["mixedTopics"]["message"]
+        );
 
         let mut wait_store_mismatch = Message::new("orders", b"second".to_vec());
         wait_store_mismatch.set_wait_store_msg_ok(false).unwrap();
@@ -447,6 +523,14 @@ mod tests {
             ]),
             Err(ProducerError::BatchWaitStoreMismatch)
         ));
+        assert_eq!(
+            fixture["messageBatchValidationFailures"]["waitStoreMismatch"]["class"],
+            "java.lang.UnsupportedOperationException"
+        );
+        assert_eq!(
+            ProducerError::BatchWaitStoreMismatch.to_string(),
+            fixture["messageBatchValidationFailures"]["waitStoreMismatch"]["message"]
+        );
 
         let batch = MessageBatch::generate_from_list(vec![
             Message::new("orders", b"first".to_vec()),
@@ -455,6 +539,81 @@ mod tests {
         .unwrap();
         assert_eq!(batch.topic(), "orders");
         assert!(batch.is_wait_store_msg_ok());
+    }
+
+    #[test]
+    fn message_batch_nullable_list_and_elements_match_java_failure_boundaries() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let java = &fixture["messageBatchInputSemantics"];
+        assert_eq!(java["nullConstructorAccepted"], true);
+        assert_eq!(
+            java["nullConstructorIteratorFailure"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(
+            java["nullConstructorEncodeFailure"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(java["nullElementIteratorReturnsNull"], true);
+        assert_eq!(
+            java["nullElementEncodeFailure"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(java["emptyConstructorEncodedLength"], 0);
+        assert_eq!(
+            java["nullGenerateFromListFailure"],
+            "java.lang.IllegalArgumentException"
+        );
+        assert_eq!(
+            java["emptyGenerateFromListFailure"],
+            "java.lang.IllegalArgumentException"
+        );
+        assert_eq!(
+            java["nullElementGenerateFromListFailure"],
+            "java.lang.NullPointerException"
+        );
+
+        let null_list_for_iter = MessageBatch::new_nullable(None);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                null_list_for_iter.into_iter()
+            }))
+            .is_err()
+        );
+        let null_list = MessageBatch::new_nullable(None);
+        assert!(matches!(
+            null_list.encode(),
+            Err(ProducerError::BatchListNull)
+        ));
+        assert!(matches!(
+            MessageBatch::new_nullable(Some(Vec::new())).encode(),
+            Ok(bytes) if bytes.is_empty()
+        ));
+
+        let null_element_for_iter = MessageBatch::new_nullable(Some(vec![None]));
+        assert_eq!(null_element_for_iter.into_iter().next(), Some(None));
+        let null_element = MessageBatch::new_nullable(Some(vec![None]));
+        assert!(matches!(
+            null_element.encode(),
+            Err(ProducerError::NullMessage)
+        ));
+        assert!(matches!(
+            MessageBatch::generate_from_list_nullable(None),
+            Err(ProducerError::BatchListNull)
+        ));
+        assert_eq!(
+            ProducerError::BatchListNull.to_string(),
+            fixture["messageBatchValidationFailures"]["empty"]["message"]
+        );
+        assert!(matches!(
+            MessageBatch::generate_from_list_nullable(Some(Vec::new())),
+            Err(ProducerError::EmptyBatch)
+        ));
+        assert!(matches!(
+            MessageBatch::generate_from_list_nullable(Some(vec![None])),
+            Err(ProducerError::NullMessage)
+        ));
     }
 
     #[test]

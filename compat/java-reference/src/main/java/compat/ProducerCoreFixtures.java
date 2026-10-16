@@ -143,6 +143,8 @@ public final class ProducerCoreFixtures {
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
         result.put("messageBatchPublicApi", messageBatchPublicApi());
+        result.put("messageBatchInputSemantics", messageBatchInputSemantics());
+        result.put("messageBatchValidationFailures", messageBatchValidationFailures());
         result.put("topicPublishInfoApi", publicApiSurface(TopicPublishInfo.class));
         result.put("topicPublishInfoQueueFilterApi",
             publicApiSurface(TopicPublishInfo.QueueFilter.class));
@@ -488,6 +490,77 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList());
         result.put("declaredPublicFields", fields);
+        return result;
+    }
+
+    private static Map<String, Object> messageBatchInputSemantics() {
+        Map<String, Object> result = new TreeMap<>();
+        MessageBatch nullList = new MessageBatch(null);
+        List<Message> nullElement = Arrays.asList((Message) null);
+        result.put("nullConstructorAccepted", nullList != null);
+        result.put("nullConstructorIteratorFailure", failureType(nullList::iterator));
+        result.put("nullConstructorEncodeFailure", failureType(nullList::encode));
+        result.put("nullElementIteratorReturnsNull",
+            new MessageBatch(nullElement).iterator().next() == null);
+        result.put("nullElementEncodeFailure",
+            failureType(() -> new MessageBatch(nullElement).encode()));
+        result.put("emptyConstructorEncodedLength",
+            new MessageBatch(new ArrayList<>()).encode().length);
+        result.put("nullGenerateFromListFailure",
+            failureType(() -> MessageBatch.generateFromList(null)));
+        result.put("emptyGenerateFromListFailure",
+            failureType(() -> MessageBatch.generateFromList(new ArrayList<>())));
+        result.put("nullElementGenerateFromListFailure",
+            failureType(() -> MessageBatch.generateFromList(nullElement)));
+        return result;
+    }
+
+    private static Map<String, Object> messageBatchValidationFailures() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("empty", failureDetails(() -> MessageBatch.generateFromList(new ArrayList<>())));
+        result.put("mixedTopics", failureDetails(() -> MessageBatch.generateFromList(List.of(
+            new Message("orders", new byte[] {1}), new Message("payments", new byte[] {2})))));
+        result.put("waitStoreMismatch", failureDetails(() -> {
+            Message first = new Message("orders", new byte[] {1});
+            Message second = new Message("orders", new byte[] {2});
+            second.setWaitStoreMsgOK(false);
+            MessageBatch.generateFromList(List.of(first, second));
+        }));
+        result.put("delayed", failureDetails(() -> {
+            Message message = new Message("orders", new byte[] {1});
+            message.setDelayTimeLevel(1);
+            MessageBatch.generateFromList(List.of(message));
+        }));
+        result.put("timerDelayMs", failureDetails(() -> {
+            Message message = new Message("orders", new byte[] {1});
+            message.setDelayTimeMs(1);
+            MessageBatch.generateFromList(List.of(message));
+        }));
+        result.put("timerDelaySec", failureDetails(() -> {
+            Message message = new Message("orders", new byte[] {1});
+            message.setDelayTimeSec(1);
+            MessageBatch.generateFromList(List.of(message));
+        }));
+        result.put("timerDeliverMs", failureDetails(() -> {
+            Message message = new Message("orders", new byte[] {1});
+            message.setDeliverTimeMs(1);
+            MessageBatch.generateFromList(List.of(message));
+        }));
+        result.put("retryTopic", failureDetails(() -> MessageBatch.generateFromList(List.of(
+            new Message("%RETRY%workers", new byte[] {1})))));
+        return result;
+    }
+
+    private static Map<String, Object> failureDetails(Check check) {
+        Map<String, Object> result = new TreeMap<>();
+        try {
+            check.run();
+            result.put("class", "none");
+            result.put("message", "");
+        } catch (Throwable error) {
+            result.put("class", error.getClass().getName());
+            result.put("message", error.getMessage());
+        }
         return result;
     }
 

@@ -117,19 +117,21 @@ pub enum ProducerError {
     NoSendAttempt,
     #[error("retry metadata is not a valid Java integer")]
     InvalidRetryMetadata,
-    #[error("batch must contain at least one message")]
+    #[error("messages must not be null or empty")]
     EmptyBatch,
+    #[error("messages must not be null or empty")]
+    BatchListNull,
     #[error("batch message topic is null")]
     BatchTopicNull,
-    #[error("messages in a batch must have the same topic")]
+    #[error("The topic of the messages in one batch should be the same")]
     BatchTopicMismatch,
-    #[error("messages in a batch must have the same waitStoreMsgOK setting")]
+    #[error("The waitStoreMsgOK of the messages in one batch should the same")]
     BatchWaitStoreMismatch,
-    #[error("delayed messages are not supported in batches")]
+    #[error("Delayed messages are not supported for batching")]
     DelayedBatchMessage,
     #[error("batch message contains an invalid delay value")]
     InvalidBatchDelay,
-    #[error("retry-group messages are not supported in batches")]
+    #[error("Retry Group is not supported for batching")]
     RetryBatchMessage,
     #[error("batch message property encoding exceeds Java's signed-short limit")]
     BatchPropertiesTooLarge,
