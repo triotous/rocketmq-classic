@@ -243,6 +243,27 @@ public final class MessageDecodeFixtures {
         expected.put("nullableFieldsBodyIsNull", nullableFields.getBody() == null);
         expected.put("nullableFieldsWaitStore", nullableFields.isWaitStoreMsgOK());
 
+        byte[] twoArgumentBody = new byte[] {1, 2};
+        Message twoArgumentBodyMessage = new Message("two-argument", twoArgumentBody);
+        expected.put("constructorBodyAliasTwoArguments",
+            twoArgumentBodyMessage.getBody() == twoArgumentBody);
+        twoArgumentBody[0] = 9;
+        expected.put("constructorBodyMutationVisibleForTwoArguments",
+            twoArgumentBodyMessage.getBody()[0] == 9);
+        byte[] tagsBody = new byte[] {3, 4};
+        Message tagsBodyMessage = new Message("with-tags", "green", tagsBody);
+        expected.put("constructorBodyAliasWithTags", tagsBodyMessage.getBody() == tagsBody);
+        byte[] tagsAndKeysBody = new byte[] {5, 6};
+        Message tagsAndKeysBodyMessage =
+            new Message("with-tags-and-keys", "blue", "key", tagsAndKeysBody);
+        expected.put("constructorBodyAliasWithTagsAndKeys",
+            tagsAndKeysBodyMessage.getBody() == tagsAndKeysBody);
+        byte[] fullFieldsBody = new byte[] {7, 8};
+        Message fullFieldsBodyMessage =
+            new Message("with-fields", "yellow", "key", -11, fullFieldsBody, false);
+        expected.put("constructorBodyAliasWithAllFields",
+            fullFieldsBodyMessage.getBody() == fullFieldsBody);
+
         Message nullableSetters = new Message("before", new byte[] {1});
         nullableSetters.setTopic(null);
         nullableSetters.setBody(null);

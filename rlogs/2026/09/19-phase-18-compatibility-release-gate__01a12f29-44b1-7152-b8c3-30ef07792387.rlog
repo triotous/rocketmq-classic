@@ -35,3 +35,9 @@
 - Added the Common `Message.getBody`/`setBody(byte[])` mapping and Java-oracle evidence to `docs/compatibility/PHASE_6_API_CONFIG_MAP.md`; appended the body-alias and full P18-V02 results for `d3532c6e` to `docs/release-checklist.md`.
 - Documentation reports the fixture SHA-256 `efb8b02c5eb9fec2e78459ec63e97144fdf633d964bd4a2d6e276fc60b13e39d`. Broad P18-V01, current-revision Ubuntu/Windows CI results, Phase 19 local Docker/Broker automation, `docs/owner-validation.md`, and pre-publication version/dependency resolution remain open.
 - `git diff --check` passes. The documentation changes are isolated from the implementation commit `d3532c6e`.
+
+## Message constructor body-array alias oracle — 2026-10-16
+
+- Pinned Java source confirms all four public body-bearing `Message` constructors delegate to the six-argument constructor, which assigns `this.body = body`. Added invoked fixture observations for caller-array identity across the two-argument, tags, tags-and-keys, and all-fields constructors, plus post-construction mutation visibility.
+- Recompiled the Java harness, regenerated and verified all 11 message fixtures with the pinned Maven client. `fixtures/messages/records.json` SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- No Java checkout or plan files were modified.
