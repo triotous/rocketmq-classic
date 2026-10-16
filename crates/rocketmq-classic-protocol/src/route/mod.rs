@@ -102,8 +102,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         omit_empty_writer_values(&mut value, true);
     }
     let mut output = String::new();
-    let unquote_numeric_map_keys =
-        !features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
+    let unquote_numeric_map_keys = !features
+        .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
+        && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString);
     write_java_route_json(
         &value,
         None,
@@ -3914,6 +3915,10 @@ mod tests {
                 for (feature, feature_name) in [
                     (JavaJsonWriterFeature::NotWriteEmptyArray, "NotWriteEmptyArray"),
                     (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
+                    (
+                        JavaJsonWriterFeature::WriteNonStringKeyAsString,
+                        "WriteNonStringKeyAsString",
+                    ),
                     (
                         JavaJsonWriterFeature::NotWriteDefaultValue,
                         "NotWriteDefaultValue",

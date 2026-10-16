@@ -7202,6 +7202,10 @@ mod tests {
                         ),
                         (JavaJsonWriterFeature::IgnoreEmpty, "IgnoreEmpty"),
                         (
+                            JavaJsonWriterFeature::WriteNonStringKeyAsString,
+                            "WriteNonStringKeyAsString",
+                        ),
+                        (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
                             "NotWriteDefaultValue",
                         ),
