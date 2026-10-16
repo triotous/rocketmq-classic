@@ -1824,3 +1824,19 @@ Before any publication:
   these mappings. This closes the context framework disposition only; broad
   P18-V01 source/API/input/error/control-flow and reverse-export reconciliation
   remains open.
+
+- P18-V01 RequestResponseFuture nullable latch slice (`310b6cd6`, fixture
+  commit `3be59a09`, 2026-10-16): the pinned Java fixture confirms that a null
+  latch getter returns null, `putResponseMessage` stores its response before
+  throwing `NullPointerException`, and `waitResponseMessage` also throws. Rust
+  uses `Option` and `RequestFutureError`; inbound reply processing leaves the
+  pending table entry in place and returns `SYSTEM_ERROR` after preserving the
+  response. Core's 167 unit tests, Producer request/reply's 3 tests, the facade
+  request/reply's 5 tests, strict Clippy for Core/Producer/facade targets,
+  formatting, diff checks, and pinned Maven `verify` (37 scenarios and fixture
+  drift checks) pass. This closes this latch slice only. Broad P18-V01, a full
+  P18-V02 gate rerun on this code revision, current-revision GitHub Ubuntu /
+  P18-V04 evidence, Phase 19 Docker/Broker automation and scenario execution,
+  `docs/owner-validation.md`, and pre-publication version/registry checks
+  remain incomplete. Owner deployment and production checks remain Phase 19
+  manual validation.
