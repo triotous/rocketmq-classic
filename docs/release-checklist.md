@@ -1791,3 +1791,21 @@ Before any publication:
   open.
 
 - P18-V01 Remoting channel no-deadline write follow-up (`0b873da1`, 2026-10-16): Java 5.5.1 exposes immediate `Channel.writeAndFlush` through the channel supplied to remoting callbacks. Rust `ChannelHandle` now provides `write_and_flush_without_deadline`; `RequestContext::write_and_flush` delegates to it. The local result future reports socket-write completion and does not imply remote receipt. The loopback tests cover deadline and no-deadline channel writes, context channel state/close, shared identity, context-write completion, and the regular processor response. Pinned source: `NettyRequestProcessor.processRequest(ChannelHandlerContext, RemotingCommand)`, `RequestPipeline.execute(ChannelHandlerContext, RemotingCommand)`, and `NettyRemotingAbstract.writeResponse(Channel, ...)`. Focused Remoting all-feature tests, strict all-target/all-feature Remoting Clippy, formatting, and diff checks pass. This closes the no-deadline channel-write capability slice; generic Netty handler-context APIs and the broad bidirectional P18-V01 audit remain open, as do the final-revision full P18-V02 gates, GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and release version/registry checks.
+
+- Current-revision server-free **P18-V02** rerun on source commit `4d49cd7e`
+  (2026-10-16, macOS ARM64): default and all-feature locked workspace tests,
+  strict all-target/all-feature workspace Clippy, format/diff checks, Maven
+  `verify` (37 scenarios and Java/Rust fixture cross-decodes), comparator
+  self-test and 37-scenario manifest validation, 16 race/leak cases × 3,
+  fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations), release
+  examples, offline benchmark compilation, locked Cargo metadata, workspace
+  metadata/license/dependency checks, seven package listings with LICENSE and
+  NOTICE, and the Asia/Taipei Unique ID fixture all pass. Metadata reports 7
+  workspace packages, 215 packages total, and 208 registry packages with
+  license metadata. This closes the server-free P18-V02 rerun on this source
+  revision. Broad P18-V01 and current-revision GitHub Ubuntu/P18-V04 evidence
+  remain open. The latest listed branch CI run is for older commit `cc79eb6e`
+  and failed in the Linux consumer stack-capture test; it is not evidence for
+  `4d49cd7e`. Phase 19 Docker/Broker automation, the owner-validation handoff,
+  and pre-publication version/registry checks remain open; owner-run deployment
+  and production checks remain Phase 19 manual validation.

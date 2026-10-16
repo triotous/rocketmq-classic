@@ -1,0 +1,11 @@
+Phase 18 final-revision server-free gate rerun (2026-10-16 05:49 UTC)
+
+- Tested source revision: `4d49cd7e` (`docs(compat): map channel handle write variants`), macOS ARM64.
+- Passed default and all-feature locked workspace tests; strict all-target/all-feature workspace Clippy; `cargo fmt --all -- --check`; `git diff --check`.
+- Passed the Asia/Taipei Unique ID fixture, differential comparator self-test, and validation of all 37 scenario-manifest entries.
+- Passed pinned Java 5.5.1 `mvn -q -f compat/java-reference/pom.xml verify`, including 37 scenarios, fixture drift checks, and Java/Rust cross-decodes.
+- Passed offline deterministic race/leak smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856 bounded mutations), release example build, and offline benchmark compilation.
+- Passed workspace metadata/license/dependency checks, full locked Cargo metadata (7 workspace packages, 215 total packages, 208 registry packages with license metadata), and all seven `cargo package --workspace --list --locked --allow-dirty` listings with LICENSE/NOTICE.
+- No current-revision GitHub Ubuntu run exists for `4d49cd7e`. The latest listed branch run is for older `cc79eb6e` and failed in `stack::tests::jstack_includes_current_and_other_named_threads` because Linux stack capture found no unused unblocked default-ignore signal.
+- Remaining: broad bidirectional P18-V01 Java/Rust API and settings audit (including generic Netty handler-context disposition); current-revision GitHub Ubuntu/P18-V04 evidence; Phase 19 Docker/Broker runner and scenario execution; `docs/owner-validation.md`; pre-publication version/registry checks. Owner deployment and production evidence remain Phase 19 manual work.
+- Updated `docs/release-checklist.md`; plan files and Java reference source remain unchanged.
