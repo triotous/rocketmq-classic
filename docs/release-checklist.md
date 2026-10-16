@@ -1629,3 +1629,15 @@ Before any publication:
   and all selected integration/doc targets); strict workspace Clippy,
   formatting, and diff checks pass. The full current-tree P18-V02 suite and
   other release gates listed above remain open.
+
+- Current-revision server-free **P18-V02** gate on `479b9a7b` (2026-10-16,
+  macOS arm64): default and all-feature workspace tests, workspace check,
+  strict all-target/all-feature Clippy, Maven verify (37 scenarios and Java/Rust
+  cross-decodes), comparator self-test and manifest validation, 16 deterministic
+  race/leak cases × 3, fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations), release examples, workspace benchmark compilation, locked Cargo
+  metadata/package listings, the Asia/Taipei Unique ID differential, formatting,
+  and diff checks all pass. Broad P18-V01, current GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 Docker/Broker automation, and pre-publication version/registry
+  resolution remain open. Owner-run deployment and production checks remain
+  Phase 19 manual validation.
