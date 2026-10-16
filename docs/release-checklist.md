@@ -2587,3 +2587,21 @@ Before any publication:
   This closes only the no-feature inherited serializer slice. Broad P18-V01,
   the final-revision full-workspace P18-V02 run, current-revision platform CI
   evidence, and Phase 19 local Docker/Broker automation remain open.
+- P18-V01 inherited RemotingSerializable writer-feature inventory (worktree,
+  2026-10-16, pinned Java source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`): the invoked fixture enumerates
+  all 48 `JSONWriter.Feature` values and records feature-specific output for 32
+  representative cases across 15 inherited body DTO types. Twenty-two
+  features changed at least one sampled output; the other 26 made no change
+  in these samples, which does not establish that they are inert for every
+  valid input. The probe explicitly passes a `Feature[]` to resolve the Java
+  instance varargs overload. Pinned offline Maven verify passes all 37
+  scenarios. Fixture SHA-256:
+  `5a10759a1b73504c0476b0d08c0f922ab74c5aa04f41b9203e6bfd8a8a7d2d6c`;
+  Java fixture source SHA-256:
+  `b5bdc4a43c7f28d05ef6b91b546c62e3b48124b683e8440176d419689b3962e7`.
+  This is probe evidence only: Rust has no feature-aware encoder yet, and the
+  P18-V01 serializer API/behavior slice remains open. Broad P18-V01, the
+  final-revision P18-V02 workspace gate, current-revision platform CI evidence,
+  and Phase 19 local Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T210508Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T210508Z.rlog).

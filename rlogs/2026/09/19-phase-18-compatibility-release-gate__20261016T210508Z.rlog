@@ -38,3 +38,41 @@ Code commit: 96756a8e
 - Empty `JSONWriter.Feature[]` is pinned. Non-empty writer-feature behavior remains open for P18-V01.
 - Broad Java/Rust source/API/settings/input/error/flow/reverse-export reconciliation, full-workspace P18-V02 on the final revision, current-revision platform CI evidence, and Phase 19 local Docker/Broker automation remain open.
 - No plan edits, Docker/Broker execution, push, tag, publication, or release action occurred.
+
+## P18-V01 inherited RemotingSerializable writer-feature inventory
+
+Timestamp: 2026-10-16 21:20 UTC
+Pinned Java source commit: `efa1be59d6fc747ad220f036c86030f05f0419f9`
+
+### Findings and changes
+
+- Extended the invoked runtime fixture to enumerate all 48
+  `JSONWriter.Feature` values and record each non-empty feature's output for
+  representative default, null, and populated body values. The fixture has 32
+  feature-probe cases across 15 body DTO types. QueryConsumeTimeSpan records
+  also include UTC and Asia/Taipei projections of the same feature outputs. Twenty-two features changed
+  at least one sampled output; the other 26 did not change these samples, which
+  does not establish that they are inert for all valid inputs.
+- The probe passes `new JSONWriter.Feature[] {feature}` to select the inherited
+  instance varargs overload. It records JSON output or the Java exception type.
+- Fixture SHA-256:
+  `5a10759a1b73504c0476b0d08c0f922ab74c5aa04f41b9203e6bfd8a8a7d2d6c`.
+- `RuntimeLookupFixtures.java` SHA-256:
+  `b5bdc4a43c7f28d05ef6b91b546c62e3b48124b683e8440176d419689b3962e7`.
+- Updated the API crosswalk and release checklist to identify this as probe
+  evidence; no Rust feature-aware encoder was added.
+
+### Validation
+
+- `TZ=UTC mvn -o -q -f compat/java-reference/pom.xml verify` passed all 37
+  scenarios and fixture checks. The run emitted JDK Unsafe deprecation and
+  reflective final-field mutation warnings.
+- `git diff --check` passed after the fixture and documentation updates.
+
+### Status
+
+- Non-empty inherited writer-feature behavior remains an implementation and
+  differential gap under P18-V01. The 26 sampled no-change features require
+  broader input analysis before disposition.
+- Broad P18-V01, final-revision P18-V02, current-revision platform CI evidence,
+  and Phase 19 Docker/Broker automation remain open.
