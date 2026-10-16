@@ -2137,3 +2137,16 @@ Before any publication:
   cross-decodes. Formatting, checksum, and diff checks pass. Fixture SHA-256:
   `59309d6426aa55b398addea84e0e1fdab886bc8daa3388b32c4e27005eae07c5`. This
   closes only the MessageConst declaration slice; broad P18-V01 remains open.
+
+- P18-V01 Common `MessageQueue` declared-surface inventory (`d16f7f19`,
+  2026-10-16): the pinned Java fixture records all three public constructors,
+  all 11 declared public methods (including the compiler bridge
+  `compareTo(Object)`), and no public fields. Rust pins these declarations and
+  maps the stateless construction/copy/comparison forms to `Default`, `Clone`,
+  and `java_compare_to`; existing route differentials cover method behavior.
+  Common `message_decode` passes (24 tests), strict all-target/all-feature
+  Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios,
+  fixture drift, and Java/Rust cross-decodes. Formatting and diff checks pass.
+  Fixture SHA-256: `85feb19197afb046354bb4c88aed4ad1008dcfe235f7bf781817ffa7eb1edd2f`.
+  This closes only the MessageQueue declaration slice; broad P18-V01 remains
+  open.
