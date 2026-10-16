@@ -68,3 +68,21 @@
   checks remain open. Owner-run deployment/live Broker validation remains
   reserved for Phase 19. No plan file, live Broker/Docker, publication, push,
   or tag was changed.
+
+## P18-V01 request/reply completion API reverse-surface correction — 2026-10-16T08:15Z
+
+- Reverse-surface review caught that the preceding implementation added a
+  Java-absent public `PendingReplyCompletion::Cancelled` variant. Replaced it
+  with a private cancellation flag. Public map removal still closes only the
+  lookup sender and waits through the original deadline; explicit cancellation
+  and registry clear retain the existing `receive()` error and
+  `RequestReplyCancelled` mapping. The public enum now keeps its original
+  variants. No Java fixture needed a change.
+- PASS: scoped all-feature Core/Producer/facade tests (168 Core unit, 142
+  Producer unit, facade 5 request/reply tests, all scoped integration and doc
+  targets), strict scoped all-target/all-feature Clippy, `cargo fmt --all --
+  --check`, and `git diff --check`.
+- Updated the Phase 15 matrix and release checklist. This closes the extra
+  completion-variant discrepancy only; broad P18-V01 and final-revision
+  P18-V02 remain open. No plan file, live Broker/Docker, publication, push,
+  or tag was changed.

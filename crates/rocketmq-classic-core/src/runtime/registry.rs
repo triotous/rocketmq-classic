@@ -9,7 +9,10 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, OnceLock, Weak},
+    sync::{
+        Arc, Mutex, OnceLock, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::{
@@ -141,6 +144,7 @@ struct PendingReplyEntry {
     deadline: Instant,
     send_succeeded: bool,
     sender: Option<oneshot::Sender<PendingReplyCompletion>>,
+    cancelled: Option<Arc<AtomicBool>>,
     _admission: Option<OwnedSemaphorePermit>,
     future: Arc<RequestResponseFuture>,
 }
@@ -207,6 +211,7 @@ impl RequestFutureTable {
                         + Duration::from_millis(future.timeout_millis().max(0) as u64),
                     send_succeeded: future.send_request_ok(),
                     sender: None,
+                    cancelled: None,
                     _admission: None,
                     future,
                 },
@@ -372,7 +377,6 @@ pub enum PendingReplyCompletion {
     Reply(MessageExt),
     Timeout { send_succeeded: bool },
     SendFailed(String),
-    Cancelled,
 }
 
 /// Identity-bound operations for the currently pending correlation entry.
@@ -381,6 +385,7 @@ pub struct PendingReplyControl {
     table: RequestFutureTable,
     correlation_id: String,
     owner: Arc<()>,
+    cancelled: Arc<AtomicBool>,
 }
 
 impl PendingReplyControl {
@@ -439,9 +444,8 @@ impl PendingReplyControl {
         let Some(entry) = entry else {
             return false;
         };
-        if let Some(sender) = entry.sender {
-            let _ = sender.send(PendingReplyCompletion::Cancelled);
-        }
+        self.cancelled.store(true, Ordering::Release);
+        drop(entry.sender);
         true
     }
 
@@ -481,6 +485,7 @@ pub struct PendingReplyRequest {
     receiver: oneshot::Receiver<PendingReplyCompletion>,
     receiver_closed: bool,
     deadline: Instant,
+    cancelled: Arc<AtomicBool>,
     control: PendingReplyControl,
     future: Arc<RequestResponseFuture>,
 }
@@ -498,7 +503,12 @@ impl PendingReplyRequest {
         if !self.receiver_closed {
             match (&mut self.receiver).await {
                 Ok(completion) => return Ok(completion),
-                Err(_) => self.receiver_closed = true,
+                Err(error) => {
+                    if self.cancelled.load(Ordering::Acquire) {
+                        return Err(error);
+                    }
+                    self.receiver_closed = true;
+                }
             }
         }
         // Java's RequestResponseFuture waiter owns its timeout independently
@@ -726,9 +736,10 @@ impl GroupRegistry {
                 .collect::<Vec<_>>()
         };
         for entry in pending {
-            if let Some(sender) = entry.sender {
-                let _ = sender.send(PendingReplyCompletion::Cancelled);
+            if let Some(cancelled) = entry.cancelled {
+                cancelled.store(true, Ordering::Release);
             }
+            drop(entry.sender);
         }
         drop(previous);
         Ok(())
@@ -774,6 +785,7 @@ impl GroupRegistry {
             return Err(RuntimeError::RequestReplyAdmissionTimeout);
         }
         let (sender, receiver) = oneshot::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
         let table = RequestFutureTable::shared();
         {
             let entries = self
@@ -808,6 +820,7 @@ impl GroupRegistry {
                     deadline,
                     send_succeeded: false,
                     sender: Some(sender),
+                    cancelled: Some(cancelled.clone()),
                     _admission: Some(admission),
                     future: future.clone(),
                 },
@@ -817,10 +830,12 @@ impl GroupRegistry {
             receiver,
             receiver_closed: false,
             deadline,
+            cancelled: cancelled.clone(),
             control: PendingReplyControl {
                 table,
                 correlation_id: future.correlation_id().to_owned(),
                 owner: lease.identity.clone(),
+                cancelled,
             },
             future,
         })
@@ -1357,10 +1372,7 @@ mod pending_reply_admission_tests {
 
         registry.clear().unwrap();
 
-        assert!(matches!(
-            pending.receive().await.unwrap(),
-            PendingReplyCompletion::Cancelled
-        ));
+        assert!(pending.receive().await.is_err());
         assert!(registry.snapshot().unwrap().producers.is_empty());
     }
 }

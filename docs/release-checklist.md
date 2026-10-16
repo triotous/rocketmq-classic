@@ -1887,7 +1887,8 @@ Before any publication:
   and its own timed wait returns null. Rust now preserves the original
   `PendingReplyRequest` deadline when public table removal, replacement, or
   clear drops the lookup sender; explicit owner cancellation and registry
-  clear return `Cancelled`. Regressions cover removal-to-deadline behavior,
+  clear close the receiver and map to `RequestReplyCancelled` without adding
+  a public completion variant. Regressions cover removal-to-deadline behavior,
   cancellation, and the Java fixture observations. Core/Producer/facade
   all-feature tests pass (168 Core unit tests, 142 Producer unit tests, all
   scoped integration and doc targets); strict all-target/all-feature Clippy,
@@ -1895,4 +1896,15 @@ Before any publication:
   fixture drift and Java/Rust cross-decodes) pass. Fixture SHA-256:
   `b5c6e39d24e197d678fd214418f4f18b4fabb9f63ef27e74d3e152c7616ef5ef`.
   This closes the table-removal waiter slice only; broad P18-V01 and final
+  workspace P18-V02 remain open.
+
+- P18-V01 request/reply completion API reverse-surface correction
+  (`2026-10-16`): the first implementation added a `Cancelled` variant to the
+  public `PendingReplyCompletion` enum. The pinned Java API has no such public
+  completion, so cancellation now uses private state and preserves the
+  existing receiver-error mapping to `RequestReplyCancelled`; the public enum
+  shape is unchanged. Core/Producer/facade all-feature tests pass (168 Core
+  unit tests, 142 Producer unit tests, all scoped integration and doc targets),
+  as do strict scoped all-target/all-feature Clippy, format and diff checks.
+  This closes the extra-variant discrepancy only; broad P18-V01 and final
   workspace P18-V02 remain open.
