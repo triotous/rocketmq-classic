@@ -3,9 +3,9 @@ use rocketmq_classic::{
     EndTransactionHook, Message, MessageBatch, NullablePublishInfoQueueFilters,
     OrderlyListenerFuture, PopResult, PopStatus, Producer, ProducerConfig,
     ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter,
-    QueryResult, TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
-    TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
-    TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
+    QueryResult, SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
+    TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
 
 fn assert_public_type<T: ?Sized>() {}
@@ -23,6 +23,14 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_eq!(batch.topic(), "orders");
     assert!(!batch.encode().unwrap().is_empty());
     assert_public_type::<MessageBatch>();
+
+    let shared_properties =
+        SharedMessageProperties::from_properties(std::collections::BTreeMap::new());
+    let mut message = Message::new("shared-properties", b"body".to_vec());
+    message.set_properties_shared(Some(shared_properties.clone()));
+    shared_properties.insert(Some("key".to_owned()), Some("value".to_owned()));
+    assert_eq!(message.get_property("key").as_deref(), Some("value"));
+    assert_public_type::<SharedMessageProperties>();
 
     assert_public_type::<ConsumerServiceState>();
     assert_public_type::<OrderlyListenerFuture>();

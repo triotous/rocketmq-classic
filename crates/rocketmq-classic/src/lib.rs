@@ -1,4 +1,6 @@
-pub use rocketmq_classic_common::message::{Message, MessageExt, MessageQueue};
+pub use rocketmq_classic_common::message::{
+    Message, MessageExt, MessageQueue, SharedMessageProperties,
+};
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_common::topic::{TopicValidator, TopicValidatorError, ValidateResult};
 pub use rocketmq_classic_consumer::config::DEFAULT_CONSUMER_GROUP;

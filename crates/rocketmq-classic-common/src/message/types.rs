@@ -27,6 +27,166 @@ struct MessagePropertyStorage {
     null_key_value: Option<Option<String>>,
 }
 
+/// A cloneable, mutable handle to one message property map.
+///
+/// Java's `MessageAccessor.setProperties` retains the supplied `Map` object,
+/// so updates through either the caller's map or `Message.getProperties()` are
+/// visible through the other reference. This Rust handle preserves that
+/// behavior while keeping property access synchronized and ownership-safe.
+#[derive(Clone, Default)]
+pub struct SharedMessageProperties {
+    storage: Arc<RwLock<MessagePropertyStorage>>,
+}
+
+impl SharedMessageProperties {
+    /// Creates a handle to a present, empty property map.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a shared handle initialized from non-null string entries.
+    pub fn from_properties(properties: MessageProperties) -> Self {
+        Self {
+            storage: Arc::new(RwLock::new(MessagePropertyStorage {
+                values: properties,
+                ..MessagePropertyStorage::default()
+            })),
+        }
+    }
+
+    /// Creates a shared handle that can retain Java-style null keys and values.
+    pub fn from_nullable_properties(properties: NullableMessageProperties) -> Self {
+        let handle = Self::new();
+        handle.extend(properties);
+        handle
+    }
+
+    /// Returns the value for a key, preserving the distinction between an
+    /// absent entry and an entry whose value is null.
+    pub fn get(&self, key: Option<&str>) -> Option<Option<String>> {
+        let properties = read_message_state(&self.storage);
+        match key {
+            Some(key) => properties
+                .values
+                .get(key)
+                .cloned()
+                .map(Some)
+                .or_else(|| properties.null_values.contains(key).then_some(None)),
+            None => properties.null_key_value.clone(),
+        }
+    }
+
+    /// Inserts or replaces a Java-style map entry and returns its old value.
+    pub fn insert(&self, key: Option<String>, value: Option<String>) -> Option<Option<String>> {
+        let mut properties = write_message_state(&self.storage);
+        match key {
+            Some(key) => {
+                let previous = properties
+                    .values
+                    .remove(&key)
+                    .map(Some)
+                    .or_else(|| properties.null_values.remove(&key).then_some(None));
+                match value {
+                    Some(value) => {
+                        properties.values.insert(key, value);
+                    }
+                    None => {
+                        properties.null_values.insert(key);
+                    }
+                }
+                previous
+            }
+            None => properties.null_key_value.replace(value),
+        }
+    }
+
+    /// Returns whether the map contains the supplied key, including null keys.
+    pub fn contains_key(&self, key: Option<&str>) -> bool {
+        let properties = read_message_state(&self.storage);
+        match key {
+            Some(key) => {
+                properties.values.contains_key(key) || properties.null_values.contains(key)
+            }
+            None => properties.null_key_value.is_some(),
+        }
+    }
+
+    /// Removes an entry and returns its old value, if present.
+    pub fn remove(&self, key: Option<&str>) -> Option<Option<String>> {
+        let mut properties = write_message_state(&self.storage);
+        match key {
+            Some(key) => properties
+                .values
+                .remove(key)
+                .map(Some)
+                .or_else(|| properties.null_values.remove(key).then_some(None)),
+            None => properties.null_key_value.take(),
+        }
+    }
+
+    /// Removes all entries without detaching this handle from attached messages.
+    pub fn clear(&self) {
+        *write_message_state(&self.storage) = MessagePropertyStorage::default();
+    }
+
+    /// Returns the number of entries, including null keys and values.
+    pub fn len(&self) -> usize {
+        let properties = read_message_state(&self.storage);
+        properties.values.len()
+            + properties.null_values.len()
+            + usize::from(properties.null_key_value.is_some())
+    }
+
+    /// Returns true when the map has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Adds or replaces entries from an owned set of Java-style map entries.
+    pub fn extend<I>(&self, entries: I)
+    where
+        I: IntoIterator<Item = (Option<String>, Option<String>)>,
+    {
+        for (key, value) in entries {
+            self.insert(key, value);
+        }
+    }
+
+    /// Returns an owned snapshot of all entries, including null keys/values.
+    pub fn snapshot(&self) -> NullableMessageProperties {
+        let properties = read_message_state(&self.storage);
+        properties
+            .values
+            .iter()
+            .map(|(key, value)| (Some(key.clone()), Some(value.clone())))
+            .chain(
+                properties
+                    .null_values
+                    .iter()
+                    .filter(|key| !properties.values.contains_key(*key))
+                    .map(|key| (Some(key.clone()), None)),
+            )
+            .chain(
+                properties
+                    .null_key_value
+                    .as_ref()
+                    .map(|value| (None, value.clone())),
+            )
+            .collect()
+    }
+
+    /// Iterates over an owned snapshot so the map lock is not held by the iterator.
+    pub fn iter(&self) -> impl Iterator<Item = (Option<String>, Option<String>)> {
+        self.snapshot().into_iter()
+    }
+}
+
+impl std::fmt::Debug for SharedMessageProperties {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_map().entries(self.snapshot()).finish()
+    }
+}
+
 struct MessageBodyReadView<'a>(Option<RwLockReadGuard<'a, Vec<u8>>>);
 
 impl Deref for MessageBodyReadView<'_> {
@@ -666,6 +826,24 @@ impl Message {
         self.properties_read_initialized
             .store(false, AtomicOrdering::Relaxed);
     }
+
+    /// Replaces the property map with a shared handle, matching Java's live
+    /// `MessageAccessor.setProperties` map-reference behavior.
+    pub fn set_properties_shared(&mut self, properties: Option<SharedMessageProperties>) {
+        self.properties = properties.map(|properties| properties.storage);
+        self.properties_read_initialized
+            .store(false, AtomicOrdering::Relaxed);
+    }
+
+    /// Returns a cloneable handle to the live property map when it is present.
+    pub fn shared_properties(&self) -> Option<SharedMessageProperties> {
+        self.properties
+            .as_ref()
+            .map(|storage| SharedMessageProperties {
+                storage: storage.clone(),
+            })
+    }
+
     /// Replace the property map while preserving Java `HashMap` null keys and
     /// values. `None` represents a null map; `Some(empty)` represents an empty
     /// map.

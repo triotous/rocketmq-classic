@@ -2390,6 +2390,63 @@ fn message_public_api_matches_java_551_fixture() {
     assert_eq!(replaced_properties.get_properties(), None);
     assert_eq!(expected["setPropertiesNullMapIsNull"], true);
 
+    let caller_properties = rocketmq_classic_common::message::SharedMessageProperties::new();
+    caller_properties.insert(Some("initial".to_owned()), Some("caller".to_owned()));
+    let mut shared_properties_message = Message::new("shared-properties-topic", [1]);
+    shared_properties_message.set_properties_shared(Some(caller_properties.clone()));
+    assert_eq!(
+        shared_properties_message.get_property("initial").as_deref(),
+        Some("caller")
+    );
+    assert_eq!(expected["setPropertiesRetainsCallerMap"], true);
+    caller_properties.insert(
+        Some("caller-mutation".to_owned()),
+        Some("visible-to-message".to_owned()),
+    );
+    assert_eq!(
+        shared_properties_message
+            .get_property("caller-mutation")
+            .as_deref(),
+        expected["setPropertiesCallerMutationVisible"].as_str()
+    );
+    shared_properties_message
+        .shared_properties()
+        .unwrap()
+        .insert(
+            Some("message-mutation".to_owned()),
+            Some("visible-to-caller".to_owned()),
+        );
+    assert_eq!(
+        caller_properties.get(Some("message-mutation")),
+        Some(Some(
+            expected["setPropertiesMessageMutationVisible"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        ))
+    );
+    let nullable_shared_properties =
+        rocketmq_classic_common::message::SharedMessageProperties::from_nullable_properties(
+            std::collections::BTreeMap::from([(None, Some("replacement".to_owned()))]),
+        );
+    let mut nullable_shared_message = Message::default();
+    nullable_shared_message.set_properties_shared(Some(nullable_shared_properties.clone()));
+    assert_eq!(
+        nullable_shared_message
+            .get_nullable_property(None)
+            .as_deref(),
+        expected["setPropertiesNullKeyValue"].as_str()
+    );
+    assert_eq!(expected["setPropertiesNullKeyPresent"], true);
+    assert_eq!(
+        nullable_shared_properties.insert(None, None),
+        Some(Some("replacement".to_owned()))
+    );
+    assert!(nullable_shared_message.has_nullable_property(None));
+    assert_eq!(nullable_shared_message.get_nullable_property(None), None);
+    assert_eq!(nullable_shared_properties.remove(None), Some(None));
+    assert!(!nullable_shared_message.has_nullable_property(None));
+
     assert_eq!(expected["deepCopyPropertiesNullMapIsNull"], true);
     assert_eq!(expected["deepCopyPropertiesReturnsDistinctMap"], true);
     assert_eq!(expected["deepCopyPropertiesPreservesNullKeyAndValue"], true);
