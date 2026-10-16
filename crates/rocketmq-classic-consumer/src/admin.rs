@@ -289,7 +289,7 @@ impl RequestProcessor for ConsumerRunningInfoProcessor {
 
 pub(crate) fn push_running_info_properties(
     config: &crate::push::PushConsumerConfig,
-    runtime: &ClientRuntime,
+    nameserver_address: &str,
     start_timestamp: i64,
     consume_orderly: bool,
     core_pool_size: i32,
@@ -386,7 +386,11 @@ pub(crate) fn push_running_info_properties(
         "clientRebalance".into(),
         config.client_rebalance().to_string(),
     );
-    append_client_running_info_properties(config.client_config(), runtime, &mut properties);
+    append_client_running_info_properties(
+        config.client_config(),
+        nameserver_address,
+        &mut properties,
+    );
     properties.insert("PROP_CONSUME_ORDERLY".into(), consume_orderly.to_string());
     properties.insert(
         "PROP_THREADPOOL_CORE_SIZE".into(),
@@ -459,11 +463,11 @@ pub(crate) fn pull_consumer_running_info_properties(
 
 fn append_client_running_info_properties(
     config: &ClientConfig,
-    runtime: &ClientRuntime,
+    nameserver_address: &str,
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.extend(client_config_running_info_properties(config));
-    append_client_runtime_properties(runtime, properties);
+    properties.insert("PROP_NAMESERVER_ADDR".into(), nameserver_address.to_owned());
 }
 
 fn client_config_running_info_properties(config: &ClientConfig) -> BTreeMap<String, String> {

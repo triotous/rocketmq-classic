@@ -272,6 +272,30 @@ struct StartupServices {
     consumer: Weak<PushConsumer>,
 }
 
+#[derive(Clone)]
+struct RunningInfoRuntimeSnapshot {
+    client_id: String,
+    nameserver_address: String,
+}
+
+impl RunningInfoRuntimeSnapshot {
+    fn from_runtime(runtime: &ClientRuntime) -> Self {
+        let mut nameserver_address = String::new();
+        for address in runtime
+            .remoting()
+            .get_name_server_address_list()
+            .unwrap_or_default()
+        {
+            nameserver_address.push_str(&address);
+            nameserver_address.push(';');
+        }
+        Self {
+            client_id: runtime.client_id().to_owned(),
+            nameserver_address,
+        }
+    }
+}
+
 struct PullAttemptError {
     delay_millis: i64,
     reason: String,
@@ -388,6 +412,7 @@ pub struct PushConsumer {
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
     service_state: RwLock<Option<ConsumerServiceState>>,
+    running_info_runtime_snapshot: RwLock<Option<RunningInfoRuntimeSnapshot>>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
     listener: RwLock<Option<PushMessageListener>>,
     pop_listener: RwLock<Option<PushMessageListener>>,
@@ -465,6 +490,7 @@ impl PushConsumer {
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
+            running_info_runtime_snapshot: RwLock::new(None),
             offset_store: std::sync::Mutex::new(None),
             listener: RwLock::new(None),
             pop_listener: RwLock::new(None),
@@ -1523,19 +1549,26 @@ impl PushConsumer {
     pub async fn consumer_running_info(
         &self,
     ) -> Result<ConsumerRunningInfoBody, PushConsumerError> {
-        let (runtime, offset_store) = match &*self.state.lock().await {
+        let (runtime_snapshot, offset_store) = match &*self.state.lock().await {
             State::Started {
                 runtime,
                 offset_store,
                 ..
-            } => (
-                runtime.upgrade().ok_or(PushConsumerError::NotStarted)?,
-                offset_store.clone(),
-            ),
+            } => {
+                let runtime = runtime.upgrade().ok_or(PushConsumerError::NotStarted)?;
+                let runtime_snapshot = RunningInfoRuntimeSnapshot::from_runtime(&runtime);
+                *write_lock(&self.running_info_runtime_snapshot) = Some(runtime_snapshot.clone());
+                (runtime_snapshot, Some(offset_store.clone()))
+            }
             State::Created => return Err(PushConsumerError::NotStarted),
-            State::Shutdown => return Err(PushConsumerError::Shutdown),
+            State::Shutdown => (
+                read_lock(&self.running_info_runtime_snapshot)
+                    .clone()
+                    .ok_or(PushConsumerError::Shutdown)?,
+                None,
+            ),
         };
-        Ok(self.running_info_body(&runtime, None, Some(offset_store)))
+        Ok(self.running_info_body_with_runtime_snapshot(&runtime_snapshot, None, offset_store))
     }
 
     /// Submits an owner task to the shared runtime's PullMessageService worker.
@@ -1581,9 +1614,19 @@ impl PushConsumer {
         jstack: Option<String>,
         offset_store: Option<Arc<dyn OffsetStore>>,
     ) -> ConsumerRunningInfoBody {
+        let runtime_snapshot = RunningInfoRuntimeSnapshot::from_runtime(runtime);
+        self.running_info_body_with_runtime_snapshot(&runtime_snapshot, jstack, offset_store)
+    }
+
+    fn running_info_body_with_runtime_snapshot(
+        &self,
+        runtime_snapshot: &RunningInfoRuntimeSnapshot,
+        jstack: Option<String>,
+        offset_store: Option<Arc<dyn OffsetStore>>,
+    ) -> ConsumerRunningInfoBody {
         let mut properties = crate::admin::push_running_info_properties(
             &self.config,
-            runtime,
+            &runtime_snapshot.nameserver_address,
             self.consumer_start_timestamp.load(Ordering::Acquire),
             self.consume_orderly.load(Ordering::Acquire),
             self.consume_core_pool_size.load(Ordering::Acquire),
@@ -1611,7 +1654,7 @@ impl PushConsumer {
                     (
                         topic.clone(),
                         self.stats.status(
-                            runtime.client_id(),
+                            &runtime_snapshot.client_id,
                             &self.config.consumer_group().unwrap_or_default(),
                             topic,
                         ),
@@ -3832,6 +3875,8 @@ impl PushConsumer {
             .await;
         match startup {
             Ok(lease) => {
+                *write_lock(&self.running_info_runtime_snapshot) =
+                    Some(RunningInfoRuntimeSnapshot::from_runtime(&runtime));
                 *state = State::Started {
                     runtime: Arc::downgrade(&runtime),
                     _lease: lease,
@@ -5998,6 +6043,10 @@ impl PushConsumer {
                 State::Created | State::Shutdown => unreachable!("state checked before move"),
             }
         };
+        if let Some(runtime) = runtime.as_ref() {
+            *write_lock(&self.running_info_runtime_snapshot) =
+                Some(RunningInfoRuntimeSnapshot::from_runtime(runtime));
+        }
         for process_queue in write_lock(&self.pop_process_queues).values() {
             process_queue.drop_assignment();
         }
@@ -10401,10 +10450,31 @@ mod tests {
         consumer.set_consumer_group(Some("running-info-snapshot".into()));
 
         consumer.shutdown().await.unwrap();
-        assert!(matches!(
-            consumer.consumer_running_info().await,
-            Err(PushConsumerError::Shutdown)
-        ));
+        let shutdown_running_info = consumer.consumer_running_info().await.unwrap();
+        assert_eq!(
+            shutdown_running_info.mq_table.len(),
+            raw_running_info_fixture["rawRunningInfoAfterShutdownQueueCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            shutdown_running_info.mq_pop_table.len(),
+            raw_running_info_fixture["rawRunningInfoAfterShutdownPopQueueCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            shutdown_running_info.status_table.len(),
+            raw_running_info_fixture["rawRunningInfoAfterShutdownStatusCount"]
+                .as_u64()
+                .unwrap() as usize
+        );
+        assert_eq!(
+            shutdown_running_info.properties["PROP_THREADPOOL_CORE_SIZE"],
+            raw_running_info_fixture["rawRunningInfoAfterShutdownCorePoolSize"]
+                .as_str()
+                .unwrap()
+        );
         runtime.shutdown().await.unwrap();
     }
 
