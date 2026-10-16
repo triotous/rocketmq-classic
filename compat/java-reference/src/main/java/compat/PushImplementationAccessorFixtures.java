@@ -406,6 +406,18 @@ public final class PushImplementationAccessorFixtures {
         concurrentConsumer.updateCorePoolSize(8);
         concurrentConsumer.updateCorePoolSize(0);
         result.put("concurrentCorePoolSizeAfterInvalid", concurrentService.getCorePoolSize());
+        concurrentConsumer.setConsumeThreadMax(10);
+        boolean concurrentRaisedMaxUpdateThrowsIllegalArgumentException = false;
+        try {
+            concurrentConsumer.updateCorePoolSize(9);
+        } catch (IllegalArgumentException expected) {
+            concurrentRaisedMaxUpdateThrowsIllegalArgumentException = true;
+        }
+        result.put("concurrentRaisedMaxUpdateThrowsIllegalArgumentException",
+            concurrentRaisedMaxUpdateThrowsIllegalArgumentException);
+        result.put("concurrentCorePoolSizeAfterRaisedMaxFailure", concurrentService.getCorePoolSize());
+        concurrentConsumer.updateCorePoolSize(8);
+        result.put("concurrentCorePoolSizeAtExecutorMaximum", concurrentService.getCorePoolSize());
         concurrentService.shutdown(0);
         concurrentConsumer.updateCorePoolSize(7);
         result.put("concurrentCorePoolSizeAfterShutdownUpdate", concurrentService.getCorePoolSize());
@@ -425,6 +437,18 @@ public final class PushImplementationAccessorFixtures {
         orderlyConsumer.updateCorePoolSize(8);
         orderlyConsumer.updateCorePoolSize(-1);
         result.put("orderlyCorePoolSizeAfterInvalid", orderlyService.getCorePoolSize());
+        orderlyConsumer.setConsumeThreadMax(10);
+        boolean orderlyRaisedMaxUpdateThrowsIllegalArgumentException = false;
+        try {
+            orderlyConsumer.updateCorePoolSize(9);
+        } catch (IllegalArgumentException expected) {
+            orderlyRaisedMaxUpdateThrowsIllegalArgumentException = true;
+        }
+        result.put("orderlyRaisedMaxUpdateThrowsIllegalArgumentException",
+            orderlyRaisedMaxUpdateThrowsIllegalArgumentException);
+        result.put("orderlyCorePoolSizeAfterRaisedMaxFailure", orderlyService.getCorePoolSize());
+        orderlyConsumer.updateCorePoolSize(8);
+        result.put("orderlyCorePoolSizeAtExecutorMaximum", orderlyService.getCorePoolSize());
         orderlyService.shutdown(0);
         orderlyConsumer.updateCorePoolSize(7);
         result.put("orderlyCorePoolSizeAfterShutdownUpdate", orderlyService.getCorePoolSize());

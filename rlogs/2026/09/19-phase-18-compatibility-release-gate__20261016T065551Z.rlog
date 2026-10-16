@@ -4,3 +4,10 @@
 - Extended `PushImplementationAccessorFixtures` to invoke the null-service facade path and both concrete services, checking void return type, valid/invalid updates, and post-shutdown updates. Regenerated `fixtures/consumer/push-implementation-accessor.json`; SHA-256 `ed491b81cc44386ba5644b668fc4bcb0b0da0af67659c86668f7b5fca0ffa265`.
 - PASS: `mvn -q -f compat/java-reference/pom.xml -Dexec.args='push-implementation-accessor-fixture /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/consumer/push-implementation-accessor.json' compile exec:java`; `git diff --check`.
 - Rust facade parity regression and implementation are pending. No plan file, Docker/live Broker, publication, or tag was changed.
+
+## P18-V01 Push updateCorePoolSize live-maximum edge — 2026-10-16T07:06Z
+
+- Continued source-flow review found that the Java facade reads the current `consumeThreadMax`, while each constructed `ThreadPoolExecutor` retains its original maximum. If the facade maximum is raised from 8 to 10, updating to 9 passes the facade guard and throws `IllegalArgumentException`; updating to 8 is accepted because it equals the executor maximum. This applies to both concurrent and orderly services.
+- Extended the invoked Java fixture for both services with that mutation/error boundary and regenerated `fixtures/consumer/push-implementation-accessor.json`; SHA-256 `7cb9248e388ffb283f4b3554364edfc84cd2623ef7ec25a2d38dd638a2f8613d`.
+- PASS: focused Java fixture generation; fixture reports the exception for 9, retained size 6, and accepted size 8 for both services; `git diff --check`.
+- Rust still needs to distinguish the live facade bound from the constructed executor capacity; implementation and differential regression remain in progress.
