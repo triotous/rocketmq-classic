@@ -2557,3 +2557,18 @@ Before any publication:
   this adapter. Broad P18-V01 and the final-revision full-workspace P18-V02
   gate remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T201832Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T201832Z.rlog).
+- P18-V01 CheckClient inherited serialization continuation (2026-10-16, pinned
+  Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`): Rust now
+  exposes inherited compact/pretty JSON, instance/static encode, decode/list
+  decode, `fromJson`, and nullable adapters for `CheckClientRequestBody`. The
+  invoked fixture pins all nine inherited Java signatures and covers default,
+  explicit-null, populated nested subscription data, and Java null utility
+  results including a null list member. Protocol all-feature tests (119 unit
+  tests, integration targets and 42 doctests), strict Protocol Clippy, Maven
+  verify (37 scenarios), formatting and diff checks pass. Empty
+  `JSONWriter.Feature[]` is recorded; non-empty writer features and the broader
+  inherited DTO audit remain open. Pinned Java source SHA-256:
+  `769c533d9d6940c97ffcca009b6b2089a1e2c6eb251b517b9dbb247f5085505a`;
+  fixture SHA-256:
+  `b40aca9ee7eecbcfccb272757fd0f7371f953ffece7634352b0bcd91079d24c0`.
+  The final-revision full-workspace P18-V02 rerun remains open.
