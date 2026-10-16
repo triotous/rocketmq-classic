@@ -107,3 +107,24 @@
   route tests (5) pass. This closes a bounded Remoting method-name/public
   surface slice only; P18-V01 remains open for the full Java/Rust source,
   settings, overload/input/error/flow, inherited API, and reverse-export audit.
+
+# P18-V01 Remoting semaphore helper API slice — 2026-10-16 18:41 UTC
+
+- Pinned Java 5.5.1 exposes `SemaphoreReleaseOnlyOnce(Semaphore)`,
+  `release()`, and `getSemaphore()`, plus two public `ResponseFuture` constructors.
+  The Rust remoting crate now exposes `client::SemaphoreReleaseOnlyOnce` with
+  nullable shared Tokio semaphore input, same-handle retrieval, and once-only
+  release. `ResponseFuture::new` maps the null-helper constructor and
+  `new_with_release_once` maps the helper constructor; the Tokio-only
+  `new_with_permit` is private and guarded by a compile-fail doctest.
+- Added `RemotingApiSurfaceFixtures` and
+  `fixtures/remoting/response-future-api.json`, pinning both Java
+  `ResponseFuture` constructors, all 20 declared methods, the helper
+  constructor/methods, and repeated-release/null/identity outcomes. Fixture
+  SHA-256: `4fc0509fee67637d2e1655a39dfb810ecac19e264289c6634448fa85f38aab4c`.
+- Implementation commit: `978791b3`. Remoting all-feature tests pass (105 unit,
+  8 codec, 1 fuzz, 7 security, 107 transport, 10 doctests); strict Remoting
+  Clippy passes; formatting and diff checks pass. Pinned Maven `verify` passes
+  with 37 scenarios and the reflection fixture. This closes only the helper and
+  constructor slice; broad P18-V01 remains open and full-workspace gates on the
+  eventual final revision are still due.

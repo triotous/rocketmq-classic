@@ -2435,3 +2435,17 @@ Before any publication:
   Java/Rust source, overload/input/error/control-flow, inherited API, and
   cross-crate reverse-export audit remains open. See
   [PHASE_3_REMOTING_INVENTORY.md](compatibility/PHASE_3_REMOTING_INVENTORY.md).
+- P18-V01 Remoting semaphore helper API slice (`978791b3`, 2026-10-16, pinned
+  Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`): added the
+  Rust `client::SemaphoreReleaseOnlyOnce` equivalent for Java's public
+  constructor, `release`, and `getSemaphore`; `ResponseFuture::new` and
+  `new_with_release_once` now map the pinned Java constructor overloads, while
+  the Tokio-only `new_with_permit` remains private under a compile-fail doctest.
+  `fixtures/remoting/response-future-api.json` pins both Java constructor/method
+  inventories and release/null/identity behavior (SHA-256
+  `4fc0509fee67637d2e1655a39dfb810ecac19e264289c6634448fa85f38aab4c`). The
+  Remoting all-feature suite passes (105 unit, 8 codec, 1 fuzz, 7 security,
+  107 transport, and 10 doctests), as do strict Remoting Clippy, Maven verify
+  (37 scenarios and the new reflection fixture), formatting, and diff checks.
+  This closes the helper and constructor slice only; broad P18-V01 and the
+  final-revision workspace gates remain open.
