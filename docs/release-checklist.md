@@ -2320,3 +2320,16 @@ Before any publication:
   Ubuntu/Windows CI evidence, Phase 19 Docker/Broker automation,
   `docs/owner-validation.md`, and pre-publication version/dependency resolution
   remain open.
+- P18-V01 Remoting request-context capability disposition (`b03d7fe9`,
+  2026-10-16, pinned Java source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  `NettyRequestProcessor` declares `processRequest(ChannelHandlerContext,
+  RemotingCommand)` and default `rejectRequest()`. Rust maps those operations
+  to the shared identity-preserving `RequestContext` and `reject_request()`;
+  generic allocator, handler propagation, arbitrary-object write, promise, and
+  raw Netty APIs remain framework-specific under the Rust/Tokio API contract.
+  The Phase 3 source/call-site mapping and Common API map now record this
+  disposition. Remoting all-feature `p18_` tests pass (11), including context
+  identity and no-deadline channel writes; processor executor/rejection and
+  pipeline-order regressions pass (1 each). This closes the Netty context
+  capability question only; processor error-remark formatting and broad
+  P18-V01 reconciliation remain open.

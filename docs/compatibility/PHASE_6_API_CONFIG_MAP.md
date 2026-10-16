@@ -1102,9 +1102,19 @@ The pinned public API scan used `javap -public` on `PullResult`, `PullResultExt`
 | --- | --- |
 | `NettyEventType.values()` / `valueOf(String)` / inherited enum methods | `client::NettyEventType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java names, declaration order, and lookup failures |
 | `NettyEvent.getType()` | Native channel event queue stores the public `NettyEventType` directly; listener callbacks remain event-specific and carry the remote address |
-| `NettyEvent.getChannel()` | `ChannelEvent` and listener callbacks carry an identity-preserving `ChannelHandle` with address, generation, state, close, and write capabilities. This maps Rust-native channel operations without exposing a Netty object or raw Tokio socket; the broader Netty method surface remains under P18-V01 review, separate from enum parity |
+| `NettyEvent.getChannel()` | `ChannelEvent` and listener callbacks carry an identity-preserving `ChannelHandle` with address, generation, state, close, and write capabilities. This maps the RocketMQ channel operations without exposing a Netty object or raw Tokio socket; generic Netty methods remain framework-specific. The request-processor context disposition is recorded below. |
 
 The pinned Java fixture invokes all five constants, defensive `values()` copies, and null/unknown/case-mismatched name lookups; the native differential checks 12 outcomes. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md).
+
+## Remoting public API: request processor context
+
+| Pinned Java 5.5.1 API | Rust counterpart / disposition |
+| --- | --- |
+| `NettyRequestProcessor.processRequest(ChannelHandlerContext, RemotingCommand)` | `RequestProcessor::process_with_request_context(&RequestContext, RemotingCommand)`; the same channel-identity-preserving context is passed through request-pipeline stages and the processor. Legacy address-only processing adapts through `process_with_context`. |
+| `NettyRequestProcessor.rejectRequest()` (default `false`) | `RequestProcessor::reject_request()` (default `false`); `RequestProcessorRegistration` selects an optional per-code Rust executor, with the runtime public executor as its default. |
+| `ChannelHandlerContext` operations used by RocketMQ request dispatch | Rust `RequestContext` and `ChannelHandle` expose peer address, channel identity/state, close, and typed `RemotingCommand` writes with or without an operation deadline. The remaining allocator, handler propagation, arbitrary-object writes, promise, and raw Netty channel APIs belong to Netty; Rust uses Tokio and does not claim to recreate that framework surface. |
+
+Pinned source: `remoting/.../NettyRequestProcessor.java` and `NettyRemotingAbstract.buildProcessRequestHandler` at Java commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. Rust coverage: `p18_request_context_exposes_channel_state_and_closes_its_channel`, `p18_request_context_preserves_channel_identity_through_pipeline_and_processor`, `p18_channel_handle_writes_commands_and_closes_its_connection`, `p3_processor_specific_and_default_executors_route_or_reject_tasks`, and `p3_request_pipeline_pipe_runs_new_stage_before_existing_stage`. The separate processor exception-remark formatting difference remains recorded in the Phase 3 inventory; this mapping closes the RocketMQ request-context capability review only.
 
 ## Remoting request source enum API: RequestSource
 

@@ -61,3 +61,10 @@
 - Updated the Phase 6 API/config map with the four body-bearing Java `Message` constructor aliases and linked the invoked fixture SHA-256 `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
 - Appended the constructor alias implementation and current-revision server-free P18-V02 results for code revision `b03d7fe9` to `docs/release-checklist.md`; retained the distinction between completed server-free gates and remaining P18-V01, CI, Phase 19 automation, owner-handoff, and release-preflight work.
 - `git diff --check` passes. Documentation changes are isolated from the implementation commits; no plan or Java checkout files were changed.
+
+## Remoting request-context API disposition — 2026-10-16
+
+- Read the pinned `NettyRequestProcessor` declaration and `NettyRemotingAbstract` request dispatch at Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. The RocketMQ interface declares `processRequest(ChannelHandlerContext, RemotingCommand)` plus default `rejectRequest()`; the Rust request processor maps these through the shared `RequestContext` and `reject_request()`.
+- The RocketMQ dispatch contract's peer/channel-state, close, and typed-command write operations map to Rust/Tokio APIs. Generic Netty allocator, handler propagation, arbitrary-object write, promise, and raw-channel operations are framework-specific and are not reimplemented. The separate exception-remark formatting mismatch remains open.
+- Updated the Phase 6 API map and `KNOWN_DIFFERENCES.md` to record the source-backed disposition; appended the bounded result and focused test evidence to the release checklist.
+- PASS: `cargo test -p rocketmq-classic-remoting --all-features --locked p18_` (11 tests); executor/rejection and pipeline-order regressions (1 each). No Java checkout or plan files were modified.
