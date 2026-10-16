@@ -1,6 +1,7 @@
 package compat;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -118,6 +119,9 @@ public final class RuntimeLookupFixtures {
         fixture.put("lockBatchResponseBodyCases", lockBatchResponseBodyCases());
         fixture.put("batchAckBodyInputCases", batchAckBodyInputCases());
         fixture.put("batchAckApiCase", batchAckApiCase());
+        fixture.put("batchAckInheritedSerializationCases", batchAckInheritedSerializationCases());
+        fixture.put("batchAckInheritedSerializationNullUtilities",
+            batchAckInheritedSerializationNullUtilities());
         fixture.put("batchAckBitSetCapacityCase", batchAckBitSetCapacityCase());
         fixture.put("runtimeScheduledTaskCases", runtimeScheduledTaskCases());
         fixture.put("runtimeNullBrokerLookupRpcTopics", runtimeNullBrokerLookupRpcTopics());
@@ -2302,6 +2306,18 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.BatchAck ack =
             new org.apache.rocketmq.remoting.protocol.body.BatchAck();
         Map<String, Object> item = new TreeMap<>();
+        item.put("batchAckPublicConstructors", publicConstructorSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
+        item.put("batchAckDeclaredPublicMethods", declaredPublicMethodSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
+        item.put("batchAckCallablePublicMethods", callablePublicMethodSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
+        item.put("bodyPublicConstructors", publicConstructorSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
+        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
+        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("consumerGroup", ack.getConsumerGroup());
         defaults.put("topic", ack.getTopic());
@@ -2554,6 +2570,120 @@ public final class RuntimeLookupFixtures {
         body.setAcks(null);
         item.put("bodyNullAcks", body.getAcks() == null);
         return item;
+    }
+
+    private static List<Object> batchAckInheritedSerializationCases() {
+        String[][] inputs = {
+            {"default", "{}"},
+            {"explicit-null", "{\"brokerName\":null,\"acks\":null}"},
+            {"populated", "{\"brokerName\":\"broker-a\",\"acks\":[null,{"
+                + "\"consumerGroup\":\"workers\",\"topic\":\"orders\",\"retry\":\"0\","
+                + "\"startOffset\":100,\"queueId\":1,\"reviveQueueId\":2,"
+                + "\"popTime\":10,\"invisibleTime\":20,\"bitSet\":\"BQ==\"}]}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] input : inputs) {
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody value =
+                org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.decode(
+                    input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class);
+            String instanceJson = value.toJson();
+            byte[] instanceBytes = value.encode();
+            List<org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody> decodedList =
+                org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.decodeList(
+                    com.alibaba.fastjson2.JSON.toJSONBytes(java.util.Collections.singletonList(value)),
+                    org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("id", input[0]);
+            item.put("rawInput", input[1]);
+            item.put("instanceJson", instanceJson);
+            item.put("instancePrettyJson", value.toJson(true));
+            item.put("staticJson",
+                org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, false));
+            item.put("staticPrettyJson",
+                org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, true));
+            item.put("instanceEncodedJson",
+                new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8));
+            item.put("staticEncodedJson", new String(
+                org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(value),
+                java.nio.charset.StandardCharsets.UTF_8));
+            item.put("featureEncodedJson", new String(value.encode(
+                new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+            item.put("decodedJson",
+                org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.decode(
+                    instanceBytes,
+                    org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class).toJson());
+            item.put("fromJsonJson",
+                org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.fromJson(
+                    instanceJson,
+                    org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class).toJson());
+            item.put("decodedListJson", decodedList.get(0).toJson());
+            item.put("decodedListCount", decodedList.size());
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> batchAckInheritedSerializationNullUtilities() {
+        Class<org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody> type =
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class;
+        byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("staticEncodeNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode((Object) null) == null);
+        item.put("staticToJsonNull", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(null, false));
+        item.put("decodeNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(null, type) == null);
+        item.put("decodeJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(jsonNull, type) == null);
+        item.put("fromJsonNullInputReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(null, type) == null);
+        item.put("fromJsonJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson("null", type) == null);
+        item.put("decodeListNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, type) == null);
+        item.put("decodeListJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, type) == null);
+        List<org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody> nullMemberList =
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+                "[null,{}]".getBytes(java.nio.charset.StandardCharsets.UTF_8), type);
+        item.put("decodeListNullMemberCount", nullMemberList.size());
+        item.put("decodeListPreservesNullMember", nullMemberList.get(0) == null);
+        return item;
+    }
+
+    private static List<String> publicConstructorSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(constructor -> type.getName() + "(" + Arrays.stream(constructor.getParameterTypes())
+                .map(Class::getName).collect(java.util.stream.Collectors.joining(",")) + ")")
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static List<String> declaredPublicMethodSignatures(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(RuntimeLookupFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static List<String> callablePublicMethodSignatures(Class<?> type) {
+        return Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(RuntimeLookupFixtures::methodSignature)
+            .distinct()
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getName() + " " + method.getDeclaringClass().getName() + "."
+            + method.getName() + "(" + Arrays.stream(method.getParameterTypes())
+            .map(Class::getName)
+            .collect(java.util.stream.Collectors.joining(",")) + ")";
     }
 
     private static Map<String, Object> batchAckBitSetCapacityCase() {

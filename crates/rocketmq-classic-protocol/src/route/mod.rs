@@ -72,7 +72,7 @@ where
     serde_fastjson::serialize_nullable_long_string_map(&snapshot, serializer)
 }
 
-fn java_route_json<T: Serialize>(
+pub(crate) fn java_fastjson_json<T: Serialize>(
     value: &T,
     pretty_format: bool,
 ) -> Result<String, serde_json::Error> {
@@ -1560,7 +1560,7 @@ impl TopicQueueMappingInfo {
     /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
     /// Bean fields are key-sorted and integer map keys remain unquoted as in Fastjson2.
     pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
-        java_route_json(self, pretty_format)
+        java_fastjson_json(self, pretty_format)
     }
 
     /// Encodes the inherited Java `RemotingSerializable.encode()` UTF-8 bytes.
@@ -2633,7 +2633,7 @@ impl TopicRouteData {
     /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
     /// Bean fields are key-sorted and integer map keys remain unquoted as in Fastjson2.
     pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
-        java_route_json(self, pretty_format)
+        java_fastjson_json(self, pretty_format)
     }
 
     /// Encodes the inherited Java `RemotingSerializable.encode()` UTF-8 bytes.

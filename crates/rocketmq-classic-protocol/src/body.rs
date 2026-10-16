@@ -2492,6 +2492,66 @@ impl<'de> Deserialize<'de> for BatchAckMessageRequestBody {
 }
 
 impl BatchAckMessageRequestBody {
+    /// Encodes the inherited Java static encode(Object) form, preserving its null result.
+    pub fn java_encode_optional(
+        value: Option<&Self>,
+    ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+        value.map(Self::java_encode).transpose()
+    }
+
+    /// Encodes the inherited Java static toJson(Object, boolean) form.
+    pub fn java_to_json_optional(
+        value: Option<&Self>,
+        pretty_format: bool,
+    ) -> Result<String, serde_json::Error> {
+        value.map_or_else(
+            || Ok("null".to_owned()),
+            |value| value.java_to_json(pretty_format),
+        )
+    }
+
+    /// Encodes the inherited Java RemotingSerializable.toJson(boolean) form.
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        crate::route::java_fastjson_json(self, pretty_format)
+    }
+
+    /// Encodes the inherited Java RemotingSerializable.encode() UTF-8 bytes.
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    /// Decodes the inherited Java RemotingSerializable.decode form.
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes the nullable inherited Java utility, including null bytes and a JSON null root.
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice_nullable(data)
+    }
+
+    /// Decodes the inherited Java RemotingSerializable.decodeList form.
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes a nullable Java list, preserving null roots and members.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        serde_fastjson::from_fastjson_list_nullable(data)
+    }
+
+    /// Decodes the inherited Java RemotingSerializable.fromJson form.
+    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_str(json)
+    }
+
+    /// Decodes the nullable inherited Java fromJson utility form.
+    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_str_nullable(json)
+    }
+
     pub fn get_broker_name(&self) -> Option<&str> {
         self.broker_name.as_deref()
     }
@@ -4535,9 +4595,9 @@ mod tests {
         let cases = fixture["batchAckBodyInputCases"].as_array().unwrap();
         assert_eq!(cases.len(), 111);
         for case in cases {
-            let decoded = serde_json::from_str::<Option<BatchAckMessageRequestBody>>(
-                case["rawInput"].as_str().unwrap(),
-            );
+            let decoded = BatchAckMessageRequestBody::java_decode_nullable(Some(
+                case["rawInput"].as_str().unwrap().as_bytes(),
+            ));
             let java_accepts = case["outcome"] == "ACCEPTED";
             assert_eq!(
                 decoded.is_ok(),
@@ -5008,6 +5068,225 @@ mod tests {
         body.set_acks(None);
         assert!(body.get_acks().is_none());
         assert_eq!(case["bodyNullAcks"], true);
+    }
+
+    #[test]
+    fn batch_ack_inherited_remoting_serialization_matches_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let api = &fixture["batchAckApiCase"];
+        assert_eq!(
+            api["batchAckPublicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.BatchAck()"])
+        );
+        assert_eq!(
+            api["batchAckDeclaredPublicMethods"]
+                .as_array()
+                .unwrap()
+                .len(),
+            19
+        );
+        assert_eq!(
+            api["batchAckDeclaredPublicMethods"],
+            api["batchAckCallablePublicMethods"]
+        );
+        assert_eq!(
+            api["bodyPublicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody()"])
+        );
+        assert_eq!(
+            api["bodyDeclaredPublicMethods"].as_array().unwrap().len(),
+            4
+        );
+        assert_eq!(
+            api["bodyCallablePublicMethods"].as_array().unwrap().len(),
+            13
+        );
+
+        let method_names = |key: &str| {
+            let mut names = api[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|signature| {
+                    signature
+                        .as_str()
+                        .unwrap()
+                        .split_once('(')
+                        .unwrap()
+                        .0
+                        .rsplit_once('.')
+                        .unwrap()
+                        .1
+                        .to_owned()
+                })
+                .collect::<Vec<_>>();
+            names.sort();
+            names.dedup();
+            names
+        };
+        assert_eq!(
+            method_names("batchAckDeclaredPublicMethods"),
+            [
+                "getBitSet",
+                "getConsumerGroup",
+                "getInvisibleTime",
+                "getPopTime",
+                "getQueueId",
+                "getRetry",
+                "getReviveQueueId",
+                "getStartOffset",
+                "getTopic",
+                "setBitSet",
+                "setConsumerGroup",
+                "setInvisibleTime",
+                "setPopTime",
+                "setQueueId",
+                "setRetry",
+                "setReviveQueueId",
+                "setStartOffset",
+                "setTopic",
+                "toString",
+            ]
+        );
+        assert_eq!(
+            method_names("bodyDeclaredPublicMethods"),
+            ["getAcks", "getBrokerName", "setAcks", "setBrokerName"]
+        );
+        assert_eq!(
+            method_names("bodyCallablePublicMethods"),
+            [
+                "decode",
+                "decodeList",
+                "encode",
+                "fromJson",
+                "getAcks",
+                "getBrokerName",
+                "setAcks",
+                "setBrokerName",
+                "toJson",
+            ]
+        );
+
+        for case in fixture["batchAckInheritedSerializationCases"]
+            .as_array()
+            .unwrap()
+        {
+            let raw_input = case["rawInput"].as_str().unwrap();
+            let value = BatchAckMessageRequestBody::java_decode(raw_input.as_bytes()).unwrap();
+            let compact = value.java_to_json(false).unwrap();
+            let encoded = value.java_encode().unwrap();
+            assert_eq!(
+                BatchAckMessageRequestBody::java_to_json_optional(Some(&value), false).unwrap(),
+                compact
+            );
+            assert_eq!(
+                BatchAckMessageRequestBody::java_encode_optional(Some(&value)).unwrap(),
+                Some(encoded.clone())
+            );
+            assert_eq!(
+                compact, case["instanceJson"],
+                "{} instance JSON",
+                case["id"]
+            );
+            assert_eq!(compact, case["staticJson"], "{} static JSON", case["id"]);
+            assert_eq!(
+                value.java_to_json(true).unwrap(),
+                case["instancePrettyJson"],
+                "{} pretty JSON",
+                case["id"]
+            );
+            assert_eq!(
+                value.java_to_json(true).unwrap(),
+                case["staticPrettyJson"],
+                "{} static pretty JSON",
+                case["id"]
+            );
+            assert_eq!(
+                encoded,
+                case["instanceEncodedJson"].as_str().unwrap().as_bytes()
+            );
+            assert_eq!(
+                encoded,
+                case["staticEncodedJson"].as_str().unwrap().as_bytes()
+            );
+            assert_eq!(
+                encoded,
+                case["featureEncodedJson"].as_str().unwrap().as_bytes()
+            );
+
+            let decoded = BatchAckMessageRequestBody::java_decode(&encoded).unwrap();
+            let from_json = BatchAckMessageRequestBody::java_from_json(&compact).unwrap();
+            let list =
+                BatchAckMessageRequestBody::java_decode_list(format!("[{compact}]").as_bytes())
+                    .unwrap();
+            assert_eq!(decoded.java_to_json(false).unwrap(), case["decodedJson"]);
+            assert_eq!(from_json.java_to_json(false).unwrap(), case["fromJsonJson"]);
+            assert_eq!(
+                list.len(),
+                case["decodedListCount"].as_u64().unwrap() as usize
+            );
+            assert_eq!(
+                list[0].java_to_json(false).unwrap(),
+                case["decodedListJson"],
+                "{} list decode",
+                case["id"]
+            );
+        }
+
+        let nulls = &fixture["batchAckInheritedSerializationNullUtilities"];
+        assert_eq!(nulls["staticEncodeNullReturnsNull"], true);
+        assert_eq!(nulls["staticToJsonNull"], "null");
+        assert_eq!(
+            BatchAckMessageRequestBody::java_encode_optional(None).unwrap(),
+            None
+        );
+        assert_eq!(
+            BatchAckMessageRequestBody::java_to_json_optional(None, false).unwrap(),
+            nulls["staticToJsonNull"]
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_decode_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_decode_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_from_json_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_decode_list_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            BatchAckMessageRequestBody::java_decode_list_nullable(Some(b"null"))
+                .unwrap()
+                .is_none()
+        );
+        let null_members =
+            BatchAckMessageRequestBody::java_decode_list_nullable(Some(b"[null,{}]")).unwrap();
+        assert_eq!(null_members.as_ref().map(Vec::len), Some(2));
+        assert!(null_members.unwrap()[0].is_none());
+        assert_eq!(nulls["decodeNullBytesReturnsNull"], true);
+        assert_eq!(nulls["decodeJsonNullReturnsNull"], true);
+        assert_eq!(nulls["fromJsonNullInputReturnsNull"], true);
+        assert_eq!(nulls["fromJsonJsonNullReturnsNull"], true);
+        assert_eq!(nulls["decodeListNullBytesReturnsNull"], true);
+        assert_eq!(nulls["decodeListJsonNullReturnsNull"], true);
+        assert_eq!(nulls["decodeListNullMemberCount"], 2);
+        assert_eq!(nulls["decodeListPreservesNullMember"], true);
     }
 
     #[test]
