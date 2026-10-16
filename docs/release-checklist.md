@@ -1592,6 +1592,23 @@ Before any publication:
   pre-publication version/registry resolution remain open. Owner-run deployment
   and production checks remain Phase 19 manual validation.
 
+- P18-V01 Remoting close-socket property-source follow-up (`280bcfe0`,
+  2026-10-16): the pinned Java fixture now sets
+  `com.rocketmq.remoting.client.closeSocketIfTimeout=false` and records the
+  resulting `NettyClientConfig` value. Rust reads the same process environment
+  key on first `ClientConfig::default()` and matches Java's case-insensitive
+  `Boolean.parseBoolean` behavior. The isolated subprocess test checks this
+  alongside the semaphore properties. Remoting all-feature tests pass (99
+  unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, 8 doctests);
+  strict all-target/all-feature Remoting Clippy, Maven verify (37 scenarios,
+  fixture drift, and Java/Rust cross-decodes), formatting, and diff checks pass.
+  This closes this property-source slice only. Other `NettySystemConfig`
+  default seeds and broad P18-V01 remain open, as do final-revision
+  full-workspace P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 local Docker/Broker automation, and pre-publication version/registry
+  resolution. Owner-run deployment and production checks remain Phase 19
+  manual validation.
+
 - P18-V01 request/reply helper behavior fixture (2026-10-16): the invoked
   Java 5.5.1 fixture now exercises `RequestResponseFuture` timeout, response,
   latch, send-status, cause and callback behavior, including its private
