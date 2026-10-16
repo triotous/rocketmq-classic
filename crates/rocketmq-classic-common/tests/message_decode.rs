@@ -16,7 +16,7 @@ use rocketmq_classic_common::{
         encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
         encode_nullable_property_entries, encode_properties_nullable,
     },
-    sysflag::message,
+    sysflag::{message, pull},
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -1048,6 +1048,44 @@ fn message_sys_flag_public_api_matches_java_551() {
             "TRANSACTION_ROLLBACK_TYPE": message::TRANSACTION_ROLLBACK_TYPE
         })
     );
+}
+
+#[test]
+fn pull_sys_flag_public_api_matches_java_551() {
+    let expected = &fixture()["pullSysFlagPublicApi"];
+    assert_eq!(expected["publicConstants"], json!({}));
+    assert_eq!(expected["publicConstructors"], json!(["PullSysFlag()"]));
+    assert_eq!(
+        expected["declaredPublicMethods"],
+        json!([
+            "boolean hasClassFilterFlag(int)",
+            "boolean hasCommitOffsetFlag(int)",
+            "boolean hasLitePullFlag(int)",
+            "boolean hasSubscriptionFlag(int)",
+            "boolean hasSuspendFlag(int)",
+            "int buildSysFlag(boolean, boolean, boolean, boolean)",
+            "int buildSysFlag(boolean, boolean, boolean, boolean, boolean)",
+            "int buildSysFlagWithSubscription(int)",
+            "int clearCommitOffsetFlag(int)",
+            "int clearSuspendFlag(int)"
+        ])
+    );
+
+    assert_eq!(pull::build_pull_sys_flag(false, true, false, true), 0x0a);
+    assert_eq!(
+        pull::build_pull_sys_flag_with_lite(false, true, false, true, true),
+        0x1a
+    );
+    let every_flag = pull::build_pull_sys_flag_with_lite(true, true, true, true, true);
+    assert_eq!(every_flag, 0x1f);
+    assert!(pull::has_commit_offset_flag(every_flag));
+    assert!(pull::has_suspend_flag(every_flag));
+    assert!(pull::has_subscription_flag(every_flag));
+    assert!(pull::has_class_filter_flag(every_flag));
+    assert!(pull::has_lite_pull_flag(every_flag));
+    assert_eq!(pull::clear_commit_offset_flag(every_flag), 0x1e);
+    assert_eq!(pull::clear_suspend_flag(every_flag), 0x1d);
+    assert_eq!(pull::build_sys_flag_with_subscription(0x1b), 0x1f);
 }
 
 #[test]

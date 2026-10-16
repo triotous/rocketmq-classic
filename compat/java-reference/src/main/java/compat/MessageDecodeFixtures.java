@@ -36,6 +36,7 @@ import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.utils.NetworkUtil;
+import org.apache.rocketmq.common.sysflag.PullSysFlag;
 
 /** Deterministic Java 5.5.1 message-record bytes and decoded outcomes. */
 public final class MessageDecodeFixtures {
@@ -73,6 +74,7 @@ public final class MessageDecodeFixtures {
         root.put("messagePublicApi", messagePublicApi());
         root.put("messageDecoderPublicApi", messageDecoderPublicApi());
         root.put("messageSysFlagPublicApi", messageSysFlagPublicApi());
+        root.put("pullSysFlagPublicApi", pullSysFlagPublicApi());
         root.put("messageConstantsApi", messageConstantsApi());
         root.put("messageVersionApi", messageVersionApi());
         root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
@@ -654,18 +656,30 @@ public final class MessageDecodeFixtures {
 
     private static Map<String, Object> messageSysFlagPublicApi() throws IllegalAccessException {
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("publicConstants", publicIntegerConstants(MessageSysFlag.class));
+        expected.put("publicConstructors", publicConstructorSignatures(MessageSysFlag.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(MessageSysFlag.class));
+        return expected;
+    }
+
+    private static Map<String, Object> pullSysFlagPublicApi() throws IllegalAccessException {
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("publicConstants", publicIntegerConstants(PullSysFlag.class));
+        expected.put("publicConstructors", publicConstructorSignatures(PullSysFlag.class));
+        expected.put("declaredPublicMethods", publicMethodSignatures(PullSysFlag.class));
+        return expected;
+    }
+
+    private static Map<String, Integer> publicIntegerConstants(Class<?> type) throws IllegalAccessException {
         Map<String, Integer> constants = new TreeMap<>();
-        for (Field field : MessageSysFlag.class.getDeclaredFields()) {
+        for (Field field : type.getDeclaredFields()) {
             int modifiers = field.getModifiers();
             if (field.getType() == int.class && Modifier.isPublic(modifiers)
                 && Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers)) {
                 constants.put(field.getName(), field.getInt(null));
             }
         }
-        expected.put("publicConstants", constants);
-        expected.put("publicConstructors", publicConstructorSignatures(MessageSysFlag.class));
-        expected.put("declaredPublicMethods", publicMethodSignatures(MessageSysFlag.class));
-        return expected;
+        return constants;
     }
 
     private static Map<String, Object> messageVersionApi() {
