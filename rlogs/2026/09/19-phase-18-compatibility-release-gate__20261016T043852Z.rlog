@@ -16,3 +16,19 @@ P18-V01 ChannelHandle identity slice (2026-10-16)
   --locked -- -D warnings` passed.
 - The Java reference checkout remained read-only. No plan file was changed.
 - Commit pending.
+
+Documentation reconciliation and commit (2026-10-16):
+- Corrected stale address-only/unexposed-channel statements in the Phase
+  3/6 inventories, Phase 16 matrix, known differences, and remoting ADRs.
+  The docs now distinguish Rust-owned ChannelHandle capability/identity
+  from Netty internals and raw Tokio sockets.
+- Added the P18-V01 slice to docs/release-checklist.md.
+- Documentation diff check passed; docs are committed separately from the test change.
+- Test and identity-assertion commit: 463c1460.
+- Also corrected the Java 5.5.1 compatibility summary so the former
+  address-only disposition is explicitly historical and the broader
+  Netty method-surface audit remains open.
+- A literal search for the stale address-only/unexposed-channel claims returned
+  no remaining matches; `git diff --check` passed. The initial search command
+  used double quotes around a backtick-bearing pattern and zsh interpreted it;
+  the corrected single-quoted search ran successfully without changing files.

@@ -1761,3 +1761,16 @@ Before any publication:
   evidence, Phase 19 local Docker/Broker automation, and pre-publication
   version/registry resolution remain open. Owner-run deployment and production
   checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting channel capability identity (`463c1460`, 2026-10-16):
+  pinned Java `ResponseFuture.getChannel()` and `ChannelEventListener` channel
+  callbacks are represented by Rust `ResponseFuture::channel()` and
+  identity-preserving `ChannelHandle` values. Unit and loopback assertions now
+  cover future identity plus shared CONNECT/ACTIVE callback identity. Corrected
+  stale Java 5.5.1, Phase 3/6/16 inventory, known-difference and ADR claims that described
+  the API as address-only or absent. The Remoting all-feature suite (102 unit,
+  8 codec, 1 fuzz regression, 7 security, 101 transport, 8 doctests), strict
+  Remoting Clippy, formatting and diff checks pass. Broad P18-V01 remains open;
+  final-revision full-workspace P18-V02, GitHub Ubuntu/P18-V04 evidence, Phase
+  19 Docker/Broker automation, and release version/registry checks remain
+  pending.
