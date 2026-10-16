@@ -2234,3 +2234,14 @@ Before any publication:
   strict all-target/all-feature workspace Clippy, all-target/all-feature
   workspace check, formatting, and diff checks pass. The final full-workspace
   P18-V02 rerun remains open.
+- Current-revision server-free P18-V02 rerun (`00254e6d`, 2026-10-16): default
+  and all-feature workspace tests, all-target/all-feature workspace check and
+  strict Clippy, Maven `verify` (37 scenarios, fixture drift checks and
+  Java/Rust cross-decodes), comparator self-test and 37-scenario manifest,
+  16 deterministic race/leak cases × 3, fuzz smoke (105 frame seeds, 11
+  message seeds, 1,856 mutations), release example build, offline benchmark
+  compilation, workspace metadata/license/dependency checks, seven package
+  listings, the Asia/Taipei Unique ID differential, formatting, and diff checks
+  pass. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19
+  Docker/Broker runner and scenario execution, and pre-publication
+  dependency/version resolution remain outstanding.
