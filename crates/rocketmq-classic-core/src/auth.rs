@@ -1313,6 +1313,38 @@ mod tests {
         use std::borrow::Cow;
 
         let fixture = fixture();
+        let _acl_utils = AclUtils;
+        assert_eq!(
+            fixture["aclUtilsPublicConstructors"],
+            serde_json::json!(["public org.apache.rocketmq.acl.common.AclUtils()"])
+        );
+        assert_eq!(
+            fixture["aclUtilsPublicMethods"],
+            serde_json::json!([
+                "public static [B combineBytes([B,[B)",
+                "public static [B combineRequestContent(org.apache.rocketmq.remoting.protocol.RemotingCommand,java.util.SortedMap)",
+                "public static [Ljava.lang.String; getAddresses(java.lang.String,java.lang.String)",
+                "public static boolean isAsterisk(java.lang.String)",
+                "public static boolean isColon(java.lang.String)",
+                "public static boolean isComma(java.lang.String)",
+                "public static boolean isIPv6Scope([Ljava.lang.String;,int)",
+                "public static boolean isIPv6Scope(int)",
+                "public static boolean isMinus(java.lang.String)",
+                "public static boolean isScope([Ljava.lang.String;,int)",
+                "public static boolean isScope(int)",
+                "public static boolean isScope(java.lang.String)",
+                "public static boolean isScope(java.lang.String,int)",
+                "public static java.lang.Object getYamlDataObject(java.io.InputStream,java.lang.Class)",
+                "public static java.lang.Object getYamlDataObject(java.lang.String,java.lang.Class)",
+                "public static java.lang.String calSignature([B,java.lang.String)",
+                "public static java.lang.String expandIP(java.lang.String,int)",
+                "public static java.lang.String v6ipProcess(java.lang.String)",
+                "public static org.apache.rocketmq.remoting.RPCHook getAclRPCHook(java.io.InputStream)",
+                "public static org.apache.rocketmq.remoting.RPCHook getAclRPCHook(java.lang.String)",
+                "public static void IPv6AddressCheck(java.lang.String)",
+                "public static void verify(java.lang.String,int)"
+            ])
+        );
         let utilities = &fixture["utilityCases"];
         assert_eq!(
             AclUtils::cal_signature(b"RocketMQ", "12345678"),
@@ -1381,96 +1413,112 @@ mod tests {
 
         let address = &utilities["addressPredicates"];
         for (name, value) in [
-            ("ipv4Valid", is_scope_address("192.168.0.255", 4).unwrap()),
+            (
+                "ipv4Valid",
+                AclUtils::is_scope_address("192.168.0.255", 4).unwrap(),
+            ),
             (
                 "ipv4OutOfRange",
-                is_scope_address("192.168.256.1", 4).unwrap(),
+                AclUtils::is_scope_address("192.168.256.1", 4).unwrap(),
             ),
             (
                 "ipv4InvalidShape",
-                is_scope_address("192.168.1", 4).unwrap(),
+                AclUtils::is_scope_address("192.168.1", 4).unwrap(),
             ),
             (
                 "ipv6ValidPrefix",
-                is_scope_address("2001:db8::1", 2).unwrap(),
+                AclUtils::is_scope_address("2001:db8::1", 2).unwrap(),
             ),
             (
                 "ipv6OutOfRange",
-                is_scope_address("2001:10000::1", 2).unwrap(),
+                AclUtils::is_scope_address("2001:10000::1", 2).unwrap(),
             ),
-            ("scopeValueLow", is_scope_value(-1)),
-            ("scopeValueMax", is_scope_value(255)),
-            ("ipv6ScopeMax", is_ipv6_scope_value(65535)),
-            ("ipv6ScopeTooLarge", is_ipv6_scope_value(65536)),
-            ("colon", is_colon("2001:db8::1")),
-            ("asterisk", is_asterisk("192.168.*")),
-            ("comma", is_comma("a,b")),
-            ("minus", is_minus("1-2")),
+            ("scopeValueLow", AclUtils::is_scope_value(-1)),
+            ("scopeValueMax", AclUtils::is_scope_value(255)),
+            ("ipv6ScopeMax", AclUtils::is_ipv6_scope_value(65535)),
+            ("ipv6ScopeTooLarge", AclUtils::is_ipv6_scope_value(65536)),
+            ("colon", AclUtils::is_colon("2001:db8::1")),
+            ("asterisk", AclUtils::is_asterisk("192.168.*")),
+            ("comma", AclUtils::is_comma("a,b")),
+            ("minus", AclUtils::is_minus("1-2")),
         ] {
             assert_eq!(address[name], value, "{name}");
         }
+        assert_eq!(
+            address["scopeTokenWhitespace"],
+            AclUtils::is_scope_token(" 42 ").unwrap()
+        );
+        assert_eq!(
+            address["scopeTokenOutOfRange"],
+            AclUtils::is_scope_token("256").unwrap()
+        );
 
         let segments = &utilities["segmentPredicates"];
         for (name, value) in [
             (
                 "ipv4",
-                is_scope_segments(&["192", "168", "1", "2"], 3).unwrap(),
+                AclUtils::is_scope_segments(&["192", "168", "1", "2"], 3).unwrap(),
             ),
             (
                 "ipv4Bad",
-                is_scope_segments(&["192", "999", "1", "2"], 3).unwrap(),
+                AclUtils::is_scope_segments(&["192", "999", "1", "2"], 3).unwrap(),
             ),
             (
                 "ipv6",
-                is_ipv6_scope_segments(&["2001", "DB8", "FFFF"], 3).unwrap(),
+                AclUtils::is_ipv6_scope_segments(&["2001", "DB8", "FFFF"], 3).unwrap(),
             ),
             (
                 "ipv6Bad",
-                is_ipv6_scope_segments(&["2001", "10000"], 2).unwrap(),
+                AclUtils::is_ipv6_scope_segments(&["2001", "10000"], 2).unwrap(),
             ),
         ] {
             assert_eq!(segments[name], value, "{name}");
         }
 
         assert_eq!(
-            expand_ip("2001:db8::1", 8),
+            AclUtils::expand_ip("2001:db8::1", 8),
             utilities["expandedIp"].as_str().unwrap()
         );
         assert_eq!(
-            v6_ip_process("2::ac5:78:1-200:*"),
+            AclUtils::v6_ip_process("2::ac5:78:1-200:*"),
             Ok(utilities["processedIp"].as_str().unwrap().to_owned())
         );
         assert_eq!(
-            serde_json::to_value(get_addresses("192.168.{1,2}", "{1,2}").unwrap()).unwrap(),
+            serde_json::to_value(AclUtils::get_addresses("192.168.{1,2}", "{1,2}").unwrap())
+                .unwrap(),
             utilities["braceAddresses"]
         );
         assert_eq!(
-            ipv6_address_check("2::ac5:78:1-200:*").map(|()| "ok"),
+            AclUtils::ipv6_address_check("2::ac5:78:1-200:*").map(|()| "ok"),
             Ok("ok")
         );
         assert_eq!(
-            ipv6_address_check("2::ac5-78:1").unwrap_err().to_string(),
+            AclUtils::ipv6_address_check("2::ac5-78:1")
+                .unwrap_err()
+                .to_string(),
             utilities["invalidIpv6Check"]
         );
         assert_eq!(
-            verify_scope("192.168.0.1", 4).map(|()| "ok"),
+            AclUtils::verify("192.168.0.1", 4).map(|()| "ok"),
             Ok(utilities["validVerify"].as_str().unwrap())
         );
         assert_eq!(
-            verify_scope("192.168.256.1", 4).unwrap_err().to_string(),
+            AclUtils::verify("192.168.256.1", 4)
+                .unwrap_err()
+                .to_string(),
             utilities["invalidVerify"]
         );
 
-        let yaml_reader = get_yaml_data_object::<_, serde_json::Value>(std::io::Cursor::new(
-            b"accessKey: yaml-ak\nsecretKey: yaml-sk\n",
-        ))
+        let yaml_reader = AclUtils::get_yaml_data_object::<_, serde_json::Value>(
+            std::io::Cursor::new(b"accessKey: yaml-ak\nsecretKey: yaml-sk\n"),
+        )
         .unwrap();
         assert_eq!(
             serde_json::to_value(yaml_reader).unwrap(),
             utilities["yamlReader"]
         );
         assert_eq!(
-            get_yaml_data_object::<_, serde_json::Value>(std::io::Cursor::new(b"")),
+            AclUtils::get_yaml_data_object::<_, serde_json::Value>(std::io::Cursor::new(b"")),
             Ok(None)
         );
         assert_eq!(utilities["yamlNull"], serde_json::Value::Null);
@@ -1485,7 +1533,8 @@ mod tests {
         );
         let path = std::env::temp_dir().join(unique);
         std::fs::write(&path, "accessKey: yaml-path-ak\nsecretKey: yaml-path-sk\n").unwrap();
-        let yaml_path = get_yaml_data_object_from_path::<serde_json::Value>(&path).unwrap();
+        let yaml_path =
+            AclUtils::get_yaml_data_object_from_path::<serde_json::Value>(&path).unwrap();
         assert_eq!(
             serde_json::to_value(yaml_path).unwrap(),
             utilities["yamlPath"]
@@ -1496,8 +1545,10 @@ mod tests {
             utilities["yamlPathHook"]["credentials"]["accessKey"].as_str()
         );
         assert_eq!(
-            get_yaml_data_object_from_path::<serde_json::Value>(path.with_extension("missing"))
-                .unwrap(),
+            AclUtils::get_yaml_data_object_from_path::<serde_json::Value>(
+                path.with_extension("missing"),
+            )
+            .unwrap(),
             None
         );
         std::fs::remove_file(path).unwrap();

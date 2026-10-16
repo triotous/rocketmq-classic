@@ -18,10 +18,14 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +34,7 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
 import org.apache.rocketmq.acl.common.AclException;
 import org.apache.rocketmq.acl.common.AclUtils;
@@ -70,6 +75,8 @@ public final class AclFixtures {
             "AclClientRPCHook.parseRequestContent",
             "AclUtils.combineRequestContent",
             "AclSigner.calSignature"));
+        result.put("aclUtilsPublicConstructors", publicConstructors(AclUtils.class));
+        result.put("aclUtilsPublicMethods", publicMethods(AclUtils.class));
         result.put("serverContacted", false);
 
         List<Map<String, Object>> cases = new ArrayList<>();
@@ -100,6 +107,36 @@ public final class AclFixtures {
         return result;
     }
 
+    private static List<String> publicConstructors(Class<?> type) {
+        return Arrays.stream(type.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(AclFixtures::constructorSignature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static List<String> publicMethods(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(AclFixtures::methodSignature)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return Modifier.toString(constructor.getModifiers()) + " " + constructor.getDeclaringClass().getName()
+            + "(" + parameterTypes(constructor.getParameterTypes()) + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return Modifier.toString(method.getModifiers()) + " " + method.getReturnType().getName() + " " +
+            method.getName() + "(" + parameterTypes(method.getParameterTypes()) + ")";
+    }
+
+    private static String parameterTypes(Class<?>[] types) {
+        return String.join(",", Arrays.stream(types).map(Class::getName).collect(Collectors.toList()));
+    }
+
     private static Map<String, Object> utilityCases() throws Exception {
         Map<String, Object> cases = new TreeMap<>();
         cases.put("defaultSignature", AclUtils.calSignature("RocketMQ".getBytes(StandardCharsets.UTF_8), "12345678"));
@@ -121,6 +158,8 @@ public final class AclFixtures {
             "scopeValueMax", AclUtils.isScope(255),
             "ipv6ScopeMax", AclUtils.isIPv6Scope(65535),
             "ipv6ScopeTooLarge", AclUtils.isIPv6Scope(65536),
+            "scopeTokenWhitespace", AclUtils.isScope(" 42 "),
+            "scopeTokenOutOfRange", AclUtils.isScope("256"),
             "colon", AclUtils.isColon("2001:db8::1"),
             "asterisk", AclUtils.isAsterisk("192.168.*"),
             "comma", AclUtils.isComma("a,b"),
