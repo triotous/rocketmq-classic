@@ -764,6 +764,24 @@ pub trait ChannelEventListener: Send + Sync + 'static {
 }
 
 /// Deadline-based RocketMQ remoting client. Call [`start`](Self::start) before using transport operations.
+///
+/// The peer-returning NameServer helper is an internal adapter, not a public
+/// operation. Java's public invocation returns the response command; peer
+/// selection metadata stays inside this client unless an owning API needs it
+/// for its error context.
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::{client::RemotingClient, RemotingCommand};
+///
+/// async fn peer_address_is_not_a_public_operation(client: &RemotingClient) {
+///     let _ = client
+///         .invoke_name_server_with_peer(
+///             RemotingCommand::default(),
+///             tokio::time::Instant::now(),
+///         )
+///         .await;
+/// }
+/// ```
 #[derive(Clone)]
 pub struct RemotingClient {
     inner: Arc<ClientInner>,
@@ -1317,7 +1335,7 @@ impl RemotingClient {
     }
 
     /// Invokes a NameServer and returns the address that supplied the response.
-    pub async fn invoke_name_server_with_peer(
+    async fn invoke_name_server_with_peer(
         &self,
         command: RemotingCommand,
         deadline: Instant,
