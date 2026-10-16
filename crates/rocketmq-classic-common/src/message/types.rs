@@ -1161,6 +1161,20 @@ impl DerefMut for MessageExt {
 /// let _ = MessageExt::from_message(Message::default());
 /// ```
 ///
+/// Java inheritance exposes the `Message` surface through `MessageExt`; Rust
+/// uses `Deref` for that surface and does not export lossy `From` conversions:
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{Message, MessageExt};
+/// let _: Message = MessageExt::default().into();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_common::message::{Message, MessageExt};
+/// let extended = MessageExt::default();
+/// let _: Message = (&extended).into();
+/// ```
+///
 /// Java `MessageExt` inherits identity-based `Object.equals`/`hashCode`;
 /// Rust equality also follows the message identity token instead of comparing
 /// fields. Cloning a `MessageExt` preserves that token:
@@ -1480,18 +1494,6 @@ impl MessageExt {
 impl std::fmt::Display for MessageExt {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(&self.java_to_string())
-    }
-}
-
-impl From<MessageExt> for Message {
-    fn from(message: MessageExt) -> Self {
-        message.message
-    }
-}
-
-impl From<&MessageExt> for Message {
-    fn from(message: &MessageExt) -> Self {
-        message.message.clone()
     }
 }
 
@@ -1821,18 +1823,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn message_ext_upcasts_to_java_message_surface() {
+    fn message_ext_inherits_java_message_surface_through_deref() {
         let mut extended = MessageExt::new();
         extended.set_topic("reply-topic");
         extended.set_body(b"reply-body".to_vec());
 
-        let borrowed: Message = (&extended).into();
-        assert_eq!(borrowed.topic(), "reply-topic");
-        assert_eq!(borrowed.body().as_ref(), b"reply-body");
+        let inherited: &Message = &extended;
+        assert_eq!(inherited.topic(), "reply-topic");
+        assert_eq!(inherited.body().as_ref(), b"reply-body");
 
-        let owned: Message = extended.into();
-        assert_eq!(owned.topic(), "reply-topic");
-        assert_eq!(owned.body().as_ref(), b"reply-body");
+        let owned_copy = Message::clone(inherited);
+        assert_eq!(owned_copy.topic(), "reply-topic");
+        assert_eq!(owned_copy.body().as_ref(), b"reply-body");
     }
 
     #[test]

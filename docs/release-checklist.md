@@ -1847,12 +1847,14 @@ Before any publication:
 - P18-V01 request/reply public message type (`c6d852df`, 2026-10-16): the
   pinned Java signatures use base `Message` for Producer request results,
   `RequestCallback.onSuccess`, and `RequestResponseFuture` response methods.
-  Rust now uses `Message` on those public boundaries and keeps inbound
-  `MessageExt` conversion internal. `cargo fmt --all -- --check`, strict
-  workspace all-target/all-feature Clippy, default and all-feature workspace
-  tests, and `git diff --check` pass on this revision. This closes that type slice only;
-  broad P18-V01 and the full P18-V02 gate suite remain open, along with the
-  Ubuntu/P18-V04 result, Phase 19 Docker/Broker automation, owner-validation
+  Rust now uses `Message` on those public boundaries. A later reverse-export
+  review found public `From<MessageExt>` and `From<&MessageExt>` implementations
+  that contradicted the documented boundary; the follow-up below removes them
+  and records its scoped validation. At `c6d852df`, `cargo fmt --all -- --check`,
+  strict workspace all-target/all-feature Clippy, default and all-feature
+  workspace tests, and `git diff --check` passed. This closes that type slice
+  only; broad P18-V01 and the full P18-V02 gate suite remain open, along with
+  the Ubuntu/P18-V04 result, Phase 19 Docker/Broker automation, owner-validation
   instructions, and pre-publication version/registry checks.
 - [x] **P18-V02** — Complete server-free gate rerun on revision `3b0af61d`
   (2026-10-16, macOS ARM64): default/all-feature locked workspace tests,
@@ -1997,3 +1999,15 @@ Before any publication:
   evidence, Phase 19 local Docker/Broker automation, and release
   version/registry checks remain open. Owner-run deployment and live Broker
   checks remain Phase 19 manual validation.
+
+- P18-V01 Common `MessageExt` reverse-export correction (2026-10-16): the
+  pinned Java class inherits `Message`; Rust already models that access through
+  `Deref`, but public `From<MessageExt>` and `From<&MessageExt>` implementations
+  also exposed lossy conversions to the base type. Both conversions are removed,
+  Core clones the inherited `Message` for its internal response-future boundary,
+  and compile-fail doctests guard the absent conversions. Common all-feature
+  tests pass (23 unit tests, all integration targets, 24 doctests); Core
+  all-feature tests and strict Common/Core all-target Clippy also pass, as do
+  formatting and diff checks. This closes only this reverse-export discrepancy;
+  broad P18-V01, final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04,
+  Phase 19 local Docker/Broker automation, and release preflight remain open.

@@ -293,7 +293,7 @@ impl RequestFutureTable {
             };
             pending
                 .future
-                .put_response_message(Some(Message::from(&reply)))?;
+                .put_response_message(Some(Message::clone(&*reply)))?;
             entries.remove(correlation_id)
         };
         let Some(entry) = entry else {

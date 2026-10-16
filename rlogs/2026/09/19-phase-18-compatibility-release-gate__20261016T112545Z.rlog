@@ -27,3 +27,21 @@
 - No plan was edited; no Docker/Broker, push, publication, tag, or deployment
   action was taken. The audit slice is ready for its own commit after final
   diff review.
+
+- Reverse-export follow-up on `d6495994`: found that the Common source exported
+  `From<MessageExt>` and `From<&MessageExt>` even though the release checklist
+  said inbound conversion was internal and Java exposes inheritance through
+  `MessageExt extends Message`. Removed both trait impls, changed Core's
+  response-future copy to clone the inherited `Message` via `Deref`, replaced
+  the conversion unit test with a deref-inheritance test, and added two
+  compile-fail doctests.
+- Validation passed: `cargo fmt --all -- --check`; `cargo test
+  -p rocketmq-classic-common --all-features --locked` (23 unit tests, all
+  integration targets and 24 doctests); `cargo test -p rocketmq-classic-core
+  --all-features --locked` (168 unit tests, all integration targets and 13
+  doctests); `cargo clippy -p rocketmq-classic-common
+  -p rocketmq-classic-core --all-targets --all-features --locked -- -D
+  warnings`; and `git diff --check`.
+- This closes one reverse-export discrepancy only. The broader P18-V01 audit,
+  final-revision P18-V02, current-revision GitHub Ubuntu/P18-V04 evidence, and
+  Phase 19 local Docker/Broker automation remain open.
