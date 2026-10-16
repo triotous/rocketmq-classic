@@ -522,6 +522,14 @@ mod tests {
         assert_eq!(spans.len(), 2);
         for (span, expected) in spans.iter().zip(case["successRows"].as_array().unwrap()) {
             let span = span.as_ref().unwrap();
+            let timezone = match std::env::var("TZ").as_deref() {
+                Ok("Asia/Taipei") => "Asia/Taipei",
+                Ok("UTC" | "Etc/UTC" | "GMT" | "Etc/GMT") | Err(_) => "UTC",
+                Ok(other) => panic!(
+                    "runtime lookup fixture has timestamp strings for UTC and Asia/Taipei; TZ={other}"
+                ),
+            };
+            let expected_time_strings = &expected["timestampStringsByTimeZone"][timezone];
             let queue = span.message_queue.as_ref().unwrap();
             assert_eq!(queue.topic(), expected["topic"].as_str());
             assert_eq!(queue.broker_name(), expected["brokerName"].as_str());
@@ -542,6 +550,18 @@ mod tests {
                 expected["consumeTimeStamp"].as_i64().unwrap()
             );
             assert_eq!(span.delay_time, expected["delayTime"].as_i64().unwrap());
+            assert_eq!(
+                span.get_min_time_stamp_str(),
+                expected_time_strings["minTimeStampStr"]
+            );
+            assert_eq!(
+                span.get_max_time_stamp_str(),
+                expected_time_strings["maxTimeStampStr"]
+            );
+            assert_eq!(
+                span.get_consume_time_stamp_str(),
+                expected_time_strings["consumeTimeStampStr"]
+            );
         }
 
         let error = api

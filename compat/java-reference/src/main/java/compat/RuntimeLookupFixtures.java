@@ -53,7 +53,7 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", "efa1be59d6fc747ad220f036c86030f05f0419f9");
-        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/getBootTimestamp/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/BatchAckMessageRequestBody.decode/encode and public DTO constructor/getter/setter/toString methods");
+        fixture.put("entrypoint", "MQClientInstance.findBrokerAddrByTopic/findConsumerIdList/queryAssignment/getBootTimestamp/startScheduledTask registration/BrokerData.selectBrokerAddr/QueryAssignmentResponseBody.decode/GetConsumerListByGroupResponseBody.decode/ResetOffsetBody.decode/encode/GetConsumerStatusBody.decode/encode/CheckClientRequestBody and client remoting DTO inherited RemotingSerializable methods/QueueTimeSpan timestamp-string getters and public DTO constructor/getter/setter/toString methods");
         fixture.put("serverBaselineContacted", false);
         fixture.put("cases", cases);
         fixture.put("bootTimestampInsideConstructorWindow",
@@ -97,11 +97,14 @@ public final class RuntimeLookupFixtures {
         fixture.put("checkClientInheritedSerializationCases", checkClientInheritedSerializationCases());
         fixture.put("checkClientInheritedSerializationNullUtilities",
             checkClientInheritedSerializationNullUtilities());
+        fixture.put("remotingSerializableBodyCases", remotingSerializableBodyCases());
+        fixture.put("remotingSerializableBodyNullUtilities", remotingSerializableBodyNullUtilities());
         fixture.put("consumerListApiCase", consumerListApiCase());
         fixture.put("consumerListNullGroupApiCase", consumerListNullGroupApiCase());
         fixture.put("consumerListEmptyGroupApiCase", consumerListEmptyGroupApiCase());
         fixture.put("defaultTopicRouteApiCase", defaultTopicRouteApiCase());
         fixture.put("queryConsumeTimeSpanApiCase", queryConsumeTimeSpanApiCase());
+        fixture.put("queueTimeSpanApiCase", queueTimeSpanApiCase());
         fixture.put("lockBatchRequestApiCase", lockBatchRequestApiCase());
         fixture.put("unlockBatchRequestApiCase", unlockBatchRequestApiCase());
         fixture.put("lockBatchResponseApiCase", lockBatchResponseApiCase());
@@ -1408,6 +1411,200 @@ public final class RuntimeLookupFixtures {
         return item;
     }
 
+    private static Map<String, Object> remotingSerializableBodyCases() {
+        Map<String, Object> result = new TreeMap<>();
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"subscriptionSet\":[{"
+                + "\"group\":\"workers\",\"topic\":\"orders\","
+                + "\"liteTopicSet\":[\"blue\"]}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"topic\":\"orders\","
+                + "\"consumerGroup\":\"workers\",\"clientId\":\"client-a\","
+                + "\"strategyName\":\"Allocate\",\"messageModel\":\"CLUSTERING\"}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"messageQueueAssignments\":[{"
+                + "\"messageQueue\":{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
+                + "\"queueId\":1},\"mode\":\"POP\"}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"consumeTimeSpanSet\":[{"
+                + "\"messageQueue\":{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
+                + "\"queueId\":1},\"minTimeStamp\":10,\"maxTimeStamp\":20,"
+                + "\"consumeTimeStamp\":15,\"delayTime\":5}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"topic\":\"orders\","
+                + "\"consumerGroup\":\"workers\",\"mode\":\"POP\","
+                + "\"popShareQueueNum\":2}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"messageRequestModeMap\":{"
+                + "\"orders\":{\"workers\":{\"topic\":\"orders\","
+                + "\"consumerGroup\":\"workers\",\"mode\":\"POP\","
+                + "\"popShareQueueNum\":2}}}}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"consumerGroup\":\"workers\","
+                + "\"clientId\":\"client-a\",\"onlyThisBroker\":true,"
+                + "\"mqSet\":[{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
+                + "\"queueId\":1}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"consumerGroup\":\"workers\","
+                + "\"clientId\":\"client-a\",\"onlyThisBroker\":true,"
+                + "\"mqSet\":[{\"topic\":\"orders\",\"brokerName\":\"broker-a\","
+                + "\"queueId\":1}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"lockOKMQSet\":[{"
+                + "\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"consumerIdList\":["
+                + "\"client-a\",null,\"client-b\"]}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"order\":true,"
+                + "\"autoCommit\":false,\"consumeResult\":\"CR_SUCCESS\","
+                + "\"remark\":\"ok\",\"spentTimeMills\":19}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"messageQueueTable\":"
+                + "{{\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}:9},"
+                + "\"consumerTable\":{}}"} });
+        addRemotingSerializableBodyCases(result,
+            org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody.class,
+            new String[][] { {"default", "{}"}, {"populated", "{\"offsetTable\":"
+                + "{{\"topic\":\"orders\",\"brokerName\":\"broker-a\",\"queueId\":1}:9}}"} });
+        return result;
+    }
+
+    private static <T extends org.apache.rocketmq.remoting.protocol.RemotingSerializable>
+        void addRemotingSerializableBodyCases(Map<String, Object> result, Class<T> type, String[][] inputs) {
+        Map<String, Object> dto = new TreeMap<>();
+        dto.put("inheritedMethods", Arrays.stream(type.getMethods())
+            .filter(method -> method.getDeclaringClass()
+                == org.apache.rocketmq.remoting.protocol.RemotingSerializable.class)
+            .map(RuntimeLookupFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        List<Object> cases = new ArrayList<>();
+        java.util.TimeZone originalTimeZone = java.util.TimeZone.getDefault();
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+            for (String[] input : inputs) {
+                byte[] raw = input[1].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                T value = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(raw, type);
+                Map<String, Object> item = new TreeMap<>();
+                item.put("id", input[0]);
+                item.put("rawInput", input[1]);
+                item.putAll(remotingSerializableValueCases(value, type));
+                if (type == org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.class) {
+                    Map<String, Object> byTimeZone = new TreeMap<>();
+                    for (String zone : List.of("UTC", "Asia/Taipei")) {
+                        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                        byTimeZone.put(zone, remotingSerializableValueCases(value, type));
+                    }
+                    java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+                    item.put("byTimeZone", byTimeZone);
+                }
+                cases.add(item);
+            }
+        } finally {
+            java.util.TimeZone.setDefault(originalTimeZone);
+        }
+        dto.put("cases", cases);
+        result.put(type.getSimpleName(), dto);
+    }
+
+    private static <T extends org.apache.rocketmq.remoting.protocol.RemotingSerializable>
+        Map<String, Object> remotingSerializableValueCases(T value, Class<T> type) {
+        String instanceJson = value.toJson();
+        byte[] instanceBytes = value.encode();
+        List<T> decodedList = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+            com.alibaba.fastjson2.JSON.toJSONBytes(java.util.Collections.singletonList(value)), type);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("instanceJson", instanceJson);
+        item.put("instancePrettyJson", value.toJson(true));
+        item.put("staticJson",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, false));
+        item.put("staticPrettyJson",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(value, true));
+        item.put("instanceEncodedJson", new String(instanceBytes, java.nio.charset.StandardCharsets.UTF_8));
+        item.put("staticEncodedJson", new String(
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(value),
+            java.nio.charset.StandardCharsets.UTF_8));
+        item.put("featureEncodedJson", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[0]), java.nio.charset.StandardCharsets.UTF_8));
+        item.put("decodedJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable
+            .decode(instanceBytes, type).toJson());
+        item.put("fromJsonJson", org.apache.rocketmq.remoting.protocol.RemotingSerializable
+            .fromJson(instanceJson, type).toJson());
+        item.put("decodedListJson", decodedList.get(0).toJson());
+        item.put("decodedListCount", decodedList.size());
+        return item;
+    }
+
+    private static Map<String, Object> remotingSerializableBodyNullUtilities() {
+        Map<String, Object> result = new TreeMap<>();
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.class);
+        addRemotingSerializableNullUtilities(result,
+            org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody.class);
+        return result;
+    }
+
+    private static <T extends org.apache.rocketmq.remoting.protocol.RemotingSerializable>
+        void addRemotingSerializableNullUtilities(Map<String, Object> result, Class<T> type) {
+        byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("staticEncodeNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode((Object) null) == null);
+        item.put("staticToJsonNull", org.apache.rocketmq.remoting.protocol.RemotingSerializable.toJson(null, false));
+        item.put("decodeNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(null, type) == null);
+        item.put("decodeJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decode(jsonNull, type) == null);
+        item.put("fromJsonNullInputReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson(null, type) == null);
+        item.put("fromJsonJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.fromJson("null", type) == null);
+        item.put("decodeListNullBytesReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(null, type) == null);
+        item.put("decodeListJsonNullReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(jsonNull, type) == null);
+        List<T> nullMemberList = org.apache.rocketmq.remoting.protocol.RemotingSerializable.decodeList(
+            "[null,{}]".getBytes(java.nio.charset.StandardCharsets.UTF_8), type);
+        item.put("decodeListNullMemberCount", nullMemberList.size());
+        item.put("decodeListPreservesNullMember", nullMemberList.get(0) == null);
+        result.put(type.getSimpleName(), item);
+    }
+
     private static Map<String, Object> consumerListApiCase() throws Exception {
         org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody body =
             new org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody();
@@ -1556,6 +1753,7 @@ public final class RuntimeLookupFixtures {
                 row.put("maxTimeStamp", span.getMaxTimeStamp());
                 row.put("consumeTimeStamp", span.getConsumeTimeStamp());
                 row.put("delayTime", span.getDelayTime());
+                row.put("timestampStringsByTimeZone", queueTimeSpanStringsByTimeZone(span));
                 rows.add(row);
             }
             result.put("successRows", rows);
@@ -1573,6 +1771,70 @@ public final class RuntimeLookupFixtures {
         result.put("responseBody", body);
         result.put("requests", requests);
         return result;
+    }
+
+    private static Map<String, Object> queueTimeSpanStringsByTimeZone(
+            org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan span) {
+        Map<String, Object> byTimeZone = new TreeMap<>();
+        java.util.TimeZone originalTimeZone = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : List.of("UTC", "Asia/Taipei")) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                Map<String, Object> values = new TreeMap<>();
+                values.put("minTimeStampStr", span.getMinTimeStampStr());
+                values.put("maxTimeStampStr", span.getMaxTimeStampStr());
+                values.put("consumeTimeStampStr", span.getConsumeTimeStampStr());
+                byTimeZone.put(zone, values);
+            }
+        } finally {
+            java.util.TimeZone.setDefault(originalTimeZone);
+        }
+        return byTimeZone;
+    }
+
+    private static Map<String, Object> queueTimeSpanApiCase() throws Exception {
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan defaults =
+            new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan value =
+            new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan extremes =
+            new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
+        value.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1));
+        value.setMinTimeStamp(1_000L);
+        value.setMaxTimeStamp(9_000L);
+        value.setConsumeTimeStamp(5_000L);
+        value.setDelayTime(4_000L);
+        extremes.setMinTimeStamp(Long.MIN_VALUE);
+        extremes.setMaxTimeStamp(Long.MAX_VALUE);
+        extremes.setConsumeTimeStamp(Long.MIN_VALUE);
+        Map<String, Object> item = new TreeMap<>();
+        item.put("publicConstructors", publicConstructorSignatures(value.getClass()));
+        item.put("declaredPublicMethods", declaredPublicMethodSignatures(value.getClass()));
+        Map<String, Object> defaultsByTimeZone = new TreeMap<>();
+        Map<String, Object> valuesByTimeZone = new TreeMap<>();
+        Map<String, Object> extremeValuesByTimeZone = queueTimeSpanStringsByTimeZone(extremes);
+        java.util.TimeZone originalTimeZone = java.util.TimeZone.getDefault();
+        try {
+            for (String zone : List.of("UTC", "Asia/Taipei")) {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone));
+                Map<String, Object> defaultValues = new TreeMap<>();
+                defaultValues.put("minTimeStampStr", defaults.getMinTimeStampStr());
+                defaultValues.put("maxTimeStampStr", defaults.getMaxTimeStampStr());
+                defaultValues.put("consumeTimeStampStr", defaults.getConsumeTimeStampStr());
+                defaultsByTimeZone.put(zone, defaultValues);
+                Map<String, Object> values = new TreeMap<>();
+                values.put("minTimeStampStr", value.getMinTimeStampStr());
+                values.put("maxTimeStampStr", value.getMaxTimeStampStr());
+                values.put("consumeTimeStampStr", value.getConsumeTimeStampStr());
+                valuesByTimeZone.put(zone, values);
+            }
+        } finally {
+            java.util.TimeZone.setDefault(originalTimeZone);
+        }
+        item.put("defaultsByTimeZone", defaultsByTimeZone);
+        item.put("valuesByTimeZone", valuesByTimeZone);
+        item.put("extremeValuesByTimeZone", extremeValuesByTimeZone);
+        return item;
     }
 
     private static Map<String, Object> consumerListNullGroupApiCase() throws Exception {

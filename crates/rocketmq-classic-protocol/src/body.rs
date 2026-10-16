@@ -1,6 +1,6 @@
 use crate::{SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData, serde_fastjson};
 use rocketmq_classic_common::message::MessageQueue;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct};
 use std::{collections::BTreeMap, hash::Hash};
 
 macro_rules! impl_java_enum_api {
@@ -43,6 +43,68 @@ macro_rules! impl_java_enum_api {
                 formatter.write_str(self.name())
             }
         }
+    };
+}
+
+macro_rules! impl_java_remoting_serializable_adapters {
+    ($($dto:ty),+ $(,)?) => {
+        $(
+            impl $dto {
+                pub fn java_encode_optional(
+                    value: Option<&Self>,
+                ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+                    value.map(Self::java_encode).transpose()
+                }
+
+                pub fn java_to_json_optional(
+                    value: Option<&Self>,
+                    pretty_format: bool,
+                ) -> Result<String, serde_json::Error> {
+                    value.map_or_else(
+                        || Ok("null".to_owned()),
+                        |value| value.java_to_json(pretty_format),
+                    )
+                }
+
+                pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+                    crate::route::java_fastjson_json(self, pretty_format)
+                }
+
+                pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(self.java_to_json(false)?.into_bytes())
+                }
+
+                pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+                    serde_fastjson::from_fastjson_slice(data)
+                }
+
+                pub fn java_decode_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    serde_fastjson::from_fastjson_slice_nullable(data)
+                }
+
+                pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+                    serde_fastjson::from_fastjson_slice(data)
+                }
+
+                pub fn java_decode_list_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+                    serde_fastjson::from_fastjson_list_nullable(data)
+                }
+
+                pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+                    serde_fastjson::from_fastjson_str(json)
+                }
+
+                pub fn java_from_json_nullable(
+                    json: Option<&str>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    serde_fastjson::from_fastjson_str_nullable(json)
+                }
+            }
+        )+
     };
 }
 
@@ -104,66 +166,6 @@ impl<'de> Deserialize<'de> for CheckClientRequestBody {
 }
 
 impl CheckClientRequestBody {
-    /// Encodes the inherited Java static `encode(Object)` form, preserving its null result.
-    pub fn java_encode_optional(
-        value: Option<&Self>,
-    ) -> Result<Option<Vec<u8>>, serde_json::Error> {
-        value.map(Self::java_encode).transpose()
-    }
-
-    /// Encodes the inherited Java static `toJson(Object, boolean)` form.
-    pub fn java_to_json_optional(
-        value: Option<&Self>,
-        pretty_format: bool,
-    ) -> Result<String, serde_json::Error> {
-        value.map_or_else(
-            || Ok("null".to_owned()),
-            |value| value.java_to_json(pretty_format),
-        )
-    }
-
-    /// Encodes the inherited Java `RemotingSerializable.toJson(boolean)` form.
-    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
-        crate::route::java_fastjson_json(self, pretty_format)
-    }
-
-    /// Encodes inherited Java `RemotingSerializable.encode()` as UTF-8 JSON.
-    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
-        Ok(self.java_to_json(false)?.into_bytes())
-    }
-
-    /// Decodes the inherited Java `RemotingSerializable.decode` form.
-    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_fastjson::from_fastjson_slice(data)
-    }
-
-    /// Decodes the nullable inherited Java utility, including null bytes and JSON `null`.
-    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
-        serde_fastjson::from_fastjson_slice_nullable(data)
-    }
-
-    /// Decodes the inherited Java `RemotingSerializable.decodeList` form.
-    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
-        serde_fastjson::from_fastjson_slice(data)
-    }
-
-    /// Decodes a nullable Java list, preserving null roots and members.
-    pub fn java_decode_list_nullable(
-        data: Option<&[u8]>,
-    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
-        serde_fastjson::from_fastjson_list_nullable(data)
-    }
-
-    /// Decodes the inherited Java `RemotingSerializable.fromJson` form.
-    pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
-        serde_fastjson::from_fastjson_str(json)
-    }
-
-    /// Decodes the nullable inherited Java `fromJson` utility form.
-    pub fn java_from_json_nullable(json: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
-        serde_fastjson::from_fastjson_str_nullable(json)
-    }
-
     pub fn get_client_id(&self) -> Option<&str> {
         self.client_id.as_deref()
     }
@@ -1535,19 +1537,36 @@ impl QueryAssignmentResponseBody {
 
 /// One queue's broker and consumer timestamp range, matching Java
 /// `org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan`.
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default)]
 pub struct QueueTimeSpan {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_queue: Option<MessageQueue>,
-    #[serde(default)]
     pub min_time_stamp: i64,
-    #[serde(default)]
     pub max_time_stamp: i64,
-    #[serde(default)]
     pub consume_time_stamp: i64,
-    #[serde(default)]
     pub delay_time: i64,
+}
+
+impl Serialize for QueueTimeSpan {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut fields = serializer.serialize_struct(
+            "QueueTimeSpan",
+            7 + usize::from(self.message_queue.is_some()),
+        )?;
+        fields.serialize_field("consumeTimeStamp", &self.consume_time_stamp)?;
+        fields.serialize_field("consumeTimeStampStr", &self.get_consume_time_stamp_str())?;
+        fields.serialize_field("delayTime", &self.delay_time)?;
+        fields.serialize_field("maxTimeStamp", &self.max_time_stamp)?;
+        fields.serialize_field("maxTimeStampStr", &self.get_max_time_stamp_str())?;
+        if let Some(message_queue) = &self.message_queue {
+            fields.serialize_field("messageQueue", message_queue)?;
+        }
+        fields.serialize_field("minTimeStamp", &self.min_time_stamp)?;
+        fields.serialize_field("minTimeStampStr", &self.get_min_time_stamp_str())?;
+        fields.end()
+    }
 }
 
 #[derive(Deserialize)]
@@ -1595,6 +1614,18 @@ impl<'de> Deserialize<'de> for QueueTimeSpan {
 }
 
 impl QueueTimeSpan {
+    pub fn get_min_time_stamp_str(&self) -> String {
+        java_format_timestamp_millis(self.min_time_stamp)
+    }
+
+    pub fn get_max_time_stamp_str(&self) -> String {
+        java_format_timestamp_millis(self.max_time_stamp)
+    }
+
+    pub fn get_consume_time_stamp_str(&self) -> String {
+        java_format_timestamp_millis(self.consume_time_stamp)
+    }
+
     pub fn get_message_queue(&self) -> Option<&MessageQueue> {
         self.message_queue.as_ref()
     }
@@ -1633,6 +1664,156 @@ impl QueueTimeSpan {
 
     pub fn set_delay_time(&mut self, delay_time: i64) {
         self.delay_time = delay_time;
+    }
+}
+
+fn java_format_timestamp_millis(timestamp_millis: i64) -> String {
+    const MILLIS_PER_DAY: i128 = 86_400_000;
+    let timestamp_millis = i128::from(timestamp_millis);
+    let utc_days = timestamp_millis.div_euclid(MILLIS_PER_DAY);
+    let millis_in_day = timestamp_millis.rem_euclid(MILLIS_PER_DAY);
+    let (utc_year, utc_month, utc_day) = java_calendar_date_from_epoch_day(utc_days);
+    let hour = millis_in_day / 3_600_000;
+    let minute = (millis_in_day / 60_000) % 60;
+    let second = (millis_in_day / 1_000) % 60;
+    let millisecond = millis_in_day % 1_000;
+    let offset_seconds = java_local_offset_seconds(
+        timestamp_millis,
+        utc_year,
+        utc_month,
+        utc_day,
+        hour,
+        minute,
+        second,
+    );
+    let local_millis = timestamp_millis + i128::from(offset_seconds) * 1_000;
+    let local_days = local_millis.div_euclid(MILLIS_PER_DAY);
+    let millis_in_day = local_millis.rem_euclid(MILLIS_PER_DAY);
+    let (year, month, day) = java_calendar_date_from_epoch_day(local_days);
+    let year_of_era = if year > 0 { year } else { 1 - year };
+    format!(
+        "{year_of_era:04}-{month:02}-{day:02}#{:02}:{:02}:{:02}:{millisecond:03}",
+        millis_in_day / 3_600_000,
+        (millis_in_day / 60_000) % 60,
+        (millis_in_day / 1_000) % 60,
+    )
+}
+
+fn java_local_offset_seconds(
+    timestamp_millis: i128,
+    year: i128,
+    month: i128,
+    day: i128,
+    hour: i128,
+    minute: i128,
+    second: i128,
+) -> i32 {
+    let exact_datetime =
+        time::OffsetDateTime::from_unix_timestamp_nanos(timestamp_millis * 1_000_000);
+    if let Ok(datetime) = exact_datetime {
+        if let Ok(offset) = time::UtcOffset::local_offset_at(datetime) {
+            return offset.whole_seconds();
+        }
+    }
+
+    if year < -9_999 {
+        let winter = local_offset_for_gregorian_date(2_000, 1, 15, 12, 0, 0);
+        let summer = local_offset_for_gregorian_date(2_000, 7, 15, 12, 0, 0);
+        return winter.min(summer);
+    }
+
+    let representative_year = if year > 9_999 {
+        2_000 + (year - 2_000).rem_euclid(400)
+    } else {
+        year
+    };
+    let day = day.min(days_in_gregorian_month(representative_year, month));
+    local_offset_for_gregorian_date(representative_year, month, day, hour, minute, second)
+}
+
+fn local_offset_for_gregorian_date(
+    year: i128,
+    month: i128,
+    day: i128,
+    hour: i128,
+    minute: i128,
+    second: i128,
+) -> i32 {
+    let representative_days = gregorian_days_from_civil(year, month, day);
+    let representative_seconds = representative_days * 86_400 + hour * 3_600 + minute * 60 + second;
+    time::OffsetDateTime::from_unix_timestamp(representative_seconds as i64)
+        .ok()
+        .and_then(|datetime| time::UtcOffset::local_offset_at(datetime).ok())
+        .unwrap_or(time::UtcOffset::UTC)
+        .whole_seconds()
+}
+
+fn java_calendar_date_from_epoch_day(days: i128) -> (i128, i128, i128) {
+    // GregorianCalendar switches from the Julian calendar after 1582-10-04.
+    if days >= -141_427 {
+        let shifted = days + 719_468;
+        let era = shifted.div_euclid(146_097);
+        let day_of_era = shifted - era * 146_097;
+        let year_of_era =
+            (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let mut year = year_of_era + era * 400;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let month_prime = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+        let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+        year += i128::from(month <= 2);
+        (year, month, day)
+    } else {
+        let mut days_in_cycle = days + 719_530;
+        let cycle = days_in_cycle.div_euclid(1_461);
+        days_in_cycle = days_in_cycle.rem_euclid(1_461);
+        let mut year = cycle * 4;
+        loop {
+            let year_length = if year.rem_euclid(4) == 0 { 366 } else { 365 };
+            if days_in_cycle < year_length {
+                break;
+            }
+            days_in_cycle -= year_length;
+            year += 1;
+        }
+        let mut month = 1;
+        while days_in_cycle >= julian_month_length(year, month) {
+            days_in_cycle -= julian_month_length(year, month);
+            month += 1;
+        }
+        (year, month, days_in_cycle + 1)
+    }
+}
+
+fn julian_month_length(year: i128, month: i128) -> i128 {
+    match month {
+        2 if year.rem_euclid(4) == 0 => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    }
+}
+
+fn gregorian_days_from_civil(year: i128, month: i128, day: i128) -> i128 {
+    let year = year - i128::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+fn days_in_gregorian_month(year: i128, month: i128) -> i128 {
+    match month {
+        2 if year.rem_euclid(4) == 0
+            && (year.rem_euclid(100) != 0 || year.rem_euclid(400) == 0) =>
+        {
+            29
+        }
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
     }
 }
 
@@ -4521,6 +4702,247 @@ fn default_auto_commit() -> bool {
     true
 }
 
+impl_java_remoting_serializable_adapters!(
+    CheckClientRequestBody,
+    LiteSubscriptionCtlRequestBody,
+    QueryAssignmentRequestBody,
+    QueryAssignmentResponseBody,
+    QueryConsumeTimeSpanBody,
+    SetMessageRequestModeRequestBody,
+    MessageRequestModeSerializeWrapper,
+    LockBatchRequestBody,
+    UnlockBatchRequestBody,
+    LockBatchResponseBody,
+    ConsumerListByGroupResponseBody,
+    ConsumeMessageDirectlyResult,
+);
+
+macro_rules! impl_java_remoting_serializable_body_adapters {
+    ($($dto:ty),+ $(,)?) => {
+        $(
+            impl $dto {
+                pub fn java_encode_optional(
+                    value: Option<&Self>,
+                ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+                    value.map(Self::java_encode).transpose()
+                }
+
+                pub fn java_to_json_optional(
+                    value: Option<&Self>,
+                    pretty_format: bool,
+                ) -> Result<String, serde_json::Error> {
+                    value.map_or_else(
+                        || Ok("null".to_owned()),
+                        |value| value.java_to_json(pretty_format),
+                    )
+                }
+
+                pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+                    if pretty_format {
+                        java_fastjson_remoting_body_json(self, true)
+                    } else {
+                        Ok(String::from_utf8_lossy(&self.encode_java_json()?).into_owned())
+                    }
+                }
+
+                pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+                    self.encode_java_json()
+                }
+
+                pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+                    Self::decode_java_json(&String::from_utf8_lossy(data))
+                }
+
+                pub fn java_decode_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    let Some(data) = data else {
+                        return Ok(None);
+                    };
+                    let input = String::from_utf8_lossy(data);
+                    let normalized = normalize_java_object_map_keys(
+                        &serde_fastjson::normalize_json_input(&input),
+                    )?;
+                    if serde_json::from_str::<serde_json::Value>(&normalized)?.is_null() {
+                        return Ok(None);
+                    }
+                    Self::decode_java_json(&input).map(Some)
+                }
+
+                pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+                    let input = String::from_utf8_lossy(data);
+                    let normalized = normalize_java_object_map_keys(
+                        &serde_fastjson::normalize_json_input(&input),
+                    )?;
+                    serde_json::from_str(&normalized)
+                }
+
+                pub fn java_decode_list_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+                    let Some(data) = data else {
+                        return Ok(None);
+                    };
+                    let input = String::from_utf8_lossy(data);
+                    let normalized = normalize_java_object_map_keys(
+                        &serde_fastjson::normalize_json_input(&input),
+                    )?;
+                    if serde_json::from_str::<serde_json::Value>(&normalized)?.is_null() {
+                        return Ok(None);
+                    }
+                    serde_json::from_str(&normalized).map(Some)
+                }
+
+                pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+                    Self::decode_java_json(json)
+                }
+
+                pub fn java_from_json_nullable(
+                    json: Option<&str>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    let Some(json) = json else {
+                        return Ok(None);
+                    };
+                    let normalized = normalize_java_object_map_keys(
+                        &serde_fastjson::normalize_json_input(json),
+                    )?;
+                    if serde_json::from_str::<serde_json::Value>(&normalized)?.is_null() {
+                        return Ok(None);
+                    }
+                    Self::decode_java_json(json).map(Some)
+                }
+            }
+        )+
+    };
+}
+
+impl_java_remoting_serializable_body_adapters!(GetConsumerStatusBody, ResetOffsetBody);
+
+fn java_fastjson_remoting_body_json<T: Serialize>(
+    value: &T,
+    pretty_format: bool,
+) -> Result<String, serde_json::Error> {
+    let value = serde_json::to_value(value)?;
+    let mut output = String::new();
+    write_java_remoting_body_json(&value, None, 0, pretty_format, false, &mut output)?;
+    Ok(output)
+}
+
+fn write_java_remoting_body_json(
+    value: &serde_json::Value,
+    field_name: Option<&str>,
+    depth: usize,
+    pretty_format: bool,
+    queue_table: bool,
+    output: &mut String,
+) -> Result<(), serde_json::Error> {
+    match value {
+        serde_json::Value::Object(fields)
+            if fields.is_empty() && (!pretty_format || field_name.is_some()) =>
+        {
+            output.push_str("{}")
+        }
+        serde_json::Value::Object(fields) if fields.is_empty() => {
+            output.push_str("{\n");
+            write_java_remoting_body_indent(output, depth + 1);
+            output.push('\n');
+            write_java_remoting_body_indent(output, depth);
+            output.push('}');
+        }
+        serde_json::Value::Object(fields) => {
+            output.push('{');
+            for (index, (key, value)) in fields.iter().enumerate() {
+                if pretty_format {
+                    output.push('\n');
+                    write_java_remoting_body_indent(output, depth + 1);
+                }
+                let queue_key = if queue_table {
+                    serde_json::from_str::<serde_json::Value>(key)
+                        .ok()
+                        .filter(serde_json::Value::is_object)
+                } else {
+                    None
+                };
+                if let Some(queue_key) = queue_key {
+                    write_java_remoting_body_json(
+                        &queue_key,
+                        None,
+                        depth + 1,
+                        pretty_format,
+                        false,
+                        output,
+                    )?;
+                } else {
+                    output.push_str(&serde_json::to_string(key)?);
+                }
+                output.push(':');
+                let child_is_queue_table =
+                    matches!(key.as_str(), "messageQueueTable" | "offsetTable")
+                        || field_name == Some("consumerTable");
+                write_java_remoting_body_json(
+                    value,
+                    Some(key),
+                    depth + 1,
+                    pretty_format,
+                    child_is_queue_table,
+                    output,
+                )?;
+                if index + 1 != fields.len() {
+                    output.push(',');
+                }
+            }
+            if pretty_format {
+                output.push('\n');
+                write_java_remoting_body_indent(output, depth);
+            }
+            output.push('}');
+        }
+        serde_json::Value::Array(values) if values.is_empty() && !pretty_format => {
+            output.push_str("[]")
+        }
+        serde_json::Value::Array(values) if values.is_empty() => {
+            output.push_str("[\n");
+            write_java_remoting_body_indent(output, depth + 1);
+            output.push('\n');
+            write_java_remoting_body_indent(output, depth);
+            output.push(']');
+        }
+        serde_json::Value::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if pretty_format {
+                    output.push('\n');
+                    write_java_remoting_body_indent(output, depth + 1);
+                }
+                write_java_remoting_body_json(
+                    value,
+                    None,
+                    depth + 1,
+                    pretty_format,
+                    false,
+                    output,
+                )?;
+                if index + 1 != values.len() {
+                    output.push(',');
+                }
+            }
+            if pretty_format {
+                output.push('\n');
+                write_java_remoting_body_indent(output, depth);
+            }
+            output.push(']');
+        }
+        _ => output.push_str(&serde_json::to_string(value)?),
+    }
+    Ok(())
+}
+
+fn write_java_remoting_body_indent(output: &mut String, depth: usize) {
+    for _ in 0..depth {
+        output.push('\t');
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6287,6 +6709,236 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), nulls["decodeListNullMemberCount"]);
         assert_eq!(list[0].is_none(), nulls["decodeListPreservesNullMember"]);
+    }
+
+    #[test]
+    fn remoting_serializable_body_adapters_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
+        let timezone = match std::env::var("TZ").as_deref() {
+            Ok("Asia/Taipei") => "Asia/Taipei",
+            Ok("UTC" | "Etc/UTC" | "GMT" | "Etc/GMT") | Err(_) => "UTC",
+            Ok(other) => panic!(
+                "runtime lookup fixture has timestamp strings for UTC and Asia/Taipei; TZ={other}"
+            ),
+        };
+
+        macro_rules! assert_body_serialization {
+            ($dto:ty, $name:literal) => {{
+                let dto_case = &fixture["remotingSerializableBodyCases"][$name];
+                let methods = dto_case["inheritedMethods"].as_array().unwrap();
+                assert_eq!(methods.len(), 9, "{} inherited method inventory", $name);
+                for case in dto_case["cases"].as_array().unwrap() {
+                    let expected = case["byTimeZone"].get(timezone).unwrap_or(case);
+                    let value =
+                        <$dto>::java_decode(case["rawInput"].as_str().unwrap().as_bytes()).unwrap();
+                    let encoded = value.java_encode().unwrap();
+                    assert_eq!(
+                        String::from_utf8(encoded.clone()).unwrap(),
+                        expected["instanceEncodedJson"],
+                        "{} {} instance encode",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        String::from_utf8(
+                            <$dto>::java_encode_optional(Some(&value)).unwrap().unwrap()
+                        )
+                        .unwrap(),
+                        expected["staticEncodedJson"],
+                        "{} {} static encode",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        value.java_to_json(false).unwrap(),
+                        expected["instanceJson"],
+                        "{} {} instance JSON",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        value.java_to_json(true).unwrap(),
+                        expected["instancePrettyJson"],
+                        "{} {} pretty JSON",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        <$dto>::java_to_json_optional(Some(&value), false).unwrap(),
+                        expected["staticJson"],
+                        "{} {} static JSON",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        <$dto>::java_decode(&encoded)
+                            .unwrap()
+                            .java_to_json(false)
+                            .unwrap(),
+                        expected["decodedJson"],
+                        "{} {} decode",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        <$dto>::java_from_json(case["instanceJson"].as_str().unwrap())
+                            .unwrap()
+                            .java_to_json(false)
+                            .unwrap(),
+                        expected["fromJsonJson"],
+                        "{} {} fromJson",
+                        $name,
+                        case["id"]
+                    );
+                    let encoded_list = format!("[{}]", case["instanceJson"].as_str().unwrap());
+                    assert_eq!(
+                        <$dto>::java_decode_list(encoded_list.as_bytes()).unwrap()[0]
+                            .java_to_json(false)
+                            .unwrap(),
+                        expected["decodedListJson"],
+                        "{} {} decodeList",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        expected["featureEncodedJson"], expected["instanceEncodedJson"],
+                        "{} {} empty writer features",
+                        $name, case["id"]
+                    );
+                }
+
+                let nulls = &fixture["remotingSerializableBodyNullUtilities"][$name];
+                assert!(<$dto>::java_encode_optional(None).unwrap().is_none());
+                assert_eq!(
+                    <$dto>::java_to_json_optional(None, false).unwrap(),
+                    nulls["staticToJsonNull"]
+                );
+                assert_eq!(
+                    <$dto>::java_decode_nullable(None).unwrap().is_none(),
+                    nulls["decodeNullBytesReturnsNull"]
+                );
+                assert_eq!(
+                    <$dto>::java_decode_nullable(Some(b"null"))
+                        .unwrap()
+                        .is_none(),
+                    nulls["decodeJsonNullReturnsNull"]
+                );
+                assert!(<$dto>::java_from_json_nullable(None).unwrap().is_none());
+                assert!(
+                    <$dto>::java_from_json_nullable(Some("null"))
+                        .unwrap()
+                        .is_none()
+                );
+                assert_eq!(
+                    <$dto>::java_decode_list_nullable(None).unwrap().is_none(),
+                    nulls["decodeListNullBytesReturnsNull"]
+                );
+                assert_eq!(
+                    <$dto>::java_decode_list_nullable(Some(b"null"))
+                        .unwrap()
+                        .is_none(),
+                    nulls["decodeListJsonNullReturnsNull"]
+                );
+                let list = <$dto>::java_decode_list_nullable(Some(b"[null,{}]"))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(list.len(), nulls["decodeListNullMemberCount"]);
+                assert_eq!(list[0].is_none(), nulls["decodeListPreservesNullMember"]);
+            }};
+        }
+
+        assert_body_serialization!(
+            LiteSubscriptionCtlRequestBody,
+            "LiteSubscriptionCtlRequestBody"
+        );
+        assert_body_serialization!(QueryAssignmentRequestBody, "QueryAssignmentRequestBody");
+        assert_body_serialization!(QueryAssignmentResponseBody, "QueryAssignmentResponseBody");
+        assert_body_serialization!(QueryConsumeTimeSpanBody, "QueryConsumeTimeSpanBody");
+        assert_body_serialization!(
+            SetMessageRequestModeRequestBody,
+            "SetMessageRequestModeRequestBody"
+        );
+        assert_body_serialization!(
+            MessageRequestModeSerializeWrapper,
+            "MessageRequestModeSerializeWrapper"
+        );
+        assert_body_serialization!(LockBatchRequestBody, "LockBatchRequestBody");
+        assert_body_serialization!(UnlockBatchRequestBody, "UnlockBatchRequestBody");
+        assert_body_serialization!(LockBatchResponseBody, "LockBatchResponseBody");
+        assert_body_serialization!(
+            ConsumerListByGroupResponseBody,
+            "GetConsumerListByGroupResponseBody"
+        );
+        assert_body_serialization!(ConsumeMessageDirectlyResult, "ConsumeMessageDirectlyResult");
+        assert_body_serialization!(GetConsumerStatusBody, "GetConsumerStatusBody");
+        assert_body_serialization!(ResetOffsetBody, "ResetOffsetBody");
+
+        let queue_api = &fixture["queueTimeSpanApiCase"];
+        let default_expected = &queue_api["defaultsByTimeZone"][timezone];
+        let default_span = QueueTimeSpan::default();
+        assert_eq!(
+            default_span.get_min_time_stamp_str(),
+            default_expected["minTimeStampStr"]
+        );
+        assert_eq!(
+            default_span.get_max_time_stamp_str(),
+            default_expected["maxTimeStampStr"]
+        );
+        assert_eq!(
+            default_span.get_consume_time_stamp_str(),
+            default_expected["consumeTimeStampStr"]
+        );
+        let expected = &queue_api["valuesByTimeZone"][timezone];
+        let mut span = QueueTimeSpan::default();
+        span.set_message_queue(Some(MessageQueue::new("orders", "broker-a", 1)));
+        span.set_min_time_stamp(1_000);
+        span.set_max_time_stamp(9_000);
+        span.set_consume_time_stamp(5_000);
+        span.set_delay_time(4_000);
+        assert_eq!(span.get_min_time_stamp_str(), expected["minTimeStampStr"]);
+        assert_eq!(span.get_max_time_stamp_str(), expected["maxTimeStampStr"]);
+        assert_eq!(
+            span.get_consume_time_stamp_str(),
+            expected["consumeTimeStampStr"]
+        );
+        let serialized = serde_json::to_value(&span).unwrap();
+        assert_eq!(serialized["minTimeStampStr"], expected["minTimeStampStr"]);
+        assert_eq!(serialized["maxTimeStampStr"], expected["maxTimeStampStr"]);
+        assert_eq!(
+            serialized["consumeTimeStampStr"],
+            expected["consumeTimeStampStr"]
+        );
+        let extreme_expected = &queue_api["extremeValuesByTimeZone"][timezone];
+        let mut extremes = QueueTimeSpan::default();
+        extremes.set_min_time_stamp(i64::MIN);
+        extremes.set_max_time_stamp(i64::MAX);
+        extremes.set_consume_time_stamp(i64::MIN);
+        assert_eq!(
+            extremes.get_min_time_stamp_str(),
+            extreme_expected["minTimeStampStr"]
+        );
+        assert_eq!(
+            extremes.get_max_time_stamp_str(),
+            extreme_expected["maxTimeStampStr"]
+        );
+        assert_eq!(
+            extremes.get_consume_time_stamp_str(),
+            extreme_expected["consumeTimeStampStr"]
+        );
+        for method in [
+            "getMinTimeStampStr",
+            "getMaxTimeStampStr",
+            "getConsumeTimeStampStr",
+        ] {
+            assert!(
+                queue_api["declaredPublicMethods"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|signature| signature.as_str().unwrap().contains(method))
+            );
+        }
     }
 
     #[test]
