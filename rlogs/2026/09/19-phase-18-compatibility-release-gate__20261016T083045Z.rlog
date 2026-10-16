@@ -1,0 +1,35 @@
+# Phase 18 server-free gate rerun — 2026-10-16T08:30Z
+
+- Revision: `ac26a5ae498231269c5c7f65e2976ca0cc1c4af0`; branch
+  `phase/19-phase-18-compatibility-release-gate`; worktree was clean before
+  this documentation update.
+- Re-ran the current-revision P18-V02 server-free gate after the request/reply
+  completion API correction. `cargo fmt --check` and
+  `cargo fmt --all -- --check` passed. Sequential `cargo test --workspace
+  --locked` and `cargo test --workspace --all-features --locked` passed, as
+  did `cargo clippy --workspace --all-targets --all-features --locked -- -D
+  warnings`.
+- Pinned Maven `verify` passed all 37 scenarios, fixture-drift checks, Java
+  reference probes, and Java/Rust cross-decodes. The differential comparator
+  self-test and 37-scenario manifest validation passed.
+- Deterministic offline race/leak smoke passed 16 cases × 3 repetitions.
+  Bounded fuzz smoke passed with 105 frame seeds, 11 message seeds, and 1,856
+  mutations. Release examples and the offline benchmark compiled.
+- `scripts/check-workspace-metadata.py` passed. Locked Cargo metadata resolved
+  7 workspace packages and 208 registry packages (215 total); workspace
+  versions are all `0.1.0`. All seven `cargo package --list --locked` checks
+  passed and included `LICENSE` and `NOTICE`. The Asia/Taipei Unique ID fixture
+  passed.
+- One metadata-summary one-liner initially assumed all package `source`
+  values were strings; local path packages use `null`. Corrected the query to
+  handle `null`; metadata resolution itself was successful and reported the
+  counts above. No project failure occurred.
+- Updated `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md` and
+  `docs/release-checklist.md` with the current P18-V02 evidence. This closes
+  P18-V02 on `ac26a5ae`; it does not close the broad P18-V01 API/source/input/
+  control-flow/reverse-export audit, current-revision GitHub Ubuntu/P18-V04,
+  Phase 19 Docker/Broker automation and owner-validation handoff, or release
+  registry/legal preflight. Deployment, production Broker, organization CA,
+  credential, and topology checks remain owner validation.
+- No plan files changed. No Docker, live Broker, push, tag, publication,
+  deployment, or compatibility claim was made.

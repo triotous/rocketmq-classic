@@ -1,8 +1,23 @@
 # Phase 6 requirement and handoff audit
 
-## Current closure state (2026-10-15)
+## Current closure state (2026-10-16)
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:
+
+- Current server-free P18-V02 gate on source commit `ac26a5ae` (2026-10-16,
+  macOS ARM64): default and all-feature locked workspace tests, strict
+  all-target/all-feature Clippy, workspace formatting, pinned Maven `verify`
+  (37 scenarios, fixture drift and Java/Rust cross-decodes), differential
+  self-test and 37-scenario manifest, deterministic race/leak smoke (16 cases
+  × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations),
+  release examples, offline benchmark compilation, locked Cargo metadata,
+  workspace metadata/license/dependency checks, seven package listings with
+  LICENSE/NOTICE, and the Asia/Taipei Unique ID fixture all pass. Metadata
+  reports 7 workspace packages, 215 packages total, and 208 registry packages;
+  all workspace packages are version `0.1.0`. This closes P18-V02 on this
+  revision. Broad P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence,
+  Phase 19 Docker/Broker automation, and release registry/legal preflight
+  remain open.
 
 - ClientConfig field visibility (`2026-10-15`, pinned Java source
   `efa1be59d6fc747ad220f036c86030f05f0419f9`): the 33 Rust backing fields are

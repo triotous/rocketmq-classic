@@ -1908,3 +1908,16 @@ Before any publication:
   as do strict scoped all-target/all-feature Clippy, format and diff checks.
   This closes the extra-variant discrepancy only; broad P18-V01 and final
   workspace P18-V02 remain open.
+
+- [x] **P18-V02** — Revalidated the complete server-free gate on revision
+  `ac26a5ae` (2026-10-16, macOS ARM64): default and all-feature locked workspace
+  tests, strict all-target/all-feature Clippy, workspace formatting, pinned
+  Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes),
+  differential self-test and 37-scenario manifest, deterministic race/leak
+  smoke (16 cases × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations), release examples, offline benchmark compilation, locked Cargo
+  metadata, workspace metadata/license/dependency checks, seven package
+  listings with LICENSE/NOTICE, and the `TZ=Asia/Taipei` Unique ID fixture all
+  pass. P18-V01, current GitHub Ubuntu/P18-V04 evidence, Phase 19 automation,
+  and release preflight remain open; this makes no live Broker, release, or
+  compatibility claim.
