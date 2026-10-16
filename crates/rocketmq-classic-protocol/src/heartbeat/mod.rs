@@ -2607,6 +2607,18 @@ mod tests {
                 "{} WriteNonStringValueAsString",
                 case["case"]
             );
+            let pretty_featured = value
+                .java_encode_with_features(&[crate::JavaJsonWriterFeature::PrettyFormat])
+                .unwrap();
+            let expected_pretty_featured = case["writerFeatureOverrides"]["PrettyFormat"]
+                .as_str()
+                .unwrap_or_else(|| case["instancePrettyJson"].as_str().unwrap());
+            assert_eq!(
+                pretty_featured,
+                expected_pretty_featured.as_bytes(),
+                "{} PrettyFormat",
+                case["case"]
+            );
             assert_eq!(
                 value.java_encode().unwrap(),
                 native_json.as_bytes(),

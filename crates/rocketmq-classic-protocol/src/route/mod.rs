@@ -85,6 +85,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     features: &[JavaJsonWriterFeature],
 ) -> Result<String, serde_json::Error> {
     validate_java_writer_features(features)?;
+    let pretty_format = pretty_format || features.contains(&JavaJsonWriterFeature::PrettyFormat);
     let mut value = serde_json::to_value(value)?;
     if features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString) {
         write_non_string_values_as_strings(&mut value);
@@ -3636,6 +3637,18 @@ mod tests {
                     featured,
                     expected_featured.as_bytes(),
                     "{} WriteNonStringValueAsString",
+                    case["id"]
+                );
+                let pretty_featured = value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::PrettyFormat])
+                    .unwrap();
+                let expected_pretty_featured = case["writerFeatureOverrides"]["PrettyFormat"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instancePrettyJson"].as_str().unwrap());
+                assert_eq!(
+                    pretty_featured,
+                    expected_pretty_featured.as_bytes(),
+                    "{} PrettyFormat",
                     case["id"]
                 );
                 assert_eq!(
