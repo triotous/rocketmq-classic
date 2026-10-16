@@ -276,6 +276,17 @@ public final class RequestReplyFixtures {
         result.put("sizeAfterInsert", second.size());
         result.put("removedSameInstance", first.remove(future.getCorrelationId()) == future);
         result.put("sizeAfterRemove", second.size());
+        result.put("waiterLatchCountAfterTableRemove", future.getCountDownLatch().getCount());
+        boolean waiterResponseNullAfterTableRemove;
+        try {
+            waiterResponseNullAfterTableRemove = future.waitResponseMessage(1) == null;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+        result.put("waiterResponseNullAfterTableRemove", waiterResponseNullAfterTableRemove);
+        result.put("waiterLatchStillUnsignaledAfterTableRemove",
+            future.getCountDownLatch().getCount() == 1);
         return result;
     }
 
