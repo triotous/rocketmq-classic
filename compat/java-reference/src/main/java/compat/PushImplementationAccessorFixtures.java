@@ -906,9 +906,13 @@ public final class PushImplementationAccessorFixtures {
             result.put("rawRunningInfoStatusCount", info.getStatusTable().size());
             result.put("rawRunningInfoCorePoolSize",
                 info.getProperties().getProperty("PROP_THREADPOOL_CORE_SIZE"));
+            implementation.getRebalanceImpl().destroy();
             implementation.setServiceState(ServiceState.SHUTDOWN_ALREADY);
             ConsumerRunningInfo afterShutdown = implementation.consumerRunningInfo();
             result.put("rawRunningInfoAfterShutdownSucceeded", true);
+            result.put("rawRunningInfoAfterShutdownQueueCount", afterShutdown.getMqTable().size());
+            result.put("rawRunningInfoAfterShutdownPopQueueCount", afterShutdown.getMqPopTable().size());
+            result.put("rawRunningInfoAfterShutdownStatusCount", afterShutdown.getStatusTable().size());
             result.put("rawRunningInfoAfterShutdownCorePoolSize",
                 afterShutdown.getProperties().getProperty("PROP_THREADPOOL_CORE_SIZE"));
             implementation.setServiceState(ServiceState.RUNNING);
