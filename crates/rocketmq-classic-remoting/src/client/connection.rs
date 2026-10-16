@@ -551,14 +551,22 @@ pub(super) async fn connect(
     mode: &TransportMode,
     use_tls: &AtomicBool,
     proxy: Option<&SocksProxyConfig>,
-    send_buffer_size: usize,
-    receive_buffer_size: usize,
+    send_buffer_size: i32,
+    receive_buffer_size: i32,
     deadline: Option<Instant>,
 ) -> Result<BoxedStream, TransportError> {
     let (host, port) = split_address(address)?;
     let host = connect_host(&host);
     let dial = async {
         if let Some(proxy) = proxy {
+            // Java's proxy Bootstrap always installs both SO_*BUF options,
+            // including zero and negative config values. The JDK rejects
+            // nonpositive sizes when the channel applies those options.
+            if send_buffer_size <= 0 || receive_buffer_size <= 0 {
+                return Err(TransportError::InvalidConfiguration(
+                    "SO_SNDBUF and SO_RCVBUF must be positive for proxy connections".into(),
+                ));
+            }
             let stream = match (&proxy.username, &proxy.password) {
                 (Some(username), Some(password)) => {
                     Socks5Stream::connect_with_password(
@@ -574,16 +582,12 @@ pub(super) async fn connect(
             .map_err(TransportError::connect_source)?
             .into_inner();
             let socket = socket2::SockRef::from(&stream);
-            if send_buffer_size > 0 {
-                socket
-                    .set_send_buffer_size(send_buffer_size)
-                    .map_err(TransportError::connect_source)?;
-            }
-            if receive_buffer_size > 0 {
-                socket
-                    .set_recv_buffer_size(receive_buffer_size)
-                    .map_err(TransportError::connect_source)?;
-            }
+            socket
+                .set_send_buffer_size(send_buffer_size as usize)
+                .map_err(TransportError::connect_source)?;
+            socket
+                .set_recv_buffer_size(receive_buffer_size as usize)
+                .map_err(TransportError::connect_source)?;
             Ok(Box::new(stream) as BoxedStream)
         } else {
             let addresses = tokio::net::lookup_host((host.as_str(), port))
@@ -607,12 +611,12 @@ pub(super) async fn connect(
                 let socket_ref = socket2::SockRef::from(&socket);
                 if send_buffer_size > 0 {
                     socket_ref
-                        .set_send_buffer_size(send_buffer_size)
+                        .set_send_buffer_size(send_buffer_size as usize)
                         .map_err(TransportError::connect_source)?;
                 }
                 if receive_buffer_size > 0 {
                     socket_ref
-                        .set_recv_buffer_size(receive_buffer_size)
+                        .set_recv_buffer_size(receive_buffer_size as usize)
                         .map_err(TransportError::connect_source)?;
                 }
                 match socket.connect(address).await {
@@ -678,5 +682,35 @@ pub(super) fn connect_host(host: &str) -> String {
         "127.0.0.1".to_owned()
     } else {
         host.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SocksProxyConfig, TransportMode, connect};
+    use crate::error::TransportError;
+    use std::sync::atomic::AtomicBool;
+
+    #[tokio::test]
+    async fn proxy_nonpositive_socket_buffers_fail_before_dial() {
+        let proxy = SocksProxyConfig::new("127.0.0.1:1");
+        for (send_buffer_size, receive_buffer_size) in
+            [(0, 8192), (8192, 0), (-1, 8192), (8192, -1)]
+        {
+            let result = connect(
+                "127.0.0.1:10911",
+                &TransportMode::Plain,
+                &AtomicBool::new(false),
+                Some(&proxy),
+                send_buffer_size,
+                receive_buffer_size,
+                None,
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(TransportError::InvalidConfiguration(_))
+            ));
+        }
     }
 }

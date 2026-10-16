@@ -25,7 +25,11 @@ public final class ClientConfigPropertiesProbe {
         Map.entry("com.rocketmq.remoting.client.worker.size", "-3"),
         Map.entry("com.rocketmq.remoting.client.connect.timeout", "-13"),
         Map.entry("com.rocketmq.remoting.client.channel.maxIdleTimeSeconds", "-7"),
-        Map.entry("com.rocketmq.remoting.client.closeSocketIfTimeout", "false")
+        Map.entry("com.rocketmq.remoting.client.closeSocketIfTimeout", "false"),
+        Map.entry("com.rocketmq.remoting.socket.sndbuf.size", "-8192"),
+        Map.entry("com.rocketmq.remoting.socket.rcvbuf.size", "0"),
+        Map.entry("com.rocketmq.remoting.write.buffer.high.water.mark", "-31"),
+        Map.entry("com.rocketmq.remoting.write.buffer.low.water.mark", "17")
     );
 
     private ClientConfigPropertiesProbe() { }
@@ -47,6 +51,7 @@ public final class ClientConfigPropertiesProbe {
         fixture.put("remotingSemaphoreValues", remotingSemaphoreValues());
         fixture.put("remotingWorkerSettings", remotingWorkerSettings());
         fixture.put("remotingTimeoutSettings", remotingTimeoutSettings());
+        fixture.put("remotingBootstrapSettings", remotingBootstrapSettings());
 
         Path file = Path.of(args[0]);
         String json = JSON.toJSONString(fixture) + "\n";
@@ -109,6 +114,65 @@ public final class ClientConfigPropertiesProbe {
         result.put("connectTimeoutMillis", config.getConnectTimeoutMillis());
         result.put("clientChannelMaxIdleTimeSeconds", config.getClientChannelMaxIdleTimeSeconds());
         result.put("closeSocketIfTimeout", config.isClientCloseSocketIfTimeout());
+        return result;
+    }
+
+    private static Map<String, Object> remotingBootstrapSettings() {
+        org.apache.rocketmq.remoting.netty.NettyClientConfig config =
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("clientSocketSndBufSize", config.getClientSocketSndBufSize());
+        result.put("clientSocketRcvBufSize", config.getClientSocketRcvBufSize());
+        result.put("writeBufferHighWaterMark", config.getWriteBufferHighWaterMark());
+        result.put("writeBufferLowWaterMark", config.getWriteBufferLowWaterMark());
+
+        Map<String, List<Object>> setterCases = new TreeMap<>();
+        for (String setting : List.of(
+            "clientSocketSndBufSize", "clientSocketRcvBufSize",
+            "writeBufferHighWaterMark", "writeBufferLowWaterMark")) {
+            List<Object> cases = new ArrayList<>();
+            for (int value : new int[] {Integer.MIN_VALUE, -1, 0, 1, Integer.MAX_VALUE}) {
+                org.apache.rocketmq.remoting.netty.NettyClientConfig configured =
+                    new org.apache.rocketmq.remoting.netty.NettyClientConfig();
+                switch (setting) {
+                    case "clientSocketSndBufSize":
+                        configured.setClientSocketSndBufSize(value);
+                        break;
+                    case "clientSocketRcvBufSize":
+                        configured.setClientSocketRcvBufSize(value);
+                        break;
+                    case "writeBufferHighWaterMark":
+                        configured.setWriteBufferHighWaterMark(value);
+                        break;
+                    case "writeBufferLowWaterMark":
+                        configured.setWriteBufferLowWaterMark(value);
+                        break;
+                    default:
+                        throw new IllegalStateException("unknown setting " + setting);
+                }
+                Map<String, Object> item = new TreeMap<>();
+                item.put("input", value);
+                switch (setting) {
+                    case "clientSocketSndBufSize":
+                        item.put("getter", configured.getClientSocketSndBufSize());
+                        break;
+                    case "clientSocketRcvBufSize":
+                        item.put("getter", configured.getClientSocketRcvBufSize());
+                        break;
+                    case "writeBufferHighWaterMark":
+                        item.put("getter", configured.getWriteBufferHighWaterMark());
+                        break;
+                    case "writeBufferLowWaterMark":
+                        item.put("getter", configured.getWriteBufferLowWaterMark());
+                        break;
+                    default:
+                        throw new IllegalStateException("unknown setting " + setting);
+                }
+                cases.add(item);
+            }
+            setterCases.put(setting, cases);
+        }
+        result.put("setterCases", setterCases);
         return result;
     }
 }

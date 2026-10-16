@@ -911,6 +911,8 @@ async fn p18_nameserver_proxy_scan_uses_timeout_cached_at_first_route_use() {
     let client = RemotingClient::with_config(ClientConfig {
         connect_timeout: 40,
         scan_available_nameserver: true,
+        client_socket_send_buffer_size: 64 * 1024,
+        client_socket_receive_buffer_size: 64 * 1024,
         socks_proxy_config: format!(r#"{{"127.0.0.0/8":{{"addr":"{}"}}}}"#, proxy_address),
         ..ClientConfig::default()
     })
@@ -3016,25 +3018,24 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         })
         .is_ok()
     );
-    for invalid_capacity in [
-        ClientConfig {
-            callback_executor_threads: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            write_buffer_high_water_mark: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            write_buffer_low_water_mark: i32::MAX as usize + 1,
-            ..defaults.clone()
-        },
-    ] {
-        assert!(config_is_accepted(invalid_capacity).is_err());
-    }
+    let invalid_capacity = ClientConfig {
+        callback_executor_threads: i32::MAX as usize + 1,
+        ..defaults.clone()
+    };
+    assert!(config_is_accepted(invalid_capacity).is_err());
     assert!(
         config_is_accepted(ClientConfig {
             callback_executor_threads: 0,
+            ..defaults.clone()
+        })
+        .is_ok()
+    );
+    assert!(
+        config_is_accepted(ClientConfig {
+            client_socket_send_buffer_size: i32::MIN,
+            client_socket_receive_buffer_size: i32::MAX,
+            write_buffer_low_water_mark: i32::MIN,
+            write_buffer_high_water_mark: i32::MAX,
             ..defaults.clone()
         })
         .is_ok()
@@ -3045,7 +3046,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
             write_buffer_high_water_mark: 5,
             ..defaults.clone()
         })
-        .is_err()
+        .is_ok()
     );
     assert!(
         config_is_accepted(ClientConfig {
@@ -3069,18 +3070,6 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         })
         .is_ok()
     );
-    for invalid in [
-        ClientConfig {
-            client_socket_send_buffer_size: usize::MAX,
-            ..defaults.clone()
-        },
-        ClientConfig {
-            client_socket_receive_buffer_size: usize::MAX,
-            ..defaults.clone()
-        },
-    ] {
-        assert!(config_is_accepted(invalid).is_err());
-    }
     assert!(
         config_is_accepted(ClientConfig {
             socks_proxy_config: r#"{"not-a-cidr":{"addr":"invalid","username":"user"}}"#.into(),
@@ -5472,6 +5461,8 @@ async fn p18_proxy_connect_timeout_uses_live_first_use_value_and_caches_it() {
     });
     let client = RemotingClient::with_config(ClientConfig {
         scan_available_nameserver: false,
+        client_socket_send_buffer_size: 64 * 1024,
+        client_socket_receive_buffer_size: 64 * 1024,
         socks_proxy_config: format!(r#"{{"127.0.0.0/8":{{"addr":"{}"}}}}"#, proxy_address),
         ..ClientConfig::default()
     })
@@ -5579,6 +5570,8 @@ async fn socks5_proxy_tunnels_a_remoting_request(username_password: bool) {
     };
     let config = ClientConfig {
         socks_proxy_config: proxy_config,
+        client_socket_send_buffer_size: 64 * 1024,
+        client_socket_receive_buffer_size: 64 * 1024,
         ..ClientConfig::default()
     };
     let client = RemotingClient::with_config(config).unwrap();

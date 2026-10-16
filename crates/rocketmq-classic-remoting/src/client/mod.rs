@@ -13,7 +13,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
     },
 };
 
@@ -172,10 +172,10 @@ struct ClientInner {
     client_worker_threads: AtomicI32,
     disable_netty_worker_group: AtomicBool,
     client_channel_max_idle_time_seconds: AtomicI32,
-    client_socket_send_buffer_size: AtomicUsize,
-    client_socket_receive_buffer_size: AtomicUsize,
-    write_buffer_high_water_mark: AtomicUsize,
-    write_buffer_low_water_mark: AtomicUsize,
+    client_socket_send_buffer_size: AtomicI32,
+    client_socket_receive_buffer_size: AtomicI32,
+    write_buffer_high_water_mark: AtomicI32,
+    write_buffer_low_water_mark: AtomicI32,
     pooled_byte_buffer_allocator_enabled: AtomicBool,
     active_connection_settings: Mutex<Option<config::ConnectionSettings>>,
     proxy_connection_settings: Mutex<HashMap<String, config::ConnectionSettings>>,
@@ -766,12 +766,12 @@ impl RemotingClient {
             client_worker_threads: AtomicI32::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
-            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
-            client_socket_receive_buffer_size: AtomicUsize::new(
+            client_socket_send_buffer_size: AtomicI32::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicI32::new(
                 config.client_socket_receive_buffer_size,
             ),
-            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
-            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            write_buffer_high_water_mark: AtomicI32::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicI32::new(config.write_buffer_low_water_mark),
             pooled_byte_buffer_allocator_enabled: AtomicBool::new(
                 config.pooled_byte_buffer_allocator_enabled,
             ),
@@ -904,7 +904,7 @@ impl RemotingClient {
     }
 
     /// Returns the configured Java client socket send-buffer size in bytes.
-    pub fn get_client_socket_send_buffer_size(&self) -> usize {
+    pub fn get_client_socket_send_buffer_size(&self) -> i32 {
         self.inner
             .client_socket_send_buffer_size
             .load(Ordering::Acquire)
@@ -912,14 +912,14 @@ impl RemotingClient {
 
     /// Sets the direct Bootstrap value captured by `start()` and the value
     /// captured when each proxy CIDR is first used.
-    pub fn set_client_socket_send_buffer_size(&self, size: usize) {
+    pub fn set_client_socket_send_buffer_size(&self, size: i32) {
         self.inner
             .client_socket_send_buffer_size
             .store(size, Ordering::Release);
     }
 
     /// Returns the configured Java client socket receive-buffer size in bytes.
-    pub fn get_client_socket_receive_buffer_size(&self) -> usize {
+    pub fn get_client_socket_receive_buffer_size(&self) -> i32 {
         self.inner
             .client_socket_receive_buffer_size
             .load(Ordering::Acquire)
@@ -927,35 +927,35 @@ impl RemotingClient {
 
     /// Sets the direct Bootstrap value captured by `start()` and the value
     /// captured when each proxy CIDR is first used.
-    pub fn set_client_socket_receive_buffer_size(&self, size: usize) {
+    pub fn set_client_socket_receive_buffer_size(&self, size: i32) {
         self.inner
             .client_socket_receive_buffer_size
             .store(size, Ordering::Release);
     }
 
     /// Returns the configured Java write-buffer high watermark in bytes.
-    pub fn get_write_buffer_high_water_mark(&self) -> usize {
+    pub fn get_write_buffer_high_water_mark(&self) -> i32 {
         self.inner
             .write_buffer_high_water_mark
             .load(Ordering::Acquire)
     }
 
     /// Sets the direct Bootstrap value captured by `start()`.
-    pub fn set_write_buffer_high_water_mark(&self, size: usize) {
+    pub fn set_write_buffer_high_water_mark(&self, size: i32) {
         self.inner
             .write_buffer_high_water_mark
             .store(size, Ordering::Release);
     }
 
     /// Returns the configured Java write-buffer low watermark in bytes.
-    pub fn get_write_buffer_low_water_mark(&self) -> usize {
+    pub fn get_write_buffer_low_water_mark(&self) -> i32 {
         self.inner
             .write_buffer_low_water_mark
             .load(Ordering::Acquire)
     }
 
     /// Sets the direct Bootstrap value captured by `start()`.
-    pub fn set_write_buffer_low_water_mark(&self, size: usize) {
+    pub fn set_write_buffer_low_water_mark(&self, size: i32) {
         self.inner
             .write_buffer_low_water_mark
             .store(size, Ordering::Release);
@@ -1049,12 +1049,12 @@ impl RemotingClient {
             client_worker_threads: AtomicI32::new(4),
             disable_netty_worker_group: AtomicBool::new(false),
             client_channel_max_idle_time_seconds: AtomicI32::new(120),
-            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
-            client_socket_receive_buffer_size: AtomicUsize::new(
+            client_socket_send_buffer_size: AtomicI32::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicI32::new(
                 config.client_socket_receive_buffer_size,
             ),
-            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
-            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            write_buffer_high_water_mark: AtomicI32::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicI32::new(config.write_buffer_low_water_mark),
             pooled_byte_buffer_allocator_enabled: AtomicBool::new(
                 config.pooled_byte_buffer_allocator_enabled,
             ),
@@ -3528,9 +3528,14 @@ mod tests {
         let connect_timeout_property = config::JAVA_CLIENT_CONNECT_TIMEOUT_PROPERTY;
         let max_idle_time_property = config::JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY;
         let close_socket_property = config::JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY;
+        let send_buffer_property = config::JAVA_CLIENT_SOCKET_SNDBUF_SIZE_PROPERTY;
+        let receive_buffer_property = config::JAVA_CLIENT_SOCKET_RCVBUF_SIZE_PROPERTY;
+        let high_watermark_property = config::JAVA_CLIENT_WRITE_BUFFER_HIGH_WATER_MARK_PROPERTY;
+        let low_watermark_property = config::JAVA_CLIENT_WRITE_BUFFER_LOW_WATER_MARK_PROPERTY;
         let configured = &fixture["remotingSemaphoreValues"];
         let worker_settings = &fixture["remotingWorkerSettings"];
         let timeout_settings = &fixture["remotingTimeoutSettings"];
+        let bootstrap_settings = &fixture["remotingBootstrapSettings"];
 
         match std::env::var(CHILD_MARKER).as_deref() {
             Ok("valid") => {
@@ -3561,12 +3566,42 @@ mod tests {
                         .as_i64()
                         .unwrap()
                 );
+                assert_eq!(
+                    i64::from(defaults.client_socket_send_buffer_size),
+                    bootstrap_settings["clientSocketSndBufSize"]
+                        .as_i64()
+                        .unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.client_socket_receive_buffer_size),
+                    bootstrap_settings["clientSocketRcvBufSize"]
+                        .as_i64()
+                        .unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.write_buffer_high_water_mark),
+                    bootstrap_settings["writeBufferHighWaterMark"]
+                        .as_i64()
+                        .unwrap()
+                );
+                assert_eq!(
+                    i64::from(defaults.write_buffer_low_water_mark),
+                    bootstrap_settings["writeBufferLowWaterMark"]
+                        .as_i64()
+                        .unwrap()
+                );
                 return;
             }
             Ok("invalid") => {
                 let error = std::panic::catch_unwind(ClientConfig::default).unwrap_err();
                 let message = error.downcast_ref::<String>().unwrap();
                 assert!(message.contains(async_property));
+                return;
+            }
+            Ok("invalid-bootstrap") => {
+                let error = std::panic::catch_unwind(ClientConfig::default).unwrap_err();
+                let message = error.downcast_ref::<String>().unwrap();
+                assert!(message.contains(send_buffer_property));
                 return;
             }
             _ => {}
@@ -3604,6 +3639,22 @@ mod tests {
                 max_idle_time_property,
                 property_values[max_idle_time_property].as_str().unwrap(),
             )
+            .env(
+                send_buffer_property,
+                property_values[send_buffer_property].as_str().unwrap(),
+            )
+            .env(
+                receive_buffer_property,
+                property_values[receive_buffer_property].as_str().unwrap(),
+            )
+            .env(
+                high_watermark_property,
+                property_values[high_watermark_property].as_str().unwrap(),
+            )
+            .env(
+                low_watermark_property,
+                property_values[low_watermark_property].as_str().unwrap(),
+            )
             .output()
             .unwrap();
         assert!(
@@ -3613,7 +3664,7 @@ mod tests {
             String::from_utf8_lossy(&valid.stderr)
         );
 
-        let invalid = Command::new(executable)
+        let invalid = Command::new(&executable)
             .arg("--exact")
             .arg("client::tests::client_remoting_defaults_follow_java_system_properties")
             .arg("--nocapture")
@@ -3646,6 +3697,53 @@ mod tests {
             "invalid child failed: {}{}",
             String::from_utf8_lossy(&invalid.stdout),
             String::from_utf8_lossy(&invalid.stderr)
+        );
+
+        let invalid_bootstrap = Command::new(&executable)
+            .arg("--exact")
+            .arg("client::tests::client_remoting_defaults_follow_java_system_properties")
+            .arg("--nocapture")
+            .env(CHILD_MARKER, "invalid-bootstrap")
+            .env(
+                async_property,
+                property_values[async_property].as_str().unwrap(),
+            )
+            .env(
+                oneway_property,
+                property_values[oneway_property].as_str().unwrap(),
+            )
+            .env(
+                worker_property,
+                property_values[worker_property].as_str().unwrap(),
+            )
+            .env(
+                connect_timeout_property,
+                property_values[connect_timeout_property].as_str().unwrap(),
+            )
+            .env(
+                max_idle_time_property,
+                property_values[max_idle_time_property].as_str().unwrap(),
+            )
+            .env(send_buffer_property, " 1")
+            .env(
+                receive_buffer_property,
+                property_values[receive_buffer_property].as_str().unwrap(),
+            )
+            .env(
+                high_watermark_property,
+                property_values[high_watermark_property].as_str().unwrap(),
+            )
+            .env(
+                low_watermark_property,
+                property_values[low_watermark_property].as_str().unwrap(),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            invalid_bootstrap.status.success(),
+            "invalid bootstrap property child failed: {}{}",
+            String::from_utf8_lossy(&invalid_bootstrap.stdout),
+            String::from_utf8_lossy(&invalid_bootstrap.stderr)
         );
     }
 
@@ -4230,14 +4328,84 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_live_write_watermarks_leave_start_retryable() {
+    async fn signed_socket_settings_follow_java_direct_and_proxy_snapshots() {
+        let client = RemotingClient::with_config(ClientConfig {
+            scan_available_nameserver: false,
+            socks_proxy_config: r#"{"127.0.0.0/8":{"addr":"127.0.0.1:1080"}}"#.into(),
+            client_socket_send_buffer_size: -8192,
+            client_socket_receive_buffer_size: 0,
+            write_buffer_low_water_mark: -3,
+            write_buffer_high_water_mark: 12,
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        client.start().unwrap();
+
+        let direct = client.inner.direct_connection_settings().unwrap();
+        assert_eq!(direct.send_buffer_size, -8192);
+        assert_eq!(direct.receive_buffer_size, 0);
+        assert_eq!(direct.write_buffer_watermarks, (64 * 1024, 32 * 1024));
+
+        let proxy = client
+            .inner
+            .connection_settings_for_route(Some("127.0.0.0/8"))
+            .unwrap();
+        assert_eq!(proxy.send_buffer_size, -8192);
+        assert_eq!(proxy.receive_buffer_size, 0);
+        assert_eq!(proxy.write_buffer_watermarks, (64 * 1024, 32 * 1024));
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn signed_buffer_and_watermark_settings_match_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config-properties.json"
+        ))
+        .unwrap();
+        let settings = &fixture["remotingBootstrapSettings"]["setterCases"];
         let client = RemotingClient::with_config(ClientConfig {
             scan_available_nameserver: false,
             ..ClientConfig::default()
         })
         .unwrap();
-        client.set_write_buffer_low_water_mark(8192);
-        client.set_write_buffer_high_water_mark(4096);
+
+        for (setting, cases) in settings.as_object().unwrap() {
+            for case in cases.as_array().unwrap() {
+                let input = i32::try_from(case["input"].as_i64().unwrap()).unwrap();
+                let expected = i32::try_from(case["getter"].as_i64().unwrap()).unwrap();
+                match setting.as_str() {
+                    "clientSocketSndBufSize" => {
+                        client.set_client_socket_send_buffer_size(input);
+                        assert_eq!(client.get_client_socket_send_buffer_size(), expected);
+                    }
+                    "clientSocketRcvBufSize" => {
+                        client.set_client_socket_receive_buffer_size(input);
+                        assert_eq!(client.get_client_socket_receive_buffer_size(), expected);
+                    }
+                    "writeBufferHighWaterMark" => {
+                        client.set_write_buffer_high_water_mark(input);
+                        assert_eq!(client.get_write_buffer_high_water_mark(), expected);
+                    }
+                    "writeBufferLowWaterMark" => {
+                        client.set_write_buffer_low_water_mark(input);
+                        assert_eq!(client.get_write_buffer_low_water_mark(), expected);
+                    }
+                    other => panic!("unexpected Java setting fixture: {other}"),
+                }
+            }
+        }
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn invalid_live_write_watermarks_leave_start_retryable() {
+        let client = RemotingClient::with_config(ClientConfig {
+            write_buffer_low_water_mark: 8192,
+            write_buffer_high_water_mark: 4096,
+            scan_available_nameserver: false,
+            ..ClientConfig::default()
+        })
+        .unwrap();
         assert!(matches!(
             client.start(),
             Err(TransportError::InvalidConfiguration(_))
@@ -4303,12 +4471,12 @@ mod tests {
             client_worker_threads: AtomicI32::new(config.worker_threads),
             disable_netty_worker_group: AtomicBool::new(config.disable_netty_worker_group),
             client_channel_max_idle_time_seconds: AtomicI32::new(config.max_idle_time),
-            client_socket_send_buffer_size: AtomicUsize::new(config.client_socket_send_buffer_size),
-            client_socket_receive_buffer_size: AtomicUsize::new(
+            client_socket_send_buffer_size: AtomicI32::new(config.client_socket_send_buffer_size),
+            client_socket_receive_buffer_size: AtomicI32::new(
                 config.client_socket_receive_buffer_size,
             ),
-            write_buffer_high_water_mark: AtomicUsize::new(config.write_buffer_high_water_mark),
-            write_buffer_low_water_mark: AtomicUsize::new(config.write_buffer_low_water_mark),
+            write_buffer_high_water_mark: AtomicI32::new(config.write_buffer_high_water_mark),
+            write_buffer_low_water_mark: AtomicI32::new(config.write_buffer_low_water_mark),
             pooled_byte_buffer_allocator_enabled: AtomicBool::new(
                 config.pooled_byte_buffer_allocator_enabled,
             ),

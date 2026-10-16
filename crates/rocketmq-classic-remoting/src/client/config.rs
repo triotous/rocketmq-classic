@@ -22,6 +22,14 @@ pub(super) const JAVA_CLIENT_CHANNEL_MAX_IDLE_TIME_PROPERTY: &str =
     "com.rocketmq.remoting.client.channel.maxIdleTimeSeconds";
 pub(super) const JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY: &str =
     "com.rocketmq.remoting.client.closeSocketIfTimeout";
+pub(super) const JAVA_CLIENT_SOCKET_SNDBUF_SIZE_PROPERTY: &str =
+    "com.rocketmq.remoting.socket.sndbuf.size";
+pub(super) const JAVA_CLIENT_SOCKET_RCVBUF_SIZE_PROPERTY: &str =
+    "com.rocketmq.remoting.socket.rcvbuf.size";
+pub(super) const JAVA_CLIENT_WRITE_BUFFER_HIGH_WATER_MARK_PROPERTY: &str =
+    "com.rocketmq.remoting.write.buffer.high.water.mark";
+pub(super) const JAVA_CLIENT_WRITE_BUFFER_LOW_WATER_MARK_PROPERTY: &str =
+    "com.rocketmq.remoting.write.buffer.low.water.mark";
 static JAVA_FRAME_MAX_LENGTH: OnceLock<Result<usize, String>> = OnceLock::new();
 static JAVA_CLIENT_DEFAULTS: OnceLock<Result<JavaClientDefaults, String>> = OnceLock::new();
 
@@ -33,6 +41,10 @@ struct JavaClientDefaults {
     connect_timeout: i32,
     max_idle_time: i32,
     close_socket_if_timeout: bool,
+    client_socket_send_buffer_size: i32,
+    client_socket_receive_buffer_size: i32,
+    write_buffer_high_water_mark: i32,
+    write_buffer_low_water_mark: i32,
 }
 
 fn read_java_int_property(property: &str, default: i32) -> Result<i32, String> {
@@ -80,6 +92,22 @@ fn java_client_defaults() -> JavaClientDefaults {
                     JAVA_CLIENT_CLOSE_SOCKET_IF_TIMEOUT_PROPERTY,
                     true,
                 ),
+                client_socket_send_buffer_size: read_java_int_property(
+                    JAVA_CLIENT_SOCKET_SNDBUF_SIZE_PROPERTY,
+                    0,
+                )?,
+                client_socket_receive_buffer_size: read_java_int_property(
+                    JAVA_CLIENT_SOCKET_RCVBUF_SIZE_PROPERTY,
+                    0,
+                )?,
+                write_buffer_high_water_mark: read_java_int_property(
+                    JAVA_CLIENT_WRITE_BUFFER_HIGH_WATER_MARK_PROPERTY,
+                    0,
+                )?,
+                write_buffer_low_water_mark: read_java_int_property(
+                    JAVA_CLIENT_WRITE_BUFFER_LOW_WATER_MARK_PROPERTY,
+                    0,
+                )?,
             })
         })
         .clone()
@@ -1891,29 +1919,20 @@ impl SocksProxyConfig {
 /// Client controls mapped from Java `NettyClientConfig` settings used by this transport.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ConnectionSettings {
-    pub(super) send_buffer_size: usize,
-    pub(super) receive_buffer_size: usize,
+    pub(super) send_buffer_size: i32,
+    pub(super) receive_buffer_size: i32,
     pub(super) write_buffer_watermarks: (usize, usize),
     pub(super) pooled_byte_buffer_allocator_enabled: bool,
 }
 
 impl ConnectionSettings {
     pub(super) fn direct(
-        send_buffer_size: usize,
-        receive_buffer_size: usize,
-        write_buffer_low_water_mark: usize,
-        write_buffer_high_water_mark: usize,
+        send_buffer_size: i32,
+        receive_buffer_size: i32,
+        write_buffer_low_water_mark: i32,
+        write_buffer_high_water_mark: i32,
         pooled_byte_buffer_allocator_enabled: bool,
     ) -> Result<Self, TransportError> {
-        if i32::try_from(send_buffer_size).is_err()
-            || i32::try_from(receive_buffer_size).is_err()
-            || i32::try_from(write_buffer_low_water_mark).is_err()
-            || i32::try_from(write_buffer_high_water_mark).is_err()
-        {
-            return Err(TransportError::InvalidConfiguration(
-                "integer client settings must fit their Java signed integer ranges".into(),
-            ));
-        }
         if write_buffer_low_water_mark > 0
             && write_buffer_high_water_mark > 0
             && write_buffer_low_water_mark > write_buffer_high_water_mark
@@ -1936,14 +1955,9 @@ impl ConnectionSettings {
     }
 
     pub(super) fn proxy(
-        send_buffer_size: usize,
-        receive_buffer_size: usize,
+        send_buffer_size: i32,
+        receive_buffer_size: i32,
     ) -> Result<Self, TransportError> {
-        if i32::try_from(send_buffer_size).is_err() || i32::try_from(receive_buffer_size).is_err() {
-            return Err(TransportError::InvalidConfiguration(
-                "socket buffer sizes must fit their Java signed integer ranges".into(),
-            ));
-        }
         Ok(Self {
             send_buffer_size,
             receive_buffer_size,
@@ -1953,9 +1967,9 @@ impl ConnectionSettings {
     }
 }
 
-fn watermarks(low: usize, high: usize) -> (usize, usize) {
+fn watermarks(low: i32, high: i32) -> (usize, usize) {
     if low > 0 && high > 0 {
-        (high, low)
+        (high as usize, low as usize)
     } else {
         (64 * 1024, 32 * 1024)
     }
@@ -1984,10 +1998,14 @@ pub struct ClientConfig {
     pub worker_threads: i32,
     pub callback_executor_threads: usize,
     pub disable_callback_executor: bool,
-    pub client_socket_send_buffer_size: usize,
-    pub client_socket_receive_buffer_size: usize,
-    pub write_buffer_high_water_mark: usize,
-    pub write_buffer_low_water_mark: usize,
+    /// Java `clientSocketSndBufSize`; retains the signed `int` value.
+    pub client_socket_send_buffer_size: i32,
+    /// Java `clientSocketRcvBufSize`; retains the signed `int` value.
+    pub client_socket_receive_buffer_size: i32,
+    /// Java `writeBufferHighWaterMark`; retains the signed `int` value.
+    pub write_buffer_high_water_mark: i32,
+    /// Java `writeBufferLowWaterMark`; retains the signed `int` value.
+    pub write_buffer_low_water_mark: i32,
     pub pooled_byte_buffer_allocator_enabled: bool,
     pub disable_netty_worker_group: bool,
     /// Java `clientChannelMaxIdleTimeSeconds`; non-positive values disable idle detection.
@@ -2015,10 +2033,10 @@ impl Default for ClientConfig {
                 .map(usize::from)
                 .unwrap_or(1),
             disable_callback_executor: false,
-            client_socket_send_buffer_size: 0,
-            client_socket_receive_buffer_size: 0,
-            write_buffer_high_water_mark: 0,
-            write_buffer_low_water_mark: 0,
+            client_socket_send_buffer_size: defaults.client_socket_send_buffer_size,
+            client_socket_receive_buffer_size: defaults.client_socket_receive_buffer_size,
+            write_buffer_high_water_mark: defaults.write_buffer_high_water_mark,
+            write_buffer_low_water_mark: defaults.write_buffer_low_water_mark,
             pooled_byte_buffer_allocator_enabled: false,
             disable_netty_worker_group: false,
             max_idle_time: defaults.max_idle_time,
@@ -2038,23 +2056,9 @@ impl ClientConfig {
     }
 
     pub(super) fn validate(&self) -> Result<(), TransportError> {
-        if i32::try_from(self.callback_executor_threads).is_err()
-            || i32::try_from(self.client_socket_send_buffer_size).is_err()
-            || i32::try_from(self.client_socket_receive_buffer_size).is_err()
-            || i32::try_from(self.write_buffer_high_water_mark).is_err()
-            || i32::try_from(self.write_buffer_low_water_mark).is_err()
-        {
+        if i32::try_from(self.callback_executor_threads).is_err() {
             return Err(TransportError::InvalidConfiguration(
-                "integer client settings must fit their Java signed integer ranges".into(),
-            ));
-        }
-        if self.write_buffer_low_water_mark > 0
-            && self.write_buffer_high_water_mark > 0
-            && self.write_buffer_low_water_mark > self.write_buffer_high_water_mark
-        {
-            return Err(TransportError::InvalidConfiguration(
-                "write buffer low water mark must not exceed high water mark when both are enabled"
-                    .into(),
+                "callback executor thread count must fit the Java signed integer range".into(),
             ));
         }
         Ok(())
@@ -2213,7 +2217,8 @@ fn java_ip_to_int(ip: &str) -> Result<i32, TransportError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientConfig, ParsedProxyRoute, SocksProxyConfig, connect_timeout_duration, scan_interval,
+        ClientConfig, ConnectionSettings, ParsedProxyRoute, SocksProxyConfig,
+        connect_timeout_duration, scan_interval,
     };
 
     #[test]
@@ -2294,7 +2299,17 @@ mod tests {
             write_buffer_low_water_mark: 128,
             ..defaults
         };
-        assert!(invalid.validate().is_err());
+        assert!(invalid.validate().is_ok());
+        assert!(
+            ConnectionSettings::direct(
+                invalid.client_socket_send_buffer_size,
+                invalid.client_socket_receive_buffer_size,
+                invalid.write_buffer_low_water_mark,
+                invalid.write_buffer_high_water_mark,
+                invalid.pooled_byte_buffer_allocator_enabled,
+            )
+            .is_err()
+        );
     }
 
     #[test]

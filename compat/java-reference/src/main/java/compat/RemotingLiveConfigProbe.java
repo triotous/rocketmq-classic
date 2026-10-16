@@ -72,6 +72,7 @@ public final class RemotingLiveConfigProbe {
         verifyConnectTimeoutSetting();
         verifyProxyConnectTimeoutSetting();
         verifyBootstrapOptionSettings();
+        verifySignedBootstrapOptionSettings();
         verifyUseTlsSetting();
         verifyChannelPipelineSettings();
         System.out.println("Remoting live config mutation verified");
@@ -334,6 +335,41 @@ public final class RemotingLiveConfigProbe {
                 "new proxy send buffer");
             assertIntOption(secondProxy.config().options(), ChannelOption.SO_RCVBUF, 32768,
                 "new proxy receive buffer");
+        } finally {
+            client.shutdown();
+        }
+    }
+
+    private static void verifySignedBootstrapOptionSettings() throws Exception {
+        NettyClientConfig config = new NettyClientConfig();
+        config.setSocksProxyConfig("{\"127.0.0.0/8\":{\"addr\":\"127.0.0.1:1080\"}}");
+        config.setClientSocketSndBufSize(-8192);
+        config.setClientSocketRcvBufSize(0);
+        config.setWriteBufferLowWaterMark(-3);
+        config.setWriteBufferHighWaterMark(12);
+        NettyRemotingClient client = new NettyRemotingClient(config);
+        try {
+            client.start();
+            Field directField = NettyRemotingClient.class.getDeclaredField("bootstrap");
+            directField.setAccessible(true);
+            Bootstrap direct = (Bootstrap) directField.get(client);
+            Map<ChannelOption<?>, Object> directOptions = direct.config().options();
+            if (directOptions.containsKey(ChannelOption.SO_SNDBUF)
+                || directOptions.containsKey(ChannelOption.SO_RCVBUF)
+                || directOptions.containsKey(ChannelOption.WRITE_BUFFER_WATER_MARK)) {
+                throw new IllegalStateException("direct Bootstrap installed nonpositive or disabled options");
+            }
+
+            java.lang.reflect.Method fetchBootstrap = NettyRemotingClient.class
+                .getDeclaredMethod("fetchBootstrap", String.class);
+            fetchBootstrap.setAccessible(true);
+            Bootstrap proxy = (Bootstrap) fetchBootstrap.invoke(client, "127.0.0.1:10911");
+            Map<ChannelOption<?>, Object> proxyOptions = proxy.config().options();
+            assertIntOption(proxyOptions, ChannelOption.SO_SNDBUF, -8192, "signed proxy send buffer");
+            assertIntOption(proxyOptions, ChannelOption.SO_RCVBUF, 0, "zero proxy receive buffer");
+            if (proxyOptions.containsKey(ChannelOption.WRITE_BUFFER_WATER_MARK)) {
+                throw new IllegalStateException("proxy Bootstrap installed direct-only write watermarks");
+            }
         } finally {
             client.shutdown();
         }
