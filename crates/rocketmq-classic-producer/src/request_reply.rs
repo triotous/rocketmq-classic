@@ -460,6 +460,7 @@ impl Producer {
             Ok(PendingReplyCompletion::SendFailed(cause)) => {
                 Err(ProducerError::RequestSendFailed { topic, cause })
             }
+            Ok(PendingReplyCompletion::Cancelled) => Err(ProducerError::RequestReplyCancelled),
             Err(_) => Err(ProducerError::RequestReplyCancelled),
         }
     }

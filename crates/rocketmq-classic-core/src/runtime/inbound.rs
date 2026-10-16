@@ -1117,7 +1117,10 @@ mod tests {
                 PendingReplyCompletion::Reply(_)
             ));
         } else {
-            assert!(cancel_race.receive().await.is_err());
+            assert!(matches!(
+                cancel_race.receive().await.unwrap(),
+                PendingReplyCompletion::Cancelled
+            ));
         }
 
         unregister(&runtime, &lease, true).await;

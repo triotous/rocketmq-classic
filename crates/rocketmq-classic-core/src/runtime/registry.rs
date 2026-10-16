@@ -372,6 +372,7 @@ pub enum PendingReplyCompletion {
     Reply(MessageExt),
     Timeout { send_succeeded: bool },
     SendFailed(String),
+    Cancelled,
 }
 
 /// Identity-bound operations for the currently pending correlation entry.
@@ -431,7 +432,17 @@ impl PendingReplyControl {
         let owned = entries
             .get(&self.correlation_id)
             .is_some_and(|entry| Arc::ptr_eq(&entry.owner, &self.owner));
-        owned && entries.remove(&self.correlation_id).is_some()
+        let entry = owned
+            .then(|| entries.remove(&self.correlation_id))
+            .flatten();
+        drop(entries);
+        let Some(entry) = entry else {
+            return false;
+        };
+        if let Some(sender) = entry.sender {
+            let _ = sender.send(PendingReplyCompletion::Cancelled);
+        }
+        true
     }
 
     /// Complete the owned entry with timeout only when its monotonic deadline
@@ -468,6 +479,8 @@ impl PendingReplyControl {
 /// Cancellable receiver for one producer-owned request/reply correlation.
 pub struct PendingReplyRequest {
     receiver: oneshot::Receiver<PendingReplyCompletion>,
+    receiver_closed: bool,
+    deadline: Instant,
     control: PendingReplyControl,
     future: Arc<RequestResponseFuture>,
 }
@@ -482,7 +495,19 @@ impl PendingReplyRequest {
     }
 
     pub async fn receive(&mut self) -> Result<PendingReplyCompletion, oneshot::error::RecvError> {
-        (&mut self.receiver).await
+        if !self.receiver_closed {
+            match (&mut self.receiver).await {
+                Ok(completion) => return Ok(completion),
+                Err(_) => self.receiver_closed = true,
+            }
+        }
+        // Java's RequestResponseFuture waiter owns its timeout independently
+        // of the live correlation map. Removing or replacing the map entry
+        // must not wake that waiter early.
+        tokio::time::sleep_until(self.deadline).await;
+        Ok(PendingReplyCompletion::Timeout {
+            send_succeeded: self.future.send_request_ok(),
+        })
     }
 }
 
@@ -700,7 +725,11 @@ impl GroupRegistry {
                 .filter_map(|correlation_id| futures.remove(&correlation_id))
                 .collect::<Vec<_>>()
         };
-        drop(pending);
+        for entry in pending {
+            if let Some(sender) = entry.sender {
+                let _ = sender.send(PendingReplyCompletion::Cancelled);
+            }
+        }
         drop(previous);
         Ok(())
     }
@@ -786,6 +815,8 @@ impl GroupRegistry {
         }
         Ok(PendingReplyRequest {
             receiver,
+            receiver_closed: false,
+            deadline,
             control: PendingReplyControl {
                 table,
                 correlation_id: future.correlation_id().to_owned(),
@@ -1309,7 +1340,7 @@ mod pending_reply_admission_tests {
     }
 
     #[tokio::test]
-    async fn clearing_registry_drops_pending_reply_without_extra_completion_variant() {
+    async fn clearing_registry_cancels_pending_reply() {
         let registry = Arc::new(GroupRegistry::with_pending_reply_capacity(1));
         let producer: Arc<dyn ProducerRuntime> = Arc::new(Producer);
         let lease = registry
@@ -1326,7 +1357,10 @@ mod pending_reply_admission_tests {
 
         registry.clear().unwrap();
 
-        assert!(pending.receive().await.is_err());
+        assert!(matches!(
+            pending.receive().await.unwrap(),
+            PendingReplyCompletion::Cancelled
+        ));
         assert!(registry.snapshot().unwrap().producers.is_empty());
     }
 }
@@ -1336,6 +1370,10 @@ mod public_request_future_table_tests {
     use super::*;
     use crate::runtime::RequestResponseCallback;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct TestProducer;
+
+    impl ProducerRuntime for TestProducer {}
 
     struct RecordingCallback(AtomicUsize);
 
@@ -1384,6 +1422,40 @@ mod public_request_future_table_tests {
         assert_eq!(future.response_msg().unwrap().topic(), reply.topic());
         assert_eq!(callback.0.load(Ordering::SeqCst), 1);
         assert!(!first_view.contains_key(correlation_id).unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn removing_live_correlation_keeps_owner_waiting_until_deadline() {
+        let correlation_id = "public-live-table-remove-keeps-owner-waiting";
+        let table = RequestFutureTable::shared();
+        let _ = table.remove(correlation_id).unwrap();
+
+        let registry = Arc::new(GroupRegistry::default());
+        let producer: Arc<dyn ProducerRuntime> = Arc::new(TestProducer);
+        let lease = registry
+            .register_producer("public-live-table-remove-owner", producer)
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut pending = registry
+            .register_pending_reply(&lease, correlation_id, deadline)
+            .await
+            .unwrap();
+
+        assert!(table.remove(correlation_id).unwrap().is_some());
+        assert!(!table.contains_key(correlation_id).unwrap());
+        let mut receive = tokio::spawn(async move { pending.receive().await });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), &mut receive)
+                .await
+                .is_err(),
+            "removing the lookup entry must not complete the owner early"
+        );
+
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert!(matches!(
+            receive.await.unwrap().unwrap(),
+            PendingReplyCompletion::Timeout { .. }
+        ));
     }
 
     #[test]

@@ -156,4 +156,7 @@ fn pinned_java_request_future_mutation_and_holder_table_behavior_is_recorded() {
     assert_eq!(holder["removedSameInstance"], true);
     assert_eq!(holder["sizeAfterInsert"], 1);
     assert_eq!(holder["sizeAfterRemove"], 0);
+    assert_eq!(holder["waiterLatchCountAfterTableRemove"], 1);
+    assert_eq!(holder["waiterResponseNullAfterTableRemove"], true);
+    assert_eq!(holder["waiterLatchStillUnsignaledAfterTableRemove"], true);
 }
