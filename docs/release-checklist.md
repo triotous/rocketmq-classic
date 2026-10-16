@@ -2215,3 +2215,15 @@ Before any publication:
   `fd92f9e88ab615288cfc5b25b8ed594c000fc2b3c07b9952d6bc0fd790cdbde4`. This
   closes the collection-send mutation slice only; broad P18-V01 and the final
   full-workspace P18-V02 rerun remain open.
+- P18-V01 Producer batch error/order follow-up (`c4251219`, 2026-10-16): Java
+  wraps batch-construction failures with `Failed to initiate the MessageBatch`;
+  Rust now preserves that message and exposes the typed source error. Batch
+  encoding no longer applies the aggregate-size check before producer-state
+  validation, matching Java's call order. The invoked fixture covers wrapper
+  messages, per-element partial mutation, and an unstarted oversized batch.
+  Producer all-feature tests (146 unit, 65 integration, and 6 doc tests), strict
+  Producer Clippy, all-target/all-feature workspace check, the pinned Producer
+  core fixture verification, formatting, and diff checks pass. Current Producer
+  core fixture SHA-256: `bfa2d5f8f411c4648670d024e44b0e637ab793873a9eeb0c7ff75bb2a82651c5`.
+  This closes only these collection-send error/order slices; broad P18-V01 and
+  the final full-workspace P18-V02 rerun remain open.
