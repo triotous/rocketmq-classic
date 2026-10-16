@@ -2112,3 +2112,15 @@ Before any publication:
   Fixture SHA-256: `1b9590233baae11bb8705795bc357c84b12fa8cf2be978d69267d2f4e2fc1fe2`.
   Formatting, checksum, and diff checks pass. This closes only this utility
   declaration slice; broad P18-V01 remains open.
+
+- P18-V01 Common `PullSysFlag` declared-surface inventory (`d0a36f9e`,
+  2026-10-16): the pinned Java fixture records its empty public-constant map,
+  public no-argument constructor, and all 10 declared public methods. Rust pins
+  these signatures and checks the two flag builders, predicates, clearers, and
+  subscription builder through `sysflag::pull`; the stateless Java utility
+  constructor is represented by that Rust namespace. Common `message_decode`
+  passes (23 tests), strict all-target/all-feature Common Clippy passes, and
+  pinned Maven `verify` passes all 37 scenarios, fixture drift, and Java/Rust
+  cross-decodes. Formatting, checksum, and diff checks pass. Fixture SHA-256:
+  `be0af6c701fbebef014ba1724670d126d5ec70ff73060c990d934e1721d7a3b9`. This
+  closes only the PullSysFlag declaration slice; broad P18-V01 remains open.
