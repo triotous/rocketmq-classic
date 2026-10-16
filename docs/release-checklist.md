@@ -2542,3 +2542,18 @@ Before any publication:
   This closes the declared-method crosswalk slice only; broad P18-V01 and the
   final-revision P18-V02 workspace gate remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195832Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T195832Z.rlog).
+
+- P18-V01 BatchAck inherited serialization (`bd228919`, 2026-10-16, pinned
+  Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  `BatchAckMessageRequestBody` now maps inherited compact/pretty JSON, encode,
+  decode/list decode, fromJson and their nullable results. The fixture pins
+  both constructors, all 19 declared `BatchAck` methods, the four declared body
+  methods, and all 13 callable body methods including inherited overloads.
+  Three serializer cases and the 111-case body input matrix pass through the
+  Java-compatible Rust adapters. Protocol all-feature tests (118 unit tests,
+  integration targets and 42 doctests), strict Protocol Clippy, Maven verify
+  (37 scenarios), formatting and diff checks pass. Empty
+  `JSONWriter.Feature[]` is covered; non-empty writer features remain outside
+  this adapter. Broad P18-V01 and the final-revision full-workspace P18-V02
+  gate remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T201832Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T201832Z.rlog).

@@ -36,6 +36,16 @@ Historical getter checkpoint, superseded by [ADR-0064](ADR-0064-shared-batch-ack
 - Checkpoint aggregate `fixtures/runtime/lookup.json` SHA-256: `abfe31546b68799aced43ff4f631f5dea37a4c14efac1dfc60a1ed637a22b970`.
 - Full workspace/all-target tests, strict Clippy, pinned offline Maven verify, comparator/manifest22, formatting, and diff checks pass. Rust does not preserve identity with the caller-owned Java `BitSet`; Phase 6 remains PARTIAL and P6-V04 stays PENDING_PHASE_19.
 
+## Inherited RemotingSerializable API continuation
+
+The pinned BatchAckMessageRequestBody extends RemotingSerializable. The Rust DTO now exposes Fastjson-compatible instance adapters for compact/pretty JSON, byte encoding, single-value decode, list decode, and fromJson, with nullable forms where Java returns null. Optional-value adapters map the inherited static encode(Object) and toJson(Object, boolean) null results. The shared crate-private Fastjson writer is used for key ordering and Java tab indentation.
+
+The invoked Java fixture records both DTO constructors, all 19 declared BatchAck methods, the four declared body methods, and the body's 13 callable methods including inherited overloads. Three Java cases cover defaults, explicit-null fields, and a populated body with a null list member. The existing 111 input cases now exercise the Rust nullable Java decoder. The feature-varargs overload is verified with an empty feature list; non-empty Fastjson writer features remain outside this adapter and the broader inherited-surface audit stays open.
+
+- Pinned source: BatchAckMessageRequestBody.java SHA-256 11b86eb41d3d427e4400aa6741916d57f5f7d035f5b2dec3c86c56b0f2688463.
+- Invoked fixture: fixtures/runtime/lookup.json SHA-256 581a2a5dad120533595717673bd395b6078d978f937ce0c888ca994ba7f81fd7.
+- Focused and all-feature Protocol tests, strict Protocol Clippy, Java fixture drift verification, and full Maven verify pass for this change.
+
 ## Java-compatible BitSet value continuation
 
 `BatchAck.bit_set` uses a shared handle around the Java-compatible Rust `BitSet` value rather than exposing raw Base64 bytes as its mutation API. It maps the functional Java surface: index and range set/clear/flip/get, boolean setter overloads, next/previous set/clear searches, `intersects`, `and/or/xor/andNot`, cardinality, length, emptiness, size/capacity, byte and long-array values, set-bit iteration, equality, Java hash/text, and canonical `toByteArray()` encoding. BatchAck JSON keeps the existing Base64 field and omits an empty bit set as before. Negative indexes and invalid ranges return typed `BitSetError` values; the direct Java oracle confirms those operations throw `IndexOutOfBoundsException`.
