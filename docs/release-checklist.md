@@ -2258,3 +2258,25 @@ Before any publication:
   `windows-latest` and fails if the exact test does not report one pass. The
   local host cannot execute Windows binaries; the workflow result remains
   pending a run on the current revision.
+- P18-V01 Common `MessageAccessor.setProperties` caller-map alias follow-up
+  (2026-10-16, pinned Java client source `efa1be59d6fc747ad220f036c86030f05f0419f9`):
+  Java retains the supplied `Map` object and exposes mutations through both the
+  caller and `Message`. Rust now provides `SharedMessageProperties`,
+  `Message::set_properties_shared`, and `Message::shared_properties`, and the
+  primary facade re-exports the shared handle. The invoked fixture checks
+  identity and bidirectional mutation; Common and facade regressions exercise
+  the mapped behavior. Fixture SHA-256:
+  `02be176d528051f874a159a7fc2867484a8e1c2f8a7cffcf92c588ec8853db91`.
+  Focused Common API and facade tests, all Common tests/Clippy, pinned Maven
+  verify (37 scenarios, fixture checks, and Java/Rust cross-decodes), format,
+  and diff checks pass. Broader P18-V01 reconciliation remains open.
+- Current-revision server-free P18-V02 rerun (`830969e8`, 2026-10-16): default
+  and all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, Maven `verify` (37 scenarios, fixture checks, Java/Rust cross-decodes),
+  comparator self-test and 37-scenario manifest, 16 deterministic race/leak
+  cases × 3, fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations,
+  146 frame decodes, 113 message decodes), release examples, benchmark
+  compilation, locked metadata/package checks, all seven package listings,
+  UTC and Asia/Taipei Unique ID tests, formatting, and diff checks pass. Broad
+  P18-V01, current-revision GitHub Ubuntu/P18-V04 evidence, and Phase 19
+  Docker/Broker automation and scenario execution remain open.

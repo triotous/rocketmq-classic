@@ -1243,15 +1243,15 @@ The invoked `RuntimeConfigFixtures` records every declared public field/method a
 
 ## Common public API: MessageAccessor
 
-The pinned Java 5.5.1 `MessageAccessor` declares 20 public static methods. Rust keeps these operations on `Message`, `NullableMessageProperties`, and the message property constants rather than introducing a Java-shaped utility type.
+The pinned Java 5.5.1 `MessageAccessor` declares 20 public static methods. Rust keeps these operations on `Message`, `SharedMessageProperties`, `NullableMessageProperties`, and the message property constants rather than introducing a Java-shaped utility type. Java `Message.getProperties()` returns its live mutable map, and `MessageAccessor.setProperties()` stores the supplied map object. Rust's ordinary `set_properties` remains an owned-map operation; `set_properties_shared` plus cloneable `SharedMessageProperties` preserve caller/message aliasing when that observable behavior is required. `shared_properties` is the mutable live-handle counterpart to Java's `getProperties`; `get_properties` remains a read view.
 
 | Java 5.5.1 method | Rust counterpart |
 | --- | --- |
 | `clearProperty(Message, String)` | `Message::clear_property_nullable` and `Message::clear_system_property` |
-| `setProperties(Message, Map)` | `Message::set_properties` and `Message::set_nullable_properties` |
+| `setProperties(Message, Map)` | `Message::set_properties` for owned values, `Message::set_properties_shared` with `SharedMessageProperties` for retained map identity, and `Message::set_nullable_properties` for null entries |
 | `putProperty(Message, String, String)` | `Message::set_property_nullable` |
 | Transfer flag, correction flag, origin message ID, MQ2 flag, reconsume time, max reconsume times, consume start timestamp, and Lite topic getters/setters | `Message::{get_property,set_system_property,set_system_property_nullable}` with the matching `message::constants::PROPERTY_*` key |
 | `cloneMessage(Message)` | `Message::clone_message`, which creates a distinct message while retaining Java's shared body/property handles until replacement |
 | `deepCopyProperties(Map)` | `Clone` on `NullableMessageProperties`, preserving null keys and values in a separately owned map; `Option::clone` preserves a null map |
 
-`message_public_api_matches_java_551_fixture` pins the declared method signatures and compares the property helper values, nullable map behavior, deep-copy independence, and `cloneMessage` aliasing behavior with the invoked Java fixture. The fixture SHA-256 is `85feb19197afb046354bb4c88aed4ad1008dcfe235f7bf781817ffa7eb1edd2f`. This closes the `MessageAccessor` declaration and mapped-behavior slice; the broader Common constructor/property overload, input/error/flow, and reverse-export audit remains open under P18-V01.
+`message_public_api_matches_java_551_fixture` pins the declared method signatures and compares the property helper values, nullable map behavior, deep-copy independence, `setProperties` caller-map aliasing, and `cloneMessage` aliasing behavior with the invoked Java fixture. The fixture SHA-256 is `02be176d528051f874a159a7fc2867484a8e1c2f8a7cffcf92c588ec8853db91`. This closes the `MessageAccessor` declaration and mapped-behavior slice; the broader Common constructor/property overload, input/error/flow, and reverse-export audit remains open under P18-V01.

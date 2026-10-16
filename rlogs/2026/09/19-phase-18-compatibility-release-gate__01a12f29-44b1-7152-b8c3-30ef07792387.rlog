@@ -5,3 +5,13 @@
 - First standalone generation attempt used a compile-scope classpath and failed because `commons-validator` was absent. Rebuilt the generated classpath with `includeScope=test`, then generated the fixture successfully. `mvn -q -f compat/java-reference/pom.xml exec:java@verify-java-message-decode-fixtures` passes with all 11 message fixtures.
 - Updated `fixtures/messages/records.json`; SHA-256: `02be176d528051f874a159a7fc2867484a8e1c2f8a7cffcf92c588ec8853db91`.
 - No files in `/Users/bruce.tsai/Projects/3rd/rocketmq` were changed. No plan files were changed.
+
+## Rust alias implementation and server-free gate — 2026-10-16
+
+- The new Java fixture exposed that the existing Rust owned-map setter could not preserve caller/message aliasing. The added Rust assertion failed to compile before implementation because `SharedMessageProperties`, `Message::set_properties_shared`, and `Message::shared_properties` were absent.
+- Implemented the cloneable synchronized map handle with Java-style nullable keys/values, live attachment to `Message`, mutable live-handle access, and a primary-facade re-export. Added Common and facade tests plus Java-to-Rust API crosswalk documentation.
+- PASS: focused Common public API test, facade public-types test, all-feature Common tests (23 unit, 30 integration, 24 doctests), strict Common Clippy, and pinned Java fixture verification.
+- PASS on code commit `830969e8`: default and all-feature workspace tests; all-target/all-feature workspace check and strict Clippy; pinned Maven `verify` (37 scenarios, fixture checks, Java/Rust cross-decodes); comparator self-test and 37-scenario manifest; offline race/leak smoke (16 cases × 3); fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes, 113 message decodes); release examples; workspace benchmark compilation; metadata/package checks; UTC and Asia/Taipei Unique ID tests (4 each); rustfmt and diff checks.
+- Full locked Cargo metadata reports 215 packages, including 208 registry packages, all with license metadata. All seven `cargo package --workspace --list --locked --allow-dirty` listings contain `LICENSE` and `NOTICE`. `scripts/check-workspace-metadata.py` passes.
+- `python3 tests/differential/compare.py --help` is not supported and prints usage with exit 1; the documented `--self-test` and `--validate-manifest` commands pass.
+- The broad P18-V01 bidirectional Java/Rust audit, current-revision GitHub Ubuntu/P18-V04 result, Phase 19 Docker/Broker runner and scenarios, and pre-publication version/dependency resolution remain open. No push, tag, publication, Docker/Broker run, plan edit, or Java checkout edit occurred.
