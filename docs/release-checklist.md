@@ -2647,3 +2647,19 @@ Before any publication:
   mappings; 44 remain unmapped. The final-revision full-workspace P18-V02 gate
   is still pending after this change. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T221138Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T221138Z.rlog).
+- P18-V01 `WriteBooleanAsNumber` and combined feature precedence (2026-10-16):
+  Java fixtures now pin the individual and combined outputs across inherited
+  body, route, and heartbeat serializers. Fastjson2 stringifies booleans when
+  both `WriteBooleanAsNumber` and `WriteNonStringValueAsString` are supplied;
+  Rust matches that precedence. Five of 48 writer features now have behavior
+  mappings; the other 43 remain unmapped. Protocol all-feature tests (121 unit
+  tests, all integration targets, 42 doctests), strict Protocol Clippy, Maven
+  verify (37 scenarios), format, and diff checks pass. Fixture SHA-256 values:
+  `lookup.json` `c0398f15a506db742fff5bc9c019ffe5b944649c08cce8b97847cc6403bffcdf`,
+  `route.json` `ad46456edced9bd7152c27ad4af06c45273f9a3ea715067d507fc732c551b4d7`,
+  `heartbeat.json`
+  `b9ffb50d9624ca531076444b2529e3a729baacf0edfc8361d93a19d1ab7df797`.
+  Broad P18-V01, final-revision full-workspace P18-V02, current-revision
+  platform CI evidence, package/pre-publication review, and Phase 19 local
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T222453Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T222453Z.rlog).
