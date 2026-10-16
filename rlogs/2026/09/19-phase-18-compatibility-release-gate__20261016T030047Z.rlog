@@ -189,3 +189,45 @@ full-workspace P18-V02 rerun, current-revision GitHub Ubuntu/P18-V04 evidence,
 Phase 19 local Docker/Broker automation, and pre-publication version/registry
 resolution remain open. Owner-run deployment and production checks remain
 Phase 19 manual validation.
+
+P18-V01 Remoting socket-buffer and write-watermark signed API/property-source
+follow-up (`45ea5b54`, 2026-10-16): the pinned Java `NettySystemConfig` reads
+both socket-buffer and both write-watermark settings from system properties;
+`NettyClientConfig` seeds each field from those class-initialized values and
+its setter/getter paths retain the full signed Java `int` domain. Source and
+`RemotingLiveConfigProbe` verify that the direct Bootstrap adds socket-buffer
+options only for positive values at `start()`, while each proxy Bootstrap
+captures and includes the raw socket-buffer values on first CIDR use; custom
+watermarks are direct-only and are installed when both are positive. Invalid
+enabled watermark ordering fails while the direct Bootstrap is built. The Java
+`ClientConfigPropertiesProbe` fixture now records all four property seeds and
+signed setter/getter cases at `Integer.MIN_VALUE`, `-1`, zero, one, and
+`Integer.MAX_VALUE`.
+
+Rust changes the four public `ClientConfig` fields and live client accessors to
+`i32`, reads matching environment keys on first default construction with Java
+signed-decimal parsing, retains signed values, samples direct settings at
+`start()` and proxy socket values on first CIDR use, and checks enabled direct
+watermark ordering at `start()`. Nonpositive proxy buffer sizes fail before
+dialing, matching the pinned Java fixture's need for positive proxy socket
+buffers; error details remain Rust-native. Rust regressions cover system
+property seeding and malformed integer rejection, signed setter/getter
+round-trips, direct/proxy snapshots, nonpositive proxy failure, and start-time
+watermark validation.
+
+Validation for code revision `45ea5b54`:
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` passed:
+  102 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, and 8 doc
+  tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed, including 37
+  scenario-manifest validations, Java fixture drift checks, the signed direct/
+  proxy option probe, and Java/Rust cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+This closes the socket-buffer and write-watermark signed API/property-source
+rows only. Broad P18-V01, a final-revision full-workspace P18-V02 rerun,
+current-revision GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker
+automation, and pre-publication version/registry resolution remain open.
+Owner-run deployment and production checks remain Phase 19 manual validation.

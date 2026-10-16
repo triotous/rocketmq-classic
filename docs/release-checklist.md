@@ -1727,3 +1727,23 @@ Before any publication:
   GitHub Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
   pre-publication version/registry resolution remain open. Owner-run deployment
   and production checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting socket-buffer and write-watermark setting/source follow-up
+  (`45ea5b54`, 2026-10-16): Java property fixtures now cover
+  `com.rocketmq.remoting.socket.sndbuf.size`,
+  `com.rocketmq.remoting.socket.rcvbuf.size`, and both write-watermark
+  properties, plus signed setter/getter round trips at
+  `Integer.MIN_VALUE`, `-1`, zero, one, and `Integer.MAX_VALUE`. Rust's
+  `ClientConfig` fields and live `RemotingClient` accessors now use signed
+  `i32`, seed defaults from those same process environment keys with Java
+  `Integer.parseInt` behavior, preserve the values, and match Java's direct
+  start-time versus proxy-CIDR first-use settings. Enabled invalid watermark
+  ordering is rejected at `start()`. Remoting all-feature tests pass (102
+  unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, 8 doctests);
+  strict all-target/all-feature Remoting Clippy, Maven verify (37 scenarios,
+  fixture drift, and Java/Rust cross-decodes), formatting, and diff checks
+  pass. This closes these four setting rows only. Broad P18-V01, a final-revision
+  full-workspace P18-V02 rerun, current-revision GitHub Ubuntu/P18-V04
+  evidence, Phase 19 local Docker/Broker automation, and pre-publication
+  version/registry resolution remain open. Owner-run deployment and production
+  checks remain Phase 19 manual validation.
