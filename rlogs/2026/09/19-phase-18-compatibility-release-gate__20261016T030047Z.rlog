@@ -62,3 +62,34 @@ Validation on code revision `c0f5c13d`:
 This closes only signed semaphore value and admission mapping. The Java system-
 property source for the two defaults remains an open P18-V01 setting source;
 the broad P18-V01 audit and final full-workspace P18-V02 rerun remain open.
+
+P18-V01 Remoting semaphore system-property source follow-up (`6497d5b4`,
+2026-10-16): the invoked Java `ClientConfigPropertiesProbe` now sets the pinned
+`com.rocketmq.remoting.clientAsyncSemaphoreValue` and
+`com.rocketmq.remoting.clientOnewaySemaphoreValue` properties and records the
+resulting `NettyClientConfig` values in
+`fixtures/runtime/client-config-properties.json`. The fixture values are
+async `-17` and oneway `2147483647`. Rust reads the same keys from process
+environment when `ClientConfig::default()` is first called, uses
+`java_number::parse_i32` to match Java signed-decimal parsing, defaults absent
+keys to `65535`, and retains the process-wide result in `OnceLock`. An isolated
+subprocess test verifies both fixture-seeded values and rejection of a value
+with leading whitespace.
+
+Validation on code revision `6497d5b4`:
+- `cargo test -p rocketmq-classic-remoting --all-features --locked` passed:
+  99 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, and 8 doc
+  tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed, including 37
+  scenario-manifest validations, runtime fixture drift checks, and Java/Rust
+  cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+This closes the property-source slice for these two semaphore settings only.
+The broad P18-V01 source/API/input/error/control-flow and reverse-export audit,
+a final-revision full-workspace P18-V02 rerun, current-revision GitHub
+Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+pre-publication version/registry resolution remain open. Owner-run deployment
+and production checks remain Phase 19 manual validation.

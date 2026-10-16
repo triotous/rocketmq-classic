@@ -1659,3 +1659,19 @@ Before any publication:
   open, as do current GitHub Ubuntu/P18-V04 evidence, Phase 19 Docker/Broker
   automation, and release version/registry resolution. Owner-run deployment
   and production checks remain Phase 19 manual validation.
+
+- P18-V01 Remoting semaphore property-source follow-up (`6497d5b4`,
+  2026-10-16): the pinned Java fixture now records the async and oneway
+  semaphore values when their Java system properties are set. Rust seeds
+  `ClientConfig::default()` from the same process environment keys on first
+  use, applies Java signed-decimal integer parsing, and retains the first
+  result process-wide. An isolated subprocess test covers the fixture values
+  and malformed leading-whitespace input. Remoting all-feature tests pass
+  (99 unit, 8 codec, 1 fuzz regression, 7 security, 100 transport, 8 doctests),
+  as do strict all-target/all-feature Remoting Clippy, formatting, diff checks,
+  and Maven verify (37 scenarios, fixture drift, and Java/Rust cross-decodes).
+  This closes the property-source slice for these two settings only. Broad
+  P18-V01, final-revision full-workspace P18-V02, current-revision GitHub
+  Ubuntu/P18-V04 evidence, Phase 19 local Docker/Broker automation, and
+  pre-publication version/registry resolution remain open. Owner-run deployment
+  and production checks remain Phase 19 manual validation.
