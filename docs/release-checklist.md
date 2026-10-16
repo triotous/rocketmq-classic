@@ -2088,3 +2088,15 @@ Before any publication:
   Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios and
   fixture drift checks. Formatting, checksum, and diff checks pass. This closes
   only the MessageId declaration-inventory slice; broad P18-V01 remains open.
+
+- P18-V01 Common `MessageVersion` declared-surface inventory (`84462565`,
+  2026-10-16): the pinned Java 5.5.1 fixture now records all eight declared
+  public methods and confirms the enum has no public constructors. The Rust
+  fixture test pins the sorted signatures alongside the existing enum values,
+  comparison, lookup, byte-width, and error-boundary cases. Fixture SHA-256:
+  `ddef0ea5e007f41e8e03c983081de27fe53de2df2d369dfefb98dab775a19516`.
+  Common `message_decode` tests pass (21 tests), strict all-target/all-feature
+  Common Clippy passes, and pinned Maven `verify` passes all 37 scenarios and
+  fixture drift checks. Formatting, checksum, and diff checks pass. This closes
+  only the MessageVersion declaration-inventory slice; broad P18-V01 remains
+  open.
