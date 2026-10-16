@@ -2677,3 +2677,16 @@ Before any publication:
   platform CI evidence, package/pre-publication review, and Phase 19 local
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T223610Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T223610Z.rlog).
+- P18-V01 Fastjson empty-value writer features (code commit `dc791e63`,
+  2026-10-16): `NotWriteEmptyArray` now omits empty collection and map
+  properties; `IgnoreEmpty` also omits empty strings. Invoked body, route, and
+  heartbeat fixture cases cover both features, including empty route maps and
+  nested DTO collections. Eight of 48 writer features now have behavior
+  mappings; the other 40 remain unmapped. Protocol all-feature tests (122 unit
+  tests, all integration targets, 42 doctests), strict Protocol Clippy, Maven
+  verify (37 scenarios), formatting, and diff checks pass. The prior
+  full-workspace default/all-feature runs were on parent `c7c26cc0`; the final
+  workspace P18-V02 gate must be rerun after this code commit. Broad P18-V01,
+  current-revision platform CI evidence, package/pre-publication review, and
+  Phase 19 local Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T225647Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T225647Z.rlog).
