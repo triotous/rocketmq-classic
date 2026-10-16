@@ -29,6 +29,7 @@ pub use rocketmq_classic_producer::{
     SendStatus, TransactionCheckListener, TransactionExecutor, TransactionListener,
     TransactionProducer, TransactionSendResult,
 };
+pub use rocketmq_classic_producer::{ReplyMessageError, RequestCallback, create_reply_message};
 pub use rocketmq_classic_producer::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 pub use rocketmq_classic_protocol::NamespaceUtil;
 pub use rocketmq_classic_remoting::client::{
