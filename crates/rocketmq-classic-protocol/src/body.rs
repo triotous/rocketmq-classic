@@ -4862,7 +4862,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     features: &[JavaJsonWriterFeature],
 ) -> Result<String, serde_json::Error> {
     crate::route::validate_java_writer_features(features)?;
-    let pretty_format = pretty_format || features.contains(&JavaJsonWriterFeature::PrettyFormat);
+    let indent = crate::route::java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
     let write_non_string_values_as_strings =
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString);
@@ -4874,7 +4874,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         &value,
         None,
         0,
-        pretty_format,
+        indent,
         false,
         write_non_string_values_as_strings,
         &mut output,
@@ -4886,30 +4886,30 @@ fn write_java_remoting_body_json(
     value: &serde_json::Value,
     field_name: Option<&str>,
     depth: usize,
-    pretty_format: bool,
+    indent: Option<&str>,
     queue_table: bool,
     write_non_string_values_as_strings: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
         serde_json::Value::Object(fields)
-            if fields.is_empty() && (!pretty_format || field_name.is_some()) =>
+            if fields.is_empty() && (indent.is_none() || field_name.is_some()) =>
         {
             output.push_str("{}")
         }
         serde_json::Value::Object(fields) if fields.is_empty() => {
             output.push_str("{\n");
-            write_java_remoting_body_indent(output, depth + 1);
+            write_java_remoting_body_indent(output, depth + 1, indent);
             output.push('\n');
-            write_java_remoting_body_indent(output, depth);
+            write_java_remoting_body_indent(output, depth, indent);
             output.push('}');
         }
         serde_json::Value::Object(fields) => {
             output.push('{');
             for (index, (key, value)) in fields.iter().enumerate() {
-                if pretty_format {
+                if indent.is_some() {
                     output.push('\n');
-                    write_java_remoting_body_indent(output, depth + 1);
+                    write_java_remoting_body_indent(output, depth + 1, indent);
                 }
                 let mut queue_key = if queue_table {
                     serde_json::from_str::<serde_json::Value>(key)
@@ -4928,7 +4928,7 @@ fn write_java_remoting_body_json(
                         &queue_key,
                         None,
                         depth + 1,
-                        pretty_format,
+                        indent,
                         false,
                         write_non_string_values_as_strings,
                         output,
@@ -4944,7 +4944,7 @@ fn write_java_remoting_body_json(
                     value,
                     Some(key),
                     depth + 1,
-                    pretty_format,
+                    indent,
                     child_is_queue_table,
                     write_non_string_values_as_strings,
                     output,
@@ -4953,34 +4953,34 @@ fn write_java_remoting_body_json(
                     output.push(',');
                 }
             }
-            if pretty_format {
+            if indent.is_some() {
                 output.push('\n');
-                write_java_remoting_body_indent(output, depth);
+                write_java_remoting_body_indent(output, depth, indent);
             }
             output.push('}');
         }
-        serde_json::Value::Array(values) if values.is_empty() && !pretty_format => {
+        serde_json::Value::Array(values) if values.is_empty() && indent.is_none() => {
             output.push_str("[]")
         }
         serde_json::Value::Array(values) if values.is_empty() => {
             output.push_str("[\n");
-            write_java_remoting_body_indent(output, depth + 1);
+            write_java_remoting_body_indent(output, depth + 1, indent);
             output.push('\n');
-            write_java_remoting_body_indent(output, depth);
+            write_java_remoting_body_indent(output, depth, indent);
             output.push(']');
         }
         serde_json::Value::Array(values) => {
             output.push('[');
             for (index, value) in values.iter().enumerate() {
-                if pretty_format {
+                if indent.is_some() {
                     output.push('\n');
-                    write_java_remoting_body_indent(output, depth + 1);
+                    write_java_remoting_body_indent(output, depth + 1, indent);
                 }
                 write_java_remoting_body_json(
                     value,
                     None,
                     depth + 1,
-                    pretty_format,
+                    indent,
                     false,
                     write_non_string_values_as_strings,
                     output,
@@ -4989,9 +4989,9 @@ fn write_java_remoting_body_json(
                     output.push(',');
                 }
             }
-            if pretty_format {
+            if indent.is_some() {
                 output.push('\n');
-                write_java_remoting_body_indent(output, depth);
+                write_java_remoting_body_indent(output, depth, indent);
             }
             output.push(']');
         }
@@ -5000,9 +5000,12 @@ fn write_java_remoting_body_json(
     Ok(())
 }
 
-fn write_java_remoting_body_indent(output: &mut String, depth: usize) {
+fn write_java_remoting_body_indent(output: &mut String, depth: usize, indent: Option<&str>) {
+    let Some(indent) = indent else {
+        return;
+    };
     for _ in 0..depth {
-        output.push('\t');
+        output.push_str(indent);
     }
 }
 
@@ -5789,6 +5792,26 @@ mod tests {
                 "{} PrettyFormat",
                 case["id"]
             );
+            for (feature, feature_name) in [
+                (
+                    JavaJsonWriterFeature::PrettyFormatWith2Space,
+                    "PrettyFormatWith2Space",
+                ),
+                (
+                    JavaJsonWriterFeature::PrettyFormatWith4Space,
+                    "PrettyFormatWith4Space",
+                ),
+            ] {
+                assert_eq!(
+                    value.java_encode_with_features(&[feature]).unwrap(),
+                    case["writerFeatureOverrides"][feature_name]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                    "{} {feature_name}",
+                    case["id"]
+                );
+            }
 
             let decoded = BatchAckMessageRequestBody::java_decode(&encoded).unwrap();
             let from_json = BatchAckMessageRequestBody::java_from_json(&compact).unwrap();
@@ -6726,6 +6749,26 @@ mod tests {
                 "{} PrettyFormat",
                 case["id"]
             );
+            for (feature, feature_name) in [
+                (
+                    JavaJsonWriterFeature::PrettyFormatWith2Space,
+                    "PrettyFormatWith2Space",
+                ),
+                (
+                    JavaJsonWriterFeature::PrettyFormatWith4Space,
+                    "PrettyFormatWith4Space",
+                ),
+            ] {
+                assert_eq!(
+                    value.java_encode_with_features(&[feature]).unwrap(),
+                    case["writerFeatureOverrides"][feature_name]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                    "{} {feature_name}",
+                    case["id"]
+                );
+            }
             assert_eq!(
                 String::from_utf8(
                     CheckClientRequestBody::java_encode_optional(Some(&value))
@@ -6974,6 +7017,27 @@ mod tests {
                         $name,
                         case["id"]
                     );
+                    for (feature, feature_name) in [
+                        (
+                            JavaJsonWriterFeature::PrettyFormatWith2Space,
+                            "PrettyFormatWith2Space",
+                        ),
+                        (
+                            JavaJsonWriterFeature::PrettyFormatWith4Space,
+                            "PrettyFormatWith4Space",
+                        ),
+                    ] {
+                        assert_eq!(
+                            value.java_encode_with_features(&[feature]).unwrap(),
+                            expected["writerFeatureOverrides"][feature_name]
+                                .as_str()
+                                .unwrap()
+                                .as_bytes(),
+                            "{} {} {feature_name}",
+                            $name,
+                            case["id"]
+                        );
+                    }
                 }
 
                 let nulls = &fixture["remotingSerializableBodyNullUtilities"][$name];

@@ -2619,6 +2619,26 @@ mod tests {
                 "{} PrettyFormat",
                 case["case"]
             );
+            for (feature, feature_name) in [
+                (
+                    crate::JavaJsonWriterFeature::PrettyFormatWith2Space,
+                    "PrettyFormatWith2Space",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::PrettyFormatWith4Space,
+                    "PrettyFormatWith4Space",
+                ),
+            ] {
+                assert_eq!(
+                    value.java_encode_with_features(&[feature]).unwrap(),
+                    case["writerFeatureOverrides"][feature_name]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                    "{} {feature_name}",
+                    case["case"]
+                );
+            }
             assert_eq!(
                 value.java_encode().unwrap(),
                 native_json.as_bytes(),

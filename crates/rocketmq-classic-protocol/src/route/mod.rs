@@ -85,7 +85,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     features: &[JavaJsonWriterFeature],
 ) -> Result<String, serde_json::Error> {
     validate_java_writer_features(features)?;
-    let pretty_format = pretty_format || features.contains(&JavaJsonWriterFeature::PrettyFormat);
+    let indent = java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
     if features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString) {
         write_non_string_values_as_strings(&mut value);
@@ -97,11 +97,26 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         &value,
         None,
         0,
-        pretty_format,
+        indent,
         unquote_numeric_map_keys,
         &mut output,
     )?;
     Ok(output)
+}
+
+pub(crate) fn java_json_indent(
+    pretty_format: bool,
+    features: &[JavaJsonWriterFeature],
+) -> Option<&'static str> {
+    if features.contains(&JavaJsonWriterFeature::PrettyFormatWith4Space) {
+        Some("    ")
+    } else if features.contains(&JavaJsonWriterFeature::PrettyFormatWith2Space) {
+        Some("  ")
+    } else if pretty_format || features.contains(&JavaJsonWriterFeature::PrettyFormat) {
+        Some("\t")
+    } else {
+        None
+    }
 }
 
 pub(crate) fn validate_java_writer_features(
@@ -142,21 +157,21 @@ fn write_java_route_json(
     value: &serde_json::Value,
     field_name: Option<&str>,
     depth: usize,
-    pretty_format: bool,
+    indent: Option<&str>,
     unquote_numeric_map_keys: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     match value {
         serde_json::Value::Object(fields)
-            if fields.is_empty() && (!pretty_format || field_name.is_some()) =>
+            if fields.is_empty() && (indent.is_none() || field_name.is_some()) =>
         {
             output.push_str("{}")
         }
         serde_json::Value::Object(fields) if fields.is_empty() => {
             output.push_str("{\n");
-            write_java_indent(output, depth + 1);
+            write_java_indent(output, depth + 1, indent);
             output.push('\n');
-            write_java_indent(output, depth);
+            write_java_indent(output, depth, indent);
             output.push('}');
         }
         serde_json::Value::Object(fields) => {
@@ -164,9 +179,9 @@ fn write_java_route_json(
                 unquote_numeric_map_keys && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
             output.push('{');
             for (index, (key, value)) in fields.iter().enumerate() {
-                if pretty_format {
+                if indent.is_some() {
                     output.push('\n');
-                    write_java_indent(output, depth + 1);
+                    write_java_indent(output, depth + 1, indent);
                 }
                 if numeric_keys && key.parse::<i64>().is_ok() {
                     output.push_str(key);
@@ -178,7 +193,7 @@ fn write_java_route_json(
                     value,
                     Some(key),
                     depth + 1,
-                    pretty_format,
+                    indent,
                     unquote_numeric_map_keys,
                     output,
                 )?;
@@ -186,34 +201,34 @@ fn write_java_route_json(
                     output.push(',');
                 }
             }
-            if pretty_format {
+            if indent.is_some() {
                 output.push('\n');
-                write_java_indent(output, depth);
+                write_java_indent(output, depth, indent);
             }
             output.push('}');
         }
-        serde_json::Value::Array(values) if values.is_empty() && !pretty_format => {
+        serde_json::Value::Array(values) if values.is_empty() && indent.is_none() => {
             output.push_str("[]")
         }
         serde_json::Value::Array(values) if values.is_empty() => {
             output.push_str("[\n");
-            write_java_indent(output, depth + 1);
+            write_java_indent(output, depth + 1, indent);
             output.push('\n');
-            write_java_indent(output, depth);
+            write_java_indent(output, depth, indent);
             output.push(']');
         }
         serde_json::Value::Array(values) => {
             output.push('[');
             for (index, value) in values.iter().enumerate() {
-                if pretty_format {
+                if indent.is_some() {
                     output.push('\n');
-                    write_java_indent(output, depth + 1);
+                    write_java_indent(output, depth + 1, indent);
                 }
                 write_java_route_json(
                     value,
                     None,
                     depth + 1,
-                    pretty_format,
+                    indent,
                     unquote_numeric_map_keys,
                     output,
                 )?;
@@ -221,9 +236,9 @@ fn write_java_route_json(
                     output.push(',');
                 }
             }
-            if pretty_format {
+            if indent.is_some() {
                 output.push('\n');
-                write_java_indent(output, depth);
+                write_java_indent(output, depth, indent);
             }
             output.push(']');
         }
@@ -232,9 +247,12 @@ fn write_java_route_json(
     Ok(())
 }
 
-fn write_java_indent(output: &mut String, depth: usize) {
+fn write_java_indent(output: &mut String, depth: usize, indent: Option<&str>) {
+    let Some(indent) = indent else {
+        return;
+    };
     for _ in 0..depth {
-        output.push('\t');
+        output.push_str(indent);
     }
 }
 
@@ -3649,6 +3667,40 @@ mod tests {
                     pretty_featured,
                     expected_pretty_featured.as_bytes(),
                     "{} PrettyFormat",
+                    case["id"]
+                );
+                for (feature, feature_name) in [
+                    (
+                        JavaJsonWriterFeature::PrettyFormatWith2Space,
+                        "PrettyFormatWith2Space",
+                    ),
+                    (
+                        JavaJsonWriterFeature::PrettyFormatWith4Space,
+                        "PrettyFormatWith4Space",
+                    ),
+                ] {
+                    assert_eq!(
+                        value.java_encode_with_features(&[feature]).unwrap(),
+                        case["writerFeatureOverrides"][feature_name]
+                            .as_str()
+                            .unwrap()
+                            .as_bytes(),
+                        "{} {feature_name}",
+                        case["id"]
+                    );
+                }
+                assert_eq!(
+                    value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::PrettyFormatWith2Space,
+                            JavaJsonWriterFeature::PrettyFormatWith4Space,
+                        ])
+                        .unwrap(),
+                    case["writerFeatureOverrides"]["PrettyFormatWith4Space"]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                    "{} Fastjson2 4-space feature takes precedence",
                     case["id"]
                 );
                 assert_eq!(

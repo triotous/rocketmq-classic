@@ -175,7 +175,13 @@ impl JavaJsonWriterFeature {
     }
 
     pub(crate) const fn is_implemented(self) -> bool {
-        matches!(self, Self::PrettyFormat | Self::WriteNonStringValueAsString)
+        matches!(
+            self,
+            Self::PrettyFormat
+                | Self::PrettyFormatWith2Space
+                | Self::PrettyFormatWith4Space
+                | Self::WriteNonStringValueAsString
+        )
     }
 }
 
