@@ -65,6 +65,13 @@ impl ConsumeService {
         }
     }
 
+    pub(crate) fn maximum_threads(&self) -> i32 {
+        match self {
+            Self::Concurrent(service) => service.maximum_threads(),
+            Self::Orderly(service) => service.maximum_threads(),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn worker_count(&self) -> usize {
         match self {

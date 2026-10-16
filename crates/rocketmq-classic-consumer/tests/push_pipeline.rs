@@ -33,7 +33,10 @@ async fn public_push_controls_match_configured_listener_and_subscription_state()
         Some(&"gold || silver".to_owned())
     );
 
-    assert!(!consumer.update_core_pool_size(2).await);
+    assert!(matches!(
+        consumer.update_core_pool_size(2).await,
+        Err(PushConsumerError::NotStarted)
+    ));
     assert!(matches!(
         consumer.send_message_back(&MessageExt::default(), 0).await,
         Err(PushConsumerError::NotStarted)

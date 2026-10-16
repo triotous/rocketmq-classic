@@ -97,12 +97,12 @@ impl ConcurrentConsumeService {
         });
     }
 
-    /// Changes the active worker count using the pinned Java client's
-    /// `updateCorePoolSize` acceptance rules.
+    /// Changes the active worker count within the constructed executor
+    /// capacity. The facade applies Java's live `consumeThreadMax` guard.
     pub fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
         if core_pool_size <= 0
             || core_pool_size > i16::MAX as i32
-            || core_pool_size >= self.maximum_threads as i32
+            || core_pool_size > self.maximum_threads as i32
         {
             return false;
         }
@@ -133,6 +133,10 @@ impl ConcurrentConsumeService {
             worker_set.retiring.push(worker.handle);
         }
         true
+    }
+
+    pub(crate) fn maximum_threads(&self) -> i32 {
+        self.maximum_threads as i32
     }
 
     pub(crate) fn try_submit(&self, request: ConsumeRequest) -> Result<(), ConsumeSubmitError> {
@@ -264,7 +268,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn core_pool_update_obeys_java_bounds_and_resizes_owned_workers() {
+    async fn core_pool_update_obeys_executor_capacity_and_resizes_owned_workers() {
         let listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
             |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
                 (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
@@ -281,7 +285,9 @@ mod tests {
         assert!(service.update_core_pool_size(4));
         assert_eq!(service.worker_count(), 4);
         assert!(!service.update_core_pool_size(0));
-        assert!(!service.update_core_pool_size(5));
+        assert!(service.update_core_pool_size(5));
+        assert_eq!(service.worker_count(), 5);
+        assert!(!service.update_core_pool_size(6));
         assert!(!service.update_core_pool_size(i16::MAX as i32 + 1));
         service.shutdown(100).await;
         assert_eq!(service.worker_count(), 0);

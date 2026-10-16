@@ -302,7 +302,7 @@ impl OrderlyConsumeService {
     pub(crate) fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
         if core_pool_size <= 0
             || core_pool_size > i16::MAX as i32
-            || core_pool_size as usize >= self.maximum_threads
+            || core_pool_size as usize > self.maximum_threads
         {
             return false;
         }
@@ -332,6 +332,10 @@ impl OrderlyConsumeService {
             workers.retiring.push(worker.handle);
         }
         true
+    }
+
+    pub(crate) fn maximum_threads(&self) -> i32 {
+        self.maximum_threads as i32
     }
 
     pub(crate) async fn shutdown(&self, await_termination_millis: i64) {

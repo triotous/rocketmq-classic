@@ -410,6 +410,8 @@ pub struct PushConsumer {
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
+    consume_service_initialized: AtomicBool,
+    consume_service_max_threads: AtomicI32,
     #[cfg(test)]
     startup_failure: Mutex<Option<StartupStage>>,
     #[cfg(test)]
@@ -442,7 +444,8 @@ impl PushConsumer {
         manager: ClientRuntimeManager,
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
-        let pop_consume_limit = usize::try_from(config.consume_thread_max().max(1)).unwrap_or(1);
+        let consume_service_max_threads = config.consume_thread_max();
+        let pop_consume_limit = usize::try_from(consume_service_max_threads.max(1)).unwrap_or(1);
         let consume_core_pool_size = config.consume_thread_min();
         let pull_time_delay_millis_when_exception = config
             .client_config()
@@ -486,6 +489,8 @@ impl PushConsumer {
             consume_orderly: AtomicBool::new(false),
             consumer_start_timestamp: AtomicI64::new(0),
             consume_core_pool_size: AtomicI32::new(consume_core_pool_size),
+            consume_service_initialized: AtomicBool::new(false),
+            consume_service_max_threads: AtomicI32::new(consume_service_max_threads.max(1)),
             #[cfg(test)]
             startup_failure: Mutex::new(None),
             #[cfg(test)]
@@ -1795,25 +1800,69 @@ impl PushConsumer {
             .store(consume_orderly, Ordering::Release);
     }
 
-    /// Updates the active concurrent-consume worker count when the requested
-    /// value satisfies Java 5.5.1's `updateCorePoolSize` bounds.
-    pub async fn update_core_pool_size(&self, core_pool_size: i32) -> bool {
-        if core_pool_size >= self.config.consume_thread_max() {
-            return false;
-        }
+    /// Mirrors Java 5.5.1's void `updateCorePoolSize` operation.
+    ///
+    /// Values rejected by Java's live facade bounds are ignored. If a raised
+    /// `consumeThreadMax` permits a size beyond the executor's construction-time
+    /// maximum, Java throws; Rust reports that as
+    /// [`PushConsumerError::InvalidSetting`]. Before service creation, Java
+    /// fails through a null service; Rust reports that state as
+    /// [`PushConsumerError::NotStarted`]. Java retains the consume service after
+    /// shutdown, so accepted values still update its tracked core-pool size
+    /// after its workers have stopped.
+    pub async fn update_core_pool_size(
+        &self,
+        core_pool_size: i32,
+    ) -> Result<(), PushConsumerError> {
         let state = self.state.lock().await;
         match &*state {
+            State::Created if !self.consume_service_initialized.load(Ordering::Acquire) => {
+                Err(PushConsumerError::NotStarted)
+            }
+            State::Created | State::Shutdown => {
+                if core_pool_size <= 0
+                    || core_pool_size > i16::MAX as i32
+                    || core_pool_size >= self.config.consume_thread_max()
+                {
+                    return Ok(());
+                }
+                let executor_max = self.consume_service_max_threads.load(Ordering::Acquire);
+                if core_pool_size > executor_max {
+                    return Err(PushConsumerError::InvalidSetting {
+                        name: "corePoolSize",
+                        value: i64::from(core_pool_size),
+                        minimum: 1,
+                        maximum: i64::from(executor_max),
+                    });
+                }
+                self.consume_core_pool_size
+                    .store(core_pool_size, Ordering::Release);
+                Ok(())
+            }
             State::Started {
                 consume_service, ..
             } => {
-                let updated = consume_service.update_core_pool_size(core_pool_size);
-                if updated {
+                if core_pool_size <= 0
+                    || core_pool_size > i16::MAX as i32
+                    || core_pool_size >= self.config.consume_thread_max()
+                {
+                    return Ok(());
+                }
+                let executor_max = consume_service.maximum_threads();
+                if core_pool_size > executor_max {
+                    return Err(PushConsumerError::InvalidSetting {
+                        name: "corePoolSize",
+                        value: i64::from(core_pool_size),
+                        minimum: 1,
+                        maximum: i64::from(executor_max),
+                    });
+                }
+                if consume_service.update_core_pool_size(core_pool_size) {
                     self.consume_core_pool_size
                         .store(core_pool_size, Ordering::Release);
                 }
-                updated
+                Ok(())
             }
-            State::Created | State::Shutdown => false,
         }
     }
 
@@ -3717,22 +3766,27 @@ impl PushConsumer {
         self.consume_orderly
             .store(orderly_lock_settings.is_some(), Ordering::Release);
         *write_lock(&self.consume_stats_group) = Some(consumer_group.clone());
+        let service_max_threads = self.config.consume_thread_max();
         let consume_service = match listener {
             PushMessageListener::Concurrently(listener) => {
                 ConsumeService::Concurrent(Arc::new(ConcurrentConsumeService::new(
                     self.config.consume_thread_min(),
-                    self.config.consume_thread_max(),
+                    service_max_threads,
                     listener,
                 )))
             }
             PushMessageListener::Orderly(listener) => {
                 ConsumeService::Orderly(Arc::new(OrderlyConsumeService::new(
                     self.config.consume_thread_min(),
-                    self.config.consume_thread_max(),
+                    service_max_threads,
                     listener,
                 )))
             }
         };
+        self.consume_service_max_threads
+            .store(service_max_threads.max(1), Ordering::Release);
+        self.consume_service_initialized
+            .store(true, Ordering::Release);
         let pull_scheduler = Arc::new(PullScheduler::new());
         let pull_rpc_workers = Arc::new(PullRpcWorkers::new());
 
@@ -8317,6 +8371,12 @@ mod tests {
             matches!(&consume_service, ConsumeService::Orderly(_)),
             Ordering::Release,
         );
+        consumer
+            .consume_service_max_threads
+            .store(consume_service.maximum_threads(), Ordering::Release);
+        consumer
+            .consume_service_initialized
+            .store(true, Ordering::Release);
         let mut client_config = consumer.config.client_config().clone();
         let consumer_group = client_config
             .with_namespace(consumer.config.consumer_group().as_deref())
@@ -12046,9 +12106,9 @@ mod tests {
         assert_eq!(consume_service.worker_count(), 20);
         assert_eq!(pull_scheduler.worker_count(), 1);
         assert_eq!(pull_rpc_workers.worker_count(), 4);
-        assert!(consumer.update_core_pool_size(4).await);
+        assert!(consumer.update_core_pool_size(4).await.is_ok());
         assert_eq!(consume_service.worker_count(), 4);
-        assert!(!consumer.update_core_pool_size(20).await);
+        assert!(consumer.update_core_pool_size(20).await.is_ok());
         let runtime = manager
             .get_or_create(consumer.config().client_config())
             .await
@@ -12109,6 +12169,226 @@ mod tests {
             consumer.start().await,
             Err(PushConsumerError::Shutdown)
         ));
+    }
+
+    #[tokio::test]
+    async fn update_core_pool_size_matches_java_void_and_lifecycle_semantics() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["updateCorePoolSizeReturnType"], "void");
+        assert_eq!(
+            fixture["updateCorePoolSizeNullServiceThrowsNullPointerException"],
+            true
+        );
+        assert_eq!(
+            fixture["concurrentRaisedMaxUpdateThrowsIllegalArgumentException"],
+            true
+        );
+        assert_eq!(
+            fixture["orderlyRaisedMaxUpdateThrowsIllegalArgumentException"],
+            true
+        );
+        assert_eq!(
+            fixture["concurrentShutdownRaisedMaxUpdateThrowsIllegalArgumentException"],
+            true
+        );
+        assert_eq!(
+            fixture["orderlyShutdownRaisedMaxUpdateThrowsIllegalArgumentException"],
+            true
+        );
+
+        fn config(
+            group: &str,
+            model: rocketmq_classic_protocol::heartbeat::MessageModel,
+        ) -> PushConsumerConfig {
+            let mut config = PushConsumerConfig::new(group).unwrap();
+            config.client_config_mut().set_namesrv_addr(None);
+            config.set_consume_thread_min(2);
+            config.set_consume_thread_max(8);
+            config.set_message_model(model);
+            config
+        }
+
+        let created = PushConsumer::new(config(
+            "push-core-pool-created",
+            rocketmq_classic_protocol::heartbeat::MessageModel::Clustering,
+        ));
+        assert!(matches!(
+            created.update_core_pool_size(4).await,
+            Err(PushConsumerError::NotStarted)
+        ));
+        assert!(matches!(
+            created.update_core_pool_size(0).await,
+            Err(PushConsumerError::NotStarted)
+        ));
+
+        let concurrent_manager = ClientRuntimeManager::new();
+        let concurrent = Arc::new(PushConsumer::with_manager(
+            config(
+                "push-core-pool-concurrent",
+                rocketmq_classic_protocol::heartbeat::MessageModel::Clustering,
+            ),
+            concurrent_manager.clone(),
+        ));
+        let concurrent_listener: Arc<dyn MessageListenerConcurrently> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| async move {
+                (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+            },
+        );
+        let concurrent_service = Arc::new(ConcurrentConsumeService::new(2, 8, concurrent_listener));
+        let concurrent_offset_store: Arc<dyn OffsetStore> =
+            Arc::new(RecordingOffsetStore::default());
+        let concurrent_runtime = install_started_consumer_with_service(
+            &concurrent,
+            &concurrent_manager,
+            concurrent_offset_store,
+            ConsumeService::Concurrent(concurrent_service.clone()),
+            None,
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        assert_eq!(
+            concurrent_service.worker_count(),
+            fixture["concurrentCorePoolSizeBefore"]
+        );
+        assert!(concurrent.update_core_pool_size(6).await.is_ok());
+        assert_eq!(
+            concurrent_service.worker_count(),
+            fixture["concurrentCorePoolSizeAfterValid"]
+        );
+        assert!(concurrent.update_core_pool_size(8).await.is_ok());
+        assert!(concurrent.update_core_pool_size(0).await.is_ok());
+        assert_eq!(
+            concurrent_service.worker_count(),
+            fixture["concurrentCorePoolSizeAfterInvalid"]
+        );
+        concurrent.config().set_consume_thread_max(10);
+        assert!(matches!(
+            concurrent.update_core_pool_size(9).await,
+            Err(PushConsumerError::InvalidSetting {
+                name: "corePoolSize",
+                value: 9,
+                minimum: 1,
+                maximum: 8,
+            })
+        ));
+        assert_eq!(
+            concurrent_service.worker_count(),
+            fixture["concurrentCorePoolSizeAfterRaisedMaxFailure"]
+        );
+        assert!(concurrent.update_core_pool_size(8).await.is_ok());
+        assert_eq!(
+            concurrent_service.worker_count(),
+            fixture["concurrentCorePoolSizeAtExecutorMaximum"]
+        );
+        concurrent.shutdown().await.unwrap();
+        assert_eq!(
+            concurrent_service.worker_count(),
+            0,
+            "shutdown retires all Rust workers"
+        );
+        assert!(matches!(
+            concurrent.update_core_pool_size(9).await,
+            Err(PushConsumerError::InvalidSetting {
+                name: "corePoolSize",
+                value: 9,
+                minimum: 1,
+                maximum: 8,
+            })
+        ));
+        assert!(concurrent.update_core_pool_size(7).await.is_ok());
+        assert_eq!(
+            concurrent.consume_core_pool_size.load(Ordering::Acquire),
+            fixture["concurrentCorePoolSizeAfterShutdownUpdate"]
+        );
+        drop(concurrent_runtime);
+
+        let orderly_manager = ClientRuntimeManager::new();
+        let orderly = Arc::new(PushConsumer::with_manager(
+            config(
+                "push-core-pool-orderly",
+                rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting,
+            ),
+            orderly_manager.clone(),
+        ));
+        let orderly_listener: Arc<dyn MessageListenerOrderly> = Arc::new(
+            |_messages: Vec<MessageExt>, context: ConsumeOrderlyContext| async move {
+                (Some(ConsumeOrderlyStatus::Success), context)
+            },
+        );
+        let orderly_offset_store: Arc<dyn OffsetStore> = Arc::new(RecordingOffsetStore::default());
+        let orderly_runtime = install_started_orderly_consumer(
+            &orderly,
+            &orderly_manager,
+            orderly_offset_store,
+            orderly_listener,
+            None,
+        )
+        .await;
+        let orderly_service = match &*orderly.state.lock().await {
+            State::Started {
+                consume_service, ..
+            } => consume_service.clone(),
+            _ => panic!("orderly consumer should own a started consume service"),
+        };
+        assert_eq!(
+            orderly_service.worker_count(),
+            fixture["orderlyCorePoolSizeBefore"]
+        );
+        assert!(orderly.update_core_pool_size(6).await.is_ok());
+        assert_eq!(
+            orderly_service.worker_count(),
+            fixture["orderlyCorePoolSizeAfterValid"]
+        );
+        assert!(orderly.update_core_pool_size(8).await.is_ok());
+        assert!(orderly.update_core_pool_size(-1).await.is_ok());
+        assert_eq!(
+            orderly_service.worker_count(),
+            fixture["orderlyCorePoolSizeAfterInvalid"]
+        );
+        orderly.config().set_consume_thread_max(10);
+        assert!(matches!(
+            orderly.update_core_pool_size(9).await,
+            Err(PushConsumerError::InvalidSetting {
+                name: "corePoolSize",
+                value: 9,
+                minimum: 1,
+                maximum: 8,
+            })
+        ));
+        assert_eq!(
+            orderly_service.worker_count(),
+            fixture["orderlyCorePoolSizeAfterRaisedMaxFailure"]
+        );
+        assert!(orderly.update_core_pool_size(8).await.is_ok());
+        assert_eq!(
+            orderly_service.worker_count(),
+            fixture["orderlyCorePoolSizeAtExecutorMaximum"]
+        );
+        orderly.shutdown().await.unwrap();
+        assert_eq!(
+            orderly_service.worker_count(),
+            0,
+            "shutdown retires all Rust workers"
+        );
+        assert!(matches!(
+            orderly.update_core_pool_size(9).await,
+            Err(PushConsumerError::InvalidSetting {
+                name: "corePoolSize",
+                value: 9,
+                minimum: 1,
+                maximum: 8,
+            })
+        ));
+        assert!(orderly.update_core_pool_size(7).await.is_ok());
+        assert_eq!(
+            orderly.consume_core_pool_size.load(Ordering::Acquire),
+            fixture["orderlyCorePoolSizeAfterShutdownUpdate"]
+        );
+        drop(orderly_runtime);
     }
 
     #[tokio::test]
