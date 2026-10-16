@@ -13,3 +13,4 @@
 - PASS for the MessageId slice: Maven compile and fixture regeneration, Common `message_decode` (21 tests), strict all-target/all-feature Common Clippy, pinned Maven `verify` (37 scenarios and fixture drift/cross-decodes), format, fixture checksum, and diff checks.
 - Additional P18-V02 evidence on `df0c5ba1` before this MessageId-only test/fixture delta: default and all-feature locked workspace tests and strict all-target/all-feature workspace Clippy passed. These full workspace gates still need a final rerun after subsequent source/test changes.
 - MessageId implementation/test/fixture commit: `cc961818` (`test(common): inventory MessageId Java API`). Its matrix/checksum/release-log documentation commit is pending.
+- Final MessageId documentation/checksum/log commit: `e4e496ff` (`docs(compat): record MessageId API inventory`). Checksum, format, and diff checks passed with the implementation and documentation commits present.
