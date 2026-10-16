@@ -1960,3 +1960,16 @@ Before any publication:
   matcher and extraction implementation. Common fixture tests, all Core
   configuration and library tests, and Java fixture generation pass. This
   closes this utility slice only; broad P18-V01 remains open.
+
+- [x] **P18-V02** — Revalidated the complete server-free gate on revision
+  `787157a0` (2026-10-16, macOS ARM64), after the Common API additions and
+  lifecycle/thread-helper audit. Default and all-feature locked workspace
+  tests, strict all-target/all-feature Clippy, formatting, pinned Maven
+  `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes),
+  differential self-test and 37-scenario manifest, race/leak smoke (16 cases
+  × 3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations),
+  release examples, offline workspace benchmark compilation, locked Cargo
+  metadata, workspace metadata/license/dependency checks, seven package
+  listings with LICENSE/NOTICE, and the `TZ=Asia/Taipei` Unique ID fixture all
+  pass. Broad P18-V01, current GitHub Ubuntu/P18-V04 evidence, Phase 19
+  Broker/Docker automation, and release preflight remain open.
