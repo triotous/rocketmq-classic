@@ -2504,3 +2504,16 @@ Before any publication:
   closes the method-crosswalk documentation slice only; broad P18-V01 and the
   final-revision full-workspace P18-V02 remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T192429Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T192429Z.rlog).
+- P18-V01 ACL `AclUtils` reflected public surface (`abde18c6`, 2026-10-16,
+  pinned Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`): the
+  invoked Java fixture records the public no-argument constructor and all 22
+  declared public static signatures. The Core regression asserts that exact
+  list and exercises each corresponding Rust wrapper; whitespace and out-of-
+  range `isScope(String)` inputs are included. Pinned and current Java
+  `AclUtils.java` SHA-256: `86a4a1f968685a6ef3392a0d8b67f0af8301a70e2dbace74de0908a4be7f7fa3`;
+  fixture SHA-256: `bb2e97058c0d8509d8143e0a21bd67bad51c0079d8753627db86086973667c4f`.
+  Focused Core test, strict all-target/all-feature Core Clippy, workspace format
+  and diff checks pass; Maven `verify` passes. This closes the declared
+  `AclUtils` surface slice only; broad P18-V01 and final-revision full-workspace
+  P18-V02 remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T194232Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T194232Z.rlog).
