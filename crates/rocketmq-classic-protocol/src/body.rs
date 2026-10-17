@@ -4906,6 +4906,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     {
         crate::route::apply_java_write_nulls::<T>(&mut value)?;
     }
+    if features.contains(&JavaJsonWriterFeature::WriteNullListAsEmpty) {
+        crate::route::apply_java_null_lists::<T>(&mut value)?;
+    }
     let value_features = JavaJsonWriterValueFeatures {
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
@@ -5949,6 +5952,10 @@ mod tests {
                 (
                     JavaJsonWriterFeature::WriteMapNullValue,
                     "WriteMapNullValue",
+                ),
+                (
+                    JavaJsonWriterFeature::WriteNullListAsEmpty,
+                    "WriteNullListAsEmpty",
                 ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
@@ -7107,6 +7114,10 @@ mod tests {
                     JavaJsonWriterFeature::WriteMapNullValue,
                     "WriteMapNullValue",
                 ),
+                (
+                    JavaJsonWriterFeature::WriteNullListAsEmpty,
+                    "WriteNullListAsEmpty",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7620,6 +7631,10 @@ mod tests {
                         (
                             JavaJsonWriterFeature::WriteMapNullValue,
                             "WriteMapNullValue",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteNullListAsEmpty,
+                            "WriteNullListAsEmpty",
                         ),
                         (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),

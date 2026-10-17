@@ -117,6 +117,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     {
         apply_java_write_nulls::<T>(&mut value)?;
     }
+    if features.contains(&JavaJsonWriterFeature::WriteNullListAsEmpty) {
+        apply_java_null_lists::<T>(&mut value)?;
+    }
     let mut bean_to_array_maps = HashMap::new();
     if features.contains(&JavaJsonWriterFeature::BeanToArray) {
         apply_java_bean_to_array::<T>(
@@ -462,6 +465,107 @@ pub(crate) fn apply_java_write_nulls<T>(
     })?;
     include_java_nullable_fields(value, kind);
     Ok(())
+}
+
+pub(crate) fn apply_java_null_lists<T>(
+    value: &mut serde_json::Value,
+) -> Result<(), serde_json::Error> {
+    let kind = JavaBeanKind::root_for_type_name(std::any::type_name::<T>()).ok_or_else(|| {
+        <serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson WriteNullListAsEmpty has no DTO field schema for {}",
+            std::any::type_name::<T>()
+        ))
+    })?;
+    write_java_null_lists(value, kind);
+    Ok(())
+}
+
+fn write_java_null_lists(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    for &name in kind.field_names() {
+        if java_is_nullable_list_field(kind, name) {
+            let field = fields
+                .entry(name.to_owned())
+                .or_insert(serde_json::Value::Null);
+            if field.is_null() {
+                *field = serde_json::Value::Array(Vec::new());
+            }
+            continue;
+        }
+        let Some(field) = fields.get_mut(name) else {
+            continue;
+        };
+        if let Some(child_kind) = kind.child_kind(name) {
+            match field {
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        write_java_null_lists(item, child_kind);
+                    }
+                }
+                serde_json::Value::Object(_) => write_java_null_lists(field, child_kind),
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => {}
+            }
+        } else if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
+            if let Some(entries) = field.as_object_mut() {
+                for entry in entries.values_mut() {
+                    write_java_null_lists(entry, JavaBeanKind::TopicQueueMappingInfo);
+                }
+            }
+        } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
+            && name == "messageRequestModeMap"
+        {
+            if let Some(topics) = field.as_object_mut() {
+                for groups in topics.values_mut() {
+                    if let Some(groups) = groups.as_object_mut() {
+                        for mode in groups.values_mut() {
+                            write_java_null_lists(
+                                mode,
+                                JavaBeanKind::SetMessageRequestModeRequestBody,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn java_is_nullable_list_field(kind: JavaBeanKind, name: &str) -> bool {
+    matches!(
+        (kind, name),
+        (JavaBeanKind::BatchAckMessageRequestBody, "acks")
+            | (JavaBeanKind::ConsumerData, "subscriptionDataSet")
+            | (
+                JavaBeanKind::GetConsumerListByGroupResponseBody,
+                "consumerIdList"
+            )
+            | (
+                JavaBeanKind::HeartbeatData,
+                "consumerDataSet" | "producerDataSet"
+            )
+            | (
+                JavaBeanKind::LiteSubscriptionCtlRequestBody,
+                "subscriptionSet"
+            )
+            | (JavaBeanKind::LiteSubscriptionDto, "liteTopicSet")
+            | (
+                JavaBeanKind::LockBatchRequestBody | JavaBeanKind::UnlockBatchRequestBody,
+                "mqSet"
+            )
+            | (JavaBeanKind::LockBatchResponseBody, "lockOKMQSet")
+            | (
+                JavaBeanKind::QueryAssignmentResponseBody,
+                "messageQueueAssignments"
+            )
+            | (JavaBeanKind::QueryConsumeTimeSpanBody, "consumeTimeSpanSet")
+            | (JavaBeanKind::SubscriptionData, "codeSet" | "tagsSet")
+            | (JavaBeanKind::TopicRouteData, "brokerDatas" | "queueDatas")
+    )
 }
 
 fn include_java_nullable_fields(value: &mut serde_json::Value, kind: JavaBeanKind) {
@@ -4817,6 +4921,10 @@ mod tests {
                     (
                         JavaJsonWriterFeature::WriteMapNullValue,
                         "WriteMapNullValue",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriteNullListAsEmpty,
+                        "WriteNullListAsEmpty",
                     ),
                     (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
