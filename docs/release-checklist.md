@@ -3800,3 +3800,27 @@ owner-specific checks belong in the manual handoff.
   reverse-export audit, current-revision Ubuntu/native Windows P18-V04 CI
   evidence, final P18-V03 package review, and Phase 19 live scenarios/profiles
   remain open. This rerun closes P18-V02 only.
+
+## Current-revision P18-V02 and OpenTelemetry Attributes API — 2026-10-17 (`7e7689f6`)
+
+- [x] P18-V01 OpenTelemetry 1.47 `AttributeKey`, immutable `Attributes`, and
+  `AttributesBuilder` surface compared with the invoked Java 5.5.1 fixture.
+  Rust maps all eight scalar/array kinds, typed lookup, `to_builder`, `put_all`,
+  type-aware `remove`, and `remove_if`. Fixture SHA-256:
+  `e15d03aac196916a0592a21a8deb2440fbce694e20bc3b0e050ba88e798a966e`.
+- [x] Full P18-V02 server-free rerun on source commit `7e7689f6`: default and
+  all-feature locked offline workspace tests; all-target/all-feature workspace
+  check and strict Clippy; Remoting all-feature tests; Maven `verify` (37
+  scenarios, fixture checks, 56 typed-header and 14 typed-body cross-decodes);
+  comparator self-test and 37-row manifest; 16 race/leak cases × 3; fuzz smoke
+  (107 frame seeds, 11 message seeds, 1,888 mutations); release examples,
+  workspace benchmark build/run, locked Cargo and workspace metadata/package
+  checks, UTC/Asia/Taipei Unique ID tests, formatting, and diff checks. The
+  benchmark ran on macOS ARM64 Apple M5 Max with Rust 1.85.0; observations are
+  recorded in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T235517Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T235517Z.rlog).
+- Broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+  reconciliation remains open. Current-revision Ubuntu/native Windows CI
+  evidence for P18-V04 and final P18-V03 package/provenance review remain open.
+  The Phase 19 live Broker matrix remains a separate phase handoff; owner-only
+  production checks remain in the final manual handoff.
