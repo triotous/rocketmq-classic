@@ -3321,3 +3321,20 @@ owner-specific checks belong in the manual handoff.
   `toString()` ordering, custom-header representation details, broad P18-V01,
   and final-revision full-workspace P18-V02 remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T091405Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T091405Z.rlog).
+- P18-V01 `RemotingCommand::default()` follow-up (pending code and
+  documentation commits, 2026-10-17): default commands now match the pinned
+  Java constructor's `JAVA` language, zero-valued fields, configured
+  serialization type, null transient fields, and process-wide opaque ID
+  increment. Factory construction now consumes one opaque ID per command.
+  The invoked fixture reflects the protected Java constructor and the Rust
+  child-process regression compares its defaults without global request-ID or
+  serialization-property interference. Fixture SHA-256:
+  `b1dc81c3c70894dfd4e669a59027590bb6d79499a8c34e4c87ca1b6d60cb70ab`.
+  Remoting all-feature tests pass (113 unit, 8 codec, 1 fuzz regression, 7
+  security, 107 transport, and 15 doctests); strict Remoting Clippy, workspace
+  all-feature check, format/diff checks, and Maven `verify` pass (37 scenarios,
+  fixture drift, and Java/Rust cross-decodes). This closes the default-state
+  difference only. Long-poll RPC metric emission, multi-entry `toString()` map
+  ordering, custom-header representation details, broad P18-V01, and final
+  full-workspace P18-V02 remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T092123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T092123Z.rlog).
