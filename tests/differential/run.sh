@@ -167,6 +167,16 @@ if [[ "${ROCKETMQ_PROFILE:-}" != "$profile" ]]; then
     echo "ROCKETMQ_PROFILE must explicitly equal the manifest profile '$profile'" >&2
     exit 2
 fi
+maven_java_version="$(mvn -version 2>&1 | sed -n 's/^Java version: \([^,]*\),.*/\1/p')"
+if [[ "$maven_java_version" != "27" ]]; then
+    echo "The live Java 5.5.1 runner requires the CI-pinned Maven JDK 27; found '${maven_java_version:-unknown}'" >&2
+    exit 2
+fi
+rustc_version="$(rustc --version | awk '{print $2}')"
+if [[ "$rustc_version" != "1.85.0" ]]; then
+    echo "The live Rust runner requires the workspace-pinned Rust 1.85.0; found '${rustc_version:-unknown}'" >&2
+    exit 2
+fi
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 started_epoch="$(date +%s)"
