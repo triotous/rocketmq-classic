@@ -3368,3 +3368,17 @@ owner-specific checks belong in the manual handoff.
   P18-V03 registry resolution, and locally runnable Phase 19 Broker/Docker
   scenarios remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog).
+- P18-V01 RemotingCommand display-order audit (test commit `a0ee6aef`,
+  2026-10-17): an invoked Java 5.5.1 fixture now includes two ext-fields whose
+  observed `HashMap` rendering is `{a=lower, Z=upper}`. The Rust differential
+  verifies that Java's rendered entries equal the field map, then compares the
+  complete display after normalizing only entry order. The pinned source uses
+  `HashMap` and its iteration order is unspecified; Rust retains deterministic
+  `BTreeMap` order. The API crosswalk now records this as a verified
+  representation disposition. It also now reflects completed command defaults,
+  process timer/callback APIs, and long-poll metrics. The broad P18-V01 audit
+  remains open; direct Java null ext-field key/value inputs are a newly
+  identified surface Rust's current `HeaderMap<String, String>` cannot
+  represent. Full workspace P18-V02 must be rerun after this test/fixture
+  revision. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T103126Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T103126Z.rlog).

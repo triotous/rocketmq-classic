@@ -36,3 +36,10 @@
   `verify` (37 scenarios, fixture drift and cross-decodes).
 - Code/test/fixture changes are ready for an independent commit. The API map
   and release checklist still need a separate documentation update.
+- Code/test/fixture commit: `a0ee6aef test(remoting): pin ext-field display
+  semantics`.
+- Updated `PHASE_6_API_CONFIG_MAP.md` to close the source-confirmed display
+  order disposition and reconcile RemotingCommand defaults, timer/callback
+  APIs, and long-poll metrics. Recorded nullable Java ext-field keys/values as
+  an open API input difference for follow-up, and appended the evidence to the
+  release checklist. No plan file was changed.
