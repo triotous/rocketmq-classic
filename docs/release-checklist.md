@@ -3728,3 +3728,35 @@ owner-specific checks belong in the manual handoff.
 - Earlier checklist notes that listed long-poll metric emission as open are
   superseded by this evidence. Broad P18-V01 remains open for its other API and
   behavior rows.
+
+## POP change-invisibility response header — 2026-10-17 (`dff482d9`)
+
+- [x] Closed the missing `ChangeInvisibleTimeResponseHeader` public typed
+  header slice. Pinned Java 5.5.1 declares its constructor, `get/setPopTime`,
+  `get/setInvisibleTime`, and `get/setReviveQid`, with identity-based inherited
+  equality. Rust now exports and directly decodes/encodes the header, retains
+  Java's independent primitive zero defaults for absent or malformed fields,
+  and matches signed limits and BMP decimal digits. The invoked fixture covers
+  both decode hints, null/empty ext-field maps, malformed and valid fields,
+  identity, accessors, and encoded fields. SHA-256:
+  `967d3146d0da1467714c96a1fa7464c7375888e2ba09f6fc0c097126bab67c2a`.
+- [x] Current-revision P18-V02 server-free gates pass on `dff482d9`:
+  default/all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, UTC Maven `verify` (37 scenarios, fixture drift and cross-decodes),
+  differential self-test and 37-row manifest, 16 deterministic race/leak cases
+  × 3, fuzz smoke (106 frame seeds, 11 message seeds, 1,872 mutations, 156
+  frame decodes, 110 message decodes), release examples, all workspace bench
+  compilation and offline benchmark run, locked Cargo metadata, metadata/
+  license/dependency-direction checks, seven package-content listings,
+  UTC/Asia-Taipei Unique ID tests, formatting, and diff checks.
+- The benchmark ran on macOS ARM64, Apple M5 Max, Rust 1.85.0: frame encode /
+  decode 2,140.8 ns per iteration, Zstd message decode 1,104.1 ns, Producer
+  request construction 1,191.8 ns, route lookup 16.4 ns, and loopback pending
+  completion 64,665.5 ns. Allocation observations were 4,676; 197,493; 3,665;
+  0; and 9,546 bytes per iteration. These are observations, not thresholds.
+- Broad P18-V01 source/API/settings/overload/input/error/flow and Rust
+  reverse-export reconciliation remains open. Current-revision GitHub Ubuntu
+  and native Windows P18-V04 evidence, 30 Phase 19 Docker/Broker scenarios and
+  required profiles, and pre-publication version/registry checks also remain
+  open. Owner-only production checks remain the final manual handoff. No plan,
+  remote branch, tag, publication, Broker operation, or deployment was touched.
