@@ -4367,6 +4367,10 @@ mod tests {
                         "IgnoreNonFieldGetter",
                     ),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
+                    (
+                        JavaJsonWriterFeature::WriteNullBooleanAsFalse,
+                        "WriteNullBooleanAsFalse",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

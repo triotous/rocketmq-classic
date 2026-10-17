@@ -2,7 +2,8 @@
 /// `RemotingSerializable.encode(JSONWriter.Feature...)` adapters.
 ///
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
-/// adapters currently implement `FieldBased`, `WriteBooleanAsNumber`,
+/// adapters currently implement `FieldBased`, `WriteNullBooleanAsFalse`,
+/// `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
@@ -39,6 +40,11 @@
 /// `FieldBased` also preserves output for the mapped RocketMQ DTO graph: the
 /// invoked Java fixtures produce the default bytes for every body, route, and
 /// heartbeat case, including getter-derived QueueTimeSpan fields.
+/// `WriteNullBooleanAsFalse` preserves output for the current body, route, and
+/// heartbeat adapters: the 41 body, 8 route, and 3 heartbeat fixture encodings
+/// have no feature-specific overrides. Other Java `RemotingSerializable`
+/// types with boxed Boolean fields, including `BrokerReplicasInfo`, are outside
+/// these adapters and remain part of the broader API parity audit.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -212,6 +218,7 @@ impl JavaJsonWriterFeature {
         matches!(
             self,
             Self::FieldBased
+                | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat
                 | Self::PrettyFormatWith2Space
                 | Self::PrettyFormatWith4Space

@@ -2765,6 +2765,10 @@ mod tests {
                 ),
                 (crate::JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
+                    crate::JavaJsonWriterFeature::WriteNullBooleanAsFalse,
+                    "WriteNullBooleanAsFalse",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),
