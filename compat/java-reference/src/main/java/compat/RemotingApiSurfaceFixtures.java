@@ -17,6 +17,9 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.Promise;
@@ -52,6 +55,7 @@ import org.apache.rocketmq.remoting.netty.ResponseFuture;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
+import org.apache.rocketmq.remoting.protocol.SerializeType;
 
 /** Public source/API inventory for the Java remoting response-future capability. */
 public final class RemotingApiSurfaceFixtures {
@@ -96,6 +100,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("sourceCommit", SOURCE_COMMIT);
         fixture.put("remotingCommandPublicConstructors", publicConstructors(RemotingCommand.class));
         fixture.put("remotingCommandPublicMethods", publicMethods(RemotingCommand.class));
+        fixture.put("remotingHeaderEncodingBehavior", remotingHeaderEncodingBehavior());
         fixture.put("responseFuturePublicConstructors", publicConstructors(ResponseFuture.class));
         fixture.put("responseFuturePublicMethods", publicMethods(ResponseFuture.class));
         fixture.put("semaphoreReleaseOnlyOncePublicConstructors",
@@ -124,6 +129,62 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("unknownResponseCodeDescription", RemotingHelper.getResponseCodeDesc(Integer.MIN_VALUE));
         fixture.put("remotingMetricsBehavior", remotingMetricsBehavior());
         return fixture;
+    }
+
+    private static Map<String, Object> remotingHeaderEncodingBehavior() {
+        Map<String, Object> result = new TreeMap<>();
+        for (SerializeType serialization : SerializeType.values()) {
+            RemotingCommand command = headerEncodingCommand(serialization);
+            List<Map<String, Object>> bodyLengths = new ArrayList<>();
+            for (int bodyLength : new int[] {-1, 0, 1, Integer.MAX_VALUE, Integer.MIN_VALUE}) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("bodyLength", bodyLength);
+                item.put("hex", hex(command.encodeHeader(bodyLength).array()));
+                bodyLengths.add(item);
+            }
+
+            Map<String, Object> codec = new TreeMap<>();
+            codec.put("bodyLengths", bodyLengths);
+            codec.put("noArgumentHex", hex(command.encodeHeader().array()));
+
+            ByteBuf output = Unpooled.buffer();
+            output.writeBytes(new byte[] {(byte) 0xa1, (byte) 0xb2});
+            int appendStart = output.writerIndex();
+            command.fastEncodeHeader(output);
+            Map<String, Object> append = new TreeMap<>();
+            append.put("initialHex", "a1b2");
+            append.put("prefixPreserved", output.getByte(0) == (byte) 0xa1
+                && output.getByte(1) == (byte) 0xb2);
+            append.put("suffixHex", ByteBufUtil.hexDump(output, appendStart,
+                output.writerIndex() - appendStart));
+            append.put("writerIndex", output.writerIndex());
+            codec.put("fastAppend", append);
+            output.release();
+            result.put(serialization.name(), codec);
+        }
+        return result;
+    }
+
+    private static RemotingCommand headerEncodingCommand(SerializeType serialization) {
+        RemotingCommand command = RemotingCommand.createRequestCommand(17, null);
+        command.setVersion(1);
+        command.setOpaque(42);
+        command.setFlag(2);
+        command.setRemark("header");
+        command.setBody(new byte[] {1, 2, 3});
+        command.setSerializeTypeCurrentRPC(serialization);
+        return command;
+    }
+
+    private static String hex(byte[] bytes) {
+        char[] digits = "0123456789abcdef".toCharArray();
+        char[] result = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int value = bytes[i] & 0xff;
+            result[i * 2] = digits[value >>> 4];
+            result[i * 2 + 1] = digits[value & 0x0f];
+        }
+        return new String(result);
     }
 
     private static List<String> publicFields(Class<?> type) {
