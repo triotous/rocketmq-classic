@@ -4128,6 +4128,14 @@ mod tests {
                     "{} BrowserCompatible",
                     case["id"]
                 );
+                assert_eq!(
+                    value
+                        .java_encode_with_features(&[JavaJsonWriterFeature::OptimizedForAscii])
+                        .unwrap(),
+                    case["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                    "{} OptimizedForAscii",
+                    case["id"]
+                );
                 assert_eq!(native_json, case["instanceJson"], "{} toJson", case["id"]);
                 assert_eq!(
                     native_json, case["staticJson"],

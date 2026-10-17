@@ -7,9 +7,10 @@
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
 /// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
-/// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, and `BrowserCompatible`;
-/// other variants return an explicit unsupported-feature error until their
-/// behavior is mapped.
+/// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
+/// and `OptimizedForAscii`. `OptimizedForAscii` is output-preserving because
+/// the Rust writer already emits UTF-8 JSON. Other variants return an explicit
+/// unsupported-feature error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -195,6 +196,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteLongAsString
                 | Self::WriteEnumUsingOrdinal
                 | Self::BrowserCompatible
+                | Self::OptimizedForAscii
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable

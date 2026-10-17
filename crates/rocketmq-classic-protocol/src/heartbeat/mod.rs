@@ -2574,6 +2574,14 @@ mod tests {
                 case["case"]
             );
             assert_eq!(
+                value
+                    .java_encode_with_features(&[crate::JavaJsonWriterFeature::OptimizedForAscii,])
+                    .unwrap(),
+                case["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                "{} OptimizedForAscii",
+                case["case"]
+            );
+            assert_eq!(
                 native_json, case["instanceJson"],
                 "{} instance encode",
                 case["case"]

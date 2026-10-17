@@ -5799,6 +5799,14 @@ mod tests {
                 case["id"]
             );
             assert_eq!(
+                value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::OptimizedForAscii])
+                    .unwrap(),
+                case["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                "{} OptimizedForAscii",
+                case["id"]
+            );
+            assert_eq!(
                 BatchAckMessageRequestBody::java_to_json_optional(Some(&value), false).unwrap(),
                 compact
             );
@@ -6856,6 +6864,14 @@ mod tests {
                 "{} BrowserCompatible",
                 case["id"]
             );
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::OptimizedForAscii])
+                    .unwrap(),
+                case["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                "{} OptimizedForAscii",
+                case["id"]
+            );
             let featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
                 .unwrap();
@@ -7132,6 +7148,17 @@ mod tests {
                         browser_compatible,
                         expected_browser_compatible.as_bytes(),
                         "{} {} BrowserCompatible",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        value
+                            .java_encode_with_features(&[
+                                JavaJsonWriterFeature::OptimizedForAscii,
+                            ])
+                            .unwrap(),
+                        expected["instanceEncodedJson"].as_str().unwrap().as_bytes(),
+                        "{} {} OptimizedForAscii",
                         $name,
                         case["id"]
                     );
