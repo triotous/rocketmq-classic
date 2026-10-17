@@ -1117,6 +1117,9 @@ name = "rocketmq-classic-integration"
 version = "0.1.0"
 dependencies = [
  "rocketmq-classic",
+ "rocketmq-classic-core",
+ "rocketmq-classic-protocol",
+ "rocketmq-classic-remoting",
  "tokio",
 ]
 

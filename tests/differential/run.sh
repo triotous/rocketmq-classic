@@ -113,10 +113,12 @@ if not selected:
 for scenario in selected:
     scenario_id = scenario.get("id")
     profile = scenario.get("profile")
-    topic = scenario.get("inputs", {}).get("topic", "")
+    inputs = scenario.get("inputs", {})
+    topic = inputs.get("topic", "-")
+    producer_group = inputs.get("producer_group", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
-    print(f"{scenario_id}\t{profile}\t{topic}")
+    print(f"{scenario_id}\t{profile}\t{topic}\t{producer_group}")
 PY
 then
     exit 2
@@ -127,9 +129,9 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -154,19 +156,25 @@ if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
     exit 3
 fi
 
-IFS=$'\t' read -r scenario_id profile topic <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
 fi
 case "$scenario_id:$topic" in
     ROUTE-001-get-existing-topic:compat_phase0_route|ROUTE-002-topic-not-exist:compat_phase0_missing) ;;
+    HEARTBEAT-001:-)
+        if [[ "$producer_group" != "compat_phase0" ]]; then
+            echo "Scenario metadata differs from the reviewed heartbeat implementation" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed route implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -201,6 +209,7 @@ fi
 export COMPOSE_PROJECT_NAME="$project_name"
 export ROCKETMQ_PROFILE="$profile"
 export ROCKETMQ_NAMESRV_HOST_PORT="${ROCKETMQ_NAMESRV_HOST_PORT:-19876}"
+export ROCKETMQ_BROKER_HOST_PORT="${ROCKETMQ_BROKER_HOST_PORT:-20911}"
 compose=(docker compose --project-name "$project_name" --file "$repo_root/integration-tests/compose.yaml" --profile "$profile")
 
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
@@ -214,9 +223,11 @@ fi
 
 evidence_dir="$repo_root/docs/compatibility/evidence/phase-19/${scenario_id}/${run_id}"
 namesrv_addr="127.0.0.1:${ROCKETMQ_NAMESRV_HOST_PORT}"
+broker_addr="127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT}"
 code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
+    compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -226,9 +237,9 @@ else
 fi
 mkdir -p "$evidence_dir"
 cp "$selected_file" "$evidence_dir/selected.tsv"
-printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nseed=not-applicable\n' \
+printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nseed=not-applicable\n' \
     "$scenario_id" "$profile" "$project_name" "$run_id" \
-    "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" \
+    "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" "$producer_group" \
     >"$evidence_dir/metadata.txt"
 {
     uname -srm
@@ -249,12 +260,20 @@ for filename in sys.argv[1:]:
     print(f"sha256 {hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
 PY
 } >"$evidence_dir/toolchain.txt" 2>&1
-cat >"$evidence_dir/commands.txt" <<EOF
+if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- heartbeat $broker_addr $producer_group
+EOF
+else
+    cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route $namesrv_addr $topic
 EOF
+fi
 topic_created=false
 cleanup() {
     status=$?
@@ -366,11 +385,13 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
         cat "$evidence_dir/topic-create.log" >&2
         exit 1
     fi
-else
+elif [[ "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Confirming that scenario topic $topic has no route"
+else
+    echo "Sending a Java/Rust heartbeat for producer group $producer_group"
 fi
 
-echo "Compiling Java 5.5.1 and Rust route probes"
+echo "Compiling Java 5.5.1 and Rust live probes"
 if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" -DskipTests compile \
     >"$evidence_dir/java-compile.log" 2>&1; then
     cat "$evidence_dir/java-compile.log" >&2
@@ -382,46 +403,79 @@ if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
     exit 1
 fi
 
-echo "Querying the same route with both clients"
-if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-    -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe \
-    >"$evidence_dir/java-route.tsv" 2>"$evidence_dir/java-route.stderr"; then
-    cat "$evidence_dir/java-route.tsv" "$evidence_dir/java-route.stderr" 2>/dev/null >&2 || true
-    exit 1
-fi
-if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route "$namesrv_addr" "$topic" \
-    >"$evidence_dir/rust-route.tsv" 2>"$evidence_dir/rust-route.stderr"; then
-    cat "$evidence_dir/rust-route.stderr" >&2
-    exit 1
-fi
-if [[ ! -s "$evidence_dir/java-route.tsv" || ! -s "$evidence_dir/rust-route.tsv" ]]; then
-    echo "A client produced empty route evidence" >&2
-    exit 1
-fi
-if ! cmp -s "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv"; then
-    diff -u "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv" \
-        >"$evidence_dir/route-diff.txt" || true
-    cat "$evidence_dir/route-diff.txt" >&2
-    exit 1
-fi
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
-    if ! awk -F '\t' -v topic="$topic" \
-        'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
-         END { if (NR != 4) exit 1 }' \
-        "$evidence_dir/java-route.tsv"; then
-        echo "Route evidence must contain exactly queue IDs 0-3 for $topic on broker-a" >&2
+if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
+    echo "Sending the same heartbeat through both client APIs"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe \
+        >"$evidence_dir/java-heartbeat.tsv" 2>"$evidence_dir/java-heartbeat.stderr"; then
+        cat "$evidence_dir/java-heartbeat.tsv" "$evidence_dir/java-heartbeat.stderr" 2>/dev/null >&2 || true
         exit 1
     fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- heartbeat "$broker_addr" "$producer_group" \
+        >"$evidence_dir/rust-heartbeat.tsv" 2>"$evidence_dir/rust-heartbeat.stderr"; then
+        cat "$evidence_dir/rust-heartbeat.stderr" >&2
+        exit 1
+    fi
+    if [[ ! -s "$evidence_dir/java-heartbeat.tsv" || ! -s "$evidence_dir/rust-heartbeat.tsv" ]]; then
+        echo "A client produced empty heartbeat evidence" >&2
+        exit 1
+    fi
+    if ! cmp -s "$evidence_dir/java-heartbeat.tsv" "$evidence_dir/rust-heartbeat.tsv"; then
+        diff -u "$evidence_dir/java-heartbeat.tsv" "$evidence_dir/rust-heartbeat.tsv" \
+            >"$evidence_dir/heartbeat-diff.txt" || true
+        cat "$evidence_dir/heartbeat-diff.txt" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' \
+        'NF != 3 || $1 != "HEARTBEAT" || $2 !~ /^[0-9]+$/ || $3 !~ /^[[:xdigit:]]+$/ || length($3) % 2 { exit 1 }
+         END { if (NR != 1) exit 1 }' \
+        "$evidence_dir/java-heartbeat.tsv"; then
+        echo "Heartbeat evidence must contain one response version and encoded request body" >&2
+        exit 1
+    fi
+    printf 'PASS %s: matching response version and encoded request body\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
 else
-    expected_route="$evidence_dir/expected-route.tsv"
-    printf 'NO_ROUTE\t%s\n' "$topic" >"$expected_route"
-    if ! cmp -s "$expected_route" "$evidence_dir/java-route.tsv"; then
-        echo "Missing-topic scenario must produce exactly NO_ROUTE for $topic" >&2
+    echo "Querying the same route with both clients"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe \
+        >"$evidence_dir/java-route.tsv" 2>"$evidence_dir/java-route.stderr"; then
+        cat "$evidence_dir/java-route.tsv" "$evidence_dir/java-route.stderr" 2>/dev/null >&2 || true
         exit 1
     fi
-    rm -f "$expected_route"
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- route "$namesrv_addr" "$topic" \
+        >"$evidence_dir/rust-route.tsv" 2>"$evidence_dir/rust-route.stderr"; then
+        cat "$evidence_dir/rust-route.stderr" >&2
+        exit 1
+    fi
+    if [[ ! -s "$evidence_dir/java-route.tsv" || ! -s "$evidence_dir/rust-route.tsv" ]]; then
+        echo "A client produced empty route evidence" >&2
+        exit 1
+    fi
+    if ! cmp -s "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv"; then
+        diff -u "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv" \
+            >"$evidence_dir/route-diff.txt" || true
+        cat "$evidence_dir/route-diff.txt" >&2
+        exit 1
+    fi
+    if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
+        if ! awk -F '\t' -v topic="$topic" \
+            'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
+             END { if (NR != 4) exit 1 }' \
+            "$evidence_dir/java-route.tsv"; then
+            echo "Route evidence must contain exactly queue IDs 0-3 for $topic on broker-a" >&2
+            exit 1
+        fi
+    else
+        expected_route="$evidence_dir/expected-route.tsv"
+        printf 'NO_ROUTE\t%s\n' "$topic" >"$expected_route"
+        if ! cmp -s "$expected_route" "$evidence_dir/java-route.tsv"; then
+            echo "Missing-topic scenario must produce exactly NO_ROUTE for $topic" >&2
+            exit 1
+        fi
+        rm -f "$expected_route"
+    fi
+    printf 'PASS %s: %s matching route rows\n' "$scenario_id" "$(wc -l <"$evidence_dir/java-route.tsv" | tr -d ' ')" \
+        | tee "$evidence_dir/result.txt"
 fi
-
-printf 'PASS %s: %s matching queue rows\n' "$scenario_id" "$(wc -l <"$evidence_dir/java-route.tsv" | tr -d ' ')" \
-    | tee "$evidence_dir/result.txt"
 echo "Evidence: $evidence_dir"

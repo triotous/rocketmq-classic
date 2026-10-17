@@ -41,6 +41,10 @@
             <configuration><mainClass>compat.LiveRouteProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-heartbeat-probe</id>
+            <configuration><mainClass>compat.LiveHeartbeatProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
