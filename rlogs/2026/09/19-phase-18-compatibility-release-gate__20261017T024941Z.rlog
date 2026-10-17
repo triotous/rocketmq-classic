@@ -15,3 +15,46 @@
 - Mapped Fastjson `ReferenceDetection` by retaining `SharedValue` Arc identities through the feature-specific serialization pass and emitting Fastjson `$ref` paths for repeated handles. Added an invoked Java route fixture that serializes the same `BrokerData` object at two list positions; Rust matches the second reference path `$.brokerDatas[0]`. Code commit: `eb991847`. Protocol all-feature tests passed (127 unit tests, all integration targets, and 42 doctests); strict Protocol Clippy, formatting, diff checks, and Maven verify (37 scenarios, fixture checks, and Java/Rust cross-decodes) passed. After the final internal-marker refactor, the focused shared-route reference test, strict Protocol Clippy, formatting, and diff checks passed. Inventory is now 47/48; `WriteClassName` remains unmapped.
 
 - Mapped Fastjson `WriteClassName` across the body, route, and heartbeat serializer schemas. The feature emits root DTO metadata, polymorphic DTO metadata in lists/sets/maps and MessageQueue map keys, `Set` collection markers, typed `HashMap`/`ConcurrentHashMap` metadata, and `L` suffixes on small Java `long` field/map values. `NotWriteRootClassName`, `NotWriteHashMapArrayListClassName`, and `NotWriteSetClassName` suppress the matching metadata when combined with the feature. Existing invoked Java 5.5.1 feature outputs now run through body, route, and heartbeat differential loops. Code commit: `07d2fba1`. Validation passed: `cargo test -p rocketmq-classic-protocol --all-features --locked` (127 unit tests, all Protocol integration targets, 42 doctests); strict `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features --locked -- -D warnings`; `cargo fmt --all`; and `git diff --check`. Writer feature inventory is now 48/48. Broad P18-V01, current-revision full-workspace P18-V02, GitHub Ubuntu/Windows CI evidence, Phase 19 local Docker/Broker automation, and pre-publication version/registry checks remain open.
+
+# P18-V02 final local rerun and request-reply deadline race fix — 2026-10-17T04:29:09Z
+
+- Code commit: `e9fe95cd fix(request-reply): expire entries at captured deadline`.
+  The repeated race smoke exposed that the registry sweep used only the future's
+  relative timeout, which can drift from the captured request deadline when
+  registration is delayed. Expiration now honors the stored absolute deadline
+  as well; a regression extends the future timeout after registration and
+  verifies that the registry still expires at the request deadline.
+- Final server-free gates passed on `e9fe95cd`: `TZ=UTC cargo test
+  --workspace --locked`; `TZ=UTC cargo test --workspace --all-features
+  --locked`; strict all-target/all-feature workspace Clippy; pinned Maven
+  `verify` (37 scenarios, fixture checks, Java/Rust cross-decodes); comparator
+  self-test and 37-scenario manifest validation; race/leak smoke (16 cases ×
+  3); fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations); release
+  examples; workspace benchmark compilation; workspace metadata/license/
+  dependency checks; seven package listings with LICENSE and NOTICE; format and
+  diff checks.
+- The first post-change race-smoke run reproduced the flaky timeout assertion
+  on repetition 3. The absolute-deadline correction and focused regression
+  passed, then the complete 16 × 3 smoke rerun passed. The initial full-workspace
+  test command's shell wrapper used zsh's read-only `status` variable after the
+  tests had completed; the workspace suites were rerun with a corrected wrapper
+  and both returned exit code 0. No test failure remained.
+- P18-V02 server-free gates are complete on this code revision. P18-V01's broad
+  source/API/settings/overload/error/control-flow/reverse-export audit remains
+  open. The 37-scenario manifest is valid, but the Phase 19 Docker/Broker
+  runner and local scenario execution remain automatic work, not manual
+  validation.
+- Verified the official `apache/rocketmq:5.3.4` multi-platform image index at
+  `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8`;
+  its linux/arm64 image is `sha256:4c7982d63c1b1d0edb45d6e9d330746b0a7816d96d01daa340244f5fad84d215`.
+  The pinned image reports server 5.3.4 and OpenJDK 8u472. Docker/Compose are
+  installed, but no Compose profile or Broker scenario has yet been executed.
+- GitHub currently has no run for this local revision. The latest listed run is
+  the older `cc79eb6e` revision and failed the Linux stack-capture test because
+  its signal-selection logic found no available default-ignore signal; the
+  local history contains the subsequent fallback correction. The branch is
+  ahead of origin and remains unpushed; no current-revision Ubuntu/Windows CI
+  result is claimed.
+- No Phase plan was changed; no Broker, tag, publication, push, deployment, or
+  compatibility claim was made. Pre-publication confirmation of the `0.1.0`
+  version set and registry dependency resolution remains open.

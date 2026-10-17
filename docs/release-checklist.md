@@ -3096,3 +3096,20 @@ Before any publication:
   Ubuntu/Windows CI evidence, and Phase 19 local Docker/Broker automation
   remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+
+- [x] **P18-V02 current-revision rerun** — Code commit `e9fe95cd` (2026-10-17):
+  default and all-feature workspace tests, strict workspace Clippy, Maven
+  `verify` (37 scenarios, fixture drift checks, Java/Rust cross-decodes),
+  comparator self-test and 37-scenario manifest, race/leak smoke (16 cases ×
+  3), fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations), release
+  examples, workspace bench compilation, workspace metadata/dependency/license
+  checks, seven package listings with `LICENSE`/`NOTICE`, format and diff checks
+  all pass. The race rerun first exposed drift between a request's captured
+  absolute deadline and its mutable future timeout. Registry expiration now
+  honors the captured deadline; the focused regression and full smoke pass.
+  This closes P18-V02's server-free local gates on this revision. Broad P18-V01,
+  current-revision Ubuntu/Windows CI evidence, P18-V04, Phase 19 Docker/Broker
+  automation and local scenario execution remain open. The pinned official
+  RocketMQ 5.3.4 image digest is verified, but no Compose profile has run.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
