@@ -24,3 +24,10 @@
   including the `BrokerReplicasInfo` DTO/API; final full-workspace P18-V02,
   current-revision Ubuntu/Windows CI and P18-V04, Phase 19 local Docker/Broker
   automation, and release version/registry resolution also remain outstanding.
+- Correction after tracing the exact pinned source commit with `git grep`:
+  `MQClientAPIImpl.getInSyncStateData` is called and exposed through the
+  `rocketmq-tools` `MQAdminExt` extension, which Phase 17 explicitly excludes.
+  It is not a confirmed missing Rust client-facade API. `BrokerReplicasInfo`
+  remains outside the current client DTO adapters; the writer-feature claim is
+  scoped accordingly. The first correction patch used stale log context and
+  changed no files; this appended note preserves the correction history.

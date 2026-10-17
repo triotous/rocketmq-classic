@@ -2938,8 +2938,10 @@ Before any publication:
   41 body, 8 route, and 3 heartbeat DTO cases; none records an output override.
   Rust accepts the flag and compares each current adapter's output with the
   corresponding fixture. The no-op claim is limited to these adapters; Java
-  `BrokerReplicasInfo` contains a boxed Boolean and its DTO/API remains outside
-  the mapped Rust surface. Protocol all-feature tests (126 unit tests, all
+  `BrokerReplicasInfo` contains a boxed Boolean, but its
+  `getInSyncStateData` entrypoint belongs to the `rocketmq-tools` `MQAdminExt`
+  extension, which Phase 17 explicitly excludes. Protocol all-feature tests
+  (126 unit tests, all
   integration targets, and 42 doctests), strict Protocol Clippy, formatting,
   diff checks, and Maven verify (37 scenarios, fixture drift, and cross-decodes)
   pass. Mapping count is now 36/48; 12 writer features remain unmapped. Broad
