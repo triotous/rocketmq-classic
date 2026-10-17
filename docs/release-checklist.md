@@ -3557,3 +3557,29 @@ owner-specific checks belong in the manual handoff.
   deployment/live Broker checks remain the separate final manual handoff. No
   plan, Java oracle, remote branch, tag, publication, Broker operation, or
   deployment was changed.
+
+## Current code revision gate — 2026-10-17 (`1db3a1c4`)
+
+- [x] P18-V02 server-free gates pass on code commit `1db3a1c4`. Default and
+  all-feature workspace tests, all-target/all-feature workspace check and
+  strict Clippy pass on Rust 1.85.0 in Linux ARM64 `rust:1.85.0-bookworm`
+  using `--init`. Host format and diff checks pass.
+- Maven `verify` passes all 37 scenarios, fixture drift checks, and Java/Rust
+  cross-decodes, including the new Pull header fast/reflection fixture for
+  missing fields, valid fields, and invalid numeric conversions. Differential
+  comparator self-test and manifest validation pass (37 scenarios). Race/leak
+  smoke passes 16 cases × 3; fuzz smoke passes 105 frame seeds, 11 message
+  seeds, 1,856 mutations, 146 frame decodes, and 113 message decodes. Workspace
+  examples and benchmarks compile; the offline benchmark runs on macOS ARM64.
+  Locked Cargo metadata, workspace metadata/license/dependency checks, seven
+  package listings with `LICENSE`/`NOTICE`, and four Core Unique ID tests under
+  both UTC and Asia/Taipei pass. The Java output includes existing JDK
+  `Unsafe` and reflective-final-field warnings but exits successfully.
+- Pull fast/reflection mode handling closes the specific decoder discrepancy
+  recorded under `86e7cb34`; other header mode differences and the broad
+  bidirectional P18-V01 source/API/input/error/flow and reverse-export audit
+  remain open. Current-revision Ubuntu/native Windows evidence for P18-V04,
+  30 remaining Phase 19 Docker/Broker scenarios and required profiles, and
+  pre-publication version/registry checks remain open. Owner-specific final
+  production checks remain a separate manual handoff. No plan, Java oracle,
+  remote branch, tag, publication, Broker operation, or deployment was changed.
