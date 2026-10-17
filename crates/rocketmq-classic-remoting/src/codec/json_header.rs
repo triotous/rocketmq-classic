@@ -161,7 +161,7 @@ mod tests {
         };
         let encoded = encode_with_limit(&command, 4096).unwrap();
         let value: Value = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(value["language"], "RUST");
+        assert_eq!(value["language"], "JAVA");
         assert_eq!(value["extFields"]["unknown"], "kept");
         assert!(value.get("body").is_none());
         assert_eq!(decode(&encoded).unwrap(), command);

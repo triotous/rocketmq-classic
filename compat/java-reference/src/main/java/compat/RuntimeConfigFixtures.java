@@ -3768,10 +3768,33 @@ public final class RuntimeConfigFixtures {
         addCommandSuspendedCase(commandSuspended, "setFalse", suspendedRequest);
         result.put("commandSuspended", commandSuspended);
         result.put("commandProtocolHelpers", commandProtocolHelperCases());
+        result.put("commandConstructorDefaults", commandConstructorDefaultCases());
         result.put("commandFactories", commandFactoryCases());
         result.put("commandCustomHeaders", commandCustomHeaderCases());
         result.put("commandInfrastructure", commandInfrastructureCases());
         result.put("commandToString", commandToStringCases());
+        return result;
+    }
+
+    private static Map<String, Object> commandConstructorDefaultCases() throws Exception {
+        java.lang.reflect.Constructor<org.apache.rocketmq.remoting.protocol.RemotingCommand> constructor =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command = constructor.newInstance();
+        org.apache.rocketmq.remoting.protocol.RemotingCommand next = constructor.newInstance();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("code", command.getCode());
+        result.put("language", command.getLanguage().name());
+        result.put("version", command.getVersion());
+        result.put("opaqueIncrement", next.getOpaque() - command.getOpaque());
+        result.put("flag", command.getFlag());
+        result.put("remarkNull", command.getRemark() == null);
+        result.put("extFieldsNull", command.getExtFields() == null);
+        result.put("bodyNull", command.getBody() == null);
+        result.put("serialization", command.getSerializeTypeCurrentRPC().name());
+        result.put("suspended", command.isSuspended());
+        result.put("processTimerNull", command.getProcessTimer() == null);
+        result.put("callbackListNull", command.getCallbackList() == null);
         return result;
     }
 

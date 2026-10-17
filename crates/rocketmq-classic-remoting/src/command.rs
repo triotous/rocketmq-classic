@@ -398,9 +398,9 @@ impl Default for RemotingCommand {
     fn default() -> Self {
         Self {
             code: 0,
-            language: Some(LanguageCode::Rust),
+            language: Some(LanguageCode::Java),
             version: 0,
-            opaque: 0,
+            opaque: Self::create_new_request_id(),
             flag: 0,
             remark: None,
             ext_fields: None,
@@ -630,8 +630,6 @@ impl RemotingCommand {
         let defaults = Self::default();
         let mut command = Self {
             code,
-            language: Some(LanguageCode::Java),
-            opaque: Self::create_new_request_id(),
             remark,
             ..defaults
         };
@@ -1642,8 +1640,64 @@ mod tests {
 
     #[test]
     fn defaults_and_flag_helpers_match_java_bits() {
+        const CHILD_CASE: &str = "ROCKETMQ_CLASSIC_COMMAND_DEFAULT_CASE";
+        if std::env::var(CHILD_CASE).as_deref() == Ok("child") {
+            let fixture: serde_json::Value =
+                serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                    .unwrap();
+            let cases = &fixture["remotingEnumMethodCases"]["commandConstructorDefaults"];
+            let command = RemotingCommand::default();
+            let next = RemotingCommand::default();
+            assert_eq!(command.code, cases["code"].as_i64().unwrap() as i32);
+            assert_eq!(
+                command.language.map(LanguageCode::name),
+                cases["language"].as_str()
+            );
+            assert_eq!(command.version, cases["version"].as_i64().unwrap() as i32);
+            assert_eq!(
+                next.opaque.wrapping_sub(command.opaque),
+                cases["opaqueIncrement"].as_i64().unwrap() as i32
+            );
+            assert_eq!(command.flag, cases["flag"].as_i64().unwrap() as i32);
+            assert_eq!(command.remark.is_none(), cases["remarkNull"]);
+            assert_eq!(command.ext_fields.is_none(), cases["extFieldsNull"]);
+            assert_eq!(command.body.is_none(), cases["bodyNull"]);
+            assert_eq!(
+                command.serialization.name(),
+                cases["serialization"].as_str().unwrap()
+            );
+            assert_eq!(command.suspended, cases["suspended"]);
+            assert_eq!(command.process_timer.is_none(), cases["processTimerNull"]);
+            assert_eq!(command.callback_list.is_none(), cases["callbackListNull"]);
+
+            let mut command = RemotingCommand::default();
+            assert!(!command.is_response());
+            assert!(!command.is_oneway());
+            command.flag = 1 << 8;
+            command.mark_response();
+            assert_eq!(command.flag, (1 << 8) | 1);
+            command.mark_oneway();
+            assert_eq!(command.flag, (1 << 8) | 3);
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("command::tests::defaults_and_flag_helpers_match_java_bits")
+            .arg("--nocapture")
+            .env(CHILD_CASE, "child")
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_PROPERTY)
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_ENV)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child default comparison failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
         let mut command = RemotingCommand::default();
-        assert_eq!(command.language, Some(LanguageCode::Rust));
         assert!(!command.is_response());
         assert!(!command.is_oneway());
         command.flag = 1 << 8;
