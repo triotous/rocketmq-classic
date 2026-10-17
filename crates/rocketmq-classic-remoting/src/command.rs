@@ -433,7 +433,19 @@ impl std::fmt::Display for RequestSource {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A RocketMQ remoting command.
+///
+/// Java 5.5.1 inherits identity-based `Object.equals` and `Object.hashCode` for
+/// this type. Rust intentionally omits structural `PartialEq` and `Eq` so two
+/// commands with equal fields do not gain Java-incompatible value equality.
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::RemotingCommand;
+/// let first = RemotingCommand::default();
+/// let second = RemotingCommand::default();
+/// let _ = first == second;
+/// ```
+#[derive(Debug, Clone)]
 pub struct RemotingCommand {
     pub code: i32,
     pub language: Option<LanguageCode>,
@@ -1384,6 +1396,22 @@ mod tests {
         ] {
             assert!(method_names.contains(&signature), "missing {signature}");
         }
+    }
+
+    #[test]
+    fn remoting_command_identity_matches_pinned_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        let identity = &fixture["remotingCommandIdentityBehavior"];
+        assert_eq!(identity["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(identity["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(identity["equalVisibleState"], true);
+        assert_eq!(identity["sameInstanceEquals"], true);
+        assert_eq!(identity["distinctEqualStateEquals"], false);
+        assert_eq!(identity["sameInstanceHashStable"], true);
+        assert_eq!(identity["distinctEqualStateHashSetSize"], 2);
     }
 
     #[test]

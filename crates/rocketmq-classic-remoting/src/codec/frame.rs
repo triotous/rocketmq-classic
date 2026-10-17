@@ -226,10 +226,18 @@ mod tests {
         ));
 
         let mut input = BytesMut::from(encoded.as_slice());
-        assert_eq!(
-            decode_next_with_limit(&mut input, encoded.len()).unwrap(),
-            Some(command)
-        );
+        let decoded = decode_next_with_limit(&mut input, encoded.len())
+            .unwrap()
+            .expect("complete frame must decode to a command");
+        assert_eq!(decoded.code, command.code);
+        assert_eq!(decoded.language, command.language);
+        assert_eq!(decoded.version, command.version);
+        assert_eq!(decoded.opaque, command.opaque);
+        assert_eq!(decoded.flag, command.flag);
+        assert_eq!(decoded.remark, command.remark);
+        assert_eq!(decoded.ext_fields, command.ext_fields);
+        assert_eq!(decoded.body, command.body);
+        assert_eq!(decoded.serialization, command.serialization);
         assert!(input.is_empty());
     }
 

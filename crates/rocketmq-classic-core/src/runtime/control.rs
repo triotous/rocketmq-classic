@@ -1196,13 +1196,13 @@ mod tests {
                 } else {
                     assert!(matches!(result, Err(RuntimeError::StartupFailure)));
                 }
-                assert_eq!(
+                assert!(matches!(
                     tokio::time::timeout(Duration::from_secs(5), pending)
                         .await
                         .unwrap()
                         .unwrap(),
                     Err(TransportError::Shutdown)
-                );
+                ));
                 tokio::time::timeout(Duration::from_secs(5), peer)
                     .await
                     .unwrap()

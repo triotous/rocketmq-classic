@@ -11,6 +11,18 @@ use rocketmq_classic_remoting::{
     command::RemotingCommand,
 };
 
+fn assert_same_wire_fields(actual: &RemotingCommand, expected: &RemotingCommand) {
+    assert_eq!(actual.code, expected.code);
+    assert_eq!(actual.language, expected.language);
+    assert_eq!(actual.version, expected.version);
+    assert_eq!(actual.opaque, expected.opaque);
+    assert_eq!(actual.flag, expected.flag);
+    assert_eq!(actual.remark, expected.remark);
+    assert_eq!(actual.ext_fields, expected.ext_fields);
+    assert_eq!(actual.body, expected.body);
+    assert_eq!(actual.serialization, expected.serialization);
+}
+
 #[test]
 fn nullable_language_matches_invoked_java_json_and_binary_boundaries() {
     let fixture: serde_json::Value =
@@ -151,10 +163,9 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
     let ordinary = fs::read(fixture_dir().join("header-ordinary-001.bin")).unwrap();
     let mut fast = BytesMut::from(fast.as_slice());
     let mut ordinary = BytesMut::from(ordinary.as_slice());
-    assert_eq!(
-        frame::decode_next(&mut fast).unwrap(),
-        frame::decode_next(&mut ordinary).unwrap()
-    );
+    let fast_command = frame::decode_next(&mut fast).unwrap().unwrap();
+    let ordinary_command = frame::decode_next(&mut ordinary).unwrap().unwrap();
+    assert_same_wire_fields(&fast_command, &ordinary_command);
 }
 
 #[test]
@@ -218,19 +229,16 @@ fn p2_v03_every_split_and_concatenated_frames_preserve_incomplete_bytes() {
         assert!(frame::decode_next(&mut input).unwrap().is_none());
         assert_eq!(input, before, "input changed at split {split}");
         input.extend_from_slice(&bytes[split..]);
-        assert_eq!(
-            frame::decode_next(&mut input).unwrap(),
-            Some(command.clone())
-        );
+        let decoded = frame::decode_next(&mut input).unwrap().unwrap();
+        assert_same_wire_fields(&decoded, &command);
         assert!(input.is_empty());
     }
     let mut joined = BytesMut::from(bytes.as_slice());
     joined.extend_from_slice(&bytes);
-    assert_eq!(
-        frame::decode_next(&mut joined).unwrap(),
-        Some(command.clone())
-    );
-    assert_eq!(frame::decode_next(&mut joined).unwrap(), Some(command));
+    let first = frame::decode_next(&mut joined).unwrap().unwrap();
+    assert_same_wire_fields(&first, &command);
+    let second = frame::decode_next(&mut joined).unwrap().unwrap();
+    assert_same_wire_fields(&second, &command);
     assert!(joined.is_empty());
 }
 

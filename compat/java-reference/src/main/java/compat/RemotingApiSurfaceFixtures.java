@@ -31,6 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -100,6 +101,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("sourceCommit", SOURCE_COMMIT);
         fixture.put("remotingCommandPublicConstructors", publicConstructors(RemotingCommand.class));
         fixture.put("remotingCommandPublicMethods", publicMethods(RemotingCommand.class));
+        fixture.put("remotingCommandIdentityBehavior", remotingCommandIdentityBehavior());
         fixture.put("remotingHeaderEncodingBehavior", remotingHeaderEncodingBehavior());
         fixture.put("responseFuturePublicConstructors", publicConstructors(ResponseFuture.class));
         fixture.put("responseFuturePublicMethods", publicMethods(ResponseFuture.class));
@@ -129,6 +131,28 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("unknownResponseCodeDescription", RemotingHelper.getResponseCodeDesc(Integer.MIN_VALUE));
         fixture.put("remotingMetricsBehavior", remotingMetricsBehavior());
         return fixture;
+    }
+
+    private static Map<String, Object> remotingCommandIdentityBehavior() throws NoSuchMethodException {
+        RemotingCommand first = RemotingCommand.createRequestCommand(17, null);
+        RemotingCommand second = RemotingCommand.createRequestCommand(17, null);
+        second.setOpaque(first.getOpaque());
+
+        Set<RemotingCommand> commands = new HashSet<>();
+        commands.add(first);
+        commands.add(second);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("equalsDeclaringClass", RemotingCommand.class.getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        result.put("hashCodeDeclaringClass", RemotingCommand.class.getMethod("hashCode")
+            .getDeclaringClass().getName());
+        result.put("equalVisibleState", first.toString().equals(second.toString()));
+        result.put("sameInstanceEquals", first.equals(first));
+        result.put("distinctEqualStateEquals", first.equals(second));
+        result.put("sameInstanceHashStable", first.hashCode() == first.hashCode());
+        result.put("distinctEqualStateHashSetSize", commands.size());
+        return result;
     }
 
     private static Map<String, Object> remotingHeaderEncodingBehavior() {

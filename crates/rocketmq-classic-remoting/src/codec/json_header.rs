@@ -168,6 +168,15 @@ mod tests {
         assert_eq!(value["language"], "JAVA");
         assert_eq!(value["extFields"]["unknown"], "kept");
         assert!(value.get("body").is_none());
-        assert_eq!(decode(&encoded).unwrap(), command);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded.code, command.code);
+        assert_eq!(decoded.language, command.language);
+        assert_eq!(decoded.version, command.version);
+        assert_eq!(decoded.opaque, command.opaque);
+        assert_eq!(decoded.flag, command.flag);
+        assert_eq!(decoded.remark, command.remark);
+        assert_eq!(decoded.ext_fields, command.ext_fields);
+        assert_eq!(decoded.body, command.body);
+        assert_eq!(decoded.serialization, command.serialization);
     }
 }

@@ -763,7 +763,7 @@ mod tests {
         assert_eq!(java["interruptFlagCleared"], true);
 
         let future = ResponseFuture::new(None, 55, None, 5000, None);
-        assert_eq!(future.wait_response(1), None);
+        assert!(future.wait_response(1).is_none());
         assert!(!future.is_interrupted());
         future.interrupt();
         assert!(future.is_interrupted());
@@ -784,7 +784,9 @@ mod tests {
             (response, started.elapsed())
         });
         let (received, elapsed) = waiter.join().unwrap();
-        assert_eq!(received, Some(response.clone()));
+        let received = received.expect("put_response must wake the waiter with a command");
+        assert_eq!(received.code, response.code);
+        assert_eq!(received.opaque, response.opaque);
         assert!(elapsed >= std::time::Duration::from_millis(15));
 
         let future = Arc::new(ResponseFuture::new(None, 0, None, 1000, None));
@@ -792,7 +794,12 @@ mod tests {
         let waiter = std::thread::spawn(move || wait_future.wait_response(1000));
         std::thread::sleep(std::time::Duration::from_millis(10));
         future.put_response(Some(response.clone()));
-        assert_eq!(waiter.join().unwrap(), Some(response));
+        let received = waiter
+            .join()
+            .unwrap()
+            .expect("put_response must wake the waiter with a command");
+        assert_eq!(received.code, response.code);
+        assert_eq!(received.opaque, response.opaque);
     }
 
     #[test]

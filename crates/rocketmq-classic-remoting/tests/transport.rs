@@ -338,20 +338,20 @@ fn p3_client_can_be_constructed_without_runtime_and_start_requires_one() {
 async fn p3_client_start_is_explicit_and_idempotent() {
     let client = RemotingClient::new(TransportMode::Plain);
     let deadline = Instant::now() + Duration::from_secs(1);
-    assert_eq!(
+    assert!(matches!(
         client.invoke("127.0.0.1:1", command(1), deadline).await,
         Err(TransportError::NotStarted)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         client
             .invoke_sync("127.0.0.1:1", command(1), Duration::from_secs(1))
             .await,
         Err(TransportError::NotStarted)
-    );
-    assert_eq!(
+    ));
+    assert!(matches!(
         client.invoke_name_server(command(1), deadline).await,
         Err(TransportError::NotStarted)
-    );
+    ));
     assert!(!client.is_address_reachable("127.0.0.1:1", deadline).await);
     assert!(matches!(
         client.invoke_oneway("127.0.0.1:1", command(1), deadline),
@@ -1307,7 +1307,10 @@ async fn p3_close_channels_interrupts_pending_pull_requests_only() {
         request::PULL_MESSAGE
     );
     client.close_channels(std::slice::from_ref(&address));
-    assert_eq!(pull.await.unwrap(), Err(TransportError::Interrupted));
+    assert!(matches!(
+        pull.await.unwrap(),
+        Err(TransportError::Interrupted)
+    ));
     peer.await.unwrap();
     client.shutdown().await;
 }
@@ -2081,8 +2084,14 @@ async fn p3_sync_admission_shutdown_keeps_shutdown_category() {
     });
     tokio::time::sleep(Duration::from_millis(20)).await;
     client.shutdown().await;
-    assert_eq!(first.await.unwrap(), Err(TransportError::Shutdown));
-    assert_eq!(second.await.unwrap(), Err(TransportError::Shutdown));
+    assert!(matches!(
+        first.await.unwrap(),
+        Err(TransportError::Shutdown)
+    ));
+    assert!(matches!(
+        second.await.unwrap(),
+        Err(TransportError::Shutdown)
+    ));
     peer.await.unwrap();
 }
 
@@ -4239,7 +4248,7 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
             cause: Some(_),
         }) if remote_addr == address.to_string()
     ));
-    assert_eq!(context.response, None);
+    assert!(context.response.is_none());
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
         context.request.remark.as_deref(),
@@ -4310,7 +4319,7 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
             .to_string()
             .starts_with("Receive GO_AWAY twice in request from channelId=")
     );
-    assert_eq!(context.response, None);
+    assert!(context.response.is_none());
     assert_eq!(context.request.flag, 1 << 8);
     assert_eq!(
         context.request.remark.as_deref(),
