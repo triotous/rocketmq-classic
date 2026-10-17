@@ -32,3 +32,15 @@
   session 40341; its final result will be appended after completion. The
   current-revision full-workspace P18-V02 gate remains open.
 - No plan files were modified; no push, tag, publish, or deployment occurred.
+
+## Workspace test-target compile result
+
+- The previously running `cargo test --workspace --all-features --locked
+  --no-run` completed with exit 0 after 38 minutes. It compiled every workspace
+  unit, integration, and binary test target, including the `live_client`
+  binary. This verifies the `ExtFields` public-type migration compiles across
+  all crates and test call sites.
+- This is compile-only evidence. Full workspace test execution and the
+  current-revision P18-V02 gate remain open because the Remoting `codec`
+  integration binary stalls at macOS `_dyld_start` in the full Remoting test
+  command.

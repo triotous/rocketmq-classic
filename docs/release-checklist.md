@@ -3398,6 +3398,7 @@ owner-specific checks belong in the manual handoff.
   while launching the `codec` integration binary at macOS `_dyld_start`; a
   process sample confirmed the launch stall, so the suite is not recorded as a
   pass. Maven `verify` passes all 37 scenarios, fixture checks, and Java/Rust
-  cross-decodes. Full workspace all-feature test-target compilation is still
-  running; no current-revision full-workspace gate is claimed. Broad P18-V01
-  remains open.
+  cross-decodes. `cargo test --workspace --all-features --locked --no-run`
+  completed successfully on this code revision in 38 minutes, compiling every
+  workspace test target including `live_client`. Full test execution and the
+  current-revision P18-V02 gate remain open. Broad P18-V01 remains open.
