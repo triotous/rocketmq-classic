@@ -213,8 +213,8 @@ async fn oneway_send_and_query(
             .get_max_offset(
                 broker_address,
                 &GetMaxOffsetRequestHeader {
-                    topic: topic.to_owned(),
-                    queue_id: 0,
+                    topic: Some(topic.to_owned()),
+                    queue_id: Some(0),
                     broker_name: Some("broker-a".into()),
                     ..GetMaxOffsetRequestHeader::default()
                 },

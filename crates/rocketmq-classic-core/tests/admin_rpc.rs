@@ -106,9 +106,9 @@ async fn invoke_offset_operation(
             api.search_offset(
                 addr,
                 &SearchOffsetRequestHeader {
-                    topic: "orders".into(),
-                    queue_id: 0,
-                    timestamp: 1_700_000_000_000,
+                    topic: Some("orders".into()),
+                    queue_id: Some(0),
+                    timestamp: Some(1_700_000_000_000),
                     boundary_type: Some(BoundaryType::value_of_name(Some("LOWER")).unwrap()),
                     ..Default::default()
                 },
@@ -120,8 +120,8 @@ async fn invoke_offset_operation(
             api.get_max_offset(
                 addr,
                 &GetMaxOffsetRequestHeader {
-                    topic: "orders".into(),
-                    queue_id: 0,
+                    topic: Some("orders".into()),
+                    queue_id: Some(0),
                     ..Default::default()
                 },
                 deadline,
@@ -132,8 +132,8 @@ async fn invoke_offset_operation(
             api.get_min_offset(
                 addr,
                 &GetMinOffsetRequestHeader {
-                    topic: "orders".into(),
-                    queue_id: 0,
+                    topic: Some("orders".into()),
+                    queue_id: Some(0),
                     ..Default::default()
                 },
                 deadline,
@@ -144,8 +144,8 @@ async fn invoke_offset_operation(
             api.get_earliest_msg_storetime(
                 addr,
                 &GetEarliestMsgStoretimeRequestHeader {
-                    topic: "orders".into(),
-                    queue_id: 0,
+                    topic: Some("orders".into()),
+                    queue_id: Some(0),
                     ..Default::default()
                 },
                 deadline,

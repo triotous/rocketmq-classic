@@ -57,13 +57,15 @@ fn rpc_header(fixture: &Value) -> (i32, HeaderMap) {
                 BoundaryType::value_of_name(request_fixture["ext"]["boundaryType"].as_str())
                     .unwrap();
             SearchOffsetRequestHeader {
-                topic: queue.topic().unwrap().to_owned(),
-                queue_id: queue.queue_id(),
-                timestamp: request_fixture["ext"]["timestamp"]
-                    .as_str()
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
+                topic: Some(queue.topic().unwrap().to_owned()),
+                queue_id: Some(queue.queue_id()),
+                timestamp: Some(
+                    request_fixture["ext"]["timestamp"]
+                        .as_str()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                ),
                 boundary_type: Some(boundary_type),
                 broker_name: Some("broker".into()),
                 ..Default::default()
@@ -71,23 +73,23 @@ fn rpc_header(fixture: &Value) -> (i32, HeaderMap) {
             .encode_fields(&mut fields);
         }
         request::GET_MAX_OFFSET => GetMaxOffsetRequestHeader {
-            topic: queue.topic().unwrap().to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(queue.topic().unwrap().to_owned()),
+            queue_id: Some(queue.queue_id()),
             committed: request_fixture["ext"]["committed"] == "true",
             broker_name: Some("broker".into()),
             ..Default::default()
         }
         .encode_fields(&mut fields),
         request::GET_MIN_OFFSET => GetMinOffsetRequestHeader {
-            topic: queue.topic().unwrap().to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(queue.topic().unwrap().to_owned()),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some("broker".into()),
             ..Default::default()
         }
         .encode_fields(&mut fields),
         request::GET_EARLIEST_MSG_STORETIME => GetEarliestMsgStoretimeRequestHeader {
-            topic: queue.topic().unwrap().to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(queue.topic().unwrap().to_owned()),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some("broker".into()),
             ..Default::default()
         }
@@ -106,13 +108,15 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
             api.search_offset(
                 addr,
                 &SearchOffsetRequestHeader {
-                    topic: queue.topic().unwrap().to_owned(),
-                    queue_id: queue.queue_id(),
-                    timestamp: request_fixture["ext"]["timestamp"]
-                        .as_str()
-                        .unwrap()
-                        .parse()
-                        .unwrap(),
+                    topic: Some(queue.topic().unwrap().to_owned()),
+                    queue_id: Some(queue.queue_id()),
+                    timestamp: Some(
+                        request_fixture["ext"]["timestamp"]
+                            .as_str()
+                            .unwrap()
+                            .parse()
+                            .unwrap(),
+                    ),
                     boundary_type: Some(
                         BoundaryType::value_of_name(
                             request_fixture["ext"]["boundaryType"].as_str(),
@@ -130,8 +134,8 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
             api.get_max_offset(
                 addr,
                 &GetMaxOffsetRequestHeader {
-                    topic: queue.topic().unwrap().to_owned(),
-                    queue_id: queue.queue_id(),
+                    topic: Some(queue.topic().unwrap().to_owned()),
+                    queue_id: Some(queue.queue_id()),
                     committed: request_fixture["ext"]["committed"] == "true",
                     broker_name: Some("broker".into()),
                     ..Default::default()
@@ -144,8 +148,8 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
             api.get_min_offset(
                 addr,
                 &GetMinOffsetRequestHeader {
-                    topic: queue.topic().unwrap().to_owned(),
-                    queue_id: queue.queue_id(),
+                    topic: Some(queue.topic().unwrap().to_owned()),
+                    queue_id: Some(queue.queue_id()),
                     broker_name: Some("broker".into()),
                     ..Default::default()
                 },
@@ -157,8 +161,8 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
             api.get_earliest_msg_storetime(
                 addr,
                 &GetEarliestMsgStoretimeRequestHeader {
-                    topic: queue.topic().unwrap().to_owned(),
-                    queue_id: queue.queue_id(),
+                    topic: Some(queue.topic().unwrap().to_owned()),
+                    queue_id: Some(queue.queue_id()),
                     broker_name: Some("broker".into()),
                     ..Default::default()
                 },

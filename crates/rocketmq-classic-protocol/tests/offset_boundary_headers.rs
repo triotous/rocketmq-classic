@@ -77,13 +77,15 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                 let boundary_type =
                     BoundaryType::value_of_name(request["ext"]["boundaryType"].as_str()).unwrap();
                 let header = SearchOffsetRequestHeader {
-                    topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
-                    queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
-                    timestamp: request["ext"]["timestamp"]
-                        .as_str()
-                        .unwrap()
-                        .parse()
-                        .unwrap(),
+                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
+                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
+                    timestamp: Some(
+                        request["ext"]["timestamp"]
+                            .as_str()
+                            .unwrap()
+                            .parse()
+                            .unwrap(),
+                    ),
                     boundary_type: Some(boundary_type),
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
                     ..SearchOffsetRequestHeader::default()
@@ -94,8 +96,8 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
             }
             30 => {
                 let header = GetMaxOffsetRequestHeader {
-                    topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
-                    queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
+                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
                     committed: request["ext"]["committed"] == "true",
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
                     ..GetMaxOffsetRequestHeader::default()
@@ -106,8 +108,8 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
             }
             31 => {
                 let header = GetMinOffsetRequestHeader {
-                    topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
-                    queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
+                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
                     ..GetMinOffsetRequestHeader::default()
                 };
@@ -117,8 +119,8 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
             }
             32 => {
                 let header = GetEarliestMsgStoretimeRequestHeader {
-                    topic: request["ext"]["topic"].as_str().unwrap().to_owned(),
-                    queue_id: request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
+                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
                     broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
                     ..GetEarliestMsgStoretimeRequestHeader::default()
                 };

@@ -1128,12 +1128,14 @@ impl PullConsumer {
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
         let header = SearchOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PullConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
-            timestamp: timestamp_millis,
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PullConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
+            timestamp: Some(timestamp_millis),
             boundary_type: Some(boundary_type),
             broker_name: Some(broker_name),
             ..SearchOffsetRequestHeader::default()
@@ -1153,11 +1155,13 @@ impl PullConsumer {
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
         let header = GetMaxOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PullConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PullConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             committed: true,
             broker_name: Some(broker_name),
             ..GetMaxOffsetRequestHeader::default()
@@ -1177,11 +1181,13 @@ impl PullConsumer {
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
         let header = GetMinOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PullConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PullConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some(broker_name),
             ..GetMinOffsetRequestHeader::default()
         };
@@ -1200,11 +1206,13 @@ impl PullConsumer {
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
         let header = GetEarliestMsgStoretimeRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PullConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PullConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some(broker_name),
             ..GetEarliestMsgStoretimeRequestHeader::default()
         };

@@ -1118,8 +1118,8 @@ fn header_validation_matrix() {
             "topic queueId timestamp",
             "queueId",
             "timestamp",
-            "liteTopic boundaryType bname ns nsd oway",
-            "nsd oway"
+            "liteTopic boundaryType bname ns nsd lo oway",
+            "nsd lo oway"
         ),
         row!(
             GetMaxOffsetRequestHeader,
@@ -1127,8 +1127,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname committed ns nsd oway",
-            "committed nsd oway"
+            "bname committed ns nsd lo oway",
+            "committed nsd lo oway"
         ),
         row!(
             GetMinOffsetRequestHeader,
@@ -1136,8 +1136,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname ns nsd oway",
-            "nsd oway"
+            "bname ns nsd lo oway",
+            "nsd lo oway"
         ),
         row!(
             GetEarliestMsgStoretimeRequestHeader,
@@ -1145,8 +1145,8 @@ fn header_validation_matrix() {
             "topic queueId",
             "queueId",
             "",
-            "bname ns nsd oway",
-            "nsd oway"
+            "bname ns nsd lo oway",
+            "nsd lo oway"
         ),
         row!(
             SearchOffsetResponseHeader,

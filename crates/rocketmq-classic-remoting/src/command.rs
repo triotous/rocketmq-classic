@@ -1086,6 +1086,9 @@ mod tests {
         );
 
         for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            if case["headerType"].as_str().unwrap().starts_with("request-") {
+                continue;
+            }
             let fields = case["fields"]
                 .as_object()
                 .unwrap()
@@ -1177,6 +1180,161 @@ mod tests {
                         "{case_name}/{mode}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn offset_boundary_request_header_reflection_modes_match_invoked_java() {
+        use rocketmq_classic_protocol::header::{
+            GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
+            GetMinOffsetRequestHeader, SearchOffsetRequestHeader,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/offset-boundary-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            if !case["headerType"].as_str().unwrap().starts_with("request-") {
+                continue;
+            }
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let expected = &case[mode];
+                let mut encoded = HeaderMap::new();
+                match case["headerType"].as_str().unwrap() {
+                    "request-search" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<SearchOffsetRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "liteTopic": header.lite_topic,
+                                "queueId": header.queue_id,
+                                "timestamp": header.timestamp,
+                                "boundaryType": header.boundary_type.map(|value| value.name()),
+                                "lo": header.logical,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                            }),
+                            expected["decodedFields"],
+                            "{case_name}/{mode}"
+                        );
+                        assert_eq!(
+                            expected["getterBoundaryType"],
+                            header.get_boundary_type().name(),
+                            "{case_name}/{mode}"
+                        );
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "request-max" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<GetMaxOffsetRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "queueId": header.queue_id,
+                                "committed": header.committed,
+                                "lo": header.logical,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                            }),
+                            expected["decodedFields"],
+                            "{case_name}/{mode}"
+                        );
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "request-min" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<GetMinOffsetRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "queueId": header.queue_id,
+                                "lo": header.logical,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                            }),
+                            expected["decodedFields"],
+                            "{case_name}/{mode}"
+                        );
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "request-earliest" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                GetEarliestMsgStoretimeRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                            });
+                        assert_eq!(
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "queueId": header.queue_id,
+                                "lo": header.logical,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                            }),
+                            expected["decodedFields"],
+                            "{case_name}/{mode}"
+                        );
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    other => panic!("{case_name}: unexpected request header type {other}"),
+                }
+
+                let expected_fields = expected["encodedFields"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<HeaderMap>();
+                assert_eq!(encoded, expected_fields, "{case_name}/{mode}");
             }
         }
     }

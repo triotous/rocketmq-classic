@@ -25,11 +25,16 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetMinOffsetResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.SearchOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader;
 
 /** Invokes Java 5.5.1 reflection decoding for offset-boundary response headers. */
@@ -53,6 +58,34 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
         cases.put("earliest-missing", decodeModes("earliest", "timestamp", new TreeMap<>()));
         cases.put("earliest-invalid", decodeModes("earliest", "timestamp", invalid("timestamp")));
         cases.put("earliest-valid", decodeModes("earliest", "timestamp", valid("timestamp", "-1")));
+        cases.put("request-search-missing", decodeModes("request-search", "queueId", new TreeMap<>()));
+        cases.put("request-search-valid", decodeModes("request-search", "timestamp", fields(
+            "topic", "orders", "liteTopic", "lite-orders", "queueId", "7", "timestamp", "9", "boundaryType", "UPPER",
+            "lo", "true", "ns", "tenant", "nsd", "true", "bname", "broker", "oway", "false")));
+        cases.put("request-search-invalid", decodeModes("request-search", "queueId", fields(
+            "topic", "orders", "queueId", "not-an-int", "timestamp", "not-a-long",
+            "boundaryType", "not-a-boundary", "lo", "malformed", "nsd", "malformed", "oway", "malformed")));
+        cases.put("request-max-missing", decodeModes("request-max", "queueId", new TreeMap<>()));
+        cases.put("request-max-valid", decodeModes("request-max", "queueId", fields(
+            "topic", "orders", "queueId", "7", "committed", "false", "lo", "true",
+            "ns", "tenant", "nsd", "true", "bname", "broker", "oway", "false")));
+        cases.put("request-max-invalid", decodeModes("request-max", "queueId", fields(
+            "topic", "orders", "queueId", "not-an-int", "committed", "malformed",
+            "lo", "malformed", "nsd", "malformed", "oway", "malformed")));
+        cases.put("request-min-missing", decodeModes("request-min", "queueId", new TreeMap<>()));
+        cases.put("request-min-valid", decodeModes("request-min", "queueId", fields(
+            "topic", "orders", "queueId", "7", "lo", "true", "ns", "tenant",
+            "nsd", "true", "bname", "broker", "oway", "false")));
+        cases.put("request-min-invalid", decodeModes("request-min", "queueId", fields(
+            "topic", "orders", "queueId", "not-an-int", "lo", "malformed",
+            "nsd", "malformed", "oway", "malformed")));
+        cases.put("request-earliest-missing", decodeModes("request-earliest", "queueId", new TreeMap<>()));
+        cases.put("request-earliest-valid", decodeModes("request-earliest", "queueId", fields(
+            "topic", "orders", "queueId", "7", "lo", "true", "ns", "tenant",
+            "nsd", "true", "bname", "broker", "oway", "false")));
+        cases.put("request-earliest-invalid", decodeModes("request-earliest", "queueId", fields(
+            "topic", "orders", "queueId", "not-an-int", "lo", "malformed",
+            "nsd", "malformed", "oway", "malformed")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -65,7 +98,7 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
             Files.createDirectories(file.getParent());
             Files.writeString(file, json);
         }
-        System.out.println("Offset-boundary response-header decode fixtures verified");
+        System.out.println("Offset-boundary request/response-header decode fixtures verified");
     }
 
     private static Map<String, String> invalid(String fieldName) {
@@ -75,6 +108,14 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
     private static Map<String, String> valid(String fieldName, String value) {
         Map<String, String> fields = new TreeMap<>();
         fields.put(fieldName, value);
+        return fields;
+    }
+
+    private static Map<String, String> fields(String... pairs) {
+        Map<String, String> fields = new TreeMap<>();
+        for (int index = 0; index < pairs.length; index += 2) {
+            fields.put(pairs[index], pairs[index + 1]);
+        }
         return fields;
     }
 
@@ -109,14 +150,35 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
                 case "earliest":
                     headerClass = GetEarliestMsgStoretimeResponseHeader.class;
                     break;
+                case "request-search":
+                    headerClass = SearchOffsetRequestHeader.class;
+                    break;
+                case "request-max":
+                    headerClass = GetMaxOffsetRequestHeader.class;
+                    break;
+                case "request-min":
+                    headerClass = GetMinOffsetRequestHeader.class;
+                    break;
+                case "request-earliest":
+                    headerClass = GetEarliestMsgStoretimeRequestHeader.class;
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + headerType);
             }
             CommandCustomHeader header = command.decodeCommandCustomHeaderDirectly(
                 headerClass, useFastEncode);
             result.put("outcome", "OK");
-            result.put("value", readField(header, fieldName));
-            recordOwnerUnboxResult(result, headerType, header);
+            Object value = readField(header, fieldName);
+            result.put("value", value instanceof BoundaryType ? ((BoundaryType) value).name() : value);
+            if (headerType.startsWith("request-")) {
+                result.put("decodedFields", requestFields(headerType, header));
+                if (header instanceof SearchOffsetRequestHeader) {
+                    result.put("getterBoundaryType", ((SearchOffsetRequestHeader) header)
+                        .getBoundaryType().name());
+                }
+            } else {
+                recordOwnerUnboxResult(result, headerType, header);
+            }
 
             RemotingCommand encoded = RemotingCommand.createRequestCommand(29, null);
             encoded.setExtFields(new HashMap<>());
@@ -157,8 +219,30 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
     }
 
     private static Object readField(Object target, String name) throws Exception {
-        Field field = target.getClass().getDeclaredField(name);
-        field.setAccessible(true);
-        return field.get(target);
+        for (Class<?> type = target.getClass(); type != Object.class; type = type.getSuperclass()) {
+            try {
+                Field field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                // Continue through inherited request-header fields.
+            }
+        }
+        throw new NoSuchFieldException(name);
+    }
+
+    private static Map<String, Object> requestFields(String headerType,
+        CommandCustomHeader header) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        String[] names = headerType.equals("request-search")
+            ? new String[] {"topic", "liteTopic", "queueId", "timestamp", "boundaryType", "lo", "ns", "nsd", "bname", "oway"}
+            : headerType.equals("request-max")
+                ? new String[] {"topic", "queueId", "committed", "lo", "ns", "nsd", "bname", "oway"}
+                : new String[] {"topic", "queueId", "lo", "ns", "nsd", "bname", "oway"};
+        for (String name : names) {
+            Object value = readField(header, name);
+            result.put(name, value instanceof BoundaryType ? ((BoundaryType) value).name() : value);
+        }
+        return result;
     }
 }

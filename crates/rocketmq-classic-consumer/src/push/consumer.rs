@@ -924,12 +924,14 @@ impl PushConsumer {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
         let header = SearchOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PushConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
-            timestamp: timestamp_millis,
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PushConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
+            timestamp: Some(timestamp_millis),
             boundary_type: Some(BoundaryType::Lower),
             broker_name: Some(broker_name),
             ..SearchOffsetRequestHeader::default()
@@ -975,11 +977,13 @@ impl PushConsumer {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
         let header = GetMaxOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PushConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PushConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             committed: true,
             broker_name: Some(broker_name),
             ..GetMaxOffsetRequestHeader::default()
@@ -997,11 +1001,13 @@ impl PushConsumer {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
         let header = GetMinOffsetRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PushConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PushConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some(broker_name),
             ..GetMinOffsetRequestHeader::default()
         };
@@ -1018,11 +1024,13 @@ impl PushConsumer {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
         let header = GetEarliestMsgStoretimeRequestHeader {
-            topic: queue
-                .topic()
-                .ok_or(PushConsumerError::InvalidQueue)?
-                .to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(
+                queue
+                    .topic()
+                    .ok_or(PushConsumerError::InvalidQueue)?
+                    .to_owned(),
+            ),
+            queue_id: Some(queue.queue_id()),
             broker_name: Some(broker_name),
             ..GetEarliestMsgStoretimeRequestHeader::default()
         };
@@ -5475,8 +5483,8 @@ impl PushConsumer {
             .find_offset_broker(runtime, topic, broker_name, deadline)
             .await?;
         let header = GetMaxOffsetRequestHeader {
-            topic: topic.to_owned(),
-            queue_id: queue.queue_id(),
+            topic: Some(topic.to_owned()),
+            queue_id: Some(queue.queue_id()),
             committed: true,
             broker_name: Some(broker_name.to_owned()),
             ..GetMaxOffsetRequestHeader::default()
@@ -5500,10 +5508,10 @@ impl PushConsumer {
             .find_offset_broker(runtime, topic, broker_name, deadline)
             .await?;
         let header = SearchOffsetRequestHeader {
-            topic: topic.to_owned(),
+            topic: Some(topic.to_owned()),
             lite_topic: None,
-            queue_id: queue.queue_id(),
-            timestamp,
+            queue_id: Some(queue.queue_id()),
+            timestamp: Some(timestamp),
             boundary_type: Some(BoundaryType::Lower),
             broker_name: Some(broker_name.to_owned()),
             ..SearchOffsetRequestHeader::default()

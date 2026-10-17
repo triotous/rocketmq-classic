@@ -344,28 +344,37 @@ impl std::fmt::Display for BoundaryType {
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchOffsetRequestHeader {
-    pub topic: String,
+    pub topic: Option<String>,
     pub lite_topic: Option<String>,
-    pub queue_id: i32,
-    pub timestamp: i64,
+    pub queue_id: Option<i32>,
+    pub timestamp: Option<i64>,
     pub boundary_type: Option<BoundaryType>,
+    pub logical: Option<bool>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
     pub oneway: Option<bool>,
 }
 
+impl SearchOffsetRequestHeader {
+    /// Returns Java `SearchOffsetRequestHeader.getBoundaryType()` semantics.
+    pub fn get_boundary_type(&self) -> BoundaryType {
+        self.boundary_type.unwrap_or_default()
+    }
+}
+
 impl CommandHeader for SearchOffsetRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
+        put_optional(fields, "topic", self.topic.as_deref());
         put_optional(fields, "liteTopic", self.lite_topic.as_deref());
-        fields.insert("queueId".into(), self.queue_id.to_string());
-        fields.insert("timestamp".into(), self.timestamp.to_string());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "timestamp", self.timestamp);
         put_optional(
             fields,
             "boundaryType",
             self.boundary_type.map(BoundaryType::name),
         );
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -388,11 +397,32 @@ impl CommandHeader for SearchOffsetRequestHeader {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             oneway: optional_java_boolean(fields, "oway"),
-            topic: required_string(fields, "topic")?.to_owned(),
+            topic: Some(required_string(fields, "topic")?.to_owned()),
             lite_topic: optional_string(fields, "liteTopic"),
-            queue_id: required_i32(fields, "queueId")?,
-            timestamp: required_i64(fields, "timestamp")?,
+            queue_id: Some(required_i32(fields, "queueId")?),
+            timestamp: Some(required_i64(fields, "timestamp")?),
             boundary_type,
+            logical: optional_java_boolean(fields, "lo"),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            lite_topic: optional_string(fields, "liteTopic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            timestamp: optional_i64_with_mode(fields, "timestamp", false)?,
+            boundary_type: fields
+                .get("boundaryType")
+                .map(|value| BoundaryType::get_type(Some(value))),
+            logical: optional_java_boolean(fields, "lo"),
             broker_name: optional_string(fields, "bname"),
         })
     }
@@ -400,9 +430,10 @@ impl CommandHeader for SearchOffsetRequestHeader {
 
 #[derive(Debug, Clone)]
 pub struct GetMaxOffsetRequestHeader {
-    pub topic: String,
-    pub queue_id: i32,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
     pub committed: bool,
+    pub logical: Option<bool>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -412,9 +443,10 @@ pub struct GetMaxOffsetRequestHeader {
 impl Default for GetMaxOffsetRequestHeader {
     fn default() -> Self {
         Self {
-            topic: String::new(),
-            queue_id: 0,
+            topic: None,
+            queue_id: None,
             committed: true,
+            logical: None,
             broker_name: None,
             namespace: None,
             namespaced: None,
@@ -425,9 +457,10 @@ impl Default for GetMaxOffsetRequestHeader {
 
 impl CommandHeader for GetMaxOffsetRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
         fields.insert("committed".into(), self.committed.to_string());
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -439,9 +472,26 @@ impl CommandHeader for GetMaxOffsetRequestHeader {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             oneway: optional_java_boolean(fields, "oway"),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
+            topic: Some(required_string(fields, "topic")?.to_owned()),
+            queue_id: Some(required_i32(fields, "queueId")?),
             committed: optional_java_boolean(fields, "committed").unwrap_or(true),
+            logical: optional_java_boolean(fields, "lo"),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            committed: optional_java_boolean(fields, "committed").unwrap_or(true),
+            logical: optional_java_boolean(fields, "lo"),
             broker_name: optional_string(fields, "bname"),
         })
     }
@@ -449,8 +499,9 @@ impl CommandHeader for GetMaxOffsetRequestHeader {
 
 #[derive(Debug, Clone, Default)]
 pub struct GetMinOffsetRequestHeader {
-    pub topic: String,
-    pub queue_id: i32,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
+    pub logical: Option<bool>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -459,8 +510,9 @@ pub struct GetMinOffsetRequestHeader {
 
 impl CommandHeader for GetMinOffsetRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -472,8 +524,24 @@ impl CommandHeader for GetMinOffsetRequestHeader {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             oneway: optional_java_boolean(fields, "oway"),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
+            topic: Some(required_string(fields, "topic")?.to_owned()),
+            queue_id: Some(required_i32(fields, "queueId")?),
+            logical: optional_java_boolean(fields, "lo"),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            logical: optional_java_boolean(fields, "lo"),
             broker_name: optional_string(fields, "bname"),
         })
     }
@@ -481,8 +549,9 @@ impl CommandHeader for GetMinOffsetRequestHeader {
 
 #[derive(Debug, Clone, Default)]
 pub struct GetEarliestMsgStoretimeRequestHeader {
-    pub topic: String,
-    pub queue_id: i32,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
+    pub logical: Option<bool>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -491,8 +560,9 @@ pub struct GetEarliestMsgStoretimeRequestHeader {
 
 impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -504,8 +574,24 @@ impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             oneway: optional_java_boolean(fields, "oway"),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
+            topic: Some(required_string(fields, "topic")?.to_owned()),
+            queue_id: Some(required_i32(fields, "queueId")?),
+            logical: optional_java_boolean(fields, "lo"),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            logical: optional_java_boolean(fields, "lo"),
             broker_name: optional_string(fields, "bname"),
         })
     }
@@ -2577,7 +2663,7 @@ mod tests {
             SearchOffsetRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut SearchOffsetRequestHeader| h.timestamp = 17
+            |h: &mut SearchOffsetRequestHeader| h.timestamp = Some(17)
         );
         check_rpc_request_header!(
             GetMaxOffsetRequestHeader,
@@ -2589,13 +2675,13 @@ mod tests {
             GetMinOffsetRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut GetMinOffsetRequestHeader| h.queue_id = 17
+            |h: &mut GetMinOffsetRequestHeader| h.queue_id = Some(17)
         );
         check_rpc_request_header!(
             GetEarliestMsgStoretimeRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut GetEarliestMsgStoretimeRequestHeader| h.queue_id = 17
+            |h: &mut GetEarliestMsgStoretimeRequestHeader| h.queue_id = Some(17)
         );
         check_rpc_request_header!(
             PullMessageRequestHeader,
