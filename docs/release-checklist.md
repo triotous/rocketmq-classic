@@ -3247,7 +3247,17 @@ owner-specific checks belong in the manual handoff.
   and Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes)
   pass. This closes those helper rows only: Java command factories and opaque
   initialization, attached custom-header behavior, process timer/callback-list,
-  Java-compatible `toString`, long-poll RPC metric emission, and the broad
-  P18-V01 audit remain open. The complete workspace P18-V02 gate must be rerun
-  after this revision. Execution log:
+  long-poll RPC metric emission, and the broad P18-V01 audit remain open. The
+  complete workspace P18-V02 gate must be rerun after this revision. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog).
+- P18-V01 `RemotingCommand.toString()` slice (code commit `dfcfc890`): Rust
+  `Display` matches invoked Java output for null fields, populated state,
+  single-entry ext-fields, and negative 32-bit flag formatting. Remoting
+  all-feature tests (110 unit, 8 codec, 1 fuzz regression, 7 security, 107
+  transport, 15 doctests), strict Clippy, format/diff checks, and Maven `verify`
+  (37 scenarios and fixture/cross-decode gates) pass. Multi-entry ext-field
+  rendering still follows Rust's sorted map order instead of Java's
+  `HashMap` iteration order, so this method remains PARTIAL. Process timer and
+  callback-list APIs, factories, long-poll metric emission, the broad P18-V01
+  audit, and the final full-workspace P18-V02 rerun remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog).

@@ -29,3 +29,31 @@
   must be rerun after this revision; current-revision Ubuntu/Windows CI and
   P18-V04 evidence remain outstanding. Phase 19 local Broker/Docker automation
   is separate from final owner-manual checks.
+
+RemotingCommand `toString()` continuation — 2026-10-17T07:57:47Z
+
+- Implemented `Display` for `RemotingCommand` using the pinned Java field labels,
+  null text, binary flag representation, and ext-field key/value rendering.
+  Invoked Java cases cover nulls, populated fields, one ext-field, and a
+  negative 32-bit flag. The method is recorded PARTIAL because Java
+  `HashMap` iteration and Rust `BTreeMap` ordering can differ for multiple
+  ext-fields.
+- First validation exposed a missing Java `HashMap` import and a Rust fixture
+  lookup at the wrong JSON level; the initial Java compile and focused test
+  failed. Added the import, generated the fixture through Maven's compile phase,
+  and changed the Rust test to read `commandToString` under
+  `remotingEnumMethodCases`. The corrected focused test and full suites pass.
+- `cargo fmt --all -- --check` passed. Focused Java/Rust command display
+  comparison passed. `cargo test -p rocketmq-classic-remoting --all-features
+  --locked` passed: 110 unit, 8 codec, 1 fuzz regression, 7 security, 107
+  transport, and 15 doctests. Strict Remoting Clippy passed.
+  `mvn -o -f compat/java-reference/pom.xml verify` passed all 37 scenarios,
+  fixture-drift checks, and Java/Rust cross-decodes. `git diff --check` passed.
+- Code/test commit: `dfcfc890 feat(remoting): match Java command display string`.
+  API crosswalk, release checklist, and this append-only log are updated in a
+  separate documentation commit.
+- `RemotingCommand` timer/callback-list methods, request/response/error
+  factories and default opaque behavior, attached custom-header API, long-poll
+  metric emission, and the broad P18-V01 audit remain open. The full workspace
+  P18-V02 gate must be rerun after these code revisions; current-revision
+  platform CI and Phase 19 live scenarios remain outstanding.
