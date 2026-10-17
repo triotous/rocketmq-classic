@@ -1302,7 +1302,7 @@ mod tests {
             .unwrap();
         RemotingCommand {
             code: request::CHECK_TRANSACTION_STATE,
-            ext_fields: Some(fields),
+            ext_fields: Some(fields.into()),
             body: Some(
                 base64::engine::general_purpose::STANDARD
                     .decode(body)

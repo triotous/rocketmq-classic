@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use rocketmq_classic_protocol::codes::LanguageCode;
 
-use crate::{command::RemotingCommand, error::CodecError};
+use crate::{command::RemotingCommand, error::CodecError, ext_fields::ExtFields};
 
 const FIXED_HEADER_LEN: usize = 21;
 
@@ -37,7 +37,7 @@ pub(crate) fn encode_with_limit(
     }
     if let Some(fields) = command.ext_fields_for_encoding() {
         let fields = fields.as_ref();
-        for (key, value) in fields {
+        for (key, value) in fields.non_null_fields() {
             let key = key.as_bytes();
             let value = value.as_bytes();
             // Java's RocketMQ `writeStr` stores key byte lengths with setShort.
@@ -108,7 +108,7 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     })
 }
 
-fn decode_entries(bytes: &[u8]) -> Result<Option<BTreeMap<String, String>>, CodecError> {
+fn decode_entries(bytes: &[u8]) -> Result<Option<ExtFields>, CodecError> {
     if bytes.is_empty() {
         return Ok(None);
     }
@@ -124,7 +124,7 @@ fn decode_entries(bytes: &[u8]) -> Result<Option<BTreeMap<String, String>>, Code
         let value = cursor.utf8(value_len)?;
         fields.insert(key, value);
     }
-    Ok(Some(fields))
+    Ok(Some(fields.into()))
 }
 
 struct Cursor<'a> {

@@ -36,7 +36,7 @@ async fn respond(
     let mut reply = RemotingCommand {
         code,
         opaque: command.opaque,
-        ext_fields: fields,
+        ext_fields: fields.map(Into::into),
         body,
         ..Default::default()
     };

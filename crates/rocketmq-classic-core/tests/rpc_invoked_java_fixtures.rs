@@ -70,7 +70,10 @@ async fn scripted(
         assert_eq!(incoming.code, expected["code"].as_i64().unwrap() as i32);
         assert_eq!(
             incoming.ext_fields.as_ref().unwrap(),
-            &serde_json::from_value(expected["ext"].clone()).unwrap()
+            &serde_json::from_value::<rocketmq_classic_protocol::header::HeaderMap>(
+                expected["ext"].clone(),
+            )
+            .unwrap()
         );
         assert_eq!(
             incoming.body.as_ref(),

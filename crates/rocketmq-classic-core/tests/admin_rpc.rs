@@ -61,7 +61,7 @@ async fn scripted_peer_after(
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
-            ext_fields: header,
+            ext_fields: header.map(Into::into),
             body,
             ..RemotingCommand::default()
         };
@@ -182,7 +182,7 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
     assert_eq!(command.code, request::UPDATE_AND_CREATE_TOPIC);
     let mut fields = HeaderMap::new();
     header.encode_fields(&mut fields);
-    assert_eq!(command.ext_fields, Some(fields));
+    assert_eq!(command.ext_fields, Some(fields.into()));
     client.shutdown().await;
 }
 
@@ -292,7 +292,7 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     let mut expected_fields = HeaderMap::new();
     header.encode_fields(&mut expected_fields);
     expected_fields.insert("_UNIQUE_KEY_QUERY".into(), "true".into());
-    assert_eq!(command.ext_fields, Some(expected_fields));
+    assert_eq!(command.ext_fields, Some(expected_fields.into()));
     assert_eq!(result.get_index_last_update_timestamp(), 1_700_000_200_041);
     let mut messages: Vec<MessageExt> = decode_many(&message_record, Default::default()).unwrap();
     for message in &mut messages {
@@ -821,7 +821,7 @@ async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     assert_eq!(command.code, request::VIEW_MESSAGE_BY_ID);
     let mut expected_fields = HeaderMap::new();
     header.encode_fields(&mut expected_fields);
-    assert_eq!(command.ext_fields, Some(expected_fields));
+    assert_eq!(command.ext_fields, Some(expected_fields.into()));
     assert_eq!(message.topic(), "orders");
     assert_eq!(message.body().as_ref(), b"hello-v1");
     assert_eq!(

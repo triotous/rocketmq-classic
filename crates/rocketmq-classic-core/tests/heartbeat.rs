@@ -301,10 +301,13 @@ async fn respond(
         opaque: command.opaque,
         version: 551,
         body,
-        ext_fields: Some(std::collections::BTreeMap::from([
-            ("IS_SUPPORT_HEART_BEAT_V2".into(), support.to_string()),
-            ("IS_SUB_CHANGE".into(), sub_change.to_string()),
-        ])),
+        ext_fields: Some(
+            std::collections::BTreeMap::from([
+                ("IS_SUPPORT_HEART_BEAT_V2".into(), support.to_string()),
+                ("IS_SUB_CHANGE".into(), sub_change.to_string()),
+            ])
+            .into(),
+        ),
         ..Default::default()
     };
     reply.mark_response();

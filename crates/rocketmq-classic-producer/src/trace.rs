@@ -1061,15 +1061,18 @@ mod tests {
         header.encode_fields(&mut fields);
         let request_command = RemotingCommand {
             code: request::RECALL_MESSAGE,
-            ext_fields: Some(fields),
+            ext_fields: Some(fields.into()),
             ..RemotingCommand::default()
         };
         let response_command = RemotingCommand {
             code: response::SUCCESS,
-            ext_fields: Some(rocketmq_classic_protocol::header::HeaderMap::from([(
-                rocketmq_classic_common::message::constants::PROPERTY_MSG_REGION.into(),
-                "region-a".into(),
-            )])),
+            ext_fields: Some(
+                rocketmq_classic_protocol::header::HeaderMap::from([(
+                    rocketmq_classic_common::message::constants::PROPERTY_MSG_REGION.into(),
+                    "region-a".into(),
+                )])
+                .into(),
+            ),
             ..RemotingCommand::default()
         };
 

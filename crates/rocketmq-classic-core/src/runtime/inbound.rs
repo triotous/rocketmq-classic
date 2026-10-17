@@ -1168,7 +1168,7 @@ mod tests {
         header.encode_fields(&mut fields);
         RemotingCommand {
             code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
-            ext_fields: Some(fields),
+            ext_fields: Some(fields.into()),
             body: Some(body.to_vec()),
             ..Default::default()
         }
@@ -1235,7 +1235,7 @@ mod tests {
                 "broker:10911",
                 RemotingCommand {
                     code: request::PUSH_REPLY_MESSAGE_TO_CLIENT,
-                    ext_fields: Some(fields),
+                    ext_fields: Some(fields.into()),
                     body: Some(Vec::new()),
                     ..Default::default()
                 },

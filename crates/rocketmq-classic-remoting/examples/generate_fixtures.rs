@@ -61,10 +61,9 @@ fn main() {
             version: 0,
             opaque: 7,
             remark: Some(name.into()),
-            ext_fields: Some(std::collections::BTreeMap::from([(
-                "oracle".into(),
-                "rust-phase-2".into(),
-            )])),
+            ext_fields: Some(
+                std::collections::BTreeMap::from([("oracle".into(), "rust-phase-2".into())]).into(),
+            ),
             body: Some(vec![0, 1, 2, 255]),
             serialization,
             ..RemotingCommand::default()
@@ -672,7 +671,7 @@ fn write_typed_body(
         code,
         language: Some(LanguageCode::Rust),
         opaque: 101,
-        ext_fields: Some(ext_fields),
+        ext_fields: Some(ext_fields.into()),
         body: if body.is_empty() { None } else { Some(body) },
         ..RemotingCommand::default()
     };

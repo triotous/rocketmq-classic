@@ -293,7 +293,7 @@ impl MQClientApi {
             RemotingCommand {
                 code: request::END_TRANSACTION,
                 language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                ext_fields: Some(fields),
+                ext_fields: Some(fields.into()),
                 remark,
                 ..RemotingCommand::default()
             },

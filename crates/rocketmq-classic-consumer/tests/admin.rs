@@ -56,7 +56,7 @@ async fn write_response(
         code,
         opaque: request.opaque,
         body,
-        ext_fields,
+        ext_fields: ext_fields.map(Into::into),
         ..Default::default()
     };
     reply.mark_response();

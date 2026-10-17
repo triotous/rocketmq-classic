@@ -1,6 +1,5 @@
 use std::any::Any;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -9,6 +8,8 @@ use rocketmq_classic_protocol::{
     codes::{JavaEnumLookupError, LanguageCode, SerializeType},
     header::{CommandHeader, HeaderMap, ProtocolError},
 };
+
+use crate::ext_fields::ExtFields;
 
 static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
 static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
@@ -376,7 +377,7 @@ pub struct RemotingCommand {
     pub opaque: i32,
     pub flag: i32,
     pub remark: Option<String>,
-    pub ext_fields: Option<BTreeMap<String, String>>,
+    pub ext_fields: Option<ExtFields>,
     pub body: Option<Vec<u8>>,
     pub serialization: SerializeType,
     pub suspended: bool,
@@ -575,7 +576,7 @@ impl RemotingCommand {
         _use_fast_encode: bool,
     ) -> Result<T, ProtocolError> {
         match self.ext_fields.as_ref() {
-            Some(fields) => T::decode_fields(fields),
+            Some(fields) => T::decode_fields(fields.non_null_fields()),
             None => Ok(T::default()),
         }
     }
@@ -586,15 +587,22 @@ impl RemotingCommand {
             return;
         };
         self.ext_fields
-            .get_or_insert_with(HeaderMap::new)
+            .get_or_insert_with(ExtFields::new)
             .extend(custom_header.encoded_fields());
     }
 
     /// Adds or replaces an extension field, creating the map when needed.
     pub fn add_ext_field(&mut self, key: impl Into<String>, value: impl Into<String>) {
         self.ext_fields
-            .get_or_insert_with(HeaderMap::new)
+            .get_or_insert_with(ExtFields::new)
             .insert(key.into(), value.into());
+    }
+
+    /// Adds an extension field with Java-compatible nullable key/value input.
+    pub fn add_ext_field_nullable(&mut self, key: Option<String>, value: Option<String>) {
+        self.ext_fields
+            .get_or_insert_with(ExtFields::new)
+            .insert_nullable(key, value);
     }
 
     /// Adds an extension field only when the map does not already contain its key.
@@ -610,11 +618,26 @@ impl RemotingCommand {
             .ext_fields
             .as_mut()
             .ok_or(ProtocolError::MissingField("extFields"))?;
-        fields.entry(key.into()).or_insert_with(|| value.into());
+        fields.put_if_absent_nullable(Some(key.into()), Some(value.into()));
         Ok(())
     }
 
-    pub(crate) fn ext_fields_for_encoding(&self) -> Option<Cow<'_, HeaderMap>> {
+    /// Adds an extension field only if its Java-compatible nullable key has no
+    /// non-null value. A present null value is replaced, matching `HashMap`.
+    pub fn add_ext_field_if_not_exist_nullable(
+        &mut self,
+        key: Option<String>,
+        value: Option<String>,
+    ) -> Result<(), ProtocolError> {
+        let fields = self
+            .ext_fields
+            .as_mut()
+            .ok_or(ProtocolError::MissingField("extFields"))?;
+        fields.put_if_absent_nullable(key, value);
+        Ok(())
+    }
+
+    pub(crate) fn ext_fields_for_encoding(&self) -> Option<Cow<'_, ExtFields>> {
         match (&self.ext_fields, &self.custom_header) {
             (None, None) => None,
             (Some(fields), None) => Some(Cow::Borrowed(fields)),
@@ -755,17 +778,11 @@ impl std::fmt::Display for RemotingCommand {
             .map(|language| language.to_string())
             .unwrap_or_else(|| "null".to_owned());
         let remark = self.remark.as_deref().unwrap_or("null");
-        let ext_fields = self.ext_fields.as_ref().map_or_else(
-            || "null".to_owned(),
-            |fields| {
-                let entries = fields
-                    .iter()
-                    .map(|(key, value)| format!("{key}={value}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{{{entries}}}")
-            },
-        );
+        let ext_fields = self
+            .ext_fields
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "null".to_owned());
         let flag_binary = format!("{:b}", self.flag as u32);
         write!(
             formatter,
@@ -785,6 +802,7 @@ impl std::fmt::Display for RemotingCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn remoting_enum_methods_and_command_type_match_invoked_java() {
@@ -1078,8 +1096,18 @@ mod tests {
                     + ext_fields_start;
                 let java_ext_fields = &java_result[ext_fields_start..ext_fields_end];
                 let parsed_java_ext_fields = parse_java_ext_fields_display(java_ext_fields);
-                assert_eq!(parsed_java_ext_fields, command.ext_fields, "{case}");
-                normalize_ext_fields_display(java_result, command.ext_fields.as_ref())
+                let command_ext_fields = command
+                    .ext_fields
+                    .as_ref()
+                    .map(|fields| fields.non_null_fields().clone());
+                assert_eq!(parsed_java_ext_fields, command_ext_fields, "{case}");
+                normalize_ext_fields_display(
+                    java_result,
+                    command
+                        .ext_fields
+                        .as_ref()
+                        .map(|fields| fields.non_null_fields()),
+                )
             } else {
                 java_result.to_owned()
             };
@@ -1118,6 +1146,109 @@ mod tests {
             },
         );
         format!("{}{}{}", &display[..start], ext_fields, &display[end..])
+    }
+
+    #[test]
+    fn nullable_ext_fields_match_invoked_java_map_and_codec_behavior() {
+        use base64::Engine as _;
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let expected = &fixture["remotingEnumMethodCases"]["commandNullableExtFields"];
+
+        let mut fields = ExtFields::new();
+        fields.insert_nullable(None, Some("null-key-value".into()));
+        fields.insert_nullable(Some("null-value".into()), None);
+        fields.insert("kept".into(), "value".into());
+
+        assert!(fields.contains_null_key());
+        assert_eq!(fields.get_nullable(None), Some(Some("null-key-value")));
+        assert!(fields.contains_key("null-value"));
+        assert_eq!(fields.get_nullable(Some("null-value")), Some(None));
+        assert_eq!(fields.get_nullable(Some("kept")), Some(Some("value")));
+        assert_eq!(fields.len(), 3);
+        assert_eq!(expected["nullKeyPresent"], true);
+        assert_eq!(expected["nullKeyValue"], "null-key-value");
+        assert_eq!(expected["nullValueKeyPresent"], true);
+        assert!(expected["nullValue"].is_null());
+        assert_eq!(expected["nonNullValue"], "value");
+
+        let expected_json: serde_json::Value =
+            serde_json::from_str(expected["jsonHeader"].as_str().unwrap()).unwrap();
+        let json_command = RemotingCommand {
+            code: expected_json["code"].as_i64().unwrap() as i32,
+            language: Some(LanguageCode::Java),
+            version: expected_json["version"].as_i64().unwrap() as i32,
+            opaque: expected_json["opaque"].as_i64().unwrap() as i32,
+            ext_fields: Some(fields.clone()),
+            serialization: SerializeType::Json,
+            ..RemotingCommand::default()
+        };
+        let java_display = expected["display"].as_str().unwrap();
+        let rust_display = json_command.to_string();
+        let display_fields = |display: &str| {
+            let start = display.find("extFields=").unwrap() + "extFields=".len();
+            let end = display[start..].find(", serializeTypeCurrentRPC=").unwrap() + start;
+            parse_java_ext_fields_display(&display[start..end])
+        };
+        assert_eq!(display_fields(&rust_display), display_fields(java_display));
+
+        let actual_json: serde_json::Value =
+            serde_json::from_slice(&crate::codec::json_header::encode(&json_command).unwrap())
+                .unwrap();
+        assert_eq!(actual_json, expected_json);
+
+        let expected_binary_map = base64::engine::general_purpose::STANDARD
+            .decode(expected["rocketMqMapBase64"].as_str().unwrap())
+            .unwrap();
+        let binary_command = RemotingCommand {
+            serialization: SerializeType::RocketMq,
+            ..json_command
+        };
+        let binary_header = crate::codec::rocketmq_header::encode(&binary_command).unwrap();
+        let binary_map_length =
+            i32::from_be_bytes(binary_header[17..21].try_into().unwrap()) as usize;
+        assert_eq!(binary_map_length, expected_binary_map.len());
+        assert_eq!(&binary_header[21..], expected_binary_map.as_slice());
+
+        let mut added = RemotingCommand::default();
+        added.add_ext_field_nullable(None, Some("null-key-added".into()));
+        added.add_ext_field_nullable(Some("null-value-added".into()), None);
+        assert!(added.ext_fields.as_ref().unwrap().contains_null_key());
+        assert_eq!(
+            added.ext_fields.as_ref().unwrap().get_nullable(None),
+            Some(Some("null-key-added"))
+        );
+        assert!(
+            added
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .contains_key("null-value-added")
+        );
+
+        let mut put_if_absent = ExtFields::new();
+        put_if_absent.insert_nullable(Some("field".into()), None);
+        let mut command = RemotingCommand {
+            ext_fields: Some(put_if_absent),
+            ..RemotingCommand::default()
+        };
+        command
+            .add_ext_field_if_not_exist_nullable(Some("field".into()), Some("replacement".into()))
+            .unwrap();
+        assert_eq!(
+            command
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get_nullable(Some("field")),
+            Some(Some("replacement"))
+        );
+        assert_eq!(expected["addNullKeyPresent"], true);
+        assert_eq!(expected["addNullKeyValue"], "null-key-added");
+        assert_eq!(expected["addNullValueKeyPresent"], true);
+        assert_eq!(expected["putIfAbsentReplacesNull"], true);
     }
 
     #[test]
@@ -1246,8 +1377,11 @@ mod tests {
                         .collect::<BTreeMap<_, _>>()
                 });
                 assert_eq!(
-                    command.ext_fields.as_ref(),
-                    expected_ext_fields.as_ref(),
+                    command
+                        .ext_fields
+                        .as_ref()
+                        .map(|fields| fields.non_null_fields().clone()),
+                    expected_ext_fields,
                     "{case}"
                 );
                 assert_eq!(
@@ -1337,7 +1471,7 @@ mod tests {
             oneway: Some(true),
         };
         let mut command = RemotingCommand {
-            ext_fields: Some(HeaderMap::from([("oracle".into(), "5.5.1".into())])),
+            ext_fields: Some(HeaderMap::from([("oracle".into(), "5.5.1".into())]).into()),
             ..Default::default()
         };
         let mut null_header = RemotingCommand::default();
@@ -1423,7 +1557,13 @@ mod tests {
             .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
             .collect::<BTreeMap<_, _>>();
         command.make_custom_header_to_net();
-        assert_eq!(command.ext_fields.as_ref(), Some(&expected_ext_fields));
+        assert_eq!(
+            command
+                .ext_fields
+                .as_ref()
+                .map(|fields| fields.non_null_fields()),
+            Some(&expected_ext_fields)
+        );
         assert_eq!(
             command
                 .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
@@ -1496,10 +1636,16 @@ mod tests {
             .iter()
             .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
             .collect::<BTreeMap<_, _>>();
-        assert_eq!(add_field.ext_fields.as_ref(), Some(&expected_add_field));
+        assert_eq!(
+            add_field
+                .ext_fields
+                .as_ref()
+                .map(|fields| fields.non_null_fields()),
+            Some(&expected_add_field)
+        );
 
         let mut add_if_missing = RemotingCommand {
-            ext_fields: Some(HeaderMap::from([("existing".into(), "original".into())])),
+            ext_fields: Some(HeaderMap::from([("existing".into(), "original".into())]).into()),
             ..Default::default()
         };
         add_if_missing
@@ -1518,7 +1664,10 @@ mod tests {
             .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
-            add_if_missing.ext_fields.as_ref(),
+            add_if_missing
+                .ext_fields
+                .as_ref()
+                .map(|fields| fields.non_null_fields()),
             Some(&expected_add_if_missing)
         );
 

@@ -132,7 +132,7 @@ async fn write_reply<W: AsyncWrite + Unpin>(stream: &mut W, opaque: i32, reply: 
     let mut response_command = RemotingCommand {
         code: reply.code,
         opaque,
-        ext_fields: reply.fields,
+        ext_fields: reply.fields.map(Into::into),
         body: reply.body,
         ..Default::default()
     };

@@ -718,7 +718,7 @@ mod tests {
         let response = processor
             .process(RemotingCommand {
                 code: request::GET_CONSUMER_STATUS_FROM_CLIENT,
-                ext_fields: Some(fields),
+                ext_fields: Some(fields.into()),
                 ..Default::default()
             })
             .unwrap()

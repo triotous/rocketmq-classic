@@ -191,7 +191,10 @@ async fn java_invoked_offset_boundary_requests_and_outcomes_match() {
             );
             assert_eq!(
                 command.ext_fields.as_ref().unwrap(),
-                &serde_json::from_value(expected["request"]["ext"].clone()).unwrap()
+                &serde_json::from_value::<rocketmq_classic_protocol::header::HeaderMap>(
+                    expected["request"]["ext"].clone(),
+                )
+                .unwrap()
             );
             assert!(command.body.is_none());
             assert!(!command.is_oneway());

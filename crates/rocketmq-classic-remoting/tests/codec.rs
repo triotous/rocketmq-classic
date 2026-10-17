@@ -166,10 +166,9 @@ fn private_rocketmq_header_narrows_code_and_version_like_java() {
         version: 987_654,
         opaque: 7,
         remark: Some("PRIVATE-LARGE-CODE-VERSION".into()),
-        ext_fields: Some(std::collections::BTreeMap::from([(
-            "oracle".into(),
-            "5.5.1".into(),
-        )])),
+        ext_fields: Some(
+            std::collections::BTreeMap::from([("oracle".into(), "5.5.1".into())]).into(),
+        ),
         serialization: SerializeType::RocketMq,
         ..RemotingCommand::default()
     };
@@ -191,7 +190,7 @@ fn private_rocketmq_header_narrows_ext_field_key_length_like_java() {
         language: Some(LanguageCode::Rust),
         opaque: 7,
         remark: Some(remark.into()),
-        ext_fields: Some(std::collections::BTreeMap::from([(key, "v".into())])),
+        ext_fields: Some(std::collections::BTreeMap::from([(key, "v".into())]).into()),
         serialization: SerializeType::RocketMq,
         ..RemotingCommand::default()
     };

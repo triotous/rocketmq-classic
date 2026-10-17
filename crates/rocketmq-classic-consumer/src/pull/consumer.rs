@@ -3129,11 +3129,14 @@ mod tests {
         );
         let response = processor
             .process(RemotingCommand {
-                ext_fields: Some(BTreeMap::from([
-                    ("consumerGroup".into(), "pull-running-info".into()),
-                    ("clientId".into(), "client-id-is-ignored".into()),
-                    ("jstackEnable".into(), "false".into()),
-                ])),
+                ext_fields: Some(
+                    BTreeMap::from([
+                        ("consumerGroup".into(), "pull-running-info".into()),
+                        ("clientId".into(), "client-id-is-ignored".into()),
+                        ("jstackEnable".into(), "false".into()),
+                    ])
+                    .into(),
+                ),
                 ..Default::default()
             })
             .unwrap()

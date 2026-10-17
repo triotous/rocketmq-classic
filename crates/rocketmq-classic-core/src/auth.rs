@@ -1367,10 +1367,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let request = RemotingCommand {
-            ext_fields: Some(std::collections::BTreeMap::from([(
-                "unused".to_owned(),
-                "request-field-not-in-map".to_owned(),
-            )])),
+            ext_fields: Some(
+                std::collections::BTreeMap::from([(
+                    "unused".to_owned(),
+                    "request-field-not-in-map".to_owned(),
+                )])
+                .into(),
+            ),
             body: Some(
                 STANDARD
                     .decode(custom_content["bodyBase64"].as_str().unwrap())

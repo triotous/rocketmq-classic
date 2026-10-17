@@ -109,7 +109,7 @@ impl MQClientApi {
             } else {
                 Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
             },
-            ext_fields: Some(fields),
+            ext_fields: Some(fields.into()),
             body,
             ..Default::default()
         };
@@ -137,7 +137,7 @@ impl MQClientApi {
             RemotingCommand {
                 code,
                 language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                ext_fields: Some(fields),
+                ext_fields: Some(fields.into()),
                 body,
                 ..RemotingCommand::default()
             },

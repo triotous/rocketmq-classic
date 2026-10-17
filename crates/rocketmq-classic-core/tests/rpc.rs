@@ -58,7 +58,7 @@ async fn scripted_probe_peer(
                 code,
                 opaque: request.opaque,
                 remark,
-                ext_fields,
+                ext_fields: ext_fields.map(Into::into),
                 ..RemotingCommand::default()
             };
             reply.mark_response();

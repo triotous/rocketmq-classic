@@ -173,10 +173,10 @@ async fn active_owner_receives_channel_context_and_transport_returns_matching_re
         let command = RemotingCommand {
             code: request::CONSUME_MESSAGE_DIRECTLY,
             opaque: 551,
-            ext_fields: Some(std::collections::BTreeMap::from([(
-                "consumerGroup".into(),
-                "consumer".into(),
-            )])),
+            ext_fields: Some(
+                std::collections::BTreeMap::from([("consumerGroup".into(), "consumer".into())])
+                    .into(),
+            ),
             ..Default::default()
         };
         write(&mut stream, &command).await;

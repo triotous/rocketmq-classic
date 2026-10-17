@@ -54,7 +54,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code: request::GET_ROUTEINFO_BY_TOPIC,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ext_fields: Some(fields),
+                    ext_fields: Some(fields.into()),
                     ..RemotingCommand::default()
                 },
                 deadline,

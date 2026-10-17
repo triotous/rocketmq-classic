@@ -140,7 +140,7 @@ async fn respond(
     let mut reply = RemotingCommand {
         code,
         opaque: command.opaque,
-        ext_fields: Some(fields),
+        ext_fields: Some(fields.into()),
         body,
         ..Default::default()
     };
@@ -579,7 +579,7 @@ async fn boundary_lookups_route_to_master_and_preserve_signed_success_values() {
             let mut reply = RemotingCommand {
                 code: response::SUCCESS,
                 opaque: command.opaque,
-                ext_fields: Some(response_fields),
+                ext_fields: Some(response_fields.into()),
                 ..Default::default()
             };
             reply.mark_response();

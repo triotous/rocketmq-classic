@@ -7639,7 +7639,7 @@ mod tests {
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
-            ext_fields: fields,
+            ext_fields: fields.map(Into::into),
             body,
             ..Default::default()
         };
@@ -10343,14 +10343,17 @@ mod tests {
         );
         let response = processor
             .process(RemotingCommand {
-                ext_fields: Some(BTreeMap::from([
-                    ("consumerGroup".into(), "running-info-snapshot".into()),
-                    (
-                        "clientId".into(),
-                        "client-id-is-not-used-for-filtering".into(),
-                    ),
-                    ("jstackEnable".into(), "false".into()),
-                ])),
+                ext_fields: Some(
+                    BTreeMap::from([
+                        ("consumerGroup".into(), "running-info-snapshot".into()),
+                        (
+                            "clientId".into(),
+                            "client-id-is-not-used-for-filtering".into(),
+                        ),
+                        ("jstackEnable".into(), "false".into()),
+                    ])
+                    .into(),
+                ),
                 ..Default::default()
             })
             .unwrap()
@@ -10421,11 +10424,14 @@ mod tests {
 
         let response = processor
             .process(RemotingCommand {
-                ext_fields: Some(BTreeMap::from([
-                    ("consumerGroup".into(), "running-info-snapshot".into()),
-                    ("clientId".into(), "ignored-client-id".into()),
-                    ("jstackEnable".into(), "true".into()),
-                ])),
+                ext_fields: Some(
+                    BTreeMap::from([
+                        ("consumerGroup".into(), "running-info-snapshot".into()),
+                        ("clientId".into(), "ignored-client-id".into()),
+                        ("jstackEnable".into(), "true".into()),
+                    ])
+                    .into(),
+                ),
                 ..Default::default()
             })
             .unwrap()
@@ -10533,10 +10539,13 @@ mod tests {
             crate::admin::ConsumerStatusProcessor::new(Arc::downgrade(&store_dyn));
         let response = tokio::time::timeout(Duration::from_secs(1), async {
             status_processor.process(RemotingCommand {
-                ext_fields: Some(BTreeMap::from([
-                    ("topic".into(), "orders".into()),
-                    ("group".into(), "status-during-direct-consume".into()),
-                ])),
+                ext_fields: Some(
+                    BTreeMap::from([
+                        ("topic".into(), "orders".into()),
+                        ("group".into(), "status-during-direct-consume".into()),
+                    ])
+                    .into(),
+                ),
                 ..Default::default()
             })
         })

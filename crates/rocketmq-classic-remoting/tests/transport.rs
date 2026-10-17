@@ -4215,10 +4215,9 @@ async fn p3_async_go_away_retry_connect_failure_completes_before_failure() {
             RemotingCommand {
                 flag: 1 << 8,
                 remark: Some("original request metadata".into()),
-                ext_fields: Some(std::collections::BTreeMap::from([(
-                    "trace".into(),
-                    "original".into(),
-                )])),
+                ext_fields: Some(
+                    std::collections::BTreeMap::from([("trace".into(), "original".into())]).into(),
+                ),
                 body: Some(vec![7, 8, 9]),
                 ..command(1)
             },
@@ -4280,10 +4279,9 @@ async fn p3_async_second_go_away_callback_retains_original_request() {
     let request = RemotingCommand {
         flag: 1 << 8,
         remark: Some("original request metadata".into()),
-        ext_fields: Some(std::collections::BTreeMap::from([(
-            "trace".into(),
-            "original".into(),
-        )])),
+        ext_fields: Some(
+            std::collections::BTreeMap::from([("trace".into(), "original".into())]).into(),
+        ),
         body: Some(vec![7, 8, 9]),
         ..command(1)
     };
@@ -4354,10 +4352,9 @@ async fn p3_async_go_away_retry_callback_reports_reconstructed_request() {
     let request = RemotingCommand {
         flag: 1 << 8,
         remark: Some("original remark".into()),
-        ext_fields: Some(std::collections::BTreeMap::from([(
-            "trace".into(),
-            "preserved".into(),
-        )])),
+        ext_fields: Some(
+            std::collections::BTreeMap::from([("trace".into(), "preserved".into())]).into(),
+        ),
         body: Some(vec![4, 5, 6]),
         ..command(1)
     };
@@ -4423,10 +4420,9 @@ async fn p3_go_away_retries_once_on_a_new_connection() {
     let original = RemotingCommand {
         flag: 1 << 8,
         remark: Some("must not survive Java-style request reconstruction".into()),
-        ext_fields: Some(std::collections::BTreeMap::from([(
-            "trace".into(),
-            "preserved".into(),
-        )])),
+        ext_fields: Some(
+            std::collections::BTreeMap::from([("trace".into(), "preserved".into())]).into(),
+        ),
         body: Some(vec![1, 2, 3]),
         ..command(1)
     };

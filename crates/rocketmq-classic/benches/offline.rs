@@ -79,10 +79,13 @@ fn main() {
 
     let command = RemotingCommand {
         code: 11,
-        ext_fields: Some(BTreeMap::from([
-            ("topic".into(), "bench-topic".into()),
-            ("producerGroup".into(), "bench-producer".into()),
-        ])),
+        ext_fields: Some(
+            BTreeMap::from([
+                ("topic".into(), "bench-topic".into()),
+                ("producerGroup".into(), "bench-producer".into()),
+            ])
+            .into(),
+        ),
         body: Some(vec![0x5a; 256]),
         serialization: SerializeType::Json,
         ..RemotingCommand::default()
@@ -225,7 +228,7 @@ fn run_pending_completion_benchmark() {
         client.start().unwrap();
         let request = RemotingCommand {
             code: 34,
-            ext_fields: Some(BTreeMap::from([("topic".into(), "bench".into())])),
+            ext_fields: Some(BTreeMap::from([("topic".into(), "bench".into())]).into()),
             body: Some(vec![0x42; 128]),
             ..RemotingCommand::default()
         };

@@ -46,7 +46,7 @@ async fn scripted(
         if !oneway {
             let mut reply = RemotingCommand {
                 code,
-                ext_fields: fields,
+                ext_fields: fields.map(Into::into),
                 body,
                 opaque: incoming.opaque,
                 remark: Some("broker error".into()),

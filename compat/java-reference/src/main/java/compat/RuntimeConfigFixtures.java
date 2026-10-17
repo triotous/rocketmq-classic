@@ -3773,6 +3773,48 @@ public final class RuntimeConfigFixtures {
         result.put("commandCustomHeaders", commandCustomHeaderCases());
         result.put("commandInfrastructure", commandInfrastructureCases());
         result.put("commandToString", commandToStringCases());
+        result.put("commandNullableExtFields", commandNullableExtFieldCases());
+        return result;
+    }
+
+    private static Map<String, Object> commandNullableExtFieldCases() {
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(90, null);
+        java.util.HashMap<String, String> fields = new java.util.HashMap<>();
+        fields.put(null, "null-key-value");
+        fields.put("null-value", null);
+        fields.put("kept", "value");
+        command.setExtFields(fields);
+        command.setSerializeTypeCurrentRPC(org.apache.rocketmq.remoting.protocol.SerializeType.JSON);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("nullKeyPresent", command.getExtFields().containsKey(null));
+        result.put("nullKeyValue", command.getExtFields().get(null));
+        result.put("nullValueKeyPresent", command.getExtFields().containsKey("null-value"));
+        result.put("nullValue", command.getExtFields().get("null-value"));
+        result.put("nonNullValue", command.getExtFields().get("kept"));
+        result.put("display", command.toString());
+        result.put("jsonHeader", new String(
+            org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(command),
+            java.nio.charset.StandardCharsets.UTF_8));
+        result.put("rocketMqMapBase64", java.util.Base64.getEncoder().encodeToString(
+            org.apache.rocketmq.remoting.protocol.RocketMQSerializable.mapSerialize(fields)));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand added =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(91, null);
+        added.addExtField(null, "null-key-added");
+        added.addExtField("null-value-added", null);
+        result.put("addNullKeyPresent", added.getExtFields().containsKey(null));
+        result.put("addNullKeyValue", added.getExtFields().get(null));
+        result.put("addNullValueKeyPresent", added.getExtFields().containsKey("null-value-added"));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand putIfAbsent =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(92, null);
+        java.util.HashMap<String, String> nullValue = new java.util.HashMap<>();
+        nullValue.put("field", null);
+        putIfAbsent.setExtFields(nullValue);
+        putIfAbsent.addExtFieldIfNotExist("field", "replacement");
+        result.put("putIfAbsentReplacesNull", "replacement".equals(putIfAbsent.getExtFields().get("field")));
         return result;
     }
 

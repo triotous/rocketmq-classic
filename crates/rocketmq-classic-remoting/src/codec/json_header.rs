@@ -1,12 +1,9 @@
-use std::{
-    collections::BTreeMap,
-    io::{self, Write},
-};
+use std::io::{self, Write};
 
 use rocketmq_classic_protocol::codes::{LanguageCode, SerializeType};
 use serde_json::{Map, Value};
 
-use crate::{command::RemotingCommand, error::CodecError};
+use crate::{command::RemotingCommand, error::CodecError, ext_fields::ExtFields};
 
 /// Encode a JSON remoting header without applying a caller-selected size limit.
 pub fn encode(command: &RemotingCommand) -> Result<Vec<u8>, CodecError> {
@@ -75,12 +72,18 @@ pub fn decode(bytes: &[u8]) -> Result<RemotingCommand, CodecError> {
     let ext_fields = match object.get("extFields") {
         None | Some(Value::Null) => None,
         Some(Value::Object(values)) => {
-            let mut fields = BTreeMap::new();
+            let mut fields = ExtFields::new();
             for (key, value) in values {
-                let value = value
-                    .as_str()
-                    .ok_or_else(|| CodecError::Json(format!("extFields.{key} must be a string")))?;
-                fields.insert(key.clone(), value.to_owned());
+                let value = match value {
+                    Value::String(value) => Some(value.clone()),
+                    Value::Null => None,
+                    _ => {
+                        return Err(CodecError::Json(format!(
+                            "extFields.{key} must be a string"
+                        )));
+                    }
+                };
+                fields.insert_nullable(Some(key.clone()), value);
             }
             Some(fields)
         }
@@ -151,12 +154,13 @@ fn integer(value: Option<&Value>, field: &'static str) -> Result<Option<i32>, Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn json_uses_java_field_names_and_language_enum_string() {
         let command = RemotingCommand {
             code: 105,
-            ext_fields: Some(BTreeMap::from([("unknown".into(), "kept".into())])),
+            ext_fields: Some(BTreeMap::from([("unknown".into(), "kept".into())]).into()),
             ..RemotingCommand::default()
         };
         let encoded = encode_with_limit(&command, 4096).unwrap();

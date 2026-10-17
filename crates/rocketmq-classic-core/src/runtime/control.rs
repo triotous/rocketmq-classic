@@ -855,10 +855,13 @@ mod tests {
             assert!(command.body.is_none());
             assert_eq!(
                 command.ext_fields,
-                Some(BTreeMap::from([
-                    ("clientID".into(), "p6-u01@DEFAULT".into()),
-                    (field.into(), group.into()),
-                ]))
+                Some(
+                    BTreeMap::from([
+                        ("clientID".into(), "p6-u01@DEFAULT".into()),
+                        (field.into(), group.into()),
+                    ])
+                    .into()
+                )
             );
         }
 

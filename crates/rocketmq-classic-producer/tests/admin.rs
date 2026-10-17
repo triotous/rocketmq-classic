@@ -73,7 +73,7 @@ async fn write_response_fields(
     let mut reply = RemotingCommand {
         code,
         opaque: request.opaque,
-        ext_fields: Some(ext_fields),
+        ext_fields: Some(ext_fields.into()),
         ..Default::default()
     };
     reply.mark_response();
@@ -94,7 +94,7 @@ async fn write_response_body_fields(
         code,
         opaque: request.opaque,
         body: Some(body),
-        ext_fields: Some(ext_fields),
+        ext_fields: Some(ext_fields.into()),
         ..Default::default()
     };
     reply.mark_response();

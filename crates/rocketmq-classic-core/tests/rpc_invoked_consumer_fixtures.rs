@@ -78,7 +78,10 @@ async fn java_invoked_consumer_requests_and_outcomes_match() {
             );
             assert_eq!(
                 incoming.ext_fields.as_ref().unwrap(),
-                &serde_json::from_value(expected["request"]["ext"].clone()).unwrap()
+                &serde_json::from_value::<rocketmq_classic_protocol::header::HeaderMap>(
+                    expected["request"]["ext"].clone(),
+                )
+                .unwrap()
             );
             assert_eq!(incoming.body, body(&expected["request"]["bodyBase64"]));
             assert!(!incoming.is_oneway());

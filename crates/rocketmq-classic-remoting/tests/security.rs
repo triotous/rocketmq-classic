@@ -49,7 +49,7 @@ fn server_config(certificate: &Certificate, key: &KeyPair) -> rustls::ServerConf
 fn command() -> RemotingCommand {
     RemotingCommand {
         code: request::GET_ROUTEINFO_BY_TOPIC,
-        ext_fields: Some(HeaderMap::from([("topic".into(), "orders".into())])),
+        ext_fields: Some(HeaderMap::from([("topic".into(), "orders".into())]).into()),
         ..RemotingCommand::default()
     }
 }

@@ -55,7 +55,7 @@ async fn peer(
             opaque: incoming.opaque,
             version: 515,
             body,
-            ext_fields: fields,
+            ext_fields: fields.map(Into::into),
             remark: Some("rejected".into()),
             ..RemotingCommand::default()
         };
