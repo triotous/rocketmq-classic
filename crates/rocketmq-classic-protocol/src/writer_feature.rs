@@ -7,7 +7,8 @@
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
-/// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `WriteEnumsUsingName`,
+/// `MapSortField`, `SortMapEntriesByKeys`, `WriteLongAsString`,
+/// `WriteEnumUsingOrdinal`, `WriteEnumsUsingName`,
 /// `WriteEnumUsingToString`, `IgnoreErrorGetter`, `UseSingleQuotes`,
 /// `UnquoteFieldName`, `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`,
 /// `BrowserCompatible`,
@@ -25,6 +26,9 @@
 /// stored values directly and invoke no fallible Java-style getters.
 /// `IgnoreNonFieldGetter` omits the getter-only QueueTimeSpan timestamp strings
 /// and uses Fastjson's filtered map-key encoding for the mapped DTO graph.
+/// `MapSortField` and `SortMapEntriesByKeys` preserve output because these
+/// adapters serialize map-backed JSON objects in key order already; the Java
+/// fixtures include populated maps and record no overrides for either flag.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
@@ -225,6 +229,8 @@ impl JavaJsonWriterFeature {
                 | Self::EscapeNoneAscii
                 | Self::WriteBooleanAsNumber
                 | Self::WriteNonStringValueAsString
+                | Self::MapSortField
+                | Self::SortMapEntriesByKeys
                 | Self::NotWriteEmptyArray
                 | Self::IgnoreEmpty
                 | Self::NotWriteDefaultValue

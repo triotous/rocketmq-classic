@@ -4371,6 +4371,11 @@ mod tests {
                         JavaJsonWriterFeature::WriteNullBooleanAsFalse,
                         "WriteNullBooleanAsFalse",
                     ),
+                    (JavaJsonWriterFeature::MapSortField, "MapSortField"),
+                    (
+                        JavaJsonWriterFeature::SortMapEntriesByKeys,
+                        "SortMapEntriesByKeys",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

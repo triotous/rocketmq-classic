@@ -2768,6 +2768,11 @@ mod tests {
                     crate::JavaJsonWriterFeature::WriteNullBooleanAsFalse,
                     "WriteNullBooleanAsFalse",
                 ),
+                (crate::JavaJsonWriterFeature::MapSortField, "MapSortField"),
+                (
+                    crate::JavaJsonWriterFeature::SortMapEntriesByKeys,
+                    "SortMapEntriesByKeys",
+                ),
                 (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
