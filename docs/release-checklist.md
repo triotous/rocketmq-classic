@@ -3218,3 +3218,13 @@ owner-specific checks belong in the manual handoff.
   settings/input/error/control-flow and reverse-export audit remains open.
   Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).
+- P18-V01 `RemotingCommand` suspended-state API slice (code commit `811d6dda`):
+  Rust now exposes the Java false-default boolean state with getter/setter
+  methods, and the invoked Java fixture compares default, true, and reset-to-
+  false outcomes. Encoding keeps this non-wire state out of command headers.
+  Remoting all-feature tests, strict Clippy, format, diff, and Maven `verify`
+  passed. The pinned Java `writeResponse` flow also emits the suspended value
+  as the long-polling RPC metric label; Rust has no corresponding remoting
+  metric emission yet, so that behavior and the broader P18-V01 audit remain
+  open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).

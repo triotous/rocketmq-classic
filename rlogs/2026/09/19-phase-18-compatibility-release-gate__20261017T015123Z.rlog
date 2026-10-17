@@ -69,3 +69,21 @@ RemotingCommand response/oneway flag helper oracle coverage (2026-10-17)
   fixture drift checks, and Java/Rust cross-decodes. The API crosswalk and
   release-checklist update are committed separately. Broad P18-V01 remains
   open.
+
+RemotingCommand suspended-state API parity (2026-10-17)
+
+- Pinned Java 5.5.1 declares public `isSuspended()` / `setSuspended(boolean)`
+  over a false-default, non-wire field. Rust now exposes `suspended` with
+  `is_suspended` / `set_suspended`; a Java-invoked fixture covers default,
+  true, and reset-to-false, and a Rust assertion confirms command-header
+  encoding omits the state and decode resets it to false.
+- Source review of pinned `NettyRemotingAbstract.writeResponse` shows Java uses
+  this state as `LABEL_IS_LONG_POLLING` on RPC latency metrics. The Rust
+  remoting crate has no equivalent RPC metric emission; this observable
+  telemetry flow remains open and is not waived by the API field mapping.
+- Passed `cargo test -p rocketmq-classic-remoting --all-features --locked`
+  (108 unit tests, 8 codec tests, 1 fuzz regression, 7 security tests, 107
+  transport tests, and 15 doctests), strict all-target/all-feature Remoting
+  Clippy, format/diff checks, and `mvn -o -f compat/java-reference/pom.xml
+  verify` (37 scenarios, fixture drift and cross-decodes). Code commit:
+  `811d6dda`; documentation and this log entry are recorded separately.
