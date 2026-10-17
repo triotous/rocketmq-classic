@@ -1,6 +1,8 @@
 package compat;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,6 +17,8 @@ import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageBatch;
+import org.apache.rocketmq.common.message.MessageClientIDSetter;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -39,12 +43,20 @@ public final class LiveProducerProbe {
             onewaySend(args[1], args[2], args[3], args[4], Long.parseLong(args[5]));
             return;
         }
+        if (args.length == 5 && "batch-send".equals(args[0])) {
+            batchSend(args[1], args[2], args[3], Integer.parseInt(args[4]));
+            return;
+        }
         if (args.length == 4 && "view".equals(args[0])) {
             view(args[1], args[2], args[3]);
             return;
         }
+        if (args.length == 4 && "view-batch".equals(args[0])) {
+            viewBatch(args[1], args[2], args[3]);
+            return;
+        }
         throw new IllegalArgumentException(
-            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | view <broker-address> <topic> <offset-message-id>");
+            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view|view-batch <broker-address> <topic> <offset-message-id>");
     }
 
     private static MQClientAPIImpl newApi() {
@@ -207,6 +219,54 @@ public final class LiveProducerProbe {
             "oneway message did not reach the Broker queue before the deadline");
     }
 
+    private static void batchSend(
+        String brokerAddress, String topic, String bodyPrefix, int messageCount) throws Exception {
+        if (messageCount < 1) {
+            throw new IllegalArgumentException("batch message count must be positive");
+        }
+        MQClientAPIImpl api = newApi();
+        api.start();
+        try {
+            List<Message> messages = new ArrayList<>(messageCount);
+            for (int index = 0; index < messageCount; index++) {
+                Message message = new Message(
+                    topic, (bodyPrefix + "-" + index).getBytes(StandardCharsets.UTF_8));
+                message.setKeys("compat_phase0_batch_java_" + index);
+                MessageClientIDSetter.setUniqID(message);
+                messages.add(message);
+            }
+            MessageBatch batch = MessageBatch.generateFromList(messages);
+            MessageClientIDSetter.setUniqID(batch);
+            batch.setBody(batch.encode());
+
+            SendMessageRequestHeader header = new SendMessageRequestHeader();
+            header.setProducerGroup("compat_phase0");
+            header.setTopic(topic);
+            header.setDefaultTopic("TBW102");
+            header.setDefaultTopicQueueNums(4);
+            header.setQueueId(0);
+            header.setSysFlag(0);
+            header.setBornTimestamp(System.currentTimeMillis());
+            header.setFlag(batch.getFlag());
+            header.setProperties(MessageDecoder.messageProperties2String(batch.getProperties()));
+            header.setReconsumeTimes(0);
+            header.setUnitMode(false);
+            header.setBatch(true);
+            header.setBrokerName("broker-a");
+
+            SendResult result = api.sendMessage(brokerAddress, "broker-a", batch, header,
+                10_000, CommunicationMode.SYNC, null, null);
+            String firstOffsetMessageId = result.getOffsetMsgId().split(",", 2)[0];
+            long physicalOffset = MessageDecoder.decodeMessageId(firstOffsetMessageId).getOffset();
+            System.out.printf("BATCH_SEND\t%s\t%s\t%d\t%d\t%s\t%s\t%d\t%d%n",
+                result.getSendStatus().name(), result.getMessageQueue().getTopic(),
+                result.getMessageQueue().getQueueId(), result.getQueueOffset(),
+                result.getOffsetMsgId(), firstOffsetMessageId, physicalOffset, messageCount);
+        } finally {
+            api.shutdown();
+        }
+    }
+
     private static void view(String brokerAddress, String topic, String offsetMessageId)
         throws Exception {
         long physicalOffset = MessageDecoder.decodeMessageId(offsetMessageId).getOffset();
@@ -216,6 +276,24 @@ public final class LiveProducerProbe {
             MessageExt message = api.viewMessage(brokerAddress, topic, physicalOffset, 10_000);
             System.out.printf("MESSAGE\t%s\t%d\t%d\t%s%n", message.getTopic(),
                 message.getQueueId(), message.getQueueOffset(), toHex(message.getBody()));
+        } finally {
+            api.shutdown();
+        }
+    }
+
+    private static void viewBatch(String brokerAddress, String topic, String offsetMessageId)
+        throws Exception {
+        long physicalOffset = MessageDecoder.decodeMessageId(offsetMessageId).getOffset();
+        MQClientAPIImpl api = newApi();
+        api.start();
+        try {
+            MessageExt batch = api.viewMessage(brokerAddress, topic, physicalOffset, 10_000);
+            List<MessageExt> messages = new ArrayList<>();
+            MessageDecoder.decodeMessage(batch, messages);
+            for (MessageExt message : messages) {
+                System.out.printf("MESSAGE\t%s\t%d\t%d\t%s%n", message.getTopic(),
+                    message.getQueueId(), message.getQueueOffset(), toHex(message.getBody()));
+            }
         } finally {
             api.shutdown();
         }

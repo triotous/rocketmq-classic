@@ -122,6 +122,7 @@ for scenario in selected:
     rust_expected_max_offset = inputs.get("rust_expected_max_offset", "-")
     java_expected_queue_offset = inputs.get("java_expected_queue_offset", "-")
     rust_expected_queue_offset = inputs.get("rust_expected_queue_offset", "-")
+    message_count = inputs.get("messages", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
     if not isinstance(key_prefix, str) or not key_prefix:
@@ -129,7 +130,7 @@ for scenario in selected:
     print(
         f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}\t{key_prefix}\t"
         f"{java_expected_max_offset}\t{rust_expected_max_offset}\t"
-        f"{java_expected_queue_offset}\t{rust_expected_queue_offset}"
+        f"{java_expected_queue_offset}\t{rust_expected_queue_offset}\t{message_count}"
     )
 PY
 then
@@ -141,9 +142,9 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send" "PROD-004-batch-send")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -168,7 +169,7 @@ if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
     exit 3
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset message_count <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
@@ -197,12 +198,18 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    PROD-004-batch-send:compat_phase0_batch)
+        if [[ "$body" != "batch" || "$message_count" != "2" ]]; then
+            echo "Batch send metadata differs from the reviewed two-message input" >&2
+            exit 3
+        fi
+        ;;
     *)
         echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" && "$scenario_id" != "PROD-003-oneway-send" && "$scenario_id" != "PROD-004-batch-send" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -264,7 +271,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
     compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    tests/differential/compare.py tests/differential/run.sh)
+    tests/differential/compare.py tests/differential/run.sh tests/differential/scenarios.yaml)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
     source_code_dirty=true
 else
@@ -278,6 +285,10 @@ printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserve
     >"$evidence_dir/metadata.txt"
 if [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
     printf 'java_message_key=%s\nrust_message_key=%s\n' "$java_oneway_key" "$rust_oneway_key" \
+        >>"$evidence_dir/metadata.txt"
+fi
+if [[ "$scenario_id" == "PROD-004-batch-send" ]]; then
+    printf 'message_count=%s\nbody_prefix=%s\n' "$message_count" "$body" \
         >>"$evidence_dir/metadata.txt"
 fi
 {
@@ -335,6 +346,15 @@ cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- 
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgByKey -t $topic -k $rust_oneway_key -n namesrv:9876
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgById -t $topic -i <rust-unique-key> -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-offset-id>" exec:java@live-producer-probe
+EOF
+elif [[ "$scenario_id" == "PROD-004-batch-send" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="batch-send $broker_addr $topic $body $message_count" exec:java@live-producer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view-batch $broker_addr $topic '<java-offset-message-id>'
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- batch-send $broker_addr $topic $body $message_count
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view-batch $broker_addr $topic <rust-offset-message-id>" exec:java@live-producer-probe
 EOF
 else
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -447,7 +467,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" || "$scenario_id" == "PROD-003-oneway-send" || "$scenario_id" == "PROD-004-batch-send" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -701,6 +721,98 @@ elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
         fi
     done
     printf 'PASS %s: both oneway calls returned without a Broker result; each keyed message reached the queue and was read by the other client\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "PROD-004-batch-send" ]]; then
+    echo "Sending one two-message batch from each language and decoding the other client's batch"
+    validate_batch_send() {
+        python3 - "$1" "$topic" "$message_count" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+rows = [line.split("\t") for line in Path(sys.argv[1]).read_text().splitlines()]
+topic = sys.argv[2]
+count = int(sys.argv[3])
+if len(rows) != 1 or len(rows[0]) != 9:
+    raise SystemExit("batch send evidence must contain one nine-column result")
+row = rows[0]
+ids = row[5].split(",")
+first_id = row[6]
+if (
+    row[0] != "BATCH_SEND"
+    or row[1] != "SEND_OK"
+    or row[2] != topic
+    or row[3] != "0"
+    or not row[4].isdecimal()
+    or len(ids) != count
+    or ids[0] != first_id
+    or any(not re.fullmatch(r"[0-9a-fA-F]+", value) or len(value) not in {32, 56} for value in ids)
+    or not re.fullmatch(r"[0-9a-fA-F]+", first_id)
+    or len(first_id) not in {32, 56}
+    or not row[7].isdecimal()
+    or int(first_id[-16:], 16) != int(row[7])
+    or row[8] != str(count)
+):
+    raise SystemExit("batch send result or physical-offset ID is invalid")
+PY
+    }
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="batch-send $broker_addr $topic $body $message_count" exec:java@live-producer-probe \
+        >"$evidence_dir/java-batch-send.tsv" 2>"$evidence_dir/java-batch-send.stderr"; then
+        cat "$evidence_dir/java-batch-send.tsv" "$evidence_dir/java-batch-send.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! validate_batch_send "$evidence_dir/java-batch-send.tsv"; then
+        echo "Java batch send did not return one successful result for all messages" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ java_send_status java_send_topic java_queue_id java_queue_offset java_offset_message_ids java_offset_message_id java_physical_offset java_message_count \
+        <"$evidence_dir/java-batch-send.tsv"
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        view-batch "$broker_addr" "$topic" "$java_offset_message_id" \
+        >"$evidence_dir/rust-read-java.tsv" 2>"$evidence_dir/rust-read-java.stderr"; then
+        cat "$evidence_dir/rust-read-java.stderr" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        batch-send "$broker_addr" "$topic" "$body" "$message_count" \
+        >"$evidence_dir/rust-batch-send.tsv" 2>"$evidence_dir/rust-batch-send.stderr"; then
+        cat "$evidence_dir/rust-batch-send.stderr" >&2
+        exit 1
+    fi
+    if ! validate_batch_send "$evidence_dir/rust-batch-send.tsv"; then
+        echo "Rust batch send did not return one successful result for all messages" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ rust_send_status rust_send_topic rust_queue_id rust_queue_offset rust_offset_message_ids rust_offset_message_id rust_physical_offset rust_message_count \
+        <"$evidence_dir/rust-batch-send.tsv"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="view-batch $broker_addr $topic $rust_offset_message_id" exec:java@live-producer-probe \
+        >"$evidence_dir/java-read-rust.tsv" 2>"$evidence_dir/java-read-rust.stderr"; then
+        cat "$evidence_dir/java-read-rust.tsv" "$evidence_dir/java-read-rust.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if [[ "$java_send_status" != "$rust_send_status" || "$java_send_topic" != "$rust_send_topic" || \
+        "$java_queue_id" != "$rust_queue_id" || "$java_message_count" != "$rust_message_count" || \
+        "$rust_queue_offset" -ne $((java_queue_offset + message_count)) ]]; then
+        echo "Java and Rust batch send result metadata or queue progression differs" >&2
+        exit 1
+    fi
+    first_body_hex="$(python3 -c 'import sys; print((sys.argv[1] + "-0").encode().hex())' "$body")"
+    second_body_hex="$(python3 -c 'import sys; print((sys.argv[1] + "-1").encode().hex())' "$body")"
+    for language_readback in "rust-read-java.tsv:$java_queue_offset" "java-read-rust.tsv:$rust_queue_offset"; do
+        readback="${language_readback%%:*}"
+        expected_queue_offset="${language_readback##*:}"
+        if ! awk -F '\t' -v topic="$topic" -v first_offset="$expected_queue_offset" \
+            -v first_body="$first_body_hex" -v second_body="$second_body_hex" \
+            'NR == 1 && (NF != 5 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 != first_offset || $5 != first_body) { exit 1 }
+             NR == 2 && (NF != 5 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 != first_offset + 1 || $5 != second_body) { exit 1 }
+             END { if (NR != 2) exit 1 }' "$evidence_dir/$readback"; then
+            echo "Cross-language batch readback did not decode both expected messages: $readback" >&2
+            exit 1
+        fi
+    done
+    printf 'PASS %s: Java and Rust batch sends succeeded and each decoded both messages from the other client\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending the same heartbeat through both client APIs"

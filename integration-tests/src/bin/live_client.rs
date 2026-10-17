@@ -1,11 +1,14 @@
 use std::{env, error::Error, fmt::Write as _, sync::Arc, time::Duration};
 
 use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
-use rocketmq_classic_common::message::{Message, decode_message_id, encode_properties};
+use rocketmq_classic_common::message::{
+    Message, decode_inner_batch, decode_message_id, encode_compact_messages, encode_properties,
+};
 use rocketmq_classic_core::api::{
     MQClientApi,
     producer::{SendKind, SendMode},
 };
+use rocketmq_classic_core::unique_id::UniqueIdGenerator;
 use rocketmq_classic_protocol::{
     SharedValue,
     header::{GetMaxOffsetRequestHeader, SendMessageRequestHeaderV1, ViewMessageRequestHeader},
@@ -38,10 +41,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )
             .await
         }
+        Some("batch-send") if arguments.len() == 5 => {
+            batch_send(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                arguments[4].parse()?,
+            )
+            .await
+        }
         Some("view") if arguments.len() == 4 => {
             view(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | view <broker-address> <topic> <offset-message-id>".into()),
+        Some("view-batch") if arguments.len() == 4 => {
+            view_batch(&arguments[1], &arguments[2], &arguments[3]).await
+        }
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view|view-batch <broker-address> <topic> <offset-message-id>".into()),
     }
 }
 
@@ -217,6 +232,87 @@ async fn oneway_send_and_query(
     }
 }
 
+async fn batch_send(
+    broker_address: &str,
+    topic: &str,
+    body_prefix: &str,
+    message_count: usize,
+) -> Result<(), Box<dyn Error>> {
+    if message_count == 0 {
+        return Err("batch message count must be positive".into());
+    }
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let ids = UniqueIdGenerator::new(None);
+    let mut messages = Vec::with_capacity(message_count);
+    for index in 0..message_count {
+        let mut message = Message::new(topic, format!("{body_prefix}-{index}").into_bytes());
+        message.set_keys(format!("compat_phase0_batch_rust_{index}"))?;
+        ids.set_if_missing(&mut message);
+        messages.push(message);
+    }
+    let mut batch_message = Message::new(topic, Vec::new());
+    let batch_id = ids.set_if_missing(&mut batch_message);
+    let body = encode_compact_messages(&messages)?;
+    let header = SendMessageRequestHeaderV1 {
+        producer_group: Some("compat_phase0".into()),
+        topic: topic.to_owned(),
+        default_topic: "TBW102".into(),
+        default_topic_queue_nums: 4,
+        queue_id: 0,
+        sys_flag: 0,
+        born_timestamp: i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_millis(),
+        )?,
+        flag: 0,
+        properties: Some(encode_properties(&batch_message.properties())),
+        reconsume_times: Some(0),
+        unit_mode: Some(false),
+        batch: Some(true),
+        broker_name: Some("broker-a".into()),
+        ..SendMessageRequestHeaderV1::default()
+    };
+    let result = api
+        .send_message(
+            broker_address,
+            "broker-a",
+            &header,
+            body,
+            &batch_id,
+            SendKind::Batch,
+            SendMode::Sync,
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    let result = result?.ok_or("batch send returned no Broker result")?;
+    let first_offset_message_id = result
+        .offset_msg_id
+        .split(',')
+        .next()
+        .filter(|message_id| !message_id.is_empty())
+        .ok_or("batch send returned no offset message ID")?;
+    let physical_offset = decode_message_id(first_offset_message_id)?.offset();
+    println!(
+        "BATCH_SEND\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        result.status,
+        result.topic,
+        result.queue_id,
+        result.queue_offset,
+        result.offset_msg_id,
+        first_offset_message_id,
+        physical_offset,
+        message_count
+    );
+    Ok(())
+}
+
 async fn send_with_mode(
     broker_address: &str,
     topic: &str,
@@ -321,6 +417,42 @@ async fn view(
         message.queue_offset(),
         encode_hex(&message.body())
     );
+    Ok(())
+}
+
+async fn view_batch(
+    broker_address: &str,
+    topic: &str,
+    offset_message_id: &str,
+) -> Result<(), Box<dyn Error>> {
+    let physical_offset = decode_message_id(offset_message_id)?.offset();
+    let remoting = RemotingClient::new(TransportMode::Plain);
+    if let Err(error) = remoting.start() {
+        remoting.shutdown().await;
+        return Err(error.into());
+    }
+    let api = MQClientApi::new(remoting.clone());
+    let result = api
+        .view_message(
+            broker_address,
+            &ViewMessageRequestHeader {
+                topic: Some(topic.to_owned()),
+                offset: physical_offset,
+            },
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    remoting.shutdown().await;
+    let outer = result?;
+    for message in decode_inner_batch(&outer)? {
+        println!(
+            "MESSAGE\t{}\t{}\t{}\t{}",
+            message.topic(),
+            message.queue_id(),
+            message.queue_offset(),
+            encode_hex(&message.body())
+        );
+    }
     Ok(())
 }
 

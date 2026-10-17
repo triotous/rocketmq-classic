@@ -179,6 +179,7 @@ def validate_manifest(manifest):
                 "PROD-001-sync-send",
                 "PROD-002-async-send",
                 "PROD-003-oneway-send",
+                "PROD-004-batch-send",
             }:
                 topic = scenario["inputs"].get("topic")
                 body = scenario["inputs"].get("body")
@@ -205,7 +206,63 @@ def validate_manifest(manifest):
 
                 asynchronous = scenario["id"] == "PROD-002-async-send"
                 oneway = scenario["id"] == "PROD-003-oneway-send"
-                if oneway:
+                batch = scenario["id"] == "PROD-004-batch-send"
+                if batch:
+                    message_count = scenario["inputs"].get("messages")
+                    if not isinstance(message_count, int) or message_count < 1:
+                        raise ValueError("batch send evidence requires a positive message count")
+                    java_send = one_tsv_row("java-batch-send.tsv", 9)
+                    rust_send = one_tsv_row("rust-batch-send.tsv", 9)
+                    for language, row in (("Java", java_send), ("Rust", rust_send)):
+                        offset_ids = row[5].split(",")
+                        if (
+                            row[0] != "BATCH_SEND"
+                            or row[1] != "SEND_OK"
+                            or row[2] != topic
+                            or row[3] != "0"
+                            or not row[4].isdecimal()
+                            or len(offset_ids) != message_count
+                            or offset_ids[0] != row[6]
+                            or any(
+                                not re.fullmatch(r"[0-9a-fA-F]+", message_id)
+                                or len(message_id) not in {32, 56}
+                                for message_id in offset_ids
+                            )
+                            or not row[7].isdecimal()
+                            or int(row[6][-16:], 16) != int(row[7])
+                            or row[8] != str(message_count)
+                        ):
+                            raise ValueError(f"{language} batch-send result is invalid")
+                    if (
+                        java_send[1:4] != rust_send[1:4]
+                        or int(rust_send[4]) != int(java_send[4]) + message_count
+                    ):
+                        raise ValueError("Java and Rust batch-send results or queue progression differ")
+                    expected_bodies = [
+                        f"{body}-{index}".encode().hex()
+                        for index in range(message_count)
+                    ]
+                    for readback_name, send_result in (
+                        ("rust-read-java.tsv", java_send),
+                        ("java-read-rust.tsv", rust_send),
+                    ):
+                        rows = tsv_rows(readback_name, 5)
+                        if len(rows) != message_count:
+                            raise ValueError(
+                                f"batch readback must contain {message_count} rows in {readback_name}"
+                            )
+                        for index, row in enumerate(rows):
+                            if (
+                                row[0] != "MESSAGE"
+                                or row[1] != topic
+                                or row[2] != "0"
+                                or row[3] != str(int(send_result[4]) + index)
+                                or row[4] != expected_bodies[index]
+                            ):
+                                raise ValueError(
+                                    f"batch cross-language readback does not match {readback_name}"
+                                )
+                elif oneway:
                     java_rows = tsv_rows("java-oneway.tsv")
                     rust_rows = tsv_rows("rust-oneway.tsv")
                     inputs = scenario["inputs"]
@@ -362,17 +419,18 @@ def validate_manifest(manifest):
                         ("rust-read-java.tsv", java_send, 4),
                         ("java-read-rust.tsv", rust_send, 4),
                     )
-                for readback_name, send_result, queue_offset_index in readback_sends:
-                    row = one_tsv_row(readback_name, 5)
-                    if (
-                        row[0] != "MESSAGE"
-                        or row[1] != topic
-                        or row[2] != "0"
-                        or not row[3].isdecimal()
-                        or row[3] != send_result[queue_offset_index]
-                        or row[4] != expected_body
-                    ):
-                        raise ValueError(f"cross-language readback does not match {readback_name}")
+                if not batch:
+                    for readback_name, send_result, queue_offset_index in readback_sends:
+                        row = one_tsv_row(readback_name, 5)
+                        if (
+                            row[0] != "MESSAGE"
+                            or row[1] != topic
+                            or row[2] != "0"
+                            or not row[3].isdecimal()
+                            or row[3] != send_result[queue_offset_index]
+                            or row[4] != expected_body
+                        ):
+                            raise ValueError(f"cross-language readback does not match {readback_name}")
     phase19_ids = {
         scenario["id"]
         for scenario in scenarios
@@ -588,6 +646,65 @@ def self_test():
             raise AssertionError("oneway evidence accepted a Broker response result")
         except ValueError as error:
             assert "Java oneway send did not return without a Broker response" in str(error)
+    batch_scenario = next(
+        scenario
+        for scenario in checked_in["scenarios"]
+        if scenario["id"] == "PROD-004-batch-send"
+    )
+    with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
+        evidence_dir = Path(temporary)
+        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
+        (evidence_dir / "result.txt").write_text(
+            "PASS PROD-004-batch-send: synthetic validator evidence\n"
+        )
+        java_batch_id = f"{1:032x}"
+        java_second_batch_id = f"{3:032x}"
+        rust_batch_id = f"{2:032x}"
+        rust_second_batch_id = f"{4:032x}"
+        batch_outputs = {
+            "java-batch-send.tsv": (
+                f"BATCH_SEND\tSEND_OK\tcompat_phase0_batch\t0\t0\t{java_batch_id},{java_second_batch_id}\t{java_batch_id}\t1\t2\n"
+            ),
+            "rust-batch-send.tsv": (
+                f"BATCH_SEND\tSEND_OK\tcompat_phase0_batch\t0\t2\t{rust_batch_id},{rust_second_batch_id}\t{rust_batch_id}\t2\t2\n"
+            ),
+            "rust-read-java.tsv": (
+                "MESSAGE\tcompat_phase0_batch\t0\t0\t62617463682d30\n"
+                "MESSAGE\tcompat_phase0_batch\t0\t1\t62617463682d31\n"
+            ),
+            "java-read-rust.tsv": (
+                "MESSAGE\tcompat_phase0_batch\t0\t2\t62617463682d30\n"
+                "MESSAGE\tcompat_phase0_batch\t0\t3\t62617463682d31\n"
+            ),
+        }
+        for filename, contents in batch_outputs.items():
+            (evidence_dir / filename).write_text(contents)
+
+        def batch_checked_manifest(java_readback):
+            changed_scenario = {
+                **batch_scenario,
+                "live_status": "PASS",
+                "evidence": evidence_rel,
+            }
+            changed_scenarios = [
+                changed_scenario if row["id"] == batch_scenario["id"] else row
+                for row in checked_in["scenarios"]
+            ]
+            if java_readback is not None:
+                (evidence_dir / "java-read-rust.tsv").write_text(java_readback)
+            return {**checked_in, "scenarios": changed_scenarios}
+
+        validate_manifest(batch_checked_manifest(None))
+        try:
+            validate_manifest(
+                batch_checked_manifest(
+                    "MESSAGE\tcompat_phase0_batch\t0\t2\t62617463682d30\n"
+                )
+            )
+            raise AssertionError("batch evidence accepted an omitted batch message")
+        except ValueError as error:
+            assert "batch readback must contain 2 rows" in str(error)
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
     assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
     assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19
