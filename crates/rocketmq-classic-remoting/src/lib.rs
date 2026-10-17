@@ -49,7 +49,7 @@ pub mod route;
 
 pub use command::{
     CommandCallback, ProcessTimer, ProcessTimerError, RemotingCommand, RemotingCommandType,
-    RequestSource, RequestType,
+    RequestSource, RequestType, SharedCommandHeader,
 };
 pub use error::{CodecError, ErrorSource, GoAwayCause, TimeoutPhase, TransportError};
 pub use ext_fields::ExtFields;

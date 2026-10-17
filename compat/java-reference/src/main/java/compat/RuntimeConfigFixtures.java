@@ -3898,6 +3898,29 @@ public final class RuntimeConfigFixtures {
             deltas.add(commands.get(index).getOpaque() - commands.get(index - 1).getOpaque());
         }
         result.put("requestIdDeltas", deltas);
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand beforeFailedFactories =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(78, null);
+        result.put("missingDefaultHeaderReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                79, "missing", MissingDefaultHeader.class) == null);
+        result.put("inaccessibleDefaultHeaderReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                80, "inaccessible", InaccessibleDefaultHeader.class) == null);
+        result.put("throwingDefaultHeaderReturnsNull",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                81, "throwing", ThrowingDefaultHeader.class) == null);
+        try {
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.buildErrorResponse(
+                82, "error", MissingDefaultHeader.class);
+            result.put("errorFactoryHeaderFailure", "NO_ERROR");
+        } catch (Exception buildError) {
+            result.put("errorFactoryHeaderFailure", buildError.getClass().getSimpleName());
+        }
+        org.apache.rocketmq.remoting.protocol.RemotingCommand afterFailedFactories =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(83, null);
+        result.put("failedHeaderFactoryOpaqueDelta",
+            afterFailedFactories.getOpaque() - beforeFailedFactories.getOpaque());
         return result;
     }
 
@@ -3938,6 +3961,8 @@ public final class RuntimeConfigFixtures {
         result.put("attachedHeaderTopicAfterMutation",
             ((org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader)
                 command.readCustomHeader()).getTopic());
+        result.put("attachedMutationVisibleToCaller",
+            "mutated-after-attach".equals(header.getTopic()));
         org.apache.rocketmq.remoting.protocol.RemotingCommand decodedWithoutAttachedHeader =
             org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(82, null);
         decodedWithoutAttachedHeader.setExtFields(new HashMap<>(command.getExtFields()));
@@ -3951,6 +3976,10 @@ public final class RuntimeConfigFixtures {
             ? null : new TreeMap<>(command.getExtFields()));
         command.makeCustomHeaderToNet();
         result.put("extFieldsAfterMake", new TreeMap<>(command.getExtFields()));
+        ((org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader)
+            command.readCustomHeader()).setTopic("mutated-through-command");
+        result.put("commandMutationVisibleToCaller",
+            "mutated-through-command".equals(header.getTopic()));
 
         org.apache.rocketmq.remoting.protocol.RemotingCommand addFieldCommand =
             org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(79, null);
@@ -4001,6 +4030,24 @@ public final class RuntimeConfigFixtures {
         result.put("bname", header.getBrokerName());
         result.put("oway", header.getOneway());
         return result;
+    }
+
+    public static final class MissingDefaultHeader
+        implements org.apache.rocketmq.remoting.CommandCustomHeader {
+        public MissingDefaultHeader(String ignored) { }
+        @Override public void checkFields() { }
+    }
+
+    public static final class InaccessibleDefaultHeader
+        implements org.apache.rocketmq.remoting.CommandCustomHeader {
+        private InaccessibleDefaultHeader() { }
+        @Override public void checkFields() { }
+    }
+
+    public static final class ThrowingDefaultHeader
+        implements org.apache.rocketmq.remoting.CommandCustomHeader {
+        public ThrowingDefaultHeader() { throw new IllegalStateException("fixture"); }
+        @Override public void checkFields() { }
     }
 
     private static Map<String, Object> commandInfrastructureCases() {

@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use rocketmq_classic_protocol::{
@@ -177,6 +177,70 @@ impl std::fmt::Debug for CustomHeaderValue {
             .field("type", &self.0.concrete_type_name())
             .field("fields", &self.encoded_fields())
             .finish()
+    }
+}
+
+/// A typed custom header that preserves Java's shared-object behavior.
+///
+/// Clone this handle before attaching it when code must retain access to the
+/// same header value after `write_custom_header`:
+///
+/// ```
+/// use rocketmq_classic_protocol::header::GetRouteInfoRequestHeader;
+/// use rocketmq_classic_remoting::{RemotingCommand, command::SharedCommandHeader};
+///
+/// let header = SharedCommandHeader::new(GetRouteInfoRequestHeader::default());
+/// let mut command = RemotingCommand::create_request_command(1).unwrap();
+/// command.write_custom_header(Some(header.clone()));
+/// header.with_mut(|value| value.topic = "orders".into());
+/// assert_eq!(
+///     command
+///         .read_custom_header::<SharedCommandHeader<GetRouteInfoRequestHeader>>()
+///         .unwrap()
+///         .with(|value| value.topic.clone()),
+///     "orders"
+/// );
+/// ```
+pub struct SharedCommandHeader<T>(Arc<RwLock<T>>);
+
+impl<T> SharedCommandHeader<T> {
+    pub fn new(header: T) -> Self {
+        Self(Arc::new(RwLock::new(header)))
+    }
+
+    pub fn with<R>(&self, inspect: impl FnOnce(&T) -> R) -> R {
+        let header = self
+            .0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        inspect(&header)
+    }
+
+    pub fn with_mut<R>(&self, update: impl FnOnce(&mut T) -> R) -> R {
+        let mut header = self
+            .0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        update(&mut header)
+    }
+}
+
+impl<T> Clone for SharedCommandHeader<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<T> CommandHeader for SharedCommandHeader<T>
+where
+    T: CommandHeader + Send + Sync,
+{
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        self.with(|header| header.encode_fields(fields));
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        T::decode_fields(fields).map(Self::new)
     }
 }
 
@@ -472,6 +536,25 @@ impl RemotingCommand {
         Ok(command)
     }
 
+    /// Creates a response with a typed header supplied by a fallible
+    /// constructor. Returning `None` represents Java's class-header reflection
+    /// failure, which returns a null command after consuming its request ID.
+    pub fn create_response_command_with_header_factory<T>(
+        code: i32,
+        remark: Option<String>,
+        header_factory: impl FnOnce() -> Option<T>,
+    ) -> Result<Option<Self>, String>
+    where
+        T: CommandHeader + Clone + Send + Sync + 'static,
+    {
+        let mut command = Self::create_response_command(code, remark)?;
+        let Some(header) = header_factory() else {
+            return Ok(None);
+        };
+        command.write_custom_header(Some(header));
+        Ok(Some(command))
+    }
+
     /// Creates Java's default system-error response with a default typed header.
     pub fn create_response_command_for_header<T>() -> Result<Self, String>
     where
@@ -497,6 +580,21 @@ impl RemotingCommand {
         T: CommandHeader + Default + Clone + Send + Sync + 'static,
     {
         Self::create_response_command_with_default_header::<T>(code, remark)
+    }
+
+    /// Creates an error response with a fallible typed-header constructor.
+    /// Returning `None` maps to Java's `NullPointerException` after its
+    /// class-header response factory returns null.
+    pub fn build_error_response_with_header_factory<T>(
+        code: i32,
+        remark: Option<String>,
+        header_factory: impl FnOnce() -> Option<T>,
+    ) -> Result<Self, String>
+    where
+        T: CommandHeader + Clone + Send + Sync + 'static,
+    {
+        Self::create_response_command_with_header_factory(code, remark, header_factory)?
+            .ok_or_else(|| "NullPointerException".to_owned())
     }
 
     /// Reads the attached typed custom header, if it has the requested type.
@@ -1303,6 +1401,46 @@ mod tests {
                 serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
                     .unwrap();
             let cases = &fixture["remotingEnumMethodCases"]["commandFactories"];
+            let before_failed_factories =
+                RemotingCommand::create_request_command(78).unwrap().opaque;
+            assert!(
+                RemotingCommand::create_response_command_with_header_factory::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(79, Some("missing".into()), || None)
+                .unwrap()
+                .is_none()
+            );
+            assert!(
+                RemotingCommand::create_response_command_with_header_factory::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(80, Some("inaccessible".into()), || None)
+                .unwrap()
+                .is_none()
+            );
+            assert!(
+                RemotingCommand::create_response_command_with_header_factory::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(81, Some("throwing".into()), || None)
+                .unwrap()
+                .is_none()
+            );
+            assert_eq!(
+                RemotingCommand::build_error_response_with_header_factory::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(82, Some("error".into()), || None)
+                .unwrap_err(),
+                "NullPointerException"
+            );
+            let after_failed_factories =
+                RemotingCommand::create_request_command(83).unwrap().opaque;
+            assert_eq!(
+                after_failed_factories.wrapping_sub(before_failed_factories),
+                cases["failedHeaderFactoryOpaqueDelta"].as_i64().unwrap() as i32
+            );
+            assert_eq!(cases["missingDefaultHeaderReturnsNull"], true);
+            assert_eq!(cases["inaccessibleDefaultHeaderReturnsNull"], true);
+            assert_eq!(cases["throwingDefaultHeaderReturnsNull"], true);
+            assert_eq!(cases["errorFactoryHeaderFailure"], "NullPointerException");
             let mut commands = [
                 RemotingCommand::create_request_command(71).unwrap(),
                 RemotingCommand::create_response_command(72, Some("accepted".into())).unwrap(),
@@ -1830,6 +1968,79 @@ mod tests {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+    }
+
+    #[test]
+    fn shared_custom_header_preserves_java_caller_alias() {
+        use crate::command::SharedCommandHeader;
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let cases = &fixture["remotingEnumMethodCases"]["commandCustomHeaders"];
+        let header = SharedCommandHeader::new(
+            rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
+                topic: "custom-topic".into(),
+                ..Default::default()
+            },
+        );
+        let caller_header = header.clone();
+        let mut command =
+            RemotingCommand::create_request_command_with_header(78, Some(header)).unwrap();
+
+        caller_header.with_mut(|header| {
+            header.topic = cases["attachedHeaderTopicAfterMutation"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+        });
+        assert_eq!(cases["readReturnsSameInstance"], true);
+        assert_eq!(cases["attachedMutationVisibleToCaller"], true);
+        assert_eq!(
+            command
+                .read_custom_header::<SharedCommandHeader<
+                    rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+                >>()
+                .unwrap()
+                .with(|header| header.topic.clone()),
+            cases["attachedHeaderTopicAfterMutation"]
+        );
+
+        let before_make = crate::codec::json_header::encode(&command).unwrap();
+        let before_make: serde_json::Value = serde_json::from_slice(&before_make).unwrap();
+        assert_eq!(
+            before_make["extFields"]["topic"],
+            cases["attachedHeaderTopicAfterMutation"]
+        );
+        assert!(command.ext_fields.is_none());
+
+        command.make_custom_header_to_net();
+        command
+            .read_custom_header::<SharedCommandHeader<
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+            >>()
+            .unwrap()
+            .with_mut(|header| header.topic = "mutated-through-command".into());
+        assert_eq!(cases["commandMutationVisibleToCaller"], true);
+        assert_eq!(
+            caller_header.with(|header| header.topic.clone()),
+            "mutated-through-command"
+        );
+
+        let json = crate::codec::json_header::encode(&command).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        assert_eq!(json["extFields"]["topic"], "mutated-through-command");
+        let binary = crate::codec::rocketmq_header::encode(&command).unwrap();
+        let binary = crate::codec::rocketmq_header::decode(&binary).unwrap();
+        assert_eq!(
+            binary
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get("topic")
+                .map(String::as_str),
+            Some("mutated-through-command")
+        );
     }
 
     #[test]
