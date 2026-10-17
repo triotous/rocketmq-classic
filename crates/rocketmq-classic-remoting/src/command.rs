@@ -17,7 +17,18 @@ static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock
 
 /// A monotonic command-processing timer corresponding to Java's remoting
 /// `Stopwatch` field.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// Java Guava `Stopwatch` inherits identity-based `Object.equals` and
+/// `Object.hashCode`; Rust does not expose structural equality for timer
+/// instances.
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::ProcessTimer;
+/// let first = ProcessTimer::new();
+/// let second = ProcessTimer::new();
+/// let _ = first == second;
+/// ```
+#[derive(Clone, Debug, Default)]
 pub struct ProcessTimer {
     accumulated: Duration,
     started_at: Option<Instant>,
@@ -1415,6 +1426,22 @@ mod tests {
     }
 
     #[test]
+    fn process_timer_identity_matches_pinned_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        let identity = &fixture["processTimerIdentityBehavior"];
+        assert_eq!(identity["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(identity["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(identity["equalStoppedState"], true);
+        assert_eq!(identity["processTimerGetterReturnsSameObject"], true);
+        assert_eq!(identity["sameInstanceEquals"], true);
+        assert_eq!(identity["distinctEqualStateEquals"], false);
+        assert_eq!(identity["distinctEqualStateHashSetSize"], 2);
+    }
+
+    #[test]
     fn command_factories_match_pinned_java_defaults_and_id_sequence() {
         const CHILD_CASE: &str = "ROCKETMQ_CLASSIC_COMMAND_FACTORY_CASE";
         if std::env::var(CHILD_CASE).as_deref() == Ok("invalid") {
@@ -1999,7 +2026,7 @@ mod tests {
         command.set_process_timer(Some(ProcessTimer::new()));
         let first_timer = command.get_process_timer().unwrap() as *const _;
         let repeated_timer = command.get_process_timer().unwrap() as *const _;
-        assert_eq!(first_timer, repeated_timer);
+        assert!(std::ptr::eq(first_timer, repeated_timer));
         assert!(!command.get_process_timer().unwrap().is_running());
         assert_eq!(cases["processTimerSameInstance"], true);
         assert_eq!(cases["processTimerInitiallyRunning"], false);

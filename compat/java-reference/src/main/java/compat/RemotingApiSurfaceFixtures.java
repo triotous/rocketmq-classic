@@ -17,6 +17,7 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import com.google.common.base.Stopwatch;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -102,6 +103,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("remotingCommandPublicConstructors", publicConstructors(RemotingCommand.class));
         fixture.put("remotingCommandPublicMethods", publicMethods(RemotingCommand.class));
         fixture.put("remotingCommandIdentityBehavior", remotingCommandIdentityBehavior());
+        fixture.put("processTimerIdentityBehavior", processTimerIdentityBehavior());
         fixture.put("remotingHeaderEncodingBehavior", remotingHeaderEncodingBehavior());
         fixture.put("responseFuturePublicConstructors", publicConstructors(ResponseFuture.class));
         fixture.put("responseFuturePublicMethods", publicMethods(ResponseFuture.class));
@@ -152,6 +154,30 @@ public final class RemotingApiSurfaceFixtures {
         result.put("distinctEqualStateEquals", first.equals(second));
         result.put("sameInstanceHashStable", first.hashCode() == first.hashCode());
         result.put("distinctEqualStateHashSetSize", commands.size());
+        return result;
+    }
+
+    private static Map<String, Object> processTimerIdentityBehavior() throws NoSuchMethodException {
+        Stopwatch first = Stopwatch.createUnstarted();
+        Stopwatch second = Stopwatch.createUnstarted();
+        RemotingCommand command = RemotingCommand.createRequestCommand(18, null);
+        command.setProcessTimer(first);
+
+        Set<Stopwatch> timers = new HashSet<>();
+        timers.add(first);
+        timers.add(second);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("equalsDeclaringClass", Stopwatch.class.getMethod("equals", Object.class)
+            .getDeclaringClass().getName());
+        result.put("hashCodeDeclaringClass", Stopwatch.class.getMethod("hashCode")
+            .getDeclaringClass().getName());
+        result.put("equalStoppedState", !first.isRunning() && !second.isRunning()
+            && first.elapsed().equals(second.elapsed()));
+        result.put("processTimerGetterReturnsSameObject", command.getProcessTimer() == first);
+        result.put("sameInstanceEquals", first.equals(first));
+        result.put("distinctEqualStateEquals", first.equals(second));
+        result.put("distinctEqualStateHashSetSize", timers.size());
         return result;
     }
 
