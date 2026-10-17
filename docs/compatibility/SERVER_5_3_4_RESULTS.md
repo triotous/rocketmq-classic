@@ -25,22 +25,31 @@ scenario and profile.
 | `PROD-001-sync-send` | PASS — Java and Rust both received `SEND_OK`; Rust read the Java-produced message and Java read the Rust-produced message. Both readbacks matched topic `compat_phase0_send`, queue 0, returned queue offsets, and body `fixed`. The owned topic and isolated Compose project were removed after the run. | [`20261017T054628Z`](evidence/phase-19/PROD-001-sync-send/20261017T054628Z/) |
 | `PROD-002-async-send` | PASS — Java's async callback fired once and Rust's Future resolved once; both returned `SEND_OK`. Each client read the other client's message and matched topic `compat_phase0_send`, queue 0, the returned queue offset, and body `fixed`. The owned topic and isolated Compose project were removed after the run. | [`20261017T055737Z`](evidence/phase-19/PROD-002-async-send/20261017T055737Z/) |
 | `PROD-003-oneway-send` | PASS — Java and Rust oneway calls returned without a Broker response. Broker queue max offsets advanced from 0 to 1 and then 2; Rust read the Java message at queue offset 0, and Java read the Rust message at offset 1. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T063258Z`](evidence/phase-19/PROD-003-oneway-send/20261017T063258Z/) |
+| `PROD-004-batch-send` | PASS — Java and Rust both returned `SEND_OK` for two messages. Rust read both Java messages by their physical offset IDs at queue offsets 0 and 1; Java read both Rust messages at offsets 2 and 3. Bodies matched `batch-0` and `batch-1`. The owned topic and isolated Compose project, network, and volume were removed after the run. | [`20261017T065458Z`](evidence/phase-19/PROD-004-batch-send/20261017T065458Z/) |
+
+The first batch attempt at source revision `2f9396e3` sent successfully from
+Java but failed in the Rust probe because it read only the first returned
+physical offset ID and treated the stored message body as a compact batch. The
+diagnostic run is retained at
+[`20261017T064439Z`](evidence/phase-19/PROD-004-batch-send/20261017T064439Z/);
+the runner was corrected to read every returned ID before the passing run above.
 
 The two route runs used source commit `91ecd510`; the heartbeat run used
 `1a77ac68`; the sync-send run used `95e38101`; the async-send run used
-`6f2a0c12`; the oneway-send run used `48ed3f58`. Evidence metadata records the
+`6f2a0c12`; the oneway-send run used `48ed3f58`; the batch-send run used
+`8262d722`. Evidence metadata records the
 full revision, toolchains, Docker platform, Compose/configuration hashes,
 commands, duration, client outputs, and cleanup results. Local home/repository
 paths and the host name are redacted from archived tool output. The current
-results cover route lookup, one heartbeat, synchronous, asynchronous and
-oneway sends with cross-language message readback. They do not exercise batch
-sends, Broker-side consumer operations, TLS, ACL, transactions,
-retries, failover, or stress behavior.
+results cover route lookup, one heartbeat, synchronous, asynchronous, oneway,
+and batch sends with cross-language message readback. They do not exercise
+Broker-side consumer operations, TLS, ACL, transactions, retries, failover, or
+stress behavior.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases. The six cases above are the
-only ones implemented and passed by the current runner; 31 remain pending.
+The scenario manifest contains 37 live cases. The seven cases above are the
+only ones implemented and passed by the current runner; 30 remain pending.
 The two-Broker, TLS, ACL, and feature-specific profiles and full local matrix
 are not complete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust

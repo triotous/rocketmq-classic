@@ -1,0 +1,1 @@
+PASS PROD-004-batch-send: Java and Rust batch sends succeeded and each decoded both messages from the other client

@@ -63,3 +63,10 @@ PROD-004 batch readback correction (2026-10-17 06:53 UTC)
 - Added Rust integration-binary tests for decoding all IDs and rejecting empty/missing entries.
 - Verification passed: `cargo test --locked -p rocketmq-classic-integration` (2 tests), strict integration-bin Clippy, integration-bin build, `cargo fmt --all -- --check`, Maven `verify`, Maven compile after final CLI usage text, shell syntax, Python compilation, comparator self-test, 37-row manifest validation, and `git diff --check`.
 - The failure evidence was archived separately in commit `0bf53383`. The readback correction and test changes are ready for a clean-revision live rerun; `PROD-004` remains pending until that run and evidence reconciliation pass.
+
+
+PROD-004 batch live verification and evidence reconciliation (2026-10-17 06:54–06:56 UTC)
+
+- Reran `PROD-004-batch-send` from clean source revision `8262d72279ac03b77bd38ea5f963e3ad2bb12473` on the pinned 5.3.4 basic profile. Java and Rust each returned `SEND_OK` for two messages; Rust read Java queue offsets 0 and 1, and Java read Rust queue offsets 2 and 3. Both bodies matched `batch-0` and `batch-1`.
+- The runner removed the scenario topic and isolated Compose project. Post-run Docker filters found no project containers, network, or volume. Evidence metadata records `source_code_dirty=false`, image digest `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8`, and exit status 0: `docs/compatibility/evidence/phase-19/PROD-004-batch-send/20261017T065458Z/`. The failed diagnostic run remains separately archived.
+- The manifest records the passing evidence; comparator self-test and 37-row manifest validation pass, with seven PASS and 30 pending. Updated the integration README, Java compatibility checkpoint, server results, and release checklist.

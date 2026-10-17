@@ -1,10 +1,11 @@
 # Java 5.5.1 compatibility evidence
 
-Phase 19 live baseline checkpoint (2026-10-17): six of 37 live cases pass
+Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,
 asynchronous send with one Java callback / Rust Future completion, and oneway
-send with both keyed messages read back by the other language. All three
+send with both keyed messages read back by the other language, plus batch send
+with both messages read by physical offset from the other language. All four
 producer cases include bidirectional Java/Rust message readback. Their
 server-side evidence and the remaining local coverage are tracked in
 [SERVER_5_3_4_RESULTS.md](SERVER_5_3_4_RESULTS.md).
@@ -350,7 +351,7 @@ Rust remoting implements deadline-based sync-future and duration-based wrapper, 
 
 ## Phase 0 evidence
 
-The Java harness emits offline Remoting request frames for route, heartbeat, send, pull, offset query/update and lock operations. Each `.bin` has a JSON sidecar with source/client/server version labels, scenario ID, codec, code, normalized decoded fields, body length and frame SHA-256. These are protocol command fixtures, not executed RPC results. Live Broker scenarios in `tests/differential/scenarios.yaml` remain `PENDING_PHASE_19` except the two route cases, `HEARTBEAT-001`, `PROD-001-sync-send`, `PROD-002-async-send`, and `PROD-003-oneway-send`, which have matching Java 5.5.1/Rust results against Broker 5.3.4; their evidence is recorded in [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md). These six cases do not establish broader Broker interoperability.
+The Java harness emits offline Remoting request frames for route, heartbeat, send, pull, offset query/update and lock operations. Each `.bin` has a JSON sidecar with source/client/server version labels, scenario ID, codec, code, normalized decoded fields, body length and frame SHA-256. These are protocol command fixtures, not executed RPC results. Live Broker scenarios in `tests/differential/scenarios.yaml` remain `PENDING_PHASE_19` except the two route cases, `HEARTBEAT-001`, `PROD-001-sync-send`, `PROD-002-async-send`, `PROD-003-oneway-send`, and `PROD-004-batch-send`, which have matching Java 5.5.1/Rust results against Broker 5.3.4; their evidence is recorded in [`SERVER_5_3_4_RESULTS.md`](SERVER_5_3_4_RESULTS.md). These seven cases do not establish broader Broker interoperability.
 
 Phase 11 local gate (2026-10-12): Java 5.5.1 strategy fixtures, initial-offset policies, Push reconciliation/race fencing and Pull registration/allocation/query lifecycle are UNIT_VERIFIED. Empty and absent clustering routes follow Java's callback and membership-query order; unavailable membership and offset persistence failures retain existing ownership state. On the repository host, the locked workspace suite, strict all-target/all-feature Clippy, full offline Maven `verify`, comparator self-test, and 31-scenario manifest validation all pass. P11-V03/V04 remain PENDING_PHASE_19. See [PHASE_11_OFFLINE_METHOD_MATRIX.md](PHASE_11_OFFLINE_METHOD_MATRIX.md) and the Phase 11 rlog.
 
