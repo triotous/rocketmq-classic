@@ -2787,3 +2787,19 @@ Before any publication:
   Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker automation remain
   open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+
+- P18-V01 Fastjson `WriteNameAsSymbol` mapping (code commit `4d07ad5a`,
+  2026-10-17): pinned RocketMQ 5.5.1 `RemotingSerializable.encode` writes
+  UTF-8 text JSON through Fastjson2 `JSON.toJSONBytes`/`JSONWriter.ofUTF8`;
+  `WriteNameAsSymbol` affects binary JSON type-name paths, so this text output
+  remains byte-identical. Existing invoked Java feature fixtures cover the
+  mapped body DTOs, route DTOs, and HeartbeatData; Rust assertions compare the
+  output against each Java baseline. No fixture regeneration was needed.
+- Validation on `4d07ad5a`: Protocol all-feature suite passed (125 unit tests,
+  all integration targets, 42 doctests); strict all-target/all-feature
+  Protocol Clippy, formatting, `git diff --check`, and Maven verify (37
+  scenarios, fixture drift and cross-decodes) passed. Writer feature mapping is
+  now 19/48; 29 remain unmapped. Broad P18-V01, the final full-workspace
+  P18-V02 rerun, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).

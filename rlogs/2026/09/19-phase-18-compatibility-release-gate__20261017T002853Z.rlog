@@ -48,3 +48,20 @@
   all integration targets, 42 doctests); strict all-target/all-feature
   Protocol Clippy, Maven verify (37 scenarios), formatting, and diff checks
   passed. Mapping count is now 18/48; 30 writer features remain unmapped.
+
+- P18-V01 Fastjson `WriteNameAsSymbol` mapping (code commit `4d07ad5a`,
+  2026-10-17): pinned RocketMQ 5.5.1 `RemotingSerializable.encode(Feature...)`
+  calls Fastjson2 `JSON.toJSONBytes` with UTF-8; Fastjson 2.0.63 implements
+  symbol emission in JSONB type-name paths, so this UTF-8 text JSON feature is
+  output-preserving. Existing invoked Java feature fixtures cover mapped body
+  DTOs, both route DTOs, and HeartbeatData. Rust now accepts the feature and
+  compares its output with the Java baseline in those fixture tests. No fixture
+  or Java oracle source change was needed.
+- Validation on `4d07ad5a`: `cargo test -p rocketmq-classic-protocol
+  --all-features --locked` passed (125 unit tests, all integration targets,
+  42 doctests); strict all-target/all-feature Protocol Clippy, formatter check,
+  and `mvn -f compat/java-reference/pom.xml verify` passed (37 scenarios with
+  fixture drift and cross-decodes). Mapping count is 19/48; 29 writer features
+  remain unmapped. Current-revision full-workspace P18-V02, Ubuntu/Windows CI,
+  broad P18-V01 audit, P18-V03/V04, and Phase 19 Docker/Broker execution
+  remain open.
