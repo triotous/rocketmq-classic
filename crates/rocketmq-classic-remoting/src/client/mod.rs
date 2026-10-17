@@ -2877,7 +2877,11 @@ mod tests {
         )
         .unwrap();
         let properties = HashMap::new();
-        let tls = TlsConfig::from_java_properties(&properties, Some(&properties_file)).unwrap();
+        let mut tls = TlsConfig::from_java_properties(&properties, Some(&properties_file)).unwrap();
+        // This test exercises property reload, not the machine's native CA
+        // store. Supply a pinned local trust anchor so it is reproducible on
+        // hosts that do not expose system trust roots.
+        tls.ca_pem = Some(include_bytes!("../../tests/fixtures/tls/java-server.pem").to_vec());
 
         let mut observed_modes = Vec::new();
         let mut observed_auth_server = Vec::new();
