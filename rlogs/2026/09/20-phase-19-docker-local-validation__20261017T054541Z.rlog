@@ -25,3 +25,11 @@ Phase 19 live asynchronous-send case implementation
 - Passed `cargo test --locked -p rocketmq-classic-integration` (0 tests), strict integration-bin Clippy, integration-bin build, `cargo fmt --all -- --check`, Maven compile on the project JDK 27, differential comparator self-test, 37-row manifest validation, shell syntax, Python compilation, and `git diff --check`.
 - One initial Maven invocation used a relative POM path from the read-only Java checkout and failed to find the project POM; reran from the Rust repository root and compilation passed.
 - Live Broker execution and evidence reconciliation remain pending this implementation commit.
+
+Live verification and evidence reconciliation — PROD-002 (2026-10-17)
+
+- Committed the implementation as `6f2a0c12`, then ran `PROD-002-async-send` from that clean revision using isolated project `rocketmq-classic-p19-prod-002-async-send-20261017t055737z` and the pinned Apache RocketMQ 5.3.4 profile.
+- PASS: Java returned one `ASYNC_CALLBACK` with `SEND_OK`; Rust returned one `ASYNC_FUTURE` result with `SEND_OK`. Rust read the Java message and Java read the Rust message; both readbacks matched topic `compat_phase0_send`, queue 0, their send result's queue offset, and body `fixed`.
+- Scenario topic deletion, Compose project/container/network/volume teardown, and evidence path redaction succeeded. Metadata records revision `6f2a0c126dacae0245ece773d69dda2170a8b61d`, `source_code_dirty=false`, image digest, and exit status 0. Evidence: `docs/compatibility/evidence/phase-19/PROD-002-async-send/20261017T055737Z/`.
+- Comparator self-test and manifest validation passed (37 rows); evidence validation rejects a synthetic duplicate Java callback. Five live scenarios now pass and 32 remain pending.
+- `git diff --cached --check` initially flagged Compose CLI alignment spaces in the captured setup/cleanup logs. Trimmed only trailing CLI padding from archived `.log` files; no test output content changed. The evidence files are now force-staged despite the repository-wide `*.log` ignore rule.
