@@ -277,7 +277,7 @@ def validate_manifest(manifest):
                         if (
                             key_query[0] != "KEY_QUERY"
                             or key_query[1] != message_key
-                            or key_query[2] != message_key
+                            or key_query[2] != f"{message_key}_uniq"
                             or key_query[3] != row[3]
                             or key_query[4] != row[4]
                         ):
@@ -549,8 +549,8 @@ def self_test():
             "rust-oneway.tsv": f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{rust_key}\nQUEUE_MAX_OFFSET\t2\n",
             "java-message-id.tsv": f"MESSAGE_ID\t{java_key}\t{java_message_id}\t0\t0\n",
             "rust-message-id.tsv": f"MESSAGE_ID\t{rust_key}\t{rust_message_id}\t0\t1\n",
-            "java-key-query.tsv": f"KEY_QUERY\t{java_key}\t{java_key}\t0\t0\n",
-            "rust-key-query.tsv": f"KEY_QUERY\t{rust_key}\t{rust_key}\t0\t1\n",
+            "java-key-query.tsv": f"KEY_QUERY\t{java_key}\t{java_key}_uniq\t0\t0\n",
+            "rust-key-query.tsv": f"KEY_QUERY\t{rust_key}\t{rust_key}_uniq\t0\t1\n",
             "broker-query-java.txt": f"#Message ID\t#QID\t#Offset\n{java_message_id}\t0\t0\n",
             "broker-query-rust.txt": f"#Message ID\t#QID\t#Offset\n{rust_message_id}\t0\t1\n",
             "broker-offset-query-java.txt": f"OffsetID: {java_message_id}\nQueue ID: 0\nQueue Offset: 0\n",
