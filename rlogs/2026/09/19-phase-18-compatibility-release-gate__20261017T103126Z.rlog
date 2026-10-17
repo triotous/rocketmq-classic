@@ -43,3 +43,23 @@
   APIs, and long-poll metrics. Recorded nullable Java ext-field keys/values as
   an open API input difference for follow-up, and appended the evidence to the
   release checklist. No plan file was changed.
+- Full current-revision P18-V02 rerun at source commit `a0ee6aef` passed:
+  default and all-feature workspace tests, strict all-target/all-feature
+  workspace Clippy, format/diff checks, comparator self-test, 37-row manifest,
+  offline race/leak smoke (16 cases x 3), fuzz smoke (105 frame seeds, 11
+  message seeds, 1,856 mutations), release examples, workspace bench
+  compilation, offline benchmark, and Maven verify. The bench observation was
+  recorded from Apple M5 Max / macOS aarch64 / rustc 1.85.0: frame encode/decode
+  1,801.8 ns and 4,612 allocated bytes; Zstd decode 1,151.2 ns and 197,493
+  bytes; Producer request construction 1,253.7 ns and 3,665 bytes; 128-entry
+  route lookup 16.2 ns and 0 bytes; pending completion 64,129.5 ns and 9,338
+  bytes. Cargo package listing still warns that the unpublished integration
+  package has no description; add package metadata before the metadata/package
+  verification finishes.
+- Resolved the package-list warning by adding a description to the unpublished
+  integration runner. `cargo test -p rocketmq-classic-integration --locked`,
+  `cargo metadata --locked --format-version 1 --no-deps`,
+  `python3 scripts/check-workspace-metadata.py`, and
+  `cargo package --workspace --list --locked --allow-dirty` all pass; the
+  package-list rerun has no missing-description warning. The runner remains
+  `publish = false`.
