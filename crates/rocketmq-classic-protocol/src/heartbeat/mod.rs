@@ -2703,6 +2703,10 @@ mod tests {
                     "UseSingleQuotes",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::WriteNameAsSymbol,
+                    "WriteNameAsSymbol",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),

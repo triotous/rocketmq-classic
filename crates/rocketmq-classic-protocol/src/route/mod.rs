@@ -4254,6 +4254,7 @@ mod tests {
                         "PrettyFormatWith4Space",
                     ),
                     (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
+                    (JavaJsonWriterFeature::WriteNameAsSymbol, "WriteNameAsSymbol"),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

@@ -8,9 +8,11 @@
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
 /// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
 /// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
-/// and `OptimizedForAscii`. `OptimizedForAscii` is output-preserving because
-/// the Rust writer already emits UTF-8 JSON. Other variants return an explicit
-/// unsupported-feature error until their behavior is mapped.
+/// `OptimizedForAscii`, and `WriteNameAsSymbol`. `OptimizedForAscii` is
+/// output-preserving because the Rust writer already emits UTF-8 JSON.
+/// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
+/// encoder; Fastjson2 uses symbols in its JSONB type-name path. Other variants
+/// return an explicit unsupported-feature error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -197,6 +199,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteEnumUsingOrdinal
                 | Self::BrowserCompatible
                 | Self::OptimizedForAscii
+                | Self::WriteNameAsSymbol
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable
