@@ -803,10 +803,22 @@ async fn consumer_lookup_uses_timeout_mutated_after_runtime_construction() {
     assert_eq!(timeout_ms, 150);
 
     let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let (runtime, name_peer) = setup(Some(broker.local_addr().unwrap().to_string()), false).await;
+    let broker_addr = broker.local_addr().unwrap().to_string();
+    let (runtime, name_peer) = setup(Some(broker_addr.clone()), false).await;
     assert_eq!(
         runtime.config().read().unwrap().mq_client_api_timeout(),
         3000
+    );
+    runtime
+        .update_topic_route("topic", Instant::now() + Duration::from_secs(3))
+        .await
+        .unwrap();
+    assert_eq!(
+        runtime
+            .find_broker_address_by_topic("topic")
+            .unwrap()
+            .as_deref(),
+        Some(broker_addr.as_str())
     );
     runtime
         .config()
