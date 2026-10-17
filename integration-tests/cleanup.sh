@@ -9,6 +9,11 @@ if [[ "${ROCKETMQ_CLASSIC_TEST_ENV:-}" != "local-disposable" ]]; then
     exit 2
 fi
 
+if [[ "${ROCKETMQ_PROFILE:-basic}" != "basic" ]]; then
+    echo "ROCKETMQ_PROFILE must name an implemented profile (currently: basic)" >&2
+    exit 2
+fi
+
 project_name="${COMPOSE_PROJECT_NAME:-rocketmq-classic-p19-local}"
 if [[ ! "$project_name" =~ ^rocketmq-classic-p19-[a-z0-9-]+$ ]]; then
     echo "COMPOSE_PROJECT_NAME must start with rocketmq-classic-p19-" >&2
