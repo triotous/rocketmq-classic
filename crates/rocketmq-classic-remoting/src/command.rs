@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use rocketmq_classic_protocol::{
@@ -15,8 +15,15 @@ static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
 static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
 static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
 
+#[derive(Debug, Default)]
+struct ProcessTimerState {
+    accumulated: Duration,
+    started_at: Option<Instant>,
+}
+
 /// A monotonic command-processing timer corresponding to Java's remoting
-/// `Stopwatch` field.
+/// `Stopwatch` field. Cloning shares its mutable state, matching Java's
+/// reference-valued `RemotingCommand.processTimer` field.
 ///
 /// Java Guava `Stopwatch` inherits identity-based `Object.equals` and
 /// `Object.hashCode`; Rust does not expose structural equality for timer
@@ -30,8 +37,7 @@ static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct ProcessTimer {
-    accumulated: Duration,
-    started_at: Option<Instant>,
+    state: Arc<Mutex<ProcessTimerState>>,
 }
 
 impl ProcessTimer {
@@ -41,42 +47,53 @@ impl ProcessTimer {
 
     pub fn started() -> Self {
         Self {
-            accumulated: Duration::ZERO,
-            started_at: Some(Instant::now()),
+            state: Arc::new(Mutex::new(ProcessTimerState {
+                accumulated: Duration::ZERO,
+                started_at: Some(Instant::now()),
+            })),
         }
     }
 
     pub fn is_running(&self) -> bool {
-        self.started_at.is_some()
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .started_at
+            .is_some()
     }
 
     pub fn elapsed(&self) -> Duration {
-        self.accumulated.saturating_add(
-            self.started_at
+        let state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.accumulated.saturating_add(
+            state
+                .started_at
                 .map(|started_at| started_at.elapsed())
                 .unwrap_or_default(),
         )
     }
 
     pub fn start(&mut self) -> Result<(), ProcessTimerError> {
-        if self.started_at.is_some() {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        if state.started_at.is_some() {
             return Err(ProcessTimerError::AlreadyRunning);
         }
-        self.started_at = Some(Instant::now());
+        state.started_at = Some(Instant::now());
         Ok(())
     }
 
     pub fn stop(&mut self) -> Result<(), ProcessTimerError> {
-        let Some(started_at) = self.started_at.take() else {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let Some(started_at) = state.started_at.take() else {
             return Err(ProcessTimerError::NotRunning);
         };
-        self.accumulated = self.accumulated.saturating_add(started_at.elapsed());
+        state.accumulated = state.accumulated.saturating_add(started_at.elapsed());
         Ok(())
     }
 
     pub fn reset(&mut self) {
-        self.accumulated = Duration::ZERO;
-        self.started_at = None;
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.accumulated = Duration::ZERO;
+        state.started_at = None;
     }
 }
 
@@ -1439,6 +1456,24 @@ mod tests {
         assert_eq!(identity["sameInstanceEquals"], true);
         assert_eq!(identity["distinctEqualStateEquals"], false);
         assert_eq!(identity["distinctEqualStateHashSetSize"], 2);
+    }
+
+    #[test]
+    fn cloned_process_timer_shares_java_stopwatch_state() {
+        let mut timer = ProcessTimer::new();
+        let mut cloned_timer = timer.clone();
+
+        cloned_timer.start().unwrap();
+        assert!(timer.is_running());
+        assert_eq!(timer.start(), Err(ProcessTimerError::AlreadyRunning));
+
+        timer.stop().unwrap();
+        assert!(!cloned_timer.is_running());
+
+        cloned_timer.start().unwrap();
+        timer.reset();
+        assert!(!cloned_timer.is_running());
+        assert_eq!(timer.elapsed(), Duration::ZERO);
     }
 
     #[test]
