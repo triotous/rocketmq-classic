@@ -2735,3 +2735,19 @@ Before any publication:
   Phase 19 Docker/Broker automation, owner-validation handoff, and pre-release
   version/registry checks remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T235429Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261016T235429Z.rlog).
+- P18-V01 Fastjson non-serializable writer features (code commit `bc5642df`,
+  2026-10-17): `IgnoreNoneSerializable` returns Java's fixture-pinned `null`,
+  `ErrorOnNoneSerializable` maps the fixture-pinned `JSONException` failure,
+  and `IgnoreNoneSerializable` takes precedence when both are set. Body, route,
+  and heartbeat fixtures cover default, null, and populated DTO cases. Fifteen
+  of 48 writer features now have behavior mappings; 33 remain unmapped.
+  Protocol tests (123 unit tests, all integration targets, 42 doctests),
+  default/all-feature workspace tests, strict workspace Clippy, pinned Maven
+  verify (37 scenarios), differential self-test/manifest, race/leak smoke
+  (16 cases x 3), fuzz smoke (1,856 mutations), release examples, workspace
+  bench compilation, metadata/package checks, formatting, and diff checks pass.
+  P18-V02 server-free local gates are complete on `bc5642df`; broad P18-V01,
+  current-revision Ubuntu/Windows CI results, Phase 19 Docker/Broker automation,
+  owner-validation handoff, and pre-publication version/registry checks remain
+  open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T001244Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T001244Z.rlog).
