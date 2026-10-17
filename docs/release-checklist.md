@@ -3527,3 +3527,33 @@ owner-specific checks belong in the manual handoff.
   open. Owner-specific deployment/live Broker checks remain a separate manual
   handoff. No plan, Java oracle, remote branch, tag, publication, Broker
   operation, or deployment was changed.
+
+## Current code revision gate — 2026-10-17 (`86e7cb34`)
+
+- [x] P18-V02 server-free gates pass on `86e7cb34`. The default and
+  all-feature workspace test suites, all-target/all-feature workspace check
+  and strict Clippy, formatting, and diff checks passed. Rust checks ran with
+  Rust 1.85.0 in Linux ARM64 `rust:1.85.0-bookworm` using `--init`.
+- `PullMessageRequestHeader` no longer exposes Java-absent `lite_topic`, and
+  encoding omits `liteTopic`; decoding ignores an incoming value as an unknown
+  field. The protocol crate tests pass, including the updated Java-header
+  inventory. Maven `verify` passes all 37 scenarios, fixture checks and
+  Java/Rust cross-decodes; comparator self-test and 37-row manifest validation
+  pass. Race/leak smoke passes 16 cases × 3 and fuzz smoke passes 105 frame
+  seeds, 11 message seeds, 1,856 mutations, 146 frame decodes and 113 message
+  decodes. Release examples and the offline benchmark run. Locked metadata,
+  workspace metadata/license/dependency checks, all seven package listings
+  with `LICENSE`/`NOTICE`, and four Unique ID tests each under UTC and
+  Asia/Taipei pass. Detailed results are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T153927Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T153927Z.rlog).
+- Broad P18-V01 source/API/settings/input/error/flow and reverse-export
+  reconciliation remains open. In particular, the Rust direct custom-header
+  decoder still ignores the Java `useFastEncode` hint; Java's reflection path
+  catches per-field missing/conversion failures before `checkFields()`, while
+  Rust decoding is strict. Current-revision GitHub Ubuntu/native Windows
+  evidence for P18-V04, 30 remaining Phase 19 Docker/Broker scenarios and the
+  required multi-Broker/TLS/ACL/feature profiles, and pre-publication version
+  and registry dependency-resolution checks remain open. Owner-specific
+  deployment/live Broker checks remain the separate final manual handoff. No
+  plan, Java oracle, remote branch, tag, publication, Broker operation, or
+  deployment was changed.
