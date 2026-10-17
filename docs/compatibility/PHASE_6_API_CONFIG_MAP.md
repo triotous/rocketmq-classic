@@ -1105,7 +1105,7 @@ This inventory identifies source/public boundaries still requiring work; it does
 | --- | --- |
 | `getSendStatus` / `setSendStatus` | `SendResult::status: SendStatus`; enum names and values are mapped in the send-status enum row above |
 | `getMsgId` / `setMsgId` | `msg_id`; populated from the unique message ID supplied to the send operation |
-| `getOffsetMsgId` / `setOffsetMsgId` | `offset_msg_id`; populated from response-header `msgId` |
+| `getOffsetMsgId` / `setOffsetMsgId` | `offset_msg_id: Option<String>`; populated from response-header `msgId` and preserves Java `null` when that field is absent |
 | `getMessageQueue` / `setMessageQueue` | Flattened into `topic`, `broker_name`, and `queue_id`; Rust does not return a nested Java `MessageQueue` object here |
 | `getQueueOffset` / `setQueueOffset` | `queue_offset` |
 | `getTransactionId` / `setTransactionId` | `transaction_id: Option<String>` |
@@ -1115,7 +1115,7 @@ This inventory identifies source/public boundaries still requiring work; it does
 | `isTraceOn` / `setTraceOn` | `trace_on` |
 | `SendMessageResponseHeader.getBatchUniqId` | `SendMessageResponseHeader::batch_uniq_id` only; Java `SendResult` has no `batchUniqId` accessor or field |
 
-Pinned `javap -public` on Java `SendResult` and `SendMessageResponseHeader` establishes the accessor boundary. `ProducerMoreInvokedFixtures` invokes the result getter on ordinary and batch sync/async sends and checks that raw response body remains null; the Rust producer tests and invoked-request differential assert the same value. Request/response command fixtures continue to cover `batchUniqId` as a response-header input. This table records result-object field/API correspondence and the explicit flattened queue carrier; it does not claim producer-owner or send-retry parity (Phase 7).
+Pinned `javap -public` on Java `SendResult` and `SendMessageResponseHeader` establishes the accessor boundary. `ProducerMoreInvokedFixtures` invokes the result getter on ordinary and batch sync/async sends and checks that raw response body remains null; the Rust producer tests and invoked-request differential assert the same value. The invoked `SendMessageResponseHeader` decode-mode fixture also confirms that Java preserves a missing `msgId` as null in both fast and reflective decoding, so Rust `SendResult.offset_msg_id` is nullable. `queueId` and `queueOffset` are nullable in the decoded header too, but the send RPC owner requires both before constructing a `SendResult`. Request/response command fixtures continue to cover `batchUniqId` as a response-header input. This table records result-object field/API correspondence and the explicit flattened queue carrier; it does not claim producer-owner or send-retry parity (Phase 7).
 
 ## Other core response and route snapshot fields
 

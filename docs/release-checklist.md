@@ -3583,3 +3583,37 @@ owner-specific checks belong in the manual handoff.
   pre-publication version/registry checks remain open. Owner-specific final
   production checks remain a separate manual handoff. No plan, Java oracle,
   remote branch, tag, publication, Broker operation, or deployment was changed.
+
+## Current code revision gate — 2026-10-17 (`01e02a5c`)
+
+- [x] P18-V02 server-free local gates pass on code commit `01e02a5c`. Default
+  and all-feature workspace tests pass in a clean Linux ARM64
+  `rust:1.85.0-bookworm` container with serialized tests. All-target,
+  all-feature check and strict Clippy pass with Rust 1.85.0 on macOS ARM64;
+  formatting and diff checks pass.
+- `SendMessageResponseHeader` now preserves Java nullable `msgId`, `queueId`,
+  and `queueOffset` on direct decode, including Java's fast/reflection
+  conversion behavior. The send owner still requires queueId and queueOffset;
+  `SendResult.offset_msg_id` preserves absent `msgId` as `None`. Its invoked
+  Java fixture SHA-256 is
+  `c2962fc0c34868c36dd67ef7ef33e4694c59904b679de665ef401d302fe3818a`.
+- Maven `verify` passes all 37 scenarios, fixture-drift checks, and Java/Rust
+  cross-decodes. Differential self-test and the 37-row manifest validate;
+  race/leak smoke passes 16 cases × 3, and fuzz smoke passes 105 frame seeds,
+  11 message seeds, 1,856 mutations, 146 frame decodes, and 113 message
+  decodes. Release examples and workspace benches compile; the offline
+  benchmark runs. Locked metadata, package/license/dependency checks, all
+  seven package listings with `LICENSE`/`NOTICE`, and four Unique ID tests
+  under both UTC and Asia/Taipei pass. A first all-feature run had one stack
+  capture test fail to find an unblocked signal; the isolated test, full
+  consumer suite, and final default/all-feature workspace reruns passed.
+  Detailed results are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T184946Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T184946Z.rlog).
+- Broad P18-V01 bidirectional Java source/API/settings/input/error/flow
+  reconciliation and Rust reverse-export audit remain open. Current-revision
+  GitHub Ubuntu/native Windows evidence for P18-V04, 30 remaining Phase 19
+  Docker/Broker scenarios and required multi-Broker/TLS/ACL profiles, and
+  pre-publication version/registry dependency checks remain open. Owner-only
+  production checks are the separate final manual handoff. No plan, Java
+  oracle, remote branch, tag, publication, Broker operation, or deployment
+  was changed.
