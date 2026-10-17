@@ -6,11 +6,9 @@ use rocketmq_classic_core::api::{
     MQClientApi,
     producer::{SendKind, SendMode},
 };
-use rocketmq_classic_core::error::RpcError;
 use rocketmq_classic_protocol::{
     SharedValue,
-    codes::response,
-    header::{QueryMessageRequestHeader, SendMessageRequestHeaderV1, ViewMessageRequestHeader},
+    header::{GetMaxOffsetRequestHeader, SendMessageRequestHeaderV1, ViewMessageRequestHeader},
     heartbeat::{HeartbeatData, ProducerData},
 };
 use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
@@ -30,13 +28,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("async-send") if arguments.len() == 4 => {
             async_send(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        Some("oneway-send") if arguments.len() == 5 => {
-            oneway_send(&arguments[1], &arguments[2], &arguments[3], &arguments[4]).await
+        Some("oneway-send") if arguments.len() == 6 => {
+            oneway_send(
+                &arguments[1],
+                &arguments[2],
+                &arguments[3],
+                &arguments[4],
+                arguments[5].parse()?,
+            )
+            .await
         }
         Some("view") if arguments.len() == 4 => {
             view(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> | view <broker-address> <topic> <offset-message-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | view <broker-address> <topic> <offset-message-id>".into()),
     }
 }
 
@@ -124,6 +129,7 @@ async fn oneway_send(
     topic: &str,
     body: &str,
     key: &str,
+    minimum_max_offset: i64,
 ) -> Result<(), Box<dyn Error>> {
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
@@ -131,7 +137,8 @@ async fn oneway_send(
         return Err(error.into());
     }
     let api = MQClientApi::new(remoting.clone());
-    let result = oneway_send_and_query(&api, broker_address, topic, body, key).await;
+    let result =
+        oneway_send_and_query(&api, broker_address, topic, body, key, minimum_max_offset).await;
     remoting.shutdown().await;
     result
 }
@@ -142,6 +149,7 @@ async fn oneway_send_and_query(
     topic: &str,
     body: &str,
     key: &str,
+    minimum_max_offset: i64,
 ) -> Result<(), Box<dyn Error>> {
     let mut message = Message::new(topic, body.as_bytes().to_vec());
     message.set_keys(key.to_owned())?;
@@ -183,63 +191,26 @@ async fn oneway_send_and_query(
     }
     println!("ONEWAY_RETURN\tNO_RESPONSE\t{topic}\t{key}");
 
-    let now_millis = i64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis(),
-    )?;
-    let query_header = QueryMessageRequestHeader {
-        topic: topic.to_owned(),
-        key: key.to_owned(),
-        max_num: 32,
-        begin_timestamp: now_millis.saturating_sub(60_000),
-        end_timestamp: now_millis.saturating_add(60_000),
-        ..QueryMessageRequestHeader::default()
-    };
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        let result = api
-            .query_message(
+        let max_offset = api
+            .get_max_offset(
                 broker_address,
-                &query_header,
-                false,
+                &GetMaxOffsetRequestHeader {
+                    topic: topic.to_owned(),
+                    queue_id: 0,
+                    broker_name: Some("broker-a".into()),
+                    ..GetMaxOffsetRequestHeader::default()
+                },
                 Instant::now() + Duration::from_secs(5),
             )
-            .await;
-        let found = match result {
-            Ok(result) => result.get_message_list().and_then(|messages| {
-                messages
-                    .snapshot()
-                    .into_iter()
-                    .flatten()
-                    .map(|message| message.snapshot())
-                    .find(|message| {
-                        message
-                            .keys()
-                            .is_some_and(|keys| keys.split(' ').any(|candidate| candidate == key))
-                    })
-            }),
-            Err(RpcError::Response {
-                code: response::NO_MESSAGE,
-                ..
-            }) => None,
-            Err(error) => return Err(error.into()),
-        };
-        if let Some(message) = found {
-            let body_hex = encode_hex(message.body().as_ref());
-            println!(
-                "MESSAGE\t{}\t{}\t{}\t{}\t{}\t{}",
-                message.topic(),
-                message.queue_id(),
-                message.queue_offset(),
-                message.commit_log_offset(),
-                message.keys().unwrap_or_default(),
-                body_hex
-            );
+            .await?;
+        if max_offset >= minimum_max_offset {
+            println!("QUEUE_MAX_OFFSET\t{max_offset}");
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err("oneway message was not found by key before the deadline".into());
+            return Err("oneway message did not reach the Broker queue before the deadline".into());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }

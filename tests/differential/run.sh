@@ -118,11 +118,19 @@ for scenario in selected:
     producer_group = inputs.get("producer_group", "-")
     body = inputs.get("body", "-")
     key_prefix = inputs.get("key_prefix", "-")
+    java_expected_max_offset = inputs.get("java_expected_max_offset", "-")
+    rust_expected_max_offset = inputs.get("rust_expected_max_offset", "-")
+    java_expected_queue_offset = inputs.get("java_expected_queue_offset", "-")
+    rust_expected_queue_offset = inputs.get("rust_expected_queue_offset", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
     if not isinstance(key_prefix, str) or not key_prefix:
         raise SystemExit(f"{scenario_id}: invalid key prefix")
-    print(f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}\t{key_prefix}")
+    print(
+        f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}\t{key_prefix}\t"
+        f"{java_expected_max_offset}\t{rust_expected_max_offset}\t"
+        f"{java_expected_queue_offset}\t{rust_expected_queue_offset}"
+    )
 PY
 then
     exit 2
@@ -135,7 +143,7 @@ fi
 
 implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send" "PROD-003-oneway-send")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -160,7 +168,7 @@ if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
     exit 3
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body key_prefix java_expected_max_offset rust_expected_max_offset java_expected_queue_offset rust_expected_queue_offset <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
@@ -180,6 +188,12 @@ case "$scenario_id:$topic" in
         fi
         if [[ "$scenario_id" == "PROD-003-oneway-send" && "$key_prefix" != "compat_phase0_oneway" ]]; then
             echo "One-way send key prefix differs from the reviewed scenario input" >&2
+            exit 3
+        fi
+        if [[ "$scenario_id" == "PROD-003-oneway-send" && \
+            ("$java_expected_max_offset" != "1" || "$rust_expected_max_offset" != "2" || \
+                "$java_expected_queue_offset" != "0" || "$rust_expected_queue_offset" != "1") ]]; then
+            echo "One-way expected queue offsets differ from the isolated topic's empty start" >&2
             exit 3
         fi
         ;;
@@ -313,10 +327,12 @@ elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
     cat >"$evidence_dir/commands.txt" <<EOF
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="oneway-send $broker_addr $topic $body $java_oneway_key" exec:java@live-producer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic <java-physical-offset>
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- oneway-send $broker_addr $topic $body $rust_oneway_key
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-physical-offset>" exec:java@live-producer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="oneway-send $broker_addr $topic $body $java_oneway_key $java_expected_max_offset" exec:java@live-producer-probe
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgByKey -t $topic -k $java_oneway_key -n namesrv:9876
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic <java-message-id>
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- oneway-send $broker_addr $topic $body $rust_oneway_key $rust_expected_max_offset
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgByKey -t $topic -k $rust_oneway_key -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-message-id>" exec:java@live-producer-probe
 EOF
 else
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -576,44 +592,70 @@ elif [[ "$scenario_id" == "PROD-002-async-send" ]]; then
 elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
     echo "Sending one oneway message from each language, then reading each with the other client"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="oneway-send $broker_addr $topic $body $java_oneway_key" exec:java@live-producer-probe \
+        -Dexec.args="oneway-send $broker_addr $topic $body $java_oneway_key $java_expected_max_offset" exec:java@live-producer-probe \
         >"$evidence_dir/java-oneway.tsv" 2>"$evidence_dir/java-oneway.stderr"; then
         cat "$evidence_dir/java-oneway.tsv" "$evidence_dir/java-oneway.stderr" 2>/dev/null >&2 || true
         exit 1
     fi
     expected_body_hex="$(python3 -c 'import sys; print(sys.argv[1].encode().hex())' "$body")"
-    if ! awk -F '\t' -v topic="$topic" -v key="$java_oneway_key" -v body="$expected_body_hex" \
+    if ! awk -F '\t' -v topic="$topic" -v key="$java_oneway_key" -v max_offset="$java_expected_max_offset" \
         'NR == 1 && (NF != 4 || $1 != "ONEWAY_RETURN" || $2 != "NO_RESPONSE" || $3 != topic || $4 != key) { exit 1 }
-         NR == 2 && (NF != 7 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/ || $6 != key || $7 != body) { exit 1 }
+         NR == 2 && (NF != 2 || $1 != "QUEUE_MAX_OFFSET" || $2 != max_offset) { exit 1 }
          END { if (NR != 2) exit 1 }' "$evidence_dir/java-oneway.tsv"; then
-        echo "Java oneway send must return without a response and store the keyed message" >&2
+        echo "Java oneway send must return without a response and advance the Broker queue" >&2
         exit 1
     fi
-    IFS=$'\t' read -r _ java_message_topic java_queue_id java_queue_offset java_physical_offset java_message_key java_message_body \
-        < <(sed -n '2p' "$evidence_dir/java-oneway.tsv")
+
+    query_message_id() {
+        local message_key="$1"
+        local language="$2"
+        local raw_output="$evidence_dir/broker-query-$language.txt"
+        local normalized_output="$evidence_dir/$language-message-id.tsv"
+        if ! "${compose[@]}" exec --no-TTY broker ./mqadmin queryMsgByKey \
+            -t "$topic" -k "$message_key" -n namesrv:9876 \
+            >"$raw_output" 2>"$evidence_dir/broker-query-$language.stderr"; then
+            cat "$raw_output" "$evidence_dir/broker-query-$language.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+        if ! awk -v key="$message_key" '
+            NF == 3 && length($1) ~ /^(32|56)$/ && $1 ~ /^[0-9A-Fa-f]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+                printf "MESSAGE_ID\t%s\t%s\t%s\t%s\n", key, $1, $2, $3
+                found++
+            }
+            END { if (found != 1) exit 1 }
+        ' "$raw_output" >"$normalized_output"; then
+            echo "Broker key query did not return exactly one indexed message for $language" >&2
+            cat "$raw_output" >&2
+            return 1
+        fi
+    }
+
+    query_message_id "$java_oneway_key" java
+    IFS=$'\t' read -r _ _ java_message_id _ java_queue_offset <"$evidence_dir/java-message-id.tsv"
     if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
-        view "$broker_addr" "$topic" "$java_physical_offset" \
+        view "$broker_addr" "$topic" "$java_message_id" \
         >"$evidence_dir/rust-read-java.tsv" 2>"$evidence_dir/rust-read-java.stderr"; then
         cat "$evidence_dir/rust-read-java.stderr" >&2
         exit 1
     fi
     if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
-        oneway-send "$broker_addr" "$topic" "$body" "$rust_oneway_key" \
+        oneway-send "$broker_addr" "$topic" "$body" "$rust_oneway_key" "$rust_expected_max_offset" \
         >"$evidence_dir/rust-oneway.tsv" 2>"$evidence_dir/rust-oneway.stderr"; then
         cat "$evidence_dir/rust-oneway.stderr" >&2
         exit 1
     fi
-    if ! awk -F '\t' -v topic="$topic" -v key="$rust_oneway_key" -v body="$expected_body_hex" \
+    if ! awk -F '\t' -v topic="$topic" -v key="$rust_oneway_key" -v max_offset="$rust_expected_max_offset" \
         'NR == 1 && (NF != 4 || $1 != "ONEWAY_RETURN" || $2 != "NO_RESPONSE" || $3 != topic || $4 != key) { exit 1 }
-         NR == 2 && (NF != 7 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/ || $6 != key || $7 != body) { exit 1 }
+         NR == 2 && (NF != 2 || $1 != "QUEUE_MAX_OFFSET" || $2 != max_offset) { exit 1 }
          END { if (NR != 2) exit 1 }' "$evidence_dir/rust-oneway.tsv"; then
-        echo "Rust oneway send must return without a response and store the keyed message" >&2
+        echo "Rust oneway send must return without a response and advance the Broker queue" >&2
         exit 1
     fi
-    IFS=$'\t' read -r _ rust_message_topic rust_queue_id rust_queue_offset rust_physical_offset rust_message_key rust_message_body \
-        < <(sed -n '2p' "$evidence_dir/rust-oneway.tsv")
+
+    query_message_id "$rust_oneway_key" rust
+    IFS=$'\t' read -r _ _ rust_message_id _ rust_queue_offset <"$evidence_dir/rust-message-id.tsv"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="view $broker_addr $topic $rust_physical_offset" exec:java@live-producer-probe \
+        -Dexec.args="view $broker_addr $topic $rust_message_id" exec:java@live-producer-probe \
         >"$evidence_dir/java-read-rust.tsv" 2>"$evidence_dir/java-read-rust.stderr"; then
         cat "$evidence_dir/java-read-rust.tsv" "$evidence_dir/java-read-rust.stderr" 2>/dev/null >&2 || true
         exit 1
@@ -628,7 +670,7 @@ elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
             exit 1
         fi
     done
-    printf 'PASS %s: both oneway calls returned without a Broker result; keyed messages were stored and read by the other client\n' "$scenario_id" \
+    printf 'PASS %s: both oneway calls returned without a Broker result; each keyed message reached the queue and was read by the other client\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending the same heartbeat through both client APIs"

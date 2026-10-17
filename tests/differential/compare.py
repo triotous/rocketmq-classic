@@ -208,22 +208,38 @@ def validate_manifest(manifest):
                 if oneway:
                     java_rows = tsv_rows("java-oneway.tsv")
                     rust_rows = tsv_rows("rust-oneway.tsv")
-                    key_prefix = scenario["inputs"].get("key_prefix")
+                    inputs = scenario["inputs"]
+                    key_prefix = inputs.get("key_prefix")
                     if (
                         len(java_rows) != 2
                         or len(rust_rows) != 2
                         or len(java_rows[0]) != 4
                         or len(rust_rows[0]) != 4
-                        or len(java_rows[1]) != 7
-                        or len(rust_rows[1]) != 7
+                        or len(java_rows[1]) != 2
+                        or len(rust_rows[1]) != 2
                     ):
-                        raise ValueError("oneway send evidence must contain a return row and one stored message")
-                    java_return, java_message = java_rows
-                    rust_return, rust_message = rust_rows
+                        raise ValueError("oneway evidence must contain a return row and queue offset result")
+                    java_return, java_max = java_rows
+                    rust_return, rust_max = rust_rows
                     if not isinstance(key_prefix, str) or not re.fullmatch(
                         r"compat_[a-z0-9_]+", key_prefix
                     ):
                         raise ValueError("oneway send evidence requires an isolated key prefix")
+                    java_expected_max = inputs.get("java_expected_max_offset")
+                    rust_expected_max = inputs.get("rust_expected_max_offset")
+                    java_expected_queue = inputs.get("java_expected_queue_offset")
+                    rust_expected_queue = inputs.get("rust_expected_queue_offset")
+                    if (
+                        not all(isinstance(value, int) and value >= 0 for value in (
+                            java_expected_max,
+                            rust_expected_max,
+                            java_expected_queue,
+                            rust_expected_queue,
+                        ))
+                        or java_expected_max <= 0
+                        or rust_expected_max <= java_expected_max
+                    ):
+                        raise ValueError("oneway expected Broker queue offsets are invalid")
                     if (
                         len(java_return) != 4
                         or java_return[:3] != ["ONEWAY_RETURN", "NO_RESPONSE", topic]
@@ -237,23 +253,35 @@ def validate_manifest(manifest):
                         or rust_return[3] == java_return[3]
                     ):
                         raise ValueError("Rust oneway send did not return without a Broker response")
-                    for language, row, message_key in (
-                        ("Java", java_message, java_return[3]),
-                        ("Rust", rust_message, rust_return[3]),
+                    if (
+                        java_max != ["QUEUE_MAX_OFFSET", str(java_expected_max)]
+                        or rust_max != ["QUEUE_MAX_OFFSET", str(rust_expected_max)]
+                    ):
+                        raise ValueError("oneway sends did not advance the Broker queue as expected")
+                    java_message_id = one_tsv_row("java-message-id.tsv", 5)
+                    rust_message_id = one_tsv_row("rust-message-id.tsv", 5)
+                    for language, row, message_key, expected_offset in (
+                        ("Java", java_message_id, java_return[3], java_expected_queue),
+                        ("Rust", rust_message_id, rust_return[3], rust_expected_queue),
                     ):
                         if (
-                            row[0] != "MESSAGE"
-                            or row[1] != topic
-                            or row[2] != "0"
-                            or not row[3].isdecimal()
-                            or not row[4].isdecimal()
-                            or row[5] != message_key
-                            or row[6] != expected_body
+                            row[0] != "MESSAGE_ID"
+                            or row[1] != message_key
+                            or not re.fullmatch(r"[0-9a-fA-F]+", row[2])
+                            or len(row[2]) not in {32, 56}
+                            or row[3] != "0"
+                            or row[4] != str(expected_offset)
                         ):
-                            raise ValueError(f"{language} oneway stored-message result is invalid")
+                            raise ValueError(f"{language} oneway Broker key lookup is invalid")
+                    if java_message_id[2] == rust_message_id[2]:
+                        raise ValueError("Java and Rust oneway sends resolved to the same message ID")
+                    for language in ("java", "rust"):
+                        raw_query = evidence_path / f"broker-query-{language}.txt"
+                        if not raw_query.is_file() or not raw_query.read_text().strip():
+                            raise ValueError(f"oneway Broker query output is missing for {language}")
                     readback_sends = (
-                        ("rust-read-java.tsv", java_message, 3),
-                        ("java-read-rust.tsv", rust_message, 3),
+                        ("rust-read-java.tsv", java_message_id, 4),
+                        ("java-read-rust.tsv", rust_message_id, 4),
                     )
                 elif asynchronous:
                     java_send = one_tsv_row("java-async-send.tsv", 8)
@@ -486,17 +514,17 @@ def self_test():
         )
         java_key = "compat_phase0_oneway_java_selftest"
         rust_key = "compat_phase0_oneway_rust_selftest"
+        java_message_id = f"{1:032x}"
+        rust_message_id = f"{2:032x}"
         oneway_outputs = {
-            "java-oneway.tsv": (
-                f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{java_key}\n"
-                f"MESSAGE\tcompat_phase0_send\t0\t5\t1\t{java_key}\t6669786564\n"
-            ),
-            "rust-oneway.tsv": (
-                f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{rust_key}\n"
-                f"MESSAGE\tcompat_phase0_send\t0\t6\t2\t{rust_key}\t6669786564\n"
-            ),
-            "rust-read-java.tsv": "MESSAGE\tcompat_phase0_send\t0\t5\t6669786564\n",
-            "java-read-rust.tsv": "MESSAGE\tcompat_phase0_send\t0\t6\t6669786564\n",
+            "java-oneway.tsv": f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{java_key}\nQUEUE_MAX_OFFSET\t1\n",
+            "rust-oneway.tsv": f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{rust_key}\nQUEUE_MAX_OFFSET\t2\n",
+            "java-message-id.tsv": f"MESSAGE_ID\t{java_key}\t{java_message_id}\t0\t0\n",
+            "rust-message-id.tsv": f"MESSAGE_ID\t{rust_key}\t{rust_message_id}\t0\t1\n",
+            "broker-query-java.txt": f"#Message ID\t#QID\t#Offset\n{java_message_id}\t0\t0\n",
+            "broker-query-rust.txt": f"#Message ID\t#QID\t#Offset\n{rust_message_id}\t0\t1\n",
+            "rust-read-java.tsv": "MESSAGE\tcompat_phase0_send\t0\t0\t6669786564\n",
+            "java-read-rust.tsv": "MESSAGE\tcompat_phase0_send\t0\t1\t6669786564\n",
         }
         for filename, contents in oneway_outputs.items():
             (evidence_dir / filename).write_text(contents)
