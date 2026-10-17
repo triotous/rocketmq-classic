@@ -3417,3 +3417,30 @@ owner-specific checks belong in the manual handoff.
   `codec` test binary, so that launch is not counted as a pass. Broad P18-V01
   and current-revision GitHub Ubuntu/native Windows evidence for P18-V04 remain
   open. No Broker, release, push, tag, or publication action occurred.
+
+## Current code revision gate — 2026-10-17
+
+- [x] P18-V02 server-free gate passed on code revision `05448c25`, containing
+  `40ebb7ba` (custom-header validation), `fcc001a7` (header-prefix encoders),
+  and `05448c25` (heartbeat-tolerant admin test). Default and all-feature
+  workspace tests passed with Rust 1.85.0 in `rust:1.85.0-bookworm` using
+  `docker run --init` and the offline cargo cache. Workspace all-target,
+  all-feature strict Clippy, formatting, and diff checks passed. Maven
+  `verify` passed on host OpenJDK 27, including 37 scenarios, Java fixture
+  drift checks, and Java/Rust cross-decodes. The differential comparator
+  self-test and 37-row manifest validation passed; deterministic race/leak
+  smoke passed 16 cases × 3, and fuzz smoke passed 105 frame seeds, 11 message
+  seeds, and 1,856 mutations. Release examples and the offline benchmark ran
+  successfully. Locked workspace metadata, metadata/license/dependency checks,
+  seven publishable-package file lists, and four Asia/Taipei Unique ID tests
+  passed. Detailed commands and benchmark observations are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T141001Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T141001Z.rlog).
+- These code changes close only the custom-header validation and Remoting
+  header-prefix API slices. Broad P18-V01 source/API/settings/input/error/flow
+  and reverse-export reconciliation remains open. Current-revision GitHub
+  Ubuntu/native Windows evidence for P18-V04 is still absent. The Phase 19
+  manifest has 37 cases; 30 local Broker/Docker scenarios and required
+  two-Broker/TLS/ACL profiles remain automatic work. Release version and
+  registry dependency-resolution checks remain pending before publication.
+  Owner-specific MAN checks remain separate final validation. No plan files
+  changed; no push, tag, publication, or deployment occurred.
