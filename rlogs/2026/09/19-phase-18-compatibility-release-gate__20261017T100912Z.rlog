@@ -1,0 +1,55 @@
+# Phase 18 Remoting RPC-latency metrics continuation — 2026-10-17T10:09:12Z
+
+- Repository: `/Users/bruce.tsai/Projects/trio/rocketmq-classic`.
+- Branch: `phase/19-phase-18-compatibility-release-gate`.
+- Java oracle: RocketMQ 5.5.1 source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`; inspected pinned source read-only.
+- Scope: add the Remoting metrics manager and close request/response code-description
+  mapping needed by inbound response metrics. The Phase 18 plan was not changed.
+
+## Changes
+
+- Added a per-client `RemotingMetricsManager` with a Rust histogram adapter,
+  Java-compatible view boundaries, typed attribute keys, result mapping, and
+  optional base-attribute supplier. A missing supplier leaves base labels empty;
+  a supplied builder receives `protocol_type=remoting`.
+- Added request/response code-description mappings for 166 request and 68
+  response codes, with decimal-string fallback for unknown values.
+- Connected inbound response handling to record oneway, write success/failure,
+  cancellation, long-polling state, and executor-submit failure observations.
+- Added the invoked Java fixture and Rust API/metrics differentials, plus a
+  loopback transport regression for successful, unsupported, and oneway requests.
+- Java's OpenTelemetry `LongHistogram` is represented by a Rust adapter trait;
+  Java exceptions and Netty future objects are not recreated.
+
+## Validation
+
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: exit 0;
+  115 unit, 8 codec, 1 fuzz regression, 7 security, 107 transport, and 15
+  doctests passed.
+- The initial strict Clippy run found `await_holding_lock` in the new transport
+  test. The observation guard was scoped to a block. The targeted test
+  `cargo test -p rocketmq-classic-remoting --all-features --locked --test
+  transport p3_v03_inbound_dispatch_and_reordered_parallel_responses` then
+  passed, followed by strict Clippy:
+  `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` (exit 0).
+- `cargo fmt --all -- --check` and `git diff --check`: exit 0.
+- Pinned Java fixture verification and cross-decode gate:
+  `TERM=dumb JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=8 mvn -o -B -q
+  -Djline.terminal=jline.UnsupportedTerminal -Dstyle.color=never -f
+  compat/java-reference/pom.xml verify` (exit 0; 37 scenarios, fixture drift,
+  and Java/Rust header/body cross-decodes passed).
+
+## Commit and remaining work
+
+- Code/test/fixture commit: `0d72386c feat(remoting): record inbound RPC latency metrics`.
+- The release-checklist update and this log are prepared for a separate docs
+  commit.
+- This closes the named metrics and code-description slice only. Broad P18-V01
+  bidirectional source/API/settings/input/error/control-flow and reverse-export
+  reconciliation remains open. Multi-entry `RemotingCommand.toString()` order
+  and custom-header representation details also remain partial; the final
+  full-workspace P18-V02 gate, current-revision CI, P18-V03/V04, and Phase 19
+  locally runnable Broker/Docker scenarios remain outstanding. Owner-only
+  MAN-01–05 checks remain reserved for final manual validation.
