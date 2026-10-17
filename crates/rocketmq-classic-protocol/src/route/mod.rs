@@ -4274,6 +4274,14 @@ mod tests {
                         "WriteEnumUsingOrdinal",
                     ),
                     (
+                        JavaJsonWriterFeature::WriteEnumsUsingName,
+                        "WriteEnumsUsingName",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriteEnumUsingToString,
+                        "WriteEnumUsingToString",
+                    ),
+                    (
                         JavaJsonWriterFeature::NotWriteDefaultValue,
                         "NotWriteDefaultValue",
                     ),

@@ -6,7 +6,8 @@
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
-/// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
+/// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `WriteEnumsUsingName`,
+/// `WriteEnumUsingToString`, `UseSingleQuotes`, `UnquoteFieldName`,
 /// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
 /// `BrowserSecure`, `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
 /// `NotWriteHashMapArrayListClassName`, `NotWriteNumberClassName`, and
@@ -15,6 +16,9 @@
 /// `WriteBigDecimalAsPlain`, and `WriteFloatSpecialAsString`.
 /// `OptimizedForAscii` is output-preserving because the Rust writer already
 /// emits UTF-8 JSON.
+/// `WriteEnumsUsingName` and `WriteEnumUsingToString` preserve output for the
+/// mapped DTO graph: the invoked enum values already serialize as their Java
+/// names, and their `toString()` values match those names.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
@@ -211,6 +215,8 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNonStringKeyAsString
                 | Self::WriteLongAsString
                 | Self::WriteEnumUsingOrdinal
+                | Self::WriteEnumsUsingName
+                | Self::WriteEnumUsingToString
                 | Self::BrowserCompatible
                 | Self::OptimizedForAscii
                 | Self::WriteNameAsSymbol

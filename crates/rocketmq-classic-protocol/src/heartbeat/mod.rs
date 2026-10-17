@@ -2748,6 +2748,14 @@ mod tests {
                 ),
                 (crate::JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
                 (
+                    crate::JavaJsonWriterFeature::WriteEnumsUsingName,
+                    "WriteEnumsUsingName",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::WriteEnumUsingToString,
+                    "WriteEnumUsingToString",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),

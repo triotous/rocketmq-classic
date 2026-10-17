@@ -5861,6 +5861,14 @@ mod tests {
                     "WriteFloatSpecialAsString",
                 ),
                 (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
+                (
+                    JavaJsonWriterFeature::WriteEnumsUsingName,
+                    "WriteEnumsUsingName",
+                ),
+                (
+                    JavaJsonWriterFeature::WriteEnumUsingToString,
+                    "WriteEnumUsingToString",
+                ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -6985,6 +6993,14 @@ mod tests {
                     "WriteFloatSpecialAsString",
                 ),
                 (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
+                (
+                    JavaJsonWriterFeature::WriteEnumsUsingName,
+                    "WriteEnumsUsingName",
+                ),
+                (
+                    JavaJsonWriterFeature::WriteEnumUsingToString,
+                    "WriteEnumUsingToString",
+                ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7465,6 +7481,14 @@ mod tests {
                         (
                             JavaJsonWriterFeature::WriteEnumUsingOrdinal,
                             "WriteEnumUsingOrdinal",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteEnumsUsingName,
+                            "WriteEnumsUsingName",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteEnumUsingToString,
+                            "WriteEnumUsingToString",
                         ),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
