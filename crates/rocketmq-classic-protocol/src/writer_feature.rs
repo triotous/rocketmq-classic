@@ -6,7 +6,7 @@
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
-/// `WriteLongAsString`, `UseSingleQuotes`, `UnquoteFieldName`,
+/// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
 /// `IgnoreNoneSerializable`, and `ErrorOnNoneSerializable`; other variants
 /// return an explicit unsupported-feature error until their behavior is mapped.
 #[repr(usize)]
@@ -192,6 +192,7 @@ impl JavaJsonWriterFeature {
                 | Self::NotWriteDefaultValue
                 | Self::WriteNonStringKeyAsString
                 | Self::WriteLongAsString
+                | Self::WriteEnumUsingOrdinal
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable
@@ -228,5 +229,57 @@ mod tests {
             crate::route::escape_none_ascii_json(&output),
             r#"'a\'b"c\\d\n\u6F22<>()'"#
         );
+    }
+
+    #[test]
+    fn enum_ordinal_writer_covers_protocol_enum_fields() {
+        let mut value = serde_json::json!([
+            {"properties": {"mode": "POP", "action": "PARTIAL_ADD"}},
+            {"messageRequestModeMap": {"topic": {"group": {"mode": "POP"}}}},
+            {"action": "PARTIAL_ADD"},
+            {"action": "PARTIAL_REMOVE"},
+            {"action": "COMPLETE_ADD"},
+            {"action": "COMPLETE_REMOVE"},
+            {"consumeFromWhere": "CONSUME_FROM_LAST_OFFSET"},
+            {"consumeFromWhere": "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST"},
+            {"consumeFromWhere": "CONSUME_FROM_MIN_OFFSET"},
+            {"consumeFromWhere": "CONSUME_FROM_MAX_OFFSET"},
+            {"consumeFromWhere": "CONSUME_FROM_FIRST_OFFSET"},
+            {"consumeFromWhere": "CONSUME_FROM_TIMESTAMP"},
+            {"consumeResult": "CR_SUCCESS"},
+            {"consumeResult": "CR_LATER"},
+            {"consumeResult": "CR_ROLLBACK"},
+            {"consumeResult": "CR_COMMIT"},
+            {"consumeResult": "CR_THROW_EXCEPTION"},
+            {"consumeResult": "CR_RETURN_NULL"},
+            {"consumeType": "CONSUME_ACTIVELY"},
+            {"consumeType": "CONSUME_PASSIVELY"},
+            {"consumeType": "CONSUME_POP"},
+            {"messageModel": "BROADCASTING"},
+            {"messageModel": "CLUSTERING"},
+            {"messageModel": "LITE_SELECTIVE"},
+            {"mode": "PULL"},
+            {"mode": "POP"},
+            {"optionType": "POLICY"},
+            {"optionType": "OFFSET"},
+            {"optionType": "TAIL_N"},
+            {"optionType": "TIMESTAMP"},
+        ]);
+        crate::route::apply_java_json_writer_value_features(&mut value, false, false, true);
+        let expected = serde_json::json!([
+            {"properties": {"mode": "POP", "action": "PARTIAL_ADD"}},
+            {"messageRequestModeMap": {"topic": {"group": {"mode": 1}}}},
+            {"action": 0}, {"action": 1}, {"action": 2}, {"action": 3},
+            {"consumeFromWhere": 0}, {"consumeFromWhere": 1},
+            {"consumeFromWhere": 2}, {"consumeFromWhere": 3},
+            {"consumeFromWhere": 4}, {"consumeFromWhere": 5},
+            {"consumeResult": 0}, {"consumeResult": 1}, {"consumeResult": 2},
+            {"consumeResult": 3}, {"consumeResult": 4}, {"consumeResult": 5},
+            {"consumeType": 0}, {"consumeType": 1}, {"consumeType": 2},
+            {"messageModel": 0}, {"messageModel": 1}, {"messageModel": 2},
+            {"mode": 0}, {"mode": 1},
+            {"optionType": 0}, {"optionType": 1}, {"optionType": 2}, {"optionType": 3},
+        ]);
+        assert_eq!(value, expected);
     }
 }

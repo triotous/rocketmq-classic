@@ -4871,12 +4871,14 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         write_non_string_values_as_strings: features
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         write_boolean_as_number: features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
+        write_enum_using_ordinal: features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
         ..JavaJsonWriterValueFeatures::default()
     };
     crate::route::apply_java_json_writer_value_features(
         &mut value,
         value_features.write_non_string_values_as_strings,
         value_features.write_boolean_as_number,
+        value_features.write_enum_using_ordinal,
     );
     if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
         crate::route::omit_default_writer_values(&mut value);
@@ -4908,6 +4910,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
 struct JavaJsonWriterValueFeatures {
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
+    write_enum_using_ordinal: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
 }
@@ -4953,6 +4956,7 @@ fn write_java_remoting_body_json(
                         queue_key,
                         value_features.write_non_string_values_as_strings,
                         value_features.write_boolean_as_number,
+                        value_features.write_enum_using_ordinal,
                     );
                 }
                 if let Some(queue_key) = queue_key {
@@ -7258,6 +7262,10 @@ mod tests {
                             "WriteNonStringKeyAsString",
                         ),
                         (JavaJsonWriterFeature::WriteLongAsString, "WriteLongAsString"),
+                        (
+                            JavaJsonWriterFeature::WriteEnumUsingOrdinal,
+                            "WriteEnumUsingOrdinal",
+                        ),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
                             "NotWriteDefaultValue",

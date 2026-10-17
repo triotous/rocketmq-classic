@@ -94,6 +94,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         &mut value,
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
+        features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
     );
     if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
         omit_default_writer_values(&mut value);
@@ -286,6 +287,25 @@ pub(crate) fn apply_java_json_writer_value_features(
     value: &mut serde_json::Value,
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
+    write_enum_using_ordinal: bool,
+) {
+    apply_java_json_writer_value_features_inner(
+        value,
+        write_non_string_values_as_strings,
+        write_boolean_as_number,
+        write_enum_using_ordinal,
+        false,
+        false,
+    );
+}
+
+fn apply_java_json_writer_value_features_inner(
+    value: &mut serde_json::Value,
+    write_non_string_values_as_strings: bool,
+    write_boolean_as_number: bool,
+    write_enum_using_ordinal: bool,
+    object_is_map: bool,
+    map_values_are_maps: bool,
 ) {
     match value {
         serde_json::Value::Bool(boolean) => {
@@ -306,24 +326,98 @@ pub(crate) fn apply_java_json_writer_value_features(
         }
         serde_json::Value::Array(values) => {
             for value in values {
-                apply_java_json_writer_value_features(
+                apply_java_json_writer_value_features_inner(
                     value,
                     write_non_string_values_as_strings,
                     write_boolean_as_number,
+                    write_enum_using_ordinal,
+                    false,
+                    false,
                 );
             }
         }
         serde_json::Value::Object(fields) => {
-            for value in fields.values_mut() {
-                apply_java_json_writer_value_features(
+            for (name, value) in fields.iter_mut() {
+                if write_enum_using_ordinal && !object_is_map {
+                    if let Some(ordinal) = java_enum_ordinal(name, value) {
+                        *value = serde_json::Value::Number(serde_json::Number::from(ordinal));
+                    }
+                }
+                let child_is_map = if object_is_map {
+                    map_values_are_maps
+                } else {
+                    is_java_map_property(name)
+                };
+                let child_map_values_are_maps = !object_is_map && name == "messageRequestModeMap";
+                apply_java_json_writer_value_features_inner(
                     value,
                     write_non_string_values_as_strings,
                     write_boolean_as_number,
+                    write_enum_using_ordinal,
+                    child_is_map,
+                    child_map_values_are_maps,
                 );
             }
         }
         serde_json::Value::Null | serde_json::Value::String(_) => {}
     }
+}
+
+fn java_enum_ordinal(field_name: &str, value: &serde_json::Value) -> Option<i64> {
+    let value = value.as_str()?;
+    let ordinal = match field_name {
+        "action" => match value {
+            "PARTIAL_ADD" => 0,
+            "PARTIAL_REMOVE" => 1,
+            "COMPLETE_ADD" => 2,
+            "COMPLETE_REMOVE" => 3,
+            _ => return None,
+        },
+        "consumeFromWhere" => match value {
+            "CONSUME_FROM_LAST_OFFSET" => 0,
+            "CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST" => 1,
+            "CONSUME_FROM_MIN_OFFSET" => 2,
+            "CONSUME_FROM_MAX_OFFSET" => 3,
+            "CONSUME_FROM_FIRST_OFFSET" => 4,
+            "CONSUME_FROM_TIMESTAMP" => 5,
+            _ => return None,
+        },
+        "consumeResult" => match value {
+            "CR_SUCCESS" => 0,
+            "CR_LATER" => 1,
+            "CR_ROLLBACK" => 2,
+            "CR_COMMIT" => 3,
+            "CR_THROW_EXCEPTION" => 4,
+            "CR_RETURN_NULL" => 5,
+            _ => return None,
+        },
+        "consumeType" => match value {
+            "CONSUME_ACTIVELY" => 0,
+            "CONSUME_PASSIVELY" => 1,
+            "CONSUME_POP" => 2,
+            _ => return None,
+        },
+        "messageModel" => match value {
+            "BROADCASTING" => 0,
+            "CLUSTERING" => 1,
+            "LITE_SELECTIVE" => 2,
+            _ => return None,
+        },
+        "mode" => match value {
+            "PULL" => 0,
+            "POP" => 1,
+            _ => return None,
+        },
+        "optionType" => match value {
+            "POLICY" => 0,
+            "OFFSET" => 1,
+            "TAIL_N" => 2,
+            "TIMESTAMP" => 3,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(ordinal)
 }
 
 pub(crate) fn apply_java_json_long_as_string(value: &mut serde_json::Value) {
@@ -471,7 +565,13 @@ fn is_java_unquoted_field_name(value: &str) -> bool {
 pub(crate) fn is_java_enum_field(name: &str) -> bool {
     matches!(
         name,
-        "consumeFromWhere" | "consumeResult" | "consumeType" | "messageModel" | "mode"
+        "action"
+            | "consumeFromWhere"
+            | "consumeResult"
+            | "consumeType"
+            | "messageModel"
+            | "mode"
+            | "optionType"
     )
 }
 
@@ -4099,6 +4199,10 @@ mod tests {
                         "WriteNonStringKeyAsString",
                     ),
                     (JavaJsonWriterFeature::WriteLongAsString, "WriteLongAsString"),
+                    (
+                        JavaJsonWriterFeature::WriteEnumUsingOrdinal,
+                        "WriteEnumUsingOrdinal",
+                    ),
                     (
                         JavaJsonWriterFeature::NotWriteDefaultValue,
                         "NotWriteDefaultValue",

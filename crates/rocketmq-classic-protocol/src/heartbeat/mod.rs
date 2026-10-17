@@ -2811,6 +2811,37 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_writer_enum_ordinal_uses_java_consumer_enum_ordinals() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
+                .unwrap();
+        for case in fixture["heartbeatSerializationMethodCases"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let value = HeartbeatData::java_from_json(case["rawInput"].as_str().unwrap()).unwrap();
+            let mut expected: serde_json::Value =
+                serde_json::from_str(case["instanceEncodedJson"].as_str().unwrap()).unwrap();
+            if case["case"] == "populated" {
+                expected["consumerDataSet"][0]["consumeType"] = serde_json::json!(0);
+                expected["consumerDataSet"][0]["messageModel"] = serde_json::json!(1);
+                expected["consumerDataSet"][0]["consumeFromWhere"] = serde_json::json!(0);
+            }
+            let expected = serde_json::to_string(&expected).unwrap();
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[
+                        crate::JavaJsonWriterFeature::WriteEnumUsingOrdinal,
+                    ])
+                    .unwrap(),
+                expected.as_bytes(),
+                "{} WriteEnumUsingOrdinal",
+                case["case"]
+            );
+        }
+    }
+
+    #[test]
     fn heartbeat_owner_fields_match_invoked_java_nulls_and_defaults() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/heartbeat.json"))
