@@ -53,3 +53,41 @@
   full-workspace P18-V02 gate, current-revision CI, P18-V03/V04, and Phase 19
   locally runnable Broker/Docker scenarios remain outstanding. Owner-only
   MAN-01–05 checks remain reserved for final manual validation.
+
+## Current-revision server-free P18-V02 gate — `bdf56557`
+
+- `cargo test --workspace --locked`: exit 0, including all workspace unit,
+  integration and documentation tests.
+- `cargo test --workspace --all-features --locked`: exit 0, including the
+  Remoting metrics and code-description fixture tests.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D
+  warnings`: exit 0.
+- `cargo fmt --all -- --check`, `git diff --check`, and
+  `python3 tests/differential/compare.py --self-test`: exit 0.
+- `tests/differential/run.sh --list`: exit 0; all 37 scenario rows validated.
+- `bash tests/stress/run-offline-smoke.sh`: exit 0; 16 deterministic race/leak
+  cases each passed three repetitions.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`:
+  exit 0; 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame
+  decodes, and 113 message decodes.
+- `cargo build -p rocketmq-classic --examples --release --locked` and
+  `cargo bench --workspace --no-run --locked`: exit 0.
+- `cargo bench -p rocketmq-classic --bench offline --locked`: completed on
+  Apple M5 Max (18 logical CPUs), macOS/aarch64, rustc 1.85.0, release profile.
+  Observed ns/iteration and allocation bytes/iteration: frame encode/decode
+  1,911.1 / 4,612; Zstd message decode 1,332.5 / 197,493; Producer send-request
+  construction 1,372.4 / 3,665; 128-entry route address lookup 19.4 / 0; loopback
+  pending-request completion 66,826.2 / 9,338. These are observations, not
+  acceptance thresholds.
+- `cargo metadata --locked --format-version 1 --no-deps`,
+  `python3 scripts/check-workspace-metadata.py`, and
+  `cargo package --workspace --list --locked --allow-dirty`: exit 0. The package
+  list command warned that the unpublished integration runner has no
+  description; all seven product packages have `LICENSE` and `NOTICE`.
+- Maven offline verify exited 0: 37 scenarios, fixture-drift checks, Java/Rust
+  cross-decodes, and pinned API/input probes passed. Maven reported existing
+  JDK `Unsafe` and reflective-final-field warnings.
+- This closes the server-free P18-V02 rerun on `bdf56557`. Any later source
+  change requires another current-revision run. P18-V01, platform CI/P18-V04,
+  P18-V03 registry resolution, and locally executable Phase 19 Broker/Docker
+  scenarios remain open. No push, tag, or publication occurred.

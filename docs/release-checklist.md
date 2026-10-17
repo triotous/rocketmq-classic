@@ -3354,3 +3354,17 @@ owner-specific checks belong in the manual handoff.
   broad P18-V01, and final-revision full-workspace P18-V02 remain open. Execution
   log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog).
+- [x] Run the current-revision server-free P18-V02 gate on `bdf56557` after
+  Remoting metrics: default and all-feature workspace tests, workspace
+  all-target/all-feature strict Clippy, format/diff, pinned Maven verify (37
+  scenarios, fixture drift and cross-decodes), comparator self-test, 37-row
+  scenario manifest, race/leak smoke (16 cases × 3), bounded fuzz smoke,
+  release examples, workspace bench compilation and benchmark, locked Cargo
+  metadata, metadata/license/dependency-direction checks, and workspace package
+  file lists all passed. This is current-revision evidence; rerun the gate after
+  any later source change. The integration test package remains unpublished;
+  Cargo emitted a non-blocking missing-description warning for it during the
+  package-list command. Broad P18-V01, current-revision platform CI/P18-V04,
+  P18-V03 registry resolution, and locally runnable Phase 19 Broker/Docker
+  scenarios remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T100912Z.rlog).
