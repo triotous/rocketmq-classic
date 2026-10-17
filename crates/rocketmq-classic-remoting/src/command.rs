@@ -193,6 +193,7 @@ pub struct RemotingCommand {
     pub ext_fields: Option<BTreeMap<String, String>>,
     pub body: Option<Vec<u8>>,
     pub serialization: SerializeType,
+    pub suspended: bool,
 }
 
 impl Default for RemotingCommand {
@@ -207,6 +208,7 @@ impl Default for RemotingCommand {
             ext_fields: None,
             body: None,
             serialization: SerializeType::Json,
+            suspended: false,
         }
     }
 }
@@ -237,6 +239,14 @@ impl RemotingCommand {
 
     pub fn mark_oneway(&mut self) {
         self.flag |= Self::ONEWAY_BIT;
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.suspended
+    }
+
+    pub fn set_suspended(&mut self, suspended: bool) {
+        self.suspended = suspended;
     }
 }
 
@@ -417,6 +427,33 @@ mod tests {
                 "{case}"
             );
         }
+
+        let suspended_cases = cases["commandSuspended"].as_array().unwrap();
+        let mut command = RemotingCommand::default();
+        assert_eq!(suspended_cases.len(), 3);
+        for (case, next) in suspended_cases.iter().zip([None, Some(true), Some(false)]) {
+            if let Some(value) = next {
+                command.set_suspended(value);
+            }
+            assert_eq!(
+                command.is_suspended(),
+                case["suspended"].as_bool().unwrap(),
+                "{case}"
+            );
+        }
+
+        command.set_suspended(true);
+        let encoded = crate::codec::json_header::encode(&command).unwrap();
+        assert!(
+            !String::from_utf8(encoded.clone())
+                .unwrap()
+                .contains("suspended")
+        );
+        assert!(
+            !crate::codec::json_header::decode(&encoded)
+                .unwrap()
+                .is_suspended()
+        );
     }
 
     #[test]

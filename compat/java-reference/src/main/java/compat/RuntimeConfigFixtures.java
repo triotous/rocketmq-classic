@@ -3756,6 +3756,16 @@ public final class RuntimeConfigFixtures {
         flaggedRequest.markResponseType();
         addCommandFlagCase(commandFlags, "preservesUnknownBits", flaggedRequest);
         result.put("commandFlags", commandFlags);
+
+        List<Object> commandSuspended = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.RemotingCommand suspendedRequest =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(1, null);
+        addCommandSuspendedCase(commandSuspended, "default", suspendedRequest);
+        suspendedRequest.setSuspended(true);
+        addCommandSuspendedCase(commandSuspended, "setTrue", suspendedRequest);
+        suspendedRequest.setSuspended(false);
+        addCommandSuspendedCase(commandSuspended, "setFalse", suspendedRequest);
+        result.put("commandSuspended", commandSuspended);
         return result;
     }
 
@@ -3769,6 +3779,16 @@ public final class RuntimeConfigFixtures {
         item.put("type", command.getType().name());
         item.put("isOneway", command.isOnewayRPC());
         item.put("isResponse", command.isResponseType());
+        cases.add(item);
+    }
+
+    private static void addCommandSuspendedCase(
+        List<Object> cases, String name,
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command
+    ) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("case", name);
+        item.put("suspended", command.isSuspended());
         cases.add(item);
     }
 
