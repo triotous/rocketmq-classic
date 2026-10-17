@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::serde_fastjson;
 use crate::{JavaJsonWriterFeature, SharedValue};
@@ -112,6 +112,15 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
         omit_java_non_field_getter_properties(&mut value);
     }
+    let mut bean_to_array_maps = HashMap::new();
+    if features.contains(&JavaJsonWriterFeature::BeanToArray) {
+        apply_java_bean_to_array::<T>(
+            &mut value,
+            &mut bean_to_array_maps,
+            features.contains(&JavaJsonWriterFeature::WriteEnumsUsingName)
+                || features.contains(&JavaJsonWriterFeature::WriteEnumUsingToString),
+        )?;
+    }
     let mut output = String::new();
     let writer_options = JavaRouteWriterOptions {
         unquote_numeric_map_keys: !features
@@ -124,7 +133,13 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
         browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
     };
-    write_java_route_json(&value, None, 0, indent, writer_options, &mut output)?;
+    let mut writer = JavaRouteWriter {
+        indent,
+        writer_options,
+        map_fields: &bean_to_array_maps,
+        path: Vec::new(),
+    };
+    write_java_route_json(&value, None, 0, &mut writer, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
         Ok(escape_none_ascii_json(&output))
     } else {
@@ -209,6 +224,357 @@ pub(crate) fn is_java_map_property(name: &str) -> bool {
             | "topicQueueMappingByBroker"
             | "userConsumerInfo"
     )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JavaBeanKind {
+    BatchAck,
+    BatchAckMessageRequestBody,
+    BrokerData,
+    CheckClientRequestBody,
+    ConsumeMessageDirectlyResult,
+    ConsumerData,
+    GetConsumerListByGroupResponseBody,
+    GetConsumerStatusBody,
+    HeartbeatData,
+    LiteSubscriptionCtlRequestBody,
+    LiteSubscriptionDto,
+    LockBatchRequestBody,
+    LockBatchResponseBody,
+    MessageQueue,
+    MessageQueueAssignment,
+    MessageRequestModeSerializeWrapper,
+    QueryAssignmentRequestBody,
+    QueryAssignmentResponseBody,
+    QueryConsumeTimeSpanBody,
+    QueueData,
+    QueueTimeSpan,
+    ResetOffsetBody,
+    SetMessageRequestModeRequestBody,
+    SubscriptionData,
+    TopicQueueMappingInfo,
+    TopicRouteData,
+    UnlockBatchRequestBody,
+    ProducerData,
+}
+
+impl JavaBeanKind {
+    fn field_names(self) -> &'static [&'static str] {
+        match self {
+            Self::BatchAck => &["b", "c", "it", "pt", "q", "r", "rq", "so", "t"],
+            Self::BatchAckMessageRequestBody => &["acks", "brokerName"],
+            Self::BrokerData => &[
+                "brokerAddrs",
+                "brokerName",
+                "cluster",
+                "enableActingMaster",
+                "zoneName",
+            ],
+            Self::CheckClientRequestBody => &["clientId", "group", "namespace", "subscriptionData"],
+            Self::ConsumeMessageDirectlyResult => &[
+                "autoCommit",
+                "consumeResult",
+                "order",
+                "remark",
+                "spentTimeMills",
+            ],
+            Self::ConsumerData => &[
+                "consumeFromWhere",
+                "consumeType",
+                "groupName",
+                "messageModel",
+                "subscriptionDataSet",
+                "unitMode",
+            ],
+            Self::GetConsumerListByGroupResponseBody => &["consumerIdList"],
+            Self::GetConsumerStatusBody => &["consumerTable", "messageQueueTable"],
+            Self::HeartbeatData => &[
+                "clientID",
+                "consumerDataSet",
+                "heartbeatFingerprint",
+                "producerDataSet",
+                "withoutSub",
+            ],
+            Self::LiteSubscriptionCtlRequestBody => &["subscriptionSet"],
+            Self::LiteSubscriptionDto => &[
+                "action",
+                "clientId",
+                "group",
+                "liteTopicSet",
+                "offsetOption",
+                "topic",
+                "version",
+            ],
+            Self::LockBatchRequestBody | Self::UnlockBatchRequestBody => {
+                &["clientId", "consumerGroup", "mqSet", "onlyThisBroker"]
+            }
+            Self::LockBatchResponseBody => &["lockOKMQSet"],
+            Self::MessageQueue => &["brokerName", "queueId", "topic"],
+            Self::MessageQueueAssignment => &["attachments", "messageQueue", "mode"],
+            Self::MessageRequestModeSerializeWrapper => &["messageRequestModeMap"],
+            Self::QueryAssignmentRequestBody => &[
+                "clientId",
+                "consumerGroup",
+                "messageModel",
+                "strategyName",
+                "topic",
+            ],
+            Self::QueryAssignmentResponseBody => &["messageQueueAssignments"],
+            Self::QueryConsumeTimeSpanBody => &["consumeTimeSpanSet"],
+            Self::QueueData => &[
+                "brokerName",
+                "perm",
+                "readQueueNums",
+                "topicSysFlag",
+                "writeQueueNums",
+            ],
+            Self::QueueTimeSpan => &[
+                "consumeTimeStamp",
+                "consumeTimeStampStr",
+                "delayTime",
+                "maxTimeStamp",
+                "maxTimeStampStr",
+                "messageQueue",
+                "minTimeStamp",
+                "minTimeStampStr",
+            ],
+            Self::ResetOffsetBody => &["offsetTable"],
+            Self::SetMessageRequestModeRequestBody => {
+                &["consumerGroup", "mode", "popShareQueueNum", "topic"]
+            }
+            Self::SubscriptionData => &[
+                "classFilterMode",
+                "codeSet",
+                "expressionType",
+                "subString",
+                "subVersion",
+                "tagsSet",
+                "topic",
+            ],
+            Self::TopicQueueMappingInfo => &[
+                "bname",
+                "currIdMap",
+                "dirty",
+                "epoch",
+                "scope",
+                "topic",
+                "totalQueues",
+            ],
+            Self::TopicRouteData => &[
+                "brokerDatas",
+                "filterServerTable",
+                "orderTopicConf",
+                "queueDatas",
+                "topicQueueMappingByBroker",
+            ],
+            Self::ProducerData => &["groupName"],
+        }
+    }
+
+    fn child_kind(self, field: &str) -> Option<Self> {
+        match (self, field) {
+            (Self::BatchAckMessageRequestBody, "acks") => Some(Self::BatchAck),
+            (Self::CheckClientRequestBody, "subscriptionData") => Some(Self::SubscriptionData),
+            (Self::ConsumerData, "subscriptionDataSet") => Some(Self::SubscriptionData),
+            (Self::HeartbeatData, "consumerDataSet") => Some(Self::ConsumerData),
+            (Self::HeartbeatData, "producerDataSet") => Some(Self::ProducerData),
+            (Self::LiteSubscriptionCtlRequestBody, "subscriptionSet") => {
+                Some(Self::LiteSubscriptionDto)
+            }
+            (Self::LockBatchRequestBody | Self::UnlockBatchRequestBody, "mqSet") => {
+                Some(Self::MessageQueue)
+            }
+            (Self::LockBatchResponseBody, "lockOKMQSet") => Some(Self::MessageQueue),
+            (Self::MessageQueueAssignment, "messageQueue") => Some(Self::MessageQueue),
+            (Self::QueueTimeSpan, "messageQueue") => Some(Self::MessageQueue),
+            (Self::QueryAssignmentResponseBody, "messageQueueAssignments") => {
+                Some(Self::MessageQueueAssignment)
+            }
+            (Self::QueryConsumeTimeSpanBody, "consumeTimeSpanSet") => Some(Self::QueueTimeSpan),
+            (Self::TopicRouteData, "brokerDatas") => Some(Self::BrokerData),
+            (Self::TopicRouteData, "queueDatas") => Some(Self::QueueData),
+            _ => None,
+        }
+    }
+
+    fn root_for_type_name(type_name: &str) -> Option<Self> {
+        let name = type_name.rsplit("::").next()?;
+        Some(match name {
+            "BatchAckMessageRequestBody" => Self::BatchAckMessageRequestBody,
+            "CheckClientRequestBody" => Self::CheckClientRequestBody,
+            "ConsumeMessageDirectlyResult" => Self::ConsumeMessageDirectlyResult,
+            "ConsumerListByGroupResponseBody" => Self::GetConsumerListByGroupResponseBody,
+            "GetConsumerStatusBody" => Self::GetConsumerStatusBody,
+            "HeartbeatData" => Self::HeartbeatData,
+            "LiteSubscriptionCtlRequestBody" => Self::LiteSubscriptionCtlRequestBody,
+            "LockBatchRequestBody" => Self::LockBatchRequestBody,
+            "LockBatchResponseBody" => Self::LockBatchResponseBody,
+            "MessageRequestModeSerializeWrapper" => Self::MessageRequestModeSerializeWrapper,
+            "QueryAssignmentRequestBody" => Self::QueryAssignmentRequestBody,
+            "QueryAssignmentResponseBody" => Self::QueryAssignmentResponseBody,
+            "QueryConsumeTimeSpanBody" => Self::QueryConsumeTimeSpanBody,
+            "ResetOffsetBody" => Self::ResetOffsetBody,
+            "SetMessageRequestModeRequestBody" => Self::SetMessageRequestModeRequestBody,
+            "TopicQueueMappingInfo" => Self::TopicQueueMappingInfo,
+            "TopicRouteData" => Self::TopicRouteData,
+            "UnlockBatchRequestBody" => Self::UnlockBatchRequestBody,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub(crate) enum JavaJsonPathSegment {
+    ArrayIndex(usize),
+    ObjectKey(String),
+}
+
+pub(crate) type BeanToArrayMapFields = HashMap<Vec<JavaJsonPathSegment>, &'static str>;
+
+pub(crate) fn apply_java_bean_to_array<T>(
+    value: &mut serde_json::Value,
+    map_fields: &mut BeanToArrayMapFields,
+    use_enum_names: bool,
+) -> Result<(), serde_json::Error> {
+    let kind = JavaBeanKind::root_for_type_name(std::any::type_name::<T>()).ok_or_else(|| {
+        <serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson BeanToArray has no DTO field schema for {}",
+            std::any::type_name::<T>()
+        ))
+    })?;
+    serialize_java_bean_as_array(value, kind, &mut Vec::new(), map_fields, use_enum_names);
+    Ok(())
+}
+
+fn serialize_java_bean_as_array(
+    value: &mut serde_json::Value,
+    kind: JavaBeanKind,
+    path: &mut Vec<JavaJsonPathSegment>,
+    map_fields: &mut BeanToArrayMapFields,
+    use_enum_names: bool,
+) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    let mut fields = std::mem::take(fields);
+    let mut values = Vec::with_capacity(kind.field_names().len());
+    for (index, &name) in kind.field_names().iter().enumerate() {
+        let mut value = fields.remove(name).unwrap_or(serde_json::Value::Null);
+        path.push(JavaJsonPathSegment::ArrayIndex(index));
+        if is_java_map_property(name) {
+            map_fields.insert(path.clone(), name);
+        }
+        if let Some(child_kind) = kind.child_kind(name) {
+            match &mut value {
+                serde_json::Value::Array(items) => {
+                    for (item_index, item) in items.iter_mut().enumerate() {
+                        path.push(JavaJsonPathSegment::ArrayIndex(item_index));
+                        serialize_java_bean_as_array(
+                            item,
+                            child_kind,
+                            path,
+                            map_fields,
+                            use_enum_names,
+                        );
+                        path.pop();
+                    }
+                }
+                _ => serialize_java_bean_as_array(
+                    &mut value,
+                    child_kind,
+                    path,
+                    map_fields,
+                    use_enum_names,
+                ),
+            }
+        } else if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
+            apply_java_bean_map_values(&mut value, path, map_fields, use_enum_names);
+        } else if kind == JavaBeanKind::GetConsumerStatusBody && name == "consumerTable" {
+            mark_nested_java_bean_map_values(&value, path, map_fields, "consumerTable");
+        } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
+            && name == "messageRequestModeMap"
+        {
+            if let Some(topics) = value.as_object_mut() {
+                for (topic, groups) in topics {
+                    path.push(JavaJsonPathSegment::ObjectKey(topic.clone()));
+                    if let Some(groups) = groups.as_object_mut() {
+                        map_fields.insert(path.clone(), "messageRequestModeMap");
+                        for (group, mode) in groups {
+                            path.push(JavaJsonPathSegment::ObjectKey(group.clone()));
+                            serialize_java_bean_as_array(
+                                mode,
+                                JavaBeanKind::SetMessageRequestModeRequestBody,
+                                path,
+                                map_fields,
+                                use_enum_names,
+                            );
+                            path.pop();
+                        }
+                    }
+                    path.pop();
+                }
+            }
+        }
+        if !use_enum_names {
+            if let Some(ordinal) = java_enum_ordinal(name, &value) {
+                value = serde_json::Value::Number(ordinal.into());
+            }
+        }
+        values.push(value);
+        path.pop();
+    }
+    *value = serde_json::Value::Array(values);
+}
+
+pub(crate) fn apply_java_message_queue_bean_to_array(
+    value: &mut serde_json::Value,
+    use_enum_names: bool,
+) {
+    serialize_java_bean_as_array(
+        value,
+        JavaBeanKind::MessageQueue,
+        &mut Vec::new(),
+        &mut HashMap::new(),
+        use_enum_names,
+    );
+}
+
+fn mark_nested_java_bean_map_values(
+    value: &serde_json::Value,
+    path: &mut Vec<JavaJsonPathSegment>,
+    map_fields: &mut BeanToArrayMapFields,
+    field_name: &'static str,
+) {
+    if let Some(entries) = value.as_object() {
+        for (key, value) in entries {
+            if value.is_object() {
+                path.push(JavaJsonPathSegment::ObjectKey(key.clone()));
+                map_fields.insert(path.clone(), field_name);
+                path.pop();
+            }
+        }
+    }
+}
+
+fn apply_java_bean_map_values(
+    value: &mut serde_json::Value,
+    path: &mut Vec<JavaJsonPathSegment>,
+    map_fields: &mut BeanToArrayMapFields,
+    use_enum_names: bool,
+) {
+    if let Some(entries) = value.as_object_mut() {
+        for (key, value) in entries {
+            path.push(JavaJsonPathSegment::ObjectKey(key.clone()));
+            serialize_java_bean_as_array(
+                value,
+                JavaBeanKind::TopicQueueMappingInfo,
+                path,
+                map_fields,
+                use_enum_names,
+            );
+            path.pop();
+        }
+    }
 }
 
 fn omit_default_writer_map_values(value: &mut serde_json::Value) {
@@ -705,14 +1071,23 @@ struct JavaRouteWriterOptions {
     browser_secure: bool,
 }
 
+struct JavaRouteWriter<'a> {
+    indent: Option<&'a str>,
+    writer_options: JavaRouteWriterOptions,
+    map_fields: &'a BeanToArrayMapFields,
+    path: Vec<JavaJsonPathSegment>,
+}
+
 fn write_java_route_json(
     value: &serde_json::Value,
     field_name: Option<&str>,
     depth: usize,
-    indent: Option<&str>,
-    writer_options: JavaRouteWriterOptions,
+    writer: &mut JavaRouteWriter<'_>,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
+    let indent = writer.indent;
+    let writer_options = writer.writer_options;
+    let field_name = writer.map_fields.get(&writer.path).copied().or(field_name);
     match value {
         serde_json::Value::Object(fields)
             if fields.is_empty() && (indent.is_none() || field_name.is_some()) =>
@@ -751,7 +1126,12 @@ fn write_java_route_json(
                     )?;
                 }
                 output.push(':');
-                write_java_route_json(value, Some(key), depth + 1, indent, writer_options, output)?;
+                writer
+                    .path
+                    .push(JavaJsonPathSegment::ObjectKey(key.clone()));
+                let result = write_java_route_json(value, Some(key), depth + 1, writer, output);
+                writer.path.pop();
+                result?;
                 if index + 1 != fields.len() {
                     output.push(',');
                 }
@@ -779,7 +1159,10 @@ fn write_java_route_json(
                     output.push('\n');
                     write_java_indent(output, depth + 1, indent);
                 }
-                write_java_route_json(value, None, depth + 1, indent, writer_options, output)?;
+                writer.path.push(JavaJsonPathSegment::ArrayIndex(index));
+                let result = write_java_route_json(value, None, depth + 1, writer, output);
+                writer.path.pop();
+                result?;
                 if index + 1 != values.len() {
                     output.push(',');
                 }
@@ -4366,6 +4749,7 @@ mod tests {
                         JavaJsonWriterFeature::IgnoreNonFieldGetter,
                         "IgnoreNonFieldGetter",
                     ),
+                    (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                     (
                         JavaJsonWriterFeature::WriteNullBooleanAsFalse,

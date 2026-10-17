@@ -37,12 +37,15 @@
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
 /// mapped API does not enable `WriteClassName`, and pinned Fastjson only uses
 /// three of these options while deciding whether to write type metadata; it
-/// has no writer callsite for `NotWriteSetClassName`. The remaining four
-/// options preserve output for the mapped RocketMQ DTO graph: it contains no
+/// has no writer callsite for `NotWriteSetClassName`. `BeanToArray` serializes
+/// mapped DTO beans in Java bean-property order, including typed bean values
+/// nested in collections and the route/request-mode maps, while preserving
+/// user JSON maps as maps. The remaining four options preserve output for the
+/// mapped RocketMQ DTO graph: it contains no
 /// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
 /// Pair field, Throwable field, or `java.util.Date` field. Other variants
-/// return an explicit unsupported-feature error until their behavior is
-/// mapped. The DTO graph also has no `BigDecimal`, `Float`, or `Double` fields,
+/// not yet mapped return an explicit unsupported-feature error. The DTO graph
+/// also has no `BigDecimal`, `Float`, or `Double` fields,
 /// so their number-format options preserve output.
 /// `FieldBased` also preserves output for the mapped RocketMQ DTO graph: the
 /// invoked Java fixtures produce the default bytes for every body, route, and
@@ -224,7 +227,8 @@ impl JavaJsonWriterFeature {
     pub(crate) const fn is_implemented(self) -> bool {
         matches!(
             self,
-            Self::FieldBased
+            Self::BeanToArray
+                | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat
                 | Self::PrettyFormatWith2Space

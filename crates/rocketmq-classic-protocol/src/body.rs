@@ -4874,6 +4874,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         write_enum_using_ordinal: features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
         browser_compatible: features.contains(&JavaJsonWriterFeature::BrowserCompatible),
         browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
+        bean_to_array: features.contains(&JavaJsonWriterFeature::BeanToArray),
+        use_enum_names: features.contains(&JavaJsonWriterFeature::WriteEnumsUsingName)
+            || features.contains(&JavaJsonWriterFeature::WriteEnumUsingToString),
         ..JavaJsonWriterValueFeatures::default()
     };
     crate::route::apply_java_json_writer_value_features(
@@ -4904,8 +4907,22 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         ignore_non_field_getter: features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter),
         ..value_features
     };
+    let mut bean_to_array_maps = std::collections::HashMap::new();
+    if value_features.bean_to_array {
+        crate::route::apply_java_bean_to_array::<T>(
+            &mut value,
+            &mut bean_to_array_maps,
+            value_features.use_enum_names,
+        )?;
+    }
     let mut output = String::new();
-    write_java_remoting_body_json(&value, None, 0, indent, false, value_features, &mut output)?;
+    let mut writer = JavaRemotingBodyWriter {
+        indent,
+        value_features,
+        map_fields: &bean_to_array_maps,
+        path: Vec::new(),
+    };
+    write_java_remoting_body_json(&value, None, 0, false, &mut writer, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
         Ok(crate::route::escape_none_ascii_json(&output))
     } else {
@@ -4923,17 +4940,33 @@ struct JavaJsonWriterValueFeatures {
     use_single_quotes: bool,
     unquote_field_names: bool,
     ignore_non_field_getter: bool,
+    bean_to_array: bool,
+    use_enum_names: bool,
+}
+
+struct JavaRemotingBodyWriter<'a> {
+    indent: Option<&'a str>,
+    value_features: JavaJsonWriterValueFeatures,
+    map_fields: &'a crate::route::BeanToArrayMapFields,
+    path: Vec<crate::route::JavaJsonPathSegment>,
 }
 
 fn write_java_remoting_body_json(
     value: &serde_json::Value,
     field_name: Option<&str>,
     depth: usize,
-    indent: Option<&str>,
     queue_table: bool,
-    value_features: JavaJsonWriterValueFeatures,
+    writer: &mut JavaRemotingBodyWriter<'_>,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
+    let indent = writer.indent;
+    let value_features = writer.value_features;
+    let field_name = writer.map_fields.get(&writer.path).copied().or(field_name);
+    let queue_table = queue_table
+        || matches!(
+            field_name,
+            Some("consumerTable" | "messageQueueTable" | "offsetTable")
+        );
     match value {
         serde_json::Value::Object(fields)
             if fields.is_empty() && (indent.is_none() || field_name.is_some()) =>
@@ -4969,6 +5002,12 @@ fn write_java_remoting_body_json(
                         value_features.write_enum_using_ordinal,
                         value_features.browser_compatible,
                     );
+                    if value_features.bean_to_array {
+                        crate::route::apply_java_message_queue_bean_to_array(
+                            queue_key,
+                            value_features.use_enum_names,
+                        );
+                    }
                 }
                 if let Some(queue_key) = queue_key {
                     if value_features.ignore_non_field_getter {
@@ -4980,18 +5019,25 @@ fn write_java_remoting_body_json(
                             output,
                         )?;
                     } else {
+                        let mut queue_key_writer = JavaRemotingBodyWriter {
+                            indent: writer.indent,
+                            value_features: JavaJsonWriterValueFeatures {
+                                use_single_quotes: value_features.use_single_quotes,
+                                unquote_field_names: value_features.unquote_field_names,
+                                browser_secure: value_features.browser_secure,
+                                bean_to_array: value_features.bean_to_array,
+                                use_enum_names: value_features.use_enum_names,
+                                ..JavaJsonWriterValueFeatures::default()
+                            },
+                            map_fields: writer.map_fields,
+                            path: writer.path.clone(),
+                        };
                         write_java_remoting_body_json(
                             &queue_key,
                             None,
                             depth + 1,
-                            indent,
                             false,
-                            JavaJsonWriterValueFeatures {
-                                use_single_quotes: value_features.use_single_quotes,
-                                unquote_field_names: value_features.unquote_field_names,
-                                browser_secure: value_features.browser_secure,
-                                ..JavaJsonWriterValueFeatures::default()
-                            },
+                            &mut queue_key_writer,
                             output,
                         )?;
                     }
@@ -5010,15 +5056,19 @@ fn write_java_remoting_body_json(
                 let child_is_queue_table =
                     matches!(key.as_str(), "messageQueueTable" | "offsetTable")
                         || field_name == Some("consumerTable");
-                write_java_remoting_body_json(
+                writer
+                    .path
+                    .push(crate::route::JavaJsonPathSegment::ObjectKey(key.clone()));
+                let result = write_java_remoting_body_json(
                     value,
                     Some(key),
                     depth + 1,
-                    indent,
                     child_is_queue_table,
-                    value_features,
+                    writer,
                     output,
-                )?;
+                );
+                writer.path.pop();
+                result?;
                 if index + 1 != fields.len() {
                     output.push(',');
                 }
@@ -5046,15 +5096,13 @@ fn write_java_remoting_body_json(
                     output.push('\n');
                     write_java_remoting_body_indent(output, depth + 1, indent);
                 }
-                write_java_remoting_body_json(
-                    value,
-                    None,
-                    depth + 1,
-                    indent,
-                    false,
-                    value_features,
-                    output,
-                )?;
+                writer
+                    .path
+                    .push(crate::route::JavaJsonPathSegment::ArrayIndex(index));
+                let result =
+                    write_java_remoting_body_json(value, None, depth + 1, false, writer, output);
+                writer.path.pop();
+                result?;
                 if index + 1 != values.len() {
                     output.push(',');
                 }
@@ -5892,6 +5940,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
                     JavaJsonWriterFeature::WriteNullBooleanAsFalse,
@@ -7043,6 +7092,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
                     JavaJsonWriterFeature::WriteNullBooleanAsFalse,
@@ -7551,6 +7601,7 @@ mod tests {
                             JavaJsonWriterFeature::IgnoreNonFieldGetter,
                             "IgnoreNonFieldGetter",
                         ),
+                        (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                         (
                             JavaJsonWriterFeature::WriteNullBooleanAsFalse,
