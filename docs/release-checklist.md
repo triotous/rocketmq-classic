@@ -3444,3 +3444,20 @@ owner-specific checks belong in the manual handoff.
   registry dependency-resolution checks remain pending before publication.
   Owner-specific MAN checks remain separate final validation. No plan files
   changed; no push, tag, publication, or deployment occurred.
+
+- P18-V01 RemotingCommand identity equality (`4eb99671`, 2026-10-17): the
+  pinned Java 5.5.1 fixture resolves `equals` and `hashCode` to `java.lang.Object`
+  and shows two distinct commands with the same visible state remain unequal
+  and occupy two `HashSet` entries. Rust no longer derives structural
+  `PartialEq`/`Eq`; a compile-fail doctest guards that API, and affected codec,
+  response-future, and transport assertions now compare wire fields or error
+  variants. Fixture SHA-256:
+  `a539bc204e2f2c03077af07dad37bc4a58c631ce2fa24d8e9e69f50999e4c9b0`.
+  Remoting tests pass (123 unit, 8 codec, 1 fuzz regression, 7 security, 107
+  transport, 17 doctests), default/all-feature workspace tests pass on
+  `rust:1.85.0-bookworm` with `--init`, strict workspace Clippy, formatting,
+  diff checks, and Maven `verify` (37 scenarios, fixture drift, and
+  cross-decodes) pass. The final P18-V02 gate remains subject to rerun after the
+  remaining Phase 18 implementation work. Broad P18-V01, current-revision
+  Ubuntu/Windows P18-V04 evidence, Phase 19 live scenarios, and pre-publication
+  checks remain open.

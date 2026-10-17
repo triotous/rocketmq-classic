@@ -74,3 +74,31 @@
 - The Phase 8 method matrix did not yet list the public `SharedMessageBody`/`SharedMessageProperties` operations or the `Message` shared constructor/accessor variants added to preserve Java caller/message aliasing. Added the Java API mapping, documented these as ownership representations of existing array/Map capabilities, and recorded their complete public method inventory.
 - PASS: `cargo test -p rocketmq-classic-common --all-features --locked --test message_decode message_public_api_matches_java_551_fixture` and the facade `phase_owned_public_types_are_available_from_the_facade_crate` test (1 each). Fixture SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
 - The broad Common/API/error/control-flow and reverse-export audit remains open. No implementation or Java checkout files were changed.
+
+## P18-V01 RemotingCommand identity equality — 2026-10-17
+
+- Pinned Java 5.5.1 reflection shows `RemotingCommand.equals(Object)` and
+  `hashCode()` are inherited from `java.lang.Object`. Two distinct commands
+  with equal visible state compare unequal and both remain in a `HashSet`.
+- Removed Rust structural `PartialEq`/`Eq` from `RemotingCommand`. Updated
+  response-future and codec regressions to inspect presence, errors, and wire
+  fields explicitly; updated transport assertions to match typed error
+  variants. Added a compile-fail doctest for the public trait boundary and a
+  Java-invoked identity fixture. Fixture SHA-256:
+  `a539bc204e2f2c03077af07dad37bc4a58c631ce2fa24d8e9e69f50999e4c9b0`.
+- Initial Remoting compilation found 17 test assertions depending on
+  `RemotingCommand` equality; they were converted to field/error assertions. The
+  first full-workspace compile then found one Core shutdown assertion and it
+  was converted to `matches!`. An initial Docker invocation used a login shell
+  that hid the image's Cargo path; using `sh -c` corrected the command.
+- PASS: `cargo test -p rocketmq-classic-remoting --all-features --locked`
+  (123 unit, 8 codec, 1 fuzz regression, 7 security, 107 transport, 17
+  doctests); full workspace default and all-feature tests on
+  `rust:1.85.0-bookworm` with `--init` and offline Cargo; strict workspace
+  all-target/all-feature Clippy; `cargo fmt --all -- --check`;
+  `git diff --check`; and `mvn -f compat/java-reference/pom.xml verify` (37
+  scenarios, Java fixture drift, Java/Rust cross-decodes).
+- Code/test/fixture commit: `4eb99671 fix(remoting): align command identity
+  semantics`. The crosswalk, requirement audit, release checklist, and this log
+  are pending a separate documentation commit. Broad P18-V01 remains open; the
+  final P18-V02 gate must be rerun after the remaining implementation changes.
