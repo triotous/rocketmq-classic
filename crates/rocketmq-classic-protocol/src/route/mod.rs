@@ -4336,6 +4336,10 @@ mod tests {
                         "WriteFloatSpecialAsString",
                     ),
                     (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
+                    (
+                        JavaJsonWriterFeature::IgnoreErrorGetter,
+                        "IgnoreErrorGetter",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

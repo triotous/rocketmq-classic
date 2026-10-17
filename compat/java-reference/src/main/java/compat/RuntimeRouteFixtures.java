@@ -3543,6 +3543,10 @@ public final class RuntimeRouteFixtures {
                 com.alibaba.fastjson2.JSONWriter.Feature.BrowserSecure,
                 com.alibaba.fastjson2.JSONWriter.Feature.UnquoteFieldName}),
             java.nio.charset.StandardCharsets.UTF_8));
+        overrides.put("IgnoreErrorGetter", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.IgnoreErrorGetter}),
+            java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
     }
 

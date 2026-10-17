@@ -2756,6 +2756,10 @@ mod tests {
                     "WriteEnumUsingToString",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::IgnoreErrorGetter,
+                    "IgnoreErrorGetter",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),

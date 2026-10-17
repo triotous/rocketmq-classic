@@ -7,8 +7,9 @@
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
 /// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `WriteEnumsUsingName`,
-/// `WriteEnumUsingToString`, `UseSingleQuotes`, `UnquoteFieldName`,
-/// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
+/// `WriteEnumUsingToString`, `IgnoreErrorGetter`, `UseSingleQuotes`,
+/// `UnquoteFieldName`, `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`,
+/// `BrowserCompatible`,
 /// `BrowserSecure`, `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
 /// `NotWriteHashMapArrayListClassName`, `NotWriteNumberClassName`, and
 /// `NotWriteSetClassName`, `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
@@ -19,6 +20,8 @@
 /// `WriteEnumsUsingName` and `WriteEnumUsingToString` preserve output for the
 /// mapped DTO graph: the invoked enum values already serialize as their Java
 /// names, and their `toString()` values match those names.
+/// `IgnoreErrorGetter` preserves output because these Rust DTO adapters read
+/// stored values directly and invoke no fallible Java-style getters.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
@@ -217,6 +220,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteEnumUsingOrdinal
                 | Self::WriteEnumsUsingName
                 | Self::WriteEnumUsingToString
+                | Self::IgnoreErrorGetter
                 | Self::BrowserCompatible
                 | Self::OptimizedForAscii
                 | Self::WriteNameAsSymbol
