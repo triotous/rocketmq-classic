@@ -1,0 +1,7 @@
+[ERROR] Failed to execute goal org.codehaus.mojo:exec-maven-plugin:3.5.0:java (default-cli) on project rocketmq-java-reference: An exception occurred while executing the Java class. usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE -> [Help 1]
+[ERROR]
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR]
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

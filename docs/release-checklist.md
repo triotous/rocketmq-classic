@@ -3128,3 +3128,44 @@ Before any publication:
   remain automatic Phase 19 work. No scenario is marked as passed. Evidence:
   [`integration-tests/README.md`](../integration-tests/README.md),
   [`rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog`](../rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog).
+
+## Phase 19 local progress (2026-10-17)
+
+- [x] Add an unpublished `rocketmq-classic-integration` workspace package,
+  Java 5.5.1 route probe, and fail-closed differential selector. Code commits:
+  `72266b44`, `0fa704f8`, `21ef9f4e`, and `adae9d1f` (Maven JDK 27 / Rust
+  1.85.0 gate and evidence path redaction).
+- [x] Run `ROUTE-001-get-existing-topic` against the pinned Apache RocketMQ
+  5.3.4 profile. Java and Rust returned the same four `broker-a` queue rows
+  (IDs 0–3); scenario-topic deletion and project-only Compose cleanup passed.
+  The runner marked only this manifest row `PASS`. Evidence:
+  [`20261017T051047Z`](compatibility/evidence/phase-19/ROUTE-001-get-existing-topic/20261017T051047Z/).
+- [x] After adding the integration package, rerun default and all-feature
+  workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
+  metadata/license checks, comparator self-test, and 37-row manifest
+  validation. Seven publishable packages each list `LICENSE` and `NOTICE`; the
+  integration runner remains `publish = false`.
+- [ ] Close broad P18-V01 Java source/API/settings/input/error/control-flow and
+  reverse-export audit. The 48/48 JSON writer-feature mapping is complete, but
+  it does not close the remaining API and behavior inventory.
+- [x] Rerun the remaining Phase 18 offline checks on the revision containing
+  the integration package: `bash tests/stress/run-offline-smoke.sh` passed 16
+  race/leak cases × 3; fuzz smoke passed 105 frame seeds, 11 message seeds,
+  1,856 mutations, 146 frame decodes, and 113 message decodes; release examples
+  built; the offline bench target compiled. This closes the local server-free
+  P18-V02 rerun on the integration-package revision.
+- [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
+- [ ] Implement and run the remaining 36 of 37 Phase 19 live scenarios, the
+  required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
+  evidence reconciliation. `tests/differential/run.sh --all` currently fails
+  closed on unimplemented IDs.
+- [ ] Complete pre-publication version and registry dependency-resolution
+  checks. No publish, tag, or push was performed.
+- [ ] Owner checks MAN-01–MAN-04 are blocked pending approved topology,
+  identity/resources, maintenance procedure, and workload inputs; MAN-05 is
+  pending classification after local matrix execution. See
+  [`docs/owner-validation.md`](owner-validation.md).
+
+The route PASS is one scenario result, not Phase 19 acceptance. All remaining
+locally reproducible cases stay automatic work; only the owner-specific checks
+belong in the manual handoff.

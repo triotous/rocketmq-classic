@@ -1,0 +1,12 @@
+scenario=ROUTE-001-get-existing-topic
+profile=basic
+project=rocketmq-classic-p19-route-001-get-existing-topic-20261017t045719z
+run_id=20261017T045719Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=c48f1b65393d1ab3fc37424398a4b39d483f5913
+source_worktree_dirty=true
+seed=not-applicable
+exit_status=0
+duration_seconds=61
