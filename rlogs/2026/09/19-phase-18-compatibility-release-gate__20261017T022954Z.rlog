@@ -49,3 +49,24 @@
   Writer-feature inventory is 38/48; 10 features remain unmapped. Broad
   P18-V01, final full-workspace P18-V02, current-revision Ubuntu/Windows CI and
   P18-V04, and Phase 19 Docker/Broker automation remain open.
+- 2026-10-17T02:43:42Z: Mapped Fastjson2 `LargeObject`. Pinned 2.0.63 source
+  sets the writer's maximum array capacity to 64 MiB by default and 1 GiB with
+  this feature. Rust's growable output string has no corresponding fixed cap;
+  accepting the flag preserves output and keeps Rust's default capacity policy
+  more permissive. The Java oracle records no overrides across 41 body, 8 route,
+  and 3 heartbeat cases. Added the feature to all current adapter comparisons.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed
+  (126 unit tests, all integration targets, 42 doctests).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features
+  --locked -- -D warnings`, formatting, and diff checks passed.
+- `mvn -q -f compat/java-reference/pom.xml verify`: passed all 37 scenarios,
+  fixture-drift checks, and Java/Rust cross-decodes.
+- Code/test commit: `fc4d2e30 feat(protocol): map LargeObject writer flag`.
+  Writer-feature inventory is 39/48; 9 features remain unmapped. The final
+  workspace P18-V02 rerun, broad P18-V01, current-revision CI/P18-V04, and
+  Phase 19 automation remain outstanding.
+- A Python fixture-diff probe initially rejected Fastjson output containing
+  unquoted field names; a guarded rerun captured the affected fields and did
+  not change any source or fixture files. One earlier multi-file patch also
+  used stale context and made no file changes before the exact patch was
+  applied.

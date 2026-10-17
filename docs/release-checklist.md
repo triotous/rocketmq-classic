@@ -2962,3 +2962,17 @@ Before any publication:
   full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V04 handoff,
   and Phase 19 Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).
+- P18-V01 Fastjson `LargeObject` writer flag (code commit `fc4d2e30`,
+  2026-10-17): Fastjson2 raises its writer array-capacity ceiling from 64 MiB
+  to 1 GiB for this flag. The Rust adapter uses a growable `String` with no
+  corresponding fixed ceiling, so accepting the flag does not alter its output
+  or allocation policy; Rust's default large-output capacity is more permissive
+  than Fastjson's default. The Java oracle records no output overrides across
+  41 body, 8 route, and 3 heartbeat cases. Protocol all-feature tests (126 unit
+  tests, all integration targets, and 42 doctests), strict Protocol Clippy,
+  formatting, diff checks, and Maven verify (37 scenarios, fixture drift, and
+  cross-decodes) pass. Mapping count is now 39/48; 9 writer features remain
+  unmapped. Broad P18-V01, final full-workspace P18-V02, current-revision
+  Ubuntu/Windows CI, P18-V04 handoff, and Phase 19 Docker/Broker automation
+  remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).
