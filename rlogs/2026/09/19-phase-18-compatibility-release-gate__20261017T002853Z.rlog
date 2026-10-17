@@ -17,3 +17,25 @@
   local scenario execution; owner-validation handoff; pre-publication version
   and registry dependency resolution.
 - No test commands were run in this documentation/status session.
+- P18-V01 `BrowserCompatible` implementation committed as `8c22e355`. The
+  pinned Fastjson2 2.0.63 `TypeUtils.isJavaScriptSupport(long)` boundary is
+  `[-9007199254740991, 9007199254740991]`; Java/Rust fixtures cover both
+  boundaries, adjacent out-of-range values, and route numeric map keys. The
+  lookup fixture SHA-256 is
+  `2df184afd48b41bd26d8d0c6d7109ee294bc9e041e33a3d93a62fc639d6ebdc9`.
+- Validation: Protocol all-feature suite passed (125 unit tests, all
+  integration targets, 42 doctests); the final CheckClient BrowserCompatible
+  fixture assertion passed as a focused rerun; strict all-target/all-feature
+  Protocol Clippy, pinned Maven verify (37 scenarios), formatting, and diff
+  checks passed.
+- Iteration notes: an initial Protocol compile exposed three call sites missing
+  the new feature flag; they were updated. The first strict Clippy run found
+  identical number-stringification branches; they were merged. The first
+  `mvn test-compile exec:java -Dexec.mainClass=...` invocation used the POM's
+  fixed `compat.Main` and stopped at its usage check; fixture regeneration was
+  rerun by invoking the compiled `RuntimeLookupFixtures` class directly with
+  the Maven dependency classpath. The subsequent full Maven verify passed.
+- Current mapping count: 17/48 writer features. The broad P18-V01 audit,
+  current-revision full-workspace P18-V02, Ubuntu/Windows CI, P18-V03/V04,
+  owner-validation handoff, pre-publication resolution, and Phase 19 local
+  Docker/Broker execution remain outstanding.

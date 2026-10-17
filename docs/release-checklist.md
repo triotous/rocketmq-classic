@@ -2763,3 +2763,15 @@ Before any publication:
   Phase 19 Docker/Broker automation and scenario execution remain open.
   Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 Fastjson `BrowserCompatible` writer feature (code commit `8c22e355`,
+  2026-10-17): mapped serializers now quote numeric route-map keys and emit
+  mapped integral values outside JavaScript's exact integer range as strings.
+  Invoked Java fixtures cover both safe boundaries and values just outside
+  them, plus route-map keys. Seventeen of 48 writer features now have behavior
+  mappings; 31 remain unmapped. Protocol all-feature tests (125 unit tests, all
+  integration targets, and 42 doctests), strict Protocol Clippy, Maven verify
+  (37 scenarios), formatting, and diff checks pass. Broad P18-V01, final
+  full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V03 package
+  review, P18-V04 handoff, and Phase 19 Docker/Broker automation remain open.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
