@@ -535,8 +535,10 @@ async fn run_connection(
                     }
                     input.extend_from_slice(&read_buffer[..length]);
                     loop {
+                        let process_timer = crate::command::ProcessTimer::started();
                         match frame::decode_next_with_limit(&mut input, max_frame_size) {
-                            Ok(Some(command)) => {
+                            Ok(Some(mut command)) => {
+                                command.set_process_timer(Some(process_timer));
                                 if command.is_response() {
                                     if let Some(inner) = inner.upgrade() {
                                         inner.complete_response(generation, command);

@@ -3770,6 +3770,7 @@ public final class RuntimeConfigFixtures {
         result.put("commandProtocolHelpers", commandProtocolHelperCases());
         result.put("commandFactories", commandFactoryCases());
         result.put("commandCustomHeaders", commandCustomHeaderCases());
+        result.put("commandInfrastructure", commandInfrastructureCases());
         result.put("commandToString", commandToStringCases());
         return result;
     }
@@ -3934,6 +3935,57 @@ public final class RuntimeConfigFixtures {
         result.put("nsd", header.getNamespaced());
         result.put("bname", header.getBrokerName());
         result.put("oway", header.getOneway());
+        return result;
+    }
+
+    private static Map<String, Object> commandInfrastructureCases() {
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(84, null);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("processTimerInitiallyNull", command.getProcessTimer() == null);
+        result.put("callbackListInitiallyNull", command.getCallbackList() == null);
+
+        com.google.common.base.Stopwatch timer = com.google.common.base.Stopwatch.createUnstarted();
+        command.setProcessTimer(timer);
+        result.put("processTimerSameInstance", command.getProcessTimer() == timer);
+        result.put("processTimerInitiallyRunning", timer.isRunning());
+        timer.start();
+        result.put("processTimerRunningAfterStart", timer.isRunning());
+        result.put("processTimerElapsedNonnegative", timer.elapsed(TimeUnit.NANOSECONDS) >= 0);
+        try {
+            timer.start();
+            result.put("processTimerStartWhileRunning", "NO_ERROR");
+        } catch (Throwable error) {
+            result.put("processTimerStartWhileRunning", error.getClass().getSimpleName());
+        }
+        timer.stop();
+        result.put("processTimerRunningAfterStop", timer.isRunning());
+        timer.reset();
+        result.put("processTimerRunningAfterReset", timer.isRunning());
+        result.put("processTimerElapsedAfterReset", timer.elapsed(TimeUnit.NANOSECONDS));
+        try {
+            timer.stop();
+            result.put("processTimerStopWhileStopped", "NO_ERROR");
+        } catch (Throwable error) {
+            result.put("processTimerStopWhileStopped", error.getClass().getSimpleName());
+        }
+        command.setProcessTimer(null);
+        result.put("processTimerNullAfterClear", command.getProcessTimer() == null);
+
+        java.util.concurrent.atomic.AtomicInteger callbackCount =
+            new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<org.apache.rocketmq.remoting.CommandCallback> callbacks = new ArrayList<>();
+        callbacks.add(callbackCount::incrementAndGet);
+        command.setCallbackList(callbacks);
+        result.put("callbackListSameInstance", command.getCallbackList() == callbacks);
+        command.getCallbackList().add(callbackCount::incrementAndGet);
+        for (org.apache.rocketmq.remoting.CommandCallback callback : command.getCallbackList()) {
+            callback.accept();
+        }
+        result.put("callbackListSizeAfterMutation", command.getCallbackList().size());
+        result.put("callbackListInvocationCount", callbackCount.get());
+        command.setCallbackList(null);
+        result.put("callbackListNullAfterClear", command.getCallbackList() == null);
         return result;
     }
 

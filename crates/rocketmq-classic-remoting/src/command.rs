@@ -1,8 +1,9 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use rocketmq_classic_protocol::{
     codes::{JavaEnumLookupError, LanguageCode, SerializeType},
@@ -12,6 +13,100 @@ use rocketmq_classic_protocol::{
 static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
 static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
 static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
+
+/// A monotonic command-processing timer corresponding to Java's remoting
+/// `Stopwatch` field.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProcessTimer {
+    accumulated: Duration,
+    started_at: Option<Instant>,
+}
+
+impl ProcessTimer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn started() -> Self {
+        Self {
+            accumulated: Duration::ZERO,
+            started_at: Some(Instant::now()),
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.started_at.is_some()
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.accumulated.saturating_add(
+            self.started_at
+                .map(|started_at| started_at.elapsed())
+                .unwrap_or_default(),
+        )
+    }
+
+    pub fn start(&mut self) -> Result<(), ProcessTimerError> {
+        if self.started_at.is_some() {
+            return Err(ProcessTimerError::AlreadyRunning);
+        }
+        self.started_at = Some(Instant::now());
+        Ok(())
+    }
+
+    pub fn stop(&mut self) -> Result<(), ProcessTimerError> {
+        let Some(started_at) = self.started_at.take() else {
+            return Err(ProcessTimerError::NotRunning);
+        };
+        self.accumulated = self.accumulated.saturating_add(started_at.elapsed());
+        Ok(())
+    }
+
+    pub fn reset(&mut self) {
+        self.accumulated = Duration::ZERO;
+        self.started_at = None;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ProcessTimerError {
+    #[error("process timer is already running")]
+    AlreadyRunning,
+    #[error("process timer is not running")]
+    NotRunning,
+}
+
+/// A command callback with the no-argument behavior of Java's
+/// `org.apache.rocketmq.remoting.CommandCallback`.
+#[derive(Clone)]
+pub struct CommandCallback(Arc<dyn Fn() + Send + Sync + 'static>);
+
+impl CommandCallback {
+    pub fn new<F>(callback: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Self(Arc::new(callback))
+    }
+
+    pub fn accept(&self) {
+        (self.0)();
+    }
+}
+
+impl std::fmt::Debug for CommandCallback {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CommandCallback(..)")
+    }
+}
+
+impl PartialEq for CommandCallback {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for CommandCallback {}
 
 trait CustomHeaderValueDyn: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
@@ -291,6 +386,12 @@ pub struct RemotingCommand {
     /// Lazily decoded custom header cached by `decode_command_custom_header`.
     #[doc(hidden)]
     pub cached_header: Option<CustomHeaderValue>,
+    /// Timer attached to inbound command processing; not serialized on the wire.
+    #[doc(hidden)]
+    pub process_timer: Option<ProcessTimer>,
+    /// Command completion callbacks; not serialized on the wire.
+    #[doc(hidden)]
+    pub callback_list: Option<Vec<CommandCallback>>,
 }
 
 impl Default for RemotingCommand {
@@ -309,6 +410,8 @@ impl Default for RemotingCommand {
             suspended: false,
             custom_header: None,
             cached_header: None,
+            process_timer: None,
+            callback_list: None,
         }
     }
 }
@@ -620,6 +723,30 @@ impl RemotingCommand {
 
     pub fn set_suspended(&mut self, suspended: bool) {
         self.suspended = suspended;
+    }
+
+    pub fn get_process_timer(&self) -> Option<&ProcessTimer> {
+        self.process_timer.as_ref()
+    }
+
+    pub fn get_process_timer_mut(&mut self) -> Option<&mut ProcessTimer> {
+        self.process_timer.as_mut()
+    }
+
+    pub fn set_process_timer(&mut self, process_timer: Option<ProcessTimer>) {
+        self.process_timer = process_timer;
+    }
+
+    pub fn get_callback_list(&self) -> Option<&[CommandCallback]> {
+        self.callback_list.as_deref()
+    }
+
+    pub fn get_callback_list_mut(&mut self) -> Option<&mut Vec<CommandCallback>> {
+        self.callback_list.as_mut()
+    }
+
+    pub fn set_callback_list(&mut self, callback_list: Option<Vec<CommandCallback>>) {
+        self.callback_list = callback_list;
     }
 }
 
@@ -1363,6 +1490,88 @@ mod tests {
             cases["addExtFieldIfNotExistWithoutMap"],
             "NullPointerException"
         );
+    }
+
+    #[test]
+    fn command_process_timer_and_callback_list_match_java_api_behavior() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let cases = &fixture["remotingEnumMethodCases"]["commandInfrastructure"];
+        let mut command = RemotingCommand::default();
+        assert_eq!(
+            command.get_process_timer().is_none(),
+            cases["processTimerInitiallyNull"]
+        );
+        assert_eq!(
+            command.get_callback_list().is_none(),
+            cases["callbackListInitiallyNull"]
+        );
+
+        command.set_process_timer(Some(ProcessTimer::new()));
+        let first_timer = command.get_process_timer().unwrap() as *const _;
+        let repeated_timer = command.get_process_timer().unwrap() as *const _;
+        assert_eq!(first_timer, repeated_timer);
+        assert!(!command.get_process_timer().unwrap().is_running());
+        assert_eq!(cases["processTimerSameInstance"], true);
+        assert_eq!(cases["processTimerInitiallyRunning"], false);
+
+        let timer = command.get_process_timer_mut().unwrap();
+        timer.start().unwrap();
+        assert!(timer.is_running());
+        assert!(timer.elapsed() >= Duration::ZERO);
+        assert_eq!(timer.start(), Err(ProcessTimerError::AlreadyRunning));
+        assert_eq!(cases["processTimerRunningAfterStart"], true);
+        assert_eq!(cases["processTimerElapsedNonnegative"], true);
+        assert_eq!(
+            cases["processTimerStartWhileRunning"],
+            "IllegalStateException"
+        );
+
+        timer.stop().unwrap();
+        assert!(!timer.is_running());
+        timer.reset();
+        assert!(!timer.is_running());
+        assert_eq!(timer.elapsed(), Duration::ZERO);
+        assert_eq!(timer.stop(), Err(ProcessTimerError::NotRunning));
+        assert_eq!(cases["processTimerRunningAfterStop"], false);
+        assert_eq!(cases["processTimerRunningAfterReset"], false);
+        assert_eq!(cases["processTimerElapsedAfterReset"], 0);
+        assert_eq!(
+            cases["processTimerStopWhileStopped"],
+            "IllegalStateException"
+        );
+        command.set_process_timer(None);
+        assert!(command.get_process_timer().is_none());
+        assert_eq!(cases["processTimerNullAfterClear"], true);
+
+        let callback_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let callbacks = vec![{
+            let callback_count = callback_count.clone();
+            CommandCallback::new(move || {
+                callback_count.fetch_add(1, Ordering::SeqCst);
+            })
+        }];
+        let callbacks_ptr = callbacks.as_ptr();
+        command.set_callback_list(Some(callbacks));
+        assert_eq!(command.get_callback_list().unwrap().as_ptr(), callbacks_ptr);
+        command.get_callback_list_mut().unwrap().push({
+            let callback_count = callback_count.clone();
+            CommandCallback::new(move || {
+                callback_count.fetch_add(1, Ordering::SeqCst);
+            })
+        });
+        assert_eq!(cases["callbackListSameInstance"], true);
+        for callback in command.get_callback_list().unwrap() {
+            callback.accept();
+        }
+        assert_eq!(command.get_callback_list().unwrap().len(), 2);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 2);
+        assert_eq!(cases["callbackListSizeAfterMutation"], 2);
+        assert_eq!(cases["callbackListInvocationCount"], 2);
+        command.set_callback_list(None);
+        assert!(command.get_callback_list().is_none());
+        assert_eq!(cases["callbackListNullAfterClear"], true);
     }
 
     #[test]
