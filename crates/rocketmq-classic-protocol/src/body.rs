@@ -5892,6 +5892,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::FieldBased, "FieldBased"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7032,6 +7033,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::FieldBased, "FieldBased"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7529,6 +7531,7 @@ mod tests {
                             JavaJsonWriterFeature::IgnoreNonFieldGetter,
                             "IgnoreNonFieldGetter",
                         ),
+                        (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
                             "NotWriteDefaultValue",

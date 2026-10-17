@@ -2,7 +2,7 @@
 /// `RemotingSerializable.encode(JSONWriter.Feature...)` adapters.
 ///
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
-/// adapters currently implement `WriteBooleanAsNumber`,
+/// adapters currently implement `FieldBased`, `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
@@ -36,6 +36,9 @@
 /// return an explicit unsupported-feature error until their behavior is
 /// mapped. The DTO graph also has no `BigDecimal`, `Float`, or `Double` fields,
 /// so their number-format options preserve output.
+/// `FieldBased` also preserves output for the mapped RocketMQ DTO graph: the
+/// invoked Java fixtures produce the default bytes for every body, route, and
+/// heartbeat case, including getter-derived QueueTimeSpan fields.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -208,7 +211,8 @@ impl JavaJsonWriterFeature {
     pub(crate) const fn is_implemented(self) -> bool {
         matches!(
             self,
-            Self::PrettyFormat
+            Self::FieldBased
+                | Self::PrettyFormat
                 | Self::PrettyFormatWith2Space
                 | Self::PrettyFormatWith4Space
                 | Self::EscapeNoneAscii
