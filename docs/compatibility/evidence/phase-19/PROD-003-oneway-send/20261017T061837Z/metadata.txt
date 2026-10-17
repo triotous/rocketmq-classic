@@ -1,0 +1,16 @@
+scenario=PROD-003-oneway-send
+profile=basic
+project=rocketmq-classic-p19-prod-003-oneway-send-20261017t061837z
+run_id=20261017T061837Z
+java_client=5.5.1
+server=5.3.4
+server_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8
+source_revision=610df3b216f5d41e5e702b2bad6d6f5fca939443
+source_code_dirty=true
+producer_group=-
+body=fixed
+seed=not-applicable
+java_message_key=compat_phase0_oneway_java_20261017t061837z
+rust_message_key=compat_phase0_oneway_rust_20261017t061837z
+exit_status=1
+duration_seconds=62

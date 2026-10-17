@@ -3157,6 +3157,11 @@ Before any publication:
   cross-read the other's message by physical offset. Topic and project-only
   Compose cleanup passed. Code/evidence commits: `6f2a0c12`, `aa35cc45`. Evidence:
   [`20261017T055737Z`](compatibility/evidence/phase-19/PROD-002-async-send/20261017T055737Z/).
+- [x] Run `PROD-003-oneway-send` against the pinned basic profile. Both clients
+  returned without a Broker response; the queue max offset advanced to 1 and 2,
+  and each language read the other's message at queue offsets 0 and 1. Topic,
+  containers, network, and volume cleanup passed. Code commit: `48ed3f58`.
+  Evidence: [`20261017T063258Z`](compatibility/evidence/phase-19/PROD-003-oneway-send/20261017T063258Z/).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -3172,7 +3177,7 @@ Before any publication:
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
-- [ ] Implement and run the remaining 32 of 37 Phase 19 live scenarios, the
+- [ ] Implement and run the remaining 31 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
   evidence reconciliation. `tests/differential/run.sh --all` currently fails
   closed on unimplemented IDs.
@@ -3183,6 +3188,6 @@ Before any publication:
   pending classification after local matrix execution. See
   [`docs/owner-validation.md`](owner-validation.md).
 
-The five live PASS results do not constitute Phase 19 acceptance. All
+The six live PASS results do not constitute Phase 19 acceptance. All
 remaining locally reproducible cases stay automatic work; only the
 owner-specific checks belong in the manual handoff.
