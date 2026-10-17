@@ -1,5 +1,19 @@
 # Phase 6 API and configuration map
 
+## Current Fastjson writer-feature closure (2026-10-17)
+
+The pinned Fastjson 2.0.63 `JSONWriter.Feature` surface is mapped 48/48.
+Commit `07d2fba1` closes the last feature, `WriteClassName`: Java and Rust
+fixtures compare root DTO metadata, polymorphic DTO/list/set members, typed
+maps and `MessageQueue` map keys, `Set` markers, long-field `L` suffixes, and
+the combined `NotWriteRootClassName`,
+`NotWriteHashMapArrayListClassName`, and `NotWriteSetClassName` policies.
+The current implementation coverage is in
+`crates/rocketmq-classic-protocol/src/writer_feature.rs`, the body/route/
+heartbeat feature loops, and the Phase 18 entry in `docs/release-checklist.md`.
+This supersedes earlier writer-feature status paragraphs below. The broad
+P18-V01 API/source/input/error/control-flow/reverse-export audit remains open.
+
 ClientConfig field-visibility reconciliation (2026-10-15, pinned Java source
 `efa1be59d6fc747ad220f036c86030f05f0419f9`): Java 5.5.1 keeps the 33
 configuration values behind getter/setter methods. Rust now keeps the backing

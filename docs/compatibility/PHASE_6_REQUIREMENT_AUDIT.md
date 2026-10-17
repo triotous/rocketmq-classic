@@ -1,5 +1,15 @@
 # Phase 6 requirement and handoff audit
 
+P18-V01 Fastjson writer-feature closure (`07d2fba1`, 2026-10-17): the pinned
+48-value `JSONWriter.Feature` inventory is mapped 48/48. The final
+`WriteClassName` implementation compares invoked Java and Rust output for
+root and nested DTO metadata, polymorphic collection members, typed map values
+and `MessageQueue` keys, `Set` markers, long-field suffixes, and the combined
+class-name suppression flags. See the current writer-feature summary in the
+[API/config map](PHASE_6_API_CONFIG_MAP.md). This closes the writer-feature
+slice only; the broader P18-V01 bidirectional API/settings/source/input/error/
+flow/reverse-export audit remains PARTIAL.
+
 ## Current closure state (2026-10-16)
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:

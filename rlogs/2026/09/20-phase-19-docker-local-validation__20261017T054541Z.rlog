@@ -78,3 +78,10 @@ Current server-free Phase 18 verification (2026-10-17 07:04 UTC)
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, `cargo fmt --all -- --check`, and the timezone-sensitive unique-ID fixture passed. Workspace metadata/license/dependency-direction check passed.
 - `bash tests/stress/run-offline-smoke.sh` passed all 16 cases × 3 repetitions. Fuzz smoke passed 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes, and 113 message decodes. Release examples and offline bench target compiled.
 - Maven `verify` passed after the Java probe change on source revision `8262d722`; Maven compile passed after the final usage text update. Comparator self-test and final 37-row manifest validation passed with seven PASS / 30 pending.
+
+
+P18-V01 audit crosswalk reconciliation (2026-10-17)
+
+- Reconciled the Phase 6 API/config map and requirement audit with the later `WriteClassName` completion in code commit `07d2fba1` and evidence recorded in release-checklist commit `b5e02620`. The prior 35/48 and 47/48 checkpoints are now identified as superseded; the current pinned `JSONWriter.Feature` mapping is 48/48.
+- No implementation or fixture changed in this documentation correction. `git diff --check` is the documentation-only verification; the protocol implementation and fixture coverage were verified in the cited earlier commits.
+- The broad P18-V01 audit, current-revision Ubuntu/Windows CI evidence, and remaining Phase 19 local scenarios remain open.
