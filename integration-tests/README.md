@@ -29,7 +29,7 @@ bash integration-tests/cleanup.sh
 ```
 
 `COMPOSE_PROJECT_NAME` may be set to isolate concurrent runs; it must start
-with `rocketmq-classic-p19-`. To run the currently implemented live case:
+with `rocketmq-classic-p19-`. Run one of the implemented live cases:
 
 ```bash
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
@@ -37,20 +37,26 @@ ROCKETMQ_PROFILE=basic \
 tests/differential/run.sh --scenario ROUTE-001-get-existing-topic
 ```
 
-The runner creates a unique Compose project, provisions the manifest-owned
-topic with four queues, queries the route using Java client 5.5.1 and the Rust
-client, compares the sorted queue rows, deletes the topic, and tears down only
-that project. It stores toolchain/configuration/output/cleanup evidence under
-`docs/compatibility/evidence/phase-19/` and marks the manifest row `PASS` only
-after comparison and cleanup both succeed. The differential inventory has 37
-cases; `ROUTE-001-get-existing-topic` is the sole implemented and passed case
-in the current runner. `--phase N` and `--all` fail closed when any selected
-case has no runner, so they currently report the unimplemented cases instead
-of skipping them.
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=basic \
+tests/differential/run.sh --scenario ROUTE-002-topic-not-exist
+```
+
+The runner creates a unique Compose project, provisions a manifest-owned
+topic when required, queries the route using Java client 5.5.1 and the Rust
+client, compares their route outcomes, deletes any owned topic, and tears down
+only that project. It stores toolchain/configuration/output/cleanup evidence
+under `docs/compatibility/evidence/phase-19/` and marks the manifest row `PASS`
+only after comparison and cleanup both succeed. The differential inventory has
+37 cases; `ROUTE-001-get-existing-topic` and `ROUTE-002-topic-not-exist` are the
+two implemented and passed cases in the current runner. `--phase N` and `--all`
+fail closed when any selected case has no runner, so they currently report the
+unimplemented cases instead of skipping them.
 
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
-The two-Broker, TLS, ACL, and feature-specific profiles; remaining 36 live
+The two-Broker, TLS, ACL, and feature-specific profiles; remaining 35 live
 cases; and a `run-local.sh --all` orchestration entry point are still pending.
 Starting this basic profile by itself does not mark a scenario passed.

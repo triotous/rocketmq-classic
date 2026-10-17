@@ -19,21 +19,23 @@ scenario and profile.
 
 | Scenario | Result | Evidence |
 | --- | --- | --- |
-| `ROUTE-001-get-existing-topic` | PASS — Java 5.5.1 and Rust returned the same four route rows for `compat_phase0_route`, broker `broker-a`, queue IDs 0–3. The owned topic was deleted and the Compose project, network, and volume were removed. | [`20261017T051047Z`](evidence/phase-19/ROUTE-001-get-existing-topic/20261017T051047Z/) |
+| `ROUTE-001-get-existing-topic` | PASS — Java 5.5.1 and Rust returned the same four route rows for `compat_phase0_route`, broker `broker-a`, queue IDs 0–3. The owned topic was deleted and the Compose project, network, and volume were removed. | [`20261017T052003Z`](evidence/phase-19/ROUTE-001-get-existing-topic/20261017T052003Z/) |
+| `ROUTE-002-topic-not-exist` | PASS — Java 5.5.1 and Rust both returned `NO_ROUTE` for `compat_phase0_missing`. The isolated Compose project was removed after the run. | [`20261017T051903Z`](evidence/phase-19/ROUTE-002-topic-not-exist/20261017T051903Z/) |
 
-The run used source commit `adae9d1f`; the evidence metadata records the full
-revision, toolchains, Docker platform, Compose/configuration hashes, commands,
-duration, client outputs, and cleanup results. Local home/repository paths and
-the host name are redacted from archived tool output. This is route lookup evidence;
-it does not exercise message send/receive, Broker-side consumer operations,
-TLS, ACL, transactions, retries, failover, or stress behavior.
+Both latest runs used source commit `91ecd510`; the evidence metadata records
+the full revision, toolchains, Docker platform, Compose/configuration hashes,
+commands, duration, client outputs, and cleanup results. Local home/repository
+paths and the host name are redacted from archived tool output. This is route
+lookup evidence; it does not exercise message send/receive, Broker-side
+consumer operations, TLS, ACL, transactions, retries, failover, or stress
+behavior.
 
 ## Pending local server coverage
 
-The scenario manifest contains 37 live cases. The route case above is the only
-one implemented and passed by the current runner; 36 remain pending. The
-two-Broker, TLS, ACL, and feature-specific profiles and full local matrix are
-not complete. No server limitation is inferred from an unrun case. Phase 19
+The scenario manifest contains 37 live cases. The two route cases above are
+the only ones implemented and passed by the current runner; 35 remain pending.
+The two-Broker, TLS, ACL, and feature-specific profiles and full local matrix
+are not complete. No server limitation is inferred from an unrun case. Phase 19
 acceptance remains open until each locally reproducible case has Java/Rust
 evidence or a source-backed matched server limitation plus the required
 success-path evidence.

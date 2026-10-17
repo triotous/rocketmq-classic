@@ -3138,8 +3138,11 @@ Before any publication:
 - [x] Run `ROUTE-001-get-existing-topic` against the pinned Apache RocketMQ
   5.3.4 profile. Java and Rust returned the same four `broker-a` queue rows
   (IDs 0–3); scenario-topic deletion and project-only Compose cleanup passed.
-  The runner marked only this manifest row `PASS`. Evidence:
-  [`20261017T051047Z`](compatibility/evidence/phase-19/ROUTE-001-get-existing-topic/20261017T051047Z/).
+  The runner marked this manifest row `PASS`. Latest evidence:
+  [`20261017T052003Z`](compatibility/evidence/phase-19/ROUTE-001-get-existing-topic/20261017T052003Z/).
+- [x] Run `ROUTE-002-topic-not-exist`; Java and Rust both returned `NO_ROUTE`,
+  and project-only Compose cleanup passed. Evidence:
+  [`20261017T051903Z`](compatibility/evidence/phase-19/ROUTE-002-topic-not-exist/20261017T051903Z/).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -3155,7 +3158,7 @@ Before any publication:
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
-- [ ] Implement and run the remaining 36 of 37 Phase 19 live scenarios, the
+- [ ] Implement and run the remaining 35 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
   evidence reconciliation. `tests/differential/run.sh --all` currently fails
   closed on unimplemented IDs.
@@ -3166,6 +3169,6 @@ Before any publication:
   pending classification after local matrix execution. See
   [`docs/owner-validation.md`](owner-validation.md).
 
-The route PASS is one scenario result, not Phase 19 acceptance. All remaining
+The two route PASS results do not constitute Phase 19 acceptance. All remaining
 locally reproducible cases stay automatic work; only the owner-specific checks
 belong in the manual handoff.

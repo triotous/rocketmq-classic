@@ -1,5 +1,12 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 19 live baseline checkpoint (2026-10-17): two of 37 live cases pass
+against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup and
+missing-topic `NO_ROUTE`. Their server-side evidence and the remaining local
+coverage are tracked in [SERVER_5_3_4_RESULTS.md](SERVER_5_3_4_RESULTS.md).
+This does not close the broad Phase 18 API/settings/flow audit or the other
+Phase 19 cases.
+
 Phase 8 message records and pull-result processing: source/field mappings and P8-V01–V03 evidence are recorded in [PHASE_8_OFFLINE_METHOD_MATRIX.md](PHASE_8_OFFLINE_METHOD_MATRIX.md). Pinned fixture bytes and source hash are in `fixtures/messages/records.json` and `P8_MESSAGE_FIXTURE_SHA256SUMS.txt`; tests cover both versions, host and compression variants, limits and pull post-processing. No live Broker or Filter Server was contacted; those checks remain Phase 19.
 
 Phase 9 pull consumers, offset stores and boundary RPCs: source mappings and P9-V01/V02/U01 evidence are recorded in [PHASE_9_OFFLINE_METHOD_MATRIX.md](PHASE_9_OFFLINE_METHOD_MATRIX.md). Offline pull/offset checks pass, including Java 5.5.1 boundary request codes 29–32 and successful `-1` offsets. P9-V03 live Broker pull/restart remains `PENDING_PHASE_19`.

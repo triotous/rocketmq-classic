@@ -93,3 +93,41 @@
   `NOTICE`. P18-V02 server-free local validation is now complete for this
   workspace revision. Broad P18-V01 and current-revision platform CI/P18-V04
   remain open.
+
+# Follow-up at 2026-10-17T05:23Z
+
+- On `91ecd510`, completed the missing-topic route runner and reran both basic
+  profile route scenarios. `ROUTE-001-get-existing-topic` returned matching
+  four-queue route rows; `ROUTE-002-topic-not-exist` returned `NO_ROUTE` for
+  both clients. Latest evidence is under `20261017T052003Z` and
+  `20261017T051903Z`, respectively. Both manifest rows now have evidence-backed
+  `PASS` status.
+- Reconciled the differential manifest and verified `compare.py
+  --validate-manifest`, `compare.py --self-test`, and `git diff --check`. Both
+  isolated Compose projects report no remaining containers; cleanup logs show
+  their networks removed.
+- Updated the compatibility matrix, server results, integration README, and
+  release checklist to reflect 2/37 live cases passed and 35 pending.
+- Remaining automatable work includes the broad P18-V01 audit, current-revision
+  Ubuntu/Windows CI and P18-V04 evidence, 35 live cases and their additional
+  profiles, `run-local.sh --all`, and pre-publication version/registry checks.
+  Owner-specific MAN-01–MAN-04 still await environment inputs; MAN-05 awaits
+  local-matrix classification. No push, publication, tag, or production
+  mutation occurred.
+
+# Evidence note at 2026-10-17T05:24Z
+
+- The first missing-topic runner attempt (`20261017T051613Z`) recorded Java's
+  route miss as Maven failure because the client wraps response code 17 in an
+  `MQClientException`. The route adapter now walks the cause chain and
+  normalizes this Java outcome to `NO_ROUTE`; follow-up runs at
+  `20261017T051736Z` and `20261017T051903Z` matched Rust. The first failure is
+  retained as evidence, with trailing spaces on two blank `[ERROR]` lines
+  removed so the archived output passes `git diff --check`.
+
+# Evidence formatting at 2026-10-17T05:26Z
+
+- Docker Compose progress logs emitted trailing padding and blank separators.
+  The archived text keeps the full progress messages while trimming only
+  line-ending whitespace and redundant blank separators so the evidence
+  commit passes `git diff --check`.
