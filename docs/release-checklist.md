@@ -3181,6 +3181,13 @@ Before any publication:
   1,856 mutations, 146 frame decodes, and 113 message decodes; release examples
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
+- [x] Recheck the server-free P18-V02 gates after the batch probe change on
+  `5e677be3` (probe source `8262d722`): default and all-feature workspace tests,
+  all-target/all-feature strict Clippy, format, timezone-sensitive unique-ID
+  test, workspace metadata/license check, 16 race/leak cases × 3, fuzz smoke,
+  release examples, and offline bench compilation all passed. Maven `verify`
+  passed on the same probe source commit; final comparator and 37-row manifest
+  validation passed after evidence reconciliation.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
 - [ ] Implement and run the remaining 30 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`

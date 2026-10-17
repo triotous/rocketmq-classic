@@ -70,3 +70,11 @@ PROD-004 batch live verification and evidence reconciliation (2026-10-17 06:54â€
 - Reran `PROD-004-batch-send` from clean source revision `8262d72279ac03b77bd38ea5f963e3ad2bb12473` on the pinned 5.3.4 basic profile. Java and Rust each returned `SEND_OK` for two messages; Rust read Java queue offsets 0 and 1, and Java read Rust queue offsets 2 and 3. Both bodies matched `batch-0` and `batch-1`.
 - The runner removed the scenario topic and isolated Compose project. Post-run Docker filters found no project containers, network, or volume. Evidence metadata records `source_code_dirty=false`, image digest `sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8`, and exit status 0: `docs/compatibility/evidence/phase-19/PROD-004-batch-send/20261017T065458Z/`. The failed diagnostic run remains separately archived.
 - The manifest records the passing evidence; comparator self-test and 37-row manifest validation pass, with seven PASS and 30 pending. Updated the integration README, Java compatibility checkpoint, server results, and release checklist.
+
+
+Current server-free Phase 18 verification (2026-10-17 07:04 UTC)
+
+- On clean worktree revision `5e677be3` (probe source commit `8262d722`), `cargo test --workspace --locked` and `cargo test --workspace --all-features --locked` both exited 0, including workspace integration tests and doctests.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, `cargo fmt --all -- --check`, and the timezone-sensitive unique-ID fixture passed. Workspace metadata/license/dependency-direction check passed.
+- `bash tests/stress/run-offline-smoke.sh` passed all 16 cases Ã— 3 repetitions. Fuzz smoke passed 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes, and 113 message decodes. Release examples and offline bench target compiled.
+- Maven `verify` passed after the Java probe change on source revision `8262d722`; Maven compile passed after the final usage text update. Comparator self-test and final 37-row manifest validation passed with seven PASS / 30 pending.
