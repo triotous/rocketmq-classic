@@ -45,6 +45,10 @@
             <configuration><mainClass>compat.LiveHeartbeatProbe</mainClass></configuration>
           </execution>
           <execution>
+            <id>live-producer-probe</id>
+            <configuration><mainClass>compat.LiveProducerProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

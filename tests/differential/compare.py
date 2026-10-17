@@ -174,6 +174,53 @@ def validate_manifest(manifest):
                     or rust_rows.read_bytes() != expected
                 ):
                     raise ValueError(f"Phase 19 missing-route evidence does not match: {scenario['id']}")
+            if scenario["id"] == "PROD-001-sync-send":
+                topic = scenario["inputs"].get("topic")
+                body = scenario["inputs"].get("body")
+                if not isinstance(topic, str) or not isinstance(body, str):
+                    raise ValueError("synchronous-send evidence requires topic and body inputs")
+                expected_body = body.encode().hex()
+
+                def one_tsv_row(name, columns):
+                    path = evidence_path / name
+                    if not path.is_file():
+                        raise ValueError(f"synchronous-send evidence is missing {name}")
+                    rows = [line.split("\t") for line in path.read_text().splitlines()]
+                    if len(rows) != 1 or len(rows[0]) != columns:
+                        raise ValueError(f"synchronous-send evidence has invalid rows in {name}")
+                    return rows[0]
+
+                java_send = one_tsv_row("java-send.tsv", 7)
+                rust_send = one_tsv_row("rust-send.tsv", 7)
+                for language, row in (("Java", java_send), ("Rust", rust_send)):
+                    if (
+                        row[0] != "SEND"
+                        or row[1] != "SEND_OK"
+                        or row[2] != topic
+                        or row[3] != "0"
+                        or not row[4].isdecimal()
+                        or not re.fullmatch(r"[0-9a-fA-F]+", row[5])
+                        or len(row[5]) not in {32, 56}
+                        or not row[6].isdecimal()
+                        or int(row[5][-16:], 16) != int(row[6])
+                    ):
+                        raise ValueError(f"{language} synchronous-send result is invalid")
+                if java_send[1:4] != rust_send[1:4]:
+                    raise ValueError("Java and Rust synchronous-send status/queue results differ")
+                for name, sent in (
+                    ("rust-read-java.tsv", java_send),
+                    ("java-read-rust.tsv", rust_send),
+                ):
+                    row = one_tsv_row(name, 5)
+                    if (
+                        row[0] != "MESSAGE"
+                        or row[1] != topic
+                        or row[2] != "0"
+                        or not row[3].isdecimal()
+                        or row[3] != sent[4]
+                        or row[4] != expected_body
+                    ):
+                        raise ValueError(f"cross-language readback does not match {name}")
     phase19_ids = {
         scenario["id"]
         for scenario in scenarios

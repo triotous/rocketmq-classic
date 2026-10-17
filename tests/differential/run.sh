@@ -116,9 +116,10 @@ for scenario in selected:
     inputs = scenario.get("inputs", {})
     topic = inputs.get("topic", "-")
     producer_group = inputs.get("producer_group", "-")
+    body = inputs.get("body", "-")
     if not isinstance(profile, str) or not profile:
         raise SystemExit(f"{scenario_id}: missing profile")
-    print(f"{scenario_id}\t{profile}\t{topic}\t{producer_group}")
+    print(f"{scenario_id}\t{profile}\t{topic}\t{producer_group}\t{body}")
 PY
 then
     exit 2
@@ -129,9 +130,9 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send")
 unsupported=()
-while IFS=$'\t' read -r scenario_id profile topic producer_group; do
+while IFS=$'\t' read -r scenario_id profile topic producer_group body; do
     is_implemented=false
     for implemented_id in "${implemented[@]}"; do
         if [[ "$scenario_id" == "$implemented_id" ]]; then
@@ -156,7 +157,7 @@ if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
     exit 3
 fi
 
-IFS=$'\t' read -r scenario_id profile topic producer_group <"$selected_file"
+IFS=$'\t' read -r scenario_id profile topic producer_group body <"$selected_file"
 if [[ "$profile" != "basic" ]]; then
     echo "Scenario metadata differs from the implemented basic profile" >&2
     exit 3
@@ -169,12 +170,18 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
+    PROD-001-sync-send:compat_phase0_send)
+        if [[ "$body" != "fixed" ]]; then
+            echo "Scenario metadata differs from the reviewed synchronous-send implementation" >&2
+            exit 3
+        fi
+        ;;
     *)
-        echo "Scenario metadata differs from the reviewed route implementations" >&2
+        echo "Scenario metadata differs from the reviewed case implementations" >&2
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -228,6 +235,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     compat/java-reference/src/main/java/compat/LiveHeartbeatProbe.java
+    compat/java-reference/src/main/java/compat/LiveProducerProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
     tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
@@ -237,9 +245,9 @@ else
 fi
 mkdir -p "$evidence_dir"
 cp "$selected_file" "$evidence_dir/selected.tsv"
-printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nseed=not-applicable\n' \
+printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserver=5.3.4\nserver_image=apache/rocketmq:5.3.4@sha256:d57ee4ebbd9d7bb6e185775bde41c128e98f185b25bf0b05c77d4e6c010572b8\nsource_revision=%s\nsource_code_dirty=%s\nproducer_group=%s\nbody=%s\nseed=not-applicable\n' \
     "$scenario_id" "$profile" "$project_name" "$run_id" \
-    "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" "$producer_group" \
+    "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" "$producer_group" "$body" \
     >"$evidence_dir/metadata.txt"
 {
     uname -srm
@@ -265,6 +273,15 @@ if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- heartbeat $broker_addr $producer_group
+EOF
+elif [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic $body" exec:java@live-producer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic '<java-offset-message-id>'
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- send $broker_addr $topic $body
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-offset-message-id>" exec:java@live-producer-probe
 EOF
 else
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -377,7 +394,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -403,7 +420,64 @@ if ! cargo build --locked -p rocketmq-classic-integration --bin live_client \
     exit 1
 fi
 
-if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
+if [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
+    echo "Sending one message from each language and reading each with the other client"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="send $broker_addr $topic $body" exec:java@live-producer-probe \
+        >"$evidence_dir/java-send.tsv" 2>"$evidence_dir/java-send.stderr"; then
+        cat "$evidence_dir/java-send.tsv" "$evidence_dir/java-send.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! awk -F '\t' -v topic="$topic" \
+        'NF != 7 || $1 != "SEND" || $2 != "SEND_OK" || $3 != topic || $4 != 0 || $5 !~ /^[0-9]+$/ || $6 !~ /^[[:xdigit:]]+$/ || $7 !~ /^[0-9]+$/ { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/java-send.tsv"; then
+        echo "Java synchronous send did not return a valid SEND_OK result" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ java_send_status java_send_topic java_queue_id java_queue_offset java_offset_message_id java_physical_offset \
+        <"$evidence_dir/java-send.tsv"
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        view "$broker_addr" "$topic" "$java_offset_message_id" \
+        >"$evidence_dir/rust-read-java.tsv" 2>"$evidence_dir/rust-read-java.stderr"; then
+        cat "$evidence_dir/rust-read-java.stderr" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        send "$broker_addr" "$topic" "$body" \
+        >"$evidence_dir/rust-send.tsv" 2>"$evidence_dir/rust-send.stderr"; then
+        cat "$evidence_dir/rust-send.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v topic="$topic" \
+        'NF != 7 || $1 != "SEND" || $2 != "SEND_OK" || $3 != topic || $4 != 0 || $5 !~ /^[0-9]+$/ || $6 !~ /^[[:xdigit:]]+$/ || $7 !~ /^[0-9]+$/ { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/rust-send.tsv"; then
+        echo "Rust synchronous send did not return a valid SEND_OK result" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ rust_send_status rust_send_topic rust_queue_id rust_queue_offset rust_offset_message_id rust_physical_offset \
+        <"$evidence_dir/rust-send.tsv"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="view $broker_addr $topic $rust_offset_message_id" exec:java@live-producer-probe \
+        >"$evidence_dir/java-read-rust.tsv" 2>"$evidence_dir/java-read-rust.stderr"; then
+        cat "$evidence_dir/java-read-rust.tsv" "$evidence_dir/java-read-rust.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if [[ "$java_send_status" != "$rust_send_status" || "$java_send_topic" != "$rust_send_topic" || "$java_queue_id" != "$rust_queue_id" ]]; then
+        echo "Java and Rust synchronous send results differ in status, topic, or queue" >&2
+        exit 1
+    fi
+    expected_body_hex="$(python3 -c 'import sys; print(sys.argv[1].encode().hex())' "$body")"
+    for readback in "$evidence_dir/rust-read-java.tsv" "$evidence_dir/java-read-rust.tsv"; do
+        if ! awk -F '\t' -v topic="$topic" -v body="$expected_body_hex" \
+            'NF != 5 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 !~ /^[0-9]+$/ || $5 != body { exit 1 }
+             END { if (NR != 1) exit 1 }' "$readback"; then
+            echo "Cross-language readback did not match the scenario topic and body: $readback" >&2
+            exit 1
+        fi
+    done
+    printf 'PASS %s: matching SEND_OK results and bidirectional cross-language readback\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending the same heartbeat through both client APIs"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="$broker_addr $producer_group" exec:java@live-heartbeat-probe \
@@ -435,7 +509,7 @@ if [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     fi
     printf 'PASS %s: matching response version and encoded request body\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
-else
+elif [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Querying the same route with both clients"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
         -Dexec.args="$namesrv_addr $topic" exec:java@live-route-probe \

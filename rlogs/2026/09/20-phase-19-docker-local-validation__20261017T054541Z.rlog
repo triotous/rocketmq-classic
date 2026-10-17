@@ -1,0 +1,10 @@
+Phase 19 live synchronous-send case implementation
+Started: 2026-10-17 05:45:41 UTC
+
+- Revalidated branch `phase/19-phase-18-compatibility-release-gate`, HEAD `259cde6f`, and a clean worktree before edits. Java reference checkout remains read-only.
+- Added Java 5.5.1 and Rust direct Broker probes for synchronous V2 send and physical-offset readback. Added the fail-closed `PROD-001-sync-send` runner path for Java-to-Rust and Rust-to-Java readback, isolated topic creation/cleanup, and structural evidence validation.
+- Confirmed local toolchains: Maven 3.10.0/JDK 27, Rust 1.85.0, Docker 29.8.2, Compose 5.5.0.
+- Initial Maven compilation exposed the Java request-header package mismatch; corrected to `org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader` and compilation passed.
+- Initial `cargo fmt --check` reported import ordering; applied `cargo fmt --all`, then formatting passed.
+- Passed `cargo test --locked -p rocketmq-classic-integration` (0 tests), strict integration-crate Clippy, Java Maven compile, comparator self-test, 37-scenario manifest validation, shell syntax, and `git diff --check`.
+- Live Broker execution and evidence commit are pending this implementation commit.
