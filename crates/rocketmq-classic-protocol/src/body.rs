@@ -4895,9 +4895,13 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::WriteLongAsString) {
         crate::route::apply_java_json_long_as_string(&mut value);
     }
+    if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
+        crate::route::omit_java_non_field_getter_properties(&mut value);
+    }
     let value_features = JavaJsonWriterValueFeatures {
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
+        ignore_non_field_getter: features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter),
         ..value_features
     };
     let mut output = String::new();
@@ -4918,6 +4922,7 @@ struct JavaJsonWriterValueFeatures {
     browser_secure: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
+    ignore_non_field_getter: bool,
 }
 
 fn write_java_remoting_body_json(
@@ -4966,20 +4971,30 @@ fn write_java_remoting_body_json(
                     );
                 }
                 if let Some(queue_key) = queue_key {
-                    write_java_remoting_body_json(
-                        &queue_key,
-                        None,
-                        depth + 1,
-                        indent,
-                        false,
-                        JavaJsonWriterValueFeatures {
-                            use_single_quotes: value_features.use_single_quotes,
-                            unquote_field_names: value_features.unquote_field_names,
-                            browser_secure: value_features.browser_secure,
-                            ..JavaJsonWriterValueFeatures::default()
-                        },
-                        output,
-                    )?;
+                    if value_features.ignore_non_field_getter {
+                        let queue_key = serde_json::to_string(&queue_key)?;
+                        crate::route::write_java_json_string_with_browser_secure(
+                            &queue_key,
+                            value_features.use_single_quotes,
+                            value_features.browser_secure,
+                            output,
+                        )?;
+                    } else {
+                        write_java_remoting_body_json(
+                            &queue_key,
+                            None,
+                            depth + 1,
+                            indent,
+                            false,
+                            JavaJsonWriterValueFeatures {
+                                use_single_quotes: value_features.use_single_quotes,
+                                unquote_field_names: value_features.unquote_field_names,
+                                browser_secure: value_features.browser_secure,
+                                ..JavaJsonWriterValueFeatures::default()
+                            },
+                            output,
+                        )?;
+                    }
                 } else {
                     crate::route::write_java_json_field_name(
                         key,
@@ -5872,6 +5887,10 @@ mod tests {
                 (
                     JavaJsonWriterFeature::IgnoreErrorGetter,
                     "IgnoreErrorGetter",
+                ),
+                (
+                    JavaJsonWriterFeature::IgnoreNonFieldGetter,
+                    "IgnoreNonFieldGetter",
                 ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
@@ -7009,6 +7028,10 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreErrorGetter,
                     "IgnoreErrorGetter",
                 ),
+                (
+                    JavaJsonWriterFeature::IgnoreNonFieldGetter,
+                    "IgnoreNonFieldGetter",
+                ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7501,6 +7524,10 @@ mod tests {
                         (
                             JavaJsonWriterFeature::IgnoreErrorGetter,
                             "IgnoreErrorGetter",
+                        ),
+                        (
+                            JavaJsonWriterFeature::IgnoreNonFieldGetter,
+                            "IgnoreNonFieldGetter",
                         ),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,

@@ -22,6 +22,8 @@
 /// names, and their `toString()` values match those names.
 /// `IgnoreErrorGetter` preserves output because these Rust DTO adapters read
 /// stored values directly and invoke no fallible Java-style getters.
+/// `IgnoreNonFieldGetter` omits the getter-only QueueTimeSpan timestamp strings
+/// and uses Fastjson's filtered map-key encoding for the mapped DTO graph.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
@@ -221,6 +223,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteEnumsUsingName
                 | Self::WriteEnumUsingToString
                 | Self::IgnoreErrorGetter
+                | Self::IgnoreNonFieldGetter
                 | Self::BrowserCompatible
                 | Self::OptimizedForAscii
                 | Self::WriteNameAsSymbol

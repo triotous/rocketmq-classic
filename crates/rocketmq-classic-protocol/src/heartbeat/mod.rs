@@ -2760,6 +2760,10 @@ mod tests {
                     "IgnoreErrorGetter",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::IgnoreNonFieldGetter,
+                    "IgnoreNonFieldGetter",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),

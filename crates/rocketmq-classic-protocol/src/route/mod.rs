@@ -109,12 +109,16 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::WriteLongAsString) {
         apply_java_json_long_as_string(&mut value);
     }
+    if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
+        omit_java_non_field_getter_properties(&mut value);
+    }
     let mut output = String::new();
     let writer_options = JavaRouteWriterOptions {
         unquote_numeric_map_keys: !features
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
             && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString)
-            && !features.contains(&JavaJsonWriterFeature::BrowserCompatible),
+            && !features.contains(&JavaJsonWriterFeature::BrowserCompatible)
+            && !features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter),
         stringify_long_map_keys: features.contains(&JavaJsonWriterFeature::WriteLongAsString),
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
@@ -125,6 +129,24 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         Ok(escape_none_ascii_json(&output))
     } else {
         Ok(output)
+    }
+}
+
+pub(crate) fn omit_java_non_field_getter_properties(value: &mut serde_json::Value) {
+    let Some(spans) = value
+        .get_mut("consumeTimeSpanSet")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for span in spans {
+        let Some(fields) = span.as_object_mut() else {
+            continue;
+        };
+        fields.remove("consumeTimeStampStr");
+        fields.remove("maxTimeStampStr");
+        fields.remove("minTimeStampStr");
     }
 }
 
@@ -4339,6 +4361,10 @@ mod tests {
                     (
                         JavaJsonWriterFeature::IgnoreErrorGetter,
                         "IgnoreErrorGetter",
+                    ),
+                    (
+                        JavaJsonWriterFeature::IgnoreNonFieldGetter,
+                        "IgnoreNonFieldGetter",
                     ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
