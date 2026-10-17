@@ -2764,6 +2764,10 @@ mod tests {
                     "IgnoreNonFieldGetter",
                 ),
                 (crate::JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
+                (
+                    crate::JavaJsonWriterFeature::WriteMapNullValue,
+                    "WriteMapNullValue",
+                ),
                 (crate::JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (crate::JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (

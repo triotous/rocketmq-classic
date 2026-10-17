@@ -4901,7 +4901,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
         crate::route::omit_java_non_field_getter_properties(&mut value);
     }
-    if features.contains(&JavaJsonWriterFeature::WriteNulls) {
+    if features.contains(&JavaJsonWriterFeature::WriteNulls)
+        || features.contains(&JavaJsonWriterFeature::WriteMapNullValue)
+    {
         crate::route::apply_java_write_nulls::<T>(&mut value)?;
     }
     let value_features = JavaJsonWriterValueFeatures {
@@ -5944,6 +5946,10 @@ mod tests {
                     "IgnoreNonFieldGetter",
                 ),
                 (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
+                (
+                    JavaJsonWriterFeature::WriteMapNullValue,
+                    "WriteMapNullValue",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7097,6 +7103,10 @@ mod tests {
                     "IgnoreNonFieldGetter",
                 ),
                 (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
+                (
+                    JavaJsonWriterFeature::WriteMapNullValue,
+                    "WriteMapNullValue",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7607,6 +7617,10 @@ mod tests {
                             "IgnoreNonFieldGetter",
                         ),
                         (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
+                        (
+                            JavaJsonWriterFeature::WriteMapNullValue,
+                            "WriteMapNullValue",
+                        ),
                         (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                         (
