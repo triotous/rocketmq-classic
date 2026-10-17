@@ -3502,3 +3502,28 @@ owner-specific checks belong in the manual handoff.
   release version/registry checks remain open. Owner-specific final checks
   remain a separate manual handoff. No plan, Java oracle, remote branch, tag,
   or publication target was changed.
+
+## Current code revision gate — 2026-10-17 (`56ca072f`)
+
+- [x] P18-V02 server-free local gate passed on code commit `56ca072f`. Default
+  and all-feature workspace tests, all-target/all-feature workspace check and
+  strict Clippy, formatting, and diff checks pass. Rust tests/checks ran with
+  Rust 1.85.0 in a Linux ARM64 `rust:1.85.0-bookworm` container with `--init`;
+  workspace tests were serialized with `--test-threads=1`.
+- Maven `verify` passes all 37 scenarios, fixture drift checks and Java/Rust
+  cross-decodes. Differential comparator self-test and the 37-row manifest
+  validate; deterministic race/leak smoke passes 16 cases × 3; fuzz smoke
+  passes 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes
+  and 113 message decodes. Release examples build and the offline benchmark
+  runs. Locked Cargo metadata, workspace metadata/license/dependency checks,
+  all seven package file lists, and UTC plus Asia/Taipei Unique ID tests pass.
+  Maven emitted existing JDK `Unsafe` and reflective-final-field warnings but
+  exited successfully. Detailed commands and benchmark observations are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T152044Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T152044Z.rlog).
+- Broad P18-V01 source/API/settings/input/error/flow and reverse-export
+  reconciliation remains open. Current-revision GitHub Ubuntu/native Windows
+  evidence for P18-V04, 30 Phase 19 Docker/Broker scenarios and required
+  multi-Broker/TLS/ACL profiles, and release version/registry checks remain
+  open. Owner-specific deployment/live Broker checks remain a separate manual
+  handoff. No plan, Java oracle, remote branch, tag, publication, Broker
+  operation, or deployment was changed.
