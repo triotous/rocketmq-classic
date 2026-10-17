@@ -1350,7 +1350,12 @@ public final class RuntimeLookupFixtures {
             {"populated", "{\"clientId\":\"client-a\",\"group\":\"workers\","
                 + "\"subscriptionData\":{\"topic\":\"orders\",\"subString\":\"*\","
                 + "\"subVersion\":42,\"classFilterMode\":true,\"expressionType\":\"TAG\","
-                + "\"tagsSet\":[\"gold\"]},\"namespace\":\"tenant\"}"}
+                + "\"tagsSet\":[\"gold\"]},\"namespace\":\"tenant\"}"},
+            {"browser-secure", "{\"clientId\":\"<client>(1)</client> & ops\","
+                + "\"group\":\"workers\",\"subscriptionData\":{\"topic\":\"<orders>\","
+                + "\"subString\":\"a(b)\",\"subVersion\":42,\"classFilterMode\":true,"
+                + "\"expressionType\":\"TAG\",\"tagsSet\":[\"<gold>\"]},"
+                + "\"namespace\":\"tenant\"}"}
         };
         List<Object> cases = new ArrayList<>();
         Class<org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody> type =
@@ -1580,6 +1585,11 @@ public final class RuntimeLookupFixtures {
             new com.alibaba.fastjson2.JSONWriter.Feature[] {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteBooleanAsNumber,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringValueAsString}),
+            java.nio.charset.StandardCharsets.UTF_8));
+        overrides.put("BrowserSecure+UnquoteFieldName", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.BrowserSecure,
+                com.alibaba.fastjson2.JSONWriter.Feature.UnquoteFieldName}),
             java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
     }

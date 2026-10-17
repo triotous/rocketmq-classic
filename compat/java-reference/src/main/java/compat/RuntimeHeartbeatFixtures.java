@@ -774,6 +774,11 @@ public final class RuntimeHeartbeatFixtures {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteBooleanAsNumber,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringValueAsString}),
             java.nio.charset.StandardCharsets.UTF_8));
+        overrides.put("BrowserSecure+UnquoteFieldName", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.BrowserSecure,
+                com.alibaba.fastjson2.JSONWriter.Feature.UnquoteFieldName}),
+            java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
     }
 

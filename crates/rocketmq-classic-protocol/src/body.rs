@@ -4873,6 +4873,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         write_boolean_as_number: features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
         write_enum_using_ordinal: features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
         browser_compatible: features.contains(&JavaJsonWriterFeature::BrowserCompatible),
+        browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
         ..JavaJsonWriterValueFeatures::default()
     };
     crate::route::apply_java_json_writer_value_features(
@@ -4914,6 +4915,7 @@ struct JavaJsonWriterValueFeatures {
     write_boolean_as_number: bool,
     write_enum_using_ordinal: bool,
     browser_compatible: bool,
+    browser_secure: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
 }
@@ -4973,6 +4975,7 @@ fn write_java_remoting_body_json(
                         JavaJsonWriterValueFeatures {
                             use_single_quotes: value_features.use_single_quotes,
                             unquote_field_names: value_features.unquote_field_names,
+                            browser_secure: value_features.browser_secure,
                             ..JavaJsonWriterValueFeatures::default()
                         },
                         output,
@@ -4984,6 +4987,7 @@ fn write_java_remoting_body_json(
                         field_name.is_some_and(crate::route::is_java_map_property),
                         value_features.use_single_quotes,
                         value_features.unquote_field_names,
+                        value_features.browser_secure,
                         output,
                     )?;
                 }
@@ -5049,7 +5053,12 @@ fn write_java_remoting_body_json(
         serde_json::Value::String(value) => {
             let use_single_quotes = value_features.use_single_quotes
                 && field_name.is_none_or(|name| !crate::route::is_java_enum_field(name));
-            crate::route::write_java_json_string(value, use_single_quotes, output)?;
+            crate::route::write_java_json_string_with_browser_secure(
+                value,
+                use_single_quotes,
+                value_features.browser_secure,
+                output,
+            )?;
         }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
@@ -5851,6 +5860,7 @@ mod tests {
                     JavaJsonWriterFeature::WriteFloatSpecialAsString,
                     "WriteFloatSpecialAsString",
                 ),
+                (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -6974,6 +6984,7 @@ mod tests {
                     JavaJsonWriterFeature::WriteFloatSpecialAsString,
                     "WriteFloatSpecialAsString",
                 ),
+                (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -6986,6 +6997,20 @@ mod tests {
                     case["id"]
                 );
             }
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[
+                        JavaJsonWriterFeature::BrowserSecure,
+                        JavaJsonWriterFeature::UnquoteFieldName,
+                    ])
+                    .unwrap(),
+                case["writerFeatureOverrides"]["BrowserSecure+UnquoteFieldName"]
+                    .as_str()
+                    .unwrap()
+                    .as_bytes(),
+                "{} BrowserSecure+UnquoteFieldName",
+                case["id"]
+            );
             let featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
                 .unwrap();
@@ -7498,6 +7523,7 @@ mod tests {
                             JavaJsonWriterFeature::WriteFloatSpecialAsString,
                             "WriteFloatSpecialAsString",
                         ),
+                        (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
                         (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                         (
                             JavaJsonWriterFeature::IgnoreNoneSerializable,
@@ -7515,6 +7541,21 @@ mod tests {
                             case["id"]
                         );
                     }
+                    assert_eq!(
+                        value
+                            .java_encode_with_features(&[
+                                JavaJsonWriterFeature::BrowserSecure,
+                                JavaJsonWriterFeature::UnquoteFieldName,
+                            ])
+                            .unwrap(),
+                        expected["writerFeatureOverrides"]["BrowserSecure+UnquoteFieldName"]
+                            .as_str()
+                            .unwrap()
+                            .as_bytes(),
+                        "{} {} BrowserSecure+UnquoteFieldName",
+                        $name,
+                        case["id"]
+                    );
                     assert_eq!(
                         expected["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"],
                         "JSONException",

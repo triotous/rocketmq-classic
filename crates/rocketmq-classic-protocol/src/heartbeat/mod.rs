@@ -2746,6 +2746,7 @@ mod tests {
                     crate::JavaJsonWriterFeature::WriteFloatSpecialAsString,
                     "WriteFloatSpecialAsString",
                 ),
+                (crate::JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
                 (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
@@ -2765,6 +2766,20 @@ mod tests {
                     case["case"]
                 );
             }
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[
+                        crate::JavaJsonWriterFeature::BrowserSecure,
+                        crate::JavaJsonWriterFeature::UnquoteFieldName,
+                    ])
+                    .unwrap(),
+                case["writerFeatureOverrides"]["BrowserSecure+UnquoteFieldName"]
+                    .as_str()
+                    .unwrap()
+                    .as_bytes(),
+                "{} BrowserSecure+UnquoteFieldName",
+                case["case"]
+            );
             assert_eq!(
                 case["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"], "JSONException",
                 "{} Java error feature result",

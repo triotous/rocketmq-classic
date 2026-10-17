@@ -3538,6 +3538,11 @@ public final class RuntimeRouteFixtures {
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteBooleanAsNumber,
                 com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringValueAsString}),
             java.nio.charset.StandardCharsets.UTF_8));
+        overrides.put("BrowserSecure+UnquoteFieldName", new String(value.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.BrowserSecure,
+                com.alibaba.fastjson2.JSONWriter.Feature.UnquoteFieldName}),
+            java.nio.charset.StandardCharsets.UTF_8));
         return overrides;
     }
 
@@ -3546,7 +3551,8 @@ public final class RuntimeRouteFixtures {
         String[][] routeInputs = new String[][] {
             {"route-default", "{}"},
             {"route-null", "{\"orderTopicConf\":null,\"queueDatas\":null,\"brokerDatas\":null,\"filterServerTable\":null,\"topicQueueMappingByBroker\":null}"},
-            {"route-populated", "{\"orderTopicConf\":\"broker:2\",\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":2,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":1}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{\"broker\":[\"filter-a\",\"filter-b\"]},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\",\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"scope\":\"__global__\",\"currIdMap\":{\"0\":0,\"1\":1}}}}"}
+            {"route-populated", "{\"orderTopicConf\":\"broker:2\",\"queueDatas\":[{\"brokerName\":\"broker\",\"readQueueNums\":2,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":1}],\"brokerDatas\":[{\"cluster\":\"cluster\",\"brokerName\":\"broker\",\"brokerAddrs\":{\"0\":\"master:10911\",\"2\":\"slave:10911\"}}],\"filterServerTable\":{\"broker\":[\"filter-a\",\"filter-b\"]},\"topicQueueMappingByBroker\":{\"broker\":{\"topic\":\"topic\",\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"scope\":\"__global__\",\"currIdMap\":{\"0\":0,\"1\":1}}}}"},
+            {"route-browser-secure", "{\"topicQueueMappingByBroker\":{\"<broker>(a)\":{\"topic\":\"<orders>\",\"totalQueues\":1,\"bname\":\"broker\",\"epoch\":1,\"dirty\":false,\"scope\":\"tenant\",\"currIdMap\":{\"0\":0}}}}"}
         };
         for (String[] entry : routeInputs) {
             cases.add(inheritedSerializationCase(entry[0], entry[1], TopicRouteData.class));

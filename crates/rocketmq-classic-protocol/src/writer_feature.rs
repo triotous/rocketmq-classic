@@ -8,7 +8,7 @@
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
 /// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
 /// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
-/// `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
+/// `BrowserSecure`, `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
 /// `NotWriteHashMapArrayListClassName`, `NotWriteNumberClassName`, and
 /// `NotWriteSetClassName`, `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
 /// `WriteThrowableClassName`, `WriterUtilDateAsMillis`,
@@ -224,6 +224,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriterUtilDateAsMillis
                 | Self::WriteBigDecimalAsPlain
                 | Self::WriteFloatSpecialAsString
+                | Self::BrowserSecure
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable
@@ -254,12 +255,31 @@ mod tests {
     #[test]
     fn single_quoted_strings_match_fastjson_escaping() {
         let mut output = String::new();
-        crate::route::write_java_json_string("a'b\"c\\d\n漢<>()", true, &mut output).unwrap();
+        crate::route::write_java_json_string_with_browser_secure(
+            "a'b\"c\\d\n漢<>()",
+            true,
+            false,
+            &mut output,
+        )
+        .unwrap();
         assert_eq!(output, r#"'a\'b"c\\d\n漢<>()'"#);
         assert_eq!(
             crate::route::escape_none_ascii_json(&output),
             r#"'a\'b"c\\d\n\u6F22<>()'"#
         );
+    }
+
+    #[test]
+    fn browser_secure_strings_escape_html_sensitive_characters() {
+        let mut output = String::new();
+        crate::route::write_java_json_string_with_browser_secure(
+            "a'b\"c\\d\n漢<>()",
+            true,
+            true,
+            &mut output,
+        )
+        .unwrap();
+        assert_eq!(output, r#"'a\'b"c\\d\n漢\u003C\u003E\u0028\u0029'"#);
     }
 
     #[test]

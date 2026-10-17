@@ -118,6 +118,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         stringify_long_map_keys: features.contains(&JavaJsonWriterFeature::WriteLongAsString),
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
+        browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
     };
     write_java_route_json(&value, None, 0, indent, writer_options, &mut output)?;
     if features.contains(&JavaJsonWriterFeature::EscapeNoneAscii) {
@@ -599,13 +600,25 @@ pub(crate) fn is_java_enum_field(name: &str) -> bool {
     )
 }
 
-pub(crate) fn write_java_json_string(
+pub(crate) fn write_java_json_string_with_browser_secure(
     value: &str,
     use_single_quotes: bool,
+    browser_secure: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     if !use_single_quotes {
-        output.push_str(&serde_json::to_string(value)?);
+        let encoded = serde_json::to_string(value)?;
+        if browser_secure {
+            for character in encoded.chars() {
+                if matches!(character, '<' | '>' | '(' | ')') {
+                    output.push_str(&format!("\\u{:04X}", character as u32));
+                } else {
+                    output.push(character);
+                }
+            }
+        } else {
+            output.push_str(&encoded);
+        }
         return Ok(());
     }
 
@@ -619,6 +632,9 @@ pub(crate) fn write_java_json_string(
             '\t' => output.push_str("\\t"),
             '\u{0008}' => output.push_str("\\b"),
             '\u{000C}' => output.push_str("\\f"),
+            character if browser_secure && matches!(character, '<' | '>' | '(' | ')') => {
+                output.push_str(&format!("\\u{:04X}", character as u32));
+            }
             character if character <= '\u{001F}' => {
                 output.push_str(&format!("\\u{:04X}", character as u32));
             }
@@ -635,6 +651,7 @@ pub(crate) fn write_java_json_field_name(
     is_map_entry: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
+    browser_secure: bool,
     output: &mut String,
 ) -> Result<(), serde_json::Error> {
     // Fastjson's specialized boolean field writer keeps its normal quoted
@@ -642,11 +659,19 @@ pub(crate) fn write_java_json_field_name(
     let eligible_for_unquote = is_map_entry || !value.is_boolean();
     let eligible_for_single_quotes =
         is_map_entry || (!value.is_boolean() && !is_java_enum_field(key));
-    if eligible_for_unquote && unquote_field_names && is_java_unquoted_field_name(key) {
+    if eligible_for_unquote
+        && unquote_field_names
+        && (is_map_entry || is_java_unquoted_field_name(key))
+    {
         output.push_str(key);
         return Ok(());
     }
-    write_java_json_string(key, eligible_for_single_quotes && use_single_quotes, output)
+    write_java_json_string_with_browser_secure(
+        key,
+        eligible_for_single_quotes && use_single_quotes,
+        browser_secure,
+        output,
+    )
 }
 
 #[derive(Clone, Copy, Default)]
@@ -655,6 +680,7 @@ struct JavaRouteWriterOptions {
     stringify_long_map_keys: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
+    browser_secure: bool,
 }
 
 fn write_java_route_json(
@@ -698,6 +724,7 @@ fn write_java_route_json(
                         field_name.is_some_and(is_java_map_property),
                         writer_options.use_single_quotes,
                         writer_options.unquote_field_names,
+                        writer_options.browser_secure,
                         output,
                     )?;
                 }
@@ -744,7 +771,12 @@ fn write_java_route_json(
         serde_json::Value::String(value) => {
             let use_single_quotes_for_value = writer_options.use_single_quotes
                 && field_name.is_none_or(|name| !is_java_enum_field(name));
-            write_java_json_string(value, use_single_quotes_for_value, output)?;
+            write_java_json_string_with_browser_secure(
+                value,
+                use_single_quotes_for_value,
+                writer_options.browser_secure,
+                output,
+            )?;
         }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
@@ -4295,6 +4327,7 @@ mod tests {
                         JavaJsonWriterFeature::WriteFloatSpecialAsString,
                         "WriteFloatSpecialAsString",
                     ),
+                    (JavaJsonWriterFeature::BrowserSecure, "BrowserSecure"),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,
@@ -4311,6 +4344,20 @@ mod tests {
                         case["id"]
                     );
                 }
+                assert_eq!(
+                    value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::BrowserSecure,
+                            JavaJsonWriterFeature::UnquoteFieldName,
+                        ])
+                        .unwrap(),
+                    case["writerFeatureOverrides"]["BrowserSecure+UnquoteFieldName"]
+                        .as_str()
+                        .unwrap()
+                        .as_bytes(),
+                    "{} BrowserSecure+UnquoteFieldName",
+                    case["id"]
+                );
                 assert_eq!(
                     case["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"],
                     "JSONException",
