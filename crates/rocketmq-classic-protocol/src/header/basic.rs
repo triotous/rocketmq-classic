@@ -520,17 +520,26 @@ impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SearchOffsetResponseHeader {
-    pub offset: i64,
+    pub offset: Option<i64>,
 }
 
 impl CommandHeader for SearchOffsetResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "offset", self.offset);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            offset: required_i64(fields, "offset")?,
+            offset: Some(required_i64(fields, "offset")?),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: optional_i64_with_mode(fields, "offset", false)?,
         })
     }
 }
@@ -544,17 +553,26 @@ impl CommandHeader for SearchOffsetResponseHeader {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetMaxOffsetResponseHeader {
-    pub offset: i64,
+    pub offset: Option<i64>,
 }
 
 impl CommandHeader for GetMaxOffsetResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "offset", self.offset);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            offset: required_i64(fields, "offset")?,
+            offset: Some(required_i64(fields, "offset")?),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: optional_i64_with_mode(fields, "offset", false)?,
         })
     }
 }
@@ -568,17 +586,26 @@ impl CommandHeader for GetMaxOffsetResponseHeader {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetMinOffsetResponseHeader {
-    pub offset: i64,
+    pub offset: Option<i64>,
 }
 
 impl CommandHeader for GetMinOffsetResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "offset", self.offset);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            offset: required_i64(fields, "offset")?,
+            offset: Some(required_i64(fields, "offset")?),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: optional_i64_with_mode(fields, "offset", false)?,
         })
     }
 }
@@ -592,17 +619,26 @@ impl CommandHeader for GetMinOffsetResponseHeader {
 /// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetEarliestMsgStoretimeResponseHeader {
-    pub timestamp: i64,
+    pub timestamp: Option<i64>,
 }
 
 impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("timestamp".into(), self.timestamp.to_string());
+        put_optional(fields, "timestamp", self.timestamp);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            timestamp: required_i64(fields, "timestamp")?,
+            timestamp: Some(required_i64(fields, "timestamp")?),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            timestamp: optional_i64_with_mode(fields, "timestamp", false)?,
         })
     }
 }

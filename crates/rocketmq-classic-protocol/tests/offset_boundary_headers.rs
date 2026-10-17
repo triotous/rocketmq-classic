@@ -138,6 +138,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     SearchOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
                         .offset
+                        .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
                     "{name}"
@@ -146,6 +147,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     GetMaxOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
                         .offset
+                        .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
                     "{name}"
@@ -154,6 +156,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     GetMinOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
                         .offset
+                        .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
                     "{name}"
@@ -162,6 +165,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                     GetEarliestMsgStoretimeResponseHeader::decode_fields(&fields)
                         .unwrap()
                         .timestamp
+                        .unwrap()
                         .to_string(),
                     response["ext"]["timestamp"].as_str().unwrap(),
                     "{name}"

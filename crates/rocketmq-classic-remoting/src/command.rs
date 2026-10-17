@@ -1070,6 +1070,118 @@ mod tests {
     }
 
     #[test]
+    fn offset_boundary_response_header_reflection_modes_match_invoked_java() {
+        use rocketmq_classic_protocol::header::{
+            GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetResponseHeader,
+            GetMinOffsetResponseHeader, SearchOffsetResponseHeader,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/offset-boundary-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let expected = &case[mode];
+                let expected_value = expected["value"].as_i64();
+                let mut encoded = HeaderMap::new();
+                match case["headerType"].as_str().unwrap() {
+                    "search" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<SearchOffsetResponseHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "max" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<GetMaxOffsetResponseHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "min" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<GetMinOffsetResponseHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "earliest" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                GetEarliestMsgStoretimeResponseHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                            });
+                        assert_eq!(header.timestamp, expected_value, "{case_name}/{mode}");
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    other => panic!("{case_name}: unknown header type {other}"),
+                }
+
+                let expected_fields = expected["encodedFields"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<HeaderMap>();
+                assert_eq!(encoded, expected_fields, "{case_name}/{mode}");
+                let expected_owner_outcome = if expected_value.is_some() {
+                    "OK"
+                } else {
+                    "NullPointerException"
+                };
+                assert_eq!(
+                    expected["ownerOutcome"], expected_owner_outcome,
+                    "{case_name}/{mode}"
+                );
+                if let Some(value) = expected_value {
+                    assert_eq!(
+                        expected["ownerValue"].as_i64(),
+                        Some(value),
+                        "{case_name}/{mode}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn pull_response_header_fast_and_reflective_decode_modes_match_invoked_java() {
         use rocketmq_classic_protocol::header::PullMessageResponseHeader;
 
@@ -1928,7 +2040,7 @@ mod tests {
                     75,
                     Some(
                         rocketmq_classic_protocol::header::SearchOffsetResponseHeader {
-                            offset: 88,
+                            offset: Some(88),
                         },
                     ),
                 )

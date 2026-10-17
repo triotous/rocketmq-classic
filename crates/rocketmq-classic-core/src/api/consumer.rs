@@ -6,7 +6,7 @@ use rocketmq_classic_protocol::{
     },
     codes::{request, response},
     header::{
-        ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+        CommandHeader, ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
         GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
         HeaderMap, LockBatchMqRequestHeader, ProtocolError, PullMessageRequestHeader,
@@ -197,7 +197,12 @@ impl MQClientApi {
         let code = request::SEARCH_OFFSET_BY_TIMESTAMP;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        Ok(decode_header::<SearchOffsetResponseHeader>(&reply, code, addr)?.offset)
+        required_response_header_field(
+            decode_header_with_mode::<SearchOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            "offset",
+            code,
+            addr,
+        )
     }
 
     pub async fn get_max_offset(
@@ -209,7 +214,12 @@ impl MQClientApi {
         let code = request::GET_MAX_OFFSET;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        Ok(decode_header::<GetMaxOffsetResponseHeader>(&reply, code, addr)?.offset)
+        required_response_header_field(
+            decode_header_with_mode::<GetMaxOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            "offset",
+            code,
+            addr,
+        )
     }
 
     pub async fn get_min_offset(
@@ -221,7 +231,12 @@ impl MQClientApi {
         let code = request::GET_MIN_OFFSET;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        Ok(decode_header::<GetMinOffsetResponseHeader>(&reply, code, addr)?.offset)
+        required_response_header_field(
+            decode_header_with_mode::<GetMinOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            "offset",
+            code,
+            addr,
+        )
     }
 
     pub async fn get_earliest_msg_storetime(
@@ -233,7 +248,15 @@ impl MQClientApi {
         let code = request::GET_EARLIEST_MSG_STORETIME;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
-        Ok(decode_header::<GetEarliestMsgStoretimeResponseHeader>(&reply, code, addr)?.timestamp)
+        required_response_header_field(
+            decode_header_with_mode::<GetEarliestMsgStoretimeResponseHeader>(
+                &reply, code, addr, true,
+            )?
+            .timestamp,
+            "timestamp",
+            code,
+            addr,
+        )
     }
 
     fn process_pull_response(
@@ -434,6 +457,24 @@ fn required_response_header_field(
         request_code,
         peer: peer.to_owned(),
         reason: ProtocolError::MissingField(field).to_string(),
+    })
+}
+
+fn decode_header_with_mode<T: CommandHeader + Default>(
+    reply: &rocketmq_classic_remoting::RemotingCommand,
+    request_code: i32,
+    peer: &str,
+    use_fast_encode: bool,
+) -> Result<T, RpcError> {
+    let Some(fields) = reply.ext_fields.as_ref() else {
+        return Ok(T::default());
+    };
+    T::decode_fields_with_mode(fields, use_fast_encode).map_err(|error| {
+        RpcError::MalformedResponse {
+            request_code,
+            peer: peer.to_owned(),
+            reason: error.to_string(),
+        }
     })
 }
 

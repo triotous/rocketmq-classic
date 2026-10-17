@@ -170,6 +170,46 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
     }
 }
 
+async fn invoke_with_response_fields(
+    fixture: &Value,
+    response_fields: Option<HeaderMap>,
+) -> Result<i64, RpcError> {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let expected = fixture.clone();
+    let response_fields = response_fields.clone();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let command = read_command(&mut stream).await;
+        let (request_code, request_fields) = rpc_header(&expected);
+        assert_eq!(command.code, request_code);
+        assert_eq!(command.ext_fields.as_ref().unwrap(), &request_fields);
+        assert!(command.body.is_none());
+        assert!(!command.is_oneway());
+        let mut reply = RemotingCommand {
+            code: response::SUCCESS,
+            opaque: command.opaque,
+            ext_fields: response_fields.map(Into::into),
+            ..Default::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply).unwrap())
+            .await
+            .unwrap();
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let api = MQClientApi::new(client.clone());
+    let result = invoke(&api, &addr, fixture).await;
+    tokio::time::timeout(Duration::from_secs(3), peer)
+        .await
+        .unwrap()
+        .unwrap();
+    client.shutdown().await;
+    result
+}
+
 #[tokio::test]
 async fn java_invoked_offset_boundary_requests_and_outcomes_match() {
     for name in CASES {
@@ -247,5 +287,53 @@ async fn java_invoked_offset_boundary_requests_and_outcomes_match() {
             .unwrap()
             .unwrap();
         client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn offset_boundary_rpc_unboxes_required_java_response_values() {
+    for (case_name, field_name, request_code) in [
+        (
+            "search-offset-lower-empty",
+            "offset",
+            request::SEARCH_OFFSET_BY_TIMESTAMP,
+        ),
+        (
+            "max-offset-committed-empty",
+            "offset",
+            request::GET_MAX_OFFSET,
+        ),
+        ("min-offset", "offset", request::GET_MIN_OFFSET),
+        (
+            "earliest-storetime-signed",
+            "timestamp",
+            request::GET_EARLIEST_MSG_STORETIME,
+        ),
+    ] {
+        let fixture = fixture(case_name);
+        assert_eq!(
+            fixture["request"]["code"].as_i64(),
+            Some(i64::from(request_code))
+        );
+        for response_fields in [
+            None,
+            Some(HeaderMap::new()),
+            Some(HeaderMap::from([(
+                field_name.to_owned(),
+                "not-a-long".to_owned(),
+            )])),
+        ] {
+            match invoke_with_response_fields(&fixture, response_fields).await {
+                Err(RpcError::MalformedResponse {
+                    request_code: actual_code,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(actual_code, request_code, "{case_name}");
+                    assert!(reason.contains(field_name), "{case_name}: {reason}");
+                }
+                other => panic!("{case_name}: expected malformed response, got {other:?}"),
+            }
+        }
     }
 }
