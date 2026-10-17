@@ -48,3 +48,10 @@ Phase 19 live batch-send case implementation
 - Registered `PROD-004-batch-send` with the basic profile, fixed body prefix, and two-message count. Added fail-closed runner dispatch, manifest inputs, structural evidence validation, and comparator self-test evidence for missing batch members. The runner uses the first Broker physical offset ID in the comma-separated batch send response for `view-batch` and retains the full ID list in evidence.
 - Passed the Java Maven compile on the pinned JDK, `cargo build --locked -p rocketmq-classic-integration --bin live_client`, strict integration-crate Clippy, formatting, shell syntax, Python compilation, comparator self-test, and 37-row manifest validation. The no-marker runner preflight refused execution before Docker setup as expected.
 - Basic-profile live execution and evidence reconciliation remain pending the implementation commit. No Docker resources were started in this implementation checkpoint.
+
+
+PROD-004 batch live diagnostic run (2026-10-17 06:44 UTC)
+
+- Ran `PROD-004-batch-send` from clean source revision `2f9396e3be30e0a123d59aa125d881a3056ad102` against the pinned 5.3.4 basic profile. Java batch send succeeded and returned two comma-separated physical offset IDs.
+- The Rust readback command received only the first ID and incorrectly decoded that ordinary stored message body as a compact batch body, failing with `IncompleteField { field: "magic code", length: 4 }`. This is a runner readback failure; no PASS was recorded.
+- The failed run evidence is preserved at `docs/compatibility/evidence/phase-19/PROD-004-batch-send/20261017T064439Z/`. The scenario topic and isolated Compose containers, network, and volume were cleaned up; project-filtered Docker checks found no remnants.
