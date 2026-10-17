@@ -3651,6 +3651,13 @@ owner-specific checks belong in the manual handoff.
   Clippy, formatting, and diff checks pass. Two test expectations were corrected
   to match Java: direct decode preserves null, and the wrapper fields are
   nullable in the validation matrix. This closes this header slice only.
+- [x] P18-V01 `FastCodesHeader` production-source inventory: pinned Java
+  `remoting` contains exactly four implementations, and all four have invoked
+  fast/reflection fixtures plus Rust comparisons: Pull request, Pull response,
+  Send response, and Send V2 request headers. Rust provides per-mode decoders
+  for each; Send V2 also covers inherited fields and V1 conversion. This closes
+  that bounded inventory only. Other headers' generic reflection decoding and
+  broad P18-V01 reconciliation remain open.
 - [x] P18-V02 server-free gates complete for code revision `fcc0f3f1`
   (documentation HEAD `29b38b4b`): comparator self-test and 37-row manifest;
   16 race/leak cases × 3; fuzz smoke (105 frame seeds, 11 message seeds, 1,856

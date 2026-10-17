@@ -79,3 +79,20 @@ This closes the remaining server-free P18-V02 supplemental gates for
 P18-V04 evidence, Phase 19 local Docker/Broker scenarios and profiles, and
 pre-publication version/registry checks remain open. Owner-only production
 validation remains separate manual work.
+
+## P18-V01 FastCodesHeader production source inventory — 2026-10-17T19:47:25Z
+
+- Scanned the pinned Java client `remoting/src/main/java` source tree for
+  production `FastCodesHeader` implementations. Exactly four were found:
+  `PullMessageRequestHeader`, `PullMessageResponseHeader`,
+  `SendMessageResponseHeader`, and `SendMessageRequestHeaderV2`.
+- Each maps to an invoked Java fast/reflection fixture and a Rust comparison.
+  The fixtures cover valid and missing fields plus representative conversion
+  failures; Send V2 also covers inherited-field decode behavior and V1
+  conversion.
+- Rust implements mode-specific decoding for all four classes. The full
+  current-revision P18-V02 suite verified these fixtures on code revision
+  `fcc0f3f1`.
+- This closes the bounded production `FastCodesHeader` inventory. Generic
+  reflection decoding for other typed headers and broad bidirectional P18-V01
+  source/API/settings/input/error/flow reconciliation remain open.
