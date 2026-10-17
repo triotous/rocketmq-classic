@@ -200,19 +200,29 @@ pub(super) fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
                 task();
             }
         });
-        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             executor.execute(dispatched)
-        }))
-        .map_or(true, |result| result.is_err());
-        if rejected && task.lock().unwrap().take().is_some() {
-            send_response(
-                inner,
-                request_for_rejection,
-                error_response(
-                    response::SYSTEM_BUSY,
-                    "[OVERLOAD]system busy, start flow control for a while",
-                ),
-            );
+        })) {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) if task.lock().unwrap().take().is_some() => {
+                send_response(
+                    inner,
+                    request_for_rejection,
+                    error_response(
+                        response::SYSTEM_BUSY,
+                        "[OVERLOAD]system busy, start flow control for a while",
+                    ),
+                );
+            }
+            Ok(Err(_)) => {}
+            Err(_) => {
+                if let Some(manager) = client.metrics_manager.read().unwrap().clone() {
+                    crate::metrics::record_process_request_failed(
+                        &manager,
+                        &request_for_rejection.command,
+                    );
+                }
+            }
         }
     }
 }
@@ -357,12 +367,23 @@ fn send_response(
     request: InboundRequest,
     mut response: RemotingCommand,
 ) {
-    if request.command.is_oneway() {
-        return;
-    }
     let Some(client) = inner.upgrade() else {
         return;
     };
+    let metrics_manager = client.metrics_manager.read().unwrap().clone();
+    let attributes = metrics_manager.as_ref().map(|manager| {
+        crate::metrics::response_attributes_builder(manager, &request.command, response.code)
+    });
+    let process_timer = request.command.get_process_timer().cloned();
+    if request.command.is_oneway() {
+        record_response_metric(
+            metrics_manager.as_ref(),
+            process_timer.as_ref(),
+            attributes,
+            crate::metrics::RESULT_ONEWAY,
+        );
+        return;
+    }
     response.opaque = request.command.opaque;
     response.mark_response();
     let connection = client
@@ -372,20 +393,66 @@ fn send_response(
         .values()
         .find(|connection| connection.generation == request.generation)
         .cloned();
-    if let Some(connection) = connection {
-        match connection.encode_command(&response, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE)
-        {
-            Ok(encoded) => {
-                let Some(runtime) = client.runtime.lock().unwrap().clone() else {
-                    return;
+    let Some(connection) = connection else {
+        record_response_metric(
+            metrics_manager.as_ref(),
+            process_timer.as_ref(),
+            attributes,
+            crate::metrics::RESULT_WRITE_CHANNEL_FAILED,
+        );
+        return;
+    };
+    match connection.encode_command(&response, crate::codec::frame::JAVA_ENCODER_MAX_FRAME_SIZE) {
+        Ok(encoded) => {
+            let Some(runtime) = client.runtime.lock().unwrap().clone() else {
+                record_response_metric(
+                    metrics_manager.as_ref(),
+                    process_timer.as_ref(),
+                    attributes,
+                    crate::metrics::RESULT_WRITE_CHANNEL_FAILED,
+                );
+                return;
+            };
+            let write_metric =
+                match (metrics_manager, attributes) {
+                    (Some(manager), Some(attributes)) => Some(
+                        crate::metrics::PendingWriteMetric::new(manager, process_timer, attributes),
+                    ),
+                    _ => None,
                 };
-                let task = runtime.spawn(async move {
-                    let _ = connection.send_without_deadline(encoded).await;
-                });
-                client.spawn(task);
-            }
-            Err(error) => client.connection_closed(request.generation, Some(error)),
+            let task = runtime.spawn(async move {
+                let result = connection.send_without_deadline(encoded).await;
+                let status = if result.is_ok() {
+                    crate::metrics::WriteAndFlushStatus::Success
+                } else {
+                    crate::metrics::WriteAndFlushStatus::Failed
+                };
+                if let Some(write_metric) = write_metric {
+                    write_metric.finish(status);
+                }
+            });
+            client.spawn(task);
         }
+        Err(error) => {
+            record_response_metric(
+                metrics_manager.as_ref(),
+                process_timer.as_ref(),
+                attributes,
+                crate::metrics::RESULT_WRITE_CHANNEL_FAILED,
+            );
+            client.connection_closed(request.generation, Some(error));
+        }
+    }
+}
+
+fn record_response_metric(
+    manager: Option<&Arc<crate::metrics::RemotingMetricsManager>>,
+    timer: Option<&crate::command::ProcessTimer>,
+    attributes: Option<crate::metrics::AttributesBuilder>,
+    result: &'static str,
+) {
+    if let (Some(manager), Some(attributes)) = (manager, attributes) {
+        crate::metrics::record_request_latency(manager, timer, attributes, result);
     }
 }
 

@@ -42,6 +42,8 @@ pub mod client;
 pub mod codec;
 pub mod command;
 pub mod error;
+pub mod metrics;
+pub mod remoting_helper;
 pub mod route;
 
 pub use command::{

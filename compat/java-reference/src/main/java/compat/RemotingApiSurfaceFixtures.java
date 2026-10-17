@@ -17,6 +17,9 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.ImmediateEventExecutor;
+import io.netty.util.concurrent.Promise;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -27,18 +30,28 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.netty.channel.Channel;
 import org.apache.rocketmq.remoting.InvokeCallback;
+import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.remoting.common.SemaphoreReleaseOnlyOnce;
+import org.apache.rocketmq.remoting.metrics.RemotingMetricsConstant;
+import org.apache.rocketmq.remoting.metrics.RemotingMetricsManager;
+import org.apache.rocketmq.remoting.netty.NettyRemotingAbstract;
 import org.apache.rocketmq.remoting.netty.ResponseFuture;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.RequestCode;
+import org.apache.rocketmq.remoting.protocol.ResponseCode;
 
 /** Public source/API inventory for the Java remoting response-future capability. */
 public final class RemotingApiSurfaceFixtures {
@@ -94,7 +107,81 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("responseFutureWaitResponseInterruptionBehavior",
             responseFutureWaitResponseInterruptionBehavior());
         fixture.put("responseFutureCallbackFailureBehavior", responseFutureCallbackFailureBehavior());
+        fixture.put("remotingMetricsConstantFields", publicFields(RemotingMetricsConstant.class));
+        fixture.put("remotingMetricsManagerPublicConstructors",
+            publicConstructors(RemotingMetricsManager.class));
+        fixture.put("remotingMetricsManagerPublicFields", publicFields(RemotingMetricsManager.class));
+        fixture.put("remotingMetricsManagerPublicMethods", publicMethods(RemotingMetricsManager.class));
+        fixture.put("remotingMetricsHostMethods", publicMethods(NettyRemotingAbstract.class).stream()
+            .filter(method -> method.contains("getRemotingMetricsManager(")
+                || method.contains("setRemotingMetricsManager("))
+            .collect(Collectors.toList()));
+        fixture.put("requestCodeDescriptions", codeDescriptions(RequestCode.class,
+            RemotingHelper::getRequestCodeDesc));
+        fixture.put("responseCodeDescriptions", codeDescriptions(ResponseCode.class,
+            RemotingHelper::getResponseCodeDesc));
+        fixture.put("unknownRequestCodeDescription", RemotingHelper.getRequestCodeDesc(Integer.MAX_VALUE));
+        fixture.put("unknownResponseCodeDescription", RemotingHelper.getResponseCodeDesc(Integer.MIN_VALUE));
+        fixture.put("remotingMetricsBehavior", remotingMetricsBehavior());
         return fixture;
+    }
+
+    private static List<String> publicFields(Class<?> type) {
+        return Arrays.stream(type.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> field.getType().getName() + " " + field.getName())
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static List<Map<String, Object>> codeDescriptions(Class<?> type, IntFunction<String> describe)
+        throws IllegalAccessException {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        Set<Integer> seenCodes = new java.util.HashSet<>();
+        for (java.lang.reflect.Field field : type.getFields()) {
+            if (field.getType() != int.class) continue;
+            int code = field.getInt(null);
+            if (!seenCodes.add(code)) {
+                throw new IllegalStateException("duplicate code in " + type.getName() + ": " + code);
+            }
+            Map<String, Object> testCase = new TreeMap<>();
+            testCase.put("code", code);
+            testCase.put("field", field.getName());
+            testCase.put("description", describe.apply(code));
+            cases.add(testCase);
+        }
+        cases.sort((left, right) -> Integer.compare((Integer) left.get("code"), (Integer) right.get("code")));
+        return cases;
+    }
+
+    private static Map<String, Object> remotingMetricsBehavior() {
+        RemotingMetricsManager manager = new RemotingMetricsManager();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("defaultAttributesEmpty", manager.newAttributesBuilder().build().asMap().isEmpty());
+        result.put("defaultHistogramClass", manager.getRpcLatency().getClass().getName());
+
+        manager.setAttributesBuilderSupplier(() -> Attributes.builder().put("base", "value"));
+        Attributes attributes = manager.newAttributesBuilder().build();
+        result.put("suppliedBaseAttribute", attributes.get(AttributeKey.stringKey("base")));
+        result.put("suppliedProtocolType", attributes.get(AttributeKey.stringKey(
+            RemotingMetricsConstant.LABEL_PROTOCOL_TYPE)));
+        result.put("supplierGetterPresent", manager.getAttributesBuilderSupplier() != null);
+
+        Promise<Object> success = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+        success.setSuccess(new Object());
+        Promise<Object> cancelled = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+        cancelled.cancel(false);
+        Promise<Object> failed = new DefaultPromise<>(ImmediateEventExecutor.INSTANCE);
+        failed.setFailure(new IllegalStateException("fixture failure"));
+        result.put("writeResults", Arrays.asList(
+            manager.getWriteAndFlushResult(success),
+            manager.getWriteAndFlushResult(cancelled),
+            manager.getWriteAndFlushResult(failed)));
+
+        result.put("metricsViewCount", manager.getMetricsView().size());
+        result.put("metricsViewBoundariesMilliseconds",
+            Arrays.asList(1, 3, 5, 7, 10, 100, 1000, 2000, 3000));
+        return result;
     }
 
     private static List<String> publicConstructors(Class<?> type) {

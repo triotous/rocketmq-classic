@@ -2,7 +2,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -20,6 +20,11 @@ use rocketmq_classic_remoting::{
     },
     codec::frame,
     error::TransportError,
+    metrics::{
+        AttributeValue, Attributes, HISTOGRAM_RPC_LATENCY, LABEL_IS_LONG_POLLING,
+        LABEL_REQUEST_CODE, LABEL_RESPONSE_CODE, LABEL_RESULT, RESULT_ONEWAY, RESULT_SUCCESS,
+        RemotingMetricsManager, RpcLatencyHistogram,
+    },
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
@@ -1381,6 +1386,17 @@ async fn p3_v02_single_flight_shares_connection_and_stale_close_keeps_generation
 
 #[tokio::test]
 async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
+    #[derive(Default)]
+    struct RecordingHistogram(Mutex<Vec<(u64, Attributes)>>);
+    impl RpcLatencyHistogram for RecordingHistogram {
+        fn record(&self, elapsed_milliseconds: u64, attributes: &Attributes) {
+            self.0
+                .lock()
+                .unwrap()
+                .push((elapsed_milliseconds, attributes.clone()));
+        }
+    }
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -1411,6 +1427,14 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         (processor_response, unsupported_response)
     });
     let client = RemotingClient::new(TransportMode::Plain);
+    let histogram = Arc::new(RecordingHistogram::default());
+    let manager = Arc::new(RemotingMetricsManager::new());
+    manager.init_metrics(histogram.clone(), None);
+    client.set_remoting_metrics_manager(Some(manager.clone()));
+    assert!(Arc::ptr_eq(
+        &client.get_remoting_metrics_manager().unwrap(),
+        &manager
+    ));
     client.start().unwrap();
     client.register_processor(
         777_777,
@@ -1438,6 +1462,50 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         Some(" request type 888888 not supported")
     );
     assert_eq!(unsupported_response.opaque, 42);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if histogram.0.lock().unwrap().len() == 3 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all inbound response metrics should be recorded");
+    {
+        let observations = histogram.0.lock().unwrap();
+        assert_eq!(observations.len(), 3);
+        let success = observations
+            .iter()
+            .find(|(_, labels)| {
+                labels[LABEL_REQUEST_CODE] == AttributeValue::String("777777".into())
+            })
+            .unwrap();
+        assert_eq!(
+            success.1[LABEL_RESPONSE_CODE],
+            AttributeValue::String("99".into())
+        );
+        assert_eq!(
+            success.1[LABEL_IS_LONG_POLLING],
+            AttributeValue::Boolean(false)
+        );
+        assert_eq!(
+            success.1[LABEL_RESULT],
+            AttributeValue::String(RESULT_SUCCESS.into())
+        );
+        let oneway = observations
+            .iter()
+            .find(|(_, labels)| {
+                labels[LABEL_REQUEST_CODE] == AttributeValue::String("999999".into())
+            })
+            .unwrap();
+        assert_eq!(
+            oneway.1[LABEL_RESULT],
+            AttributeValue::String(RESULT_ONEWAY.into())
+        );
+        assert!(!oneway.1.contains_key("protocol_type"));
+        assert_eq!(manager.get_metrics_view()[0].name, HISTOGRAM_RPC_LATENCY);
+    }
     client.shutdown().await;
 }
 

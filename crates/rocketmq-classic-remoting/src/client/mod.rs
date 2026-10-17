@@ -12,7 +12,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, RwLock, Weak,
         atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
     },
 };
@@ -26,7 +26,7 @@ use tokio::{
     time::{self, Instant},
 };
 
-use crate::{command::RemotingCommand, error::TransportError};
+use crate::{command::RemotingCommand, error::TransportError, metrics::RemotingMetricsManager};
 
 pub use config::{ClientConfig, SocksProxyConfig};
 pub use connection::TransportMode;
@@ -192,6 +192,7 @@ struct ClientInner {
     runtime: Mutex<Option<tokio::runtime::Handle>>,
     started: AtomicBool,
     request_pipeline: Mutex<Option<Arc<dyn RequestPipeline>>>,
+    metrics_manager: RwLock<Option<Arc<RemotingMetricsManager>>>,
     nameservers: Mutex<Option<Vec<String>>>,
     available_nameservers: Mutex<HashSet<String>>,
     chosen_nameserver: Mutex<Option<String>>,
@@ -896,6 +897,7 @@ impl RemotingClient {
             runtime: Mutex::new(None),
             started: AtomicBool::new(false),
             request_pipeline: Mutex::new(None),
+            metrics_manager: RwLock::new(None),
             nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
@@ -1164,6 +1166,7 @@ impl RemotingClient {
             channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
+            metrics_manager: RwLock::new(None),
             nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
@@ -1572,6 +1575,16 @@ impl RemotingClient {
 
     pub fn set_request_pipeline(&self, pipeline: Option<Arc<dyn RequestPipeline>>) {
         *self.inner.request_pipeline.lock().unwrap() = pipeline;
+    }
+
+    /// Sets the optional per-client remoting metrics manager.
+    pub fn set_remoting_metrics_manager(&self, manager: Option<Arc<RemotingMetricsManager>>) {
+        *self.inner.metrics_manager.write().unwrap() = manager;
+    }
+
+    /// Returns this client's remoting metrics manager, when configured.
+    pub fn get_remoting_metrics_manager(&self) -> Option<Arc<RemotingMetricsManager>> {
+        self.inner.metrics_manager.read().unwrap().clone()
     }
 
     pub fn pipe_request_pipeline(&self, pipeline: Arc<dyn RequestPipeline>) {
@@ -4603,6 +4616,7 @@ mod tests {
             channel_listener: None,
             channel_event_sender,
             request_pipeline: Mutex::new(None),
+            metrics_manager: RwLock::new(None),
             nameservers: Mutex::new(None),
             available_nameservers: Mutex::new(HashSet::new()),
             chosen_nameserver: Mutex::new(None),
