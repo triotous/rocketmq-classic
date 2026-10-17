@@ -3282,3 +3282,24 @@ owner-specific checks belong in the manual handoff.
   TLS certificate as a local trust anchor. This keeps the test focused on
   property reload and lets it run on hosts without native system trust roots.
   The test and the complete Remoting all-feature suite pass with this change.
+- P18-V01 `RemotingCommand` custom-header slice (code/test commit `d0ecaf1e`,
+  2026-10-17): typed headers remain attached until explicit materialization or
+  encoding; both JSON and RocketMQ codecs include the header fields without
+  changing the pre-encode ext-field map. Rust mutable borrows preserve the
+  attached header's in-command mutation flow, and cached decode returns the
+  same typed instance when requested. Invoked Java cases cover attach/read,
+  null clearing, post-attach mutation, direct and cached decoding, ext-field
+  merge, `addExtField`, `addExtFieldIfNotExist`, and its null-map exception.
+  Rust maps the null-map failure to `ProtocolError` and uses owned typed
+  headers with a compile-time trait contract instead of Java aliases and
+  reflection. The fixture SHA-256 is
+  `48b1ac80746dbb12d22b4da2c6a100b0a19f19e78b65035e5d88243c82d6e582`.
+  Remoting all-feature tests pass (112 unit, 8 codec, 1 fuzz regression, 7
+  security, 107 transport, and 15 doctests); strict all-target/all-feature
+  Remoting Clippy, workspace all-feature check, formatting, diff checks, and
+  Maven `verify` pass (37 scenarios, fixture drift, and Java/Rust cross-decodes).
+  `Default` initialization, process timer/callback-list, long-poll metric,
+  multi-entry `toString()` ordering, and broad P18-V01 remain open. The final
+  full-workspace P18-V02 run is still due after the remaining Phase 18 changes.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T090444Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T090444Z.rlog).
