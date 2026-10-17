@@ -1,0 +1,19 @@
+# Phase 18 compatibility release gate — 2026-10-17T00:28:53Z
+
+- Resumed on branch `phase/19-phase-18-compatibility-release-gate` at code
+  revision `5f08a240`; Java comparison repository remains read-only.
+- Reviewed the `WriteEnumUsingOrdinal` documentation diff and current phase
+  checklist. Recorded 16/48 mapped writer features and the latest Protocol and
+  Maven verification evidence in compatibility/release docs.
+- Latest Protocol evidence from the implementation session: 125 unit tests,
+  all integration targets, 42 doctests, strict Protocol Clippy, formatting,
+  Maven verify (37 scenarios), and diff checks pass on `5f08a240`. Latest full
+  workspace P18-V02 evidence remains on parent code revision `bc5642df` and
+  must be rerun after Phase 18 code work is complete.
+- Outstanding: broad P18-V01 bidirectional API/settings/input/error/flow and
+  reverse-export reconciliation; 32 unmapped JSON writer features; current
+  Ubuntu/Windows CI evidence; P18-V03 package/provenance/documentation review;
+  P18-V04 live-handoff registration; Phase 19 Docker/Broker automation and
+  local scenario execution; owner-validation handoff; pre-publication version
+  and registry dependency resolution.
+- No test commands were run in this documentation/status session.

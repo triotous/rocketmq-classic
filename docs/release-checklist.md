@@ -2751,3 +2751,15 @@ Before any publication:
   owner-validation handoff, and pre-publication version/registry checks remain
   open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T001244Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T001244Z.rlog).
+- P18-V01 `WriteEnumUsingOrdinal` (code commit `5f08a240`, 2026-10-17): enum-valued
+  protocol bean fields now serialize as Java ordinals; same-named string values
+  in map properties are preserved, including nested `messageRequestModeMap`.
+  Sixteen of 48 writer features have behavior mappings; 32 remain unmapped.
+  Protocol all-feature tests (125 unit tests, all integration targets, and 42
+  doctests), strict Protocol Clippy, Maven verify (37 scenarios), formatting,
+  and diff checks pass on `5f08a240`. The full-workspace P18-V02 gate remains
+  due after the remaining Phase 18 code changes. Broad P18-V01, current-revision
+  Ubuntu/Windows CI, package/provenance review, owner-validation handoff, and
+  Phase 19 Docker/Broker automation and scenario execution remain open.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
