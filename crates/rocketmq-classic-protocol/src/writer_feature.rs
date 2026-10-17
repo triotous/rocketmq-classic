@@ -44,7 +44,7 @@
 /// heartbeat adapters: the 41 body, 8 route, and 3 heartbeat fixture encodings
 /// have no feature-specific overrides. Other Java `RemotingSerializable`
 /// types with boxed Boolean fields, including `BrokerReplicasInfo`, are outside
-/// these adapters and remain part of the broader API parity audit.
+/// these client DTO adapters and are not covered by this mapping.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
