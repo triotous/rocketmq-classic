@@ -3043,3 +3043,16 @@ Before any publication:
   full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V04 handoff,
   and Phase 19 Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `WriteNullNumberAsZero` writer flag (code commit
+  `63a90423`, 2026-10-17): this is output-preserving for the mapped DTO graph.
+  The mapped bean schemas contain no nullable numeric fields; pinned Fastjson2
+  map and collection writers serialize null entries with `writeNull()` without
+  applying the number-null feature. Java feature fixtures record no output
+  overrides. Protocol all-feature tests (126 unit tests, all integration
+  targets, and 42 doctests), strict Protocol Clippy, formatting, and diff
+  checks pass. Mapping count is now 45/48; three flags remain unmapped:
+  `NullAsDefaultValue`, `WriteClassName`, and `ReferenceDetection`. Broad
+  P18-V01, final full-workspace P18-V02, current-revision Ubuntu/Windows CI,
+  P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
+  log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
