@@ -4,6 +4,7 @@
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
 /// adapters currently implement `FieldBased`, `WriteNullBooleanAsFalse`,
 /// `WriteNulls`, `WriteMapNullValue`, `WriteNullListAsEmpty`,
+/// `WriteNullStringAsEmpty`,
 /// `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
@@ -45,6 +46,8 @@
 /// nullable fields from the mapped Java DTO schemas as explicit JSON nulls,
 /// including nested typed DTOs. `WriteNullListAsEmpty` writes schema-identified
 /// nullable collection properties as empty arrays, including nested DTOs. The
+/// `WriteNullStringAsEmpty` option replaces null schema-identified String fields
+/// and nullable String collection members with empty strings. The
 /// remaining four options preserve output for the
 /// mapped RocketMQ DTO graph: it contains no
 /// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
@@ -236,6 +239,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNulls
                 | Self::WriteMapNullValue
                 | Self::WriteNullListAsEmpty
+                | Self::WriteNullStringAsEmpty
                 | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat

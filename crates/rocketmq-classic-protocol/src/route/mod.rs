@@ -120,6 +120,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::WriteNullListAsEmpty) {
         apply_java_null_lists::<T>(&mut value)?;
     }
+    if features.contains(&JavaJsonWriterFeature::WriteNullStringAsEmpty) {
+        apply_java_null_strings::<T>(&mut value)?;
+    }
     let mut bean_to_array_maps = HashMap::new();
     if features.contains(&JavaJsonWriterFeature::BeanToArray) {
         apply_java_bean_to_array::<T>(
@@ -478,6 +481,144 @@ pub(crate) fn apply_java_null_lists<T>(
     })?;
     write_java_null_lists(value, kind);
     Ok(())
+}
+
+pub(crate) fn apply_java_null_strings<T>(
+    value: &mut serde_json::Value,
+) -> Result<(), serde_json::Error> {
+    let kind = JavaBeanKind::root_for_type_name(std::any::type_name::<T>()).ok_or_else(|| {
+        <serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson WriteNullStringAsEmpty has no DTO field schema for {}",
+            std::any::type_name::<T>()
+        ))
+    })?;
+    write_java_null_strings(value, kind);
+    Ok(())
+}
+
+fn write_java_null_strings(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    for &name in kind.field_names() {
+        if java_is_nullable_string_field(kind, name) {
+            let field = fields
+                .entry(name.to_owned())
+                .or_insert(serde_json::Value::Null);
+            if field.is_null() {
+                *field = serde_json::Value::String(String::new());
+            }
+            continue;
+        }
+        let Some(field) = fields.get_mut(name) else {
+            continue;
+        };
+        if java_is_nullable_string_collection(kind, name) {
+            if let Some(items) = field.as_array_mut() {
+                for item in items {
+                    if item.is_null() {
+                        *item = serde_json::Value::String(String::new());
+                    }
+                }
+            }
+            continue;
+        }
+        if let Some(child_kind) = kind.child_kind(name) {
+            match field {
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        write_java_null_strings(item, child_kind);
+                    }
+                }
+                serde_json::Value::Object(_) => write_java_null_strings(field, child_kind),
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => {}
+            }
+        } else if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
+            if let Some(entries) = field.as_object_mut() {
+                for entry in entries.values_mut() {
+                    write_java_null_strings(entry, JavaBeanKind::TopicQueueMappingInfo);
+                }
+            }
+        } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
+            && name == "messageRequestModeMap"
+        {
+            if let Some(topics) = field.as_object_mut() {
+                for groups in topics.values_mut() {
+                    if let Some(groups) = groups.as_object_mut() {
+                        for mode in groups.values_mut() {
+                            write_java_null_strings(
+                                mode,
+                                JavaBeanKind::SetMessageRequestModeRequestBody,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn java_is_nullable_string_field(kind: JavaBeanKind, name: &str) -> bool {
+    matches!(
+        (kind, name),
+        (JavaBeanKind::BatchAck, "c" | "r" | "t")
+            | (JavaBeanKind::BatchAckMessageRequestBody, "brokerName")
+            | (
+                JavaBeanKind::BrokerData,
+                "brokerName" | "cluster" | "zoneName"
+            )
+            | (
+                JavaBeanKind::CheckClientRequestBody,
+                "clientId" | "group" | "namespace"
+            )
+            | (JavaBeanKind::ConsumeMessageDirectlyResult, "remark")
+            | (
+                JavaBeanKind::ConsumerData | JavaBeanKind::ProducerData,
+                "groupName"
+            )
+            | (JavaBeanKind::HeartbeatData, "clientID")
+            | (
+                JavaBeanKind::LiteSubscriptionDto,
+                "clientId" | "group" | "topic"
+            )
+            | (
+                JavaBeanKind::LockBatchRequestBody | JavaBeanKind::UnlockBatchRequestBody,
+                "clientId" | "consumerGroup"
+            )
+            | (JavaBeanKind::MessageQueue, "brokerName" | "topic")
+            | (
+                JavaBeanKind::QueryAssignmentRequestBody,
+                "clientId" | "consumerGroup" | "strategyName" | "topic"
+            )
+            | (JavaBeanKind::QueueData, "brokerName")
+            | (
+                JavaBeanKind::SetMessageRequestModeRequestBody,
+                "consumerGroup" | "topic"
+            )
+            | (
+                JavaBeanKind::SubscriptionData,
+                "expressionType" | "subString" | "topic"
+            )
+            | (
+                JavaBeanKind::TopicQueueMappingInfo,
+                "bname" | "scope" | "topic"
+            )
+            | (JavaBeanKind::TopicRouteData, "orderTopicConf")
+    )
+}
+
+fn java_is_nullable_string_collection(kind: JavaBeanKind, name: &str) -> bool {
+    matches!(
+        (kind, name),
+        (
+            JavaBeanKind::GetConsumerListByGroupResponseBody,
+            "consumerIdList"
+        ) | (JavaBeanKind::LiteSubscriptionDto, "liteTopicSet")
+            | (JavaBeanKind::SubscriptionData, "tagsSet")
+    )
 }
 
 fn write_java_null_lists(value: &mut serde_json::Value, kind: JavaBeanKind) {
@@ -4925,6 +5066,10 @@ mod tests {
                     (
                         JavaJsonWriterFeature::WriteNullListAsEmpty,
                         "WriteNullListAsEmpty",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriteNullStringAsEmpty,
+                        "WriteNullStringAsEmpty",
                     ),
                     (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
