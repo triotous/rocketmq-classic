@@ -3056,3 +3056,16 @@ Before any publication:
   P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
   log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `NullAsDefaultValue` writer flag (code commit `a54512da`,
+  2026-10-17): DTO-schema traversal emits empty strings for nullable String
+  fields, empty arrays for nullable collections, and empty objects for nullable
+  maps and nested DTO references. Nullable enum fields remain `null`, matching
+  Fastjson2 2.0.63. Invoked Java writer fixtures cover body, route, and
+  heartbeat defaults, explicit nulls, nested DTOs, and nullable String
+  collection members. Protocol all-feature tests (126 unit tests, all
+  integration targets, and 42 doctests), strict all-target/all-feature Protocol
+  Clippy, formatting, and diff checks pass. Mapping is now 46/48; `WriteClassName`
+  and `ReferenceDetection` remain unmapped. Broad P18-V01, final full-workspace
+  P18-V02, current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
