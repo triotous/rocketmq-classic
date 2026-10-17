@@ -48,3 +48,34 @@
 
 No plan, Java oracle, remote branch, tag, publication, Broker operation, or
 deployment was changed.
+
+## Current-revision P18-V02 supplemental gates — 2026-10-17T19:44:48Z
+
+- Code revision: `fcc0f3f1`; documentation HEAD before this record:
+  `29b38b4b`.
+- `python3 tests/differential/compare.py --self-test`: PASS.
+- `python3 tests/differential/compare.py --validate-manifest`: PASS, 37 scenarios.
+- `bash tests/stress/run-offline-smoke.sh`: PASS, 16 race/leak cases × 3.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`: PASS,
+  105 frame seeds, 11 message seeds, 1,856 bounded mutations, 146 frame
+  decodes, 113 message decodes.
+- `cargo build -p rocketmq-classic --examples --release --locked`: PASS.
+- `cargo bench -p rocketmq-classic --bench offline --locked --no-run`: PASS.
+- `cargo bench -p rocketmq-classic --bench offline --locked`: PASS on macOS
+  ARM64, Apple M5 Max, Rust 1.85.0. Per-iteration observations: frame
+  encode/decode 1,954.6 ns; Zstd message decode 1,038.8 ns; Producer request
+  construction 1,181.7 ns; route lookup 15.5 ns; loopback pending completion
+  64,728.4 ns. These are observations, not acceptance thresholds.
+- `cargo metadata --format-version 1 --locked --no-deps`: PASS.
+- `cargo package --workspace --list --locked --allow-dirty`: PASS.
+- `python3 scripts/check-workspace-metadata.py`: PASS, package licenses and
+  dependency direction.
+- `TZ=UTC cargo test -p rocketmq-classic-core --lib unique_id::tests --locked`:
+  PASS, 4 tests. Same command under `TZ=Asia/Taipei`: PASS, 4 tests.
+- Final `cargo fmt --all -- --check` and `git diff --check`: PASS.
+
+This closes the remaining server-free P18-V02 supplemental gates for
+`fcc0f3f1`. Broad P18-V01, current-revision GitHub Ubuntu/native Windows
+P18-V04 evidence, Phase 19 local Docker/Broker scenarios and profiles, and
+pre-publication version/registry checks remain open. Owner-only production
+validation remains separate manual work.

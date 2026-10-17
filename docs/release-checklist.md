@@ -3651,11 +3651,17 @@ owner-specific checks belong in the manual handoff.
   Clippy, formatting, and diff checks pass. Two test expectations were corrected
   to match Java: direct decode preserves null, and the wrapper fields are
   nullable in the validation matrix. This closes this header slice only.
-- [ ] Re-run the remaining P18-V02 gates on `fcc0f3f1`: differential comparator
-  and manifest, race/leak and fuzz smoke, release examples and benchmark build,
-  locked metadata/package checks, and UTC/Asia-Taipei Unique ID checks. The
-  current-revision test/check and Maven results above do not replace those
-  supplemental gates.
+- [x] P18-V02 server-free gates complete for code revision `fcc0f3f1`
+  (documentation HEAD `29b38b4b`): comparator self-test and 37-row manifest;
+  16 race/leak cases × 3; fuzz smoke (105 frame seeds, 11 message seeds, 1,856
+  mutations, 146 frame decodes, 113 message decodes); release examples;
+  workspace benchmark compile and offline run; locked Cargo metadata, workspace
+  metadata/license/dependency checks, and all seven product package listings;
+  four Core Unique ID tests under each of UTC and Asia/Taipei. Formatting and
+  diff checks pass. The benchmark ran on macOS ARM64, Apple M5 Max, Rust 1.85.0:
+  frame encode/decode 1,954.6 ns/iteration, Zstd message decode 1,038.8 ns,
+  Producer request construction 1,181.7 ns, route lookup 15.5 ns, and loopback
+  pending completion 64,728.4 ns. These are observations, not thresholds.
 - Broad P18-V01 reconciliation, current-revision GitHub Ubuntu/native Windows
   P18-V04 evidence, 30 Phase 19 local Docker/Broker scenarios and required
   profiles, and pre-publication version/registry checks remain open. Owner-only
