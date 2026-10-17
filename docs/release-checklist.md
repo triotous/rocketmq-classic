@@ -2949,3 +2949,16 @@ Before any publication:
   P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
   log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).
+- P18-V01 Fastjson map-sorting writer flags (code commit `b1a071fd`,
+  2026-10-17): `MapSortField` and `SortMapEntriesByKeys` sort serialized map
+  entries by key. Rust's `serde_json::Value` maps are key-ordered in the
+  configured dependency, so the current body, route, and heartbeat adapters
+  already produce the feature output. The Java oracle records no overrides
+  across 41 body, 8 route, and 3 heartbeat cases, including populated route
+  maps. Protocol all-feature tests (126 unit tests, all integration targets,
+  and 42 doctests), strict Protocol Clippy, formatting, diff checks, and Maven
+  verify (37 scenarios, fixture drift, and cross-decodes) pass. Mapping count
+  is now 38/48; 10 writer features remain unmapped. Broad P18-V01, final
+  full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V04 handoff,
+  and Phase 19 Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).

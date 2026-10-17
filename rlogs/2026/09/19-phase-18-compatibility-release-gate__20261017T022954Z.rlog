@@ -31,3 +31,21 @@
   remains outside the current client DTO adapters; the writer-feature claim is
   scoped accordingly. The first correction patch used stale log context and
   changed no files; this appended note preserves the correction history.
+- 2026-10-17T02:38:20Z: Mapped Fastjson2 `MapSortField` and
+  `SortMapEntriesByKeys`. Pinned Fastjson2 2.0.63 source says both sort map
+  entries by key (and sorted maps need no extra sorting); the Rust adapters
+  serialize through key-ordered `serde_json::Value` maps. The Java oracle has
+  no output overrides across 41 body, 8 route, and 3 heartbeat cases, including
+  populated route maps. Added adapter comparisons without changing Java
+  fixtures.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed
+  (126 unit tests, all integration targets, 42 doctests).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features
+  --locked -- -D warnings`, `cargo fmt --all -- --check`, and
+  `git diff --check`: passed.
+- `mvn -q -f compat/java-reference/pom.xml verify`: passed all 37 scenarios,
+  fixture-drift checks, and Java/Rust cross-decodes.
+- Code/test commit: `b1a071fd feat(protocol): map sorted map writer flags`.
+  Writer-feature inventory is 38/48; 10 features remain unmapped. Broad
+  P18-V01, final full-workspace P18-V02, current-revision Ubuntu/Windows CI and
+  P18-V04, and Phase 19 Docker/Broker automation remain open.
