@@ -3152,6 +3152,11 @@ Before any publication:
   and matched topic, queue, queue offset, and body. Topic and project-only
   Compose cleanup passed. Code/evidence commits: `95e38101`, `398c8ebd`. Evidence:
   [`20261017T054628Z`](compatibility/evidence/phase-19/PROD-001-sync-send/20261017T054628Z/).
+- [x] Run `PROD-002-async-send` against the pinned basic profile. Java's
+  callback fired once; Rust's Future resolved once; both returned `SEND_OK` and
+  cross-read the other's message by physical offset. Topic and project-only
+  Compose cleanup passed. Code/evidence commits: `6f2a0c12`, `aa35cc45`. Evidence:
+  [`20261017T055737Z`](compatibility/evidence/phase-19/PROD-002-async-send/20261017T055737Z/).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -3167,7 +3172,7 @@ Before any publication:
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
-- [ ] Implement and run the remaining 33 of 37 Phase 19 live scenarios, the
+- [ ] Implement and run the remaining 32 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
   evidence reconciliation. `tests/differential/run.sh --all` currently fails
   closed on unimplemented IDs.
@@ -3178,6 +3183,6 @@ Before any publication:
   pending classification after local matrix execution. See
   [`docs/owner-validation.md`](owner-validation.md).
 
-The four live PASS results do not constitute Phase 19 acceptance. All
+The five live PASS results do not constitute Phase 19 acceptance. All
 remaining locally reproducible cases stay automatic work; only the
 owner-specific checks belong in the manual handoff.
