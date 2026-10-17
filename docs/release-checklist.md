@@ -3388,3 +3388,16 @@ owner-specific checks belong in the manual handoff.
   dependency-direction/license check, and workspace package file listing pass;
   `rocketmq-classic-integration` remains unpublished. Registry dependency
   resolution remains pending after Phase 19.
+- P18-V01 Remoting nullable ext-field input slice (code/test commit `c07d3ac2`,
+  2026-10-17): `ExtFields` now preserves Java `HashMap` null-key/null-value
+  entries, nullable `addExtField` adapters match `putIfAbsent`, JSON encodes a
+  null key as the string `"null"` and omits null values, and RocketMQ binary
+  map encoding omits null entries. The invoked Java fixture and Rust
+  differential pass; the targeted Remoting all-feature test passes, and all
+  119 Remoting unit tests pass. The complete Remoting test command then stalled
+  while launching the `codec` integration binary at macOS `_dyld_start`; a
+  process sample confirmed the launch stall, so the suite is not recorded as a
+  pass. Maven `verify` passes all 37 scenarios, fixture checks, and Java/Rust
+  cross-decodes. Full workspace all-feature test-target compilation is still
+  running; no current-revision full-workspace gate is claimed. Broad P18-V01
+  remains open.
