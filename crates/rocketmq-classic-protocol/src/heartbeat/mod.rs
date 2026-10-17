@@ -2693,6 +2693,10 @@ mod tests {
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),
+                (
+                    crate::JavaJsonWriterFeature::IgnoreNoneSerializable,
+                    "IgnoreNoneSerializable",
+                ),
             ] {
                 assert_eq!(
                     value.java_encode_with_features(&[feature]).unwrap(),
@@ -2704,6 +2708,31 @@ mod tests {
                     case["case"]
                 );
             }
+            assert_eq!(
+                case["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"], "JSONException",
+                "{} Java error feature result",
+                case["case"]
+            );
+            assert!(
+                value
+                    .java_encode_with_features(&[
+                        crate::JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                    ])
+                    .is_err(),
+                "{} ErrorOnNoneSerializable",
+                case["case"]
+            );
+            assert_eq!(
+                value
+                    .java_encode_with_features(&[
+                        crate::JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                        crate::JavaJsonWriterFeature::IgnoreNoneSerializable,
+                    ])
+                    .unwrap(),
+                b"null",
+                "{} IgnoreNoneSerializable takes precedence",
+                case["case"]
+            );
             assert_eq!(
                 value.java_encode().unwrap(),
                 native_json.as_bytes(),

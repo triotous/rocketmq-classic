@@ -85,6 +85,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     features: &[JavaJsonWriterFeature],
 ) -> Result<String, serde_json::Error> {
     validate_java_writer_features(features)?;
+    if let Some(output) = java_non_serializable_writer_output(features)? {
+        return Ok(output);
+    }
     let indent = java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
     apply_java_json_writer_value_features(
@@ -261,6 +264,22 @@ pub(crate) fn validate_java_writer_features(
         )));
     }
     Ok(())
+}
+
+pub(crate) fn java_non_serializable_writer_output(
+    features: &[JavaJsonWriterFeature],
+) -> Result<Option<String>, serde_json::Error> {
+    // Fastjson2's IgnoreNoneSerializable result takes precedence when both
+    // non-serializable policies are enabled.
+    if features.contains(&JavaJsonWriterFeature::IgnoreNoneSerializable) {
+        return Ok(Some("null".to_owned()));
+    }
+    if features.contains(&JavaJsonWriterFeature::ErrorOnNoneSerializable) {
+        return Err(<serde_json::Error as serde::ser::Error>::custom(
+            "JSONException",
+        ));
+    }
+    Ok(None)
 }
 
 pub(crate) fn apply_java_json_writer_value_features(
@@ -4094,6 +4113,10 @@ mod tests {
                     ),
                     (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
+                    (
+                        JavaJsonWriterFeature::IgnoreNoneSerializable,
+                        "IgnoreNoneSerializable",
+                    ),
                 ] {
                     assert_eq!(
                         value.java_encode_with_features(&[feature]).unwrap(),
@@ -4105,6 +4128,32 @@ mod tests {
                         case["id"]
                     );
                 }
+                assert_eq!(
+                    case["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"],
+                    "JSONException",
+                    "{} Java error feature result",
+                    case["id"]
+                );
+                assert!(
+                    value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                        ])
+                        .is_err(),
+                    "{} ErrorOnNoneSerializable",
+                    case["id"]
+                );
+                assert_eq!(
+                    value
+                        .java_encode_with_features(&[
+                            JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                            JavaJsonWriterFeature::IgnoreNoneSerializable,
+                        ])
+                        .unwrap(),
+                    b"null",
+                    "{} IgnoreNoneSerializable takes precedence",
+                    case["id"]
+                );
                 assert_eq!(
                     value
                         .java_encode_with_features(&[

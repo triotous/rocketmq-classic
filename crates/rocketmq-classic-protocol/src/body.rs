@@ -4862,6 +4862,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     features: &[JavaJsonWriterFeature],
 ) -> Result<String, serde_json::Error> {
     crate::route::validate_java_writer_features(features)?;
+    if let Some(output) = crate::route::java_non_serializable_writer_output(features)? {
+        return Ok(output);
+    }
     let indent = crate::route::java_json_indent(pretty_format, features);
     let mut value = serde_json::to_value(value)?;
     let value_features = JavaJsonWriterValueFeatures {
@@ -7269,6 +7272,10 @@ mod tests {
                         ),
                         (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
                         (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
+                        (
+                            JavaJsonWriterFeature::IgnoreNoneSerializable,
+                            "IgnoreNoneSerializable",
+                        ),
                     ] {
                         assert_eq!(
                             value.java_encode_with_features(&[feature]).unwrap(),
@@ -7281,6 +7288,35 @@ mod tests {
                             case["id"]
                         );
                     }
+                    assert_eq!(
+                        expected["writerFeatureOverrides"]["ErrorOnNoneSerializable"]["error"],
+                        "JSONException",
+                        "{} {} Java error feature result",
+                        $name,
+                        case["id"]
+                    );
+                    assert!(
+                        value
+                            .java_encode_with_features(&[
+                                JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                            ])
+                            .is_err(),
+                        "{} {} ErrorOnNoneSerializable",
+                        $name,
+                        case["id"]
+                    );
+                    assert_eq!(
+                        value
+                            .java_encode_with_features(&[
+                                JavaJsonWriterFeature::ErrorOnNoneSerializable,
+                                JavaJsonWriterFeature::IgnoreNoneSerializable,
+                            ])
+                            .unwrap(),
+                        b"null",
+                        "{} {} IgnoreNoneSerializable takes precedence",
+                        $name,
+                        case["id"]
+                    );
                 }
 
                 let nulls = &fixture["remotingSerializableBodyNullUtilities"][$name];

@@ -6,9 +6,9 @@
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
-/// `WriteLongAsString`, `UseSingleQuotes`, and `UnquoteFieldName`; other
-/// variants return an explicit unsupported-feature error until their behavior
-/// is mapped.
+/// `WriteLongAsString`, `UseSingleQuotes`, `UnquoteFieldName`,
+/// `IgnoreNoneSerializable`, and `ErrorOnNoneSerializable`; other variants
+/// return an explicit unsupported-feature error until their behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -194,6 +194,8 @@ impl JavaJsonWriterFeature {
                 | Self::WriteLongAsString
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
+                | Self::IgnoreNoneSerializable
+                | Self::ErrorOnNoneSerializable
         )
     }
 }
