@@ -87,3 +87,19 @@ RemotingCommand suspended-state API parity (2026-10-17)
   Clippy, format/diff checks, and `mvn -o -f compat/java-reference/pom.xml
   verify` (37 scenarios, fixture drift and cross-decodes). Code commit:
   `811d6dda`; documentation and this log entry are recorded separately.
+
+Pinned RemotingCommand public method surface audit (2026-10-17)
+
+- Extended `RemotingApiSurfaceFixtures` to reflect every declared public
+  constructor and method on Java 5.5.1 `RemotingCommand`. The pinned class has
+  zero public constructors and 57 public methods; the fixture delta contains
+  only these two inventory fields. Rust now pins the source commit, counts,
+  and key method signatures. Code/test commit: `b6129174`.
+- The audit found unmapped or only operation-level coverage for command
+  factories and global request IDs, protocol/header metadata helpers, attached
+  custom-header methods, command timer/callback-list methods, and command
+  `toString`; the long-poll metric flow is also absent. The API crosswalk marks
+  these families OPEN/PARTIAL instead of treating the method-name inventory as
+  completion evidence. Maven `verify` passed with all 37 scenarios, Java
+  fixture-drift checks, and Java/Rust cross-decodes; the focused Rust inventory
+  test, strict Remoting Clippy, format, and diff checks passed.

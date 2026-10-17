@@ -3228,3 +3228,13 @@ owner-specific checks belong in the manual handoff.
   metric emission yet, so that behavior and the broader P18-V01 audit remain
   open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).
+
+- P18-V01 `RemotingCommand` public method inventory (test commit `b6129174`):
+  the pinned Java fixture now reflects all 57 declared public methods and
+  confirms there is no public constructor. The audit identifies remaining
+  factory/request-ID helpers, serialization metadata/header helpers, attached
+  custom-header accessors, process timer/callback-list methods, command display
+  behavior, and long-poll RPC metric emission. The matching crosswalk marks
+  each family OPEN or PARTIAL; the inventory is a guard against omission, not
+  compatibility evidence for those families. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).

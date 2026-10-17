@@ -1005,6 +1005,21 @@ The pinned Java fixture invokes all enum methods and parse boundary cases; the n
 
 The pinned fixture directly calls both enum APIs, unknown byte lookups, `RemotingCommand.getType()`, response/oneway marking and predicates, including repeated marks and preservation of unrelated flag bits. The Rust stream hook uses the mapped code instead of a duplicated literal. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md).
 
+## Pinned `RemotingCommand` public method inventory
+
+`fixtures/remoting/response-future-api.json` now reflects the complete declared public method surface from the pinned Java 5.5.1 class: no public constructors and 57 public methods. Maven verifies the reflection fixture against that artifact; the Rust test pins the source commit, constructor count, method count, and key state/flag/string methods. This inventory exposes method families that the enum/field crosswalk above did not cover.
+
+| Java public method family | Rust counterpart / evidence | P18 status |
+| --- | --- | --- |
+| `createRequestCommand`, `createResponseCommand*`, `buildErrorResponse*`, `createNewRequestId` | Rust callers currently construct `RemotingCommand` with `Default`/public fields; the client uses its own pending opaque counter. No factory or class-level request-ID API currently matches Java defaults and counter behavior. | OPEN |
+| `getProtocolType`, `markProtocolType`, `getSerializeTypeConfigInThisServer`, `getHeaderLength` | `SerializeType` and codec frame/header helpers cover related wire operations, but no crosswalk or direct method-level equivalent/test covers these public helpers. | OPEN |
+| `encode`, `decode(byte[]/ByteBuffer/ByteBuf)`, `encodeHeader*`, `fastEncodeHeader`, `makeCustomHeaderToNet` | `codec::{frame,json_header,rocketmq_header}` provides byte-vector and incremental stream operations, and `CommandHeader` encodes typed headers. Exact overload boundaries, custom-header attachment, and helper behavior still need reconciliation against the 57-method fixture. | PARTIAL |
+| State getters/setters, `getType`, response/oneway methods, suspended state | Typed Rust command fields plus `get_type`, flag helpers, and suspended getter/setter; direct Java fixture cases cover flags and suspended default/set/reset. `ext_fields` uses `BTreeMap` rather than Java `HashMap`. | PARTIAL — long-poll metric emission remains open |
+| `readCustomHeader`, `writeCustomHeader`, `decodeCommandCustomHeader*`, `addExtField*` | Rust typed `CommandHeader` trait and `HeaderMap` cover header conversion at the protocol layer, but `RemotingCommand` has no attached custom-header object or equivalent helper methods; null/error and mutation behavior are not fully mapped. | OPEN |
+| `getProcessTimer` / `setProcessTimer`, `getCallbackList` / `setCallbackList`, `toString` | No corresponding command timer/callback-list API or Java-compatible command display implementation is currently recorded. | OPEN |
+
+P18-V01 remains open until every method row has a tested Rust counterpart or a source-confirmed disposition that preserves the required public capability and observable flow.
+
 ## Runtime worker and inherited ServiceThread methods
 
 | Pinned Java public method | Rust counterpart / disposition |
