@@ -7,9 +7,10 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, LiteSubscriptionCtlRequestHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, UnregisterClientRequestHeader,
+        ChangeInvisibleTimeResponseHeader, HeartbeatRequestHeader,
+        LiteSubscriptionCtlRequestHeader, PopLiteMessageRequestHeader,
+        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
+        UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -221,7 +222,7 @@ impl MQClientApi {
             .request(
                 addr,
                 request::HEART_BEAT,
-                &LiteSubscriptionCtlRequestHeader,
+                &HeartbeatRequestHeader::default(),
                 Some(body),
                 deadline,
             )
@@ -240,7 +241,7 @@ impl MQClientApi {
             self.request(
                 addr,
                 request::HEART_BEAT,
-                &LiteSubscriptionCtlRequestHeader,
+                &HeartbeatRequestHeader::default(),
                 Some(body),
                 deadline,
             )

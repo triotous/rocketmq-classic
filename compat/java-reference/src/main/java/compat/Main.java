@@ -57,6 +57,7 @@ import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader
 import org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.HeartbeatRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader;
@@ -706,6 +707,10 @@ public final class Main {
         runningInfo.setNamespaced(true); runningInfo.setBrokerName("broker-a");
         runningInfo.setOneway(false);
         writeTypedHeaderFixture(output, "consumer-running-info-request", 307, runningInfo);
+        HeartbeatRequestHeader heartbeat = new HeartbeatRequestHeader();
+        heartbeat.setNamespace("tenant"); heartbeat.setNamespaced(true);
+        heartbeat.setBrokerName("broker-a"); heartbeat.setOneway(false);
+        writeTypedHeaderFixture(output, "heartbeat-request", 34, heartbeat);
         ConsumeMessageDirectlyResultRequestHeader direct = new ConsumeMessageDirectlyResultRequestHeader();
         direct.setConsumerGroup("workers");
         writeTypedHeaderFixture(output, "consume-directly-request", 309, direct);
@@ -902,6 +907,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-end-transaction-response.bin", 0);
             assertAllExtFields(byName, "typed-consumer-status-request.bin", 221);
             assertAllExtFields(byName, "typed-consumer-running-info-request.bin", 307);
+            assertAllExtFields(byName, "typed-heartbeat-request.bin", 34);
             assertAllExtFields(byName, "typed-polling-request.bin", 200055);
             assertAllExtFields(byName, "typed-polling-response.bin", 0);
             assertAllExtFields(byName, "typed-pop-lite-request.bin", 200070);
@@ -1022,6 +1028,7 @@ public final class Main {
             case "typed-end-transaction-response.bin": fixtureStem = "header-end-transaction-response"; break;
             case "typed-consumer-status-request.bin": fixtureStem = "header-consumer-status-request"; break;
             case "typed-consumer-running-info-request.bin": fixtureStem = "header-consumer-running-info-request"; break;
+            case "typed-heartbeat-request.bin": fixtureStem = "header-heartbeat-request"; break;
             case "typed-polling-request.bin": fixtureStem = "header-polling-request"; break;
             case "typed-polling-response.bin": fixtureStem = "header-polling-response"; break;
             case "typed-pop-lite-request.bin": fixtureStem = "header-pop-lite-request"; break;

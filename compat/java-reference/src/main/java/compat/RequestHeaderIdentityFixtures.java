@@ -43,6 +43,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("GetConsumerRunningInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader"),
         Map.entry("GetConsumerStatusRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader"),
         Map.entry("GetEarliestMsgStoretimeRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeRequestHeader"),
+        Map.entry("HeartbeatRequestHeader", "org.apache.rocketmq.remoting.protocol.header.HeartbeatRequestHeader"),
         Map.entry("GetMaxOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader"),
         Map.entry("GetMinOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader"),
         Map.entry("GetRouteInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"),
@@ -115,6 +116,12 @@ public final class RequestHeaderIdentityFixtures {
         result.put("distinctDefaultObjectsEquals", defaultsA.equals(defaultsB));
         result.put("equalBaseFieldsEquals", baseA.equals(baseB));
         result.put("equalBaseFieldsHashEqual", baseA.hashCode() == baseB.hashCode());
+        if ("HeartbeatRequestHeader".equals(type.getSimpleName())) {
+            result.put("defaultHashCode", defaultsA.hashCode());
+            result.put("baseHashCode", baseA.hashCode());
+            result.put("defaultToString", defaultsA.toString());
+            result.put("baseToString", baseA.toString());
+        }
         result.putAll(payloadProbe(type, baseA));
 
         Map<String, Boolean> baseFieldDifferences = new TreeMap<>();

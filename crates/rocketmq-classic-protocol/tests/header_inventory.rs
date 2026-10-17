@@ -64,6 +64,7 @@ macro_rules! inventory {
             NotifyUnsubscribeLiteRequestHeader => ("header-notify-unsubscribe-lite-request", "typed-notify-unsubscribe-lite-request.bin"),
             ChangeInvisibleTimeRequestHeader => ("header-change-invisible-request", "typed-change-invisible.bin"),
             ChangeInvisibleTimeResponseHeader => ("header-change-invisible-response", "typed-change-invisible-response.bin"),
+            HeartbeatRequestHeader => ("header-heartbeat-request", "typed-heartbeat-request.bin"),
             ConsumeMessageDirectlyResultRequestHeader => ("header-consume-directly-request", "typed-consume-directly-request.bin"),
             ReplyMessageRequestHeader => ("header-reply-request", "typed-reply.bin"),
             SendMessageResponseHeader => ("header-send-response", "typed-send-response.bin"),
@@ -114,3 +115,41 @@ macro_rules! cases {
 }
 
 inventory!(cases);
+
+#[test]
+#[allow(deprecated)]
+fn heartbeat_request_header_inherits_java_rpc_surface() {
+    let identity: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/protocol/request-header-identity.json"
+    ))
+    .unwrap();
+    let java = &identity["identityCases"]["HeartbeatRequestHeader"];
+
+    let mut header = HeartbeatRequestHeader::default();
+    assert_eq!(
+        header.java_hash_code(),
+        java["defaultHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        header.java_to_string(),
+        java["defaultToString"].as_str().unwrap()
+    );
+
+    header.set_namespace(Some("namespace".into()));
+    header.set_namespaced(Some(true));
+    header.set_bname(Some("broker".into()));
+    header.set_oneway(Some(false));
+    assert_eq!(header.get_namespace(), Some("namespace"));
+    assert_eq!(header.get_namespaced(), Some(true));
+    assert_eq!(header.get_broker_name(), Some("broker"));
+    assert_eq!(header.get_oneway(), Some(false));
+    assert_eq!(header.get_bname(), Some("broker"));
+    assert_eq!(
+        header.java_hash_code(),
+        java["baseHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        header.java_to_string(),
+        java["baseToString"].as_str().unwrap()
+    );
+}

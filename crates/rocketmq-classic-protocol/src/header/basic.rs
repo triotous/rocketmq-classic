@@ -56,6 +56,7 @@ impl_rpc_request_header_semantics!(
     ReplyMessageRequestHeader,
     NotificationRequestHeader,
     ResetOffsetRequestHeader,
+    HeartbeatRequestHeader,
     GetConsumerStatusRequestHeader,
     GetConsumerRunningInfoRequestHeader,
     PopMessageRequestHeader,
@@ -2124,6 +2125,133 @@ impl CommandHeader for LiteSubscriptionCtlRequestHeader {
     }
 }
 
+/// Java 5.5.1's client heartbeat RPC header. The Java class declares no
+/// payload fields and inherits its namespace and routing fields from
+/// `RpcRequestHeader`.
+#[derive(Debug, Clone, Default)]
+pub struct HeartbeatRequestHeader {
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl HeartbeatRequestHeader {
+    #[deprecated(note = "use broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+
+    /// Returns the integer produced by Java `Objects.hash(ns, nsd, bname,
+    /// oway)` in `RpcRequestHeader.hashCode()`.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut hash = 1_i32;
+        for value_hash in [
+            self.namespace
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+            self.namespaced.map(java_boolean_hash_code).unwrap_or(0),
+            self.broker_name
+                .as_deref()
+                .map(java_string_hash_code)
+                .unwrap_or(0),
+            self.oneway.map(java_boolean_hash_code).unwrap_or(0),
+        ] {
+            hash = hash.wrapping_mul(31).wrapping_add(value_hash);
+        }
+        hash
+    }
+
+    /// Returns Java `RpcRequestHeader.toString()` output.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "HeartbeatRequestHeader{{namespace={}, namespaced={}, brokerName={}, oneway={}}}",
+            java_nullable_string(self.namespace.as_deref()),
+            java_nullable_bool(self.namespaced),
+            java_nullable_string(self.broker_name.as_deref()),
+            java_nullable_bool(self.oneway),
+        )
+    }
+}
+
+impl CommandHeader for HeartbeatRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
+fn java_nullable_string(value: Option<&str>) -> String {
+    value.unwrap_or("null").to_owned()
+}
+
+fn java_nullable_bool(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "null",
+    }
+}
+
+fn java_boolean_hash_code(value: bool) -> i32 {
+    if value { 1231 } else { 1237 }
+}
+
+fn java_string_hash_code(value: &str) -> i32 {
+    value.encode_utf16().fold(0_i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct NotifyUnsubscribeLiteRequestHeader {
     pub lite_topic: String,
@@ -2640,7 +2768,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 31);
+        assert_eq!(cases.len(), 32);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -2671,7 +2799,9 @@ mod tests {
                 identity["payloadDifferenceTested"],
                 !matches!(
                     rust_name.as_str(),
-                    "LockBatchMqRequestHeader" | "UnlockBatchMqRequestHeader"
+                    "LockBatchMqRequestHeader"
+                        | "UnlockBatchMqRequestHeader"
+                        | "HeartbeatRequestHeader"
                 ),
                 "{rust_name}"
             );
@@ -2690,6 +2820,12 @@ mod tests {
             |h: &mut QueryConsumerOffsetRequestHeader| {
                 h.consumer_group = Some("payload".into())
             }
+        );
+        check_rpc_request_header!(
+            HeartbeatRequestHeader,
+            broker_name,
+            |_| {},
+            |_: &mut HeartbeatRequestHeader| {}
         );
         check_rpc_request_header!(
             UpdateConsumerOffsetRequestHeader,
