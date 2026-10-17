@@ -2992,3 +2992,17 @@ Before any publication:
   current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `WriteNulls` writer flag (code commit `e7b0acde`,
+  2026-10-17): schema-backed serialization restores omitted nullable fields as
+  JSON `null` across mapped body, route, and heartbeat DTOs, including nested
+  typed DTOs. The pinned Java fixture comparisons cover all current feature
+  samples in those adapters. Protocol all-feature tests (126 unit tests, all
+  integration targets, and 42 doctests), strict Protocol Clippy, formatting,
+  diff checks, and Maven verify (37 scenarios, fixture checks, and Java/Rust
+  cross-decodes) pass. Mapping count is now 41/48; seven flags remain unmapped:
+  `WriteMapNullValue`, `NullAsDefaultValue`, `WriteClassName`,
+  `ReferenceDetection`, `WriteNullListAsEmpty`, `WriteNullStringAsEmpty`, and
+  `WriteNullNumberAsZero`. Broad P18-V01, final full-workspace P18-V02,
+  current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
