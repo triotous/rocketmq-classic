@@ -2,7 +2,7 @@ use std::{env, error::Error, fmt::Write as _, sync::Arc, time::Duration};
 
 use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
 use rocketmq_classic_common::message::{
-    Message, decode_inner_batch, decode_message_id, encode_compact_messages, encode_properties,
+    Message, decode_message_id, encode_compact_messages, encode_properties,
 };
 use rocketmq_classic_core::api::{
     MQClientApi,
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("view-batch") if arguments.len() == 4 => {
             view_batch(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view|view-batch <broker-address> <topic> <offset-message-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>".into()),
     }
 }
 
@@ -423,37 +423,51 @@ async fn view(
 async fn view_batch(
     broker_address: &str,
     topic: &str,
-    offset_message_id: &str,
+    offset_message_ids: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let physical_offset = decode_message_id(offset_message_id)?.offset();
+    let physical_offsets = decode_batch_offsets(offset_message_ids)?;
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
         remoting.shutdown().await;
         return Err(error.into());
     }
     let api = MQClientApi::new(remoting.clone());
-    let result = api
-        .view_message(
-            broker_address,
-            &ViewMessageRequestHeader {
-                topic: Some(topic.to_owned()),
-                offset: physical_offset,
-            },
-            Instant::now() + Duration::from_secs(10),
-        )
-        .await;
-    remoting.shutdown().await;
-    let outer = result?;
-    for message in decode_inner_batch(&outer)? {
-        println!(
-            "MESSAGE\t{}\t{}\t{}\t{}",
-            message.topic(),
-            message.queue_id(),
-            message.queue_offset(),
-            encode_hex(&message.body())
-        );
+    let result = async {
+        for physical_offset in physical_offsets {
+            let message = api
+                .view_message(
+                    broker_address,
+                    &ViewMessageRequestHeader {
+                        topic: Some(topic.to_owned()),
+                        offset: physical_offset,
+                    },
+                    Instant::now() + Duration::from_secs(10),
+                )
+                .await?;
+            println!(
+                "MESSAGE\t{}\t{}\t{}\t{}",
+                message.topic(),
+                message.queue_id(),
+                message.queue_offset(),
+                encode_hex(&message.body())
+            );
+        }
+        Ok::<(), Box<dyn Error>>(())
     }
-    Ok(())
+    .await;
+    remoting.shutdown().await;
+    result
+}
+
+fn decode_batch_offsets(offset_message_ids: &str) -> Result<Vec<i64>, Box<dyn Error>> {
+    let mut offsets = Vec::new();
+    for message_id in offset_message_ids.split(',') {
+        if message_id.is_empty() {
+            return Err("batch readback requires every physical offset ID".into());
+        }
+        offsets.push(decode_message_id(message_id)?.offset());
+    }
+    Ok(offsets)
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -462,4 +476,22 @@ fn encode_hex(bytes: &[u8]) -> String {
         write!(&mut encoded, "{byte:02x}").expect("writing to a String cannot fail");
     }
     encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_batch_offsets;
+
+    #[test]
+    fn batch_readback_decodes_every_physical_offset_id() {
+        let ids = "C0A86B0200002A9F0000000000000000,C0A86B0200002A9F00000000000000E1";
+
+        assert_eq!(decode_batch_offsets(ids).unwrap(), [0, 225]);
+    }
+
+    #[test]
+    fn batch_readback_rejects_missing_physical_offset_ids() {
+        assert!(decode_batch_offsets("").is_err());
+        assert!(decode_batch_offsets("C0A86B0200002A9F0000000000000000,").is_err());
+    }
 }

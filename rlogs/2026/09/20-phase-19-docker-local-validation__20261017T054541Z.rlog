@@ -55,3 +55,11 @@ PROD-004 batch live diagnostic run (2026-10-17 06:44 UTC)
 - Ran `PROD-004-batch-send` from clean source revision `2f9396e3be30e0a123d59aa125d881a3056ad102` against the pinned 5.3.4 basic profile. Java batch send succeeded and returned two comma-separated physical offset IDs.
 - The Rust readback command received only the first ID and incorrectly decoded that ordinary stored message body as a compact batch body, failing with `IncompleteField { field: "magic code", length: 4 }`. This is a runner readback failure; no PASS was recorded.
 - The failed run evidence is preserved at `docs/compatibility/evidence/phase-19/PROD-004-batch-send/20261017T064439Z/`. The scenario topic and isolated Compose containers, network, and volume were cleaned up; project-filtered Docker checks found no remnants.
+
+
+PROD-004 batch readback correction (2026-10-17 06:53 UTC)
+
+- Updated Java and Rust `view-batch` probes to parse the complete comma-separated physical-offset ID list and read each stored message independently. Removed the incorrect assumption that `viewMessage` returns a compact-batch body. The runner now passes all returned IDs in both language directions; command usage documents the full list.
+- Added Rust integration-binary tests for decoding all IDs and rejecting empty/missing entries.
+- Verification passed: `cargo test --locked -p rocketmq-classic-integration` (2 tests), strict integration-bin Clippy, integration-bin build, `cargo fmt --all -- --check`, Maven `verify`, Maven compile after final CLI usage text, shell syntax, Python compilation, comparator self-test, 37-row manifest validation, and `git diff --check`.
+- The failure evidence was archived separately in commit `0bf53383`. The readback correction and test changes are ready for a clean-revision live rerun; `PROD-004` remains pending until that run and evidence reconciliation pass.

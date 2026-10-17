@@ -352,9 +352,9 @@ elif [[ "$scenario_id" == "PROD-004-batch-send" ]]; then
 ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="batch-send $broker_addr $topic $body $message_count" exec:java@live-producer-probe
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view-batch $broker_addr $topic '<java-offset-message-id>'
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view-batch $broker_addr $topic '<java-offset-message-ids>'
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- batch-send $broker_addr $topic $body $message_count
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="view-batch $broker_addr $topic <rust-offset-message-id>" exec:java@live-producer-probe
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view-batch $broker_addr $topic <rust-offset-message-ids>" exec:java@live-producer-probe
 EOF
 else
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -769,7 +769,7 @@ PY
     IFS=$'\t' read -r _ java_send_status java_send_topic java_queue_id java_queue_offset java_offset_message_ids java_offset_message_id java_physical_offset java_message_count \
         <"$evidence_dir/java-batch-send.tsv"
     if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
-        view-batch "$broker_addr" "$topic" "$java_offset_message_id" \
+        view-batch "$broker_addr" "$topic" "$java_offset_message_ids" \
         >"$evidence_dir/rust-read-java.tsv" 2>"$evidence_dir/rust-read-java.stderr"; then
         cat "$evidence_dir/rust-read-java.stderr" >&2
         exit 1
@@ -787,7 +787,7 @@ PY
     IFS=$'\t' read -r _ rust_send_status rust_send_topic rust_queue_id rust_queue_offset rust_offset_message_ids rust_offset_message_id rust_physical_offset rust_message_count \
         <"$evidence_dir/rust-batch-send.tsv"
     if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
-        -Dexec.args="view-batch $broker_addr $topic $rust_offset_message_id" exec:java@live-producer-probe \
+        -Dexec.args="view-batch $broker_addr $topic $rust_offset_message_ids" exec:java@live-producer-probe \
         >"$evidence_dir/java-read-rust.tsv" 2>"$evidence_dir/java-read-rust.stderr"; then
         cat "$evidence_dir/java-read-rust.tsv" "$evidence_dir/java-read-rust.stderr" 2>/dev/null >&2 || true
         exit 1

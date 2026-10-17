@@ -56,7 +56,7 @@ public final class LiveProducerProbe {
             return;
         }
         throw new IllegalArgumentException(
-            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view|view-batch <broker-address> <topic> <offset-message-id>");
+            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> <minimum-max-offset> | batch-send <broker-address> <topic> <body-prefix> <message-count> | view <broker-address> <topic> <offset-message-id> | view-batch <broker-address> <topic> <comma-separated-offset-message-ids>");
     }
 
     private static MQClientAPIImpl newApi() {
@@ -281,16 +281,23 @@ public final class LiveProducerProbe {
         }
     }
 
-    private static void viewBatch(String brokerAddress, String topic, String offsetMessageId)
+    private static void viewBatch(String brokerAddress, String topic, String offsetMessageIds)
         throws Exception {
-        long physicalOffset = MessageDecoder.decodeMessageId(offsetMessageId).getOffset();
+        String[] messageIds = offsetMessageIds.split(",", -1);
+        if (messageIds.length == 0) {
+            throw new IllegalArgumentException("batch readback requires physical offset IDs");
+        }
+        for (String messageId : messageIds) {
+            if (messageId.isEmpty()) {
+                throw new IllegalArgumentException("batch readback requires every physical offset ID");
+            }
+        }
         MQClientAPIImpl api = newApi();
         api.start();
         try {
-            MessageExt batch = api.viewMessage(brokerAddress, topic, physicalOffset, 10_000);
-            List<MessageExt> messages = new ArrayList<>();
-            MessageDecoder.decodeMessage(batch, messages);
-            for (MessageExt message : messages) {
+            for (String messageId : messageIds) {
+                long physicalOffset = MessageDecoder.decodeMessageId(messageId).getOffset();
+                MessageExt message = api.viewMessage(brokerAddress, topic, physicalOffset, 10_000);
                 System.out.printf("MESSAGE\t%s\t%d\t%d\t%s%n", message.getTopic(),
                     message.getQueueId(), message.getQueueOffset(), toHex(message.getBody()));
             }
