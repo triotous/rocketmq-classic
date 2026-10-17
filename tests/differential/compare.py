@@ -139,8 +139,30 @@ def validate_manifest(manifest):
             raise ValueError(
                 f"scenario cleanup includes a non-isolated resource: {scenario['id']}"
             )
-        if scenario["execution_phase"] == 19 and scenario["live_status"] == "PASS":
-            raise ValueError(f"unexecuted Phase 19 scenario cannot be PASS: {scenario['id']}")
+        live_status = scenario["live_status"]
+        if live_status not in {"PENDING_PHASE_19", "PASS"}:
+            raise ValueError(f"unsupported live status for {scenario['id']}: {live_status}")
+        if live_status == "PASS":
+            if scenario["execution_phase"] != 19:
+                raise ValueError(f"only Phase 19 scenarios may carry live PASS: {scenario['id']}")
+            evidence = scenario.get("evidence")
+            if not isinstance(evidence, str) or not evidence:
+                raise ValueError(f"Phase 19 PASS requires evidence: {scenario['id']}")
+            evidence_root = Path("docs/compatibility/evidence/phase-19").resolve()
+            evidence_path = Path(evidence).resolve()
+            if evidence_root not in evidence_path.parents or not evidence_path.is_dir():
+                raise ValueError(f"Phase 19 evidence path is missing or outside the evidence root: {scenario['id']}")
+            metadata_path = evidence_path / "metadata.txt"
+            result_path = evidence_path / "result.txt"
+            if not metadata_path.is_file() or not result_path.is_file():
+                raise ValueError(f"Phase 19 evidence is incomplete: {scenario['id']}")
+            if "exit_status=0" not in metadata_path.read_text() or f"PASS {scenario['id']}:" not in result_path.read_text():
+                raise ValueError(f"Phase 19 evidence does not record a successful run: {scenario['id']}")
+            if scenario["id"] == "ROUTE-001-get-existing-topic":
+                java_rows = evidence_path / "java-route.tsv"
+                rust_rows = evidence_path / "rust-route.tsv"
+                if not java_rows.is_file() or not rust_rows.is_file() or java_rows.read_bytes() != rust_rows.read_bytes():
+                    raise ValueError(f"Phase 19 route evidence does not match: {scenario['id']}")
     phase19_ids = {
         scenario["id"]
         for scenario in scenarios
@@ -222,8 +244,23 @@ def self_test():
     try:
         validate_manifest(invalid)
         raise AssertionError("pending scenario incorrectly accepted as PASS")
-    except ValueError:
-        pass
+    except ValueError as error:
+        assert "requires evidence" in str(error)
+    invalid_evidence_path = {
+        **manifest,
+        "scenarios": [
+            {
+                **manifest["scenarios"][0],
+                "live_status": "PASS",
+                "evidence": "../../README.md",
+            }
+        ],
+    }
+    try:
+        validate_manifest(invalid_evidence_path)
+        raise AssertionError("manifest accepted evidence outside the Phase 19 evidence directory")
+    except ValueError as error:
+        assert "evidence path" in str(error)
     checked_in = json.loads(Path("tests/differential/scenarios.yaml").read_text())
     validate_manifest(checked_in)
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]

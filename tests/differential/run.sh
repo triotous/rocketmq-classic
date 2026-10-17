@@ -257,6 +257,48 @@ cleanup() {
         echo "Compose cleanup failed; see $evidence_dir/compose-cleanup.log" >&2
     fi
     ended_epoch="$(date +%s)"
+    if ((status == 0)); then
+        evidence_relative="${evidence_dir#"$repo_root"/}"
+        if ! python3 - "$manifest" "$scenario_id" "$evidence_relative" <<'PY'
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+scenario_id = sys.argv[2]
+evidence = sys.argv[3]
+lines = manifest_path.read_text().splitlines(keepends=True)
+matches = 0
+updated = []
+for line in lines:
+    body = line[:-1] if line.endswith("\n") else line
+    match = re.fullmatch(r"(\s*)(\{.*\})(,?)(\s*)", body)
+    if match is None:
+        updated.append(line)
+        continue
+    scenario = json.loads(match.group(2))
+    if scenario.get("id") != scenario_id:
+        updated.append(line)
+        continue
+    matches += 1
+    scenario["live_status"] = "PASS"
+    scenario["evidence"] = evidence
+    replacement = match.group(1) + json.dumps(scenario, separators=(",", ":")) + match.group(3) + match.group(4)
+    updated.append(replacement + ("\n" if line.endswith("\n") else ""))
+
+if matches != 1:
+    raise SystemExit(f"expected one manifest row for {scenario_id}, found {matches}")
+temporary = manifest_path.with_name(f".{manifest_path.name}.{os.getpid()}.tmp")
+temporary.write_text("".join(updated))
+temporary.replace(manifest_path)
+PY
+        then
+            status=1
+            echo "Failed to reconcile the successful scenario into the manifest" >&2
+        fi
+    fi
     printf 'exit_status=%s\n' "$status" >>"$evidence_dir/metadata.txt"
     printf 'duration_seconds=%s\n' "$((ended_epoch - started_epoch))" >>"$evidence_dir/metadata.txt"
     rm -f "$selected_file"
