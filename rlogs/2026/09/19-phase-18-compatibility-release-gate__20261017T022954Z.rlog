@@ -1,0 +1,26 @@
+# Phase 18 `WriteNullBooleanAsFalse` continuation — 2026-10-17T02:29:54Z
+
+- Resumed on `phase/19-phase-18-compatibility-release-gate` at `a5a0179d` with
+  an existing uncommitted writer-feature change. The Java checkout at
+  `/Users/bruce.tsai/Projects/3rd/rocketmq` was inspected read-only.
+- Pinned Java fixtures invoke `WriteNullBooleanAsFalse` across 41 body, 8 route,
+  and 3 heartbeat cases; none has a feature-specific output override. Scoped the
+  Rust no-op claim to these currently mapped adapters. Source inspection found
+  `BrokerReplicasInfo.ReplicaIdentity.alive: Boolean`, but neither this DTO nor
+  the `getInSyncStateData` client API is mapped in Rust. This remains a concrete
+  P18-V01 parity gap and is not covered by the writer-feature result.
+- Added the flag to the implemented writer-feature gate and body/route/heartbeat
+  fixture comparisons. No Java source or fixture was changed.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed,
+  including 126 unit tests, all Protocol integration targets, and 42 doctests.
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features
+  --locked -- -D warnings`: passed. `cargo fmt --all -- --check` and
+  `git diff --check`: passed.
+- `mvn -q -f compat/java-reference/pom.xml verify`: passed all 37 scenarios,
+  fixture-drift checks, and Java/Rust cross-decodes.
+- Code/test commit: `bd3e7ced feat(protocol): map WriteNullBooleanAsFalse writer flag`.
+  The mapping inventory is 36/48; 12 writer features remain unmapped.
+- Updated `docs/release-checklist.md` separately. Broad P18-V01 remains open,
+  including the `BrokerReplicasInfo` DTO/API; final full-workspace P18-V02,
+  current-revision Ubuntu/Windows CI and P18-V04, Phase 19 local Docker/Broker
+  automation, and release version/registry resolution also remain outstanding.

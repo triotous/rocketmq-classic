@@ -2933,3 +2933,17 @@ Before any publication:
   P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
   log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T021935Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T021935Z.rlog).
+- P18-V01 Fastjson `WriteNullBooleanAsFalse` writer-feature mapping (code
+  commit `bd3e7ced`, 2026-10-17): the pinned Java oracle probes the feature for
+  41 body, 8 route, and 3 heartbeat DTO cases; none records an output override.
+  Rust accepts the flag and compares each current adapter's output with the
+  corresponding fixture. The no-op claim is limited to these adapters; Java
+  `BrokerReplicasInfo` contains a boxed Boolean and its DTO/API remains outside
+  the mapped Rust surface. Protocol all-feature tests (126 unit tests, all
+  integration targets, and 42 doctests), strict Protocol Clippy, formatting,
+  diff checks, and Maven verify (37 scenarios, fixture drift, and cross-decodes)
+  pass. Mapping count is now 36/48; 12 writer features remain unmapped. Broad
+  P18-V01, final full-workspace P18-V02, current-revision Ubuntu/Windows CI,
+  P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
+  log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).
