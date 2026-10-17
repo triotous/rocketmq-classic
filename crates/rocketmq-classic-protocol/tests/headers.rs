@@ -11,7 +11,8 @@ use rocketmq_classic_protocol::{
     },
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
+        ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
+        CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         CreateTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
@@ -1419,6 +1420,15 @@ fn header_validation_matrix() {
             "suspend nsd oway"
         ),
         row!(
+            ChangeInvisibleTimeResponseHeader,
+            "change-invisible-response",
+            "",
+            "reviveQid",
+            "popTime invisibleTime",
+            "",
+            ""
+        ),
+        row!(
             PollingInfoRequestHeader,
             "polling-request",
             "consumerGroup topic queueId",
@@ -1629,6 +1639,15 @@ fn header_validation_matrix() {
                         assert!(
                             !decoded.contains_key(name),
                             "{} reflection decoding should ignore invalid {name}={value}",
+                            case.fixture
+                        );
+                    } else if case.model == "ChangeInvisibleTimeResponseHeader" {
+                        let decoded = (case.decode)(&fields)
+                            .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                        assert_eq!(
+                            decoded.get(name).map(String::as_str),
+                            Some("0"),
+                            "{} primitive reflection decoding should retain zero for invalid {name}={value}",
                             case.fixture
                         );
                     } else {

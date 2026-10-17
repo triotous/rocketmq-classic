@@ -40,6 +40,7 @@ import org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHe
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.AckMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PollingInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PollingInfoResponseHeader;
@@ -94,6 +95,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "change-invisible-time-response-header-fixture".equals(args[0])) {
+            ChangeInvisibleTimeResponseHeaderFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "code-registry-fixtures".equals(args[0])) {
             CodeRegistryFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -328,7 +333,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | change-invisible-time-response-header-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {
@@ -599,6 +604,13 @@ public final class Main {
         change.setOffset(9L);
         change.setInvisibleTime(60_000L);
         writeTypedHeaderFixture(output, "change-invisible-request", 200053, change);
+
+        ChangeInvisibleTimeResponseHeader changeResponse = new ChangeInvisibleTimeResponseHeader();
+        changeResponse.setPopTime(123L);
+        changeResponse.setInvisibleTime(456L);
+        changeResponse.setReviveQid(2);
+        writeTypedHeaderFixture(output, "change-invisible-response",
+            RemotingCommand.createResponseCommandWithHeader(0, changeResponse));
 
         NotificationRequestHeader notification = new NotificationRequestHeader();
         notification.setConsumerGroup("workers");
@@ -871,6 +883,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-pop-lite-response.bin", 0);
             assertAllExtFields(byName, "typed-ack.bin", 200051);
             assertAllExtFields(byName, "typed-change-invisible.bin", 200053);
+            assertAllExtFields(byName, "typed-change-invisible-response.bin", 0);
             assertAllExtFields(byName, "typed-query-offset-response.bin", 0);
             assertAllExtFields(byName, "typed-search-offset-request.bin", 29);
             assertAllExtFields(byName, "typed-max-offset-request.bin", 30);
@@ -927,6 +940,9 @@ public final class Main {
             assertExtField(byName, "typed-pop.bin", 200050, "maxMsgNums", "16");
             assertExtField(byName, "typed-ack.bin", 200051, "extraInfo", "startOffset popTime invisibleTime queueId");
             assertExtField(byName, "typed-change-invisible.bin", 200053, "invisibleTime", "60000");
+            assertExtField(byName, "typed-change-invisible-response.bin", 0, "popTime", "123");
+            assertExtField(byName, "typed-change-invisible-response.bin", 0, "invisibleTime", "456");
+            assertExtField(byName, "typed-change-invisible-response.bin", 0, "reviveQid", "2");
             for (String id : new String[] {"reply-v2", "reply-push"}) {
                 byte[] rustBody = frameBody(Files.readAllBytes(directory.resolve("typed-" + id + ".bin")));
                 Path javaPath = Path.of("../../fixtures/remoting/header-" +
@@ -987,6 +1003,7 @@ public final class Main {
             case "typed-pop-lite-response.bin": fixtureStem = "header-pop-lite-response"; break;
             case "typed-ack.bin": fixtureStem = "header-ack-request"; break;
             case "typed-change-invisible.bin": fixtureStem = "header-change-invisible-request"; break;
+            case "typed-change-invisible-response.bin": fixtureStem = "header-change-invisible-response"; break;
             case "typed-query-offset-response.bin": fixtureStem = "header-query-offset-response"; break;
             case "typed-search-offset-request.bin": fixtureStem = "header-search-offset-request"; break;
             case "typed-max-offset-request.bin": fixtureStem = "header-max-offset-request"; break;

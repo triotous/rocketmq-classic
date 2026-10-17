@@ -181,6 +181,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-change-invisible-time-response-header-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ChangeInvisibleTimeResponseHeaderFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/change-invisible-time-response-header.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-client-config-tls-mode-fixture</id>
             <phase>verify</phase>
             <goals><goal>exec</goal></goals>

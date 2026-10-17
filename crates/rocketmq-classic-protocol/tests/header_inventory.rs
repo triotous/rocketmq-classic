@@ -63,6 +63,7 @@ macro_rules! inventory {
             LiteSubscriptionCtlRequestHeader => ("header-lite-subscription-request", "typed-lite-subscription-request.bin"),
             NotifyUnsubscribeLiteRequestHeader => ("header-notify-unsubscribe-lite-request", "typed-notify-unsubscribe-lite-request.bin"),
             ChangeInvisibleTimeRequestHeader => ("header-change-invisible-request", "typed-change-invisible.bin"),
+            ChangeInvisibleTimeResponseHeader => ("header-change-invisible-response", "typed-change-invisible-response.bin"),
             ConsumeMessageDirectlyResultRequestHeader => ("header-consume-directly-request", "typed-consume-directly-request.bin"),
             ReplyMessageRequestHeader => ("header-reply-request", "typed-reply.bin"),
             SendMessageResponseHeader => ("header-send-response", "typed-send-response.bin"),

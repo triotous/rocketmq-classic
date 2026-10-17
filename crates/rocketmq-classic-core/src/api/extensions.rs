@@ -7,9 +7,9 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        LiteSubscriptionCtlRequestHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        UnregisterClientRequestHeader,
+        ChangeInvisibleTimeResponseHeader, LiteSubscriptionCtlRequestHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -191,7 +191,7 @@ fn pop_status(reply: &RemotingCommand, code: i32, addr: &str) -> Result<PopStatu
     }
 }
 
-// Reflectively decoded Java primitive response fields retain zero after a missing/invalid value.
+// Other POP response headers still use Java's reflective primitive defaults.
 fn primitive<T: std::str::FromStr + Default>(reply: &RemotingCommand, key: &str) -> T {
     reply
         .ext_fields
@@ -457,10 +457,11 @@ impl MQClientApi {
                 deadline,
             )
             .await?;
-        // Java's reflective decoder catches field conversion failures and retains primitive defaults.
-        let pop_time = primitive(&reply, "popTime");
-        let invisible_time = primitive(&reply, "invisibleTime");
-        let revive_qid = primitive(&reply, "reviveQid");
+        let response_header = reply
+            .decode_command_custom_header_directly::<ChangeInvisibleTimeResponseHeader>(true)?;
+        let pop_time = response_header.pop_time;
+        let invisible_time = response_header.invisible_time;
+        let revive_qid = response_header.revive_qid;
         if reply.code != response::SUCCESS {
             return Ok(ChangeInvisibleTimeResult {
                 status: AckStatus::NoExist,

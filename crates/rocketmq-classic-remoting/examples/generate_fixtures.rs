@@ -13,7 +13,8 @@ use rocketmq_classic_protocol::{
     codes::{LanguageCode, SerializeType},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
+        ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
+        CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         CreateTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
@@ -161,6 +162,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         output,
         "typed-earliest-msg-storetime-response.bin",
         "header-earliest-msg-storetime-response",
+        0,
+    );
+    write_oracle_header::<ChangeInvisibleTimeResponseHeader>(
+        output,
+        "typed-change-invisible-response.bin",
+        "header-change-invisible-response",
         0,
     );
     write_oracle_header::<UnregisterClientRequestHeader>(

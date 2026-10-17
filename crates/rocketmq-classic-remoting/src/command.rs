@@ -1185,6 +1185,127 @@ mod tests {
     }
 
     #[test]
+    fn change_invisible_time_response_header_matches_invoked_java_api() {
+        use rocketmq_classic_protocol::header::ChangeInvisibleTimeResponseHeader;
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/change-invisible-time-response-header.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(
+            fixture["headerType"],
+            "org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeResponseHeader"
+        );
+        assert!(fixture["publicConstructor"].as_bool().unwrap());
+        assert_eq!(
+            fixture["declaredPublicMethods"],
+            serde_json::json!([
+                "checkFields():void",
+                "getInvisibleTime():long",
+                "getPopTime():long",
+                "getReviveQid():int",
+                "setInvisibleTime(long):void",
+                "setPopTime(long):void",
+                "setReviveQid(int):void"
+            ])
+        );
+        assert_eq!(
+            fixture["identity"]["equalsDeclaringClass"],
+            "java.lang.Object"
+        );
+        assert_eq!(
+            fixture["identity"]["hashCodeDeclaringClass"],
+            "java.lang.Object"
+        );
+        assert!(fixture["identity"]["selfEquals"].as_bool().unwrap());
+        assert!(
+            !fixture["identity"]["distinctDefaultEquals"]
+                .as_bool()
+                .unwrap()
+        );
+
+        let defaults = &fixture["defaults"];
+        let default_header = ChangeInvisibleTimeResponseHeader::default();
+        assert_eq!(
+            default_header.pop_time,
+            defaults["popTime"].as_i64().unwrap()
+        );
+        assert_eq!(
+            default_header.invisible_time,
+            defaults["invisibleTime"].as_i64().unwrap()
+        );
+        assert_eq!(
+            default_header.revive_qid,
+            defaults["reviveQid"].as_i64().unwrap() as i32
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                        .collect::<HeaderMap>()
+                })
+                .unwrap_or_default();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: (!case["fields"].is_null()).then(|| fields.clone().into()),
+                    ..Default::default()
+                };
+                let header = command
+                    .decode_command_custom_header_directly::<ChangeInvisibleTimeResponseHeader>(
+                        use_fast_encode,
+                    )
+                    .unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                let expected = &case[mode];
+                assert_eq!(
+                    header.pop_time,
+                    expected["popTime"].as_i64().unwrap(),
+                    "{case_name}/{mode}"
+                );
+                assert_eq!(
+                    header.invisible_time,
+                    expected["invisibleTime"].as_i64().unwrap(),
+                    "{case_name}/{mode}"
+                );
+                assert_eq!(
+                    header.revive_qid,
+                    expected["reviveQid"].as_i64().unwrap() as i32,
+                    "{case_name}/{mode}"
+                );
+            }
+        }
+
+        let accessors = &fixture["accessors"];
+        let encoded_fields = fixture["encodedFields"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<HeaderMap>();
+        let assigned = ChangeInvisibleTimeResponseHeader {
+            pop_time: accessors["popTime"].as_i64().unwrap(),
+            invisible_time: accessors["invisibleTime"].as_i64().unwrap(),
+            revive_qid: accessors["reviveQid"].as_i64().unwrap() as i32,
+        };
+        let mut actual_fields = HeaderMap::new();
+        CommandHeader::encode_fields(&assigned, &mut actual_fields);
+        assert_eq!(actual_fields, encoded_fields);
+    }
+
+    #[test]
     fn offset_boundary_request_header_reflection_modes_match_invoked_java() {
         use rocketmq_classic_protocol::header::{
             GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,

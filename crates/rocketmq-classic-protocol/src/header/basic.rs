@@ -2,8 +2,8 @@ use std::hash::{Hash, Hasher};
 
 use super::{
     CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i32_with_mode,
-    optional_i64, optional_i64_with_mode, optional_java_boolean, optional_string, required_i32,
-    required_i64, required_string,
+    optional_i64, optional_i64_with_mode, optional_java_boolean, optional_string, parse_java_i32,
+    parse_java_i64, required_i32, required_i64, required_string,
 };
 use crate::codes::JavaEnumLookupError;
 
@@ -2177,6 +2177,50 @@ impl CommandHeader for ChangeInvisibleTimeRequestHeader {
             invisible_time: required_i64(fields, "invisibleTime")?,
             lite_topic: optional_string(fields, "liteTopic"),
             suspend: java_boolean(fields, "suspend"),
+        })
+    }
+}
+
+/// Java's response header for the POP change-invisibility RPC.
+///
+/// Missing and malformed primitive fields retain Java's zero defaults during
+/// reflective custom-header decoding.
+///
+/// Java inherits identity-based `Object.equals` and `Object.hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ChangeInvisibleTimeResponseHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<ChangeInvisibleTimeResponseHeader>(); }
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ChangeInvisibleTimeResponseHeader {
+    pub pop_time: i64,
+    pub invisible_time: i64,
+    pub revive_qid: i32,
+}
+
+impl CommandHeader for ChangeInvisibleTimeResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("popTime".into(), self.pop_time.to_string());
+        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        fields.insert("reviveQid".into(), self.revive_qid.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            pop_time: fields
+                .get("popTime")
+                .and_then(|value| parse_java_i64(value))
+                .unwrap_or_default(),
+            invisible_time: fields
+                .get("invisibleTime")
+                .and_then(|value| parse_java_i64(value))
+                .unwrap_or_default(),
+            revive_qid: fields
+                .get("reviveQid")
+                .and_then(|value| parse_java_i32(value))
+                .unwrap_or_default(),
         })
     }
 }
