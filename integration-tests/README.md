@@ -49,18 +49,27 @@ ROCKETMQ_PROFILE=basic \
 tests/differential/run.sh --scenario HEARTBEAT-001
 ```
 
+```bash
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable \
+ROCKETMQ_PROFILE=basic \
+tests/differential/run.sh --scenario PROD-001-sync-send
+```
+
 The runner creates a unique Compose project, provisions a manifest-owned
-topic when required, then compares Java 5.5.1 and Rust route outcomes or the
-heartbeat body and Broker response version. It deletes any owned topic and
-tears down only that project. Toolchain, configuration, output, and cleanup
-evidence is stored under `docs/compatibility/evidence/phase-19/`; a manifest
-row becomes `PASS` only after comparison and cleanup both succeed. Three of 37
-cases are implemented and passed: the two route cases and `HEARTBEAT-001`.
+topic when required, then compares Java 5.5.1 and Rust route outcomes,
+heartbeat bodies and Broker response versions, or synchronous send results
+and bidirectional cross-language Broker readback. It deletes any owned
+topic and tears down only that project. Toolchain, configuration, output,
+and cleanup evidence is stored under
+`docs/compatibility/evidence/phase-19/`; a manifest row becomes `PASS` only
+after comparison and cleanup both succeed. Four of 37
+cases are implemented and passed: the two route cases, `HEARTBEAT-001`, and
+`PROD-001-sync-send`.
 `--phase N` and `--all` fail closed when any selected case has no runner.
 
 Live runs require the pinned runner toolchains: Maven on JDK 27 and Rust 1.85.0,
 matching the repository CI configuration.
 
-The two-Broker, TLS, ACL, and feature-specific profiles; remaining 34 live
+The two-Broker, TLS, ACL, and feature-specific profiles; remaining 33 live
 cases; and a `run-local.sh --all` orchestration entry point are still pending.
 Starting this basic profile by itself does not mark a scenario passed.

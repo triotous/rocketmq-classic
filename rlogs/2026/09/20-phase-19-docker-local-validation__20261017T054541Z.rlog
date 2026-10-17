@@ -8,3 +8,11 @@ Started: 2026-10-17 05:45:41 UTC
 - Initial `cargo fmt --check` reported import ordering; applied `cargo fmt --all`, then formatting passed.
 - Passed `cargo test --locked -p rocketmq-classic-integration` (0 tests), strict integration-crate Clippy, Java Maven compile, comparator self-test, 37-scenario manifest validation, shell syntax, and `git diff --check`.
 - Live Broker execution and evidence commit are pending this implementation commit.
+
+
+Live verification and evidence reconciliation (2026-10-17 05:46–05:49 UTC)
+
+- Committed the harness implementation as `95e38101`, then ran `PROD-001-sync-send` from that clean code revision against the pinned 5.3.4 basic profile.
+- PASS: Java and Rust synchronous V2 sends both returned `SEND_OK`; Rust read the Java message and Java read the Rust message by physical offset. Both bodies were `fixed`, both topics were `compat_phase0_send`, and queue IDs/queue offsets matched each send result.
+- The runner deleted the scenario topic and removed the isolated Compose containers, network and volume. Exit status was 0; metadata records `source_code_dirty=false` and the pinned image digest. Manifest and evidence were committed in `398c8ebd`; ignored setup/build/topic/Compose logs were force-archived with trailing CLI padding removed in `4fe2444c`.
+- `python3 tests/differential/compare.py --validate-manifest` passed with 37 rows. Four scenarios now pass; 33 remain pending. Updated the integration instructions, Java compatibility checkpoint, 5.3.4 results and release checklist. Broad P18-V01, current-revision Ubuntu/Windows P18-V04 evidence, the remaining local Phase 19 matrix/profiles/orchestration, pre-publication checks, and MAN-05 classification remain open.

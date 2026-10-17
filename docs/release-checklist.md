@@ -3125,7 +3125,7 @@ Before any publication:
   one-shot volume owner initialization service. This verifies only the basic
   environment startup and cleanup path; Java/Rust client scenarios, runner,
   resource reset/evidence reconciliation, and two-Broker/TLS/auth profiles
-  remain automatic Phase 19 work. No scenario is marked as passed. Evidence:
+  remain automatic Phase 19 work. No scenario had been marked as passed at this initial setup checkpoint. Evidence:
   [`integration-tests/README.md`](../integration-tests/README.md),
   [`rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog`](../rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog).
 
@@ -3147,6 +3147,11 @@ Before any publication:
   heartbeat and received Broker version `481`. Project-only Compose cleanup
   passed. Evidence:
   [`20261017T053144Z`](compatibility/evidence/phase-19/HEARTBEAT-001/20261017T053144Z/).
+- [x] Run `PROD-001-sync-send` against the pinned basic profile. Java and Rust
+  both returned `SEND_OK`; each client read the other's message by physical offset
+  and matched topic, queue, queue offset, and body. Topic and project-only
+  Compose cleanup passed. Code/evidence commits: `95e38101`, `398c8ebd`. Evidence:
+  [`20261017T054628Z`](compatibility/evidence/phase-19/PROD-001-sync-send/20261017T054628Z/).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -3162,7 +3167,7 @@ Before any publication:
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
-- [ ] Implement and run the remaining 34 of 37 Phase 19 live scenarios, the
+- [ ] Implement and run the remaining 33 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
   evidence reconciliation. `tests/differential/run.sh --all` currently fails
   closed on unimplemented IDs.
@@ -3173,6 +3178,6 @@ Before any publication:
   pending classification after local matrix execution. See
   [`docs/owner-validation.md`](owner-validation.md).
 
-The three live PASS results do not constitute Phase 19 acceptance. All
+The four live PASS results do not constitute Phase 19 acceptance. All
 remaining locally reproducible cases stay automatic work; only the
 owner-specific checks belong in the manual handoff.
