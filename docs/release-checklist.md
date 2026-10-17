@@ -3681,3 +3681,33 @@ owner-specific checks belong in the manual handoff.
 - [x] Stabilized the live-timeout regression after the first parallel workspace run exposed a route-refresh timeout: the test now loads and checks the Broker route before mutating the timeout, then applies the Java fixture's 150 ms value to the Broker RPC. All 17 runtime_lookup integration tests pass. Test-only commit: 3beabab0.
 - A macOS Remoting package run was stopped after its codec test child remained in dyld startup before Rust main; a live process sample showed _dyld_start. The complete default/all-feature workspace suites passed in the Linux container on 3beabab0.
 - Broad P18-V01 bidirectional Java/Rust source/API/settings/input/error/flow and reverse-export audit remains open. Current-revision GitHub Ubuntu/native Windows P18-V04 evidence, 30 Phase 19 Docker/Broker scenarios and required profiles, and pre-publication version/registry checks remain open. Owner-specific production checks remain the separate final manual handoff. Plans and the read-only Java oracle were unchanged.
+
+## Offset-boundary reflection follow-up and current gate — 2026-10-17 (`9513e4da`)
+
+- [x] P18-V01 offset-boundary response-header decoding: Java 5.5.1 direct
+  reflection leaves absent or malformed boxed `Long` fields null per field,
+  regardless of the fast-encode hint. Rust now preserves those nullable values
+  for `SearchOffsetResponseHeader`, `GetMaxOffsetResponseHeader`,
+  `GetMinOffsetResponseHeader`, and `GetEarliestMsgStoretimeResponseHeader`;
+  each RPC owner checks the required value at the Java-equivalent unboxing
+  boundary. Invoked fixture SHA-256:
+  `c4891f046639eb0f9a82e221b1605d296aed1314fb70e37c22ea514d240a9e95`.
+- [x] P18-V02 server-free local gates pass on code revision `9513e4da` in a
+  serialized Linux ARM64 `rust:1.85.0-bookworm` container: default/all-feature
+  workspace tests, all-target/all-feature check and strict Clippy, Maven verify
+  (37 scenarios, fixture drift and Java/Rust cross-decodes), differential
+  self-test/manifest validation, 16 race/leak cases × 3, fuzz smoke, release
+  examples, benchmark build/run, locked metadata/package checks, workspace
+  metadata/license/dependency checks, seven package listings with `LICENSE` and
+  `NOTICE`, UTC/Asia-Taipei Unique ID tests, formatting, and diff checks. A
+  first parallel workspace run had one Consumer stack-capture failure because
+  the environment exposed no unblocked signal; serialized default/all-feature
+  reruns passed. Benchmark values are observations, not thresholds.
+- Broad P18-V01 source/API/settings/overload/input/error/flow and Rust
+  reverse-export reconciliation remains open. Current-revision GitHub Ubuntu
+  and native Windows P18-V04 evidence, 30 Phase 19 Docker/Broker scenarios and
+  required multi-Broker/TLS/ACL profiles, and pre-publication version/registry
+  checks remain open. Owner-only production connectivity, credentials/CA,
+  approved HA/fault injection, and capacity/soak checks remain the final manual
+  handoff. No plan, Java oracle, remote branch, tag, publication, Broker
+  operation, or deployment was changed.
