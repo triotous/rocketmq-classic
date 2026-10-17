@@ -3461,3 +3461,16 @@ owner-specific checks belong in the manual handoff.
   remaining Phase 18 implementation work. Broad P18-V01, current-revision
   Ubuntu/Windows P18-V04 evidence, Phase 19 live scenarios, and pre-publication
   checks remain open.
+
+- P18-V01 `ProcessTimer` identity equality (`4858ebdd`, 2026-10-17): Guava
+  `Stopwatch` inherits identity equality from `Object`; the invoked fixture
+  verifies equal stopped state, getter identity, and two entries for distinct
+  timers in a `HashSet`. Rust omits structural `PartialEq`/`Eq` from
+  `ProcessTimer` and guards the public trait boundary with a compile-fail
+  doctest. Fixture SHA-256:
+  `2680e925aa7c21cd5f2f5ea8055ee986bec5fc174601c612cb8ae469481d2cf0`.
+  Linux Remoting all-feature tests, strict Remoting Clippy, format/diff checks,
+  and Maven verify pass. The macOS all-feature workspace run stalled in Rust
+  compilation and was interrupted, so a current-revision workspace P18-V02
+  rerun remains open. Details are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog).
