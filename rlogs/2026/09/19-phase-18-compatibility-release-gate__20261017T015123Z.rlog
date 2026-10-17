@@ -30,3 +30,22 @@
   the refreshed `lookup.json`, `route.json`, and `heartbeat.json` fixtures.
 - Code/test commit: `cceed2ab feat(protocol): map IgnoreErrorGetter writer flag`.
   Documentation and execution-log updates are recorded separately.
+- Mapped Fastjson2 `IgnoreNonFieldGetter`: oracle fixtures show it removes the
+  three computed `QueueTimeSpan` timestamp strings, writes `MessageQueue` map
+  keys as quoted compact JSON strings, and quotes numeric route-map keys.
+  Rust applies the getter filter in the shared serializer and the custom body
+  map-key serializer; fixture assertions cover body, route, and heartbeat DTOs.
+- The first Rust compile required qualifying the shared JSON-string writer.
+  The next comparison exposed that `QueryConsumeTimeSpanBody` uses the shared
+  serializer, so filtering only the special body serializer left its three
+  getter fields present. Moved the filter to the shared route serializer and
+  reran the entire Protocol suite successfully.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed
+  (126 unit tests, all Protocol integration targets, 42 doctests).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features
+  --locked -- -D warnings`: passed. `cargo fmt --all -- --check` and
+  `git diff --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed all 37 scenarios,
+  fixture drift checks, and Rust/Java cross-decodes.
+- Code/test commit: `333e24a8 feat(protocol): map IgnoreNonFieldGetter writer flag`.
+  Compatibility documentation and this log update are recorded separately.
