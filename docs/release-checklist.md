@@ -2852,3 +2852,16 @@ Before any publication:
   P18-V01 audit, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 numeric writer-format mapping (code commit `b25f6a79`, 2026-10-17):
+  `WriteBigDecimalAsPlain` and `WriteFloatSpecialAsString` preserve output for
+  the mapped body, route, and heartbeat DTO graph. Pinned Fastjson2 uses these
+  options only for BigDecimal, Float, and Double values; none appear in this
+  graph's fields or map-value types, and the invoked Java fixture records no
+  output changes. Rust now compares every mapped adapter against the Java
+  baseline. Protocol all-feature tests (125 unit tests, all integration
+  targets, 42 doctests), strict Protocol Clippy, formatting, and diff checks
+  pass. Mapping count is now 29/48; 19 writer features remain unmapped. The
+  final full-workspace P18-V02 rerun, broad P18-V01 audit, current-revision
+  Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker automation remain
+  open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).

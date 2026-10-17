@@ -110,3 +110,15 @@
   and Maven verify (37 scenarios, fixture checks and cross-decodes) passed.
   The mapping count is 27/48; 21 remain unmapped. Full-workspace P18-V02 is
   pending after remaining Phase 18 code work.
+
+- P18-V01 numeric writer-format mapping (`b25f6a79`, 2026-10-17):
+  `WriteBigDecimalAsPlain` and `WriteFloatSpecialAsString` preserve output for
+  the mapped body, route, and heartbeat DTO graph. Pinned Fastjson2 applies
+  these options to BigDecimal, Float, and Double values; those types are absent
+  from this mapped graph. Invoked Java fixture cases record no output changes,
+  and Rust now compares every mapped adapter against the Java baseline.
+  Validation on `b25f6a79`: Protocol all-feature tests (125 unit tests, all
+  integration targets, 42 doctests), strict all-target/all-feature Protocol
+  Clippy, formatting, and `git diff --check` passed. Mapping count is now
+  29/48; 19 remain unmapped. Full-workspace P18-V02 remains due after the
+  remaining Phase 18 code work.
