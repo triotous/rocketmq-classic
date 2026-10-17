@@ -2976,3 +2976,19 @@ Before any publication:
   Ubuntu/Windows CI, P18-V04 handoff, and Phase 19 Docker/Broker automation
   remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T022954Z.rlog).
+- P18-V01 Fastjson `BeanToArray` writer flag (code commit `acd40aff`,
+  2026-10-17): the adapters serialize mapped DTOs in Java bean-property order,
+  including nested DTOs in collections and typed maps, while preserving user
+  maps as maps. The transform retains null fields, applies enum ordinal/name
+  behavior, and preserves queue-table map-key encoding. Body, route, and
+  heartbeat fixture loops compare the feature output with invoked Java 5.5.1.
+  Protocol all-feature tests (126 unit tests, all integration targets, and 42
+  doctests), strict Protocol Clippy, formatting, diff checks, and Maven verify
+  (37 scenarios, fixture checks, and Java/Rust cross-decodes) pass. Mapping
+  count is now 40/48; the eight remaining flags are `WriteNulls`,
+  `WriteMapNullValue`, `NullAsDefaultValue`, `WriteClassName`,
+  `ReferenceDetection`, `WriteNullListAsEmpty`, `WriteNullStringAsEmpty`, and
+  `WriteNullNumberAsZero`. Broad P18-V01, final full-workspace P18-V02,
+  current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
