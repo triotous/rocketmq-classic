@@ -2879,3 +2879,16 @@ Before any publication:
   P18-V01 audit, current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase
   19 Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014126Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014126Z.rlog).
+- P18-V01 Fastjson enum-name writer flags (code commit `d13636e8`,
+  2026-10-17): `WriteEnumsUsingName` and `WriteEnumUsingToString` preserve the
+  pinned Java output across body, route, and heartbeat DTO cases: the covered
+  Java enum name and `toString()` values match their existing encoded strings.
+  Rust now accepts both flags and checks their output against each applicable
+  Java fixture. Protocol all-feature tests (126 unit tests, all integration
+  targets, 42 doctests), strict Protocol Clippy, formatting, and diff checks
+  pass. Maven verify passed on fixture revision `02ae239d`; this change adds no
+  Java fixture changes. Mapping count is now 32/48; 16 writer features remain
+  unmapped. Final full-workspace P18-V02, broad P18-V01, current-revision
+  Ubuntu/Windows CI, P18-V04 handoff, and Phase 19 Docker/Broker automation
+  remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014736Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014736Z.rlog).
