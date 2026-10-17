@@ -3768,7 +3768,84 @@ public final class RuntimeConfigFixtures {
         addCommandSuspendedCase(commandSuspended, "setFalse", suspendedRequest);
         result.put("commandSuspended", commandSuspended);
         result.put("commandProtocolHelpers", commandProtocolHelperCases());
+        result.put("commandFactories", commandFactoryCases());
         result.put("commandToString", commandToStringCases());
+        return result;
+    }
+
+    private static Map<String, Object> commandFactoryCases() {
+        List<Object> cases = new ArrayList<>();
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> commands = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(71, null);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(72, "accepted");
+        org.apache.rocketmq.remoting.protocol.RemotingCommand error =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.buildErrorResponse(73, null);
+        commands.add(request);
+        commands.add(response);
+        commands.add(error);
+
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader requestHeader =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader();
+        requestHeader.setTopic("orders");
+        org.apache.rocketmq.remoting.protocol.RemotingCommand requestWithHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(74, requestHeader);
+        requestWithHeader.makeCustomHeaderToNet();
+        commands.add(requestWithHeader);
+
+        org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader responseHeader =
+            new org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader();
+        responseHeader.setOffset(88L);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand responseWithHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommandWithHeader(75, responseHeader);
+        responseWithHeader.makeCustomHeaderToNet();
+        commands.add(responseWithHeader);
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand responseWithDefaultHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader.class);
+        responseWithDefaultHeader.makeCustomHeaderToNet();
+        commands.add(responseWithDefaultHeader);
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand responseWithClassHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                76, "class-header", org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader.class);
+        responseWithClassHeader.makeCustomHeaderToNet();
+        commands.add(responseWithClassHeader);
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand errorWithClassHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.buildErrorResponse(
+                77, "built", org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader.class);
+        errorWithClassHeader.makeCustomHeaderToNet();
+        commands.add(errorWithClassHeader);
+
+        for (int index = 0; index < commands.size(); index++) {
+            cases.add(commandFactoryCase("factory" + index, commands.get(index)));
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("commands", cases);
+        List<Integer> deltas = new ArrayList<>();
+        for (int index = 1; index < commands.size(); index++) {
+            deltas.add(commands.get(index).getOpaque() - commands.get(index - 1).getOpaque());
+        }
+        result.put("requestIdDeltas", deltas);
+        return result;
+    }
+
+    private static Map<String, Object> commandFactoryCase(
+        String name, org.apache.rocketmq.remoting.protocol.RemotingCommand command) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("name", name);
+        result.put("code", command.getCode());
+        result.put("language", command.getLanguage() == null ? null : command.getLanguage().name());
+        result.put("version", command.getVersion());
+        result.put("opaque", command.getOpaque());
+        result.put("flag", command.getFlag());
+        result.put("remark", command.getRemark());
+        result.put("extFields", command.getExtFields());
+        result.put("serialization", command.getSerializeTypeCurrentRPC().name());
         return result;
     }
 

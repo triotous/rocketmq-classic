@@ -2,9 +2,13 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use rocketmq_classic_protocol::codes::{JavaEnumLookupError, LanguageCode, SerializeType};
+use rocketmq_classic_protocol::{
+    codes::{JavaEnumLookupError, LanguageCode, SerializeType},
+    header::{CommandHeader, HeaderMap},
+};
 
 static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
+static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
 static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -229,6 +233,110 @@ impl RemotingCommand {
 
     pub fn create_new_request_id() -> i32 {
         REQUEST_ID.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Creates a request command with Java's default command fields and a process-wide opaque ID.
+    pub fn create_request_command(code: i32) -> Result<Self, String> {
+        Self::create_command(code, false, None)
+    }
+
+    /// Creates a request command and snapshots a typed header into ext-fields.
+    pub fn create_request_command_with_header<T: CommandHeader>(
+        code: i32,
+        custom_header: &T,
+    ) -> Result<Self, String> {
+        let mut command = Self::create_command(code, false, None)?;
+        command.attach_header_fields(custom_header);
+        Ok(command)
+    }
+
+    /// Creates a response command with Java's response flag, remark, and process-wide opaque ID.
+    pub fn create_response_command(code: i32, remark: Option<String>) -> Result<Self, String> {
+        Self::create_command(code, true, remark)
+    }
+
+    /// Creates a response command and snapshots a typed header into ext-fields.
+    pub fn create_response_command_with_header<T: CommandHeader>(
+        code: i32,
+        custom_header: &T,
+    ) -> Result<Self, String> {
+        let mut command = Self::create_command(code, true, None)?;
+        command.attach_header_fields(custom_header);
+        Ok(command)
+    }
+
+    /// Creates a response with a default typed header, matching Java's class-header overload.
+    pub fn create_response_command_with_default_header<T: CommandHeader + Default>(
+        code: i32,
+        remark: Option<String>,
+    ) -> Result<Self, String> {
+        let mut command = Self::create_response_command(code, remark)?;
+        command.attach_header_fields(&T::default());
+        Ok(command)
+    }
+
+    /// Creates Java's default system-error response with a default typed header.
+    pub fn create_response_command_for_header<T: CommandHeader + Default>() -> Result<Self, String>
+    {
+        Self::create_response_command_with_default_header::<T>(
+            rocketmq_classic_protocol::codes::response::SYSTEM_ERROR,
+            Some("not set any response code".into()),
+        )
+    }
+
+    /// Creates an error response command.
+    pub fn build_error_response(code: i32, remark: Option<String>) -> Result<Self, String> {
+        Self::create_response_command(code, remark)
+    }
+
+    /// Creates an error response and attaches a default typed header.
+    pub fn build_error_response_with_default_header<T: CommandHeader + Default>(
+        code: i32,
+        remark: Option<String>,
+    ) -> Result<Self, String> {
+        Self::create_response_command_with_default_header::<T>(code, remark)
+    }
+
+    fn attach_header_fields<T: CommandHeader>(&mut self, custom_header: &T) {
+        let mut fields = HeaderMap::new();
+        custom_header.encode_fields(&mut fields);
+        self.ext_fields = Some(fields);
+    }
+
+    fn create_command(code: i32, response: bool, remark: Option<String>) -> Result<Self, String> {
+        let defaults = Self::default();
+        let mut command = Self {
+            code,
+            language: Some(LanguageCode::Java),
+            opaque: Self::create_new_request_id(),
+            remark,
+            ..defaults
+        };
+        if response {
+            command.mark_response();
+        }
+        command.set_configured_version()?;
+        Ok(command)
+    }
+
+    fn set_configured_version(&mut self) -> Result<(), String> {
+        let configured = COMMAND_VERSION.load(Ordering::SeqCst);
+        if configured >= 0 {
+            self.version = configured;
+            return Ok(());
+        }
+
+        let Ok(value) = std::env::var(Self::REMOTING_VERSION_KEY) else {
+            return Ok(());
+        };
+        let parsed = value
+            .parse::<i32>()
+            .map_err(|_| format!("For input string: \"{value}\""))?;
+        if parsed >= 0 {
+            COMMAND_VERSION.store(parsed, Ordering::SeqCst);
+        }
+        self.version = parsed;
+        Ok(())
     }
 
     pub fn get_serialize_type_config_in_this_server() -> Result<SerializeType, String> {
@@ -657,6 +765,155 @@ mod tests {
         ] {
             assert!(method_names.contains(&signature), "missing {signature}");
         }
+    }
+
+    #[test]
+    fn command_factories_match_pinned_java_defaults_and_id_sequence() {
+        const CHILD_CASE: &str = "ROCKETMQ_CLASSIC_COMMAND_FACTORY_CASE";
+        if std::env::var(CHILD_CASE).as_deref() == Ok("invalid") {
+            assert_eq!(
+                RemotingCommand::create_request_command(71).unwrap_err(),
+                "For input string: \"invalid\""
+            );
+            return;
+        }
+        if std::env::var(CHILD_CASE).as_deref() == Ok("child") {
+            let fixture: serde_json::Value =
+                serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                    .unwrap();
+            let cases = &fixture["remotingEnumMethodCases"]["commandFactories"];
+            let commands = [
+                RemotingCommand::create_request_command(71).unwrap(),
+                RemotingCommand::create_response_command(72, Some("accepted".into())).unwrap(),
+                RemotingCommand::build_error_response(73, None).unwrap(),
+                RemotingCommand::create_request_command_with_header(
+                    74,
+                    &rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
+                        topic: "orders".into(),
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+                RemotingCommand::create_response_command_with_header(
+                    75,
+                    &rocketmq_classic_protocol::header::SearchOffsetResponseHeader { offset: 88 },
+                )
+                .unwrap(),
+                RemotingCommand::create_response_command_for_header::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >()
+                .unwrap(),
+                RemotingCommand::create_response_command_with_default_header::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(76, Some("class-header".into()))
+                .unwrap(),
+                RemotingCommand::build_error_response_with_default_header::<
+                    rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
+                >(77, Some("built".into()))
+                .unwrap(),
+            ];
+            assert_eq!(cases["commands"].as_array().unwrap().len(), commands.len());
+            for (case, command) in cases["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(commands.iter())
+            {
+                assert_eq!(
+                    command.code,
+                    case["code"].as_i64().unwrap() as i32,
+                    "{case}"
+                );
+                assert_eq!(
+                    command.language.map(LanguageCode::name),
+                    case["language"].as_str(),
+                    "{case}"
+                );
+                assert_eq!(
+                    command.version,
+                    case["version"].as_i64().unwrap() as i32,
+                    "{case}"
+                );
+                assert_eq!(
+                    command.flag,
+                    case["flag"].as_i64().unwrap() as i32,
+                    "{case}"
+                );
+                assert_eq!(command.remark.as_deref(), case["remark"].as_str(), "{case}");
+                let expected_ext_fields = case["extFields"].as_object().map(|object| {
+                    object
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                        .collect::<BTreeMap<_, _>>()
+                });
+                assert_eq!(
+                    command.ext_fields.as_ref(),
+                    expected_ext_fields.as_ref(),
+                    "{case}"
+                );
+                assert_eq!(
+                    command.serialization.name(),
+                    case["serialization"].as_str().unwrap(),
+                    "{case}"
+                );
+            }
+            let expected_deltas = cases["requestIdDeltas"].as_array().unwrap();
+            assert_eq!(expected_deltas.len(), commands.len() - 1);
+            for index in 1..commands.len() {
+                assert_eq!(
+                    commands[index]
+                        .opaque
+                        .wrapping_sub(commands[index - 1].opaque),
+                    expected_deltas[index - 1].as_i64().unwrap() as i32
+                );
+            }
+            for (index, command) in commands.iter().enumerate() {
+                assert_eq!(command.is_response(), !matches!(index, 0 | 3));
+            }
+            return;
+        }
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let expected_version = fixture["remotingEnumMethodCases"]["commandFactories"]["commands"]
+            [0]["version"]
+            .as_i64()
+            .unwrap()
+            .to_string();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("command::tests::command_factories_match_pinned_java_defaults_and_id_sequence")
+            .arg("--nocapture")
+            .env(CHILD_CASE, "child")
+            .env(RemotingCommand::REMOTING_VERSION_KEY, expected_version)
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_PROPERTY)
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_ENV)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child factory comparison failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let invalid = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("command::tests::command_factories_match_pinned_java_defaults_and_id_sequence")
+            .arg("--nocapture")
+            .env(CHILD_CASE, "invalid")
+            .env(RemotingCommand::REMOTING_VERSION_KEY, "invalid")
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_PROPERTY)
+            .env_remove(RemotingCommand::SERIALIZE_TYPE_ENV)
+            .output()
+            .unwrap();
+        assert!(
+            invalid.status.success(),
+            "invalid version property case failed: {}{}",
+            String::from_utf8_lossy(&invalid.stdout),
+            String::from_utf8_lossy(&invalid.stderr)
+        );
     }
 
     #[test]
