@@ -3777,3 +3777,26 @@ owner-specific checks belong in the manual handoff.
 - Broad P18-V01 reconciliation remains open. Current-revision GitHub Ubuntu
   and native Windows P18-V04 evidence, 30 Phase 19 local Broker scenarios and
   required profiles, and pre-publication registry resolution remain open.
+
+## Current-revision P18-V02 gate — 2026-10-17 (`5e5775fa`)
+
+- [x] The current-revision server-free gate passes after adding
+  `HeartbeatRequestHeader` to the Protocol header-validation matrix. The first
+  full default workspace run exposed the missing row; the focused matrix test
+  and both complete default and all-feature workspace suites passed after the
+  correction. Commit: `5e5775fa`.
+- [x] Also passed all-target/all-feature workspace check and strict Clippy,
+  format and diff checks, UTC Maven `verify` (37 scenarios, fixture drift,
+  56 typed-header and 14 typed-body cross-decodes), differential comparator
+  self-test and 37-row manifest validation, 16 race/leak cases × 3, fuzz smoke
+  (107 frame seeds, 11 message seeds, 1,888 mutations, 165 frame decodes,
+  116 message decodes), release examples, workspace bench compilation and
+  offline benchmark, locked Cargo metadata, workspace metadata/license/
+  dependency-direction checks, workspace package-content listing, and
+  UTC/Asia-Taipei unique-ID tests. Benchmark observations and toolchain details
+  are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T230853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T230853Z.rlog).
+- Broad P18-V01 Java/Rust source/API/settings/input/error/flow and
+  reverse-export audit, current-revision Ubuntu/native Windows P18-V04 CI
+  evidence, final P18-V03 package review, and Phase 19 live scenarios/profiles
+  remain open. This rerun closes P18-V02 only.
