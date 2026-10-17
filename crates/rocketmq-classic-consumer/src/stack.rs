@@ -490,7 +490,11 @@ mod linux {
     fn enumerate_threads() -> io::Result<Vec<ThreadInfo>> {
         let mut threads = Vec::new();
         for entry in fs::read_dir("/proc/self/task")? {
-            let entry = entry?;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) if is_disappeared_task_error(&error) => continue,
+                Err(error) => return Err(error),
+            };
             let Some(id) = entry
                 .file_name()
                 .to_str()
@@ -501,7 +505,7 @@ mod linux {
             let status_path = entry.path().join("status");
             let blocked_signals = match read_blocked_signals(&status_path) {
                 Ok(mask) => mask,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) if is_disappeared_task_error(&error) => continue,
                 Err(error) => return Err(error),
             };
             let name = fs::read_to_string(entry.path().join("comm"))
@@ -517,6 +521,10 @@ mod linux {
         }
         threads.sort_by_key(|thread| thread.id);
         Ok(threads)
+    }
+
+    fn is_disappeared_task_error(error: &io::Error) -> bool {
+        error.kind() == io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH)
     }
 
     fn read_blocked_signals(path: &std::path::Path) -> io::Result<u64> {
@@ -746,7 +754,22 @@ mod linux {
 
     #[cfg(test)]
     mod tests {
-        use super::{SIGNAL_CANDIDATES, ThreadInfo, unblocked_signal_candidates};
+        use super::{
+            SIGNAL_CANDIDATES, ThreadInfo, is_disappeared_task_error, unblocked_signal_candidates,
+        };
+
+        #[test]
+        fn task_disappearance_errors_are_recognized() {
+            assert!(is_disappeared_task_error(&std::io::Error::from(
+                std::io::ErrorKind::NotFound
+            )));
+            assert!(is_disappeared_task_error(
+                &std::io::Error::from_raw_os_error(libc::ESRCH)
+            ));
+            assert!(!is_disappeared_task_error(&std::io::Error::from(
+                std::io::ErrorKind::PermissionDenied
+            )));
+        }
 
         #[test]
         fn signal_candidate_falls_back_to_sigchld_when_common_signals_are_blocked() {
