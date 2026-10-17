@@ -3711,3 +3711,20 @@ owner-specific checks belong in the manual handoff.
   approved HA/fault injection, and capacity/soak checks remain the final manual
   handoff. No plan, Java oracle, remote branch, tag, publication, Broker
   operation, or deployment was changed.
+
+## Remoting suspended response metric — 2026-10-17 (`0fdbc1d4`)
+
+- [x] Closed the P18-V01 long-poll metric slice. Pinned Java
+  `NettyRemotingAbstract.writeResponse` records `request.isSuspended()` in the
+  `is_long_polling` RPC latency attribute. Rust's inbound `send_response`
+  builds the same attribute from the request and records it after response
+  writes or for oneway requests. The transport integration test marks an
+  inbound request suspended in a hook and verifies the recorded response
+  metric contains `is_long_polling=true`.
+- Focused verification passed:
+  `cargo test --locked -p rocketmq-classic-remoting --test transport
+  p3_v03_inbound_dispatch_and_reordered_parallel_responses`, formatting, and
+  `git diff --check`. Test-only commit: `0fdbc1d4`.
+- Earlier checklist notes that listed long-poll metric emission as open are
+  superseded by this evidence. Broad P18-V01 remains open for its other API and
+  behavior rows.
