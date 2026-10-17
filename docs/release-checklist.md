@@ -2775,3 +2775,15 @@ Before any publication:
   review, P18-V04 handoff, and Phase 19 Docker/Broker automation remain open.
   Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 Fastjson `OptimizedForAscii` writer feature (code commit `8a9939b9`,
+  2026-10-17): accepted as an output-preserving option. Fastjson 2.0.63 uses a
+  UTF-8 writer path for the option; Rust's protocol JSON writer already emits
+  UTF-8. Java/Rust fixture comparisons remain byte-identical for ASCII and
+  Unicode values across body, route, and heartbeat serializers. Eighteen of 48
+  writer features now have behavior mappings; 30 remain unmapped. Protocol
+  all-feature tests (125 unit tests, all integration targets, and 42 doctests),
+  strict Protocol Clippy, Maven verify (37 scenarios), formatting, and diff
+  checks pass. Broad P18-V01, final full-workspace P18-V02, current-revision
+  Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker automation remain
+  open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).

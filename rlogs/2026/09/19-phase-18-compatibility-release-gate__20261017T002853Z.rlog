@@ -39,3 +39,12 @@
   current-revision full-workspace P18-V02, Ubuntu/Windows CI, P18-V03/V04,
   owner-validation handoff, pre-publication resolution, and Phase 19 local
   Docker/Broker execution remain outstanding.
+- P18-V01 `OptimizedForAscii` implementation committed as `8a9939b9`. Pinned
+  Fastjson2 2.0.63 selects a UTF-8 writer path for this flag; Rust already emits
+  UTF-8 JSON. CheckClient, BatchAck, all mapped body adapters, both route DTOs,
+  and HeartbeatData compare byte-for-byte against the fixtures, including
+  ASCII and Unicode values. No Java fixture change was required.
+- Validation on `8a9939b9`: Protocol all-feature suite passed (125 unit tests,
+  all integration targets, 42 doctests); strict all-target/all-feature
+  Protocol Clippy, Maven verify (37 scenarios), formatting, and diff checks
+  passed. Mapping count is now 18/48; 30 writer features remain unmapped.
