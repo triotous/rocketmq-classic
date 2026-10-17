@@ -4039,6 +4039,21 @@ public final class RuntimeConfigFixtures {
         populated.setSerializeTypeCurrentRPC(org.apache.rocketmq.remoting.protocol.SerializeType.ROCKETMQ);
         result.add(commandToStringCase("populated", populated));
 
+        org.apache.rocketmq.remoting.protocol.RemotingCommand multipleExtFields =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(8, null);
+        multipleExtFields.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA);
+        multipleExtFields.setVersion(16);
+        multipleExtFields.setOpaque(43);
+        multipleExtFields.setFlag(0);
+        multipleExtFields.setRemark("multiple fields");
+        java.util.HashMap<String, String> unorderedFields = new java.util.HashMap<>();
+        unorderedFields.put("Z", "upper");
+        unorderedFields.put("a", "lower");
+        multipleExtFields.setExtFields(unorderedFields);
+        multipleExtFields.setSerializeTypeCurrentRPC(
+            org.apache.rocketmq.remoting.protocol.SerializeType.JSON);
+        result.add(commandToStringCase("multipleExtFields", multipleExtFields));
+
         org.apache.rocketmq.remoting.protocol.RemotingCommand signedFlag =
             org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(-1, null);
         signedFlag.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA);

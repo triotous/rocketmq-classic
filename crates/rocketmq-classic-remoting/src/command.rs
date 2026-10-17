@@ -1067,12 +1067,57 @@ mod tests {
                 serialization,
                 ..RemotingCommand::default()
             };
-            assert_eq!(
-                command.to_string(),
-                case["result"].as_str().unwrap(),
-                "{case}"
-            );
+            let java_result = case["result"].as_str().unwrap();
+            let expected_result = if case["name"] == "multipleExtFields" {
+                // Java HashMap does not guarantee iteration order; validate its entries as a map
+                // and normalize only that segment before comparing the diagnostic string.
+                let ext_fields_start = java_result.find("extFields=").unwrap() + "extFields=".len();
+                let ext_fields_end = java_result[ext_fields_start..]
+                    .find(", serializeTypeCurrentRPC=")
+                    .unwrap()
+                    + ext_fields_start;
+                let java_ext_fields = &java_result[ext_fields_start..ext_fields_end];
+                let parsed_java_ext_fields = parse_java_ext_fields_display(java_ext_fields);
+                assert_eq!(parsed_java_ext_fields, command.ext_fields, "{case}");
+                normalize_ext_fields_display(java_result, command.ext_fields.as_ref())
+            } else {
+                java_result.to_owned()
+            };
+            assert_eq!(command.to_string(), expected_result, "{case}");
         }
+    }
+
+    fn parse_java_ext_fields_display(display: &str) -> Option<HeaderMap> {
+        if display == "null" {
+            return None;
+        }
+        let entries = display.strip_prefix('{')?.strip_suffix('}')?;
+        let mut fields = HeaderMap::new();
+        if entries.is_empty() {
+            return Some(fields);
+        }
+        for entry in entries.split(", ") {
+            let (key, value) = entry.split_once('=')?;
+            fields.insert(key.to_owned(), value.to_owned());
+        }
+        Some(fields)
+    }
+
+    fn normalize_ext_fields_display(display: &str, fields: Option<&HeaderMap>) -> String {
+        let start = display.find("extFields=").unwrap() + "extFields=".len();
+        let end = display[start..].find(", serializeTypeCurrentRPC=").unwrap() + start;
+        let ext_fields = fields.map_or_else(
+            || "null".to_owned(),
+            |fields| {
+                let entries = fields
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        format!("{}{}{}", &display[..start], ext_fields, &display[end..])
     }
 
     #[test]
