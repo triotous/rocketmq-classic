@@ -2773,6 +2773,7 @@ mod tests {
                     crate::JavaJsonWriterFeature::SortMapEntriesByKeys,
                     "SortMapEntriesByKeys",
                 ),
+                (crate::JavaJsonWriterFeature::LargeObject, "LargeObject"),
                 (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",

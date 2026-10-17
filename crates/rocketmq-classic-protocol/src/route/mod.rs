@@ -4376,6 +4376,7 @@ mod tests {
                         JavaJsonWriterFeature::SortMapEntriesByKeys,
                         "SortMapEntriesByKeys",
                     ),
+                    (JavaJsonWriterFeature::LargeObject, "LargeObject"),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

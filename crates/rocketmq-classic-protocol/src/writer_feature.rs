@@ -7,7 +7,7 @@
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
-/// `MapSortField`, `SortMapEntriesByKeys`, `WriteLongAsString`,
+/// `MapSortField`, `SortMapEntriesByKeys`, `LargeObject`, `WriteLongAsString`,
 /// `WriteEnumUsingOrdinal`, `WriteEnumsUsingName`,
 /// `WriteEnumUsingToString`, `IgnoreErrorGetter`, `UseSingleQuotes`,
 /// `UnquoteFieldName`, `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`,
@@ -29,6 +29,9 @@
 /// `MapSortField` and `SortMapEntriesByKeys` preserve output because these
 /// adapters serialize map-backed JSON objects in key order already; the Java
 /// fixtures include populated maps and record no overrides for either flag.
+/// `LargeObject` raises Fastjson2's writer array-capacity ceiling from 64 MiB
+/// to 1 GiB. Rust's growable JSON output has no corresponding fixed ceiling, so
+/// the flag needs no output or capacity change in these adapters.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
@@ -231,6 +234,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNonStringValueAsString
                 | Self::MapSortField
                 | Self::SortMapEntriesByKeys
+                | Self::LargeObject
                 | Self::NotWriteEmptyArray
                 | Self::IgnoreEmpty
                 | Self::NotWriteDefaultValue

@@ -5902,6 +5902,7 @@ mod tests {
                     JavaJsonWriterFeature::SortMapEntriesByKeys,
                     "SortMapEntriesByKeys",
                 ),
+                (JavaJsonWriterFeature::LargeObject, "LargeObject"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7052,6 +7053,7 @@ mod tests {
                     JavaJsonWriterFeature::SortMapEntriesByKeys,
                     "SortMapEntriesByKeys",
                 ),
+                (JavaJsonWriterFeature::LargeObject, "LargeObject"),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7559,6 +7561,7 @@ mod tests {
                             JavaJsonWriterFeature::SortMapEntriesByKeys,
                             "SortMapEntriesByKeys",
                         ),
+                        (JavaJsonWriterFeature::LargeObject, "LargeObject"),
                         (
                             JavaJsonWriterFeature::NotWriteDefaultValue,
                             "NotWriteDefaultValue",
