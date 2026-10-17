@@ -4287,6 +4287,14 @@ mod tests {
                         JavaJsonWriterFeature::WriterUtilDateAsMillis,
                         "WriterUtilDateAsMillis",
                     ),
+                    (
+                        JavaJsonWriterFeature::WriteBigDecimalAsPlain,
+                        "WriteBigDecimalAsPlain",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriteFloatSpecialAsString,
+                        "WriteFloatSpecialAsString",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

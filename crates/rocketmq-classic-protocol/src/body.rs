@@ -5843,6 +5843,14 @@ mod tests {
                     JavaJsonWriterFeature::WriterUtilDateAsMillis,
                     "WriterUtilDateAsMillis",
                 ),
+                (
+                    JavaJsonWriterFeature::WriteBigDecimalAsPlain,
+                    "WriteBigDecimalAsPlain",
+                ),
+                (
+                    JavaJsonWriterFeature::WriteFloatSpecialAsString,
+                    "WriteFloatSpecialAsString",
+                ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -6958,6 +6966,14 @@ mod tests {
                     JavaJsonWriterFeature::WriterUtilDateAsMillis,
                     "WriterUtilDateAsMillis",
                 ),
+                (
+                    JavaJsonWriterFeature::WriteBigDecimalAsPlain,
+                    "WriteBigDecimalAsPlain",
+                ),
+                (
+                    JavaJsonWriterFeature::WriteFloatSpecialAsString,
+                    "WriteFloatSpecialAsString",
+                ),
             ] {
                 let featured = value.java_encode_with_features(&[feature]).unwrap();
                 let expected = case["writerFeatureOverrides"][feature_name]
@@ -7473,6 +7489,14 @@ mod tests {
                         (
                             JavaJsonWriterFeature::WriterUtilDateAsMillis,
                             "WriterUtilDateAsMillis",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteBigDecimalAsPlain,
+                            "WriteBigDecimalAsPlain",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteFloatSpecialAsString,
+                            "WriteFloatSpecialAsString",
                         ),
                         (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                         (

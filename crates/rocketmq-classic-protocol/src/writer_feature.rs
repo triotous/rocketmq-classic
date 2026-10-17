@@ -11,7 +11,8 @@
 /// `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
 /// `NotWriteHashMapArrayListClassName`, `NotWriteNumberClassName`, and
 /// `NotWriteSetClassName`, `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
-/// `WriteThrowableClassName`, and `WriterUtilDateAsMillis`.
+/// `WriteThrowableClassName`, `WriterUtilDateAsMillis`,
+/// `WriteBigDecimalAsPlain`, and `WriteFloatSpecialAsString`.
 /// `OptimizedForAscii` is output-preserving because the Rust writer already
 /// emits UTF-8 JSON.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
@@ -24,7 +25,8 @@
 /// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
 /// Pair field, Throwable field, or `java.util.Date` field. Other variants
 /// return an explicit unsupported-feature error until their behavior is
-/// mapped.
+/// mapped. The DTO graph also has no `BigDecimal`, `Float`, or `Double` fields,
+/// so their number-format options preserve output.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -220,6 +222,8 @@ impl JavaJsonWriterFeature {
                 | Self::WritePairAsJavaBean
                 | Self::WriteThrowableClassName
                 | Self::WriterUtilDateAsMillis
+                | Self::WriteBigDecimalAsPlain
+                | Self::WriteFloatSpecialAsString
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable

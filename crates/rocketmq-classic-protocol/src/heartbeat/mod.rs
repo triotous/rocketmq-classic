@@ -2739,6 +2739,14 @@ mod tests {
                     "WriterUtilDateAsMillis",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::WriteBigDecimalAsPlain,
+                    "WriteBigDecimalAsPlain",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::WriteFloatSpecialAsString,
+                    "WriteFloatSpecialAsString",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),
