@@ -2821,3 +2821,18 @@ Before any publication:
   P18-V02 rerun, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 CheckClient/BatchAck writer-flag test follow-up (code commit
+  `4ae3735a`, 2026-10-17): their dedicated inherited-serialization tests now
+  compare Java fixture baselines for `WriteNameAsSymbol` and all four
+  `NotWrite*ClassName` flags across default, explicit-null, and populated
+  cases. The Java oracle probes every pinned writer feature and records changed
+  output or exceptions; an absent override therefore represents the unchanged
+  Java baseline. The focused Protocol command
+  `cargo test -p rocketmq-classic-protocol --all-features --locked
+  inherited_remoting_serialization_matches_invoked_java` passed (3 matching
+  tests, including the two dedicated DTO tests); formatting and diff checks
+  passed. This closes the named test-coverage slice only. The final full-workspace
+  P18-V02 rerun, broad P18-V01 audit, 25 unmapped writer features,
+  current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker
+  automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).

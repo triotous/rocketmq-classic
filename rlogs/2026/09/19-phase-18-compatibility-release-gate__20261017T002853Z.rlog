@@ -83,3 +83,15 @@
   writer features remain unmapped. Current-revision full-workspace P18-V02,
   Ubuntu/Windows CI, broad P18-V01 audit, P18-V03/V04, and Phase 19 Docker/
   Broker execution remain open.
+
+- P18-V01 CheckClient/BatchAck writer-flag test follow-up (`4ae3735a`,
+  2026-10-17): the dedicated inherited-serialization tests now compare Java
+  fixture baselines for `WriteNameAsSymbol` and all four `NotWrite*ClassName`
+  flags across default, explicit-null, and populated cases. The Java oracle
+  probes every pinned writer feature and records changed output or exceptions;
+  absent override entries therefore represent unchanged output. Focused
+  validation passed: three matching Protocol tests (including both dedicated
+  DTO tests), `cargo fmt --all -- --check`, and `git diff --check`. No Java
+  fixture regeneration was needed. Full-workspace P18-V02 remains pending
+  after Phase 18 code work is complete. Current mapping count remains 23/48;
+  25 writer features remain unmapped.
