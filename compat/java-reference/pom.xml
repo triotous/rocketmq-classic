@@ -121,6 +121,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-pull-response-header-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.PullMessageResponseHeaderDecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/pull-response-header-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-send-message-response-header-decode-mode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

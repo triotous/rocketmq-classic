@@ -252,10 +252,20 @@ impl MQClientApi {
         let fields: PullMessageResponseHeader = decode_header(&reply, code, addr)?;
         Ok(PullResultExt {
             status,
-            next_begin_offset: fields.next_begin_offset,
-            min_offset: fields.min_offset,
-            max_offset: fields.max_offset,
-            suggest_which_broker_id: fields.suggest_which_broker_id,
+            next_begin_offset: required_pull_response_field(
+                fields.next_begin_offset,
+                "nextBeginOffset",
+                code,
+                addr,
+            )?,
+            min_offset: required_pull_response_field(fields.min_offset, "minOffset", code, addr)?,
+            max_offset: required_pull_response_field(fields.max_offset, "maxOffset", code, addr)?,
+            suggest_which_broker_id: required_pull_response_field(
+                fields.suggest_which_broker_id,
+                "suggestWhichBrokerId",
+                code,
+                addr,
+            )?,
             offset_delta: fields.offset_delta,
             raw_messages: reply.body,
         })
@@ -407,6 +417,19 @@ impl MQClientApi {
             Ok(())
         }
     }
+}
+
+fn required_pull_response_field(
+    value: Option<i64>,
+    field: &'static str,
+    request_code: i32,
+    peer: &str,
+) -> Result<i64, RpcError> {
+    value.ok_or_else(|| RpcError::MalformedResponse {
+        request_code,
+        peer: peer.to_owned(),
+        reason: ProtocolError::MissingField(field).to_string(),
+    })
 }
 
 #[cfg(test)]

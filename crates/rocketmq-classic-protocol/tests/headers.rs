@@ -149,7 +149,7 @@ fn java_request_and_response_header_fixtures_decode() {
 
     let pull_response =
         PullMessageResponseHeader::decode_fields(&java_ext_fields("header-pull-response")).unwrap();
-    assert_eq!(pull_response.next_begin_offset, 10);
+    assert_eq!(pull_response.next_begin_offset, Some(10));
     let offset_response = QueryConsumerOffsetResponseHeader::decode_fields(&java_ext_fields(
         "header-query-offset-response",
     ))
@@ -872,6 +872,11 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
     assert_eq!(empty_send_response.msg_id, None);
     assert_eq!(empty_send_response.queue_id, None);
     assert_eq!(empty_send_response.queue_offset, None);
+    let empty_pull_response = PullMessageResponseHeader::decode_fields(&empty).unwrap();
+    assert_eq!(empty_pull_response.suggest_which_broker_id, None);
+    assert_eq!(empty_pull_response.next_begin_offset, None);
+    assert_eq!(empty_pull_response.min_offset, None);
+    assert_eq!(empty_pull_response.max_offset, None);
     let err = QueryConsumerOffsetResponseHeader::decode_fields(&empty)
         .unwrap_err()
         .to_string();
@@ -1074,10 +1079,10 @@ fn header_validation_matrix() {
         row!(
             PullMessageResponseHeader,
             "pull-response",
-            "suggestWhichBrokerId nextBeginOffset minOffset maxOffset",
+            "",
             "topicSysFlag groupSysFlag forbiddenType",
             "suggestWhichBrokerId nextBeginOffset minOffset maxOffset offsetDelta",
-            "offsetDelta topicSysFlag groupSysFlag forbiddenType",
+            "suggestWhichBrokerId nextBeginOffset minOffset maxOffset offsetDelta topicSysFlag groupSysFlag forbiddenType",
             ""
         ),
         row!(

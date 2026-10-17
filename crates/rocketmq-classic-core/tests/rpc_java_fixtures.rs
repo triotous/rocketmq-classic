@@ -64,7 +64,15 @@ fn pinned_java_rpc_replies_decode_in_rust() {
                     Ok(header) => header.queue_id.is_none() || header.queue_offset.is_none(),
                     Err(_) => true,
                 },
-                11 => PullMessageResponseHeader::decode_fields(&actual).is_err(),
+                11 => match PullMessageResponseHeader::decode_fields(&actual) {
+                    Ok(header) => {
+                        header.next_begin_offset.is_none()
+                            && header.min_offset.is_none()
+                            && header.max_offset.is_none()
+                            && header.suggest_which_broker_id.is_none()
+                    }
+                    Err(_) => false,
+                },
                 14 => QueryConsumerOffsetResponseHeader::decode_fields(&actual).is_err(),
                 _ => false,
             });
@@ -91,7 +99,7 @@ fn pinned_java_rpc_replies_decode_in_rust() {
             }
             11 => {
                 let header = PullMessageResponseHeader::decode_fields(&actual).unwrap();
-                assert_eq!(header.next_begin_offset, 10);
+                assert_eq!(header.next_begin_offset, Some(10));
                 assert!(
                     ["FOUND", "NO_NEW_MSG", "NO_MATCHED_MSG", "OFFSET_ILLEGAL"].contains(&outcome)
                 );

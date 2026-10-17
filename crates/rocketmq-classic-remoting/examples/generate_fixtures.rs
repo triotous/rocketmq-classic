@@ -502,10 +502,10 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-pull-response.bin",
         0,
         &PullMessageResponseHeader {
-            suggest_which_broker_id: 0,
-            next_begin_offset: 10,
-            min_offset: 0,
-            max_offset: 100,
+            suggest_which_broker_id: Some(0),
+            next_begin_offset: Some(10),
+            min_offset: Some(0),
+            max_offset: Some(100),
             ..PullMessageResponseHeader::default()
         },
     );

@@ -662,10 +662,10 @@ impl CommandHeader for PullMessageRequestHeader {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct PullMessageResponseHeader {
-    pub suggest_which_broker_id: i64,
-    pub next_begin_offset: i64,
-    pub min_offset: i64,
-    pub max_offset: i64,
+    pub suggest_which_broker_id: Option<i64>,
+    pub next_begin_offset: Option<i64>,
+    pub min_offset: Option<i64>,
+    pub max_offset: Option<i64>,
     pub offset_delta: Option<i64>,
     pub topic_sys_flag: Option<i32>,
     pub group_sys_flag: Option<i32>,
@@ -674,13 +674,10 @@ pub struct PullMessageResponseHeader {
 
 impl CommandHeader for PullMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert(
-            "suggestWhichBrokerId".into(),
-            self.suggest_which_broker_id.to_string(),
-        );
-        fields.insert("nextBeginOffset".into(), self.next_begin_offset.to_string());
-        fields.insert("minOffset".into(), self.min_offset.to_string());
-        fields.insert("maxOffset".into(), self.max_offset.to_string());
+        put_optional(fields, "suggestWhichBrokerId", self.suggest_which_broker_id);
+        put_optional(fields, "nextBeginOffset", self.next_begin_offset);
+        put_optional(fields, "minOffset", self.min_offset);
+        put_optional(fields, "maxOffset", self.max_offset);
         put_optional(fields, "offsetDelta", self.offset_delta);
         put_optional(fields, "topicSysFlag", self.topic_sys_flag);
         put_optional(fields, "groupSysFlag", self.group_sys_flag);
@@ -688,15 +685,26 @@ impl CommandHeader for PullMessageResponseHeader {
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            suggest_which_broker_id: required_i64(fields, "suggestWhichBrokerId")?,
-            next_begin_offset: required_i64(fields, "nextBeginOffset")?,
-            min_offset: required_i64(fields, "minOffset")?,
-            max_offset: required_i64(fields, "maxOffset")?,
-            offset_delta: optional_i64(fields, "offsetDelta")?,
-            topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
-            group_sys_flag: optional_i32(fields, "groupSysFlag")?,
-            forbidden_type: optional_i32(fields, "forbiddenType")?,
+            suggest_which_broker_id: optional_i64_with_mode(
+                fields,
+                "suggestWhichBrokerId",
+                use_fast_encode,
+            )?,
+            next_begin_offset: optional_i64_with_mode(fields, "nextBeginOffset", use_fast_encode)?,
+            min_offset: optional_i64_with_mode(fields, "minOffset", use_fast_encode)?,
+            max_offset: optional_i64_with_mode(fields, "maxOffset", use_fast_encode)?,
+            offset_delta: optional_i64_with_mode(fields, "offsetDelta", use_fast_encode)?,
+            topic_sys_flag: optional_i32_with_mode(fields, "topicSysFlag", use_fast_encode)?,
+            group_sys_flag: optional_i32_with_mode(fields, "groupSysFlag", use_fast_encode)?,
+            forbidden_type: optional_i32_with_mode(fields, "forbiddenType", use_fast_encode)?,
         })
     }
 }

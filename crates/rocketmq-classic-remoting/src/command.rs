@@ -995,6 +995,78 @@ mod tests {
     }
 
     #[test]
+    fn pull_response_header_fast_and_reflective_decode_modes_match_invoked_java() {
+        use rocketmq_classic_protocol::header::PullMessageResponseHeader;
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/pull-response-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let decoded = command
+                    .decode_command_custom_header_directly::<PullMessageResponseHeader>(
+                        use_fast_encode,
+                    );
+                let expected = &case[mode];
+                if expected["outcome"] == "OK" {
+                    let decoded = decoded.unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                    let expected_header = &expected["header"];
+                    assert_eq!(
+                        decoded.suggest_which_broker_id,
+                        expected_header["suggestWhichBrokerId"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.next_begin_offset,
+                        expected_header["nextBeginOffset"].as_i64()
+                    );
+                    assert_eq!(decoded.min_offset, expected_header["minOffset"].as_i64());
+                    assert_eq!(decoded.max_offset, expected_header["maxOffset"].as_i64());
+                    assert_eq!(
+                        decoded.offset_delta,
+                        expected_header["offsetDelta"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.topic_sys_flag.map(i64::from),
+                        expected_header["topicSysFlag"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.group_sys_flag.map(i64::from),
+                        expected_header["groupSysFlag"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.forbidden_type.map(i64::from),
+                        expected_header["forbiddenType"].as_i64()
+                    );
+                } else {
+                    assert!(
+                        decoded.is_err(),
+                        "{case_name}/{mode}: Java returned {}, Rust decoded successfully",
+                        expected["outcome"]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn send_message_response_header_decode_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::SendMessageResponseHeader;
 

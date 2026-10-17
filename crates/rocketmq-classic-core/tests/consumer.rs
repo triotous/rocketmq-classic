@@ -81,10 +81,10 @@ async fn pull_statuses_and_malformed_success() {
         ..Default::default()
     };
     let response_header = fields(&PullMessageResponseHeader {
-        next_begin_offset: 12,
-        min_offset: 1,
-        max_offset: 30,
-        suggest_which_broker_id: 2,
+        next_begin_offset: Some(12),
+        min_offset: Some(1),
+        max_offset: Some(30),
+        suggest_which_broker_id: Some(2),
         ..Default::default()
     });
     for (code, status) in [
@@ -125,6 +125,29 @@ async fn pull_statuses_and_malformed_success() {
         let (api, client, addr) = scripted(
             response::SUCCESS,
             Some(invalid),
+            None,
+            request::PULL_MESSAGE,
+            false,
+        )
+        .await;
+        malformed(
+            api.pull_message(&addr, &header, deadline()).await,
+            request::PULL_MESSAGE,
+            &addr,
+        );
+        client.shutdown().await;
+    }
+    for key in [
+        "nextBeginOffset",
+        "minOffset",
+        "maxOffset",
+        "suggestWhichBrokerId",
+    ] {
+        let mut missing = response_header.clone();
+        missing.remove(key);
+        let (api, client, addr) = scripted(
+            response::SUCCESS,
+            Some(missing),
             None,
             request::PULL_MESSAGE,
             false,
