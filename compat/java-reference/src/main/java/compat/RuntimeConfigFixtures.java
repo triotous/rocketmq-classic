@@ -3739,7 +3739,37 @@ public final class RuntimeConfigFixtures {
         request.markResponseType();
         addCommandTypeCase(commandTypes, "markedRequest", request);
         result.put("commandGetType", commandTypes);
+
+        List<Object> commandFlags = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.RemotingCommand flaggedRequest =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(1, null);
+        addCommandFlagCase(commandFlags, "default", flaggedRequest);
+        flaggedRequest.markOnewayRPC();
+        addCommandFlagCase(commandFlags, "oneway", flaggedRequest);
+        flaggedRequest.markResponseType();
+        addCommandFlagCase(commandFlags, "onewayResponse", flaggedRequest);
+        flaggedRequest.markOnewayRPC();
+        flaggedRequest.markResponseType();
+        addCommandFlagCase(commandFlags, "repeatedMarks", flaggedRequest);
+        flaggedRequest.setFlag(1 << 8);
+        flaggedRequest.markOnewayRPC();
+        flaggedRequest.markResponseType();
+        addCommandFlagCase(commandFlags, "preservesUnknownBits", flaggedRequest);
+        result.put("commandFlags", commandFlags);
         return result;
+    }
+
+    private static void addCommandFlagCase(
+        List<Object> cases, String name,
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command
+    ) {
+        Map<String, Object> item = new TreeMap<>();
+        item.put("case", name);
+        item.put("flag", command.getFlag());
+        item.put("type", command.getType().name());
+        item.put("isOneway", command.isOnewayRPC());
+        item.put("isResponse", command.isResponseType());
+        cases.add(item);
     }
 
     private static Map<String, Object> requestSourceMethodCases() {

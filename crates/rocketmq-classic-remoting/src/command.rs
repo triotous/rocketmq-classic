@@ -370,6 +370,53 @@ mod tests {
             assert_eq!(command.get_type().name(), case["type"].as_str().unwrap());
             assert_eq!(command.is_response(), case["isResponse"].as_bool().unwrap());
         }
+
+        let default = RemotingCommand::default();
+        let mut oneway = RemotingCommand::default();
+        oneway.mark_oneway();
+        let mut oneway_response = RemotingCommand::default();
+        oneway_response.mark_oneway();
+        oneway_response.mark_response();
+        let mut repeated_marks = oneway_response.clone();
+        repeated_marks.mark_oneway();
+        repeated_marks.mark_response();
+        let mut preserves_unknown_bits = RemotingCommand {
+            flag: 1 << 8,
+            ..RemotingCommand::default()
+        };
+        preserves_unknown_bits.mark_oneway();
+        preserves_unknown_bits.mark_response();
+        let commands = [
+            default,
+            oneway,
+            oneway_response,
+            repeated_marks,
+            preserves_unknown_bits,
+        ];
+        let flag_cases = cases["commandFlags"].as_array().unwrap();
+        assert_eq!(flag_cases.len(), commands.len());
+        for (case, command) in flag_cases.iter().zip(commands) {
+            assert_eq!(
+                command.flag,
+                case["flag"].as_i64().unwrap() as i32,
+                "{case}"
+            );
+            assert_eq!(
+                command.get_type().name(),
+                case["type"].as_str().unwrap(),
+                "{case}"
+            );
+            assert_eq!(
+                command.is_oneway(),
+                case["isOneway"].as_bool().unwrap(),
+                "{case}"
+            );
+            assert_eq!(
+                command.is_response(),
+                case["isResponse"].as_bool().unwrap(),
+                "{case}"
+            );
+        }
     }
 
     #[test]
