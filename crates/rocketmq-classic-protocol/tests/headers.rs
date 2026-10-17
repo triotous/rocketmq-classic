@@ -1072,7 +1072,7 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion",
             "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
             "queueOffset commitOffset suspendTimeoutMillis subVersion",
-            "liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname ns nsd oway",
+            "subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname ns nsd oway",
             "nsd oway"
         ),
         row!(

@@ -565,7 +565,6 @@ impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
 pub struct PullMessageRequestHeader {
     pub consumer_group: String,
     pub topic: String,
-    pub lite_topic: Option<String>,
     pub queue_id: i32,
     pub queue_offset: i64,
     pub max_msg_nums: i32,
@@ -588,7 +587,6 @@ impl CommandHeader for PullMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         fields.insert("consumerGroup".into(), self.consumer_group.clone());
         fields.insert("topic".into(), self.topic.clone());
-        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("queueOffset".into(), self.queue_offset.to_string());
         fields.insert("maxMsgNums".into(), self.max_msg_nums.to_string());
@@ -621,7 +619,6 @@ impl CommandHeader for PullMessageRequestHeader {
             oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
-            lite_topic: optional_string(fields, "liteTopic"),
             queue_id: required_i32(fields, "queueId")?,
             queue_offset: required_i64(fields, "queueOffset")?,
             max_msg_nums: required_i32(fields, "maxMsgNums")?,
@@ -2723,6 +2720,26 @@ mod tests {
         assert!(!fields.contains_key("subscription"));
         assert_eq!(fields["proxyFrowardClientId"], "proxy");
         assert_eq!(fields["bname"], "broker-a");
+    }
+
+    #[test]
+    fn pull_request_header_does_not_export_java_absent_lite_topic_field() {
+        let mut fields = HeaderMap::new();
+        fields.insert("consumerGroup".into(), "workers".into());
+        fields.insert("topic".into(), "orders".into());
+        fields.insert("queueId".into(), "1".into());
+        fields.insert("queueOffset".into(), "9".into());
+        fields.insert("maxMsgNums".into(), "32".into());
+        fields.insert("sysFlag".into(), "0".into());
+        fields.insert("commitOffset".into(), "8".into());
+        fields.insert("suspendTimeoutMillis".into(), "15000".into());
+        fields.insert("subVersion".into(), "1".into());
+        fields.insert("liteTopic".into(), "not-a-pull-header-field".into());
+
+        let decoded = PullMessageRequestHeader::decode_fields(&fields).unwrap();
+        let mut encoded = HeaderMap::new();
+        decoded.encode_fields(&mut encoded);
+        assert!(!encoded.contains_key("liteTopic"));
     }
 
     #[test]
