@@ -3203,3 +3203,18 @@ Before any publication:
 The seven live PASS results do not constitute Phase 19 acceptance. All
 remaining locally reproducible cases stay automatic work; only the
 owner-specific checks belong in the manual handoff.
+
+## Phase 18 API audit update (2026-10-17)
+
+- P18-V01 Remoting command flag-helper slice (test commit `f017a1df`): the
+  pinned Java 5.5.1 fixture now invokes response/oneway marking and predicates
+  for default, oneway, combined, repeated, and unrelated-high-bit cases. The
+  Rust fixture test checks flags, command type, and both predicates; only
+  `remotingEnumMethodCases.commandFlags` was added to the generated fixture.
+  The full Remoting all-feature suite passed (108 unit, 8 codec, 1 fuzz, 7
+  security, 107 transport tests, 15 doctests), strict Remoting Clippy, format,
+  diff, and Maven `verify` (37 scenarios and fixture/cross-decode checks).
+  This closes the flag-helper test slice only. The broad P18-V01 source/API/
+  settings/input/error/control-flow and reverse-export audit remains open.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).

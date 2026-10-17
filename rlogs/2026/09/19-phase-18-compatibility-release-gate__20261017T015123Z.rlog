@@ -49,3 +49,23 @@
   fixture drift checks, and Rust/Java cross-decodes.
 - Code/test commit: `333e24a8 feat(protocol): map IgnoreNonFieldGetter writer flag`.
   Compatibility documentation and this log update are recorded separately.
+
+RemotingCommand response/oneway flag helper oracle coverage (2026-10-17)
+
+- Extended the pinned Java runtime fixture to invoke `markResponseType`,
+  `isResponseType`, `markOnewayRPC`, and `isOnewayRPC` for default, oneway,
+  combined, repeated-mark, and unrelated-high-bit cases. The generated values
+  are flags 0, 2, 3, 3, and 259 with matching type and predicates.
+- The fixture comparison confirmed the only change was the nested
+  `remotingEnumMethodCases.commandFlags` entry. Rust assertions compare the
+  Java flag, type, and both predicates and require the fixture case count to
+  match. Code/test commit: `f017a1df`.
+- Passed `cargo test -p rocketmq-classic-remoting --all-features --locked`
+  (108 unit tests, 8 codec tests, 1 fuzz regression, 7 security tests, 107
+  transport tests, and 15 doctests); strict all-target/all-feature Remoting
+  Clippy; focused `remoting_enum_methods_and_command_type_match_invoked_java`;
+  `cargo fmt --all -- --check`; and `git diff --check`.
+- `mvn -o -f compat/java-reference/pom.xml verify` passed all 37 scenarios,
+  fixture drift checks, and Java/Rust cross-decodes. The API crosswalk and
+  release-checklist update are committed separately. Broad P18-V01 remains
+  open.

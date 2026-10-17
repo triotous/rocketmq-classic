@@ -997,10 +997,12 @@ The pinned Java fixture invokes all enum methods and parse boundary cases; the n
 | --- | --- |
 | `RemotingCommandType.values()` / `valueOf(String)` / inherited enum methods | `RemotingCommandType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match `REQUEST_COMMAND` and `RESPONSE_COMMAND` order and lookup failures |
 | `RemotingCommand.getType()` | `RemotingCommand::get_type()` returns the type selected by the response flag and remains consistent with `is_response()` |
+| `markResponseType()`, `isResponseType()`, `markOnewayRPC()`, `isOnewayRPC()` | `mark_response()`, `is_response()`, `mark_oneway()`, `is_oneway()` preserve unrelated flag bits and repeated marks are idempotent; direct Java fixtures compare flags, type, and both predicates, including combined and high-bit cases |
+| Private command fields with public getters/setters (`code`, `language`, `version`, `opaque`, `flag`, `remark`, `body`, `extFields`, `serializeTypeCurrentRPC`) | Rust `RemotingCommand` exposes corresponding typed fields; these are the idiomatic Rust access paths for Java's getter/setter capabilities. `ext_fields` uses `BTreeMap` rather than Java `HashMap`; ordering is a representation choice, while wire and lookup behavior are covered by codec fixtures. |
 | `RequestType.values()` / `valueOf(String)` / inherited enum methods | `RequestType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` map the single `STREAM` value |
 | `RequestType.valueOf(byte)` / `getCode()` | `RequestType::from_java_byte(i8) -> Option<RequestType>` returns `None` for unknown signed bytes; `get_code() -> i8` returns Java code `0` |
 
-The pinned fixture directly calls both enum APIs, unknown byte lookups, `RemotingCommand.getType()`, and response marking. The Rust stream hook uses the mapped code instead of a duplicated literal. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md).
+The pinned fixture directly calls both enum APIs, unknown byte lookups, `RemotingCommand.getType()`, response/oneway marking and predicates, including repeated marks and preservation of unrelated flag bits. The Rust stream hook uses the mapped code instead of a duplicated literal. See [ADR-0032](../architecture/ADR-0032-remoting-command-enum-java-api.md).
 
 ## Runtime worker and inherited ServiceThread methods
 
