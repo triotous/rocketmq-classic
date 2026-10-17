@@ -3303,3 +3303,21 @@ owner-specific checks belong in the manual handoff.
   full-workspace P18-V02 run is still due after the remaining Phase 18 changes.
   Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T090444Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T090444Z.rlog).
+- P18-V01 `RemotingCommand` process timer and callback-list slice (pending code
+  and documentation commits, 2026-10-17): Rust now exposes timer and callback
+  getters/setters, maps the Java stopwatch start/stop/reset state behavior to
+  `ProcessTimer`, and attaches a running timer to each inbound decoded command.
+  The invoked Java fixture covers null defaults/clears, same-instance access,
+  timer state/errors, callback-list mutation, and callback invocation. The Rust
+  transport regression confirms inbound requests reach processors with a
+  running timer. Fixture SHA-256:
+  `8a7ae4f5b258cff9ad87462c5568fe363d079605c487e5327dc672d69981b4c8`.
+  Remoting all-feature tests pass (113 unit, 8 codec, 1 fuzz regression, 7
+  security, 107 transport, and 15 doctests); focused transport coverage,
+  strict Remoting Clippy, workspace all-feature check, formatting, diff checks,
+  and Maven `verify` pass (37 scenarios, fixture drift and Java/Rust
+  cross-decodes). This closes the timer/callback-list method slice only.
+  `Default` initialization, long-poll RPC metric emission, multi-entry
+  `toString()` ordering, custom-header representation details, broad P18-V01,
+  and final-revision full-workspace P18-V02 remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T091405Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T091405Z.rlog).
