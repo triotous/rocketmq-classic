@@ -3766,6 +3766,60 @@ public final class RuntimeConfigFixtures {
         suspendedRequest.setSuspended(false);
         addCommandSuspendedCase(commandSuspended, "setFalse", suspendedRequest);
         result.put("commandSuspended", commandSuspended);
+        result.put("commandProtocolHelpers", commandProtocolHelperCases());
+        return result;
+    }
+
+    private static Map<String, Object> commandProtocolHelperCases() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("serializeTypeProperty",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.SERIALIZE_TYPE_PROPERTY);
+        result.put("serializeTypeEnv",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.SERIALIZE_TYPE_ENV);
+        result.put("remotingVersionKey",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.REMOTING_VERSION_KEY);
+        result.put("serializeTypeConfig",
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.getSerializeTypeConfigInThisServer().name());
+
+        List<Object> headerLengths = new ArrayList<>();
+        for (int input : new int[] {Integer.MIN_VALUE, -1, 0, 1, 0x12345678, Integer.MAX_VALUE}) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("input", input);
+            item.put("result", org.apache.rocketmq.remoting.protocol.RemotingCommand.getHeaderLength(input));
+            headerLengths.add(item);
+        }
+        result.put("headerLengths", headerLengths);
+
+        List<Object> protocolTypes = new ArrayList<>();
+        for (int source : new int[] {Integer.MIN_VALUE, -1, 0, 1, 0x12345678, Integer.MAX_VALUE}) {
+            for (org.apache.rocketmq.remoting.protocol.SerializeType type :
+                org.apache.rocketmq.remoting.protocol.SerializeType.values()) {
+                int marked = org.apache.rocketmq.remoting.protocol.RemotingCommand.markProtocolType(source, type);
+                Map<String, Object> item = new TreeMap<>();
+                item.put("source", source);
+                item.put("type", type.name());
+                item.put("marked", marked);
+                item.put("decoded", org.apache.rocketmq.remoting.protocol.RemotingCommand
+                    .getProtocolType(marked).name());
+                protocolTypes.add(item);
+            }
+        }
+        result.put("protocolTypes", protocolTypes);
+
+        List<Object> protocolTypeLookups = new ArrayList<>();
+        for (int source : new int[] {0, 0x01000000, 0x02000000, 0xff000000}) {
+            org.apache.rocketmq.remoting.protocol.SerializeType decoded =
+                org.apache.rocketmq.remoting.protocol.RemotingCommand.getProtocolType(source);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("source", source);
+            item.put("decoded", decoded == null ? null : decoded.name());
+            protocolTypeLookups.add(item);
+        }
+        result.put("protocolTypeLookups", protocolTypeLookups);
+
+        int firstRequestId = org.apache.rocketmq.remoting.protocol.RemotingCommand.createNewRequestId();
+        int secondRequestId = org.apache.rocketmq.remoting.protocol.RemotingCommand.createNewRequestId();
+        result.put("requestIdDelta", secondRequestId - firstRequestId);
         return result;
     }
 

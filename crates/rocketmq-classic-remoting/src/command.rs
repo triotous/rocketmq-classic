@@ -1,6 +1,11 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use rocketmq_classic_protocol::codes::{JavaEnumLookupError, LanguageCode, SerializeType};
+
+static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
+static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RemotingCommandType {
@@ -207,15 +212,55 @@ impl Default for RemotingCommand {
             remark: None,
             ext_fields: None,
             body: None,
-            serialization: SerializeType::Json,
+            serialization: Self::get_serialize_type_config_in_this_server()
+                .unwrap_or_else(|error| panic!("{error}")),
             suspended: false,
         }
     }
 }
 
 impl RemotingCommand {
+    pub const SERIALIZE_TYPE_PROPERTY: &'static str = "rocketmq.serialize.type";
+    pub const SERIALIZE_TYPE_ENV: &'static str = "ROCKETMQ_SERIALIZE_TYPE";
+    pub const REMOTING_VERSION_KEY: &'static str = "rocketmq.remoting.version";
+
     const RESPONSE_BIT: i32 = 1;
     const ONEWAY_BIT: i32 = 1 << 1;
+
+    pub fn create_new_request_id() -> i32 {
+        REQUEST_ID.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn get_serialize_type_config_in_this_server() -> Result<SerializeType, String> {
+        SERIALIZE_TYPE_CONFIG
+            .get_or_init(|| {
+                let configured = std::env::var(Self::SERIALIZE_TYPE_PROPERTY)
+                    .ok()
+                    .or_else(|| std::env::var(Self::SERIALIZE_TYPE_ENV).ok());
+                match configured {
+                    Some(value) if !value.trim().is_empty() => {
+                        SerializeType::value_of_name(Some(&value)).map_err(|error| {
+                            format!("parser specified protocol error. protocol={value}: {error}")
+                        })
+                    }
+                    _ => Ok(SerializeType::Json),
+                }
+            })
+            .clone()
+    }
+
+    pub const fn get_header_length(length: i32) -> i32 {
+        length & 0x00ff_ffff
+    }
+
+    pub const fn get_protocol_type(source: i32) -> Option<SerializeType> {
+        let code = ((source as u32 >> 24) as u8) as i8;
+        SerializeType::from_java_byte(code)
+    }
+
+    pub const fn mark_protocol_type(source: i32, serialization: SerializeType) -> i32 {
+        (((serialization.code() as u32) << 24) | (source as u32 & 0x00ff_ffff)) as i32
+    }
 
     pub fn is_response(&self) -> bool {
         self.flag & Self::RESPONSE_BIT != 0
@@ -454,6 +499,62 @@ mod tests {
                 .unwrap()
                 .is_suspended()
         );
+
+        let helpers = &cases["commandProtocolHelpers"];
+        assert_eq!(
+            RemotingCommand::SERIALIZE_TYPE_PROPERTY,
+            helpers["serializeTypeProperty"].as_str().unwrap()
+        );
+        assert_eq!(
+            RemotingCommand::SERIALIZE_TYPE_ENV,
+            helpers["serializeTypeEnv"].as_str().unwrap()
+        );
+        assert_eq!(
+            RemotingCommand::REMOTING_VERSION_KEY,
+            helpers["remotingVersionKey"].as_str().unwrap()
+        );
+        assert_eq!(
+            RemotingCommand::get_serialize_type_config_in_this_server()
+                .unwrap()
+                .name(),
+            helpers["serializeTypeConfig"].as_str().unwrap()
+        );
+        for case in helpers["headerLengths"].as_array().unwrap() {
+            assert_eq!(
+                RemotingCommand::get_header_length(case["input"].as_i64().unwrap() as i32),
+                case["result"].as_i64().unwrap() as i32,
+                "{case}"
+            );
+        }
+        for case in helpers["protocolTypes"].as_array().unwrap() {
+            let source = case["source"].as_i64().unwrap() as i32;
+            let serialization = match case["type"].as_str().unwrap() {
+                "JSON" => SerializeType::Json,
+                "ROCKETMQ" => SerializeType::RocketMq,
+                other => panic!("unexpected Java serialization type {other}"),
+            };
+            let marked = RemotingCommand::mark_protocol_type(source, serialization);
+            assert_eq!(marked, case["marked"].as_i64().unwrap() as i32, "{case}");
+            assert_eq!(
+                RemotingCommand::get_protocol_type(marked).map(SerializeType::name),
+                case["decoded"].as_str(),
+                "{case}"
+            );
+        }
+        for case in helpers["protocolTypeLookups"].as_array().unwrap() {
+            assert_eq!(
+                RemotingCommand::get_protocol_type(case["source"].as_i64().unwrap() as i32)
+                    .map(SerializeType::name),
+                case["decoded"].as_str(),
+                "{case}"
+            );
+        }
+        let first_id = RemotingCommand::create_new_request_id();
+        let second_id = RemotingCommand::create_new_request_id();
+        assert_eq!(
+            second_id.wrapping_sub(first_id),
+            helpers["requestIdDelta"].as_i64().unwrap() as i32
+        );
     }
 
     #[test]
@@ -490,6 +591,72 @@ mod tests {
             "java.lang.String toString()",
         ] {
             assert!(method_names.contains(&signature), "missing {signature}");
+        }
+    }
+
+    #[test]
+    fn serialize_type_config_matches_java_property_and_environment_rules() {
+        const CHILD_MARKER: &str = "ROCKETMQ_CLASSIC_SERIALIZE_TYPE_CASE";
+        if let Ok(case) = std::env::var(CHILD_MARKER) {
+            match case.as_str() {
+                "property-precedence" => assert_eq!(
+                    RemotingCommand::default().serialization,
+                    SerializeType::RocketMq
+                ),
+                "environment-alias" => assert_eq!(
+                    RemotingCommand::default().serialization,
+                    SerializeType::RocketMq
+                ),
+                "blank-property" => assert_eq!(
+                    RemotingCommand::default().serialization,
+                    SerializeType::Json
+                ),
+                "invalid-property" => {
+                    let error =
+                        RemotingCommand::get_serialize_type_config_in_this_server().unwrap_err();
+                    assert!(error.contains("parser specified protocol error"));
+                    assert!(error.contains("protocol=rocketmq"));
+                    let panic = std::panic::catch_unwind(RemotingCommand::default).unwrap_err();
+                    assert!(
+                        panic
+                            .downcast_ref::<String>()
+                            .unwrap()
+                            .contains("protocol=rocketmq")
+                    );
+                }
+                other => panic!("unknown child case {other}"),
+            }
+            return;
+        }
+
+        let executable = std::env::current_exe().unwrap();
+        for (case, property, environment) in [
+            ("property-precedence", Some("ROCKETMQ"), Some("JSON")),
+            ("environment-alias", None, Some("ROCKETMQ")),
+            ("blank-property", Some(" \t"), Some("ROCKETMQ")),
+            ("invalid-property", Some("rocketmq"), None),
+        ] {
+            let mut child = std::process::Command::new(&executable);
+            child
+                .arg("--exact")
+                .arg("command::tests::serialize_type_config_matches_java_property_and_environment_rules")
+                .arg("--nocapture")
+                .env(CHILD_MARKER, case)
+                .env_remove(RemotingCommand::SERIALIZE_TYPE_PROPERTY)
+                .env_remove(RemotingCommand::SERIALIZE_TYPE_ENV);
+            if let Some(value) = property {
+                child.env(RemotingCommand::SERIALIZE_TYPE_PROPERTY, value);
+            }
+            if let Some(value) = environment {
+                child.env(RemotingCommand::SERIALIZE_TYPE_ENV, value);
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "child case {case} failed: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     }
 
