@@ -81,6 +81,8 @@ public final class RemotingApiSurfaceFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("remotingCommandPublicConstructors", publicConstructors(RemotingCommand.class));
+        fixture.put("remotingCommandPublicMethods", publicMethods(RemotingCommand.class));
         fixture.put("responseFuturePublicConstructors", publicConstructors(ResponseFuture.class));
         fixture.put("responseFuturePublicMethods", publicMethods(ResponseFuture.class));
         fixture.put("semaphoreReleaseOnlyOncePublicConstructors",

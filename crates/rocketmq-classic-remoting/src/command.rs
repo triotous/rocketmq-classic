@@ -457,6 +457,43 @@ mod tests {
     }
 
     #[test]
+    fn pinned_java_remoting_command_public_surface_is_present_in_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/response-future-api.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+        assert_eq!(
+            fixture["remotingCommandPublicConstructors"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        let methods = fixture["remotingCommandPublicMethods"].as_array().unwrap();
+        assert_eq!(methods.len(), 57);
+        let method_names = methods
+            .iter()
+            .map(|signature| signature.as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(method_names.len() >= 40);
+        for signature in [
+            "void markResponseType()",
+            "boolean isResponseType()",
+            "void markOnewayRPC()",
+            "boolean isOnewayRPC()",
+            "boolean isSuspended()",
+            "void setSuspended(boolean)",
+            "java.lang.String toString()",
+        ] {
+            assert!(method_names.contains(&signature), "missing {signature}");
+        }
+    }
+
+    #[test]
     fn defaults_and_flag_helpers_match_java_bits() {
         let mut command = RemotingCommand::default();
         assert_eq!(command.language, Some(LanguageCode::Rust));
