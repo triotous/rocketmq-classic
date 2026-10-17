@@ -2561,11 +2561,16 @@ mod tests {
                 "{} empty writer-feature array",
                 case["case"]
             );
-            assert!(
-                value
-                    .java_encode_with_features(&[crate::JavaJsonWriterFeature::BrowserCompatible,])
-                    .is_err(),
-                "{} unmapped writer feature is rejected explicitly",
+            let browser_compatible = value
+                .java_encode_with_features(&[crate::JavaJsonWriterFeature::BrowserCompatible])
+                .unwrap();
+            let expected_browser_compatible = case["writerFeatureOverrides"]["BrowserCompatible"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                browser_compatible,
+                expected_browser_compatible.as_bytes(),
+                "{} BrowserCompatible",
                 case["case"]
             );
             assert_eq!(

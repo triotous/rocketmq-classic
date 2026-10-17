@@ -95,6 +95,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
         features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
+        features.contains(&JavaJsonWriterFeature::BrowserCompatible),
     );
     if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
         omit_default_writer_values(&mut value);
@@ -112,7 +113,8 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     let writer_options = JavaRouteWriterOptions {
         unquote_numeric_map_keys: !features
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString)
-            && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString),
+            && !features.contains(&JavaJsonWriterFeature::WriteNonStringKeyAsString)
+            && !features.contains(&JavaJsonWriterFeature::BrowserCompatible),
         stringify_long_map_keys: features.contains(&JavaJsonWriterFeature::WriteLongAsString),
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
@@ -288,12 +290,14 @@ pub(crate) fn apply_java_json_writer_value_features(
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
     write_enum_using_ordinal: bool,
+    browser_compatible: bool,
 ) {
     apply_java_json_writer_value_features_inner(
         value,
         write_non_string_values_as_strings,
         write_boolean_as_number,
         write_enum_using_ordinal,
+        browser_compatible,
         false,
         false,
     );
@@ -304,6 +308,7 @@ fn apply_java_json_writer_value_features_inner(
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
     write_enum_using_ordinal: bool,
+    browser_compatible: bool,
     object_is_map: bool,
     map_values_are_maps: bool,
 ) {
@@ -320,7 +325,9 @@ fn apply_java_json_writer_value_features_inner(
             }
         }
         serde_json::Value::Number(number) => {
-            if write_non_string_values_as_strings {
+            if write_non_string_values_as_strings
+                || (browser_compatible && !is_browser_safe_integer(number))
+            {
                 *value = serde_json::Value::String(number.to_string());
             }
         }
@@ -331,6 +338,7 @@ fn apply_java_json_writer_value_features_inner(
                     write_non_string_values_as_strings,
                     write_boolean_as_number,
                     write_enum_using_ordinal,
+                    browser_compatible,
                     false,
                     false,
                 );
@@ -354,12 +362,28 @@ fn apply_java_json_writer_value_features_inner(
                     write_non_string_values_as_strings,
                     write_boolean_as_number,
                     write_enum_using_ordinal,
+                    browser_compatible,
                     child_is_map,
                     child_map_values_are_maps,
                 );
             }
         }
         serde_json::Value::Null | serde_json::Value::String(_) => {}
+    }
+}
+
+fn is_browser_safe_integer(number: &serde_json::Number) -> bool {
+    const JAVASCRIPT_INTEGER_MIN: i64 = -9_007_199_254_740_991;
+    const JAVASCRIPT_INTEGER_MAX: u64 = 9_007_199_254_740_991;
+
+    if let Some(value) = number.as_i64() {
+        (JAVASCRIPT_INTEGER_MIN..=JAVASCRIPT_INTEGER_MAX as i64).contains(&value)
+    } else if let Some(value) = number.as_u64() {
+        value <= JAVASCRIPT_INTEGER_MAX
+    } else {
+        // BrowserCompatible stringifies unsafe integer fields, while floating
+        // values retain their numeric representation.
+        true
     }
 }
 
@@ -4091,11 +4115,17 @@ mod tests {
                     "{} empty writer-feature array",
                     case["id"]
                 );
-                assert!(
-                    value
-                        .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible,])
-                        .is_err(),
-                    "{} unmapped writer feature is rejected explicitly",
+                let browser_compatible = value
+                    .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible])
+                    .unwrap();
+                let expected_browser_compatible = case["writerFeatureOverrides"]
+                    ["BrowserCompatible"]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    browser_compatible,
+                    expected_browser_compatible.as_bytes(),
+                    "{} BrowserCompatible",
                     case["id"]
                 );
                 assert_eq!(native_json, case["instanceJson"], "{} toJson", case["id"]);

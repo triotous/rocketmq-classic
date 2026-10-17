@@ -4872,6 +4872,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
         write_boolean_as_number: features.contains(&JavaJsonWriterFeature::WriteBooleanAsNumber),
         write_enum_using_ordinal: features.contains(&JavaJsonWriterFeature::WriteEnumUsingOrdinal),
+        browser_compatible: features.contains(&JavaJsonWriterFeature::BrowserCompatible),
         ..JavaJsonWriterValueFeatures::default()
     };
     crate::route::apply_java_json_writer_value_features(
@@ -4879,6 +4880,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         value_features.write_non_string_values_as_strings,
         value_features.write_boolean_as_number,
         value_features.write_enum_using_ordinal,
+        value_features.browser_compatible,
     );
     if features.contains(&JavaJsonWriterFeature::NotWriteDefaultValue) {
         crate::route::omit_default_writer_values(&mut value);
@@ -4911,6 +4913,7 @@ struct JavaJsonWriterValueFeatures {
     write_non_string_values_as_strings: bool,
     write_boolean_as_number: bool,
     write_enum_using_ordinal: bool,
+    browser_compatible: bool,
     use_single_quotes: bool,
     unquote_field_names: bool,
 }
@@ -4957,6 +4960,7 @@ fn write_java_remoting_body_json(
                         value_features.write_non_string_values_as_strings,
                         value_features.write_boolean_as_number,
                         value_features.write_enum_using_ordinal,
+                        value_features.browser_compatible,
                     );
                 }
                 if let Some(queue_key) = queue_key {
@@ -5780,6 +5784,18 @@ mod tests {
                 value.java_encode_with_features(&[]).unwrap(),
                 encoded,
                 "{} empty writer-feature array",
+                case["id"]
+            );
+            let browser_compatible = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible])
+                .unwrap();
+            let expected_browser_compatible = case["writerFeatureOverrides"]["BrowserCompatible"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                browser_compatible,
+                expected_browser_compatible.as_bytes(),
+                "{} BrowserCompatible",
                 case["id"]
             );
             assert_eq!(
@@ -6828,6 +6844,18 @@ mod tests {
                 "{} encode",
                 case["id"]
             );
+            let browser_compatible = value
+                .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible])
+                .unwrap();
+            let expected_browser_compatible = case["writerFeatureOverrides"]["BrowserCompatible"]
+                .as_str()
+                .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+            assert_eq!(
+                browser_compatible,
+                expected_browser_compatible.as_bytes(),
+                "{} BrowserCompatible",
+                case["id"]
+            );
             let featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
                 .unwrap();
@@ -7093,11 +7121,17 @@ mod tests {
                         $name,
                         case["id"]
                     );
-                    assert!(
-                        value
-                            .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible,])
-                            .is_err(),
-                        "{} {} unmapped writer feature is rejected explicitly",
+                    let browser_compatible = value
+                        .java_encode_with_features(&[JavaJsonWriterFeature::BrowserCompatible])
+                        .unwrap();
+                    let expected_browser_compatible = expected["writerFeatureOverrides"]
+                        ["BrowserCompatible"]
+                        .as_str()
+                        .unwrap_or_else(|| expected["instanceEncodedJson"].as_str().unwrap());
+                    assert_eq!(
+                        browser_compatible,
+                        expected_browser_compatible.as_bytes(),
+                        "{} {} BrowserCompatible",
                         $name,
                         case["id"]
                     );

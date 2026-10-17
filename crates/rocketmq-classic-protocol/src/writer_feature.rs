@@ -7,8 +7,9 @@
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
 /// `IgnoreEmpty`, `NotWriteDefaultValue`, `WriteNonStringKeyAsString`,
 /// `WriteLongAsString`, `WriteEnumUsingOrdinal`, `UseSingleQuotes`, `UnquoteFieldName`,
-/// `IgnoreNoneSerializable`, and `ErrorOnNoneSerializable`; other variants
-/// return an explicit unsupported-feature error until their behavior is mapped.
+/// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, and `BrowserCompatible`;
+/// other variants return an explicit unsupported-feature error until their
+/// behavior is mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -193,6 +194,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNonStringKeyAsString
                 | Self::WriteLongAsString
                 | Self::WriteEnumUsingOrdinal
+                | Self::BrowserCompatible
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable
@@ -265,7 +267,7 @@ mod tests {
             {"optionType": "TAIL_N"},
             {"optionType": "TIMESTAMP"},
         ]);
-        crate::route::apply_java_json_writer_value_features(&mut value, false, false, true);
+        crate::route::apply_java_json_writer_value_features(&mut value, false, false, true, false);
         let expected = serde_json::json!([
             {"properties": {"mode": "POP", "action": "PARTIAL_ADD"}},
             {"messageRequestModeMap": {"topic": {"group": {"mode": 1}}}},

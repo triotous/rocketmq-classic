@@ -1475,7 +1475,11 @@ public final class RuntimeLookupFixtures {
             org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"order\":true,"
                 + "\"autoCommit\":false,\"consumeResult\":\"CR_SUCCESS\","
-                + "\"remark\":\"ok\",\"spentTimeMills\":19}"} });
+                + "\"remark\":\"ok\",\"spentTimeMills\":19}"},
+                {"browser-compatible-max-safe", "{\"spentTimeMills\":9007199254740991}"},
+                {"browser-compatible-above-max-safe", "{\"spentTimeMills\":9007199254740992}"},
+                {"browser-compatible-min-safe", "{\"spentTimeMills\":-9007199254740991}"},
+                {"browser-compatible-below-min-safe", "{\"spentTimeMills\":-9007199254740992}"} });
         addRemotingSerializableBodyCases(result,
             org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody.class,
             new String[][] { {"default", "{}"}, {"populated", "{\"messageQueueTable\":"
