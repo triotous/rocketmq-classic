@@ -2803,3 +2803,21 @@ Before any publication:
   P18-V02 rerun, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+
+- P18-V01 Fastjson `NotWrite*ClassName` writer flags (code commit `812a3ff9`,
+  2026-10-17): the four suppression flags are output-preserving when passed
+  alone because `WriteClassName` remains disabled in this UTF-8 text encoder.
+  Pinned Fastjson 2.0.63 checks three flags only while writing type metadata;
+  `NotWriteSetClassName` has no writer callsite. Existing Java fixture output
+  cases cover CheckClient, BatchAck, all mapped body adapters, both route DTOs,
+  and HeartbeatData. The Rust differential compares each output to its Java
+  baseline. Combinations with the still-unmapped `WriteClassName` remain
+  unsupported.
+- Validation on `812a3ff9`: Protocol all-feature suite passed (125 unit tests,
+  all integration targets, 42 doctests); strict all-target/all-feature
+  Protocol Clippy, formatting, `git diff --check`, and Maven verify (37
+  scenarios, fixture drift and cross-decodes) passed. Writer feature mapping is
+  now 23/48; 25 remain unmapped. Broad P18-V01, the final full-workspace
+  P18-V02 rerun, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).

@@ -65,3 +65,21 @@
   remain unmapped. Current-revision full-workspace P18-V02, Ubuntu/Windows CI,
   broad P18-V01 audit, P18-V03/V04, and Phase 19 Docker/Broker execution
   remain open.
+
+- P18-V01 Fastjson class-name suppression flags (code commit `812a3ff9`,
+  2026-10-17): pinned Fastjson 2.0.63 source gates root/container/numeric type
+  metadata on `WriteClassName`; the standalone `NotWrite*ClassName` modifiers
+  therefore preserve UTF-8 RemotingSerializable output. `NotWriteSetClassName`
+  has no writer callsite in this pinned version. Rust accepts all four modifier
+  flags and compares their output with the existing invoked Java feature
+  fixtures across body DTOs, route DTOs, and HeartbeatData. Combinations with
+  the unmapped `WriteClassName` remain explicitly unsupported. No fixture or
+  Java oracle source change was needed.
+- Validation on `812a3ff9`: `cargo test -p rocketmq-classic-protocol
+  --all-features --locked` passed (125 unit tests, all integration targets,
+  42 doctests); strict all-target/all-feature Protocol Clippy, formatter check,
+  `git diff --check`, and `mvn -f compat/java-reference/pom.xml verify` passed
+  (37 scenarios, fixture drift and cross-decodes). Mapping count is 23/48; 25
+  writer features remain unmapped. Current-revision full-workspace P18-V02,
+  Ubuntu/Windows CI, broad P18-V01 audit, P18-V03/V04, and Phase 19 Docker/
+  Broker execution remain open.
