@@ -2865,3 +2865,17 @@ Before any publication:
   Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker automation remain
   open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 Fastjson `BrowserSecure` writer-feature mapping (code commit
+  `02ae239d`, 2026-10-17): standalone `BrowserSecure` escapes `<`, `>`, `(`,
+  and `)` in mapped string values and quoted field names as uppercase Unicode
+  escapes. The invoked body, route, and heartbeat fixtures also cover
+  `BrowserSecure+UnquoteFieldName`: arbitrary route map keys remain raw, while
+  string values keep the Java escapes. The `UnquoteFieldName` route case pins
+  Fastjson's unquoted output for a non-identifier map key. Protocol all-feature
+  tests (126 unit tests, all integration targets, 42 doctests), strict Protocol
+  Clippy, format/diff checks, and Maven verify (37 scenarios, fixture checks,
+  and cross-decodes) pass on `02ae239d`. The writer-feature mapping count is now
+  30/48; 18 remain unmapped. The final full-workspace P18-V02 rerun, broad
+  P18-V01 audit, current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase
+  19 Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014126Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014126Z.rlog).
