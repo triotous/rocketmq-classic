@@ -329,10 +329,12 @@ ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PRO
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="oneway-send $broker_addr $topic $body $java_oneway_key $java_expected_max_offset" exec:java@live-producer-probe
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgByKey -t $topic -k $java_oneway_key -n namesrv:9876
-cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic <java-message-id>
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgById -t $topic -i <java-unique-key> -n namesrv:9876
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic <java-offset-id>
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- oneway-send $broker_addr $topic $body $rust_oneway_key $rust_expected_max_offset
 docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgByKey -t $topic -k $rust_oneway_key -n namesrv:9876
-mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-message-id>" exec:java@live-producer-probe
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin queryMsgById -t $topic -i <rust-unique-key> -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-offset-id>" exec:java@live-producer-probe
 EOF
 else
     cat >"$evidence_dir/commands.txt" <<EOF
@@ -610,6 +612,8 @@ elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
         local message_key="$1"
         local language="$2"
         local raw_output="$evidence_dir/broker-query-$language.txt"
+        local offset_output="$evidence_dir/broker-offset-query-$language.txt"
+        local key_query="$evidence_dir/$language-key-query.tsv"
         local normalized_output="$evidence_dir/$language-message-id.tsv"
         if ! "${compose[@]}" exec --no-TTY broker ./mqadmin queryMsgByKey \
             -t "$topic" -k "$message_key" -n namesrv:9876 \
@@ -618,14 +622,40 @@ elif [[ "$scenario_id" == "PROD-003-oneway-send" ]]; then
             return 1
         fi
         if ! awk -v key="$message_key" '
-            NF == 3 && length($1) ~ /^(32|56)$/ && $1 ~ /^[0-9A-Fa-f]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
-                printf "MESSAGE_ID\t%s\t%s\t%s\t%s\n", key, $1, $2, $3
+            NF == 3 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ {
+                printf "KEY_QUERY\t%s\t%s\t%s\t%s\n", key, $1, $2, $3
                 found++
             }
             END { if (found != 1) exit 1 }
-        ' "$raw_output" >"$normalized_output"; then
+        ' "$raw_output" >"$key_query"; then
             echo "Broker key query did not return exactly one indexed message for $language" >&2
             cat "$raw_output" >&2
+            return 1
+        fi
+        IFS=$'\t' read -r _ _ unique_key _ _ <"$key_query"
+        if ! "${compose[@]}" exec --no-TTY broker ./mqadmin queryMsgById \
+            -t "$topic" -i "$unique_key" -n namesrv:9876 \
+            >"$offset_output" 2>"$evidence_dir/broker-offset-query-$language.stderr"; then
+            cat "$offset_output" "$evidence_dir/broker-offset-query-$language.stderr" 2>/dev/null >&2 || true
+            return 1
+        fi
+        if ! awk -F ':' -v key="$message_key" '
+            {
+                value = $2
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+                if ($1 == "OffsetID") offset_id = value
+                if ($1 == "Queue ID") queue_id = value
+                if ($1 == "Queue Offset") queue_offset = value
+            }
+            END {
+                if ((length(offset_id) != 32 && length(offset_id) != 56) ||
+                    offset_id !~ /^[0-9A-Fa-f]+$/ || queue_id !~ /^[0-9]+$/ ||
+                    queue_offset !~ /^[0-9]+$/) exit 1
+                printf "MESSAGE_ID\t%s\t%s\t%s\t%s\n", key, offset_id, queue_id, queue_offset
+            }
+        ' "$offset_output" >"$normalized_output"; then
+            echo "Broker message-ID query did not return a physical offset ID for $language" >&2
+            cat "$offset_output" >&2
             return 1
         fi
     }

@@ -14,6 +14,8 @@ import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendCallback;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -159,6 +161,8 @@ public final class LiveProducerProbe {
         try {
             Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
             message.setKeys(key);
+            MessageAccessor.putProperty(
+                message, MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, key);
             SendMessageRequestHeader header = new SendMessageRequestHeader();
             header.setProducerGroup("compat_phase0");
             header.setTopic(topic);

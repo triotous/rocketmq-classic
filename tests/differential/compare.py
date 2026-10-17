@@ -264,6 +264,7 @@ def validate_manifest(manifest):
                         ("Java", java_message_id, java_return[3], java_expected_queue),
                         ("Rust", rust_message_id, rust_return[3], rust_expected_queue),
                     ):
+                        key_query = one_tsv_row(f"{language.lower()}-key-query.tsv", 5)
                         if (
                             row[0] != "MESSAGE_ID"
                             or row[1] != message_key
@@ -273,12 +274,39 @@ def validate_manifest(manifest):
                             or row[4] != str(expected_offset)
                         ):
                             raise ValueError(f"{language} oneway Broker key lookup is invalid")
+                        if (
+                            key_query[0] != "KEY_QUERY"
+                            or key_query[1] != message_key
+                            or key_query[2] != message_key
+                            or key_query[3] != row[3]
+                            or key_query[4] != row[4]
+                        ):
+                            raise ValueError(f"{language} oneway unique-key lookup is invalid")
+                        offset_lines = (
+                            evidence_path / f"broker-offset-query-{language.lower()}.txt"
+                        ).read_text().splitlines()
+                        offset_values = {
+                            name.strip(): value.strip()
+                            for line in offset_lines
+                            if ":" in line
+                            for name, value in [line.split(":", 1)]
+                        }
+                        if (
+                            offset_values.get("OffsetID") != row[2]
+                            or offset_values.get("Queue ID") != row[3]
+                            or offset_values.get("Queue Offset") != row[4]
+                        ):
+                            raise ValueError(f"{language} physical offset ID evidence is inconsistent")
                     if java_message_id[2] == rust_message_id[2]:
                         raise ValueError("Java and Rust oneway sends resolved to the same message ID")
                     for language in ("java", "rust"):
-                        raw_query = evidence_path / f"broker-query-{language}.txt"
-                        if not raw_query.is_file() or not raw_query.read_text().strip():
-                            raise ValueError(f"oneway Broker query output is missing for {language}")
+                        for raw_name in (
+                            f"broker-query-{language}.txt",
+                            f"broker-offset-query-{language}.txt",
+                        ):
+                            raw_query = evidence_path / raw_name
+                            if not raw_query.is_file() or not raw_query.read_text().strip():
+                                raise ValueError(f"oneway Broker query output is missing: {raw_name}")
                     readback_sends = (
                         ("rust-read-java.tsv", java_message_id, 4),
                         ("java-read-rust.tsv", rust_message_id, 4),
@@ -521,8 +549,12 @@ def self_test():
             "rust-oneway.tsv": f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{rust_key}\nQUEUE_MAX_OFFSET\t2\n",
             "java-message-id.tsv": f"MESSAGE_ID\t{java_key}\t{java_message_id}\t0\t0\n",
             "rust-message-id.tsv": f"MESSAGE_ID\t{rust_key}\t{rust_message_id}\t0\t1\n",
+            "java-key-query.tsv": f"KEY_QUERY\t{java_key}\t{java_key}\t0\t0\n",
+            "rust-key-query.tsv": f"KEY_QUERY\t{rust_key}\t{rust_key}\t0\t1\n",
             "broker-query-java.txt": f"#Message ID\t#QID\t#Offset\n{java_message_id}\t0\t0\n",
             "broker-query-rust.txt": f"#Message ID\t#QID\t#Offset\n{rust_message_id}\t0\t1\n",
+            "broker-offset-query-java.txt": f"OffsetID: {java_message_id}\nQueue ID: 0\nQueue Offset: 0\n",
+            "broker-offset-query-rust.txt": f"OffsetID: {rust_message_id}\nQueue ID: 0\nQueue Offset: 1\n",
             "rust-read-java.tsv": "MESSAGE\tcompat_phase0_send\t0\t0\t6669786564\n",
             "java-read-rust.tsv": "MESSAGE\tcompat_phase0_send\t0\t1\t6669786564\n",
         }

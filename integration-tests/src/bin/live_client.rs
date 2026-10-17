@@ -153,6 +153,7 @@ async fn oneway_send_and_query(
 ) -> Result<(), Box<dyn Error>> {
     let mut message = Message::new(topic, body.as_bytes().to_vec());
     message.set_keys(key.to_owned())?;
+    message.set_system_property("UNIQ_KEY", key.to_owned())?;
     let born_timestamp = i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
