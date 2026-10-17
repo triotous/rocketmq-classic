@@ -674,7 +674,7 @@ impl RemotingCommand {
         _use_fast_encode: bool,
     ) -> Result<T, ProtocolError> {
         match self.ext_fields.as_ref() {
-            Some(fields) => T::decode_fields(fields.non_null_fields()),
+            Some(fields) => T::decode_fields_checked(fields.non_null_fields()),
             None => Ok(T::default()),
         }
     }
@@ -1819,6 +1819,136 @@ mod tests {
         assert_eq!(
             cases["addExtFieldIfNotExistWithoutMap"],
             "NullPointerException"
+        );
+    }
+
+    #[test]
+    fn custom_header_check_fields_matches_invoked_java_551() {
+        use rocketmq_classic_protocol::header::{
+            CheckTransactionStateResponseHeader, CreateTopicRequestHeader,
+            EndTransactionRequestHeader,
+        };
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let validation = &fixture["remotingEnumMethodCases"]["commandCustomHeaders"]["checkFields"];
+
+        let mut create_topic_base = HeaderMap::from([
+            ("topic".into(), "topic".into()),
+            ("defaultTopic".into(), "default".into()),
+            ("readQueueNums".into(), "4".into()),
+            ("writeQueueNums".into(), "4".into()),
+            ("perm".into(), "6".into()),
+        ]);
+        for case in validation["createTopic"].as_array().unwrap() {
+            create_topic_base.insert(
+                "topicFilterType".into(),
+                case["value"].as_str().unwrap().into(),
+            );
+            let command = RemotingCommand {
+                ext_fields: Some(create_topic_base.clone().into()),
+                ..Default::default()
+            };
+            assert_java_validation_outcome(
+                command.decode_command_custom_header_directly::<CreateTopicRequestHeader>(false),
+                case["outcome"].as_str().unwrap(),
+            );
+        }
+
+        let transaction_base = HeaderMap::from([
+            ("producerGroup".into(), "producer".into()),
+            ("tranStateTableOffset".into(), "1".into()),
+            ("commitLogOffset".into(), "2".into()),
+            ("msgId".into(), "message".into()),
+        ]);
+        for (cases_key, header_kind) in
+            [("endTransaction", 0), ("checkTransactionStateResponse", 1)]
+        {
+            for case in validation[cases_key].as_array().unwrap() {
+                let mut fields = transaction_base.clone();
+                fields.insert(
+                    "commitOrRollback".into(),
+                    case["value"].as_str().unwrap().into(),
+                );
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.into()),
+                    ..Default::default()
+                };
+                let outcome = if header_kind == 0 {
+                    command
+                        .decode_command_custom_header_directly::<EndTransactionRequestHeader>(false)
+                        .map(|_| ())
+                } else {
+                    command
+                        .decode_command_custom_header_directly::<CheckTransactionStateResponseHeader>(true)
+                        .map(|_| ())
+                };
+                assert_java_validation_outcome(outcome, case["outcome"].as_str().unwrap());
+            }
+        }
+
+        #[derive(Default)]
+        struct ValidatedCustomHeader {
+            value: Option<i32>,
+        }
+
+        impl CommandHeader for ValidatedCustomHeader {
+            fn encode_fields(&self, fields: &mut HeaderMap) {
+                if let Some(value) = self.value {
+                    fields.insert("value".into(), value.to_string());
+                }
+            }
+
+            fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+                let value = fields
+                    .get("value")
+                    .map(|value| {
+                        value
+                            .parse::<i32>()
+                            .map_err(|_| ProtocolError::InvalidField {
+                                field: "value",
+                                reason: "expected i32".into(),
+                            })
+                    })
+                    .transpose()?;
+                Ok(Self { value })
+            }
+
+            fn check_fields(&self) -> Result<(), ProtocolError> {
+                if self.value.is_some_and(|value| value >= 0) {
+                    Ok(())
+                } else {
+                    Err(ProtocolError::InvalidField {
+                        field: "value",
+                        reason: "value must be non-negative".into(),
+                    })
+                }
+            }
+        }
+
+        let custom_cases = &validation["custom"];
+        for (case_name, fields) in [
+            ("zero", HeaderMap::from([("value".into(), "0".into())])),
+            ("negative", HeaderMap::from([("value".into(), "-1".into())])),
+            ("missing", HeaderMap::new()),
+        ] {
+            let command = RemotingCommand {
+                ext_fields: Some(fields.into()),
+                ..Default::default()
+            };
+            assert_java_validation_outcome(
+                command.decode_command_custom_header_directly::<ValidatedCustomHeader>(true),
+                custom_cases[case_name].as_str().unwrap(),
+            );
+        }
+    }
+
+    fn assert_java_validation_outcome<T>(result: Result<T, ProtocolError>, java_outcome: &str) {
+        assert_eq!(
+            result.is_ok(),
+            java_outcome == "OK",
+            "Java outcome: {java_outcome}"
         );
     }
 

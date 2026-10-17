@@ -4017,7 +4017,78 @@ public final class RuntimeConfigFixtures {
         result.put("cachedRepeatedSameInstance", cached == cachedAgain);
         result.put("directHeader", routeHeaderFields(direct));
         result.put("directDistinctFromCached", direct != cached);
+        result.put("checkFields", commandCustomHeaderCheckFields());
         return result;
+    }
+
+    private static Map<String, Object> commandCustomHeaderCheckFields() {
+        Map<String, Object> result = new TreeMap<>();
+
+        Map<String, String> createTopicBase = new LinkedHashMap<>();
+        createTopicBase.put("topic", "topic");
+        createTopicBase.put("defaultTopic", "default");
+        createTopicBase.put("readQueueNums", "4");
+        createTopicBase.put("writeQueueNums", "4");
+        createTopicBase.put("perm", "6");
+        result.put("createTopic", customHeaderValidationCases(
+            org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader.class,
+            createTopicBase, "topicFilterType", new String[] {"SINGLE_TAG", "MULTI_TAG", "SQL92", "INVALID"}));
+
+        Map<String, String> transactionBase = new LinkedHashMap<>();
+        transactionBase.put("producerGroup", "producer");
+        transactionBase.put("tranStateTableOffset", "1");
+        transactionBase.put("commitLogOffset", "2");
+        transactionBase.put("msgId", "message");
+        result.put("endTransaction", customHeaderValidationCases(
+            org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader.class,
+            transactionBase, "commitOrRollback", new String[] {"0", "4", "8", "12", "16"}));
+
+        Map<String, String> transactionResponseBase = new LinkedHashMap<>();
+        transactionResponseBase.put("producerGroup", "producer");
+        transactionResponseBase.put("tranStateTableOffset", "1");
+        transactionResponseBase.put("commitLogOffset", "2");
+        result.put("checkTransactionStateResponse", customHeaderValidationCases(
+            org.apache.rocketmq.remoting.protocol.header.CheckTransactionStateResponseHeader.class,
+            transactionResponseBase, "commitOrRollback", new String[] {"0", "4", "8", "12", "16"}));
+
+        Map<String, Object> custom = new TreeMap<>();
+        custom.put("zero", customHeaderDecodeOutcome(
+            ValidatedCustomHeader.class, Map.of("value", "0")));
+        custom.put("negative", customHeaderDecodeOutcome(
+            ValidatedCustomHeader.class, Map.of("value", "-1")));
+        custom.put("missing", customHeaderDecodeOutcome(
+            ValidatedCustomHeader.class, Map.of()));
+        result.put("custom", custom);
+        return result;
+    }
+
+    private static List<Object> customHeaderValidationCases(
+        Class<? extends org.apache.rocketmq.remoting.CommandCustomHeader> headerClass,
+        Map<String, String> baseFields, String field, String[] values) {
+        List<Object> cases = new ArrayList<>();
+        for (String value : values) {
+            Map<String, String> fields = new LinkedHashMap<>(baseFields);
+            fields.put(field, value);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("value", value);
+            item.put("outcome", customHeaderDecodeOutcome(headerClass, fields));
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static String customHeaderDecodeOutcome(
+        Class<? extends org.apache.rocketmq.remoting.CommandCustomHeader> headerClass,
+        Map<String, String> fields) {
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(91, null);
+        command.setExtFields(new HashMap<>(fields));
+        try {
+            command.decodeCommandCustomHeader(headerClass);
+            return "OK";
+        } catch (Throwable error) {
+            return error.getClass().getSimpleName();
+        }
     }
 
     private static Map<String, Object> routeHeaderFields(
@@ -4048,6 +4119,19 @@ public final class RuntimeConfigFixtures {
         implements org.apache.rocketmq.remoting.CommandCustomHeader {
         public ThrowingDefaultHeader() { throw new IllegalStateException("fixture"); }
         @Override public void checkFields() { }
+    }
+
+    public static final class ValidatedCustomHeader
+        implements org.apache.rocketmq.remoting.CommandCustomHeader {
+        private Integer value;
+
+        @Override
+        public void checkFields() throws org.apache.rocketmq.remoting.exception.RemotingCommandException {
+            if (value == null || value < 0) {
+                throw new org.apache.rocketmq.remoting.exception.RemotingCommandException(
+                    "value must be non-negative");
+            }
+        }
     }
 
     private static Map<String, Object> commandInfrastructureCases() {

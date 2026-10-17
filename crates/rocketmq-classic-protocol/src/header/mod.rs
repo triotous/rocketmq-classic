@@ -40,6 +40,18 @@ pub enum ProtocolError {
 pub trait CommandHeader: Sized {
     fn encode_fields(&self, fields: &mut HeaderMap);
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError>;
+
+    /// Validate a decoded header, matching Java `CommandCustomHeader.checkFields()`.
+    fn check_fields(&self) -> Result<(), ProtocolError> {
+        Ok(())
+    }
+
+    /// Decode fields and run the header's source-compatible validation hook.
+    fn decode_fields_checked(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        let header = Self::decode_fields(fields)?;
+        header.check_fields()?;
+        Ok(header)
+    }
 }
 
 fn required_string<'a>(

@@ -821,16 +821,7 @@ impl CommandHeader for CreateTopicRequestHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         let topic_filter_type = required_string(fields, "topicFilterType")?.to_owned();
-        if !matches!(
-            topic_filter_type.as_str(),
-            "SINGLE_TAG" | "MULTI_TAG" | "SQL92"
-        ) {
-            return Err(ProtocolError::InvalidField {
-                field: "topicFilterType",
-                reason: format!("unknown Java TopicFilterType {topic_filter_type}"),
-            });
-        }
-        Ok(Self {
+        let header = Self {
             topic: required_string(fields, "topic")?.to_owned(),
             default_topic: required_string(fields, "defaultTopic")?.to_owned(),
             read_queue_nums: required_i32(fields, "readQueueNums")?,
@@ -846,7 +837,20 @@ impl CommandHeader for CreateTopicRequestHeader {
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
             logical: optional_java_boolean(fields, "lo"),
-        })
+        };
+        header.check_fields()?;
+        Ok(header)
+    }
+
+    fn check_fields(&self) -> Result<(), ProtocolError> {
+        if matches!(self.topic_filter_type.as_str(), "SINGLE_TAG" | "MULTI_TAG") {
+            Ok(())
+        } else {
+            Err(ProtocolError::InvalidField {
+                field: "topicFilterType",
+                reason: format!("unknown Java TopicFilterType {}", self.topic_filter_type),
+            })
+        }
     }
 }
 
@@ -1256,6 +1260,17 @@ impl CommandHeader for EndTransactionRequestHeader {
             oneway: optional_java_boolean(fields, "oway"),
         })
     }
+
+    fn check_fields(&self) -> Result<(), ProtocolError> {
+        if matches!(self.commit_or_rollback, 0 | 8 | 12) {
+            Ok(())
+        } else {
+            Err(ProtocolError::InvalidField {
+                field: "commitOrRollback",
+                reason: "value invalid".into(),
+            })
+        }
+    }
 }
 
 /// Pinned Java `EndTransactionResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
@@ -1358,6 +1373,17 @@ impl CommandHeader for CheckTransactionStateResponseHeader {
             commit_log_offset: required_i64(fields, "commitLogOffset")?,
             commit_or_rollback: required_i32(fields, "commitOrRollback")?,
         })
+    }
+
+    fn check_fields(&self) -> Result<(), ProtocolError> {
+        if matches!(self.commit_or_rollback, 8 | 12) {
+            Ok(())
+        } else {
+            Err(ProtocolError::InvalidField {
+                field: "commitOrRollback",
+                reason: "value invalid".into(),
+            })
+        }
     }
 }
 
