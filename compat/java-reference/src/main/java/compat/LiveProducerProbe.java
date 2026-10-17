@@ -1,6 +1,9 @@
 package compat;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -16,6 +19,11 @@ import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageDecoder;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.remoting.InvokeCallback;
+import org.apache.rocketmq.remoting.netty.ResponseFuture;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.ResponseCode;
+import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 
@@ -32,12 +40,16 @@ public final class LiveProducerProbe {
             asyncSend(args[1], args[2], args[3]);
             return;
         }
+        if (args.length == 5 && "oneway-send".equals(args[0])) {
+            onewaySend(args[1], args[2], args[3], args[4]);
+            return;
+        }
         if (args.length == 4 && "view".equals(args[0])) {
             view(args[1], args[2], args[3]);
             return;
         }
         throw new IllegalArgumentException(
-            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | view <broker-address> <topic> <offset-message-id>");
+            "usage: LiveProducerProbe send|async-send <broker-address> <topic> <body> | oneway-send <broker-address> <topic> <body> <key> | view <broker-address> <topic> <offset-message-id>");
     }
 
     private static MQClientAPIImpl newApi() {
@@ -144,6 +156,105 @@ public final class LiveProducerProbe {
         } finally {
             api.shutdown();
         }
+    }
+
+    private static void onewaySend(String brokerAddress, String topic, String body, String key)
+        throws Exception {
+        MQClientAPIImpl api = newApi();
+        api.start();
+        try {
+            Message message = new Message(topic, body.getBytes(StandardCharsets.UTF_8));
+            message.setKeys(key);
+            SendMessageRequestHeader header = new SendMessageRequestHeader();
+            header.setProducerGroup("compat_phase0");
+            header.setTopic(topic);
+            header.setDefaultTopic("TBW102");
+            header.setDefaultTopicQueueNums(4);
+            header.setQueueId(0);
+            header.setSysFlag(0);
+            header.setBornTimestamp(System.currentTimeMillis());
+            header.setFlag(message.getFlag());
+            header.setProperties(MessageDecoder.messageProperties2String(message.getProperties()));
+            header.setReconsumeTimes(0);
+            header.setUnitMode(false);
+            header.setBatch(false);
+            header.setBrokerName("broker-a");
+
+            SendResult result = api.sendMessage(brokerAddress, "broker-a", message, header,
+                10_000, CommunicationMode.ONEWAY, null, null);
+            if (result != null) {
+                throw new IllegalStateException("oneway send unexpectedly returned a Broker result");
+            }
+            System.out.printf("ONEWAY_RETURN\tNO_RESPONSE\t%s\t%s%n", topic, key);
+
+            MessageExt stored = queryMessageByKey(api, brokerAddress, topic, key);
+            if (stored == null) {
+                throw new IllegalStateException("oneway message was not found by key");
+            }
+            System.out.printf("MESSAGE\t%s\t%d\t%d\t%d\t%s\t%s%n", stored.getTopic(),
+                stored.getQueueId(), stored.getQueueOffset(), stored.getCommitLogOffset(),
+                stored.getKeys(), toHex(stored.getBody()));
+        } finally {
+            api.shutdown();
+        }
+    }
+
+    private static MessageExt queryMessageByKey(
+        MQClientAPIImpl api, String brokerAddress, String topic, String key) throws Exception {
+        long deadline = System.currentTimeMillis() + 15_000;
+        while (System.currentTimeMillis() < deadline) {
+            QueryMessageRequestHeader request = new QueryMessageRequestHeader();
+            request.setTopic(topic);
+            request.setKey(key);
+            request.setMaxNum(32);
+            request.setBeginTimestamp(System.currentTimeMillis() - 60_000);
+            request.setEndTimestamp(System.currentTimeMillis() + 60_000);
+
+            CountDownLatch completed = new CountDownLatch(1);
+            AtomicReference<List<MessageExt>> messages = new AtomicReference<>(Collections.emptyList());
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            api.queryMessage(brokerAddress, request, 5_000, new InvokeCallback() {
+                @Override
+                public void operationComplete(ResponseFuture responseFuture) {
+                }
+
+                @Override
+                public void operationSucceed(RemotingCommand response) {
+                    try {
+                        if (response.getCode() == ResponseCode.SUCCESS && response.getBody() != null) {
+                            messages.set(MessageDecoder.decodes(
+                                ByteBuffer.wrap(response.getBody()), true));
+                        } else if (response.getCode() != ResponseCode.NO_MESSAGE) {
+                            failure.set(new IllegalStateException("query by key failed with Broker code "
+                                + response.getCode() + ": " + response.getRemark()));
+                        }
+                    } catch (Throwable error) {
+                        failure.set(error);
+                    } finally {
+                        completed.countDown();
+                    }
+                }
+
+                @Override
+                public void operationFail(Throwable error) {
+                    failure.set(error);
+                    completed.countDown();
+                }
+            }, false);
+            if (!completed.await(6, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("query by key did not complete");
+            }
+            if (failure.get() != null) {
+                throw new Exception("query by key failed", failure.get());
+            }
+            for (MessageExt message : messages.get()) {
+                if (key.equals(message.getKeys())) {
+                    return message;
+                }
+            }
+            Thread.sleep(200);
+        }
+        return null;
     }
 
     private static void view(String brokerAddress, String topic, String offsetMessageId)

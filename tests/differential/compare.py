@@ -175,24 +175,87 @@ def validate_manifest(manifest):
                     or rust_rows.read_bytes() != expected
                 ):
                     raise ValueError(f"Phase 19 missing-route evidence does not match: {scenario['id']}")
-            if scenario["id"] in {"PROD-001-sync-send", "PROD-002-async-send"}:
+            if scenario["id"] in {
+                "PROD-001-sync-send",
+                "PROD-002-async-send",
+                "PROD-003-oneway-send",
+            }:
                 topic = scenario["inputs"].get("topic")
                 body = scenario["inputs"].get("body")
                 if not isinstance(topic, str) or not isinstance(body, str):
                     raise ValueError("producer-send evidence requires topic and body inputs")
                 expected_body = body.encode().hex()
 
-                def one_tsv_row(name, columns):
+                def tsv_rows(name, columns=None):
                     path = evidence_path / name
                     if not path.is_file():
                         raise ValueError(f"producer-send evidence is missing {name}")
                     rows = [line.split("\t") for line in path.read_text().splitlines()]
-                    if len(rows) != 1 or len(rows[0]) != columns:
+                    if not rows or (
+                        columns is not None and any(len(row) != columns for row in rows)
+                    ):
                         raise ValueError(f"producer-send evidence has invalid rows in {name}")
+                    return rows
+
+                def one_tsv_row(name, columns):
+                    rows = tsv_rows(name, columns)
+                    if len(rows) != 1:
+                        raise ValueError(f"producer-send evidence must have one row in {name}")
                     return rows[0]
 
                 asynchronous = scenario["id"] == "PROD-002-async-send"
-                if asynchronous:
+                oneway = scenario["id"] == "PROD-003-oneway-send"
+                if oneway:
+                    java_rows = tsv_rows("java-oneway.tsv")
+                    rust_rows = tsv_rows("rust-oneway.tsv")
+                    key_prefix = scenario["inputs"].get("key_prefix")
+                    if (
+                        len(java_rows) != 2
+                        or len(rust_rows) != 2
+                        or len(java_rows[0]) != 4
+                        or len(rust_rows[0]) != 4
+                        or len(java_rows[1]) != 7
+                        or len(rust_rows[1]) != 7
+                    ):
+                        raise ValueError("oneway send evidence must contain a return row and one stored message")
+                    java_return, java_message = java_rows
+                    rust_return, rust_message = rust_rows
+                    if not isinstance(key_prefix, str) or not re.fullmatch(
+                        r"compat_[a-z0-9_]+", key_prefix
+                    ):
+                        raise ValueError("oneway send evidence requires an isolated key prefix")
+                    if (
+                        len(java_return) != 4
+                        or java_return[:3] != ["ONEWAY_RETURN", "NO_RESPONSE", topic]
+                        or not java_return[3].startswith(f"{key_prefix}_java_")
+                    ):
+                        raise ValueError("Java oneway send did not return without a Broker response")
+                    if (
+                        len(rust_return) != 4
+                        or rust_return[:3] != ["ONEWAY_RETURN", "NO_RESPONSE", topic]
+                        or not rust_return[3].startswith(f"{key_prefix}_rust_")
+                        or rust_return[3] == java_return[3]
+                    ):
+                        raise ValueError("Rust oneway send did not return without a Broker response")
+                    for language, row, message_key in (
+                        ("Java", java_message, java_return[3]),
+                        ("Rust", rust_message, rust_return[3]),
+                    ):
+                        if (
+                            row[0] != "MESSAGE"
+                            or row[1] != topic
+                            or row[2] != "0"
+                            or not row[3].isdecimal()
+                            or not row[4].isdecimal()
+                            or row[5] != message_key
+                            or row[6] != expected_body
+                        ):
+                            raise ValueError(f"{language} oneway stored-message result is invalid")
+                    readback_sends = (
+                        ("rust-read-java.tsv", java_message, 3),
+                        ("java-read-rust.tsv", rust_message, 3),
+                    )
+                elif asynchronous:
                     java_send = one_tsv_row("java-async-send.tsv", 8)
                     rust_send = one_tsv_row("rust-async-send.tsv", 8)
                     expected_shapes = (
@@ -217,8 +280,10 @@ def validate_manifest(manifest):
                             raise ValueError(f"{language} asynchronous send result is invalid")
                     if java_send[2:5] != rust_send[2:5]:
                         raise ValueError("Java and Rust asynchronous send status/queue results differ")
-                    java_queue_offset_index = 5
-                    rust_queue_offset_index = 5
+                    readback_sends = (
+                        ("rust-read-java.tsv", java_send, 5),
+                        ("java-read-rust.tsv", rust_send, 5),
+                    )
                 else:
                     java_send = one_tsv_row("java-send.tsv", 7)
                     rust_send = one_tsv_row("rust-send.tsv", 7)
@@ -237,12 +302,11 @@ def validate_manifest(manifest):
                             raise ValueError(f"{language} synchronous-send result is invalid")
                     if java_send[1:4] != rust_send[1:4]:
                         raise ValueError("Java and Rust synchronous-send status/queue results differ")
-                    java_queue_offset_index = 4
-                    rust_queue_offset_index = 4
-                for readback_name, send_result, queue_offset_index in (
-                    ("rust-read-java.tsv", java_send, java_queue_offset_index),
-                    ("java-read-rust.tsv", rust_send, rust_queue_offset_index),
-                ):
+                    readback_sends = (
+                        ("rust-read-java.tsv", java_send, 4),
+                        ("java-read-rust.tsv", rust_send, 4),
+                    )
+                for readback_name, send_result, queue_offset_index in readback_sends:
                     row = one_tsv_row(readback_name, 5)
                     if (
                         row[0] != "MESSAGE"
@@ -408,6 +472,62 @@ def self_test():
             raise AssertionError("asynchronous send accepted a duplicate Java callback")
         except ValueError as error:
             assert "Java asynchronous send must complete exactly once" in str(error)
+    oneway_scenario = next(
+        scenario
+        for scenario in checked_in["scenarios"]
+        if scenario["id"] == "PROD-003-oneway-send"
+    )
+    with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
+        evidence_dir = Path(temporary)
+        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
+        (evidence_dir / "result.txt").write_text(
+            "PASS PROD-003-oneway-send: synthetic validator evidence\n"
+        )
+        java_key = "compat_phase0_oneway_java_selftest"
+        rust_key = "compat_phase0_oneway_rust_selftest"
+        oneway_outputs = {
+            "java-oneway.tsv": (
+                f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{java_key}\n"
+                f"MESSAGE\tcompat_phase0_send\t0\t5\t1\t{java_key}\t6669786564\n"
+            ),
+            "rust-oneway.tsv": (
+                f"ONEWAY_RETURN\tNO_RESPONSE\tcompat_phase0_send\t{rust_key}\n"
+                f"MESSAGE\tcompat_phase0_send\t0\t6\t2\t{rust_key}\t6669786564\n"
+            ),
+            "rust-read-java.tsv": "MESSAGE\tcompat_phase0_send\t0\t5\t6669786564\n",
+            "java-read-rust.tsv": "MESSAGE\tcompat_phase0_send\t0\t6\t6669786564\n",
+        }
+        for filename, contents in oneway_outputs.items():
+            (evidence_dir / filename).write_text(contents)
+
+        def oneway_checked_manifest(java_result):
+            changed_scenario = {
+                **oneway_scenario,
+                "live_status": "PASS",
+                "evidence": evidence_rel,
+            }
+            changed_scenarios = [
+                changed_scenario if row["id"] == oneway_scenario["id"] else row
+                for row in checked_in["scenarios"]
+            ]
+            manifest = {**checked_in, "scenarios": changed_scenarios}
+            if java_result is not None:
+                (evidence_dir / "java-oneway.tsv").write_text(java_result)
+            return manifest
+
+        validate_manifest(oneway_checked_manifest(None))
+        try:
+            validate_manifest(
+                oneway_checked_manifest(
+                    oneway_outputs["java-oneway.tsv"].replace(
+                        "NO_RESPONSE", "SEND_OK", 1
+                    )
+                )
+            )
+            raise AssertionError("oneway evidence accepted a Broker response result")
+        except ValueError as error:
+            assert "Java oneway send did not return without a Broker response" in str(error)
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
     assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
     assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19
