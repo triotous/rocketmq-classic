@@ -553,10 +553,17 @@ async fn view_message_falls_back_to_unique_key_query_after_physical_lookup_failu
         .unwrap()
         .unwrap();
     assert_eq!(invalid.message_id(), Some("producer-unique-1"));
-    let invalid_query = timeout(Duration::from_secs(1), broker_requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let invalid_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+            assert_eq!(command.code, request::HEART_BEAT);
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(invalid_query.code, request::QUERY_MESSAGE);
     assert_eq!(
         invalid_query.ext_fields.unwrap().get("_UNIQUE_KEY_QUERY"),
@@ -592,10 +599,17 @@ async fn view_message_falls_back_to_unique_key_query_after_physical_lookup_failu
     let fields = physical_request.ext_fields.unwrap();
     assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
     assert_eq!(fields.get("offset"), Some(&"77".to_owned()));
-    let unique_query = timeout(Duration::from_secs(1), broker_requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let unique_query = timeout(Duration::from_secs(1), async {
+        loop {
+            let command = broker_requests.recv().await.unwrap();
+            if command.code == request::QUERY_MESSAGE {
+                break command;
+            }
+            assert_eq!(command.code, request::HEART_BEAT);
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(unique_query.code, request::QUERY_MESSAGE);
     let route = timeout(Duration::from_secs(1), namesrv_requests.recv())
         .await
