@@ -4255,6 +4255,22 @@ mod tests {
                     ),
                     (JavaJsonWriterFeature::UseSingleQuotes, "UseSingleQuotes"),
                     (JavaJsonWriterFeature::WriteNameAsSymbol, "WriteNameAsSymbol"),
+                    (
+                        JavaJsonWriterFeature::NotWriteRootClassName,
+                        "NotWriteRootClassName",
+                    ),
+                    (
+                        JavaJsonWriterFeature::NotWriteHashMapArrayListClassName,
+                        "NotWriteHashMapArrayListClassName",
+                    ),
+                    (
+                        JavaJsonWriterFeature::NotWriteNumberClassName,
+                        "NotWriteNumberClassName",
+                    ),
+                    (
+                        JavaJsonWriterFeature::NotWriteSetClassName,
+                        "NotWriteSetClassName",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,

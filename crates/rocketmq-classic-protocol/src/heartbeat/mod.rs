@@ -2707,6 +2707,22 @@ mod tests {
                     "WriteNameAsSymbol",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::NotWriteRootClassName,
+                    "NotWriteRootClassName",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::NotWriteHashMapArrayListClassName,
+                    "NotWriteHashMapArrayListClassName",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::NotWriteNumberClassName,
+                    "NotWriteNumberClassName",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::NotWriteSetClassName,
+                    "NotWriteSetClassName",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),
