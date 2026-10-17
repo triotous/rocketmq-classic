@@ -185,7 +185,8 @@ async fn java_invoked_producer_more_requests_and_outcomes_match() {
                     };
                     format!(
                         "{status};queueOffset={};offsetMsgId={}",
-                        result.queue_offset, result.offset_msg_id
+                        result.queue_offset,
+                        result.offset_msg_id.as_deref().unwrap_or("null")
                     )
                 }
                 Err(RpcError::Response { code, .. }) => format!("MQBrokerException;code={code}"),

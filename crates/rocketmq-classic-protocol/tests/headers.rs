@@ -157,7 +157,7 @@ fn java_request_and_response_header_fixtures_decode() {
     assert_eq!(offset_response.offset, 9);
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
-    assert_eq!(send_response.msg_id, "msg-1");
+    assert_eq!(send_response.msg_id.as_deref(), Some("msg-1"));
     let recall = RecallMessageRequestHeader::decode_fields(&java_ext_fields(
         "header-recall-message-request",
     ))
@@ -815,7 +815,7 @@ fn java_frames_match_typed_header_semantics() {
     assert_eq!(v1, v2.normalized_v1());
     let response =
         SendMessageResponseHeader::decode_fields(&json_header_map("header-send-response")).unwrap();
-    assert_eq!(response.queue_offset, 99);
+    assert_eq!(response.queue_offset, Some(99));
 }
 
 #[test]
@@ -868,10 +868,10 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("a"));
-    let err = SendMessageResponseHeader::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("msgId"));
+    let empty_send_response = SendMessageResponseHeader::decode_fields(&empty).unwrap();
+    assert_eq!(empty_send_response.msg_id, None);
+    assert_eq!(empty_send_response.queue_id, None);
+    assert_eq!(empty_send_response.queue_offset, None);
     let err = QueryConsumerOffsetResponseHeader::decode_fields(&empty)
         .unwrap_err()
         .to_string();
@@ -1559,12 +1559,22 @@ fn header_validation_matrix() {
         for name in case.required.split_whitespace() {
             let mut fields = baseline.clone();
             fields.remove(name);
-            assert_eq!(
-                (case.decode)(&fields),
-                Err(ProtocolError::MissingField(name)),
-                "{} {name}",
-                case.fixture
-            );
+            let decoded = (case.decode)(&fields);
+            if case.model == "SendMessageResponseHeader" {
+                assert!(decoded.is_ok(), "{} {name}", case.fixture);
+                assert!(
+                    !decoded.unwrap().contains_key(name),
+                    "{} encoded missing Java nullable field {name}",
+                    case.fixture
+                );
+            } else {
+                assert_eq!(
+                    decoded,
+                    Err(ProtocolError::MissingField(name)),
+                    "{} {name}",
+                    case.fixture
+                );
+            }
             fields.insert(name.into(), "".into());
             assert_eq!(
                 (case.decode)(&fields).is_ok(),

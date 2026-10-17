@@ -110,7 +110,7 @@ impl std::fmt::Display for SendStatus {
 pub struct SendResult {
     pub status: SendStatus,
     pub msg_id: String,
-    pub offset_msg_id: String,
+    pub offset_msg_id: Option<String>,
     pub topic: String,
     pub broker_name: String,
     pub queue_id: i32,
@@ -254,6 +254,18 @@ impl MQClientApi {
             }
         };
         let result: SendMessageResponseHeader = decode_header(&reply, code, addr)?;
+        let queue_id = result.queue_id.ok_or_else(|| RpcError::MalformedResponse {
+            request_code: kind.code(),
+            peer: addr.to_owned(),
+            reason: "the custom field <queueId> is null".into(),
+        })?;
+        let queue_offset = result
+            .queue_offset
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: kind.code(),
+                peer: addr.to_owned(),
+                reason: "the custom field <queueOffset> is null".into(),
+            })?;
         let ext = reply
             .ext_fields
             .as_ref()
@@ -264,8 +276,8 @@ impl MQClientApi {
             offset_msg_id: result.msg_id,
             topic: header.topic.clone(),
             broker_name: broker_name.to_owned(),
-            queue_id: result.queue_id,
-            queue_offset: result.queue_offset,
+            queue_id,
+            queue_offset,
             transaction_id: result.transaction_id,
             recall_handle: result.recall_handle,
             raw_resp_body: None,

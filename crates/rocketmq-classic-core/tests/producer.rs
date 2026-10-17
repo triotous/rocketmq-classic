@@ -105,7 +105,7 @@ fn assert_send_result(
 ) {
     assert_eq!(result.status, status);
     assert_eq!(result.msg_id, "uniq");
-    assert_eq!(result.offset_msg_id, "offset-id");
+    assert_eq!(result.offset_msg_id.as_deref(), Some("offset-id"));
     assert_eq!(result.topic, "orders");
     assert_eq!(result.broker_name, "broker");
     assert_eq!(result.queue_id, 2);
@@ -154,7 +154,7 @@ async fn send_statuses_errors_and_malformed_headers() {
             let result = result.unwrap().unwrap();
             assert_eq!(result.status, expected);
             assert_eq!(result.msg_id, "uniq");
-            assert_eq!(result.offset_msg_id, "offset-id");
+            assert_eq!(result.offset_msg_id.as_deref(), Some("offset-id"));
             assert_eq!(result.transaction_id.as_deref(), Some("tx"));
             assert_eq!(result.recall_handle.as_deref(), Some("recall"));
             assert_eq!(result.raw_resp_body, None);
@@ -191,6 +191,62 @@ async fn send_statuses_errors_and_malformed_headers() {
             .await,
         Err(RpcError::MalformedResponse { .. })
     ));
+    task.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn send_result_preserves_null_offset_msg_id_from_java_response_header() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let task = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut len = [0; 4];
+        stream.read_exact(&mut len).await.unwrap();
+        let mut bytes = BytesMut::from(&len[..]);
+        bytes.resize(u32::from_be_bytes(len) as usize + 4, 0);
+        stream.read_exact(&mut bytes[4..]).await.unwrap();
+        let incoming = frame::decode_next(&mut bytes).unwrap().unwrap();
+        assert_eq!(incoming.code, request::SEND_MESSAGE);
+
+        let mut reply = RemotingCommand {
+            code: response::SUCCESS,
+            opaque: incoming.opaque,
+            ext_fields: Some(
+                [
+                    ("queueId".into(), "2".into()),
+                    ("queueOffset".into(), "17".into()),
+                ]
+                .into(),
+            ),
+            ..RemotingCommand::default()
+        };
+        reply.mark_response();
+        stream
+            .write_all(&frame::encode(&reply).unwrap())
+            .await
+            .unwrap();
+    });
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+    let result = MQClientApi::new(client.clone())
+        .send_message(
+            &addr,
+            "broker",
+            &header(),
+            b"payload".to_vec(),
+            "uniq",
+            SendKind::V1,
+            SendMode::Sync,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.msg_id, "uniq");
+    assert_eq!(result.offset_msg_id, None);
+    assert_eq!(result.queue_id, 2);
+    assert_eq!(result.queue_offset, 17);
     task.await.unwrap();
     client.shutdown().await;
 }

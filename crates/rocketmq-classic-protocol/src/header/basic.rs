@@ -1175,9 +1175,9 @@ impl CommandHeader for RecallMessageResponseHeader {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct SendMessageResponseHeader {
-    pub msg_id: String,
-    pub queue_id: i32,
-    pub queue_offset: i64,
+    pub msg_id: Option<String>,
+    pub queue_id: Option<i32>,
+    pub queue_offset: Option<i64>,
     pub transaction_id: Option<String>,
     pub batch_uniq_id: Option<String>,
     pub recall_handle: Option<String>,
@@ -2092,23 +2092,32 @@ impl CommandHeader for ReplyMessageRequestHeader {
 
 impl CommandHeader for SendMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("msgId".into(), self.msg_id.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
-        fields.insert("queueOffset".into(), self.queue_offset.to_string());
+        put_optional(fields, "msgId", self.msg_id.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "queueOffset", self.queue_offset);
         put_optional(fields, "transactionId", self.transaction_id.as_deref());
         put_optional(fields, "batchUniqId", self.batch_uniq_id.as_deref());
         put_optional(fields, "recallHandle", self.recall_handle.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
-        Ok(Self {
-            msg_id: required_string(fields, "msgId")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
-            queue_offset: required_i64(fields, "queueOffset")?,
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        let header = Self {
+            msg_id: optional_string(fields, "msgId"),
+            queue_id: optional_i32_with_mode(fields, "queueId", use_fast_encode)?,
+            queue_offset: optional_i64_with_mode(fields, "queueOffset", use_fast_encode)?,
             transaction_id: optional_string(fields, "transactionId"),
             batch_uniq_id: optional_string(fields, "batchUniqId"),
             recall_handle: optional_string(fields, "recallHandle"),
-        })
+        };
+        header.check_fields()?;
+        Ok(header)
     }
 }
 

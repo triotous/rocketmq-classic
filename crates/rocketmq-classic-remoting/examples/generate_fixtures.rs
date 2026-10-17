@@ -514,9 +514,9 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-send-response.bin",
         0,
         &SendMessageResponseHeader {
-            msg_id: "msg-1".into(),
-            queue_id: 2,
-            queue_offset: 99,
+            msg_id: Some("msg-1".into()),
+            queue_id: Some(2),
+            queue_offset: Some(99),
             ..SendMessageResponseHeader::default()
         },
     );

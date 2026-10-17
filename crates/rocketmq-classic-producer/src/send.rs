@@ -2056,7 +2056,12 @@ fn split_auto_batch_result(
         return Ok(vec![result; message_count]);
     }
     let message_ids = result.msg_id.split(',').collect::<Vec<_>>();
-    let offset_message_ids = result.offset_msg_id.split(',').collect::<Vec<_>>();
+    let offset_message_ids = result
+        .offset_msg_id
+        .as_deref()
+        .ok_or(ProducerError::InvalidAutoBatchResult)?
+        .split(',')
+        .collect::<Vec<_>>();
     if message_ids.len() != message_count || offset_message_ids.len() != message_count {
         return Err(ProducerError::InvalidAutoBatchResult);
     }
@@ -2064,7 +2069,7 @@ fn split_auto_batch_result(
         .map(|index| {
             let mut per_message = result.clone();
             per_message.msg_id = message_ids[index].to_owned();
-            per_message.offset_msg_id = offset_message_ids[index].to_owned();
+            per_message.offset_msg_id = Some(offset_message_ids[index].to_owned());
             per_message.queue_offset = result.queue_offset.wrapping_add(index as i64);
             per_message
         })
@@ -2141,7 +2146,7 @@ mod tests {
         SendResult {
             status: SendStatus::SendOk,
             msg_id: msg_id.into(),
-            offset_msg_id: offset_msg_id.into(),
+            offset_msg_id: Some(offset_msg_id.into()),
             topic: "orders".into(),
             broker_name: "scripted-broker".into(),
             queue_id: 0,
@@ -4725,7 +4730,7 @@ mod tests {
         let mut result = SendResult {
             status: SendStatus::SendOk,
             msg_id: "msg-a,msg-b".into(),
-            offset_msg_id: "offset-a,offset-b".into(),
+            offset_msg_id: Some("offset-a,offset-b".into()),
             topic: "orders".into(),
             broker_name: "broker-a".into(),
             queue_id: 2,
@@ -4739,19 +4744,19 @@ mod tests {
         let split = split_auto_batch_result(result.clone(), 2).unwrap();
         assert_eq!(split[0].msg_id, "msg-a");
         assert_eq!(split[1].msg_id, "msg-b");
-        assert_eq!(split[0].offset_msg_id, "offset-a");
-        assert_eq!(split[1].offset_msg_id, "offset-b");
+        assert_eq!(split[0].offset_msg_id.as_deref(), Some("offset-a"));
+        assert_eq!(split[1].offset_msg_id.as_deref(), Some("offset-b"));
         assert_eq!(split[0].queue_offset, 40);
         assert_eq!(split[1].queue_offset, 41);
 
         result.msg_id = "batch-msg-id".into();
-        result.offset_msg_id = "batch-offset-id".into();
+        result.offset_msg_id = Some("batch-offset-id".into());
         let repeated = split_auto_batch_result(result, 2).unwrap();
         assert_eq!(repeated[0], repeated[1]);
 
         let mut inconsistent = split[0].clone();
         inconsistent.msg_id = "msg-a,msg-b".into();
-        inconsistent.offset_msg_id = "offset-a".into();
+        inconsistent.offset_msg_id = Some("offset-a".into());
         assert!(matches!(
             split_auto_batch_result(inconsistent, 2),
             Err(ProducerError::InvalidAutoBatchResult)

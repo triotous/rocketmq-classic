@@ -292,8 +292,11 @@ async fn batch_send(
         .await;
     remoting.shutdown().await;
     let result = result?.ok_or("batch send returned no Broker result")?;
-    let first_offset_message_id = result
+    let offset_msg_id = result
         .offset_msg_id
+        .as_deref()
+        .ok_or("batch send returned no offset message ID")?;
+    let first_offset_message_id = offset_msg_id
         .split(',')
         .next()
         .filter(|message_id| !message_id.is_empty())
@@ -305,7 +308,7 @@ async fn batch_send(
         result.topic,
         result.queue_id,
         result.queue_offset,
-        result.offset_msg_id,
+        offset_msg_id,
         first_offset_message_id,
         physical_offset,
         message_count
@@ -361,7 +364,11 @@ async fn send_with_mode(
         .await;
     remoting.shutdown().await;
     let result = result?.ok_or("synchronous send returned no result")?;
-    let physical_offset = decode_message_id(&result.offset_msg_id)?.offset();
+    let offset_msg_id = result
+        .offset_msg_id
+        .as_deref()
+        .ok_or("synchronous send returned no offset message ID")?;
+    let physical_offset = decode_message_id(offset_msg_id)?.offset();
     if mode == SendMode::Future {
         println!(
             "ASYNC_FUTURE\t1\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -369,7 +376,7 @@ async fn send_with_mode(
             result.topic,
             result.queue_id,
             result.queue_offset,
-            result.offset_msg_id,
+            offset_msg_id,
             physical_offset
         );
     } else {
@@ -379,7 +386,7 @@ async fn send_with_mode(
             result.topic,
             result.queue_id,
             result.queue_offset,
-            result.offset_msg_id,
+            offset_msg_id,
             physical_offset
         );
     }

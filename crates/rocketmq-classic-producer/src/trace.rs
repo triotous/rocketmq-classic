@@ -231,7 +231,7 @@ impl SendMessageHook for ProducerSendTraceHook {
             .and_then(|beans| beans.first_mut())
         {
             bean.message_id = Some(send_result.msg_id.clone());
-            bean.offset_message_id = Some(send_result.offset_msg_id.clone());
+            bean.offset_message_id = send_result.offset_msg_id.clone();
             bean.store_time_millis = store_time_millis;
         }
         let _ = self.dispatcher.append(trace_context.clone());
@@ -985,7 +985,7 @@ mod tests {
         context.send_result = Some(crate::SendResult {
             status: crate::SendStatus::SendOk,
             msg_id: "message-1".into(),
-            offset_msg_id: "offset-1".into(),
+            offset_msg_id: Some("offset-1".into()),
             topic: "orders".into(),
             broker_name: "broker-a".into(),
             queue_id: 0,

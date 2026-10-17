@@ -643,7 +643,7 @@ async fn sync_send_retries_across_two_brokers_and_preserves_one_prepared_message
     let mut message = Message::new("orders", b"immutable-body".to_vec());
     let result = producer.send(&mut message).await.unwrap();
     assert_eq!(result.status, SendStatus::SendOk);
-    assert_eq!(result.offset_msg_id, "offset-id");
+    assert_eq!(result.offset_msg_id.as_deref(), Some("offset-id"));
     assert_eq!(result.queue_offset, 7);
     assert!(matches!(result.msg_id.len(), 32 | 56));
     assert_eq!(attempts.load(Ordering::SeqCst), 3);

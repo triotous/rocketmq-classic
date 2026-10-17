@@ -196,7 +196,8 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                         assert_eq!(result.status, SendStatus::SendOk);
                         format!(
                             "SEND_OK;queueOffset={};offsetMsgId={}",
-                            result.queue_offset, result.offset_msg_id
+                            result.queue_offset,
+                            result.offset_msg_id.as_deref().unwrap_or("null")
                         )
                     }
                     Err(RpcError::Response { code, .. }) => {

@@ -202,6 +202,10 @@ public final class Main {
             PullHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "send-message-response-header-decode-mode-fixtures".equals(args[0])) {
+            SendMessageResponseHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "client-config-properties-fixture".equals(args[0])) {
             ClientConfigPropertiesProbe.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

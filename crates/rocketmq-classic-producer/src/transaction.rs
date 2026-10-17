@@ -329,11 +329,11 @@ impl TransactionProducer {
         state: LocalTransactionState,
         callback_error: Option<&str>,
     ) -> Result<(), ProducerError> {
-        let offset_id = if send_result.offset_msg_id.is_empty() {
-            &send_result.msg_id
-        } else {
-            &send_result.offset_msg_id
-        };
+        let offset_id = send_result
+            .offset_msg_id
+            .as_deref()
+            .filter(|offset_id| !offset_id.is_empty())
+            .unwrap_or(&send_result.msg_id);
         let commit_log_offset = decode_message_id_offset(offset_id)
             .ok_or_else(|| ProducerError::TransactionMetadata(offset_id.to_owned()))?;
         let runtime = self.producer.started_runtime().await?;
@@ -1268,7 +1268,7 @@ mod tests {
         SendResult {
             status,
             msg_id: MESSAGE_ID.into(),
-            offset_msg_id: OFFSET_MSG_ID.into(),
+            offset_msg_id: Some(OFFSET_MSG_ID.into()),
             topic: topic.into(),
             broker_name: "broker-a".into(),
             queue_id: 0,
@@ -1670,7 +1670,7 @@ mod tests {
             let producer = started_producer("transaction-producer", "orders", Some(listener)).await;
             let mut result = scripted_result(SendStatus::SendOk, "orders");
             result.msg_id = result_msg_id.into();
-            result.offset_msg_id = offset_msg_id.into();
+            result.offset_msg_id = Some(offset_msg_id.into());
             producer
                 .producer
                 .scripted_transport

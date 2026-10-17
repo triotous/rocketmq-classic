@@ -995,6 +995,73 @@ mod tests {
     }
 
     #[test]
+    fn send_message_response_header_decode_modes_match_invoked_java_551() {
+        use rocketmq_classic_protocol::header::SendMessageResponseHeader;
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/send-message-response-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let decoded = command
+                    .decode_command_custom_header_directly::<SendMessageResponseHeader>(
+                        use_fast_encode,
+                    );
+                let expected = &case[mode];
+                if expected["outcome"] == "OK" {
+                    let decoded = decoded.unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                    let expected_header = &expected["header"];
+                    assert_eq!(decoded.msg_id.as_deref(), expected_header["msgId"].as_str());
+                    assert_eq!(
+                        decoded.queue_id.map(i64::from),
+                        expected_header["queueId"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.queue_offset,
+                        expected_header["queueOffset"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.transaction_id.as_deref(),
+                        expected_header["transactionId"].as_str()
+                    );
+                    assert_eq!(
+                        decoded.batch_uniq_id.as_deref(),
+                        expected_header["batchUniqId"].as_str()
+                    );
+                    assert_eq!(
+                        decoded.recall_handle.as_deref(),
+                        expected_header["recallHandle"].as_str()
+                    );
+                } else {
+                    assert!(
+                        decoded.is_err(),
+                        "{case_name}/{mode}: Java returned {}, Rust decoded successfully",
+                        expected["outcome"]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn remoting_enum_methods_and_command_type_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))

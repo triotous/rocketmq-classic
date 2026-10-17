@@ -485,7 +485,7 @@ mod tests {
         SendResult {
             status: SendStatus::SendOk,
             msg_id: "send-ok".into(),
-            offset_msg_id: "offset-ok".into(),
+            offset_msg_id: Some("offset-ok".into()),
             topic: "orders".into(),
             broker_name: "broker-a".into(),
             queue_id: 0,
