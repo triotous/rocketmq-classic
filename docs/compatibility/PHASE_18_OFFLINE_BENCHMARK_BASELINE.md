@@ -109,3 +109,23 @@ The sample meets the Phase 18 offline measurement evidence requirement. Changes
 in timing/allocation observations from earlier revisions are recorded without
 claiming regression or improvement; this benchmark defines no performance
 threshold.
+
+## Remoting custom-header revision — Linux container sample
+
+Captured with the reproduction command on 2026-10-17 at code revision
+`b6da737e`. The benchmark ran in the Rust 1.85.0 Bookworm container on Linux
+AArch64 with 18 logical CPUs; the container reported only `aarch64` as its
+hardware label. This sample is kept separate from the native macOS results
+above and must not be compared with them as a performance change.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 1,197.1 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 712.7 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 806.0 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 12.2 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 5,409.3 ns | 79.00 (100 samples) | 9,442.0 (100 samples) |
+
+These measurements satisfy the current-revision offline benchmark run; they
+are observations, not acceptance thresholds. Allocation totals are aggregate
+allocator calls and requested bytes divided by sampled operations.

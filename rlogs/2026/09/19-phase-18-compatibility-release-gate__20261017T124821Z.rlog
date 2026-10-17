@@ -32,3 +32,43 @@
 
 - Code/test/fixture commit: `b6da737e fix(remoting): preserve custom header alias behavior`.
 - The crosswalk, requirement-audit entry, and this log are pending their separate documentation commit.
+
+## Current-revision server-free verification — 2026-10-17
+
+- The first macOS `cargo test --workspace --locked` run reached the default-
+  feature Remoting `codec` binary, which remained at `_dyld_start` with 0% CPU.
+  `sample` recorded the loader frame; the unified log reported that AMFI found
+  no CMS blob and an unrecoverable code-trust signature issue. The host has no
+  valid code-signing identities. No system security setting was changed.
+- A Linux-container run without an init process failed only
+  `concurrent_jstack_captures_are_serialized_without_losing_threads`: Docker's
+  inherited signal mask left no eligible default-ignore signal. The focused
+  test and both full workspace runs passed with `docker run --init`, which
+  restored the ordinary signal defaults for the test process.
+- With `rust:1.85.0-bookworm`, offline registry caches, a separate Docker target
+  volume, and `--init`, `cargo test --workspace --locked --offline` and
+  `cargo test --workspace --all-features --locked --offline` both exited 0.
+- `cargo clippy --workspace --all-targets --all-features --locked --offline --
+  -D warnings`: PASS. Host `cargo fmt --all -- --check`: PASS.
+- `TERM=dumb mvn -f compat/java-reference/pom.xml verify`: PASS on code commit
+  `b6da737e` — 37 scenarios, fixture drift, and Java/Rust cross-decodes.
+- `python3 tests/differential/compare.py --self-test` and
+  `--validate-manifest`: PASS; manifest contains 37 scenarios.
+- `bash tests/stress/run-offline-smoke.sh` in the container: PASS, 16 race/leak
+  tests × 3. `cargo run -p rocketmq-classic-remoting --example fuzz_smoke
+  --locked --offline`: PASS — 105 frame seeds, 11 message seeds, 1,856 bounded
+  mutations, 146 frame decodes, and 113 message decodes.
+- `cargo build -p rocketmq-classic --examples --release --locked --offline`:
+  PASS. `cargo bench -p rocketmq-classic --bench offline --locked --offline`:
+  PASS; the separate Linux-container observations are recorded in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- `cargo metadata --locked --format-version 1 --no-deps`,
+  `python3 scripts/check-workspace-metadata.py`, and
+  `cargo package --workspace --list --locked --allow-dirty`: PASS. The
+  Asia/Taipei Core Unique ID test filter passed all 4 selected tests.
+- Broad P18-V01 source/API/input/error/flow and reverse-export reconciliation
+  remains open. Current-revision GitHub Ubuntu/native Windows evidence for
+  P18-V04 also remains open. No plan files changed; no push, tag, publish,
+  Broker operation, or deployment occurred.
+- The benchmark record, release-checklist entry, and this verification addendum
+  are pending their separate documentation commit.

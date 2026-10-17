@@ -3402,3 +3402,18 @@ owner-specific checks belong in the manual handoff.
   completed successfully on this code revision in 38 minutes, compiling every
   workspace test target including `live_client`. Full test execution and the
   current-revision P18-V02 gate remain open. Broad P18-V01 remains open.
+- [x] Current-revision server-free P18-V02 rerun on code commit `b6da737e`
+  (documentation HEAD `2b059963`): default and all-feature workspace tests,
+  all-target/all-feature strict workspace Clippy, formatting, Maven `verify`
+  (37 scenarios, fixture drift, and Java/Rust cross-decodes), comparator
+  self-test, 37-scenario manifest, 16 deterministic race/leak cases × 3,
+  bounded fuzz smoke (105 frame seeds, 11 message seeds, 1,856 mutations),
+  release examples, offline benchmark, locked metadata, workspace
+  metadata/license/dependency checks, seven package file lists, and the
+  Asia/Taipei Unique ID tests all pass. Rust tests ran with Rust 1.85.0 in an
+  offline Linux AArch64 container; `--init` was required to restore unblocked
+  signal defaults inherited by the container runtime. The host macOS workspace
+  test launch remains blocked by AMFI rejecting its newly built unsigned
+  `codec` test binary, so that launch is not counted as a pass. Broad P18-V01
+  and current-revision GitHub Ubuntu/native Windows evidence for P18-V04 remain
+  open. No Broker, release, push, tag, or publication action occurred.
