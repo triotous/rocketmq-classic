@@ -4,7 +4,7 @@
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
 /// adapters currently implement `FieldBased`, `WriteNullBooleanAsFalse`,
 /// `WriteNulls`, `WriteMapNullValue`, `WriteNullListAsEmpty`,
-/// `WriteNullStringAsEmpty`, `WriteNullNumberAsZero`,
+/// `WriteNullStringAsEmpty`, `WriteNullNumberAsZero`, `NullAsDefaultValue`,
 /// `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
@@ -48,6 +48,9 @@
 /// nullable collection properties as empty arrays, including nested DTOs. The
 /// `WriteNullStringAsEmpty` option replaces null schema-identified String fields
 /// and nullable String collection members with empty strings. The
+/// `NullAsDefaultValue` option applies schema-identified String, collection,
+/// map, and nested DTO defaults (`""`, `[]`, and `{}`); nullable enum fields
+/// remain null as in Fastjson2. The
 /// `WriteNullNumberAsZero` option preserves output for the mapped DTO graph:
 /// numeric bean fields are primitive, while Fastjson's map and collection
 /// writers emit bare nulls for null entries independent of this flag.
@@ -244,6 +247,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNullListAsEmpty
                 | Self::WriteNullStringAsEmpty
                 | Self::WriteNullNumberAsZero
+                | Self::NullAsDefaultValue
                 | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat
