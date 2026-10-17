@@ -131,3 +131,23 @@
   The archived text keeps the full progress messages while trimming only
   line-ending whitespace and redundant blank separators so the evidence
   commit passes `git diff --check`.
+
+# Follow-up at 2026-10-17T05:33Z
+
+- Commit `1a77ac68` adds Java/Rust live heartbeat probes and runner support for
+  `HEARTBEAT-001`. The Java 5.5.1 API and Rust typed API sent byte-identical
+  heartbeat bodies for producer group `compat_phase0`; both received Broker
+  response version `481`. The pinned 5.3.4 basic profile was removed after the
+  run. Evidence is under
+  `docs/compatibility/evidence/phase-19/HEARTBEAT-001/20261017T053144Z/`;
+  metadata records `source_code_dirty=false` and exit status 0.
+- Rust integration build and strict Clippy, Java Maven compile, manifest
+  validation, comparator self-test, runner shell syntax, and the explicit
+  disposable-environment guard passed. Updated the compatibility and release
+  documents to report 3/37 live cases passed and 34 pending.
+- Remaining automatable work: broad P18-V01 audit, current-revision
+  Ubuntu/Windows CI and P18-V04, 34 live scenarios plus additional Docker
+  profiles, `run-local.sh --all`, and pre-publication version/registry checks.
+  Owner-specific MAN-01–MAN-04 still await environment inputs; MAN-05 awaits
+  local-matrix classification. No push, publication, tag, or production
+  mutation occurred.

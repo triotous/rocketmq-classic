@@ -1,9 +1,10 @@
 # Java 5.5.1 compatibility evidence
 
-Phase 19 live baseline checkpoint (2026-10-17): two of 37 live cases pass
-against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup and
-missing-topic `NO_ROUTE`. Their server-side evidence and the remaining local
-coverage are tracked in [SERVER_5_3_4_RESULTS.md](SERVER_5_3_4_RESULTS.md).
+Phase 19 live baseline checkpoint (2026-10-17): three of 37 live cases pass
+against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
+missing-topic `NO_ROUTE`, and heartbeat request/response parity. Their
+server-side evidence and the remaining local coverage are tracked in
+[SERVER_5_3_4_RESULTS.md](SERVER_5_3_4_RESULTS.md).
 This does not close the broad Phase 18 API/settings/flow audit or the other
 Phase 19 cases.
 

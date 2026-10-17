@@ -3133,8 +3133,8 @@ Before any publication:
 
 - [x] Add an unpublished `rocketmq-classic-integration` workspace package,
   Java 5.5.1 route probe, and fail-closed differential selector. Code commits:
-  `72266b44`, `0fa704f8`, `21ef9f4e`, and `adae9d1f` (Maven JDK 27 / Rust
-  1.85.0 gate and evidence path redaction).
+  `72266b44`, `0fa704f8`, `21ef9f4e`, `adae9d1f`, and `1a77ac68` (Maven JDK 27 /
+  Rust 1.85.0 gate, evidence path redaction, and live heartbeat support).
 - [x] Run `ROUTE-001-get-existing-topic` against the pinned Apache RocketMQ
   5.3.4 profile. Java and Rust returned the same four `broker-a` queue rows
   (IDs 0–3); scenario-topic deletion and project-only Compose cleanup passed.
@@ -3143,6 +3143,10 @@ Before any publication:
 - [x] Run `ROUTE-002-topic-not-exist`; Java and Rust both returned `NO_ROUTE`,
   and project-only Compose cleanup passed. Evidence:
   [`20261017T051903Z`](compatibility/evidence/phase-19/ROUTE-002-topic-not-exist/20261017T051903Z/).
+- [x] Run `HEARTBEAT-001`; Java and Rust sent the same encoded producer
+  heartbeat and received Broker version `481`. Project-only Compose cleanup
+  passed. Evidence:
+  [`20261017T053144Z`](compatibility/evidence/phase-19/HEARTBEAT-001/20261017T053144Z/).
 - [x] After adding the integration package, rerun default and all-feature
   workspace tests, strict workspace Clippy, Maven `verify`, format, workspace
   metadata/license checks, comparator self-test, and 37-row manifest
@@ -3158,7 +3162,7 @@ Before any publication:
   built; the offline bench target compiled. This closes the local server-free
   P18-V02 rerun on the integration-package revision.
 - [ ] Obtain current-revision Ubuntu/Windows CI evidence and complete P18-V04.
-- [ ] Implement and run the remaining 35 of 37 Phase 19 live scenarios, the
+- [ ] Implement and run the remaining 34 of 37 Phase 19 live scenarios, the
   required two-Broker/TLS/ACL/feature profiles, and full `run-local.sh --all`
   evidence reconciliation. `tests/differential/run.sh --all` currently fails
   closed on unimplemented IDs.
@@ -3169,6 +3173,6 @@ Before any publication:
   pending classification after local matrix execution. See
   [`docs/owner-validation.md`](owner-validation.md).
 
-The two route PASS results do not constitute Phase 19 acceptance. All remaining
-locally reproducible cases stay automatic work; only the owner-specific checks
-belong in the manual handoff.
+The three live PASS results do not constitute Phase 19 acceptance. All
+remaining locally reproducible cases stay automatic work; only the
+owner-specific checks belong in the manual handoff.
