@@ -3069,3 +3069,16 @@ Before any publication:
   P18-V02, current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `ReferenceDetection` writer flag (code commit `eb991847`,
+  2026-10-17): serialization tracks shared `SharedValue` handles and emits the
+  pinned Fastjson `$ref` path for repeated DTO instances. The invoked Java route
+  fixture reuses one `BrokerData` object in two list positions; Rust matches
+  `$.brokerDatas[0]`. Protocol all-feature tests (127 unit tests, all
+  integration targets, and 42 doctests), strict all-target/all-feature Protocol
+  Clippy, formatting, diff checks, and Maven verify (37 scenarios, fixture
+  checks, and Java/Rust cross-decodes) pass. The final internal-marker refactor
+  also passes the focused shared-route reference test and strict Protocol
+  checks. Mapping is now 47/48; `WriteClassName` remains unmapped. Broad P18-V01,
+  final full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V04
+  handoff, and Phase 19 Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
