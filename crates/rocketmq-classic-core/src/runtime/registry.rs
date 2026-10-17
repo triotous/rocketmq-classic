@@ -342,7 +342,9 @@ impl RequestFutureTable {
             };
             let expired_ids = entries
                 .iter()
-                .filter(|(_, entry)| in_scope(entry) && entry.future.is_timeout_at(now))
+                .filter(|(_, entry)| {
+                    in_scope(entry) && (entry.deadline <= now || entry.future.is_timeout_at(now))
+                })
                 .map(|(correlation_id, _)| correlation_id.clone())
                 .collect::<Vec<_>>();
             expired_ids
@@ -1259,6 +1261,9 @@ mod pending_reply_admission_tests {
             .register_pending_reply(&lease, "registry-admission-timeout", timeout_deadline)
             .await
             .unwrap();
+        // The captured request deadline stays authoritative if the Java future's
+        // mutable timeout field is updated after registration.
+        timeout_pending.future().set_timeout_millis(60_000);
         assert_eq!(
             registry.expire_pending_replies(timeout_deadline + Duration::from_millis(1)),
             1
