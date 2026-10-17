@@ -1,0 +1,32 @@
+# Phase 18 compatibility release gate — execution log
+
+- 2026-10-17: Resumed Phase 18 on branch
+  `phase/19-phase-18-compatibility-release-gate` at `b976099f`.
+- Confirmed the Java reference checkout `/Users/bruce.tsai/Projects/3rd/rocketmq`
+  is outside the worktree and will remain read-only. The only pre-existing
+  worktree change is an uncommitted `IgnoreErrorGetter` acceptance/doc update in
+  `writer_feature.rs`; no DTO fixture assertions or Java oracle overrides cover
+  it yet.
+- Next: add pinned Java-oracle writer output evidence and Rust assertions for
+  `IgnoreErrorGetter`, verify at protocol scope, and commit code/tests separately
+  from compatibility documentation and this append-only log.
+- Completed `IgnoreErrorGetter` writer-feature mapping and fixture coverage.
+  The pinned Java oracle explicitly invokes the feature for 41 body, 8 route,
+  and 3 heartbeat rows; all outputs equal the corresponding default encoding.
+  Rust feature assertions now cover the mapped body, route, and heartbeat DTOs.
+- The initial Maven `exec:java -Dexec.mainClass=...` regeneration attempt used
+  the POM-configured `compat.Main` and failed its usage check. Regeneration then
+  used Maven compile/classpath plus direct Java invocation of the three pinned
+  fixture generators. A first structural comparison script also rejected the
+  expected new fixture key; after narrowing it to allow only that key, the
+  comparison confirmed no other fixture changes.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed
+  (126 unit tests, all Protocol integration targets, 42 doctests).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features
+  --locked -- -D warnings`: passed. `cargo fmt --all -- --check` and
+  `git diff --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed; all 37 scenarios,
+  Java fixture drift checks, and Rust/Java cross-decodes passed. Maven verifies
+  the refreshed `lookup.json`, `route.json`, and `heartbeat.json` fixtures.
+- Code/test commit: `cceed2ab feat(protocol): map IgnoreErrorGetter writer flag`.
+  Documentation and execution-log updates are recorded separately.

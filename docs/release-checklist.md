@@ -2892,3 +2892,16 @@ Before any publication:
   Ubuntu/Windows CI, P18-V04 handoff, and Phase 19 Docker/Broker automation
   remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014736Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T014736Z.rlog).
+
+- P18-V01 Fastjson `IgnoreErrorGetter` writer-feature mapping (code commit
+  `cceed2ab`, 2026-10-17): the pinned Java oracle explicitly invokes the flag
+  for 41 body, 8 route, and 3 heartbeat DTO cases; every encoding equals its
+  default output. Rust now accepts the flag and compares each applicable DTO
+  adapter with those Java fixture values. Protocol all-feature tests (126 unit
+  tests, all integration targets, and 42 doctests), strict Protocol Clippy,
+  formatting, and diff checks pass. Maven verify passes with 37 scenarios,
+  fixture drift checks, and cross-decodes. The mapping count is now 33/48; 15
+  writer features remain unmapped. Final full-workspace P18-V02, broad P18-V01,
+  current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).
