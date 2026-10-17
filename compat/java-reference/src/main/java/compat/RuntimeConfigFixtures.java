@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -3767,6 +3768,63 @@ public final class RuntimeConfigFixtures {
         addCommandSuspendedCase(commandSuspended, "setFalse", suspendedRequest);
         result.put("commandSuspended", commandSuspended);
         result.put("commandProtocolHelpers", commandProtocolHelperCases());
+        result.put("commandToString", commandToStringCases());
+        return result;
+    }
+
+    private static List<Object> commandToStringCases() {
+        List<Object> result = new ArrayList<>();
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand empty =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(0, null);
+        empty.setLanguage(null);
+        empty.setVersion(-1);
+        empty.setOpaque(17);
+        empty.setFlag(0);
+        empty.setRemark(null);
+        empty.setExtFields(null);
+        empty.setSerializeTypeCurrentRPC(org.apache.rocketmq.remoting.protocol.SerializeType.JSON);
+        result.add(commandToStringCase("nullFields", empty));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand populated =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(7, null);
+        populated.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.RUST);
+        populated.setVersion(15);
+        populated.setOpaque(42);
+        populated.setFlag(259);
+        populated.setRemark("accepted");
+        HashMap<String, String> extFields = new HashMap<>();
+        extFields.put("zone", "west");
+        populated.setExtFields(extFields);
+        populated.setSerializeTypeCurrentRPC(org.apache.rocketmq.remoting.protocol.SerializeType.ROCKETMQ);
+        result.add(commandToStringCase("populated", populated));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand signedFlag =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(-1, null);
+        signedFlag.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA);
+        signedFlag.setOpaque(-1);
+        signedFlag.setFlag(-1);
+        signedFlag.setSerializeTypeCurrentRPC(org.apache.rocketmq.remoting.protocol.SerializeType.JSON);
+        result.add(commandToStringCase("signedFlag", signedFlag));
+
+        return result;
+    }
+
+    private static Map<String, Object> commandToStringCase(
+        String name, org.apache.rocketmq.remoting.protocol.RemotingCommand command) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("name", name);
+        Map<String, Object> fields = new TreeMap<>();
+        fields.put("code", command.getCode());
+        fields.put("language", command.getLanguage() == null ? null : command.getLanguage().name());
+        fields.put("version", command.getVersion());
+        fields.put("opaque", command.getOpaque());
+        fields.put("flag", command.getFlag());
+        fields.put("remark", command.getRemark());
+        fields.put("extFields", command.getExtFields());
+        fields.put("serialization", command.getSerializeTypeCurrentRPC().name());
+        result.put("fields", fields);
+        result.put("result", command.toString());
         return result;
     }
 

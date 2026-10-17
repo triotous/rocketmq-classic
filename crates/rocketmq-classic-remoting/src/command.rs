@@ -295,6 +295,40 @@ impl RemotingCommand {
     }
 }
 
+impl std::fmt::Display for RemotingCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let language = self
+            .language
+            .map(|language| language.to_string())
+            .unwrap_or_else(|| "null".to_owned());
+        let remark = self.remark.as_deref().unwrap_or("null");
+        let ext_fields = self.ext_fields.as_ref().map_or_else(
+            || "null".to_owned(),
+            |fields| {
+                let entries = fields
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{{{entries}}}")
+            },
+        );
+        let flag_binary = format!("{:b}", self.flag as u32);
+        write!(
+            formatter,
+            "RemotingCommand [code={}, language={}, version={}, opaque={}, flag(B)={}, remark={}, extFields={}, serializeTypeCurrentRPC={}]",
+            self.code,
+            language,
+            self.version,
+            self.opaque,
+            flag_binary,
+            remark,
+            ext_fields,
+            self.serialization
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,6 +589,37 @@ mod tests {
             second_id.wrapping_sub(first_id),
             helpers["requestIdDelta"].as_i64().unwrap() as i32
         );
+
+        for case in cases["commandToString"].as_array().unwrap() {
+            let fields = &case["fields"];
+            let language = fields["language"]
+                .as_str()
+                .map(|name| LanguageCode::value_of_name(Some(name)).unwrap());
+            let serialization =
+                SerializeType::value_of_name(fields["serialization"].as_str()).unwrap();
+            let ext_fields = fields["extFields"].as_object().map(|object| {
+                object
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .collect()
+            });
+            let command = RemotingCommand {
+                code: fields["code"].as_i64().unwrap() as i32,
+                language,
+                version: fields["version"].as_i64().unwrap() as i32,
+                opaque: fields["opaque"].as_i64().unwrap() as i32,
+                flag: fields["flag"].as_i64().unwrap() as i32,
+                remark: fields["remark"].as_str().map(str::to_owned),
+                ext_fields,
+                serialization,
+                ..RemotingCommand::default()
+            };
+            assert_eq!(
+                command.to_string(),
+                case["result"].as_str().unwrap(),
+                "{case}"
+            );
+        }
     }
 
     #[test]
