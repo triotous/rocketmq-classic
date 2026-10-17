@@ -1,0 +1,34 @@
+# P18-V01 Remoting custom-header alias and factory behavior — 2026-10-17T12:48:21Z
+
+- Repository branch: `phase/19-phase-18-compatibility-release-gate`.
+- Java oracle: RocketMQ client 5.5.1 commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`; the oracle checkout remained
+  read-only.
+- Added `SharedCommandHeader<T>` so a caller-retained clone and the command's
+  custom header share mutations. Added fallible response/error header factories
+  for Java reflection behavior: response construction returns no command when
+  header construction fails, and error-response construction reports
+  `NullPointerException` after consuming the opaque ID.
+- Extended the invoked Java runtime fixture for both mutation directions,
+  missing/inaccessible/throwing default constructors, and request-ID delta.
+  Fixture SHA-256: `ed7f13b1ba8b0d91ef6dd63683ff3630c9b8b9212ae2770484bdfc29f15469be`.
+- `cargo test -p rocketmq-classic-remoting --all-features --locked`: PASS —
+  120 unit, 8 codec, 1 fuzz regression, 7 security, 107 transport, and 16
+  doctests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check`: PASS.
+- `git diff --check`: PASS.
+- `TERM=dumb mvn -f compat/java-reference/pom.xml verify`: PASS — 37 scenarios,
+  fixture drift checks, and Java/Rust cross-decodes.
+- Updated the Phase 6 API crosswalk and appended the behavior evidence to the
+  Phase 6 requirement audit. Broad P18-V01 reconciliation and full current-
+  revision workspace P18-V02 remain open.
+- Code and fixture changes are not yet committed; documentation/log changes
+  will be committed separately. No plan files were changed; no push, tag,
+  publish, or deployment occurred.
+
+## Commit disposition
+
+- Code/test/fixture commit: `b6da737e fix(remoting): preserve custom header alias behavior`.
+- The crosswalk, requirement-audit entry, and this log are pending their separate documentation commit.
