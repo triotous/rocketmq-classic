@@ -1062,6 +1062,119 @@ mod tests {
     }
 
     #[test]
+    fn send_message_request_v2_decode_modes_match_invoked_java_551() {
+        use rocketmq_classic_protocol::header::SendMessageRequestHeaderV2;
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/send-message-request-v2-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let decoded = command
+                    .decode_command_custom_header_directly::<SendMessageRequestHeaderV2>(
+                        use_fast_encode,
+                    );
+                let expected = &case[mode];
+                if expected["outcome"] == "OK" {
+                    let decoded = decoded.unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                    let expected_header = &expected["header"];
+                    assert_eq!(decoded.a.as_deref(), expected_header["a"].as_str());
+                    assert_eq!(decoded.b.as_deref(), expected_header["b"].as_str());
+                    assert_eq!(decoded.c.as_deref(), expected_header["c"].as_str());
+                    assert_eq!(decoded.d.map(i64::from), expected_header["d"].as_i64());
+                    assert_eq!(decoded.e.map(i64::from), expected_header["e"].as_i64());
+                    assert_eq!(decoded.f.map(i64::from), expected_header["f"].as_i64());
+                    assert_eq!(decoded.g, expected_header["g"].as_i64());
+                    assert_eq!(decoded.h.map(i64::from), expected_header["h"].as_i64());
+                    assert_eq!(decoded.i.as_deref(), expected_header["i"].as_str());
+                    assert_eq!(decoded.j.map(i64::from), expected_header["j"].as_i64());
+                    assert_eq!(decoded.k, expected_header["k"].as_bool());
+                    assert_eq!(decoded.l.map(i64::from), expected_header["l"].as_i64());
+                    assert_eq!(decoded.m, expected_header["m"].as_bool());
+                    assert_eq!(decoded.n.as_deref(), expected_header["n"].as_str());
+                    assert_eq!(decoded.namespace.as_deref(), expected_header["ns"].as_str());
+                    assert_eq!(decoded.namespaced, expected_header["nsd"].as_bool());
+                    assert_eq!(
+                        decoded.broker_name.as_deref(),
+                        expected_header["bname"].as_str()
+                    );
+                    assert_eq!(decoded.oneway, expected_header["oway"].as_bool());
+                    assert_eq!(decoded.logical, expected_header["lo"].as_bool());
+                } else {
+                    assert!(
+                        decoded.is_err(),
+                        "{case_name}/{mode}: Java returned {}, Rust decoded successfully",
+                        expected["outcome"]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn send_message_request_v2_conversion_matches_invoked_java_551() {
+        use rocketmq_classic_protocol::header::{
+            SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/send-message-request-v2-decode-modes.json"
+        ))
+        .unwrap();
+        let v1 = SendMessageRequestHeaderV1 {
+            producer_group: Some("producer".into()),
+            topic: "orders".into(),
+            default_topic: "TBW102".into(),
+            default_topic_queue_nums: 4,
+            queue_id: 2,
+            sys_flag: 1,
+            born_timestamp: 1_712_345_678_901,
+            flag: 7,
+            properties: Some("TAGS\u{1}blue".into()),
+            reconsume_times: Some(0),
+            unit_mode: Some(false),
+            max_reconsume_times: Some(16),
+            batch: Some(false),
+            broker_name: Some("short-broker".into()),
+            namespace: Some("tenant".into()),
+            namespaced: Some(true),
+            logical: Some(true),
+            oneway: Some(false),
+        };
+        let header = SendMessageRequestHeaderV2::from_v1(&v1);
+        let mut fields = HeaderMap::new();
+        rocketmq_classic_protocol::header::CommandHeader::encode_fields(&header, &mut fields);
+        assert_eq!(
+            serde_json::to_value(fields).unwrap(),
+            fixture["conversion"]["encodedFields"]
+        );
+        assert_eq!(header.n.as_deref(), Some("short-broker"));
+        assert_eq!(header.broker_name, None);
+        assert_eq!(header.namespace, None);
+        assert_eq!(header.namespaced, None);
+        assert_eq!(header.logical, None);
+        assert_eq!(header.oneway, None);
+    }
+
+    #[test]
     fn remoting_enum_methods_and_command_type_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))

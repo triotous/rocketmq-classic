@@ -2124,20 +2124,22 @@ impl CommandHeader for SendMessageResponseHeader {
 #[derive(Debug, Clone, Default)]
 pub struct SendMessageRequestHeaderV2 {
     pub a: Option<String>,
-    pub b: String,
-    pub c: String,
-    pub d: i32,
-    pub e: i32,
-    pub f: i32,
-    pub g: i64,
-    pub h: i32,
+    pub b: Option<String>,
+    pub c: Option<String>,
+    pub d: Option<i32>,
+    pub e: Option<i32>,
+    pub f: Option<i32>,
+    pub g: Option<i64>,
+    pub h: Option<i32>,
     pub i: Option<String>,
     pub j: Option<i32>,
     pub k: Option<bool>,
     pub l: Option<i32>,
     pub m: Option<bool>,
+    pub n: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
+    pub logical: Option<bool>,
     pub broker_name: Option<String>,
     pub oneway: Option<bool>,
 }
@@ -2145,43 +2147,64 @@ pub struct SendMessageRequestHeaderV2 {
 impl CommandHeader for SendMessageRequestHeaderV2 {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "a", self.a.as_deref());
-        fields.insert("b".into(), self.b.clone());
-        fields.insert("c".into(), self.c.clone());
-        fields.insert("d".into(), self.d.to_string());
-        fields.insert("e".into(), self.e.to_string());
-        fields.insert("f".into(), self.f.to_string());
-        fields.insert("g".into(), self.g.to_string());
-        fields.insert("h".into(), self.h.to_string());
+        put_optional(fields, "b", self.b.as_deref());
+        put_optional(fields, "c", self.c.as_deref());
+        put_optional(fields, "d", self.d);
+        put_optional(fields, "e", self.e);
+        put_optional(fields, "f", self.f);
+        put_optional(fields, "g", self.g);
+        put_optional(fields, "h", self.h);
         put_optional(fields, "i", self.i.as_deref());
         put_optional(fields, "j", self.j);
         put_optional(fields, "k", self.k);
         put_optional(fields, "l", self.l);
         put_optional(fields, "m", self.m);
+        put_optional(fields, "n", self.n.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            namespace: optional_string(fields, "ns"),
-            namespaced: optional_java_boolean(fields, "nsd"),
-            broker_name: optional_string(fields, "bname"),
-            oneway: optional_java_boolean(fields, "oway"),
+            namespace: (!use_fast_encode)
+                .then(|| optional_string(fields, "ns"))
+                .flatten(),
+            namespaced: (!use_fast_encode)
+                .then(|| optional_java_boolean(fields, "nsd"))
+                .flatten(),
+            logical: (!use_fast_encode)
+                .then(|| optional_java_boolean(fields, "lo"))
+                .flatten(),
+            broker_name: (!use_fast_encode)
+                .then(|| optional_string(fields, "bname"))
+                .flatten(),
+            oneway: (!use_fast_encode)
+                .then(|| optional_java_boolean(fields, "oway"))
+                .flatten(),
             a: optional_string(fields, "a"),
-            b: required_string(fields, "b")?.to_owned(),
-            c: required_string(fields, "c")?.to_owned(),
-            d: required_i32(fields, "d")?,
-            e: required_i32(fields, "e")?,
-            f: required_i32(fields, "f")?,
-            g: required_i64(fields, "g")?,
-            h: required_i32(fields, "h")?,
+            b: optional_string(fields, "b"),
+            c: optional_string(fields, "c"),
+            d: optional_i32_with_mode(fields, "d", use_fast_encode)?,
+            e: optional_i32_with_mode(fields, "e", use_fast_encode)?,
+            f: optional_i32_with_mode(fields, "f", use_fast_encode)?,
+            g: optional_i64_with_mode(fields, "g", use_fast_encode)?,
+            h: optional_i32_with_mode(fields, "h", use_fast_encode)?,
             i: optional_string(fields, "i"),
-            j: optional_i32(fields, "j")?,
+            j: optional_i32_with_mode(fields, "j", use_fast_encode)?,
             k: optional_java_boolean(fields, "k"),
-            l: optional_i32(fields, "l")?,
+            l: optional_i32_with_mode(fields, "l", use_fast_encode)?,
             m: optional_java_boolean(fields, "m"),
+            n: optional_string(fields, "n"),
         })
     }
 }
@@ -2190,44 +2213,20 @@ impl SendMessageRequestHeaderV2 {
     pub fn from_v1(header: &SendMessageRequestHeaderV1) -> Self {
         Self {
             a: header.producer_group.clone(),
-            b: header.topic.clone(),
-            c: header.default_topic.clone(),
-            d: header.default_topic_queue_nums,
-            e: header.queue_id,
-            f: header.sys_flag,
-            g: header.born_timestamp,
-            h: header.flag,
+            b: Some(header.topic.clone()),
+            c: Some(header.default_topic.clone()),
+            d: Some(header.default_topic_queue_nums),
+            e: Some(header.queue_id),
+            f: Some(header.sys_flag),
+            g: Some(header.born_timestamp),
+            h: Some(header.flag),
             i: header.properties.clone(),
             j: header.reconsume_times,
             k: header.unit_mode,
             l: header.max_reconsume_times,
             m: header.batch,
-            namespace: header.namespace.clone(),
-            namespaced: header.namespaced,
-            broker_name: header.broker_name.clone(),
-            oneway: header.oneway,
-        }
-    }
-
-    pub fn normalized_v1(&self) -> SendMessageRequestHeaderV1 {
-        SendMessageRequestHeaderV1 {
-            producer_group: self.a.clone(),
-            topic: self.b.clone(),
-            default_topic: self.c.clone(),
-            default_topic_queue_nums: self.d,
-            queue_id: self.e,
-            sys_flag: self.f,
-            born_timestamp: self.g,
-            flag: self.h,
-            properties: self.i.clone(),
-            reconsume_times: self.j,
-            unit_mode: self.k,
-            max_reconsume_times: self.l,
-            batch: self.m,
-            namespace: self.namespace.clone(),
-            namespaced: self.namespaced,
-            broker_name: self.broker_name.clone(),
-            oneway: self.oneway,
+            n: header.broker_name.clone(),
+            ..Self::default()
         }
     }
 }
@@ -2250,6 +2249,7 @@ pub struct SendMessageRequestHeaderV1 {
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
     pub broker_name: Option<String>,
+    pub logical: Option<bool>,
     pub oneway: Option<bool>,
 }
 
@@ -2274,6 +2274,7 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
         put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "oway", self.oneway);
     }
 
@@ -2281,6 +2282,7 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
             producer_group: optional_string(fields, "producerGroup"),
@@ -2351,7 +2353,7 @@ mod tests {
     }
 
     macro_rules! check_rpc_request_header {
-        ($header:ty, $broker_field:ident, $prepare:expr, $payload_change:expr) => {{
+        ($header:ty, $broker_field:ident, $prepare:expr, $payload_change:expr, $decode_fast:expr) => {{
             let mut header = <$header>::default();
             header.namespace = Some("namespace".into());
             header.namespaced = Some(true);
@@ -2380,7 +2382,7 @@ mod tests {
             assert_eq!(fields.get("nsd").map(String::as_str), Some("true"));
             assert_eq!(fields.get("bname").map(String::as_str), Some("broker"));
             assert_eq!(fields.get("oway").map(String::as_str), Some("false"));
-            let decoded = <$header>::decode_fields(&fields).unwrap();
+            let decoded = <$header>::decode_fields_with_mode(&fields, $decode_fast).unwrap();
             assert_eq!(
                 header,
                 decoded,
@@ -2401,6 +2403,9 @@ mod tests {
             changed_oneway.oneway = Some(true);
             assert_ne!(header, changed_oneway, "{} oway", stringify!($header));
         }};
+        ($header:ty, $broker_field:ident, $prepare:expr, $payload_change:expr) => {
+            check_rpc_request_header!($header, $broker_field, $prepare, $payload_change, true);
+        };
     }
 
     #[test]
@@ -2647,7 +2652,8 @@ mod tests {
             SendMessageRequestHeaderV2,
             broker_name,
             |_| {},
-            |h: &mut SendMessageRequestHeaderV2| h.b = "payload".into()
+            |h: &mut SendMessageRequestHeaderV2| h.b = Some("payload".into()),
+            false
         );
     }
 
@@ -2671,7 +2677,7 @@ mod tests {
     }
 
     #[test]
-    fn send_v1_and_v2_normalize_to_the_same_fields() {
+    fn send_v1_and_v2_round_trip_compact_fields() {
         let v1 = SendMessageRequestHeaderV1 {
             producer_group: Some("producer".into()),
             topic: "orders".into(),
@@ -2689,11 +2695,10 @@ mod tests {
             ..SendMessageRequestHeaderV1::default()
         };
         let v2 = SendMessageRequestHeaderV2::from_v1(&v1);
-        assert_eq!(v2.normalized_v1(), v1);
         let mut v2_fields = HeaderMap::new();
         v2.encode_fields(&mut v2_fields);
         let decoded = SendMessageRequestHeaderV2::decode_fields(&v2_fields).unwrap();
-        assert_eq!(decoded.normalized_v1(), v1);
+        assert_eq!(decoded, v2);
         assert_eq!(v2_fields["a"], "producer");
         assert!(!v2_fields.contains_key("n"));
     }
@@ -2702,6 +2707,11 @@ mod tests {
     fn nullable_producer_group_is_omitted_from_send_headers() {
         let header = SendMessageRequestHeaderV1 {
             producer_group: None,
+            broker_name: Some("short-broker".into()),
+            namespace: Some("tenant".into()),
+            namespaced: Some(true),
+            logical: Some(true),
+            oneway: Some(false),
             ..SendMessageRequestHeaderV1::default()
         };
         let mut fields = HeaderMap::new();
@@ -2713,14 +2723,27 @@ mod tests {
         );
 
         let compact = SendMessageRequestHeaderV2::from_v1(&header);
+        assert_eq!(compact.n.as_deref(), Some("short-broker"));
+        assert_eq!(compact.namespace, None);
+        assert_eq!(compact.namespaced, None);
+        assert_eq!(compact.logical, None);
+        assert_eq!(compact.broker_name, None);
+        assert_eq!(compact.oneway, None);
         let mut compact_fields = HeaderMap::new();
         compact.encode_fields(&mut compact_fields);
         assert!(!compact_fields.contains_key("a"));
         assert_eq!(
-            SendMessageRequestHeaderV2::decode_fields(&compact_fields)
-                .unwrap()
-                .normalized_v1(),
-            header
+            compact_fields.get("n").map(String::as_str),
+            Some("short-broker")
+        );
+        assert!(!compact_fields.contains_key("bname"));
+        assert!(!compact_fields.contains_key("ns"));
+        assert!(!compact_fields.contains_key("nsd"));
+        assert!(!compact_fields.contains_key("lo"));
+        assert!(!compact_fields.contains_key("oway"));
+        assert_eq!(
+            SendMessageRequestHeaderV2::decode_fields(&compact_fields).unwrap(),
+            compact
         );
     }
 

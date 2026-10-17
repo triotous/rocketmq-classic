@@ -133,6 +133,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-send-message-request-v2-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.SendMessageRequestHeaderV2DecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/send-message-request-v2-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-client-config-tls-mode-fixture</id>
             <phase>verify</phase>
             <goals><goal>exec</goal></goals>

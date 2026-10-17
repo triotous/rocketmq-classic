@@ -797,10 +797,10 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
 }
 
 #[test]
-fn java_v1_and_v2_send_fixtures_normalize_identically() {
+fn java_v1_send_conversion_matches_v2_fixture() {
     let v1 = SendMessageRequestHeaderV1::decode_fields(&java_ext_fields("header-send-v1")).unwrap();
     let v2 = SendMessageRequestHeaderV2::decode_fields(&java_ext_fields("header-send-v2")).unwrap();
-    assert_eq!(v2.normalized_v1(), v1);
+    assert_eq!(v2, SendMessageRequestHeaderV2::from_v1(&v1));
     assert_eq!(v2.k, Some(false));
     assert_eq!(v2.m, Some(false));
 }
@@ -812,7 +812,7 @@ fn java_frames_match_typed_header_semantics() {
     assert_eq!(route.topic, "orders");
     let v1 = SendMessageRequestHeaderV1::decode_fields(&json_header_map("header-send-v1")).unwrap();
     let v2 = SendMessageRequestHeaderV2::decode_fields(&json_header_map("header-send-v2")).unwrap();
-    assert_eq!(v1, v2.normalized_v1());
+    assert_eq!(v2, SendMessageRequestHeaderV2::from_v1(&v1));
     let response =
         SendMessageResponseHeader::decode_fields(&json_header_map("header-send-response")).unwrap();
     assert_eq!(response.queue_offset, Some(99));
@@ -864,10 +864,10 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("commitOffset"));
-    let err = SendMessageRequestHeaderV2::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("a"));
+    let empty_send_v2 = SendMessageRequestHeaderV2::decode_fields(&empty).unwrap();
+    assert_eq!(empty_send_v2.a, None);
+    assert_eq!(empty_send_v2.b, None);
+    assert_eq!(empty_send_v2.d, None);
     let empty_send_response = SendMessageResponseHeader::decode_fields(&empty).unwrap();
     assert_eq!(empty_send_response.msg_id, None);
     assert_eq!(empty_send_response.queue_id, None);
@@ -998,7 +998,7 @@ fn header_validation_matrix() {
             }
         };
     }
-    let cases = [
+    let mut cases = [
         row!(
             GetRouteInfoRequestHeader,
             "route-request",
@@ -1050,17 +1050,17 @@ fn header_validation_matrix() {
             "topic defaultTopic defaultTopicQueueNums queueId sysFlag bornTimestamp flag",
             "defaultTopicQueueNums queueId sysFlag flag reconsumeTimes maxReconsumeTimes",
             "bornTimestamp",
-            "producerGroup properties reconsumeTimes unitMode maxReconsumeTimes batch ns nsd bname oway",
-            "unitMode batch nsd oway"
+            "producerGroup properties reconsumeTimes unitMode maxReconsumeTimes batch ns nsd bname lo oway",
+            "unitMode batch nsd lo oway"
         ),
         row!(
             SendMessageRequestHeaderV2,
             "send-v2",
-            "b c d e f g h",
+            "",
             "d e f h j l",
             "g",
-            "a i j k l m ns nsd bname oway",
-            "k m nsd oway"
+            "a b c i j k l m n ns nsd bname lo oway",
+            "k m nsd lo oway"
         ),
         row!(
             PullMessageRequestHeader,
@@ -1459,6 +1459,21 @@ fn header_validation_matrix() {
             "nsd oway"
         ),
     ];
+    let send_v2 = cases
+        .iter_mut()
+        .find(|case| case.model == "SendMessageRequestHeaderV2")
+        .unwrap();
+    send_v2.decode = |map| {
+        let decoded = SendMessageRequestHeaderV2::decode_fields_with_mode(map, false)?;
+        let mut encoded = HeaderMap::new();
+        decoded.encode_fields(&mut encoded);
+        Ok(encoded)
+    };
+    send_v2.update = |map| {
+        let decoded = SendMessageRequestHeaderV2::decode_fields_with_mode(map, false)?;
+        decoded.encode_fields(map);
+        Ok(())
+    };
     // Keep the matrix tied to the public implementations, not just to fixture names.
     let source = include_str!("../src/header/basic.rs");
     let implementations: BTreeSet<_> = source
@@ -1603,11 +1618,21 @@ fn header_validation_matrix() {
                 ] {
                     let mut fields = baseline.clone();
                     fields.insert(name.into(), value.into());
-                    assert!(
-                        matches!((case.decode)(&fields), Err(ProtocolError::InvalidField { field, .. }) if field == name),
-                        "{} {name}={value}",
-                        case.fixture
-                    );
+                    if case.model == "SendMessageRequestHeaderV2" {
+                        let decoded = (case.decode)(&fields)
+                            .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                        assert!(
+                            !decoded.contains_key(name),
+                            "{} reflection decoding should ignore invalid {name}={value}",
+                            case.fixture
+                        );
+                    } else {
+                        assert!(
+                            matches!((case.decode)(&fields), Err(ProtocolError::InvalidField { field, .. }) if field == name),
+                            "{} {name}={value}",
+                            case.fixture
+                        );
+                    }
                 }
                 for value in if width == 32 {
                     ["2147483647", "-2147483648"]
