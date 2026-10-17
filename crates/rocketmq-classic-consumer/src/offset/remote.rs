@@ -98,9 +98,9 @@ impl RemoteBrokerOffsetStore {
             .ok_or_else(|| OffsetStoreError::Runtime("message queue has no topic".into()))?;
         let address = self.address_or_error(queue, true).await?;
         let header = QueryConsumerOffsetRequestHeader {
-            consumer_group: self.group_name.clone(),
-            topic: topic.to_owned(),
-            queue_id: queue.queue_id(),
+            consumer_group: Some(self.group_name.clone()),
+            topic: Some(topic.to_owned()),
+            queue_id: Some(queue.queue_id()),
             set_zero_if_not_found: None,
             broker_name: queue.broker_name().map(str::to_owned),
             ..QueryConsumerOffsetRequestHeader::default()
@@ -129,10 +129,10 @@ impl RemoteBrokerOffsetStore {
             .ok_or_else(|| OffsetStoreError::Runtime("message queue has no topic".into()))?;
         let address = self.address_or_error(queue, false).await?;
         let header = UpdateConsumerOffsetRequestHeader {
-            consumer_group: self.group_name.clone(),
-            topic: topic.to_owned(),
-            queue_id: queue.queue_id(),
-            commit_offset: offset,
+            consumer_group: Some(self.group_name.clone()),
+            topic: Some(topic.to_owned()),
+            queue_id: Some(queue.queue_id()),
+            commit_offset: Some(offset),
             broker_name: queue.broker_name().map(str::to_owned),
             ..UpdateConsumerOffsetRequestHeader::default()
         };

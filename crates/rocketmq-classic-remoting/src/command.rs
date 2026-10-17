@@ -995,6 +995,81 @@ mod tests {
     }
 
     #[test]
+    fn consumer_offset_header_reflection_modes_match_invoked_java() {
+        use rocketmq_classic_protocol::header::{
+            QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+            UpdateConsumerOffsetRequestHeader,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/offset-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let mut encoded = HeaderMap::new();
+                match case["headerType"].as_str().unwrap() {
+                    "query" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<QueryConsumerOffsetRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                            });
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "update" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<UpdateConsumerOffsetRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                            });
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    "response" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<QueryConsumerOffsetResponseHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                            });
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                    }
+                    other => panic!("{case_name}: unknown header type {other}"),
+                }
+
+                let expected = case[mode]["encodedFields"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<HeaderMap>();
+                assert_eq!(encoded, expected, "{case_name}/{mode}");
+            }
+        }
+    }
+
+    #[test]
     fn pull_response_header_fast_and_reflective_decode_modes_match_invoked_java() {
         use rocketmq_classic_protocol::header::PullMessageResponseHeader;
 

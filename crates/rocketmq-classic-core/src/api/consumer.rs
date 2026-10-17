@@ -252,15 +252,15 @@ impl MQClientApi {
         let fields: PullMessageResponseHeader = decode_header(&reply, code, addr)?;
         Ok(PullResultExt {
             status,
-            next_begin_offset: required_pull_response_field(
+            next_begin_offset: required_response_header_field(
                 fields.next_begin_offset,
                 "nextBeginOffset",
                 code,
                 addr,
             )?,
-            min_offset: required_pull_response_field(fields.min_offset, "minOffset", code, addr)?,
-            max_offset: required_pull_response_field(fields.max_offset, "maxOffset", code, addr)?,
-            suggest_which_broker_id: required_pull_response_field(
+            min_offset: required_response_header_field(fields.min_offset, "minOffset", code, addr)?,
+            max_offset: required_response_header_field(fields.max_offset, "maxOffset", code, addr)?,
+            suggest_which_broker_id: required_response_header_field(
                 fields.suggest_which_broker_id,
                 "suggestWhichBrokerId",
                 code,
@@ -285,7 +285,12 @@ impl MQClientApi {
         }
         let reply = classify(reply, code, addr)?;
         let fields: QueryConsumerOffsetResponseHeader = decode_header(&reply, code, addr)?;
-        Ok(Some(fields.offset))
+        Ok(Some(required_response_header_field(
+            fields.offset,
+            "offset",
+            code,
+            addr,
+        )?))
     }
 
     pub async fn update_consumer_offset(
@@ -419,7 +424,7 @@ impl MQClientApi {
     }
 }
 
-fn required_pull_response_field(
+fn required_response_header_field(
     value: Option<i64>,
     field: &'static str,
     request_code: i32,

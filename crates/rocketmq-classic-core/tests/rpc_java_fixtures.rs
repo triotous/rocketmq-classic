@@ -106,7 +106,7 @@ fn pinned_java_rpc_replies_decode_in_rust() {
             }
             14 => {
                 let header = QueryConsumerOffsetResponseHeader::decode_fields(&actual).unwrap();
-                assert_eq!(header.offset, 9);
+                assert_eq!(header.offset, Some(9));
                 assert_eq!(outcome, "OFFSET");
             }
             code => panic!("unexpected successful request code {code}"),

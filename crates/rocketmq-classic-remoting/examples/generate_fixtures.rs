@@ -361,9 +361,9 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-query-offset.bin",
         14,
         &QueryConsumerOffsetRequestHeader {
-            consumer_group: "workers".into(),
-            topic: "orders".into(),
-            queue_id: 1,
+            consumer_group: Some("workers".into()),
+            topic: Some("orders".into()),
+            queue_id: Some(1),
             set_zero_if_not_found: None,
             broker_name: None,
             ..QueryConsumerOffsetRequestHeader::default()
@@ -374,10 +374,10 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-update-offset.bin",
         15,
         &UpdateConsumerOffsetRequestHeader {
-            consumer_group: "workers".into(),
-            topic: "orders".into(),
-            queue_id: 1,
-            commit_offset: 9,
+            consumer_group: Some("workers".into()),
+            topic: Some("orders".into()),
+            queue_id: Some(1),
+            commit_offset: Some(9),
             broker_name: None,
             ..UpdateConsumerOffsetRequestHeader::default()
         },

@@ -157,6 +157,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-offset-header-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.OffsetHeaderDecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/offset-header-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-client-config-tls-mode-fixture</id>
             <phase>verify</phase>
             <goals><goal>exec</goal></goals>

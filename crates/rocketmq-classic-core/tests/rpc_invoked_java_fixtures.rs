@@ -211,10 +211,10 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
             }
             name if name.starts_with("update-") => {
                 let header = UpdateConsumerOffsetRequestHeader {
-                    consumer_group: "consumer".into(),
-                    topic: "oracle-topic".into(),
-                    queue_id: 2,
-                    commit_offset: 42,
+                    consumer_group: Some("consumer".into()),
+                    topic: Some("oracle-topic".into()),
+                    queue_id: Some(2),
+                    commit_offset: Some(42),
                     broker_name: None,
                     ..UpdateConsumerOffsetRequestHeader::default()
                 };
@@ -231,9 +231,9 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
             }
             name if name.starts_with("offset-") => {
                 let header = QueryConsumerOffsetRequestHeader {
-                    consumer_group: "consumer".into(),
-                    topic: "oracle-topic".into(),
-                    queue_id: 2,
+                    consumer_group: Some("consumer".into()),
+                    topic: Some("oracle-topic".into()),
+                    queue_id: Some(2),
                     ..Default::default()
                 };
                 match api.query_consumer_offset(&addr, &header, deadline).await {

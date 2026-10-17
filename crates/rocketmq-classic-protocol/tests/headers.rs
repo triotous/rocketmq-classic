@@ -126,8 +126,8 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-offset-request",
     ))
     .unwrap();
-    assert_eq!(query.consumer_group, "workers");
-    assert_eq!(query.queue_id, 1);
+    assert_eq!(query.consumer_group.as_deref(), Some("workers"));
+    assert_eq!(query.queue_id, Some(1));
 
     let query_time_span = QueryConsumeTimeSpanRequestHeader::decode_fields(&java_ext_fields(
         "header-query-consume-time-span-request",
@@ -140,7 +140,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-update-offset-request",
     ))
     .unwrap();
-    assert_eq!(update.commit_offset, 9);
+    assert_eq!(update.commit_offset, Some(9));
 
     let pull =
         PullMessageRequestHeader::decode_fields(&java_ext_fields("header-pull-request")).unwrap();
@@ -154,7 +154,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-offset-response",
     ))
     .unwrap();
-    assert_eq!(offset_response.offset, 9);
+    assert_eq!(offset_response.offset, Some(9));
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
     assert_eq!(send_response.msg_id.as_deref(), Some("msg-1"));

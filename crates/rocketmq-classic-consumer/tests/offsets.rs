@@ -103,9 +103,9 @@ async fn make_runtime(
 
 fn query_header(queue: &MessageQueue) -> QueryConsumerOffsetRequestHeader {
     QueryConsumerOffsetRequestHeader {
-        consumer_group: "group".into(),
-        topic: "orders".into(),
-        queue_id: queue.queue_id(),
+        consumer_group: Some("group".into()),
+        topic: Some("orders".into()),
+        queue_id: Some(queue.queue_id()),
         set_zero_if_not_found: None,
         broker_name: Some("broker".into()),
         ..QueryConsumerOffsetRequestHeader::default()

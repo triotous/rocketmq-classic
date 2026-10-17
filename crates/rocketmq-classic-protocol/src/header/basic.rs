@@ -94,9 +94,9 @@ fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T
 
 #[derive(Debug, Clone, Default)]
 pub struct QueryConsumerOffsetRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
     pub set_zero_if_not_found: Option<bool>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
@@ -107,9 +107,9 @@ pub struct QueryConsumerOffsetRequestHeader {
 
 impl CommandHeader for QueryConsumerOffsetRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
         put_optional(fields, "setZeroIfNotFound", self.set_zero_if_not_found);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
@@ -124,9 +124,26 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
             namespaced: optional_java_boolean(fields, "nsd"),
             logical: optional_java_boolean(fields, "lo"),
             oneway: optional_java_boolean(fields, "oway"),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
+            consumer_group: Some(required_string(fields, "consumerGroup")?.to_owned()),
+            topic: Some(required_string(fields, "topic")?.to_owned()),
+            queue_id: Some(required_i32(fields, "queueId")?),
+            set_zero_if_not_found: optional_java_boolean(fields, "setZeroIfNotFound"),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
+            oneway: optional_java_boolean(fields, "oway"),
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
             set_zero_if_not_found: optional_java_boolean(fields, "setZeroIfNotFound"),
             broker_name: optional_string(fields, "bname"),
         })
@@ -135,10 +152,10 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
 
 #[derive(Debug, Clone, Default)]
 pub struct UpdateConsumerOffsetRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub commit_offset: i64,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
+    pub commit_offset: Option<i64>,
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -147,10 +164,10 @@ pub struct UpdateConsumerOffsetRequestHeader {
 
 impl CommandHeader for UpdateConsumerOffsetRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
-        fields.insert("commitOffset".into(), self.commit_offset.to_string());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "commitOffset", self.commit_offset);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -162,10 +179,26 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             oneway: optional_java_boolean(fields, "oway"),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
-            commit_offset: required_i64(fields, "commitOffset")?,
+            consumer_group: Some(required_string(fields, "consumerGroup")?.to_owned()),
+            topic: Some(required_string(fields, "topic")?.to_owned()),
+            queue_id: Some(required_i32(fields, "queueId")?),
+            commit_offset: Some(required_i64(fields, "commitOffset")?),
+            broker_name: optional_string(fields, "bname"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            commit_offset: optional_i64_with_mode(fields, "commitOffset", false)?,
             broker_name: optional_string(fields, "bname"),
         })
     }
@@ -180,17 +213,26 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryConsumerOffsetResponseHeader {
-    pub offset: i64,
+    pub offset: Option<i64>,
 }
 
 impl CommandHeader for QueryConsumerOffsetResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "offset", self.offset);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            offset: required_i64(fields, "offset")?,
+            offset: Some(required_i64(fields, "offset")?),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            offset: optional_i64_with_mode(fields, "offset", false)?,
         })
     }
 }
@@ -2479,13 +2521,15 @@ mod tests {
             QueryConsumerOffsetRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut QueryConsumerOffsetRequestHeader| h.consumer_group = "payload".into()
+            |h: &mut QueryConsumerOffsetRequestHeader| {
+                h.consumer_group = Some("payload".into())
+            }
         );
         check_rpc_request_header!(
             UpdateConsumerOffsetRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut UpdateConsumerOffsetRequestHeader| h.commit_offset = 17
+            |h: &mut UpdateConsumerOffsetRequestHeader| h.commit_offset = Some(17)
         );
         check_rpc_request_header!(
             QueryConsumeTimeSpanRequestHeader,
@@ -2810,7 +2854,7 @@ mod tests {
             "12".into(),
         )]))
         .unwrap();
-        assert_eq!(decoded.offset, 12);
+        assert_eq!(decoded.offset, Some(12));
         assert!(matches!(
             QueryConsumerOffsetResponseHeader::decode_fields(&HeaderMap::from([(
                 "offset".into(),
