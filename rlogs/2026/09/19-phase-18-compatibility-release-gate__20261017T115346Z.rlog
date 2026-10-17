@@ -44,3 +44,15 @@
   current-revision P18-V02 gate remain open because the Remoting `codec`
   integration binary stalls at macOS `_dyld_start` in the full Remoting test
   command.
+
+## Current-revision full workspace test launch stall — 2026-10-17T12:19:13Z
+
+- `cargo test --workspace --locked` on the nullable ext-fields revision exited
+  101 after the Remoting `codec` integration binary stalled for over a minute
+  at macOS `_dyld_start` with 0% CPU. `sample` recorded `_dyld_start` as its
+  only stack frame; the child was terminated with SIGTERM and Cargo reported
+  `tests/codec` failed to launch. This is not a passing full workspace test.
+- The workspace test-target compile-only run, targeted ext-field test, all 119
+  Remoting unit tests, Maven `verify`, strict Clippy, formatting, and diff
+  checks passed as recorded above. Current-revision full P18-V02 execution
+  remains open.
