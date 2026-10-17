@@ -3238,3 +3238,16 @@ owner-specific checks belong in the manual handoff.
   each family OPEN or PARTIAL; the inventory is a guard against omission, not
   compatibility evidence for those families. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).
+- P18-V01 `RemotingCommand` protocol-helper slice (code commit `1d0d50b7`):
+  Rust now exposes request-ID generation, protocol-type marking/lookup, header
+  length extraction, and serialization-type configuration matching the pinned
+  Java setting precedence and validation. Invoked Java fixtures compare the
+  helper results, including unknown protocol bytes and isolated property/env
+  cases. Remoting all-feature tests, strict Clippy, formatting, diff checks,
+  and Maven `verify` (37 scenarios, fixture drift and Java/Rust cross-decodes)
+  pass. This closes those helper rows only: Java command factories and opaque
+  initialization, attached custom-header behavior, process timer/callback-list,
+  Java-compatible `toString`, long-poll RPC metric emission, and the broad
+  P18-V01 audit remain open. The complete workspace P18-V02 gate must be rerun
+  after this revision. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog).

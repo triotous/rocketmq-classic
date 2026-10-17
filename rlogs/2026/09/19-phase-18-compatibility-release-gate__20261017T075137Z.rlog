@@ -1,0 +1,31 @@
+# Phase 18 RemotingCommand helper continuation — 2026-10-17T07:51:37Z
+
+- Continued on `phase/19-phase-18-compatibility-release-gate` after the pinned
+  Java 5.5.1 `RemotingCommand` public API inventory. Read the Phase 18 plan,
+  repository coding/Rust guidance, and the Java implementation at pinned commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`. The plan and Java checkout remain
+  unmodified.
+- Implemented Java-parity request-ID generation, protocol type marking/lookup,
+  header-length extraction, and serialization-type configuration in Rust.
+  Invoked Java fixture cases cover signed/header boundaries, known and unknown
+  protocol bytes, request-ID delta, property-over-environment precedence,
+  environment fallback, blank values, and invalid configuration. Added
+  isolated-process Rust checks for serialization configuration. Fixture drift
+  and Java/Rust cross-decodes remain covered by Maven verification.
+- Validation passed before commit: `cargo test -p
+  rocketmq-classic-remoting --all-features --locked`; strict Remoting
+  all-target/all-feature Clippy; `cargo fmt --all -- --check`;
+  `git diff --check`; focused Java fixture comparison; and
+  `mvn -o -f compat/java-reference/pom.xml verify` (37 scenarios, fixture
+  drift, and Java/Rust cross-decodes).
+- Code/test commit: `1d0d50b7 feat(remoting): map Java command protocol helpers`.
+  The API crosswalk and release checklist were updated separately; their commit
+  is recorded after this entry is finalized.
+- This closes the method-level protocol-helper slice only. Java command
+  factories and default opaque initialization, attached custom-header methods,
+  process timer/callback-list, `toString`, and long-poll RPC metric emission
+  remain open in P18-V01. The broad source/API/settings/input/error/control-flow
+  and reverse-export audit remains unfinished. Full-workspace P18-V02 gates
+  must be rerun after this revision; current-revision Ubuntu/Windows CI and
+  P18-V04 evidence remain outstanding. Phase 19 local Broker/Docker automation
+  is separate from final owner-manual checks.
