@@ -5806,6 +5806,39 @@ mod tests {
                 "{} OptimizedForAscii",
                 case["id"]
             );
+            for (feature, feature_name) in [
+                (
+                    JavaJsonWriterFeature::WriteNameAsSymbol,
+                    "WriteNameAsSymbol",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteRootClassName,
+                    "NotWriteRootClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteHashMapArrayListClassName,
+                    "NotWriteHashMapArrayListClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteNumberClassName,
+                    "NotWriteNumberClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteSetClassName,
+                    "NotWriteSetClassName",
+                ),
+            ] {
+                let featured = value.java_encode_with_features(&[feature]).unwrap();
+                let expected = case["writerFeatureOverrides"][feature_name]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    featured,
+                    expected.as_bytes(),
+                    "{} {feature_name}",
+                    case["id"]
+                );
+            }
             assert_eq!(
                 BatchAckMessageRequestBody::java_to_json_optional(Some(&value), false).unwrap(),
                 compact
@@ -6872,6 +6905,39 @@ mod tests {
                 "{} OptimizedForAscii",
                 case["id"]
             );
+            for (feature, feature_name) in [
+                (
+                    JavaJsonWriterFeature::WriteNameAsSymbol,
+                    "WriteNameAsSymbol",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteRootClassName,
+                    "NotWriteRootClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteHashMapArrayListClassName,
+                    "NotWriteHashMapArrayListClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteNumberClassName,
+                    "NotWriteNumberClassName",
+                ),
+                (
+                    JavaJsonWriterFeature::NotWriteSetClassName,
+                    "NotWriteSetClassName",
+                ),
+            ] {
+                let featured = value.java_encode_with_features(&[feature]).unwrap();
+                let expected = case["writerFeatureOverrides"][feature_name]
+                    .as_str()
+                    .unwrap_or_else(|| case["instanceEncodedJson"].as_str().unwrap());
+                assert_eq!(
+                    featured,
+                    expected.as_bytes(),
+                    "{} {feature_name}",
+                    case["id"]
+                );
+            }
             let featured = value
                 .java_encode_with_features(&[JavaJsonWriterFeature::WriteNonStringValueAsString])
                 .unwrap();
