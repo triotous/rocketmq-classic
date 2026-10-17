@@ -76,7 +76,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   `ConsumeMessageDirectlyResultRequestHeader` base `bname` is separate from its
   subclass `brokerName`, and Lock/Unlock request headers have distinct Rust
   types. This closes the inherited request-header equality slice only; the
-  broad P18-V01 audit remains open.
+  broad P18-V01 audit remains open. The compact `SendMessageRequestHeaderV2`
+  slice (`227876c1`) now also matches Java's nullable compact fields, inherited-field
+  handling by fast versus reflective decode, malformed-number behavior, and
+  V1 conversion of `brokerName` to `n`; the invoked fixture is
+  `fixtures/remoting/send-message-request-v2-decode-modes.json`. This closes
+  only that header slice and leaves the broad P18-V01 audit open.
   `adjustThreadPool` has a direct owner
   mapping and fixture evidence for the pinned built-in services' no-op
   behavior. The raw `executeTask`/`executeTaskLater` methods map to the
