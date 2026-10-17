@@ -109,6 +109,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-pull-header-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.PullHeaderDecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/pull-header-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-client-config-tls-mode-fixture</id>
             <phase>verify</phase>
             <goals><goal>exec</goal></goals>

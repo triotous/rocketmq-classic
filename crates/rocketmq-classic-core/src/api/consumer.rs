@@ -9,10 +9,10 @@ use rocketmq_classic_protocol::{
         ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
         GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
-        HeaderMap, LockBatchMqRequestHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        UpdateConsumerOffsetRequestHeader,
+        HeaderMap, LockBatchMqRequestHeader, ProtocolError, PullMessageRequestHeader,
+        PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, UpdateConsumerOffsetRequestHeader,
     },
 };
 use tokio::time::Instant;
@@ -97,12 +97,15 @@ pub struct PullResultExt {
     pub raw_messages: Option<Vec<u8>>,
 }
 
-fn pull_request_code(header: &PullMessageRequestHeader) -> i32 {
-    if has_lite_pull_flag(header.sys_flag) {
+fn pull_request_code(header: &PullMessageRequestHeader) -> Result<i32, ProtocolError> {
+    let sys_flag = header
+        .sys_flag
+        .ok_or(ProtocolError::MissingField("sysFlag"))?;
+    Ok(if has_lite_pull_flag(sys_flag) {
         request::LITE_PULL_MESSAGE
     } else {
         request::PULL_MESSAGE
-    }
+    })
 }
 
 impl MQClientApi {
@@ -162,7 +165,7 @@ impl MQClientApi {
         header: &PullMessageRequestHeader,
         deadline: Instant,
     ) -> Result<PullResultExt, RpcError> {
-        let code = pull_request_code(header);
+        let code = pull_request_code(header)?;
         let reply = self.request(addr, code, header, None, deadline).await?;
         self.process_pull_response(addr, code, reply)
     }
@@ -174,7 +177,7 @@ impl MQClientApi {
         header: &PullMessageRequestHeader,
         deadline: Instant,
     ) -> Result<PullResultExt, RpcError> {
-        let code = pull_request_code(header);
+        let code = pull_request_code(header)?;
         let reply = self
             .request_future(addr, code, header, None, deadline)
             .await?;

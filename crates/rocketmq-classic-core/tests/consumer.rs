@@ -76,7 +76,10 @@ fn fields<H: CommandHeader>(header: &H) -> HeaderMap {
 
 #[tokio::test]
 async fn pull_statuses_and_malformed_success() {
-    let header = PullMessageRequestHeader::default();
+    let header = PullMessageRequestHeader {
+        sys_flag: Some(0),
+        ..Default::default()
+    };
     let response_header = fields(&PullMessageResponseHeader {
         next_begin_offset: 12,
         min_offset: 1,
@@ -410,8 +413,15 @@ async fn every_consumer_rpc_rejects_unexpected_status_before_decoding() {
         )
         .await;
         rejected(
-            api.pull_message(&addr, &PullMessageRequestHeader::default(), deadline())
-                .await,
+            api.pull_message(
+                &addr,
+                &PullMessageRequestHeader {
+                    sys_flag: Some(0),
+                    ..Default::default()
+                },
+                deadline(),
+            )
+            .await,
             request::PULL_MESSAGE,
             &addr,
             code,

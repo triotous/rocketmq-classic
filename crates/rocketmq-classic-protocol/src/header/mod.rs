@@ -41,6 +41,15 @@ pub trait CommandHeader: Sized {
     fn encode_fields(&self, fields: &mut HeaderMap);
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError>;
 
+    /// Decodes a header through the selected Java custom-header path.
+    #[doc(hidden)]
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields_checked(fields)
+    }
+
     /// Validate a decoded header, matching Java `CommandCustomHeader.checkFields()`.
     fn check_fields(&self) -> Result<(), ProtocolError> {
         Ok(())
@@ -88,6 +97,32 @@ fn optional_i64(fields: &HeaderMap, field: &'static str) -> Result<Option<i64>, 
         .get(field)
         .map(|value| parse_number(value, field))
         .transpose()
+}
+
+fn optional_i32_with_mode(
+    fields: &HeaderMap,
+    field: &'static str,
+    use_fast_encode: bool,
+) -> Result<Option<i32>, ProtocolError> {
+    let decoded = optional_i32(fields, field);
+    if use_fast_encode {
+        decoded
+    } else {
+        Ok(decoded.unwrap_or(None))
+    }
+}
+
+fn optional_i64_with_mode(
+    fields: &HeaderMap,
+    field: &'static str,
+    use_fast_encode: bool,
+) -> Result<Option<i64>, ProtocolError> {
+    let decoded = optional_i64(fields, field);
+    if use_fast_encode {
+        decoded
+    } else {
+        Ok(decoded.unwrap_or(None))
+    }
 }
 
 fn java_boolean(fields: &HeaderMap, field: &str) -> bool {

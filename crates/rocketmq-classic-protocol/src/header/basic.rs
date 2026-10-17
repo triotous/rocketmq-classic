@@ -1,8 +1,9 @@
 use std::hash::{Hash, Hasher};
 
 use super::{
-    CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i64,
-    optional_java_boolean, optional_string, required_i32, required_i64, required_string,
+    CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i32_with_mode,
+    optional_i64, optional_i64_with_mode, optional_java_boolean, optional_string, required_i32,
+    required_i64, required_string,
 };
 use crate::codes::JavaEnumLookupError;
 
@@ -100,6 +101,7 @@ pub struct QueryConsumerOffsetRequestHeader {
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
+    pub logical: Option<bool>,
     pub oneway: Option<bool>,
 }
 
@@ -112,6 +114,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "oway", self.oneway);
     }
 
@@ -119,6 +122,7 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
             oneway: optional_java_boolean(fields, "oway"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             topic: required_string(fields, "topic")?.to_owned(),
@@ -563,16 +567,16 @@ impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
 
 #[derive(Debug, Clone, Default)]
 pub struct PullMessageRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub queue_offset: i64,
-    pub max_msg_nums: i32,
-    pub sys_flag: i32,
-    pub commit_offset: i64,
-    pub suspend_timeout_millis: i64,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
+    pub queue_offset: Option<i64>,
+    pub max_msg_nums: Option<i32>,
+    pub sys_flag: Option<i32>,
+    pub commit_offset: Option<i64>,
+    pub suspend_timeout_millis: Option<i64>,
     pub subscription: Option<String>,
-    pub sub_version: i64,
+    pub sub_version: Option<i64>,
     pub expression_type: Option<String>,
     pub max_msg_bytes: Option<i32>,
     pub request_source: Option<i32>,
@@ -580,24 +584,22 @@ pub struct PullMessageRequestHeader {
     pub broker_name: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
+    pub logical: Option<bool>,
     pub oneway: Option<bool>,
 }
 
 impl CommandHeader for PullMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
-        fields.insert("queueOffset".into(), self.queue_offset.to_string());
-        fields.insert("maxMsgNums".into(), self.max_msg_nums.to_string());
-        fields.insert("sysFlag".into(), self.sys_flag.to_string());
-        fields.insert("commitOffset".into(), self.commit_offset.to_string());
-        fields.insert(
-            "suspendTimeoutMillis".into(),
-            self.suspend_timeout_millis.to_string(),
-        );
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "queueOffset", self.queue_offset);
+        put_optional(fields, "maxMsgNums", self.max_msg_nums);
+        put_optional(fields, "sysFlag", self.sys_flag);
+        put_optional(fields, "commitOffset", self.commit_offset);
+        put_optional(fields, "suspendTimeoutMillis", self.suspend_timeout_millis);
         put_optional(fields, "subscription", self.subscription.as_deref());
-        fields.insert("subVersion".into(), self.sub_version.to_string());
+        put_optional(fields, "subVersion", self.sub_version);
         put_optional(fields, "expressionType", self.expression_type.as_deref());
         put_optional(fields, "maxMsgBytes", self.max_msg_bytes);
         put_optional(fields, "requestSource", self.request_source);
@@ -609,30 +611,45 @@ impl CommandHeader for PullMessageRequestHeader {
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
-        Ok(Self {
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        let header = Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
             oneway: optional_java_boolean(fields, "oway"),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
-            queue_offset: required_i64(fields, "queueOffset")?,
-            max_msg_nums: required_i32(fields, "maxMsgNums")?,
-            sys_flag: required_i32(fields, "sysFlag")?,
-            commit_offset: required_i64(fields, "commitOffset")?,
-            suspend_timeout_millis: required_i64(fields, "suspendTimeoutMillis")?,
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", use_fast_encode)?,
+            queue_offset: optional_i64_with_mode(fields, "queueOffset", use_fast_encode)?,
+            max_msg_nums: optional_i32_with_mode(fields, "maxMsgNums", use_fast_encode)?,
+            sys_flag: optional_i32_with_mode(fields, "sysFlag", use_fast_encode)?,
+            commit_offset: optional_i64_with_mode(fields, "commitOffset", use_fast_encode)?,
+            suspend_timeout_millis: optional_i64_with_mode(
+                fields,
+                "suspendTimeoutMillis",
+                use_fast_encode,
+            )?,
             subscription: optional_string(fields, "subscription"),
-            sub_version: required_i64(fields, "subVersion")?,
+            sub_version: optional_i64_with_mode(fields, "subVersion", use_fast_encode)?,
             expression_type: optional_string(fields, "expressionType"),
-            max_msg_bytes: optional_i32(fields, "maxMsgBytes")?,
-            request_source: optional_i32(fields, "requestSource")?,
+            max_msg_bytes: optional_i32_with_mode(fields, "maxMsgBytes", use_fast_encode)?,
+            request_source: optional_i32_with_mode(fields, "requestSource", use_fast_encode)?,
             proxy_forward_client_id: optional_string(fields, "proxyFrowardClientId"),
             broker_name: optional_string(fields, "bname"),
-        })
+        };
+        header.check_fields()?;
+        Ok(header)
     }
 }
 
@@ -2482,7 +2499,7 @@ mod tests {
             PullMessageRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut PullMessageRequestHeader| h.consumer_group = "payload".into()
+            |h: &mut PullMessageRequestHeader| h.consumer_group = Some("payload".into())
         );
         check_rpc_request_header!(
             UnregisterClientRequestHeader,
@@ -2701,15 +2718,15 @@ mod tests {
     #[test]
     fn pull_headers_round_trip_required_and_optional_fields() {
         let header = PullMessageRequestHeader {
-            consumer_group: "workers".into(),
-            topic: "orders".into(),
-            queue_id: -1,
-            queue_offset: i64::MIN,
-            max_msg_nums: 32,
-            sys_flag: 0,
-            commit_offset: 0,
-            suspend_timeout_millis: 15_000,
-            sub_version: i64::MAX,
+            consumer_group: Some("workers".into()),
+            topic: Some("orders".into()),
+            queue_id: Some(-1),
+            queue_offset: Some(i64::MIN),
+            max_msg_nums: Some(32),
+            sys_flag: Some(0),
+            commit_offset: Some(0),
+            suspend_timeout_millis: Some(15_000),
+            sub_version: Some(i64::MAX),
             proxy_forward_client_id: Some("proxy".into()),
             broker_name: Some("broker-a".into()),
             ..PullMessageRequestHeader::default()

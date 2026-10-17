@@ -129,11 +129,25 @@ async fn pull_sync_future_ack_and_route_select_their_java_wait_modes() {
         let deadline = Instant::now() + Duration::from_millis(70);
         let result = match operation {
             "pull-sync" => api
-                .pull_message(&addr, &PullMessageRequestHeader::default(), deadline)
+                .pull_message(
+                    &addr,
+                    &PullMessageRequestHeader {
+                        sys_flag: Some(0),
+                        ..Default::default()
+                    },
+                    deadline,
+                )
                 .await
                 .map(|_| ()),
             "pull-future" => api
-                .pull_message_future(&addr, &PullMessageRequestHeader::default(), deadline)
+                .pull_message_future(
+                    &addr,
+                    &PullMessageRequestHeader {
+                        sys_flag: Some(0),
+                        ..Default::default()
+                    },
+                    deadline,
+                )
                 .await
                 .map(|result| assert_eq!(result.next_begin_offset, 17)),
             "ack" => api

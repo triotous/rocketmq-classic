@@ -170,19 +170,19 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
         let queue = MessageQueue::new("oracle-topic", "broker", 2);
         let outcome = if name.starts_with("pull-") || name.starts_with("lite-pull-") {
             let header = PullMessageRequestHeader {
-                consumer_group: "consumer".into(),
-                topic: "oracle-topic".into(),
-                queue_id: 2,
-                queue_offset: 10,
-                max_msg_nums: 1,
-                sys_flag: if name.starts_with("lite-pull-") {
+                consumer_group: Some("consumer".into()),
+                topic: Some("oracle-topic".into()),
+                queue_id: Some(2),
+                queue_offset: Some(10),
+                max_msg_nums: Some(1),
+                sys_flag: Some(if name.starts_with("lite-pull-") {
                     16
                 } else {
                     0
-                },
-                commit_offset: 0,
-                suspend_timeout_millis: 0,
-                sub_version: 1,
+                }),
+                commit_offset: Some(0),
+                suspend_timeout_millis: Some(0),
+                sub_version: Some(1),
                 ..Default::default()
             };
             let result = if fixture["mode"] == "ASYNC" {

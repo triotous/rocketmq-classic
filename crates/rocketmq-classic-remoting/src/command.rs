@@ -708,13 +708,14 @@ impl RemotingCommand {
     }
 
     /// Decodes a typed custom header. The `use_fast_encode` hint has no separate
-    /// Rust path because `CommandHeader` already provides the direct field decoder.
+    /// Rust path unless the header type defines distinct Java fast and reflective
+    /// field-decoding behavior.
     pub fn decode_command_custom_header_directly<T: CommandHeader + Default>(
         &self,
-        _use_fast_encode: bool,
+        use_fast_encode: bool,
     ) -> Result<T, ProtocolError> {
         match self.ext_fields.as_ref() {
-            Some(fields) => T::decode_fields_checked(fields.non_null_fields()),
+            Some(fields) => T::decode_fields_with_mode(fields.non_null_fields(), use_fast_encode),
             None => Ok(T::default()),
         }
     }
@@ -941,6 +942,57 @@ impl std::fmt::Display for RemotingCommand {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn pull_header_fast_and_reflective_decode_modes_match_invoked_java() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/pull-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let decoded = command.decode_command_custom_header_directly::<
+                    rocketmq_classic_protocol::header::PullMessageRequestHeader,
+                >(use_fast_encode);
+                let expected = &case[mode];
+                if expected["outcome"] == "OK" {
+                    let decoded = decoded.unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                    let mut encoded = HeaderMap::new();
+                    CommandHeader::encode_fields(&decoded, &mut encoded);
+                    let expected_fields = expected["encodedFields"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                        .collect::<HeaderMap>();
+                    assert_eq!(encoded, expected_fields, "{case_name}/{mode}");
+                } else {
+                    assert!(
+                        decoded.is_err(),
+                        "{case_name}/{mode}: Java returned {}, Rust accepted the header",
+                        expected["outcome"]
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn remoting_enum_methods_and_command_type_match_invoked_java() {

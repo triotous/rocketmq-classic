@@ -131,7 +131,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message(
             addr,
-            &PullMessageRequestHeader::default(),
+            &PullMessageRequestHeader {
+                sys_flag: Some(0),
+                ..Default::default()
+            },
             deadline
         )
     );
@@ -141,7 +144,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message_future(
             addr,
-            &PullMessageRequestHeader::default(),
+            &PullMessageRequestHeader {
+                sys_flag: Some(0),
+                ..Default::default()
+            },
             deadline
         )
     );
@@ -152,8 +158,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         |api, addr, deadline| api.pull_message(
             addr,
             &PullMessageRequestHeader {
-                sys_flag: rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
-                    false, false, false, false, true,
+                sys_flag: Some(
+                    rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
+                        false, false, false, false, true,
+                    ),
                 ),
                 ..Default::default()
             },
@@ -167,8 +175,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         |api, addr, deadline| api.pull_message_future(
             addr,
             &PullMessageRequestHeader {
-                sys_flag: rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
-                    false, false, false, false, true,
+                sys_flag: Some(
+                    rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
+                        false, false, false, false, true,
+                    ),
                 ),
                 ..Default::default()
             },

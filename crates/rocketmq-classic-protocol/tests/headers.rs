@@ -144,8 +144,8 @@ fn java_request_and_response_header_fixtures_decode() {
 
     let pull =
         PullMessageRequestHeader::decode_fields(&java_ext_fields("header-pull-request")).unwrap();
-    assert_eq!(pull.queue_offset, 9);
-    assert_eq!(pull.sub_version, 1_712_345_678_901);
+    assert_eq!(pull.queue_offset, Some(9));
+    assert_eq!(pull.sub_version, Some(1_712_345_678_901));
 
     let pull_response =
         PullMessageResponseHeader::decode_fields(&java_ext_fields("header-pull-response")).unwrap();
@@ -864,10 +864,6 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("commitOffset"));
-    let err = PullMessageRequestHeader::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("consumerGroup"));
     let err = SendMessageRequestHeaderV2::decode_fields(&empty)
         .unwrap_err()
         .to_string();
@@ -1069,11 +1065,11 @@ fn header_validation_matrix() {
         row!(
             PullMessageRequestHeader,
             "pull-request",
-            "consumerGroup topic queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion",
+            "",
             "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
             "queueOffset commitOffset suspendTimeoutMillis subVersion",
-            "subscription expressionType maxMsgBytes requestSource proxyFrowardClientId bname ns nsd oway",
-            "nsd oway"
+            "consumerGroup topic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion bname ns nsd lo oway",
+            "nsd lo oway"
         ),
         row!(
             PullMessageResponseHeader,
@@ -1090,8 +1086,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId",
             "queueId",
             "",
-            "setZeroIfNotFound bname ns nsd oway",
-            "setZeroIfNotFound nsd oway"
+            "setZeroIfNotFound bname ns nsd lo oway",
+            "setZeroIfNotFound nsd lo oway"
         ),
         row!(
             QueryConsumeTimeSpanRequestHeader,
