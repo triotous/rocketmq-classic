@@ -1,15 +1,97 @@
+use std::any::Any;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use rocketmq_classic_protocol::{
     codes::{JavaEnumLookupError, LanguageCode, SerializeType},
-    header::{CommandHeader, HeaderMap},
+    header::{CommandHeader, HeaderMap, ProtocolError},
 };
 
 static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
 static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
 static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
+
+trait CustomHeaderValueDyn: Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn clone_box(&self) -> Box<dyn CustomHeaderValueDyn>;
+    fn encode_fields(&self, fields: &mut HeaderMap);
+    fn concrete_type_name(&self) -> &'static str;
+}
+
+impl<T> CustomHeaderValueDyn for T
+where
+    T: CommandHeader + Clone + Send + Sync + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn CustomHeaderValueDyn> {
+        Box::new(self.clone())
+    }
+
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        CommandHeader::encode_fields(self, fields);
+    }
+
+    fn concrete_type_name(&self) -> &'static str {
+        std::any::type_name::<T>()
+    }
+}
+
+/// Type-erased storage for the typed custom header attached to a command.
+///
+/// This is a hidden field-level representation; use `read_custom_header`,
+/// `read_custom_header_mut`, and `write_custom_header` to access it.
+#[doc(hidden)]
+pub struct CustomHeaderValue(Box<dyn CustomHeaderValueDyn>);
+
+impl CustomHeaderValue {
+    fn new<T>(header: T) -> Self
+    where
+        T: CommandHeader + Clone + Send + Sync + 'static,
+    {
+        Self(Box::new(header))
+    }
+
+    fn encoded_fields(&self) -> HeaderMap {
+        let mut fields = HeaderMap::new();
+        self.0.encode_fields(&mut fields);
+        fields
+    }
+}
+
+impl Clone for CustomHeaderValue {
+    fn clone(&self) -> Self {
+        Self(self.0.clone_box())
+    }
+}
+
+impl std::fmt::Debug for CustomHeaderValue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CustomHeaderValue")
+            .field("type", &self.0.concrete_type_name())
+            .field("fields", &self.encoded_fields())
+            .finish()
+    }
+}
+
+impl PartialEq for CustomHeaderValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_any().type_id() == other.0.as_any().type_id()
+            && self.encoded_fields() == other.encoded_fields()
+    }
+}
+
+impl Eq for CustomHeaderValue {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RemotingCommandType {
@@ -203,6 +285,12 @@ pub struct RemotingCommand {
     pub body: Option<Vec<u8>>,
     pub serialization: SerializeType,
     pub suspended: bool,
+    /// Attached typed header, kept out of the wire fields until encoding.
+    #[doc(hidden)]
+    pub custom_header: Option<CustomHeaderValue>,
+    /// Lazily decoded custom header cached by `decode_command_custom_header`.
+    #[doc(hidden)]
+    pub cached_header: Option<CustomHeaderValue>,
 }
 
 impl Default for RemotingCommand {
@@ -219,6 +307,8 @@ impl Default for RemotingCommand {
             serialization: Self::get_serialize_type_config_in_this_server()
                 .unwrap_or_else(|error| panic!("{error}")),
             suspended: false,
+            custom_header: None,
+            cached_header: None,
         }
     }
 }
@@ -240,13 +330,13 @@ impl RemotingCommand {
         Self::create_command(code, false, None)
     }
 
-    /// Creates a request command and snapshots a typed header into ext-fields.
-    pub fn create_request_command_with_header<T: CommandHeader>(
+    /// Creates a request command with an attached typed header.
+    pub fn create_request_command_with_header<T: CommandHeader + Clone + Send + Sync + 'static>(
         code: i32,
-        custom_header: &T,
+        custom_header: Option<T>,
     ) -> Result<Self, String> {
         let mut command = Self::create_command(code, false, None)?;
-        command.attach_header_fields(custom_header);
+        command.write_custom_header(custom_header);
         Ok(command)
     }
 
@@ -255,28 +345,33 @@ impl RemotingCommand {
         Self::create_command(code, true, remark)
     }
 
-    /// Creates a response command and snapshots a typed header into ext-fields.
-    pub fn create_response_command_with_header<T: CommandHeader>(
+    /// Creates a response command with an attached typed header.
+    pub fn create_response_command_with_header<T: CommandHeader + Clone + Send + Sync + 'static>(
         code: i32,
-        custom_header: &T,
+        custom_header: Option<T>,
     ) -> Result<Self, String> {
         let mut command = Self::create_command(code, true, None)?;
-        command.attach_header_fields(custom_header);
+        command.write_custom_header(custom_header);
         Ok(command)
     }
 
     /// Creates a response with a default typed header, matching Java's class-header overload.
-    pub fn create_response_command_with_default_header<T: CommandHeader + Default>(
+    pub fn create_response_command_with_default_header<T>(
         code: i32,
         remark: Option<String>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, String>
+    where
+        T: CommandHeader + Default + Clone + Send + Sync + 'static,
+    {
         let mut command = Self::create_response_command(code, remark)?;
-        command.attach_header_fields(&T::default());
+        command.write_custom_header(Some(T::default()));
         Ok(command)
     }
 
     /// Creates Java's default system-error response with a default typed header.
-    pub fn create_response_command_for_header<T: CommandHeader + Default>() -> Result<Self, String>
+    pub fn create_response_command_for_header<T>() -> Result<Self, String>
+    where
+        T: CommandHeader + Default + Clone + Send + Sync + 'static,
     {
         Self::create_response_command_with_default_header::<T>(
             rocketmq_classic_protocol::codes::response::SYSTEM_ERROR,
@@ -290,17 +385,142 @@ impl RemotingCommand {
     }
 
     /// Creates an error response and attaches a default typed header.
-    pub fn build_error_response_with_default_header<T: CommandHeader + Default>(
+    pub fn build_error_response_with_default_header<T>(
         code: i32,
         remark: Option<String>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, String>
+    where
+        T: CommandHeader + Default + Clone + Send + Sync + 'static,
+    {
         Self::create_response_command_with_default_header::<T>(code, remark)
     }
 
-    fn attach_header_fields<T: CommandHeader>(&mut self, custom_header: &T) {
-        let mut fields = HeaderMap::new();
-        custom_header.encode_fields(&mut fields);
-        self.ext_fields = Some(fields);
+    /// Reads the attached typed custom header, if it has the requested type.
+    pub fn read_custom_header<T: 'static>(&self) -> Option<&T> {
+        self.custom_header.as_ref()?.0.as_any().downcast_ref::<T>()
+    }
+
+    /// Mutably borrows the attached typed custom header, if it has the requested type.
+    pub fn read_custom_header_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.custom_header
+            .as_mut()?
+            .0
+            .as_any_mut()
+            .downcast_mut::<T>()
+    }
+
+    /// Attaches or clears a typed header. Its fields are merged into
+    /// `ext_fields` when `make_custom_header_to_net` or a codec encoder runs.
+    pub fn write_custom_header<T>(&mut self, custom_header: Option<T>)
+    where
+        T: CommandHeader + Clone + Send + Sync + 'static,
+    {
+        self.custom_header = custom_header.map(CustomHeaderValue::new);
+    }
+
+    /// Decodes and caches a typed custom header, replacing the current cache.
+    pub fn decode_command_custom_header<T>(&mut self) -> Result<&mut T, ProtocolError>
+    where
+        T: CommandHeader + Default + Clone + Send + Sync + 'static,
+    {
+        self.decode_command_custom_header_with_cache::<T>(false)
+    }
+
+    /// Decodes a typed header and optionally reuses the cached instance.
+    pub fn decode_command_custom_header_with_cache<T>(
+        &mut self,
+        is_cached: bool,
+    ) -> Result<&mut T, ProtocolError>
+    where
+        T: CommandHeader + Default + Clone + Send + Sync + 'static,
+    {
+        if is_cached {
+            if let Some(cached) = self.cached_header.as_ref() {
+                if !cached.0.as_any().is::<T>() {
+                    return Err(ProtocolError::InvalidField {
+                        field: "cachedHeader",
+                        reason: "cached custom header has a different type".into(),
+                    });
+                }
+                return Ok(self
+                    .cached_header
+                    .as_mut()
+                    .unwrap()
+                    .0
+                    .as_any_mut()
+                    .downcast_mut::<T>()
+                    .unwrap());
+            }
+        }
+
+        let decoded = self.decode_command_custom_header_directly::<T>(true)?;
+        self.cached_header = Some(CustomHeaderValue::new(decoded));
+        Ok(self
+            .cached_header
+            .as_mut()
+            .unwrap()
+            .0
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .unwrap())
+    }
+
+    /// Decodes a typed custom header. The `use_fast_encode` hint has no separate
+    /// Rust path because `CommandHeader` already provides the direct field decoder.
+    pub fn decode_command_custom_header_directly<T: CommandHeader + Default>(
+        &self,
+        _use_fast_encode: bool,
+    ) -> Result<T, ProtocolError> {
+        match self.ext_fields.as_ref() {
+            Some(fields) => T::decode_fields(fields),
+            None => Ok(T::default()),
+        }
+    }
+
+    /// Merges non-null typed header fields into the existing extension fields.
+    pub fn make_custom_header_to_net(&mut self) {
+        let Some(custom_header) = &self.custom_header else {
+            return;
+        };
+        self.ext_fields
+            .get_or_insert_with(HeaderMap::new)
+            .extend(custom_header.encoded_fields());
+    }
+
+    /// Adds or replaces an extension field, creating the map when needed.
+    pub fn add_ext_field(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.ext_fields
+            .get_or_insert_with(HeaderMap::new)
+            .insert(key.into(), value.into());
+    }
+
+    /// Adds an extension field only when the map does not already contain its key.
+    ///
+    /// Java's method dereferences `extFields` without creating it; the Rust
+    /// method reports that absent-map case as a typed error.
+    pub fn add_ext_field_if_not_exist(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), ProtocolError> {
+        let fields = self
+            .ext_fields
+            .as_mut()
+            .ok_or(ProtocolError::MissingField("extFields"))?;
+        fields.entry(key.into()).or_insert_with(|| value.into());
+        Ok(())
+    }
+
+    pub(crate) fn ext_fields_for_encoding(&self) -> Option<Cow<'_, HeaderMap>> {
+        match (&self.ext_fields, &self.custom_header) {
+            (None, None) => None,
+            (Some(fields), None) => Some(Cow::Borrowed(fields)),
+            (existing, Some(custom_header)) => {
+                let mut fields = existing.as_ref().cloned().unwrap_or_default();
+                fields.extend(custom_header.encoded_fields());
+                Some(Cow::Owned(fields))
+            }
+        }
     }
 
     fn create_command(code: i32, response: bool, remark: Option<String>) -> Result<Self, String> {
@@ -782,21 +1002,27 @@ mod tests {
                 serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
                     .unwrap();
             let cases = &fixture["remotingEnumMethodCases"]["commandFactories"];
-            let commands = [
+            let mut commands = [
                 RemotingCommand::create_request_command(71).unwrap(),
                 RemotingCommand::create_response_command(72, Some("accepted".into())).unwrap(),
                 RemotingCommand::build_error_response(73, None).unwrap(),
                 RemotingCommand::create_request_command_with_header(
                     74,
-                    &rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
-                        topic: "orders".into(),
-                        ..Default::default()
-                    },
+                    Some(
+                        rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
+                            topic: "orders".into(),
+                            ..Default::default()
+                        },
+                    ),
                 )
                 .unwrap(),
                 RemotingCommand::create_response_command_with_header(
                     75,
-                    &rocketmq_classic_protocol::header::SearchOffsetResponseHeader { offset: 88 },
+                    Some(
+                        rocketmq_classic_protocol::header::SearchOffsetResponseHeader {
+                            offset: 88,
+                        },
+                    ),
                 )
                 .unwrap(),
                 RemotingCommand::create_response_command_for_header::<
@@ -812,6 +1038,9 @@ mod tests {
                 >(77, Some("built".into()))
                 .unwrap(),
             ];
+            for command in &mut commands {
+                command.make_custom_header_to_net();
+            }
             assert_eq!(cases["commands"].as_array().unwrap().len(), commands.len());
             for (case, command) in cases["commands"]
                 .as_array()
@@ -913,6 +1142,226 @@ mod tests {
             "invalid version property case failed: {}{}",
             String::from_utf8_lossy(&invalid.stdout),
             String::from_utf8_lossy(&invalid.stderr)
+        );
+    }
+
+    #[test]
+    fn command_custom_header_helpers_match_invoked_java_fields() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
+                .unwrap();
+        let cases = &fixture["remotingEnumMethodCases"]["commandCustomHeaders"];
+        assert_eq!(cases["attachedHeaderPresent"], true);
+        assert_eq!(cases["readReturnsSameInstance"], true);
+        assert_eq!(cases["readReturnsNullWithoutAttachedHeader"], true);
+        assert_eq!(cases["writeNullClearsAttachedHeader"], true);
+        assert_eq!(cases["extFieldsBeforeMake"]["oracle"], "5.5.1");
+        assert!(cases["extFieldsBeforeMake"]["topic"].is_null());
+
+        let header = rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
+            topic: "custom-topic".into(),
+            accept_standard_json_only: Some(true),
+            namespace: Some("custom-ns".into()),
+            namespaced: Some(false),
+            broker_name: Some("broker-a".into()),
+            oneway: Some(true),
+        };
+        let mut command = RemotingCommand {
+            ext_fields: Some(HeaderMap::from([("oracle".into(), "5.5.1".into())])),
+            ..Default::default()
+        };
+        let mut null_header = RemotingCommand::default();
+        null_header.write_custom_header(Some(
+            rocketmq_classic_protocol::header::GetRouteInfoRequestHeader::default(),
+        ));
+        null_header
+            .write_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+                None,
+            );
+        assert!(null_header.custom_header.is_none());
+        command.write_custom_header(Some(header));
+        assert!(command.custom_header.is_some());
+        let attached_ref = command
+            .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>()
+            .unwrap() as *const _;
+        let repeated_attached_ref = command
+            .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>()
+            .unwrap() as *const _;
+        assert_eq!(attached_ref, repeated_attached_ref);
+        assert_eq!(
+            command
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get("oracle")
+                .map(String::as_str),
+            Some("5.5.1")
+        );
+        assert_eq!(
+            command
+                .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+                )
+                .unwrap()
+                .topic,
+            "custom-topic"
+        );
+
+        let before_make = crate::codec::json_header::encode(&command).unwrap();
+        let before_make: serde_json::Value = serde_json::from_slice(&before_make).unwrap();
+        assert_eq!(before_make["extFields"]["oracle"], "5.5.1");
+        assert_eq!(before_make["extFields"]["topic"], "custom-topic");
+        assert!(command.ext_fields.as_ref().unwrap().get("topic").is_none());
+
+        command
+            .read_custom_header_mut::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+            )
+            .unwrap()
+            .topic = cases["attachedHeaderTopicAfterMutation"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let after_mutation = crate::codec::json_header::encode(&command).unwrap();
+        let after_mutation: serde_json::Value = serde_json::from_slice(&after_mutation).unwrap();
+        assert_eq!(
+            after_mutation["extFields"]["topic"],
+            cases["attachedHeaderTopicAfterMutation"]
+        );
+        let binary = crate::codec::rocketmq_header::encode(&command).unwrap();
+        let binary = crate::codec::rocketmq_header::decode(&binary).unwrap();
+        assert_eq!(
+            binary
+                .ext_fields
+                .as_ref()
+                .unwrap()
+                .get("topic")
+                .map(String::as_str),
+            cases["attachedHeaderTopicAfterMutation"].as_str()
+        );
+        assert_eq!(
+            command
+                .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+                )
+                .unwrap()
+                .topic,
+            cases["attachedHeaderTopicAfterMutation"]
+        );
+
+        let expected_ext_fields = cases["extFieldsAfterMake"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        command.make_custom_header_to_net();
+        assert_eq!(command.ext_fields.as_ref(), Some(&expected_ext_fields));
+        assert_eq!(
+            command
+                .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+                )
+                .unwrap()
+                .topic,
+            cases["cachedHeader"]["topic"]
+        );
+
+        let unattached = RemotingCommand {
+            ext_fields: command.ext_fields.clone(),
+            ..Default::default()
+        };
+        assert!(
+            unattached
+                .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
+                )
+                .is_none()
+        );
+
+        let first_cached = command
+            .decode_command_custom_header_with_cache::<
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+            >(true)
+            .unwrap() as *const _;
+        let repeated_cached = command
+            .decode_command_custom_header_with_cache::<
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+            >(true)
+            .unwrap() as *const _;
+        assert_eq!(first_cached, repeated_cached);
+        assert_eq!(cases["cachedRepeatedSameInstance"], true);
+        let decoded = command
+            .decode_command_custom_header::<
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+            >()
+            .unwrap()
+            .clone();
+        let direct = command
+            .decode_command_custom_header_directly::<
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
+            >(true)
+            .unwrap();
+        for decoded in [decoded, direct] {
+            assert_eq!(
+                decoded.topic,
+                cases["directHeader"]["topic"].as_str().unwrap()
+            );
+            assert_eq!(
+                decoded.accept_standard_json_only,
+                cases["directHeader"]["acceptStandardJsonOnly"].as_bool()
+            );
+            assert_eq!(
+                decoded.namespace.as_deref(),
+                cases["directHeader"]["ns"].as_str()
+            );
+            assert_eq!(decoded.namespaced, cases["directHeader"]["nsd"].as_bool());
+            assert_eq!(
+                decoded.broker_name.as_deref(),
+                cases["directHeader"]["bname"].as_str()
+            );
+            assert_eq!(decoded.oneway, cases["directHeader"]["oway"].as_bool());
+        }
+
+        let mut add_field = RemotingCommand::default();
+        add_field.add_ext_field("added", "value");
+        let expected_add_field = cases["addExtField"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(add_field.ext_fields.as_ref(), Some(&expected_add_field));
+
+        let mut add_if_missing = RemotingCommand {
+            ext_fields: Some(HeaderMap::from([("existing".into(), "original".into())])),
+            ..Default::default()
+        };
+        add_if_missing
+            .add_ext_field_if_not_exist("existing", "original")
+            .unwrap();
+        add_if_missing
+            .add_ext_field_if_not_exist("existing", "replacement")
+            .unwrap();
+        add_if_missing
+            .add_ext_field_if_not_exist("new", "value")
+            .unwrap();
+        let expected_add_if_missing = cases["addExtFieldIfNotExist"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            add_if_missing.ext_fields.as_ref(),
+            Some(&expected_add_if_missing)
+        );
+
+        let missing_map_error = RemotingCommand::default()
+            .add_ext_field_if_not_exist("missing-map", "value")
+            .unwrap_err();
+        assert!(matches!(
+            missing_map_error,
+            ProtocolError::MissingField("extFields")
+        ));
+        assert_eq!(
+            cases["addExtFieldIfNotExistWithoutMap"],
+            "NullPointerException"
         );
     }
 

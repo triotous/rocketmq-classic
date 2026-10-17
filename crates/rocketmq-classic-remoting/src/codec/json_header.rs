@@ -28,10 +28,10 @@ pub(crate) fn encode_with_limit(
     if let Some(remark) = &command.remark {
         fields.insert("remark".into(), remark.clone().into());
     }
-    if let Some(ext_fields) = &command.ext_fields {
+    if let Some(ext_fields) = command.ext_fields_for_encoding() {
         fields.insert(
             "extFields".into(),
-            serde_json::to_value(ext_fields).unwrap(),
+            serde_json::to_value(ext_fields.as_ref()).unwrap(),
         );
     }
     fields.insert(

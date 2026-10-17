@@ -3700,7 +3700,7 @@ public final class RuntimeConfigFixtures {
         return result;
     }
 
-    private static Map<String, Object> remotingEnumMethodCases() {
+    private static Map<String, Object> remotingEnumMethodCases() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("RemotingCommandType", enumMethodCases(
             org.apache.rocketmq.remoting.protocol.RemotingCommandType::values,
@@ -3769,6 +3769,7 @@ public final class RuntimeConfigFixtures {
         result.put("commandSuspended", commandSuspended);
         result.put("commandProtocolHelpers", commandProtocolHelperCases());
         result.put("commandFactories", commandFactoryCases());
+        result.put("commandCustomHeaders", commandCustomHeaderCases());
         result.put("commandToString", commandToStringCases());
         return result;
     }
@@ -3846,6 +3847,93 @@ public final class RuntimeConfigFixtures {
         result.put("remark", command.getRemark());
         result.put("extFields", command.getExtFields());
         result.put("serialization", command.getSerializeTypeCurrentRPC().name());
+        return result;
+    }
+
+    private static Map<String, Object> commandCustomHeaderCases() throws Exception {
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader header =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader();
+        header.setTopic("custom-topic");
+        header.setAcceptStandardJsonOnly(true);
+        header.setNamespace("custom-ns");
+        header.setNamespaced(false);
+        header.setBrokerName("broker-a");
+        header.setOneway(true);
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand command =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(78, null);
+        command.addExtField("oracle", "5.5.1");
+        command.writeCustomHeader(header);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("attachedHeaderPresent", command.readCustomHeader() != null);
+        result.put("readReturnsSameInstance", command.readCustomHeader() == header);
+        header.setTopic("mutated-after-attach");
+        result.put("attachedHeaderTopicAfterMutation",
+            ((org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader)
+                command.readCustomHeader()).getTopic());
+        org.apache.rocketmq.remoting.protocol.RemotingCommand decodedWithoutAttachedHeader =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(82, null);
+        decodedWithoutAttachedHeader.setExtFields(new HashMap<>(command.getExtFields()));
+        result.put("readReturnsNullWithoutAttachedHeader",
+            decodedWithoutAttachedHeader.readCustomHeader() == null);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand nullHeaderCommand =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(83, header);
+        nullHeaderCommand.writeCustomHeader(null);
+        result.put("writeNullClearsAttachedHeader", nullHeaderCommand.readCustomHeader() == null);
+        result.put("extFieldsBeforeMake", command.getExtFields() == null
+            ? null : new TreeMap<>(command.getExtFields()));
+        command.makeCustomHeaderToNet();
+        result.put("extFieldsAfterMake", new TreeMap<>(command.getExtFields()));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand addFieldCommand =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(79, null);
+        addFieldCommand.addExtField("added", "value");
+        result.put("addExtField", new TreeMap<>(addFieldCommand.getExtFields()));
+
+        org.apache.rocketmq.remoting.protocol.RemotingCommand addIfMissingCommand =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(80, null);
+        addIfMissingCommand.addExtField("existing", "original");
+        addIfMissingCommand.addExtFieldIfNotExist("existing", "replacement");
+        addIfMissingCommand.addExtFieldIfNotExist("new", "value");
+        result.put("addExtFieldIfNotExist", new TreeMap<>(addIfMissingCommand.getExtFields()));
+
+        try {
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createRequestCommand(81, null)
+                .addExtFieldIfNotExist("missing-map", "value");
+            result.put("addExtFieldIfNotExistWithoutMap", "NO_ERROR");
+        } catch (Exception e) {
+            result.put("addExtFieldIfNotExistWithoutMap", e.getClass().getSimpleName());
+        }
+
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader cached =
+            command.decodeCommandCustomHeader(
+                org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader.class,
+                true);
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader cachedAgain =
+            command.decodeCommandCustomHeader(
+                org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader.class,
+                true);
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader direct =
+            command.decodeCommandCustomHeaderDirectly(
+                org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader.class,
+                true);
+        result.put("cachedHeader", routeHeaderFields(cached));
+        result.put("cachedRepeatedSameInstance", cached == cachedAgain);
+        result.put("directHeader", routeHeaderFields(direct));
+        result.put("directDistinctFromCached", direct != cached);
+        return result;
+    }
+
+    private static Map<String, Object> routeHeaderFields(
+        org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader header) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topic", header.getTopic());
+        result.put("acceptStandardJsonOnly", header.getAcceptStandardJsonOnly());
+        result.put("ns", header.getNamespace());
+        result.put("nsd", header.getNamespaced());
+        result.put("bname", header.getBrokerName());
+        result.put("oway", header.getOneway());
         return result;
     }
 

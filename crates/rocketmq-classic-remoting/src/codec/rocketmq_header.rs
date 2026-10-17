@@ -35,7 +35,8 @@ pub(crate) fn encode_with_limit(
     if FIXED_HEADER_LEN + remark.len() > max_header_length {
         return Err(CodecError::FieldTooWide("header length"));
     }
-    if let Some(fields) = &command.ext_fields {
+    if let Some(fields) = command.ext_fields_for_encoding() {
+        let fields = fields.as_ref();
         for (key, value) in fields {
             let key = key.as_bytes();
             let value = value.as_bytes();
