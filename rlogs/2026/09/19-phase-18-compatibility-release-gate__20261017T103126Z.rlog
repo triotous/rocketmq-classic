@@ -63,3 +63,6 @@
   `cargo package --workspace --list --locked --allow-dirty` all pass; the
   package-list rerun has no missing-description warning. The runner remains
   `publish = false`.
+- Package metadata commit: `9e8476c4 build(integration): describe unpublished
+  test runner`. Added the result to the release checklist; registry dependency
+  resolution remains intentionally deferred until after Phase 19.

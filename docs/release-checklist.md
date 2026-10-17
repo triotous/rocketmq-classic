@@ -3382,3 +3382,9 @@ owner-specific checks belong in the manual handoff.
   represent. Full workspace P18-V02 must be rerun after this test/fixture
   revision. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T103126Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T103126Z.rlog).
+- P18-V03 unpublished integration package metadata (commit `9e8476c4`,
+  2026-10-17): added a package description to remove Cargo's package-list
+  warning. Integration package tests, locked workspace metadata, the
+  dependency-direction/license check, and workspace package file listing pass;
+  `rocketmq-classic-integration` remains unpublished. Registry dependency
+  resolution remains pending after Phase 19.
