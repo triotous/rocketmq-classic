@@ -3,6 +3,7 @@
 ///
 /// The variants and their order match the pinned Fastjson2 2.0.63 enum. The
 /// adapters currently implement `FieldBased`, `WriteNullBooleanAsFalse`,
+/// `WriteNulls`,
 /// `WriteBooleanAsNumber`,
 /// `WriteNonStringValueAsString`, `PrettyFormat`, `EscapeNoneAscii`,
 /// `PrettyFormatWith2Space`, `PrettyFormatWith4Space`, `NotWriteEmptyArray`,
@@ -40,7 +41,9 @@
 /// has no writer callsite for `NotWriteSetClassName`. `BeanToArray` serializes
 /// mapped DTO beans in Java bean-property order, including typed bean values
 /// nested in collections and the route/request-mode maps, while preserving
-/// user JSON maps as maps. The remaining four options preserve output for the
+/// user JSON maps as maps. `WriteNulls` restores omitted nullable fields from
+/// the mapped Java DTO schemas as explicit JSON nulls, including nested typed
+/// DTOs. The remaining four options preserve output for the
 /// mapped RocketMQ DTO graph: it contains no
 /// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
 /// Pair field, Throwable field, or `java.util.Date` field. Other variants
@@ -228,6 +231,7 @@ impl JavaJsonWriterFeature {
         matches!(
             self,
             Self::BeanToArray
+                | Self::WriteNulls
                 | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat

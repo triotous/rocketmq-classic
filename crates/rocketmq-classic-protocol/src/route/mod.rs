@@ -112,6 +112,9 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
         omit_java_non_field_getter_properties(&mut value);
     }
+    if features.contains(&JavaJsonWriterFeature::WriteNulls) {
+        apply_java_write_nulls::<T>(&mut value)?;
+    }
     let mut bean_to_array_maps = HashMap::new();
     if features.contains(&JavaJsonWriterFeature::BeanToArray) {
         apply_java_bean_to_array::<T>(
@@ -444,6 +447,65 @@ pub(crate) fn apply_java_bean_to_array<T>(
     })?;
     serialize_java_bean_as_array(value, kind, &mut Vec::new(), map_fields, use_enum_names);
     Ok(())
+}
+
+pub(crate) fn apply_java_write_nulls<T>(
+    value: &mut serde_json::Value,
+) -> Result<(), serde_json::Error> {
+    let kind = JavaBeanKind::root_for_type_name(std::any::type_name::<T>()).ok_or_else(|| {
+        <serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson WriteNulls has no DTO field schema for {}",
+            std::any::type_name::<T>()
+        ))
+    })?;
+    include_java_nullable_fields(value, kind);
+    Ok(())
+}
+
+fn include_java_nullable_fields(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    for &name in kind.field_names() {
+        let field = fields
+            .entry(name.to_owned())
+            .or_insert(serde_json::Value::Null);
+        if let Some(child_kind) = kind.child_kind(name) {
+            match field {
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        include_java_nullable_fields(item, child_kind);
+                    }
+                }
+                serde_json::Value::Object(_) => include_java_nullable_fields(field, child_kind),
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => {}
+            }
+        } else if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
+            if let Some(entries) = field.as_object_mut() {
+                for entry in entries.values_mut() {
+                    include_java_nullable_fields(entry, JavaBeanKind::TopicQueueMappingInfo);
+                }
+            }
+        } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
+            && name == "messageRequestModeMap"
+        {
+            if let Some(topics) = field.as_object_mut() {
+                for groups in topics.values_mut() {
+                    if let Some(groups) = groups.as_object_mut() {
+                        for mode in groups.values_mut() {
+                            include_java_nullable_fields(
+                                mode,
+                                JavaBeanKind::SetMessageRequestModeRequestBody,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn serialize_java_bean_as_array(
@@ -4749,6 +4811,7 @@ mod tests {
                         JavaJsonWriterFeature::IgnoreNonFieldGetter,
                         "IgnoreNonFieldGetter",
                     ),
+                    (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
                     (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                     (

@@ -4901,6 +4901,9 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::IgnoreNonFieldGetter) {
         crate::route::omit_java_non_field_getter_properties(&mut value);
     }
+    if features.contains(&JavaJsonWriterFeature::WriteNulls) {
+        crate::route::apply_java_write_nulls::<T>(&mut value)?;
+    }
     let value_features = JavaJsonWriterValueFeatures {
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
@@ -5940,6 +5943,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7092,6 +7096,7 @@ mod tests {
                     JavaJsonWriterFeature::IgnoreNonFieldGetter,
                     "IgnoreNonFieldGetter",
                 ),
+                (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7601,6 +7606,7 @@ mod tests {
                             JavaJsonWriterFeature::IgnoreNonFieldGetter,
                             "IgnoreNonFieldGetter",
                         ),
+                        (JavaJsonWriterFeature::WriteNulls, "WriteNulls"),
                         (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                         (
