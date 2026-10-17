@@ -2992,6 +2992,20 @@ Before any publication:
   current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `WriteMapNullValue` writer flag (code commit `af0baada`,
+  2026-10-17): the pinned Java oracle emits nullable DTO fields with this flag,
+  matching its `WriteNulls` output for the mapped body, route, and heartbeat
+  fixture cases. The schema-backed adapter restores those nullable fields;
+  map values already represented as JSON null remain present in the Rust value
+  tree. Protocol all-feature tests (126 unit tests, all integration targets,
+  and 42 doctests), strict Protocol Clippy, formatting, and diff checks pass.
+  Mapping count is now 42/48; six flags remain unmapped:
+  `NullAsDefaultValue`, `WriteClassName`, `ReferenceDetection`,
+  `WriteNullListAsEmpty`, `WriteNullStringAsEmpty`, and
+  `WriteNullNumberAsZero`. Broad P18-V01, final full-workspace P18-V02,
+  current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
 - P18-V01 Fastjson `WriteNulls` writer flag (code commit `e7b0acde`,
   2026-10-17): schema-backed serialization restores omitted nullable fields as
   JSON `null` across mapped body, route, and heartbeat DTOs, including nested
