@@ -3622,3 +3622,16 @@ owner-specific checks belong in the manual handoff.
   production checks are the separate final manual handoff. No plan, Java
   oracle, remote branch, tag, publication, Broker operation, or deployment
   was changed.
+
+## Latest code revision follow-up — 2026-10-17 (`227876c1`)
+
+- [x] Default and all-feature workspace tests pass in the Linux
+  `rust:1.85.0-bookworm` container. All-target/all-feature `cargo check` and
+  strict Clippy pass there; formatting and diff checks pass.
+- [x] Maven `verify` passed all 37 scenarios and fixture-drift/cross-decode
+  checks on the worktree containing this code revision.
+- [ ] Refresh the remaining P18-V02 server-free evidence on this revision:
+  differential comparator and manifest checks, race/leak and fuzz smoke,
+  release examples and benchmark build, locked metadata/package checks, and
+  timezone-specific Unique ID checks. The previous complete run is recorded on
+  `01e02a5c`; these later V2 header edits have not yet had those gates repeated.
