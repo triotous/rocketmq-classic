@@ -2776,6 +2776,10 @@ mod tests {
                     crate::JavaJsonWriterFeature::WriteNullStringAsEmpty,
                     "WriteNullStringAsEmpty",
                 ),
+                (
+                    crate::JavaJsonWriterFeature::WriteNullNumberAsZero,
+                    "WriteNullNumberAsZero",
+                ),
                 (crate::JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (crate::JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (

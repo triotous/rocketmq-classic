@@ -5964,6 +5964,10 @@ mod tests {
                     JavaJsonWriterFeature::WriteNullStringAsEmpty,
                     "WriteNullStringAsEmpty",
                 ),
+                (
+                    JavaJsonWriterFeature::WriteNullNumberAsZero,
+                    "WriteNullNumberAsZero",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7129,6 +7133,10 @@ mod tests {
                     JavaJsonWriterFeature::WriteNullStringAsEmpty,
                     "WriteNullStringAsEmpty",
                 ),
+                (
+                    JavaJsonWriterFeature::WriteNullNumberAsZero,
+                    "WriteNullNumberAsZero",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7650,6 +7658,10 @@ mod tests {
                         (
                             JavaJsonWriterFeature::WriteNullStringAsEmpty,
                             "WriteNullStringAsEmpty",
+                        ),
+                        (
+                            JavaJsonWriterFeature::WriteNullNumberAsZero,
+                            "WriteNullNumberAsZero",
                         ),
                         (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),
