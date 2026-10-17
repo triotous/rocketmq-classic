@@ -1521,7 +1521,7 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
             oneway.1[LABEL_RESULT],
             AttributeValue::String(RESULT_ONEWAY.into())
         );
-        assert!(!oneway.1.contains_key("protocol_type"));
+        assert!(!oneway.1.as_map().contains_key("protocol_type"));
         assert_eq!(manager.get_metrics_view()[0].name, HISTOGRAM_RPC_LATENCY);
     }
     client.shutdown().await;

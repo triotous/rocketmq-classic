@@ -45,7 +45,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.AttributeType;
 import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
 import io.netty.channel.Channel;
 import org.apache.rocketmq.remoting.InvokeCallback;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
@@ -117,6 +119,9 @@ public final class RemotingApiSurfaceFixtures {
             responseFutureWaitResponseInterruptionBehavior());
         fixture.put("responseFutureCallbackFailureBehavior", responseFutureCallbackFailureBehavior());
         fixture.put("remotingMetricsConstantFields", publicFields(RemotingMetricsConstant.class));
+        fixture.put("attributeKeyPublicMethods", publicMethods(AttributeKey.class));
+        fixture.put("attributesPublicMethods", publicMethods(Attributes.class));
+        fixture.put("attributesBuilderPublicMethods", publicMethods(AttributesBuilder.class));
         fixture.put("remotingMetricsManagerPublicConstructors",
             publicConstructors(RemotingMetricsManager.class));
         fixture.put("remotingMetricsManagerPublicFields", publicFields(RemotingMetricsManager.class));
@@ -132,6 +137,7 @@ public final class RemotingApiSurfaceFixtures {
         fixture.put("unknownRequestCodeDescription", RemotingHelper.getRequestCodeDesc(Integer.MAX_VALUE));
         fixture.put("unknownResponseCodeDescription", RemotingHelper.getResponseCodeDesc(Integer.MIN_VALUE));
         fixture.put("remotingMetricsBehavior", remotingMetricsBehavior());
+        fixture.put("attributesBuilderBehavior", attributesBuilderBehavior());
         return fixture;
     }
 
@@ -293,6 +299,53 @@ public final class RemotingApiSurfaceFixtures {
         result.put("metricsViewBoundariesMilliseconds",
             Arrays.asList(1, 3, 5, 7, 10, 100, 1000, 2000, 3000));
         return result;
+    }
+
+    private static Map<String, Object> attributesBuilderBehavior() {
+        AttributesBuilder values = Attributes.builder()
+            .put("string", "value")
+            .put("boolean", true)
+            .put("long", 42L)
+            .put("double", 1.25d)
+            .put("string_array", new String[] {"first", "second"})
+            .put("boolean_array", new boolean[] {true, false})
+            .put("long_array", new long[] {3, 4})
+            .put("double_array", new double[] {2.5d, 3.5d})
+            .put(AttributeKey.longKey("long_from_int"), 7);
+
+        AttributesBuilder operations = Attributes.builder()
+            .put("removed", "remove")
+            .put("filtered", 9L)
+            .put("type_mismatch", "keep")
+            .putAll(Attributes.builder().put("copied", "put_all").build())
+            .remove(AttributeKey.stringKey("removed"))
+            .remove(AttributeKey.longKey("type_mismatch"))
+            .removeIf(key -> key.getKey().equals("filtered")
+                && key.getType() == AttributeType.LONG);
+
+        Attributes builtValues = values.build();
+        AttributesBuilder toBuilder = builtValues.toBuilder().put("from_to_builder", "copied");
+        Map<String, Object> typedLookup = new TreeMap<>();
+        typedLookup.put("double", builtValues.get(AttributeKey.doubleKey("double")));
+        typedLookup.put("wrongTypeReturnsNull",
+            builtValues.get(AttributeKey.stringKey("double")) == null);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("values", attributeValues(builtValues));
+        result.put("typedLookup", typedLookup);
+        result.put("afterToBuilder", attributeValues(toBuilder.build()));
+        result.put("afterBuilderOperations", attributeValues(operations.build()));
+        return result;
+    }
+
+    private static Map<String, Object> attributeValues(Attributes attributes) {
+        Map<String, Object> values = new TreeMap<>();
+        attributes.asMap().forEach((key, value) -> {
+            Map<String, Object> entry = new TreeMap<>();
+            entry.put("type", key.getType().name());
+            entry.put("value", value);
+            values.put(key.getKey(), entry);
+        });
+        return values;
     }
 
     private static List<String> publicConstructors(Class<?> type) {

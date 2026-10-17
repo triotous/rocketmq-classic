@@ -22,7 +22,7 @@ pub struct AttributeKey<T> {
     marker: PhantomData<fn() -> T>,
 }
 
-impl<T> AttributeKey<T> {
+impl<T: AttributeTypeOf> AttributeKey<T> {
     pub const fn new(name: &'static str) -> Self {
         Self {
             name,
@@ -32,6 +32,11 @@ impl<T> AttributeKey<T> {
 
     pub const fn name(&self) -> &'static str {
         self.name
+    }
+
+    /// Returns the OpenTelemetry type accepted by this key.
+    pub const fn attribute_type(&self) -> AttributeType {
+        T::ATTRIBUTE_TYPE
     }
 }
 
@@ -60,12 +65,90 @@ const DESCRIPTION_RPC_LATENCY: &str = "Rpc latency";
 const UNIT_MILLISECONDS: &str = "milliseconds";
 const RPC_LATENCY_BUCKETS_MILLISECONDS: [u64; 9] = [1, 3, 5, 7, 10, 100, 1_000, 2_000, 3_000];
 
+/// OpenTelemetry attribute value kinds supported by the pinned Java API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttributeType {
+    Boolean,
+    Integer,
+    Double,
+    String,
+    BooleanArray,
+    IntegerArray,
+    DoubleArray,
+    StringArray,
+}
+
+/// Associates a Rust value type with its OpenTelemetry attribute kind.
+pub trait AttributeTypeOf {
+    const ATTRIBUTE_TYPE: AttributeType;
+}
+
+impl AttributeTypeOf for bool {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::Boolean;
+}
+
+impl AttributeTypeOf for i64 {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::Integer;
+}
+
+impl AttributeTypeOf for f64 {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::Double;
+}
+
+impl AttributeTypeOf for String {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::String;
+}
+
+impl AttributeTypeOf for &str {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::String;
+}
+
+impl AttributeTypeOf for Vec<bool> {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::BooleanArray;
+}
+
+impl AttributeTypeOf for Vec<i64> {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::IntegerArray;
+}
+
+impl AttributeTypeOf for Vec<f64> {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::DoubleArray;
+}
+
+impl AttributeTypeOf for Vec<String> {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::StringArray;
+}
+
+impl AttributeTypeOf for Vec<&str> {
+    const ATTRIBUTE_TYPE: AttributeType = AttributeType::StringArray;
+}
+
 /// Values accepted by OpenTelemetry attributes used for remoting metrics.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AttributeValue {
     String(String),
     Boolean(bool),
     Integer(i64),
+    Double(f64),
+    StringArray(Vec<String>),
+    BooleanArray(Vec<bool>),
+    IntegerArray(Vec<i64>),
+    DoubleArray(Vec<f64>),
+}
+
+impl AttributeValue {
+    pub const fn attribute_type(&self) -> AttributeType {
+        match self {
+            Self::String(_) => AttributeType::String,
+            Self::Boolean(_) => AttributeType::Boolean,
+            Self::Integer(_) => AttributeType::Integer,
+            Self::Double(_) => AttributeType::Double,
+            Self::StringArray(_) => AttributeType::StringArray,
+            Self::BooleanArray(_) => AttributeType::BooleanArray,
+            Self::IntegerArray(_) => AttributeType::IntegerArray,
+            Self::DoubleArray(_) => AttributeType::DoubleArray,
+        }
+    }
 }
 
 impl From<String> for AttributeValue {
@@ -98,7 +181,91 @@ impl From<i64> for AttributeValue {
     }
 }
 
-pub type Attributes = BTreeMap<String, AttributeValue>;
+impl From<f64> for AttributeValue {
+    fn from(value: f64) -> Self {
+        Self::Double(value)
+    }
+}
+
+impl From<Vec<String>> for AttributeValue {
+    fn from(value: Vec<String>) -> Self {
+        Self::StringArray(value)
+    }
+}
+
+impl<'a> From<Vec<&'a str>> for AttributeValue {
+    fn from(value: Vec<&'a str>) -> Self {
+        Self::StringArray(value.into_iter().map(str::to_owned).collect())
+    }
+}
+
+impl From<Vec<bool>> for AttributeValue {
+    fn from(value: Vec<bool>) -> Self {
+        Self::BooleanArray(value)
+    }
+}
+
+impl From<Vec<i64>> for AttributeValue {
+    fn from(value: Vec<i64>) -> Self {
+        Self::IntegerArray(value)
+    }
+}
+
+impl From<Vec<f64>> for AttributeValue {
+    fn from(value: Vec<f64>) -> Self {
+        Self::DoubleArray(value)
+    }
+}
+
+/// Immutable set of metric attributes, matching OpenTelemetry `Attributes`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Attributes(BTreeMap<String, AttributeValue>);
+
+impl Attributes {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get<T: AttributeTypeOf>(&self, key: AttributeKey<T>) -> Option<&AttributeValue> {
+        self.0
+            .get(key.name())
+            .filter(|value| value.attribute_type() == key.attribute_type())
+    }
+
+    pub fn as_map(&self) -> &BTreeMap<String, AttributeValue> {
+        &self.0
+    }
+
+    pub fn to_builder(&self) -> AttributesBuilder {
+        AttributesBuilder {
+            attributes: self.0.clone(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &AttributeValue)> {
+        self.0.iter()
+    }
+
+    pub fn for_each(&self, mut callback: impl FnMut(&str, &AttributeValue)) {
+        self.0.iter().for_each(|(key, value)| callback(key, value));
+    }
+}
+
+impl std::ops::Index<&str> for Attributes {
+    type Output = AttributeValue;
+
+    fn index(&self, key: &str) -> &Self::Output {
+        &self.0[key]
+    }
+}
 
 /// Rust-side adapter for Java's `io.opentelemetry.api.metrics.LongHistogram`.
 pub trait RpcLatencyHistogram: Send + Sync + 'static {
@@ -108,9 +275,9 @@ pub trait RpcLatencyHistogram: Send + Sync + 'static {
 /// Supplies the base attributes used by `new_attributes_builder`.
 pub type AttributesBuilderSupplier = Arc<dyn Fn() -> AttributesBuilder + Send + Sync + 'static>;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttributesBuilder {
-    attributes: Attributes,
+    attributes: BTreeMap<String, AttributeValue>,
 }
 
 impl AttributesBuilder {
@@ -123,7 +290,7 @@ impl AttributesBuilder {
         self
     }
 
-    pub fn put_key<T: Into<AttributeValue>>(
+    pub fn put_key<T: Into<AttributeValue> + AttributeTypeOf>(
         &mut self,
         key: AttributeKey<T>,
         value: T,
@@ -133,7 +300,40 @@ impl AttributesBuilder {
     }
 
     pub fn build(self) -> Attributes {
+        Attributes(self.attributes)
+    }
+
+    /// Copies all values from another attribute set into this builder.
+    pub fn put_all(&mut self, attributes: &Attributes) -> &mut Self {
+        self.attributes.extend(
+            attributes
+                .as_map()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        self
+    }
+
+    /// Removes the attribute matching this key name and value type.
+    pub fn remove<T: AttributeTypeOf>(&mut self, key: AttributeKey<T>) -> &mut Self {
+        if self
+            .attributes
+            .get(key.name())
+            .is_some_and(|value| value.attribute_type() == key.attribute_type())
+        {
+            self.attributes.remove(key.name());
+        }
+        self
+    }
+
+    /// Removes attributes matching a key name and OpenTelemetry value type.
+    pub fn remove_if(
+        &mut self,
+        mut predicate: impl FnMut(&str, AttributeType) -> bool,
+    ) -> &mut Self {
         self.attributes
+            .retain(|key, value| !predicate(key, value.attribute_type()));
+        self
     }
 }
 
@@ -358,6 +558,7 @@ impl Drop for PendingWriteMetric {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     use serde_json::Value;
@@ -381,6 +582,35 @@ mod tests {
             "../../../fixtures/remoting/response-future-api.json"
         ))
         .unwrap()
+    }
+
+    fn attributes_as_java_json(attributes: &Attributes) -> Value {
+        let values = attributes
+            .iter()
+            .map(|(key, value)| {
+                let (type_name, value) = match value {
+                    AttributeValue::String(value) => ("STRING", serde_json::json!(value)),
+                    AttributeValue::Boolean(value) => ("BOOLEAN", serde_json::json!(value)),
+                    AttributeValue::Integer(value) => ("LONG", serde_json::json!(value)),
+                    AttributeValue::Double(value) => ("DOUBLE", serde_json::json!(value)),
+                    AttributeValue::StringArray(value) => {
+                        ("STRING_ARRAY", serde_json::json!(value))
+                    }
+                    AttributeValue::BooleanArray(value) => {
+                        ("BOOLEAN_ARRAY", serde_json::json!(value))
+                    }
+                    AttributeValue::IntegerArray(value) => ("LONG_ARRAY", serde_json::json!(value)),
+                    AttributeValue::DoubleArray(value) => {
+                        ("DOUBLE_ARRAY", serde_json::json!(value))
+                    }
+                };
+                (
+                    key.clone(),
+                    serde_json::json!({"type": type_name, "value": value}),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        serde_json::to_value(values).unwrap()
     }
 
     #[test]
@@ -411,6 +641,60 @@ mod tests {
             ])
         );
         assert_eq!(
+            fixture["attributeKeyPublicMethods"],
+            serde_json::json!([
+                "io.opentelemetry.api.common.AttributeKey booleanArrayKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey booleanKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey doubleArrayKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey doubleKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey longArrayKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey longKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey stringArrayKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeKey stringKey(java.lang.String)",
+                "io.opentelemetry.api.common.AttributeType getType()",
+                "java.lang.String getKey()"
+            ])
+        );
+        assert_eq!(
+            fixture["attributesPublicMethods"],
+            serde_json::json!([
+                "boolean isEmpty()",
+                "int size()",
+                "io.opentelemetry.api.common.Attributes empty()",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.Attributes of(io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object,io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.AttributesBuilder builder()",
+                "io.opentelemetry.api.common.AttributesBuilder toBuilder()",
+                "java.lang.Object get(io.opentelemetry.api.common.AttributeKey)",
+                "java.util.Map asMap()",
+                "void forEach(java.util.function.BiConsumer)"
+            ])
+        );
+        assert_eq!(
+            fixture["attributesBuilderPublicMethods"],
+            serde_json::json!([
+                "io.opentelemetry.api.common.Attributes build()",
+                "io.opentelemetry.api.common.AttributesBuilder put(io.opentelemetry.api.common.AttributeKey,[Ljava.lang.Object;)",
+                "io.opentelemetry.api.common.AttributesBuilder put(io.opentelemetry.api.common.AttributeKey,int)",
+                "io.opentelemetry.api.common.AttributesBuilder put(io.opentelemetry.api.common.AttributeKey,java.lang.Object)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,[D)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,[J)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,[Ljava.lang.String;)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,[Z)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,boolean)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,double)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,java.lang.String)",
+                "io.opentelemetry.api.common.AttributesBuilder put(java.lang.String,long)",
+                "io.opentelemetry.api.common.AttributesBuilder putAll(io.opentelemetry.api.common.Attributes)",
+                "io.opentelemetry.api.common.AttributesBuilder remove(io.opentelemetry.api.common.AttributeKey)",
+                "io.opentelemetry.api.common.AttributesBuilder removeIf(java.util.function.Predicate)"
+            ])
+        );
+        assert_eq!(
             fixture["remotingMetricsManagerPublicConstructors"],
             serde_json::json!(["org.apache.rocketmq.remoting.metrics.RemotingMetricsManager()"])
         );
@@ -429,6 +713,71 @@ mod tests {
                 "void initMetrics(io.opentelemetry.api.metrics.Meter,java.util.function.Supplier)",
                 "void setAttributesBuilderSupplier(java.util.function.Supplier)"
             ])
+        );
+        let java_attribute_builder = &fixture["attributesBuilderBehavior"];
+        let mut values = AttributesBuilder::new();
+        values
+            .put("string", "value")
+            .put("boolean", true)
+            .put("long", 42_i64)
+            .put("double", 1.25_f64)
+            .put("string_array", vec!["first", "second"])
+            .put("boolean_array", vec![true, false])
+            .put("long_array", vec![3_i64, 4_i64])
+            .put("double_array", vec![2.5_f64, 3.5_f64]);
+        values.put_key(AttributeKey::<i64>::new("long_from_int"), i64::from(7_i32));
+        let values = values.build();
+        assert_eq!(
+            attributes_as_java_json(&values),
+            java_attribute_builder["values"]
+        );
+        let mut copied_values = values.to_builder();
+        copied_values.put("from_to_builder", "copied");
+        assert_eq!(
+            attributes_as_java_json(&copied_values.build()),
+            java_attribute_builder["afterToBuilder"]
+        );
+        assert_eq!(
+            values.len(),
+            java_attribute_builder["values"].as_object().unwrap().len()
+        );
+        assert!(!values.is_empty());
+        assert_eq!(values.as_map().len(), values.len());
+        assert_eq!(
+            AttributeKey::<Vec<f64>>::new("double_array").attribute_type(),
+            AttributeType::DoubleArray
+        );
+        let mut visited_keys = Vec::new();
+        values.for_each(|key, _| visited_keys.push(key.to_owned()));
+        assert_eq!(
+            visited_keys,
+            values
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            values.get(AttributeKey::<f64>::new("double")),
+            Some(&AttributeValue::Double(1.25))
+        );
+        assert_eq!(values.get(AttributeKey::<String>::new("double")), None);
+
+        let mut operations = AttributesBuilder::new();
+        operations
+            .put("removed", "remove")
+            .put("filtered", 9_i64)
+            .put("type_mismatch", "keep");
+        let mut copied_builder = AttributesBuilder::new();
+        copied_builder.put("copied", "put_all");
+        let copied = copied_builder.build();
+        operations.put_all(&copied);
+        operations.remove(AttributeKey::<String>::new("removed"));
+        operations.remove(AttributeKey::<i64>::new("type_mismatch"));
+        operations
+            .remove_if(|key, value_type| key == "filtered" && value_type == AttributeType::Integer);
+        assert_eq!(
+            attributes_as_java_json(&operations.build()),
+            java_attribute_builder["afterBuilderOperations"]
         );
         assert_eq!(
             fixture["remotingMetricsHostMethods"],
@@ -585,8 +934,8 @@ mod tests {
             observations[3].1[LABEL_RESULT],
             AttributeValue::String(RESULT_PROCESS_REQUEST_FAILED.into())
         );
-        assert_eq!(observations[3].1.get(LABEL_RESPONSE_CODE), None);
-        assert_eq!(observations[3].1.get(LABEL_IS_LONG_POLLING), None);
+        assert_eq!(observations[3].1.as_map().get(LABEL_RESPONSE_CODE), None);
+        assert_eq!(observations[3].1.as_map().get(LABEL_IS_LONG_POLLING), None);
         assert_eq!(
             observations[4].1[LABEL_RESULT],
             AttributeValue::String(RESULT_CANCELED.into())
