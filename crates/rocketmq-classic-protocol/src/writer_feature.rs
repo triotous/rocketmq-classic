@@ -53,6 +53,12 @@
 /// remain null as in Fastjson2. The
 /// `ReferenceDetection` option emits Fastjson `$ref` objects for repeated
 /// shared DTO handles.
+/// `WriteClassName` writes RocketMQ's type metadata on root DTOs, polymorphic
+/// set/list members, interface-typed maps, and MessageQueue map keys. It also
+/// writes Fastjson's `Set` collection marker and the `L` suffix for small
+/// values held in Java `long` fields. `NotWriteRootClassName`,
+/// `NotWriteHashMapArrayListClassName`, and `NotWriteSetClassName` suppress
+/// their corresponding type markers when combined with this feature.
 /// `WriteNullNumberAsZero` option preserves output for the mapped DTO graph:
 /// numeric bean fields are primitive, while Fastjson's map and collection
 /// writers emit bare nulls for null entries independent of this flag.
@@ -250,6 +256,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNullStringAsEmpty
                 | Self::WriteNullNumberAsZero
                 | Self::NullAsDefaultValue
+                | Self::WriteClassName
                 | Self::ReferenceDetection
                 | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse

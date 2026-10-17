@@ -4892,6 +4892,8 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         browser_compatible: features.contains(&JavaJsonWriterFeature::BrowserCompatible),
         browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
         bean_to_array: features.contains(&JavaJsonWriterFeature::BeanToArray),
+        write_class_name: features.contains(&JavaJsonWriterFeature::WriteClassName),
+        not_write_set_class_name: features.contains(&JavaJsonWriterFeature::NotWriteSetClassName),
         use_enum_names: features.contains(&JavaJsonWriterFeature::WriteEnumsUsingName)
             || features.contains(&JavaJsonWriterFeature::WriteEnumUsingToString),
         ..JavaJsonWriterValueFeatures::default()
@@ -4931,6 +4933,13 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
     }
     if features.contains(&JavaJsonWriterFeature::NullAsDefaultValue) {
         crate::route::apply_java_null_defaults::<T>(&mut value)?;
+    }
+    if value_features.write_class_name {
+        crate::route::apply_java_class_names::<T>(
+            &mut value,
+            features.contains(&JavaJsonWriterFeature::NotWriteRootClassName),
+            features.contains(&JavaJsonWriterFeature::NotWriteHashMapArrayListClassName),
+        )?;
     }
     let value_features = JavaJsonWriterValueFeatures {
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
@@ -4973,6 +4982,8 @@ struct JavaJsonWriterValueFeatures {
     unquote_field_names: bool,
     ignore_non_field_getter: bool,
     bean_to_array: bool,
+    write_class_name: bool,
+    not_write_set_class_name: bool,
     use_enum_names: bool,
 }
 
@@ -5040,6 +5051,9 @@ fn write_java_remoting_body_json(
                             value_features.use_enum_names,
                         );
                     }
+                    if value_features.write_class_name {
+                        crate::route::apply_java_message_queue_class_name(queue_key);
+                    }
                 }
                 if let Some(queue_key) = queue_key {
                     if value_features.ignore_non_field_getter {
@@ -5054,6 +5068,8 @@ fn write_java_remoting_body_json(
                         let mut queue_key_writer = JavaRemotingBodyWriter {
                             indent: writer.indent,
                             value_features: JavaJsonWriterValueFeatures {
+                                write_class_name: value_features.write_class_name,
+                                not_write_set_class_name: value_features.not_write_set_class_name,
                                 use_single_quotes: value_features.use_single_quotes,
                                 unquote_field_names: value_features.unquote_field_names,
                                 browser_secure: value_features.browser_secure,
@@ -5085,9 +5101,9 @@ fn write_java_remoting_body_json(
                     )?;
                 }
                 output.push(':');
-                let child_is_queue_table =
-                    matches!(key.as_str(), "messageQueueTable" | "offsetTable")
-                        || field_name == Some("consumerTable");
+                let child_is_queue_table = queue_table
+                    || matches!(key.as_str(), "messageQueueTable" | "offsetTable")
+                    || field_name == Some("consumerTable");
                 writer
                     .path
                     .push(crate::route::JavaJsonPathSegment::ObjectKey(key.clone()));
@@ -5112,9 +5128,21 @@ fn write_java_remoting_body_json(
             output.push('}');
         }
         serde_json::Value::Array(values) if values.is_empty() && indent.is_none() => {
+            if value_features.write_class_name
+                && !value_features.not_write_set_class_name
+                && crate::route::is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push_str("[]")
         }
         serde_json::Value::Array(values) if values.is_empty() => {
+            if value_features.write_class_name
+                && !value_features.not_write_set_class_name
+                && crate::route::is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push_str("[\n");
             write_java_remoting_body_indent(output, depth + 1, indent);
             output.push('\n');
@@ -5122,6 +5150,12 @@ fn write_java_remoting_body_json(
             output.push(']');
         }
         serde_json::Value::Array(values) => {
+            if value_features.write_class_name
+                && !value_features.not_write_set_class_name
+                && crate::route::is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push('[');
             for (index, value) in values.iter().enumerate() {
                 if indent.is_some() {
@@ -5154,6 +5188,15 @@ fn write_java_remoting_body_json(
                 value_features.browser_secure,
                 output,
             )?;
+        }
+        serde_json::Value::Number(number) => {
+            output.push_str(&serde_json::to_string(value)?);
+            if value_features.write_class_name
+                && (queue_table || crate::route::is_java_long_field(field_name))
+                && crate::route::is_small_java_long(number)
+            {
+                output.push('L');
+            }
         }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
@@ -5993,6 +6036,7 @@ mod tests {
                     JavaJsonWriterFeature::NullAsDefaultValue,
                     "NullAsDefaultValue",
                 ),
+                (JavaJsonWriterFeature::WriteClassName, "WriteClassName"),
                 (
                     JavaJsonWriterFeature::ReferenceDetection,
                     "ReferenceDetection",
@@ -7170,6 +7214,7 @@ mod tests {
                     JavaJsonWriterFeature::NullAsDefaultValue,
                     "NullAsDefaultValue",
                 ),
+                (JavaJsonWriterFeature::WriteClassName, "WriteClassName"),
                 (
                     JavaJsonWriterFeature::ReferenceDetection,
                     "ReferenceDetection",
@@ -7704,6 +7749,7 @@ mod tests {
                             JavaJsonWriterFeature::NullAsDefaultValue,
                             "NullAsDefaultValue",
                         ),
+                        (JavaJsonWriterFeature::WriteClassName, "WriteClassName"),
                         (
                             JavaJsonWriterFeature::ReferenceDetection,
                             "ReferenceDetection",

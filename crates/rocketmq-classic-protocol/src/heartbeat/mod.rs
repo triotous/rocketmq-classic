@@ -2785,6 +2785,10 @@ mod tests {
                     "NullAsDefaultValue",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::WriteClassName,
+                    "WriteClassName",
+                ),
+                (
                     crate::JavaJsonWriterFeature::ReferenceDetection,
                     "ReferenceDetection",
                 ),

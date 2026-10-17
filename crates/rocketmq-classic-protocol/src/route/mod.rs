@@ -256,6 +256,13 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
     if features.contains(&JavaJsonWriterFeature::NullAsDefaultValue) {
         apply_java_null_defaults::<T>(&mut value)?;
     }
+    if features.contains(&JavaJsonWriterFeature::WriteClassName) {
+        apply_java_class_names::<T>(
+            &mut value,
+            features.contains(&JavaJsonWriterFeature::NotWriteRootClassName),
+            features.contains(&JavaJsonWriterFeature::NotWriteHashMapArrayListClassName),
+        )?;
+    }
     let mut bean_to_array_maps = HashMap::new();
     if features.contains(&JavaJsonWriterFeature::BeanToArray) {
         apply_java_bean_to_array::<T>(
@@ -277,6 +284,8 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         use_single_quotes: features.contains(&JavaJsonWriterFeature::UseSingleQuotes),
         unquote_field_names: features.contains(&JavaJsonWriterFeature::UnquoteFieldName),
         browser_secure: features.contains(&JavaJsonWriterFeature::BrowserSecure),
+        write_class_name: features.contains(&JavaJsonWriterFeature::WriteClassName),
+        not_write_set_class_name: features.contains(&JavaJsonWriterFeature::NotWriteSetClassName),
     };
     let mut writer = JavaRouteWriter {
         indent,
@@ -566,6 +575,295 @@ impl JavaBeanKind {
             _ => return None,
         })
     }
+
+    fn java_class_name(self) -> &'static str {
+        match self {
+            Self::BatchAck => "org.apache.rocketmq.remoting.protocol.body.BatchAck",
+            Self::BatchAckMessageRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody"
+            }
+            Self::BrokerData => "org.apache.rocketmq.remoting.protocol.route.BrokerData",
+            Self::CheckClientRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody"
+            }
+            Self::ConsumeMessageDirectlyResult => {
+                "org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult"
+            }
+            Self::ConsumerData => "org.apache.rocketmq.remoting.protocol.heartbeat.ConsumerData",
+            Self::GetConsumerListByGroupResponseBody => {
+                "org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody"
+            }
+            Self::GetConsumerStatusBody => {
+                "org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody"
+            }
+            Self::HeartbeatData => "org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData",
+            Self::LiteSubscriptionCtlRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody"
+            }
+            Self::LiteSubscriptionDto => "org.apache.rocketmq.common.lite.LiteSubscriptionDTO",
+            Self::LockBatchRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody"
+            }
+            Self::LockBatchResponseBody => {
+                "org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody"
+            }
+            Self::MessageQueue => "org.apache.rocketmq.common.message.MessageQueue",
+            Self::MessageQueueAssignment => {
+                "org.apache.rocketmq.common.message.MessageQueueAssignment"
+            }
+            Self::MessageRequestModeSerializeWrapper => {
+                "org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper"
+            }
+            Self::QueryAssignmentRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody"
+            }
+            Self::QueryAssignmentResponseBody => {
+                "org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody"
+            }
+            Self::QueryConsumeTimeSpanBody => {
+                "org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody"
+            }
+            Self::QueueData => "org.apache.rocketmq.remoting.protocol.route.QueueData",
+            Self::QueueTimeSpan => "org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan",
+            Self::ResetOffsetBody => "org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody",
+            Self::SetMessageRequestModeRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody"
+            }
+            Self::SubscriptionData => {
+                "org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData"
+            }
+            Self::TopicQueueMappingInfo => {
+                "org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo"
+            }
+            Self::TopicRouteData => "org.apache.rocketmq.remoting.protocol.route.TopicRouteData",
+            Self::UnlockBatchRequestBody => {
+                "org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody"
+            }
+            Self::ProducerData => "org.apache.rocketmq.remoting.protocol.heartbeat.ProducerData",
+        }
+    }
+
+    fn is_set_field(self, field: &str) -> bool {
+        matches!(
+            (self, field),
+            (Self::ConsumerData, "subscriptionDataSet")
+                | (Self::HeartbeatData, "consumerDataSet" | "producerDataSet")
+                | (Self::LiteSubscriptionCtlRequestBody, "subscriptionSet")
+                | (Self::LiteSubscriptionDto, "liteTopicSet")
+                | (
+                    Self::LockBatchRequestBody | Self::UnlockBatchRequestBody,
+                    "mqSet"
+                )
+                | (Self::LockBatchResponseBody, "lockOKMQSet")
+                | (Self::QueryAssignmentResponseBody, "messageQueueAssignments")
+                | (Self::SubscriptionData, "codeSet" | "tagsSet")
+        )
+    }
+}
+
+fn java_root_kind<T>() -> Result<JavaBeanKind, serde_json::Error> {
+    JavaBeanKind::root_for_type_name(std::any::type_name::<T>()).ok_or_else(|| {
+        <serde_json::Error as serde::ser::Error>::custom(format!(
+            "Fastjson WriteClassName has no DTO field schema for {}",
+            std::any::type_name::<T>()
+        ))
+    })
+}
+
+pub(crate) fn apply_java_message_queue_class_name(value: &mut serde_json::Value) {
+    insert_java_class_name(value, JavaBeanKind::MessageQueue);
+}
+
+fn insert_java_class_name(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    if is_java_reference_value(value) {
+        return;
+    }
+    if let Some(fields) = value.as_object_mut() {
+        fields.insert(
+            "@type".to_owned(),
+            serde_json::Value::String(kind.java_class_name().to_owned()),
+        );
+    }
+}
+
+pub(crate) fn is_java_long_field(field: Option<&str>) -> bool {
+    matches!(
+        field,
+        Some(
+            "consumeTimeStamp"
+                | "delayTime"
+                | "epoch"
+                | "invisibleTime"
+                | "maxTimeStamp"
+                | "minTimeStamp"
+                | "popTime"
+                | "it"
+                | "pt"
+                | "so"
+                | "spentTimeMills"
+                | "startOffset"
+                | "subVersion"
+                | "version"
+        )
+    )
+}
+
+pub(crate) fn is_small_java_long(value: &serde_json::Number) -> bool {
+    value
+        .as_i64()
+        .is_some_and(|value| (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&value))
+}
+
+fn java_hash_map_class_name(value: &mut serde_json::Value, not_write_hash_map_array_list: bool) {
+    if !not_write_hash_map_array_list {
+        if let Some(fields) = value.as_object_mut() {
+            fields.insert(
+                "@type".to_owned(),
+                serde_json::Value::String("java.util.HashMap".to_owned()),
+            );
+        }
+    }
+}
+
+fn java_concurrent_hash_map_class_name(value: &mut serde_json::Value) {
+    // Fastjson's NotWriteHashMapArrayListClassName only suppresses HashMap and
+    // ArrayList, not ConcurrentHashMap.
+    if let Some(fields) = value.as_object_mut() {
+        fields.insert(
+            "@type".to_owned(),
+            serde_json::Value::String("java.util.concurrent.ConcurrentHashMap".to_owned()),
+        );
+    }
+}
+
+fn apply_java_class_names_to_bean(
+    value: &mut serde_json::Value,
+    kind: JavaBeanKind,
+    include_type: bool,
+    not_write_hash_map_array_list: bool,
+) {
+    if is_java_reference_value(value) {
+        return;
+    }
+    let Some(fields) = value.as_object_mut() else {
+        return;
+    };
+    if include_type {
+        fields.insert(
+            "@type".to_owned(),
+            serde_json::Value::String(kind.java_class_name().to_owned()),
+        );
+    }
+
+    for &name in kind.field_names() {
+        let Some(field) = fields.get_mut(name) else {
+            continue;
+        };
+
+        if let Some(child_kind) = kind.child_kind(name) {
+            if kind.is_set_field(name)
+                || (kind == JavaBeanKind::BatchAckMessageRequestBody && name == "acks")
+            {
+                if let Some(items) = field.as_array_mut() {
+                    for item in items {
+                        apply_java_class_names_to_bean(
+                            item,
+                            child_kind,
+                            true,
+                            not_write_hash_map_array_list,
+                        );
+                    }
+                }
+            } else {
+                match field {
+                    serde_json::Value::Array(items) => {
+                        for item in items {
+                            apply_java_class_names_to_bean(
+                                item,
+                                child_kind,
+                                false,
+                                not_write_hash_map_array_list,
+                            );
+                        }
+                    }
+                    serde_json::Value::Object(_) => apply_java_class_names_to_bean(
+                        field,
+                        child_kind,
+                        false,
+                        not_write_hash_map_array_list,
+                    ),
+                    serde_json::Value::Null
+                    | serde_json::Value::Bool(_)
+                    | serde_json::Value::Number(_)
+                    | serde_json::Value::String(_) => {}
+                }
+            }
+            continue;
+        }
+
+        match (kind, name) {
+            (JavaBeanKind::GetConsumerStatusBody, "messageQueueTable")
+            | (JavaBeanKind::GetConsumerStatusBody, "consumerTable")
+            | (JavaBeanKind::ResetOffsetBody, "offsetTable")
+            | (JavaBeanKind::TopicRouteData, "topicQueueMappingByBroker")
+            | (JavaBeanKind::MessageQueueAssignment, "attachments") => {
+                java_hash_map_class_name(field, not_write_hash_map_array_list);
+                if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
+                    if let Some(entries) = field.as_object_mut() {
+                        for value in entries.values_mut() {
+                            apply_java_class_names_to_bean(
+                                value,
+                                JavaBeanKind::TopicQueueMappingInfo,
+                                false,
+                                not_write_hash_map_array_list,
+                            );
+                        }
+                    }
+                } else if kind == JavaBeanKind::GetConsumerStatusBody && name == "consumerTable" {
+                    if let Some(entries) = field.as_object_mut() {
+                        for value in entries.values_mut() {
+                            java_hash_map_class_name(value, not_write_hash_map_array_list);
+                        }
+                    }
+                }
+            }
+            (JavaBeanKind::TopicQueueMappingInfo, "currIdMap") => {
+                java_concurrent_hash_map_class_name(field);
+            }
+            (JavaBeanKind::MessageRequestModeSerializeWrapper, "messageRequestModeMap") => {
+                if let Some(topics) = field.as_object_mut() {
+                    for groups in topics.values_mut() {
+                        if let Some(groups) = groups.as_object_mut() {
+                            for mode in groups.values_mut() {
+                                apply_java_class_names_to_bean(
+                                    mode,
+                                    JavaBeanKind::SetMessageRequestModeRequestBody,
+                                    true,
+                                    not_write_hash_map_array_list,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(crate) fn apply_java_class_names<T>(
+    value: &mut serde_json::Value,
+    not_write_root_class_name: bool,
+    not_write_hash_map_array_list: bool,
+) -> Result<(), serde_json::Error> {
+    let kind = java_root_kind::<T>()?;
+    apply_java_class_names_to_bean(
+        value,
+        kind,
+        !not_write_root_class_name,
+        not_write_hash_map_array_list,
+    );
+    Ok(())
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -1631,6 +1929,8 @@ struct JavaRouteWriterOptions {
     use_single_quotes: bool,
     unquote_field_names: bool,
     browser_secure: bool,
+    write_class_name: bool,
+    not_write_set_class_name: bool,
 }
 
 struct JavaRouteWriter<'a> {
@@ -1668,14 +1968,24 @@ fn write_java_route_json(
                 && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
             let long_keys_are_strings =
                 writer_options.stringify_long_map_keys && field_name == Some("brokerAddrs");
+            let mut entries: Vec<_> = fields.iter().collect();
+            if let Some(type_index) = entries.iter().position(|(key, _)| key.as_str() == "@type") {
+                entries.rotate_left(type_index);
+            }
             output.push('{');
-            for (index, (key, value)) in fields.iter().enumerate() {
+            for (index, (key, value)) in entries.into_iter().enumerate() {
                 if indent.is_some() {
                     output.push('\n');
                     write_java_indent(output, depth + 1, indent);
                 }
                 if numeric_keys && !long_keys_are_strings && key.parse::<i64>().is_ok() {
                     output.push_str(key);
+                    if writer_options.write_class_name
+                        && field_name == Some("brokerAddrs")
+                        && key.parse::<i32>().is_ok()
+                    {
+                        output.push('L');
+                    }
                 } else {
                     write_java_json_field_name(
                         key,
@@ -1705,9 +2015,21 @@ fn write_java_route_json(
             output.push('}');
         }
         serde_json::Value::Array(values) if values.is_empty() && indent.is_none() => {
+            if writer_options.write_class_name
+                && !writer_options.not_write_set_class_name
+                && is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push_str("[]")
         }
         serde_json::Value::Array(values) if values.is_empty() => {
+            if writer_options.write_class_name
+                && !writer_options.not_write_set_class_name
+                && is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push_str("[\n");
             write_java_indent(output, depth + 1, indent);
             output.push('\n');
@@ -1715,6 +2037,12 @@ fn write_java_route_json(
             output.push(']');
         }
         serde_json::Value::Array(values) => {
+            if writer_options.write_class_name
+                && !writer_options.not_write_set_class_name
+                && is_java_set_property(field_name)
+            {
+                output.push_str("Set");
+            }
             output.push('[');
             for (index, value) in values.iter().enumerate() {
                 if indent.is_some() {
@@ -1745,9 +2073,36 @@ fn write_java_route_json(
                 output,
             )?;
         }
+        serde_json::Value::Number(number) => {
+            output.push_str(&serde_json::to_string(value)?);
+            if writer_options.write_class_name
+                && is_java_long_field(field_name)
+                && is_small_java_long(number)
+            {
+                output.push('L');
+            }
+        }
         _ => output.push_str(&serde_json::to_string(value)?),
     }
     Ok(())
+}
+
+pub(crate) fn is_java_set_property(field: Option<&str>) -> bool {
+    matches!(
+        field,
+        Some(
+            "codeSet"
+                | "consumerDataSet"
+                | "liteTopicSet"
+                | "lockOKMQSet"
+                | "messageQueueAssignments"
+                | "mqSet"
+                | "producerDataSet"
+                | "subscriptionDataSet"
+                | "subscriptionSet"
+                | "tagsSet"
+        )
+    )
 }
 
 fn write_java_indent(output: &mut String, depth: usize, indent: Option<&str>) {
@@ -5357,6 +5712,7 @@ mod tests {
                         JavaJsonWriterFeature::NullAsDefaultValue,
                         "NullAsDefaultValue",
                     ),
+                    (JavaJsonWriterFeature::WriteClassName, "WriteClassName"),
                     (
                         JavaJsonWriterFeature::ReferenceDetection,
                         "ReferenceDetection",
