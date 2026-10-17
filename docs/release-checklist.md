@@ -3082,3 +3082,17 @@ Before any publication:
   final full-workspace P18-V02, current-revision Ubuntu/Windows CI, P18-V04
   handoff, and Phase 19 Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `WriteClassName` writer flag (code commit `07d2fba1`,
+  2026-10-17): serialization now emits Java root and polymorphic DTO type
+  metadata, typed map metadata and MessageQueue map keys, `Set` markers, and
+  `L` suffixes for small values held in Java `long` fields. The combined
+  `NotWriteRootClassName`, `NotWriteHashMapArrayListClassName`, and
+  `NotWriteSetClassName` policies are also mapped. Body, route, and heartbeat
+  fixture loops compare the feature output with invoked Java 5.5.1. Protocol
+  all-feature tests pass (127 unit tests, all integration targets, 42 doctests);
+  strict all-target/all-feature Protocol Clippy, formatting, and diff checks
+  pass. Writer feature inventory is now 48/48. The broad P18-V01 API/source/
+  input/reverse-export audit, final full-workspace P18-V02, current-revision
+  Ubuntu/Windows CI evidence, and Phase 19 local Docker/Broker automation
+  remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
