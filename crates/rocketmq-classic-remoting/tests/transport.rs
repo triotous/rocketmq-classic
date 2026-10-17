@@ -1400,6 +1400,20 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         }
     }
 
+    struct MarkLongPollingRequest;
+    impl RpcHook for MarkLongPollingRequest {
+        fn before_request_mut_result(
+            &self,
+            _: &str,
+            request: &mut RemotingCommand,
+        ) -> Result<(), RpcHookError> {
+            if request.code == 777_777 {
+                request.set_suspended(true);
+            }
+            Ok(())
+        }
+    }
+
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -1434,6 +1448,7 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
     let manager = Arc::new(RemotingMetricsManager::new());
     manager.init_metrics(histogram.clone(), None);
     client.set_remoting_metrics_manager(Some(manager.clone()));
+    client.add_rpc_hook(Arc::new(MarkLongPollingRequest));
     assert!(Arc::ptr_eq(
         &client.get_remoting_metrics_manager().unwrap(),
         &manager
@@ -1490,7 +1505,7 @@ async fn p3_v03_inbound_dispatch_and_reordered_parallel_responses() {
         );
         assert_eq!(
             success.1[LABEL_IS_LONG_POLLING],
-            AttributeValue::Boolean(false)
+            AttributeValue::Boolean(true)
         );
         assert_eq!(
             success.1[LABEL_RESULT],
