@@ -3760,3 +3760,20 @@ owner-specific checks belong in the manual handoff.
   required profiles, and pre-publication version/registry checks also remain
   open. Owner-only production checks remain the final manual handoff. No plan,
   remote branch, tag, publication, Broker operation, or deployment was touched.
+
+## Heartbeat request header API follow-up — 2026-10-17
+
+- [x] Closed the P18-V01 `HeartbeatRequestHeader` slice against the pinned
+  Java 5.5.1 source. `sendHeartbeat` and `sendHeartbeatV2` use this
+  `RpcRequestHeader` subtype, with inherited namespace, broker-name, and
+  oneway fields. Rust now exports the typed header, preserves all four ext
+  fields and inherited equality/hash/toString behavior, and uses it for both
+  heartbeat RPCs. Java typed-header fixture SHA-256:
+  `d52b9cfbb0e640702e0eb6cea45430a237ac7120513854b36f677447fc3cfe46`.
+- [x] Pinned Java Maven `verify` passes all 37 scenarios and cross-decodes 56
+  Rust typed-header frames. Focused Rust verification passes the 3 header
+  inventory tests, the request-header identity test, the 14 Core extension
+  tests, and strict all-target/all-feature Clippy for Protocol and Core.
+- Broad P18-V01 reconciliation remains open. Current-revision GitHub Ubuntu
+  and native Windows P18-V04 evidence, 30 Phase 19 local Broker scenarios and
+  required profiles, and pre-publication registry resolution remain open.
