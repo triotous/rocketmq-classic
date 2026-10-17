@@ -220,7 +220,7 @@ printf 'scenario=%s\nprofile=%s\nproject=%s\nrun_id=%s\njava_client=5.5.1\nserve
     "$(git -C "$repo_root" rev-parse HEAD)" "$source_code_dirty" \
     >"$evidence_dir/metadata.txt"
 {
-    uname -a
+    uname -srm
     cargo --version
     rustc --version
     mvn -version
@@ -265,6 +265,28 @@ cleanup() {
     if ((compose_cleanup_status)); then
         status=1
         echo "Compose cleanup failed; see $evidence_dir/compose-cleanup.log" >&2
+    fi
+    if ! python3 - "$evidence_dir" "$repo_root" "${HOME:-}" <<'PY'
+import sys
+from pathlib import Path
+
+evidence_dir = Path(sys.argv[1])
+replacements = [
+    (sys.argv[2].encode(), b"<repo>"),
+    (sys.argv[3].encode(), b"<home>"),
+]
+for path in evidence_dir.iterdir():
+    if not path.is_file():
+        continue
+    contents = path.read_bytes()
+    for source, replacement in replacements:
+        if source:
+            contents = contents.replace(source, replacement)
+    path.write_bytes(contents)
+PY
+    then
+        status=1
+        echo "Failed to redact local paths from scenario evidence" >&2
     fi
     ended_epoch="$(date +%s)"
     if ((status == 0)); then
