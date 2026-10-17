@@ -1,0 +1,50 @@
+# P18-V01 Pull response header decode-mode follow-up — 2026-10-17T19:40:32Z
+
+- Repository: `/Users/bruce.tsai/Projects/trio/rocketmq-classic`.
+- Branch: `phase/19-phase-18-compatibility-release-gate`.
+- Code revision: `fcc0f3f1 fix(protocol): match Java pull response decoding`.
+- Java oracle: RocketMQ client 5.5.1, source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9` (read-only).
+- Fixture: `fixtures/remoting/pull-response-header-decode-modes.json`.
+- Fixture SHA-256:
+  `9ba19f1b5394e7bd6e60366770990e034e75e98f2ecff04c82059d712dc8db59`.
+
+## Parity change
+
+- Java direct decoding preserves absent nullable `Long`/`Integer` wrapper
+  fields as null. Fast mode fails on malformed numeric conversion; reflection
+  mode catches a per-field conversion error and leaves that field null.
+- Rust `PullMessageResponseHeader` now preserves nullable values and mirrors
+  both decode modes. The Pull RPC requires `nextBeginOffset`, `minOffset`,
+  `maxOffset`, and `suggestWhichBrokerId` at result construction, matching
+  Java's unboxing failure boundary.
+- Optional wrapper values stay optional in the request-code compatibility
+  matrix.
+
+## Verification
+
+- Maven `verify`: PASS, all 37 scenarios, fixture drift checks, and Java/Rust
+  cross-decodes.
+- Linux Rust 1.85.0 default and all-feature workspace tests: PASS.
+- Linux all-target/all-feature workspace check and strict Clippy: PASS.
+- Formatting and `git diff --check`: PASS.
+- Two initial test assertions encoded incorrect Java assumptions and were
+  corrected: the direct RPC fixture had expected non-null wrapper values on
+  direct decode, and the validation matrix treated nullable wrapper fields as
+  required. Both corrected expectations now reflect the Java oracle.
+
+## Still open
+
+- Broad bidirectional P18-V01 source/API/settings/input/error/flow and
+  reverse-export reconciliation, including other custom-header mode differences.
+- Remaining current-revision P18-V02 supplemental checks: differential
+  comparator/manifest, race/leak and fuzz smoke, release examples/benchmarks,
+  locked metadata/package checks, and UTC/Asia-Taipei Unique ID checks.
+- Current-revision GitHub Ubuntu and native Windows P18-V04 evidence.
+- 30 Phase 19 local Docker/Broker scenarios and required multi-Broker/TLS/ACL/
+  feature profiles.
+- Pre-publication release-version intent and registry dependency-resolution
+  checks. Owner-only production validation remains separate manual work.
+
+No plan, Java oracle, remote branch, tag, publication, Broker operation, or
+deployment was changed.

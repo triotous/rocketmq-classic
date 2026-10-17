@@ -3635,3 +3635,28 @@ owner-specific checks belong in the manual handoff.
   release examples and benchmark build, locked metadata/package checks, and
   timezone-specific Unique ID checks. The previous complete run is recorded on
   `01e02a5c`; these later V2 header edits have not yet had those gates repeated.
+
+## Pull response header follow-up — 2026-10-17 (`fcc0f3f1`)
+
+- [x] P18-V01 `PullMessageResponseHeader` nullable and mode-specific decoding:
+  the Java 5.5.1 fixture covers absent wrappers, valid numbers, and malformed
+  numeric fields in fast and reflection modes. Rust preserves nullable wrapper
+  values on direct decode, rejects invalid numbers in fast mode, and ignores an
+  individual reflection conversion failure as Java does. The Pull RPC validates
+  `nextBeginOffset`, `minOffset`, `maxOffset`, and `suggestWhichBrokerId` at the
+  Java-equivalent unboxing boundary. Fixture SHA-256:
+  `9ba19f1b5394e7bd6e60366770990e034e75e98f2ecff04c82059d712dc8db59`.
+  Maven verify (37 scenarios, fixture drift and cross-decodes), Linux default
+  and all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, formatting, and diff checks pass. Two test expectations were corrected
+  to match Java: direct decode preserves null, and the wrapper fields are
+  nullable in the validation matrix. This closes this header slice only.
+- [ ] Re-run the remaining P18-V02 gates on `fcc0f3f1`: differential comparator
+  and manifest, race/leak and fuzz smoke, release examples and benchmark build,
+  locked metadata/package checks, and UTC/Asia-Taipei Unique ID checks. The
+  current-revision test/check and Maven results above do not replace those
+  supplemental gates.
+- Broad P18-V01 reconciliation, current-revision GitHub Ubuntu/native Windows
+  P18-V04 evidence, 30 Phase 19 local Docker/Broker scenarios and required
+  profiles, and pre-publication version/registry checks remain open. Owner-only
+  production checks remain separate final manual items.
