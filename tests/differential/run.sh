@@ -127,7 +127,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic; do
     is_implemented=false
@@ -155,8 +155,19 @@ if [[ $(wc -l <"$selected_file" | tr -d ' ') -ne 1 ]]; then
 fi
 
 IFS=$'\t' read -r scenario_id profile topic <"$selected_file"
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" || "$profile" != "basic" || "$topic" != "compat_phase0_route" ]]; then
-    echo "Scenario metadata differs from the reviewed ROUTE-001 implementation" >&2
+if [[ "$profile" != "basic" ]]; then
+    echo "Scenario metadata differs from the implemented basic profile" >&2
+    exit 3
+fi
+case "$scenario_id:$topic" in
+    ROUTE-001-get-existing-topic:compat_phase0_route|ROUTE-002-topic-not-exist:compat_phase0_missing) ;;
+    *)
+        echo "Scenario metadata differs from the reviewed route implementations" >&2
+        exit 3
+        ;;
+esac
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" ]]; then
+    echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
 if [[ "${ROCKETMQ_CLASSIC_TEST_ENV:-}" != "local-disposable" ]]; then
@@ -207,7 +218,7 @@ code_dirty_paths=(Cargo.toml Cargo.lock scripts/check-workspace-metadata.py
     compat/java-reference/pom.xml
     compat/java-reference/src/main/java/compat/LiveRouteProbe.java
     integration-tests/Cargo.toml integration-tests/src/bin/live_client.rs
-    tests/differential/run.sh)
+    tests/differential/compare.py tests/differential/run.sh)
 if [[ -n "$(git -C "$repo_root" status --porcelain -- "${code_dirty_paths[@]}")" ]]; then
     source_code_dirty=true
 else
@@ -347,12 +358,16 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-echo "Creating scenario-owned topic $topic"
-topic_created=true
-if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
-    >"$evidence_dir/topic-create.log" 2>&1; then
-    cat "$evidence_dir/topic-create.log" >&2
-    exit 1
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
+    echo "Creating scenario-owned topic $topic"
+    topic_created=true
+    if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
+        >"$evidence_dir/topic-create.log" 2>&1; then
+        cat "$evidence_dir/topic-create.log" >&2
+        exit 1
+    fi
+else
+    echo "Confirming that scenario topic $topic has no route"
 fi
 
 echo "Compiling Java 5.5.1 and Rust route probes"
@@ -389,12 +404,22 @@ if ! cmp -s "$evidence_dir/java-route.tsv" "$evidence_dir/rust-route.tsv"; then
     cat "$evidence_dir/route-diff.txt" >&2
     exit 1
 fi
-if ! awk -F '\t' -v topic="$topic" \
-    'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
-     END { if (NR != 4) exit 1 }' \
-    "$evidence_dir/java-route.tsv"; then
-    echo "Route evidence must contain exactly queue IDs 0-3 for $topic on broker-a" >&2
-    exit 1
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" ]]; then
+    if ! awk -F '\t' -v topic="$topic" \
+        'NF != 4 || $1 != "QUEUE" || $2 != topic || $3 != "broker-a" || $4 !~ /^[0-3]$/ || seen[$4]++ { exit 1 }
+         END { if (NR != 4) exit 1 }' \
+        "$evidence_dir/java-route.tsv"; then
+        echo "Route evidence must contain exactly queue IDs 0-3 for $topic on broker-a" >&2
+        exit 1
+    fi
+else
+    expected_route="$evidence_dir/expected-route.tsv"
+    printf 'NO_ROUTE\t%s\n' "$topic" >"$expected_route"
+    if ! cmp -s "$expected_route" "$evidence_dir/java-route.tsv"; then
+        echo "Missing-topic scenario must produce exactly NO_ROUTE for $topic" >&2
+        exit 1
+    fi
+    rm -f "$expected_route"
 fi
 
 printf 'PASS %s: %s matching queue rows\n' "$scenario_id" "$(wc -l <"$evidence_dir/java-route.tsv" | tr -d ' ')" \

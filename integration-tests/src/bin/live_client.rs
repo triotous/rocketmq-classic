@@ -1,6 +1,6 @@
 use std::{env, error::Error, sync::Arc};
 
-use rocketmq_classic::{Producer, ProducerConfig};
+use rocketmq_classic::{Producer, ProducerConfig, ProducerError};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -17,24 +17,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let producer = Arc::new(Producer::new(config));
     producer.start().await?;
-    let queues = producer.fetch_publish_message_queues(&arguments[2]).await;
+    let result = producer.fetch_publish_message_queues(&arguments[2]).await;
     let shutdown = producer.shutdown().await;
-    let mut queues = queues?;
     shutdown?;
-    queues.sort_by_key(|queue| {
-        (
-            queue.broker_name().unwrap_or_default().to_owned(),
-            queue.queue_id(),
-        )
-    });
-
-    for queue in queues {
-        println!(
-            "QUEUE\t{}\t{}\t{}",
-            queue.topic().unwrap_or_default(),
-            queue.broker_name().unwrap_or_default(),
-            queue.queue_id()
-        );
+    match result {
+        Ok(queues) if queues.is_empty() => println!("EMPTY_ROUTE\t{}", arguments[2]),
+        Ok(mut queues) => {
+            queues.sort_by_key(|queue| {
+                (
+                    queue.broker_name().unwrap_or_default().to_owned(),
+                    queue.queue_id(),
+                )
+            });
+            for queue in queues {
+                println!(
+                    "QUEUE\t{}\t{}\t{}",
+                    queue.topic().unwrap_or_default(),
+                    queue.broker_name().unwrap_or_default(),
+                    queue.queue_id()
+                );
+            }
+        }
+        Err(ProducerError::NoRoute(_)) => println!("NO_ROUTE\t{}", arguments[2]),
+        Err(error) => return Err(error.into()),
     }
     Ok(())
 }

@@ -163,6 +163,17 @@ def validate_manifest(manifest):
                 rust_rows = evidence_path / "rust-route.tsv"
                 if not java_rows.is_file() or not rust_rows.is_file() or java_rows.read_bytes() != rust_rows.read_bytes():
                     raise ValueError(f"Phase 19 route evidence does not match: {scenario['id']}")
+            if scenario["id"] == "ROUTE-002-topic-not-exist":
+                java_rows = evidence_path / "java-route.tsv"
+                rust_rows = evidence_path / "rust-route.tsv"
+                expected = f"NO_ROUTE\t{scenario['inputs']['topic']}\n".encode()
+                if (
+                    not java_rows.is_file()
+                    or not rust_rows.is_file()
+                    or java_rows.read_bytes() != expected
+                    or rust_rows.read_bytes() != expected
+                ):
+                    raise ValueError(f"Phase 19 missing-route evidence does not match: {scenario['id']}")
     phase19_ids = {
         scenario["id"]
         for scenario in scenarios
