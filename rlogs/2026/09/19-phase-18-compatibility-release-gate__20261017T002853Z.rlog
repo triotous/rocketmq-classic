@@ -95,3 +95,18 @@
   fixture regeneration was needed. Full-workspace P18-V02 remains pending
   after Phase 18 code work is complete. Current mapping count remains 23/48;
   25 writer features remain unmapped.
+
+- P18-V01 inert DTO writer-feature mapping (`b627c15e`, 2026-10-17):
+  `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
+  `WriteThrowableClassName`, and `WriterUtilDateAsMillis` preserve output for
+  the mapped body, route, and heartbeat DTO graph. Pinned Fastjson2 sources
+  restrict these options to byte arrays, Apache Pair values, Throwable values,
+  and `java.util.Date`; the mapped graph has no such fields. BatchAck's BitSet
+  uses RocketMQ's custom serializer, and QueueTimeSpan uses long fields plus
+  derived date strings. Invoked Java fixtures show no output changes; Rust now
+  accepts and compares all four flags for each mapped adapter. Validation on
+  `b627c15e`: Protocol all-feature tests (125 unit tests, all integration
+  targets, 42 doctests), strict Protocol Clippy, formatting, `git diff --check`,
+  and Maven verify (37 scenarios, fixture checks and cross-decodes) passed.
+  The mapping count is 27/48; 21 remain unmapped. Full-workspace P18-V02 is
+  pending after remaining Phase 18 code work.

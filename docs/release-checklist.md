@@ -2836,3 +2836,19 @@ Before any publication:
   current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19 Docker/Broker
   automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
+- P18-V01 inert DTO writer-feature mapping (code commit `b627c15e`,
+  2026-10-17): `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
+  `WriteThrowableClassName`, and `WriterUtilDateAsMillis` preserve output for
+  the mapped body, route, and heartbeat DTO graph. Pinned Fastjson2 call sites
+  limit these options to byte arrays, Apache Pair values, Throwable values,
+  and `java.util.Date`; the mapped graph has none of those fields. BatchAck's
+  BitSet uses RocketMQ's custom serializer, and QueueTimeSpan has long fields
+  with derived date strings. Invoked Java fixtures show no output change, and
+  Rust now compares each adapter against those baselines. Protocol all-feature
+  tests (125 unit tests, all integration targets, 42 doctests), strict Protocol
+  Clippy, Maven verify (37 scenarios, fixture checks and cross-decodes),
+  formatting, and diff checks pass. Mapping count is now 27/48; 21 writer
+  features remain unmapped. The final full-workspace P18-V02 rerun, broad
+  P18-V01 audit, current-revision Ubuntu/Windows CI, P18-V03/V04, and Phase 19
+  Docker/Broker automation remain open. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T002853Z.rlog).
