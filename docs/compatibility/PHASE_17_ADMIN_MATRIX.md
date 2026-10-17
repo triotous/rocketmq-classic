@@ -116,8 +116,19 @@ the all-candidates-blocked case. The pinned Java 5.5.1 path uses
 The updated Linux module and tests pass an isolated x86_64 Linux target
 type-check; a complete workspace cross-check cannot run on this Mac because
 the Linux C sysroot/compiler needed by AWS-LC and zstd is unavailable. The
-current revision has not yet had a Linux runtime or GitHub Ubuntu run, so this
-fix remains pending that evidence.
+current revision subsequently passed default/all-feature workspace tests and
+strict Clippy in a Linux ARM64 container after the transient-task follow-up
+below. Current-revision GitHub Ubuntu and native Windows job results remain
+pending.
+
+Linux transient-task exit follow-up (`ac0a16f3`, 2026-10-17): the default
+workspace run exposed a race where `/proc/self/task` iteration can report
+`ESRCH` while a short-lived thread exits. Thread enumeration now skips only
+the disappeared task (`ENOENT`/`ESRCH`) and still reports unrelated I/O
+errors. A unit test pins the error classification. The focused regression,
+default/all-feature workspace suites, and strict all-target/all-feature
+workspace Clippy pass on Linux ARM64. GitHub Ubuntu and Windows execution
+remain separate P17/P18 platform evidence.
 
 ## Verification status
 

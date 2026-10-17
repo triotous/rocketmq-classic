@@ -3471,6 +3471,34 @@ owner-specific checks belong in the manual handoff.
   `2680e925aa7c21cd5f2f5ea8055ee986bec5fc174601c612cb8ae469481d2cf0`.
   Linux Remoting all-feature tests, strict Remoting Clippy, format/diff checks,
   and Maven verify pass. The macOS all-feature workspace run stalled in Rust
-  compilation and was interrupted, so a current-revision workspace P18-V02
-  rerun remains open. Details are in
+  compilation and was interrupted; the later Linux ARM64 current-revision
+  rerun is recorded below. Details for this identity slice are in
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog).
+
+## Current code revision gate — 2026-10-17 (`ac0a16f3`)
+
+- [x] P18-V02 server-free local gates pass on code revision `ac0a16f3`,
+  including ProcessTimer identity parity (`4858ebdd`). Default and all-feature
+  workspace tests and strict all-target/all-feature workspace Clippy pass on
+  Rust 1.85.0 in a Linux ARM64 `rust:1.85.0-bookworm` container with
+  `--init`. The initial default run exposed a transient `/proc/self/task`
+  `ESRCH` race in Linux jstack enumeration; `ac0a16f3` skips entries for
+  disappeared tasks, and both workspace modes pass after the fix. Format and
+  diff checks pass.
+- Maven `verify` passes all 37 scenarios, fixture drift checks and Java/Rust
+  cross-decodes. Differential comparator self-test and the 37-row manifest
+  validate; deterministic race/leak smoke passes 16 cases × 3; fuzz smoke
+  passes 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes
+  and 113 message decodes. Release examples build and the offline benchmark
+  runs. Locked Cargo metadata, workspace metadata/license/dependency checks,
+  all seven package file lists, and four Asia/Taipei Unique ID tests pass.
+  Detailed output and benchmark observations are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T144935Z.rlog).
+- The macOS workspace test process still stalled during compilation; it is not
+  counted as a pass. The Linux ARM64 run closes P18-V02's local server-free
+  gate on this code revision. Broad P18-V01 reconciliation, current-revision
+  GitHub Ubuntu/native Windows evidence for P18-V04, 30 remaining Phase 19
+  Docker/Broker scenarios and required multi-Broker/TLS/ACL profiles, and
+  release version/registry checks remain open. Owner-specific final checks
+  remain a separate manual handoff. No plan, Java oracle, remote branch, tag,
+  or publication target was changed.

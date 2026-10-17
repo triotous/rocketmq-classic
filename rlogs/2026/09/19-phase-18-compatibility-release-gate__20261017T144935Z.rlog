@@ -43,3 +43,35 @@
 - Owner-only final manual validation remains a separate handoff. No plan files
   were changed; no push, tag, publication, Broker operation, or deployment
   occurred.
+
+## Current-revision server-free gate and Linux jstack follow-up — 2026-10-17
+
+- The first default workspace test run on the ProcessTimer revision exposed
+  `No such process` from Linux `/proc/self/task` iteration during concurrent
+  stack capture. Fixed transient disappeared-task handling in
+  `crates/rocketmq-classic-consumer/src/stack.rs`; unrelated I/O errors still
+  propagate. Code commit: `ac0a16f3 fix(consumer): ignore transient task exit
+  in jstack`.
+- The focused disappearing-task classification test and concurrent jstack
+  capture regression pass. Default and all-feature workspace tests pass on
+  Rust 1.85.0 in Linux ARM64 Docker with `--init`; all-target/all-feature
+  workspace Clippy, host format check, and diff check pass.
+- `mvn -f compat/java-reference/pom.xml verify` passes fixture drift checks,
+  37 scenarios, and Java/Rust cross-decodes. Comparator self-test and manifest
+  validation pass (37 cases). Race/leak smoke passes 16 cases × 3; fuzz smoke
+  passes 105 frame seeds, 11 message seeds, 1,856 mutations, 146 frame decodes,
+  and 113 message decodes.
+- Release examples build; the offline benchmark runs on Linux AArch64 with
+  Rust 1.85.0. Observations: frame encode/decode 1,239.7 ns/iteration and
+  4,676 bytes/iteration; Zstandard message decode 707.3 ns and 197,493 bytes;
+  Producer send construction 811.1 ns and 3,665 bytes; 128-entry route lookup
+  13.0 ns and zero bytes; pending completion 5,504.8 ns and 9,442 bytes.
+- Locked Cargo metadata, `scripts/check-workspace-metadata.py`, seven package
+  file listings with `LICENSE`/`NOTICE`, and the four `TZ=Asia/Taipei` Unique
+  ID tests pass. The complete local P18-V02 server-free gate is closed on
+  `ac0a16f3`.
+- Broad P18-V01 remains PARTIAL. Current-revision GitHub Ubuntu/native Windows
+  evidence for P18-V04, 30 Phase 19 local Docker/Broker scenarios and required
+  multi-Broker/TLS/ACL profiles, and release version/registry checks remain
+  open. The macOS workspace run remained stalled and is not counted; the
+  successful Linux ARM64 container runs provide the workspace evidence.
