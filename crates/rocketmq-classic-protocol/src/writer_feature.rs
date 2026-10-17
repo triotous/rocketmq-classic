@@ -10,15 +10,21 @@
 /// `IgnoreNoneSerializable`, `ErrorOnNoneSerializable`, `BrowserCompatible`,
 /// `OptimizedForAscii`, `WriteNameAsSymbol`, `NotWriteRootClassName`,
 /// `NotWriteHashMapArrayListClassName`, `NotWriteNumberClassName`, and
-/// `NotWriteSetClassName`. `OptimizedForAscii` is output-preserving because
-/// the Rust writer already emits UTF-8 JSON.
+/// `NotWriteSetClassName`, `WriteByteArrayAsBase64`, `WritePairAsJavaBean`,
+/// `WriteThrowableClassName`, and `WriterUtilDateAsMillis`.
+/// `OptimizedForAscii` is output-preserving because the Rust writer already
+/// emits UTF-8 JSON.
 /// `WriteNameAsSymbol` is output-preserving for RocketMQ's UTF-8 text JSON
 /// encoder; Fastjson2 uses symbols in its JSONB type-name path. The four
 /// `NotWrite*ClassName` features preserve output when supplied alone: the
 /// mapped API does not enable `WriteClassName`, and pinned Fastjson only uses
 /// three of these options while deciding whether to write type metadata; it
-/// has no writer callsite for `NotWriteSetClassName`. Other variants return an
-/// explicit unsupported-feature error until their behavior is mapped.
+/// has no writer callsite for `NotWriteSetClassName`. The remaining four
+/// options preserve output for the mapped RocketMQ DTO graph: it contains no
+/// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
+/// Pair field, Throwable field, or `java.util.Date` field. Other variants
+/// return an explicit unsupported-feature error until their behavior is
+/// mapped.
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JavaJsonWriterFeature {
@@ -210,6 +216,10 @@ impl JavaJsonWriterFeature {
                 | Self::NotWriteHashMapArrayListClassName
                 | Self::NotWriteNumberClassName
                 | Self::NotWriteSetClassName
+                | Self::WriteByteArrayAsBase64
+                | Self::WritePairAsJavaBean
+                | Self::WriteThrowableClassName
+                | Self::WriterUtilDateAsMillis
                 | Self::UseSingleQuotes
                 | Self::UnquoteFieldName
                 | Self::IgnoreNoneSerializable

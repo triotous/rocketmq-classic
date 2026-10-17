@@ -2723,6 +2723,22 @@ mod tests {
                     "NotWriteSetClassName",
                 ),
                 (
+                    crate::JavaJsonWriterFeature::WriteByteArrayAsBase64,
+                    "WriteByteArrayAsBase64",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::WritePairAsJavaBean,
+                    "WritePairAsJavaBean",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::WriteThrowableClassName,
+                    "WriteThrowableClassName",
+                ),
+                (
+                    crate::JavaJsonWriterFeature::WriterUtilDateAsMillis,
+                    "WriterUtilDateAsMillis",
+                ),
+                (
                     crate::JavaJsonWriterFeature::UnquoteFieldName,
                     "UnquoteFieldName",
                 ),

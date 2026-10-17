@@ -4271,6 +4271,22 @@ mod tests {
                         JavaJsonWriterFeature::NotWriteSetClassName,
                         "NotWriteSetClassName",
                     ),
+                    (
+                        JavaJsonWriterFeature::WriteByteArrayAsBase64,
+                        "WriteByteArrayAsBase64",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WritePairAsJavaBean,
+                        "WritePairAsJavaBean",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriteThrowableClassName,
+                        "WriteThrowableClassName",
+                    ),
+                    (
+                        JavaJsonWriterFeature::WriterUtilDateAsMillis,
+                        "WriterUtilDateAsMillis",
+                    ),
                     (JavaJsonWriterFeature::UnquoteFieldName, "UnquoteFieldName"),
                     (
                         JavaJsonWriterFeature::IgnoreNoneSerializable,
