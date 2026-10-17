@@ -51,6 +51,8 @@
 /// `NullAsDefaultValue` option applies schema-identified String, collection,
 /// map, and nested DTO defaults (`""`, `[]`, and `{}`); nullable enum fields
 /// remain null as in Fastjson2. The
+/// `ReferenceDetection` option emits Fastjson `$ref` objects for repeated
+/// shared DTO handles.
 /// `WriteNullNumberAsZero` option preserves output for the mapped DTO graph:
 /// numeric bean fields are primitive, while Fastjson's map and collection
 /// writers emit bare nulls for null entries independent of this flag.
@@ -248,6 +250,7 @@ impl JavaJsonWriterFeature {
                 | Self::WriteNullStringAsEmpty
                 | Self::WriteNullNumberAsZero
                 | Self::NullAsDefaultValue
+                | Self::ReferenceDetection
                 | Self::FieldBased
                 | Self::WriteNullBooleanAsFalse
                 | Self::PrettyFormat

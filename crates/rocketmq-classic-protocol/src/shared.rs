@@ -1,9 +1,55 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeMap};
 use std::{
+    cell::Cell,
     fmt,
     hash::Hash,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
+
+pub(crate) const SHARED_VALUE_REFERENCE_MARKER_KEY: &str =
+    "\0rocketmq_classic_shared_value_identity";
+
+thread_local! {
+    static SHARED_VALUE_REFERENCE_MARKERS_ENABLED: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn shared_value_reference_markers_enabled() -> bool {
+    SHARED_VALUE_REFERENCE_MARKERS_ENABLED.with(Cell::get)
+}
+
+pub(crate) fn serialize_shared_value_identity<S, T>(
+    identity: usize,
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: Serialize,
+{
+    if !shared_value_reference_markers_enabled() {
+        return value.serialize(serializer);
+    }
+    let payload = (identity, value);
+    let mut map = serializer.serialize_map(Some(1))?;
+    map.serialize_entry(SHARED_VALUE_REFERENCE_MARKER_KEY, &payload)?;
+    map.end()
+}
+
+pub(crate) fn with_shared_value_reference_markers<R>(action: impl FnOnce() -> R) -> R {
+    struct RestoreMarkerState(bool);
+
+    impl Drop for RestoreMarkerState {
+        fn drop(&mut self) {
+            SHARED_VALUE_REFERENCE_MARKERS_ENABLED.with(|enabled| enabled.set(self.0));
+        }
+    }
+
+    let previous = SHARED_VALUE_REFERENCE_MARKERS_ENABLED.with(|enabled| enabled.replace(true));
+    let restore = RestoreMarkerState(previous);
+    let result = action();
+    drop(restore);
+    result
+}
 
 /// A cloneable, shared mutable DTO value.
 ///
@@ -44,6 +90,10 @@ impl<T> SharedValue<T> {
     /// Feeds this handle's stable process-local identity into a hash builder.
     pub(crate) fn hash_identity<H: std::hash::Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);
+    }
+
+    pub(crate) fn reference_identity(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
     }
 
     fn read(&self) -> RwLockReadGuard<'_, T> {
@@ -88,7 +138,12 @@ impl<T: Serialize> Serialize for SharedValue<T> {
     where
         S: Serializer,
     {
-        self.read().serialize(serializer)
+        if SHARED_VALUE_REFERENCE_MARKERS_ENABLED.with(Cell::get) {
+            let value = self.read();
+            serialize_shared_value_identity(self.reference_identity(), &*value, serializer)
+        } else {
+            self.read().serialize(serializer)
+        }
     }
 }
 

@@ -377,6 +377,23 @@ where
     let Some(attachments) = attachments else {
         return serializer.serialize_none();
     };
+    if crate::shared::shared_value_reference_markers_enabled() {
+        let mapped = attachments.with(|entries| {
+            entries
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .as_ref()
+                        .map(|value| (key.clone(), serde_json::Value::String(value.clone())))
+                })
+                .collect()
+        });
+        return crate::shared::serialize_shared_value_identity(
+            attachments.reference_identity(),
+            &serde_json::Value::Object(mapped),
+            serializer,
+        );
+    }
     let attachments = attachments.snapshot();
     let non_null_count = attachments.values().filter(|value| value.is_some()).count();
     let mut map = serializer.serialize_map(Some(non_null_count))?;
@@ -4866,7 +4883,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
         return Ok(output);
     }
     let indent = crate::route::java_json_indent(pretty_format, features);
-    let mut value = serde_json::to_value(value)?;
+    let mut value = crate::route::java_serialize_value_with_features(value, features)?;
     let value_features = JavaJsonWriterValueFeatures {
         write_non_string_values_as_strings: features
             .contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
@@ -4929,6 +4946,7 @@ fn java_fastjson_remoting_body_json_with_features<T: Serialize>(
             value_features.use_enum_names,
         )?;
     }
+    crate::route::apply_java_reference_output_markers(&mut value);
     let mut output = String::new();
     let mut writer = JavaRemotingBodyWriter {
         indent,
@@ -5974,6 +5992,10 @@ mod tests {
                 (
                     JavaJsonWriterFeature::NullAsDefaultValue,
                     "NullAsDefaultValue",
+                ),
+                (
+                    JavaJsonWriterFeature::ReferenceDetection,
+                    "ReferenceDetection",
                 ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
@@ -7148,6 +7170,10 @@ mod tests {
                     JavaJsonWriterFeature::NullAsDefaultValue,
                     "NullAsDefaultValue",
                 ),
+                (
+                    JavaJsonWriterFeature::ReferenceDetection,
+                    "ReferenceDetection",
+                ),
                 (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (
@@ -7677,6 +7703,10 @@ mod tests {
                         (
                             JavaJsonWriterFeature::NullAsDefaultValue,
                             "NullAsDefaultValue",
+                        ),
+                        (
+                            JavaJsonWriterFeature::ReferenceDetection,
+                            "ReferenceDetection",
                         ),
                         (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                         (JavaJsonWriterFeature::FieldBased, "FieldBased"),

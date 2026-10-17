@@ -2784,6 +2784,10 @@ mod tests {
                     crate::JavaJsonWriterFeature::NullAsDefaultValue,
                     "NullAsDefaultValue",
                 ),
+                (
+                    crate::JavaJsonWriterFeature::ReferenceDetection,
+                    "ReferenceDetection",
+                ),
                 (crate::JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                 (crate::JavaJsonWriterFeature::FieldBased, "FieldBased"),
                 (

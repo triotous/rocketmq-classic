@@ -3573,6 +3573,25 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> referenceDetectionSharedRouteCase() {
+        TopicRouteData route = new TopicRouteData();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData sharedBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        sharedBroker.setBrokerName("shared-broker");
+        List<org.apache.rocketmq.remoting.protocol.route.BrokerData> brokers = new ArrayList<>();
+        brokers.add(sharedBroker);
+        brokers.add(sharedBroker);
+        route.setBrokerDatas(brokers);
+
+        Map<String, Object> item = new TreeMap<>();
+        item.put("default", new String(route.encode(), java.nio.charset.StandardCharsets.UTF_8));
+        item.put("referenceDetection", new String(route.encode(
+            new com.alibaba.fastjson2.JSONWriter.Feature[] {
+                com.alibaba.fastjson2.JSONWriter.Feature.ReferenceDetection}),
+            java.nio.charset.StandardCharsets.UTF_8));
+        return item;
+    }
+
     private static Map<String, Object> inheritedSerializationNullUtilities() {
         Map<String, Object> item = new TreeMap<>();
         byte[] jsonNull = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -3856,6 +3875,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("routeDtoReferenceAliases", routeDtoReferenceAliasCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
+        fixture.put("referenceDetectionSharedRouteCase", referenceDetectionSharedRouteCase());
         fixture.put("writerFeatureEscapingCase", inheritedSerializationCase(
             "writer-unicode",
             "{\"orderTopicConf\":\"café-漢字-😀-𝄞\"}",

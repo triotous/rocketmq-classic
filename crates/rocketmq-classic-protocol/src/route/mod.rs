@@ -17,6 +17,8 @@ pub type SharedFilterServerTable = SharedValue<BTreeMap<String, Option<SharedFil
 pub type SharedTopicQueueMappingTable =
     SharedValue<BTreeMap<String, Option<SharedTopicQueueMappingInfoHandle>>>;
 
+const JAVA_REFERENCE_OUTPUT_MARKER_KEY: &str = "\0rocketmq_classic_json_reference";
+
 impl From<Vec<Option<QueueData>>> for SharedRouteQueueDataList {
     fn from(queues: Vec<Option<QueueData>>) -> Self {
         SharedValue::new(
@@ -68,7 +70,29 @@ fn serialize_shared_nullable_long_string_map<S>(
 where
     S: Serializer,
 {
-    let snapshot = value.as_ref().map(SharedValue::snapshot);
+    let Some(addresses) = value else {
+        return serializer.serialize_none();
+    };
+    if crate::shared::shared_value_reference_markers_enabled() {
+        let mapped = addresses.with(|entries| {
+            entries
+                .iter()
+                .map(|(key, value)| {
+                    let key = key.map_or_else(|| "null".to_owned(), |key| key.to_string());
+                    let value = value.as_ref().map_or(serde_json::Value::Null, |value| {
+                        serde_json::Value::String(value.clone())
+                    });
+                    (key, value)
+                })
+                .collect()
+        });
+        return crate::shared::serialize_shared_value_identity(
+            addresses.reference_identity(),
+            &serde_json::Value::Object(mapped),
+            serializer,
+        );
+    }
+    let snapshot = Some(addresses.snapshot());
     serde_fastjson::serialize_nullable_long_string_map(&snapshot, serializer)
 }
 
@@ -77,6 +101,112 @@ pub(crate) fn java_fastjson_json<T: Serialize>(
     pretty_format: bool,
 ) -> Result<String, serde_json::Error> {
     java_fastjson_json_with_features(value, pretty_format, &[])
+}
+
+pub(crate) fn java_serialize_value_with_features<T: Serialize>(
+    value: &T,
+    features: &[JavaJsonWriterFeature],
+) -> Result<serde_json::Value, serde_json::Error> {
+    if !features.contains(&JavaJsonWriterFeature::ReferenceDetection) {
+        return serde_json::to_value(value);
+    }
+    let mut value =
+        crate::shared::with_shared_value_reference_markers(|| serde_json::to_value(value))?;
+    apply_java_reference_detection(&mut value);
+    Ok(value)
+}
+
+fn apply_java_reference_detection(value: &mut serde_json::Value) {
+    fn resolve(value: &mut serde_json::Value, path: &str, seen: &mut HashMap<usize, String>) {
+        let marker = value.as_object().and_then(|fields| {
+            if fields.len() != 1 {
+                return None;
+            }
+            let payload = fields
+                .get(crate::shared::SHARED_VALUE_REFERENCE_MARKER_KEY)?
+                .as_array()?;
+            let identity = usize::try_from(payload.first()?.as_u64()?).ok()?;
+            Some((identity, payload.get(1)?.clone()))
+        });
+        if let Some((identity, inner)) = marker {
+            if let Some(first_path) = seen.get(&identity) {
+                let mut reference = serde_json::Map::new();
+                reference.insert(
+                    JAVA_REFERENCE_OUTPUT_MARKER_KEY.to_owned(),
+                    serde_json::Value::String(first_path.clone()),
+                );
+                *value = serde_json::Value::Object(reference);
+                return;
+            }
+            seen.insert(identity, path.to_owned());
+            *value = inner;
+            resolve(value, path, seen);
+            return;
+        }
+
+        if let Some(fields) = value.as_object_mut() {
+            for (name, field) in fields {
+                let child_path = if is_java_reference_path_identifier(name) {
+                    format!("{path}.{name}")
+                } else {
+                    format!(
+                        "{path}[{}]",
+                        serde_json::to_string(name).unwrap_or_default()
+                    )
+                };
+                resolve(field, &child_path, seen);
+            }
+        } else if let Some(items) = value.as_array_mut() {
+            for (index, item) in items.iter_mut().enumerate() {
+                resolve(item, &format!("{path}[{index}]"), seen);
+            }
+        }
+    }
+
+    fn is_java_reference_path_identifier(name: &str) -> bool {
+        let mut chars = name.chars();
+        chars
+            .next()
+            .is_some_and(|first| first == '_' || first == '$' || first.is_ascii_alphabetic())
+            && chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
+    }
+
+    resolve(value, "$", &mut HashMap::new());
+}
+
+fn is_java_reference_value(value: &serde_json::Value) -> bool {
+    value.as_object().is_some_and(|fields| {
+        fields.len() == 1 && fields.contains_key(JAVA_REFERENCE_OUTPUT_MARKER_KEY)
+    })
+}
+
+pub(crate) fn apply_java_reference_output_markers(value: &mut serde_json::Value) {
+    if is_java_reference_value(value) {
+        if let Some(path) = value
+            .as_object()
+            .and_then(|fields| fields.get(JAVA_REFERENCE_OUTPUT_MARKER_KEY))
+            .cloned()
+        {
+            *value = serde_json::json!({"$ref": path});
+        }
+        return;
+    }
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                apply_java_reference_output_markers(item);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for field in fields.values_mut() {
+                apply_java_reference_output_markers(field);
+            }
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {}
+    }
 }
 
 pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
@@ -89,7 +219,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
         return Ok(output);
     }
     let indent = java_json_indent(pretty_format, features);
-    let mut value = serde_json::to_value(value)?;
+    let mut value = java_serialize_value_with_features(value, features)?;
     apply_java_json_writer_value_features(
         &mut value,
         features.contains(&JavaJsonWriterFeature::WriteNonStringValueAsString),
@@ -135,6 +265,7 @@ pub(crate) fn java_fastjson_json_with_features<T: Serialize>(
                 || features.contains(&JavaJsonWriterFeature::WriteEnumUsingToString),
         )?;
     }
+    apply_java_reference_output_markers(&mut value);
     let mut output = String::new();
     let writer_options = JavaRouteWriterOptions {
         unquote_numeric_map_keys: !features
@@ -516,6 +647,9 @@ pub(crate) fn apply_java_null_defaults<T>(
 }
 
 fn write_java_null_objects(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    if is_java_reference_value(value) {
+        return;
+    }
     let Some(fields) = value.as_object_mut() else {
         return;
     };
@@ -601,6 +735,9 @@ fn java_is_nullable_object_field(kind: JavaBeanKind, name: &str) -> bool {
 }
 
 fn write_java_null_strings(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    if is_java_reference_value(value) {
+        return;
+    }
     let Some(fields) = value.as_object_mut() else {
         return;
     };
@@ -726,6 +863,9 @@ fn java_is_nullable_string_collection(kind: JavaBeanKind, name: &str) -> bool {
 }
 
 fn write_java_null_lists(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    if is_java_reference_value(value) {
+        return;
+    }
     let Some(fields) = value.as_object_mut() else {
         return;
     };
@@ -814,6 +954,9 @@ fn java_is_nullable_list_field(kind: JavaBeanKind, name: &str) -> bool {
 }
 
 fn include_java_nullable_fields(value: &mut serde_json::Value, kind: JavaBeanKind) {
+    if is_java_reference_value(value) {
+        return;
+    }
     let Some(fields) = value.as_object_mut() else {
         return;
     };
@@ -866,6 +1009,9 @@ fn serialize_java_bean_as_array(
     map_fields: &mut BeanToArrayMapFields,
     use_enum_names: bool,
 ) {
+    if is_java_reference_value(value) {
+        return;
+    }
     let Some(fields) = value.as_object_mut() else {
         return;
     };
@@ -1114,6 +1260,9 @@ fn apply_java_json_writer_value_features_inner(
     object_is_map: bool,
     map_values_are_maps: bool,
 ) {
+    if is_java_reference_value(value) {
+        return;
+    }
     match value {
         serde_json::Value::Bool(boolean) => {
             if write_non_string_values_as_strings {
@@ -4700,6 +4849,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reference_detection_emits_java_paths_for_shared_route_dtos() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let mut route = TopicRouteData::default();
+        let shared_broker = SharedValue::new(BrokerData {
+            broker_name: Some("shared-broker".to_owned()),
+            ..BrokerData::default()
+        });
+        route.set_broker_datas(Some(SharedValue::new(vec![
+            Some(shared_broker.clone()),
+            Some(shared_broker),
+        ])));
+
+        assert_eq!(
+            route
+                .java_encode_with_features(&[JavaJsonWriterFeature::ReferenceDetection])
+                .unwrap(),
+            fixture["referenceDetectionSharedRouteCase"]["referenceDetection"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+        );
+    }
+
+    #[test]
     fn static_conversion_matches_pinned_java_epoch_scope_and_endpoint_oracle() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
@@ -5182,6 +5356,10 @@ mod tests {
                     (
                         JavaJsonWriterFeature::NullAsDefaultValue,
                         "NullAsDefaultValue",
+                    ),
+                    (
+                        JavaJsonWriterFeature::ReferenceDetection,
+                        "ReferenceDetection",
                     ),
                     (JavaJsonWriterFeature::BeanToArray, "BeanToArray"),
                     (JavaJsonWriterFeature::FieldBased, "FieldBased"),
