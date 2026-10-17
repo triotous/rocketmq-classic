@@ -37,6 +37,10 @@
         <configuration><mainClass>compat.Main</mainClass></configuration>
         <executions>
           <execution>
+            <id>live-route-probe</id>
+            <configuration><mainClass>compat.LiveRouteProbe</mainClass></configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-inbound-routing-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

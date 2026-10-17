@@ -1113,6 +1113,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rocketmq-classic-integration"
+version = "0.1.0"
+dependencies = [
+ "rocketmq-classic",
+ "tokio",
+]
+
+[[package]]
 name = "rocketmq-classic-producer"
 version = "0.1.0"
 dependencies = [

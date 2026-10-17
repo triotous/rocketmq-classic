@@ -24,7 +24,9 @@ expected = {
     "rocketmq-classic-protocol",
     "rocketmq-classic-producer",
     "rocketmq-classic-remoting",
+    "rocketmq-classic-integration",
 }
+product_packages = expected - {"rocketmq-classic-integration"}
 assert set(packages) == expected, f"unexpected workspace packages: {set(packages)}"
 
 common_deps = {dependency["name"] for dependency in packages["rocketmq-classic-common"]["dependencies"]}
@@ -37,11 +39,14 @@ assert "rocketmq-classic-protocol" in remoting_deps, "remoting must depend on pr
 assert all(package["publish"] == [] for package in packages.values())
 for package in packages.values():
     assert package["license"] == "Apache-2.0", f"unexpected license for {package['name']}"
-    package_root = Path(package["manifest_path"]).parent
-    for name, expected_content in license_documents.items():
-        packaged_document = package_root / name
-        assert packaged_document.is_file(), f"{package['name']} package is missing {name}"
-        assert packaged_document.read_bytes() == expected_content, (
-            f"{package['name']} {name} differs from the workspace copy"
-        )
+    if package["name"] in product_packages:
+        package_root = Path(package["manifest_path"]).parent
+        for name, expected_content in license_documents.items():
+            packaged_document = package_root / name
+            assert packaged_document.is_file(), f"{package['name']} package is missing {name}"
+            assert packaged_document.read_bytes() == expected_content, (
+                f"{package['name']} {name} differs from the workspace copy"
+            )
+    else:
+        assert package["publish"] == [], "integration runner must stay unpublished"
 print("workspace metadata, package license files, and dependency direction PASS")

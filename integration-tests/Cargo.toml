@@ -1,0 +1,16 @@
+[package]
+name = "rocketmq-classic-integration"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "live_client"
+path = "src/bin/live_client.rs"
+
+[dependencies]
+rocketmq-classic.workspace = true
+tokio.workspace = true

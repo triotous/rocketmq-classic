@@ -8,6 +8,7 @@ members = [
     "crates/rocketmq-classic-remoting",
     "crates/rocketmq-classic-producer",
     "crates/rocketmq-classic",
+    "integration-tests",
 ]
 
 [workspace.package]
