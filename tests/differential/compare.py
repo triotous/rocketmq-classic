@@ -4,6 +4,7 @@
 import json
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -174,53 +175,84 @@ def validate_manifest(manifest):
                     or rust_rows.read_bytes() != expected
                 ):
                     raise ValueError(f"Phase 19 missing-route evidence does not match: {scenario['id']}")
-            if scenario["id"] == "PROD-001-sync-send":
+            if scenario["id"] in {"PROD-001-sync-send", "PROD-002-async-send"}:
                 topic = scenario["inputs"].get("topic")
                 body = scenario["inputs"].get("body")
                 if not isinstance(topic, str) or not isinstance(body, str):
-                    raise ValueError("synchronous-send evidence requires topic and body inputs")
+                    raise ValueError("producer-send evidence requires topic and body inputs")
                 expected_body = body.encode().hex()
 
                 def one_tsv_row(name, columns):
                     path = evidence_path / name
                     if not path.is_file():
-                        raise ValueError(f"synchronous-send evidence is missing {name}")
+                        raise ValueError(f"producer-send evidence is missing {name}")
                     rows = [line.split("\t") for line in path.read_text().splitlines()]
                     if len(rows) != 1 or len(rows[0]) != columns:
-                        raise ValueError(f"synchronous-send evidence has invalid rows in {name}")
+                        raise ValueError(f"producer-send evidence has invalid rows in {name}")
                     return rows[0]
 
-                java_send = one_tsv_row("java-send.tsv", 7)
-                rust_send = one_tsv_row("rust-send.tsv", 7)
-                for language, row in (("Java", java_send), ("Rust", rust_send)):
-                    if (
-                        row[0] != "SEND"
-                        or row[1] != "SEND_OK"
-                        or row[2] != topic
-                        or row[3] != "0"
-                        or not row[4].isdecimal()
-                        or not re.fullmatch(r"[0-9a-fA-F]+", row[5])
-                        or len(row[5]) not in {32, 56}
-                        or not row[6].isdecimal()
-                        or int(row[5][-16:], 16) != int(row[6])
-                    ):
-                        raise ValueError(f"{language} synchronous-send result is invalid")
-                if java_send[1:4] != rust_send[1:4]:
-                    raise ValueError("Java and Rust synchronous-send status/queue results differ")
-                for name, sent in (
-                    ("rust-read-java.tsv", java_send),
-                    ("java-read-rust.tsv", rust_send),
+                asynchronous = scenario["id"] == "PROD-002-async-send"
+                if asynchronous:
+                    java_send = one_tsv_row("java-async-send.tsv", 8)
+                    rust_send = one_tsv_row("rust-async-send.tsv", 8)
+                    expected_shapes = (
+                        ("Java", java_send, "ASYNC_CALLBACK"),
+                        ("Rust", rust_send, "ASYNC_FUTURE"),
+                    )
+                    for language, row, completion_kind in expected_shapes:
+                        if row[0] != completion_kind or row[1] != "1":
+                            raise ValueError(
+                                f"{language} asynchronous send must complete exactly once"
+                            )
+                        if (
+                            row[2] != "SEND_OK"
+                            or row[3] != topic
+                            or row[4] != "0"
+                            or not row[5].isdecimal()
+                            or not re.fullmatch(r"[0-9a-fA-F]+", row[6])
+                            or len(row[6]) not in {32, 56}
+                            or not row[7].isdecimal()
+                            or int(row[6][-16:], 16) != int(row[7])
+                        ):
+                            raise ValueError(f"{language} asynchronous send result is invalid")
+                    if java_send[2:5] != rust_send[2:5]:
+                        raise ValueError("Java and Rust asynchronous send status/queue results differ")
+                    java_queue_offset_index = 5
+                    rust_queue_offset_index = 5
+                else:
+                    java_send = one_tsv_row("java-send.tsv", 7)
+                    rust_send = one_tsv_row("rust-send.tsv", 7)
+                    for language, row in (("Java", java_send), ("Rust", rust_send)):
+                        if (
+                            row[0] != "SEND"
+                            or row[1] != "SEND_OK"
+                            or row[2] != topic
+                            or row[3] != "0"
+                            or not row[4].isdecimal()
+                            or not re.fullmatch(r"[0-9a-fA-F]+", row[5])
+                            or len(row[5]) not in {32, 56}
+                            or not row[6].isdecimal()
+                            or int(row[5][-16:], 16) != int(row[6])
+                        ):
+                            raise ValueError(f"{language} synchronous-send result is invalid")
+                    if java_send[1:4] != rust_send[1:4]:
+                        raise ValueError("Java and Rust synchronous-send status/queue results differ")
+                    java_queue_offset_index = 4
+                    rust_queue_offset_index = 4
+                for readback_name, send_result, queue_offset_index in (
+                    ("rust-read-java.tsv", java_send, java_queue_offset_index),
+                    ("java-read-rust.tsv", rust_send, rust_queue_offset_index),
                 ):
-                    row = one_tsv_row(name, 5)
+                    row = one_tsv_row(readback_name, 5)
                     if (
                         row[0] != "MESSAGE"
                         or row[1] != topic
                         or row[2] != "0"
                         or not row[3].isdecimal()
-                        or row[3] != sent[4]
+                        or row[3] != send_result[queue_offset_index]
                         or row[4] != expected_body
                     ):
-                        raise ValueError(f"cross-language readback does not match {name}")
+                        raise ValueError(f"cross-language readback does not match {readback_name}")
     phase19_ids = {
         scenario["id"]
         for scenario in scenarios
@@ -321,6 +353,61 @@ def self_test():
         assert "evidence path" in str(error)
     checked_in = json.loads(Path("tests/differential/scenarios.yaml").read_text())
     validate_manifest(checked_in)
+    async_scenario = next(
+        scenario
+        for scenario in checked_in["scenarios"]
+        if scenario["id"] == "PROD-002-async-send"
+    )
+    evidence_root = Path("docs/compatibility/evidence/phase-19").resolve()
+    with tempfile.TemporaryDirectory(prefix="compare-self-test-", dir=evidence_root) as temporary:
+        evidence_dir = Path(temporary)
+        evidence_rel = str(evidence_dir.relative_to(Path.cwd()))
+        (evidence_dir / "metadata.txt").write_text("exit_status=0\n")
+        (evidence_dir / "result.txt").write_text(
+            "PASS PROD-002-async-send: synthetic validator evidence\n"
+        )
+        async_outputs = {
+            "java-async-send.tsv": (
+                "ASYNC_CALLBACK\t1\tSEND_OK\tcompat_phase0_send\t0\t5\t"
+                f"{1:032x}\t1\n"
+            ),
+            "rust-async-send.tsv": (
+                "ASYNC_FUTURE\t1\tSEND_OK\tcompat_phase0_send\t0\t6\t"
+                f"{2:032x}\t2\n"
+            ),
+            "rust-read-java.tsv": "MESSAGE\tcompat_phase0_send\t0\t5\t6669786564\n",
+            "java-read-rust.tsv": "MESSAGE\tcompat_phase0_send\t0\t6\t6669786564\n",
+        }
+        for filename, contents in async_outputs.items():
+            (evidence_dir / filename).write_text(contents)
+
+        def checked_manifest(java_result):
+            changed_scenario = {
+                **async_scenario,
+                "live_status": "PASS",
+                "evidence": evidence_rel,
+            }
+            changed_scenarios = [
+                changed_scenario if row["id"] == async_scenario["id"] else row
+                for row in checked_in["scenarios"]
+            ]
+            manifest = {**checked_in, "scenarios": changed_scenarios}
+            if java_result is not None:
+                (evidence_dir / "java-async-send.tsv").write_text(java_result)
+            return manifest
+
+        validate_manifest(checked_manifest(None))
+        try:
+            validate_manifest(
+                checked_manifest(
+                    async_outputs["java-async-send.tsv"].replace(
+                        "ASYNC_CALLBACK\t1\t", "ASYNC_CALLBACK\t2\t"
+                    )
+                )
+            )
+            raise AssertionError("asynchronous send accepted a duplicate Java callback")
+        except ValueError as error:
+            assert "Java asynchronous send must complete exactly once" in str(error)
     phase6 = [case for case in checked_in["scenarios"] if case["id"] == "P6-V04"]
     assert len(phase6) == 1, "Phase 6 live handoff case must retain its original ID"
     assert phase6[0]["phase"] == 6 and phase6[0]["execution_phase"] == 19

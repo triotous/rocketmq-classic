@@ -130,7 +130,7 @@ if [[ "$selection" == "list" ]]; then
     exit 0
 fi
 
-implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send")
+implemented=("ROUTE-001-get-existing-topic" "ROUTE-002-topic-not-exist" "HEARTBEAT-001" "PROD-001-sync-send" "PROD-002-async-send")
 unsupported=()
 while IFS=$'\t' read -r scenario_id profile topic producer_group body; do
     is_implemented=false
@@ -170,9 +170,9 @@ case "$scenario_id:$topic" in
             exit 3
         fi
         ;;
-    PROD-001-sync-send:compat_phase0_send)
+    PROD-001-sync-send:compat_phase0_send|PROD-002-async-send:compat_phase0_send)
         if [[ "$body" != "fixed" ]]; then
-            echo "Scenario metadata differs from the reviewed synchronous-send implementation" >&2
+            echo "Scenario metadata differs from the reviewed producer-send implementation" >&2
             exit 3
         fi
         ;;
@@ -181,7 +181,7 @@ case "$scenario_id:$topic" in
         exit 3
         ;;
 esac
-if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" ]]; then
+if [[ "$scenario_id" != "ROUTE-001-get-existing-topic" && "$scenario_id" != "ROUTE-002-topic-not-exist" && "$scenario_id" != "HEARTBEAT-001" && "$scenario_id" != "PROD-001-sync-send" && "$scenario_id" != "PROD-002-async-send" ]]; then
     echo "No implementation is registered for scenario '$scenario_id'" >&2
     exit 3
 fi
@@ -281,6 +281,15 @@ docker compose --project-name $project_name --file integration-tests/compose.yam
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="send $broker_addr $topic $body" exec:java@live-producer-probe
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic '<java-offset-message-id>'
 cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- send $broker_addr $topic $body
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-offset-message-id>" exec:java@live-producer-probe
+EOF
+elif [[ "$scenario_id" == "PROD-002-async-send" ]]; then
+    cat >"$evidence_dir/commands.txt" <<EOF
+ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE=$profile COMPOSE_PROJECT_NAME=$project_name bash integration-tests/setup.sh
+docker compose --project-name $project_name --file integration-tests/compose.yaml --profile $profile exec broker ./mqadmin updateTopic -c RocketMQLocalTest -t $topic -r 4 -w 4 -n namesrv:9876
+mvn -q -f compat/java-reference/pom.xml -Dexec.args="async-send $broker_addr $topic $body" exec:java@live-producer-probe
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- view $broker_addr $topic '<java-offset-message-id>'
+cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- async-send $broker_addr $topic $body
 mvn -q -f compat/java-reference/pom.xml -Dexec.args="view $broker_addr $topic <rust-offset-message-id>" exec:java@live-producer-probe
 EOF
 else
@@ -394,7 +403,7 @@ if ! ROCKETMQ_CLASSIC_TEST_ENV=local-disposable ROCKETMQ_PROFILE="$profile" \
 fi
 cat "$evidence_dir/setup.log"
 
-if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" ]]; then
+if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PROD-001-sync-send" || "$scenario_id" == "PROD-002-async-send" ]]; then
     echo "Creating scenario-owned topic $topic"
     topic_created=true
     if ! "${compose[@]}" exec --no-TTY broker ./mqadmin updateTopic -c RocketMQLocalTest -t "$topic" -r 4 -w 4 -n namesrv:9876 \
@@ -404,8 +413,10 @@ if [[ "$scenario_id" == "ROUTE-001-get-existing-topic" || "$scenario_id" == "PRO
     fi
 elif [[ "$scenario_id" == "ROUTE-002-topic-not-exist" ]]; then
     echo "Confirming that scenario topic $topic has no route"
-else
+elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending a Java/Rust heartbeat for producer group $producer_group"
+else
+    echo "Querying the same route with both clients"
 fi
 
 echo "Compiling Java 5.5.1 and Rust live probes"
@@ -476,6 +487,63 @@ if [[ "$scenario_id" == "PROD-001-sync-send" ]]; then
         fi
     done
     printf 'PASS %s: matching SEND_OK results and bidirectional cross-language readback\n' "$scenario_id" \
+        | tee "$evidence_dir/result.txt"
+elif [[ "$scenario_id" == "PROD-002-async-send" ]]; then
+    echo "Sending one asynchronous message from each language and reading each with the other client"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="async-send $broker_addr $topic $body" exec:java@live-producer-probe \
+        >"$evidence_dir/java-async-send.tsv" 2>"$evidence_dir/java-async-send.stderr"; then
+        cat "$evidence_dir/java-async-send.tsv" "$evidence_dir/java-async-send.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if ! awk -F '\t' -v topic="$topic" \
+        'NF != 8 || $1 != "ASYNC_CALLBACK" || $2 != 1 || $3 != "SEND_OK" || $4 != topic || $5 != 0 || $6 !~ /^[0-9]+$/ || $7 !~ /^[[:xdigit:]]+$/ || $8 !~ /^[0-9]+$/ { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/java-async-send.tsv"; then
+        echo "Java asynchronous send did not produce exactly one successful callback result" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ _ java_send_status java_send_topic java_queue_id java_queue_offset java_offset_message_id java_physical_offset \
+        <"$evidence_dir/java-async-send.tsv"
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        view "$broker_addr" "$topic" "$java_offset_message_id" \
+        >"$evidence_dir/rust-read-java.tsv" 2>"$evidence_dir/rust-read-java.stderr"; then
+        cat "$evidence_dir/rust-read-java.stderr" >&2
+        exit 1
+    fi
+    if ! cargo run --locked --quiet -p rocketmq-classic-integration --bin live_client -- \
+        async-send "$broker_addr" "$topic" "$body" \
+        >"$evidence_dir/rust-async-send.tsv" 2>"$evidence_dir/rust-async-send.stderr"; then
+        cat "$evidence_dir/rust-async-send.stderr" >&2
+        exit 1
+    fi
+    if ! awk -F '\t' -v topic="$topic" \
+        'NF != 8 || $1 != "ASYNC_FUTURE" || $2 != 1 || $3 != "SEND_OK" || $4 != topic || $5 != 0 || $6 !~ /^[0-9]+$/ || $7 !~ /^[[:xdigit:]]+$/ || $8 !~ /^[0-9]+$/ { exit 1 }
+         END { if (NR != 1) exit 1 }' "$evidence_dir/rust-async-send.tsv"; then
+        echo "Rust asynchronous send did not resolve to exactly one successful future result" >&2
+        exit 1
+    fi
+    IFS=$'\t' read -r _ _ rust_send_status rust_send_topic rust_queue_id rust_queue_offset rust_offset_message_id rust_physical_offset \
+        <"$evidence_dir/rust-async-send.tsv"
+    if ! mvn -q -f "$repo_root/compat/java-reference/pom.xml" \
+        -Dexec.args="view $broker_addr $topic $rust_offset_message_id" exec:java@live-producer-probe \
+        >"$evidence_dir/java-read-rust.tsv" 2>"$evidence_dir/java-read-rust.stderr"; then
+        cat "$evidence_dir/java-read-rust.tsv" "$evidence_dir/java-read-rust.stderr" 2>/dev/null >&2 || true
+        exit 1
+    fi
+    if [[ "$java_send_status" != "$rust_send_status" || "$java_send_topic" != "$rust_send_topic" || "$java_queue_id" != "$rust_queue_id" ]]; then
+        echo "Java and Rust asynchronous send results differ in status, topic, or queue" >&2
+        exit 1
+    fi
+    expected_body_hex="$(python3 -c 'import sys; print(sys.argv[1].encode().hex())' "$body")"
+    for readback in "$evidence_dir/rust-read-java.tsv" "$evidence_dir/java-read-rust.tsv"; do
+        if ! awk -F '\t' -v topic="$topic" -v body="$expected_body_hex" \
+            'NF != 5 || $1 != "MESSAGE" || $2 != topic || $3 != 0 || $4 !~ /^[0-9]+$/ || $5 != body { exit 1 }
+             END { if (NR != 1) exit 1 }' "$readback"; then
+            echo "Cross-language readback did not match the scenario topic and body: $readback" >&2
+            exit 1
+        fi
+    done
+    printf 'PASS %s: matching async results, one Java callback / Rust future completion, and bidirectional cross-language readback\n' "$scenario_id" \
         | tee "$evidence_dir/result.txt"
 elif [[ "$scenario_id" == "HEARTBEAT-001" ]]; then
     echo "Sending the same heartbeat through both client APIs"

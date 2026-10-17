@@ -25,10 +25,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("send") if arguments.len() == 4 => {
             send(&arguments[1], &arguments[2], &arguments[3]).await
         }
+        Some("async-send") if arguments.len() == 4 => {
+            async_send(&arguments[1], &arguments[2], &arguments[3]).await
+        }
         Some("view") if arguments.len() == 4 => {
             view(&arguments[1], &arguments[2], &arguments[3]).await
         }
-        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send <broker-address> <topic> <body> | view <broker-address> <topic> <offset-message-id>".into()),
+        _ => Err("usage: live_client route <namesrv-address> <topic> | heartbeat <broker-address> <producer-group> | send|async-send <broker-address> <topic> <body> | view <broker-address> <topic> <offset-message-id>".into()),
     }
 }
 
@@ -104,6 +107,19 @@ async fn heartbeat(broker_address: &str, producer_group: &str) -> Result<(), Box
 }
 
 async fn send(broker_address: &str, topic: &str, body: &str) -> Result<(), Box<dyn Error>> {
+    send_with_mode(broker_address, topic, body, SendMode::Sync).await
+}
+
+async fn async_send(broker_address: &str, topic: &str, body: &str) -> Result<(), Box<dyn Error>> {
+    send_with_mode(broker_address, topic, body, SendMode::Future).await
+}
+
+async fn send_with_mode(
+    broker_address: &str,
+    topic: &str,
+    body: &str,
+    mode: SendMode,
+) -> Result<(), Box<dyn Error>> {
     let remoting = RemotingClient::new(TransportMode::Plain);
     if let Err(error) = remoting.start() {
         remoting.shutdown().await;
@@ -140,22 +156,34 @@ async fn send(broker_address: &str, topic: &str, body: &str) -> Result<(), Box<d
             body.as_bytes().to_vec(),
             "p19-live-rust-message",
             SendKind::V2,
-            SendMode::Sync,
+            mode,
             Instant::now() + Duration::from_secs(10),
         )
         .await;
     remoting.shutdown().await;
     let result = result?.ok_or("synchronous send returned no result")?;
     let physical_offset = decode_message_id(&result.offset_msg_id)?.offset();
-    println!(
-        "SEND\t{}\t{}\t{}\t{}\t{}\t{}",
-        result.status,
-        result.topic,
-        result.queue_id,
-        result.queue_offset,
-        result.offset_msg_id,
-        physical_offset
-    );
+    if mode == SendMode::Future {
+        println!(
+            "ASYNC_FUTURE\t1\t{}\t{}\t{}\t{}\t{}\t{}",
+            result.status,
+            result.topic,
+            result.queue_id,
+            result.queue_offset,
+            result.offset_msg_id,
+            physical_offset
+        );
+    } else {
+        println!(
+            "SEND\t{}\t{}\t{}\t{}\t{}\t{}",
+            result.status,
+            result.topic,
+            result.queue_id,
+            result.queue_offset,
+            result.offset_msg_id,
+            physical_offset
+        );
+    }
     Ok(())
 }
 

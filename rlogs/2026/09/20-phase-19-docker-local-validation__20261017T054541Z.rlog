@@ -16,3 +16,12 @@ Live verification and evidence reconciliation (2026-10-17 05:46–05:49 UTC)
 - PASS: Java and Rust synchronous V2 sends both returned `SEND_OK`; Rust read the Java message and Java read the Rust message by physical offset. Both bodies were `fixed`, both topics were `compat_phase0_send`, and queue IDs/queue offsets matched each send result.
 - The runner deleted the scenario topic and removed the isolated Compose containers, network and volume. Exit status was 0; metadata records `source_code_dirty=false` and the pinned image digest. Manifest and evidence were committed in `398c8ebd`; ignored setup/build/topic/Compose logs were force-archived with trailing CLI padding removed in `4fe2444c`.
 - `python3 tests/differential/compare.py --validate-manifest` passed with 37 rows. Four scenarios now pass; 33 remain pending. Updated the integration instructions, Java compatibility checkpoint, 5.3.4 results and release checklist. Broad P18-V01, current-revision Ubuntu/Windows P18-V04 evidence, the remaining local Phase 19 matrix/profiles/orchestration, pre-publication checks, and MAN-05 classification remain open.
+
+Phase 19 live asynchronous-send case implementation
+
+- Revalidated branch `phase/19-phase-18-compatibility-release-gate`, HEAD `cfeca0a5`, and a clean worktree before edits. The Java reference checkout is read-only.
+- Added Java 5.5.1 `CommunicationMode.ASYNC` callback coverage with an exact callback count, and Rust `SendMode::Future` coverage that records its single awaited completion. Both send directly to the pinned Broker and cross-read the stored messages.
+- Registered `PROD-002-async-send`, added fail-closed runner dispatch and evidence checks, and extended manifest validation plus its self-test to reject duplicate completion evidence.
+- Passed `cargo test --locked -p rocketmq-classic-integration` (0 tests), strict integration-bin Clippy, integration-bin build, `cargo fmt --all -- --check`, Maven compile on the project JDK 27, differential comparator self-test, 37-row manifest validation, shell syntax, Python compilation, and `git diff --check`.
+- One initial Maven invocation used a relative POM path from the read-only Java checkout and failed to find the project POM; reran from the Rust repository root and compilation passed.
+- Live Broker execution and evidence reconciliation remain pending this implementation commit.
