@@ -3020,3 +3020,15 @@ Before any publication:
   current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase 19
   Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+- P18-V01 Fastjson `WriteNullListAsEmpty` writer flag (code commit `038bf5f8`,
+  2026-10-17): schema-backed traversal converts nullable collection properties
+  to empty arrays, including nested typed DTO collections, without emitting
+  unrelated missing nullable fields. Protocol all-feature tests (126 unit
+  tests, all integration targets, and 42 doctests), strict Protocol Clippy,
+  formatting, and diff checks pass. Mapping count is now 43/48; five flags
+  remain unmapped: `NullAsDefaultValue`, `WriteClassName`,
+  `ReferenceDetection`, `WriteNullStringAsEmpty`, and `WriteNullNumberAsZero`.
+  Broad P18-V01, final full-workspace P18-V02, current-revision Ubuntu/Windows
+  CI, P18-V04 handoff, and Phase 19 Docker/Broker automation remain open.
+  Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
