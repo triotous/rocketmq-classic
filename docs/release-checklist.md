@@ -3110,6 +3110,21 @@ Before any publication:
   This closes P18-V02's server-free local gates on this revision. Broad P18-V01,
   current-revision Ubuntu/Windows CI evidence, P18-V04, Phase 19 Docker/Broker
   automation and local scenario execution remain open. The pinned official
-  RocketMQ 5.3.4 image digest is verified, but no Compose profile has run.
+  RocketMQ 5.3.4 image digest was verified; basic Compose setup/readiness was
+  subsequently checked as recorded below.
   Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T024941Z.rlog).
+
+- Phase 19 initial basic Docker profile (`2026-10-17`): Compose uses the pinned
+  official RocketMQ 5.3.4 image and a project-scoped network/store volume,
+  loopback-bound host ports, explicit disposable-test marker/profile, bounded
+  readiness polling, and project-only volume cleanup. The NameServer and Broker
+  became healthy; `mqadmin clusterList` reported Broker `broker-a` at
+  `broker:10911`, version `V5_3_4`. Cleanup removed this run's containers,
+  network, and volume. A root-owned fresh-volume issue was fixed with a
+  one-shot volume owner initialization service. This verifies only the basic
+  environment startup and cleanup path; Java/Rust client scenarios, runner,
+  resource reset/evidence reconciliation, and two-Broker/TLS/auth profiles
+  remain automatic Phase 19 work. No scenario is marked as passed. Evidence:
+  [`integration-tests/README.md`](../integration-tests/README.md),
+  [`rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog`](../rlogs/2026/10/17-phase-19-basic-broker-profile__20261017T043317Z.rlog).
