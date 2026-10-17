@@ -2919,3 +2919,17 @@ Before any publication:
   broad P18-V01, current-revision Ubuntu/Windows CI, P18-V04 handoff, and Phase
   19 Docker/Broker automation remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T015123Z.rlog).
+
+- P18-V01 Fastjson `FieldBased` writer-feature mapping (code commit `6bce768d`,
+  2026-10-17): the pinned Java fixture generator invokes every writer feature
+  for 41 body, 8 route, and 3 heartbeat cases; `FieldBased` has no output
+  overrides, including for `QueueTimeSpan`'s getter-derived timestamps. Rust
+  accepts the flag and compares it with the default fixture bytes in those
+  serializer suites. Protocol all-feature tests (126 unit tests, all
+  integration targets, and 42 doctests), strict Protocol Clippy, formatting,
+  diff checks, and Maven verify (37 scenarios, fixture drift, and cross-decodes)
+  pass. Mapping count is now 35/48; 13 writer features remain unmapped. Final
+  full-workspace P18-V02, broad P18-V01, current-revision Ubuntu/Windows CI,
+  P18-V04 handoff, and Phase 19 Docker/Broker automation remain open. Execution
+  log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T021935Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T021935Z.rlog).
