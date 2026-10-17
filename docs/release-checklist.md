@@ -3261,3 +3261,24 @@ owner-specific checks belong in the manual handoff.
   callback-list APIs, factories, long-poll metric emission, the broad P18-V01
   audit, and the final full-workspace P18-V02 rerun remain open. Execution log:
   [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T075137Z.rlog).
+
+- P18-V01 `RemotingCommand` factory slice (code/test commit `a0fe9c3e`,
+  2026-10-17): Rust now has request, response, and error factories, typed
+  request/response header overloads, class-header `Default` forms, configured
+  version handling, and process-wide request-ID increments. Eight invoked Java
+  fixture cases compare flags, fields, version, ext-fields, serialization
+  type, and request-ID deltas. Full Remoting all-feature tests passed (111
+  unit, 8 codec, 1 fuzz regression, 7 security, 107 transport, and 15 doctests);
+  strict all-target/all-feature Clippy, formatting, diff checks, and Maven
+  `verify` passed (37 scenarios, fixture drift, and Java/Rust cross-decodes).
+  `Default` still has Rust-specific language/opaque initialization, custom
+  header retention/reflection failure behavior is not equivalent, and the
+  multi-entry `toString()` ordering, process timer/callback-list, long-poll
+  metric, and broad P18-V01 audit remain open. This is a method-family slice,
+  not closure of P18-V01 or the final P18-V02 gate. Execution log:
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T083404Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261017T083404Z.rlog).
+- P18-V02 Remoting TLS test portability follow-up (test commit `48482b49`,
+  2026-10-17): the property-file reload test now uses the repository's pinned
+  TLS certificate as a local trust anchor. This keeps the test focused on
+  property reload and lets it run on hosts without native system trust roots.
+  The test and the complete Remoting all-feature suite pass with this change.
