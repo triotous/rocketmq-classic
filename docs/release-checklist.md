@@ -5091,3 +5091,25 @@ owner-specific checks belong in the manual handoff.
   bidirectional reconciliation, the final current-revision P18-V02 gate,
   current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
   missing local Broker/Docker scenario runners/profiles remain open.
+
+## P18-V01 admin header field visibility and inherited `lo` — 2026-10-18 (`3b475951`)
+
+- [x] Pinned Java 5.5.1 inventories confirm no public fields on
+  `QueryConsumeTimeSpanRequestHeader`, `GetTopicStatsInfoRequestHeader`,
+  `DeleteTopicRequestHeader`, `DeleteTopicFromNamesrvRequestHeader`, and
+  `DeleteSubscriptionGroupRequestHeader`. Rust fields are crate-private with
+  Java-mapped getters/setters and compile-fail guards. The inherited `lo`
+  property on `QueryConsumeTimeSpanRequestHeader` is now preserved by Rust
+  encode/decode and included in the Java typed-header fixture and validation
+  matrix. Query-admin inventory fixture SHA-256:
+  `6e92e3d073dcb3b13abbc9c93b94955fd306a5b47576b5c8c52c472a7f668655`.
+- [x] Workspace all-target/all-feature check; Protocol header tests and 88
+  doctests; Remoting query-admin differential; Core's 50 admin RPC tests and
+  consume-time-span tests; Consumer consume-time-span test; strict Clippy for
+  Protocol/Remoting/Core/Consumer; offline Maven `verify` (37 scenarios,
+  fixture drift, 66 typed-header and 15 typed-body cross-decodes); format and
+  diff checks pass. Code commit: `3b475951`.
+- This closes only these five header rows and the `QueryConsumeTimeSpan.lo`
+  mapping. Broad P18-V01 reconciliation, the final current-revision P18-V02
+  gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
+  30 missing local Broker/Docker scenario runners/profiles remain open.
