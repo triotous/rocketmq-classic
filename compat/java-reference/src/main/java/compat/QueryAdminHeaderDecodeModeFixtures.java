@@ -32,6 +32,10 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
@@ -39,6 +43,7 @@ import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerR
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 
 /** Invokes Java 5.5.1 admin-query header reflection decoding through both mode hints. */
 public final class QueryAdminHeaderDecodeModeFixtures {
@@ -60,6 +65,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             "beginTimestamp", "not-a-long", "endTimestamp", "9223372036854775808")));
         cases.put("query-request-malformed-booleans", decodeModes("query-request", fields(
             "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
+        cases.put("query-consume-time-span-valid", decodeModes("query-consume-time-span", fields(
+            "topic", "orders", "group", "workers", "ns", "tenant", "nsd", "true",
+            "bname", "broker-a", "oway", "false", "lo", "true")));
 
         cases.put("query-response-valid", decodeModes("query-response", fields(
             "indexLastUpdateTimestamp", "1712345679000", "indexLastUpdatePhyoffset", "9876")));
@@ -107,6 +115,16 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(QuerySubscriptionByConsumerRequestHeader.class));
         apiInventories.put("QueryTopicConsumeByWhoRequestHeader",
             apiInventory(QueryTopicConsumeByWhoRequestHeader.class));
+        apiInventories.put("QueryConsumeTimeSpanRequestHeader",
+            apiInventory(QueryConsumeTimeSpanRequestHeader.class));
+        apiInventories.put("GetTopicStatsInfoRequestHeader",
+            apiInventory(GetTopicStatsInfoRequestHeader.class));
+        apiInventories.put("DeleteTopicRequestHeader",
+            apiInventory(DeleteTopicRequestHeader.class));
+        apiInventories.put("DeleteTopicFromNamesrvRequestHeader",
+            apiInventory(DeleteTopicFromNamesrvRequestHeader.class));
+        apiInventories.put("DeleteSubscriptionGroupRequestHeader",
+            apiInventory(DeleteSubscriptionGroupRequestHeader.class));
         fixture.put("apiInventories", apiInventories);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -137,6 +155,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         int code = 12;
         if ("query-topics".equals(type)) {
             code = 343;
+        } else if ("query-consume-time-span".equals(type)) {
+            code = 303;
         } else if ("query-subscription".equals(type)) {
             code = 345;
         } else if ("query-topic-consumers".equals(type)) {
@@ -151,6 +171,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             switch (type) {
                 case "query-request":
                     headerClass = QueryMessageRequestHeader.class;
+                    break;
+                case "query-consume-time-span":
+                    headerClass = QueryConsumeTimeSpanRequestHeader.class;
                     break;
                 case "query-response":
                     headerClass = QueryMessageResponseHeader.class;

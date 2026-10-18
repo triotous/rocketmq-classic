@@ -571,11 +571,9 @@ mod tests {
         let remoting = RemotingClient::new(TransportMode::Plain);
         remoting.start().unwrap();
         let api = MQClientApi::new(remoting.clone());
-        let header = QueryConsumeTimeSpanRequestHeader {
-            topic: Some("orders".into()),
-            group: Some("consumer-a".into()),
-            ..QueryConsumeTimeSpanRequestHeader::default()
-        };
+        let mut header = QueryConsumeTimeSpanRequestHeader::default();
+        header.set_topic(Some("orders".into()));
+        header.set_group(Some("consumer-a".into()));
         let spans = api
             .query_consume_time_span(
                 &success_address,
@@ -687,16 +685,11 @@ mod tests {
         config.set_vip_channel_enabled(true);
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
         let api = MQClientApi::with_config(remoting.clone(), config);
+        let mut header = QueryConsumeTimeSpanRequestHeader::default();
+        header.set_topic(Some("orders".into()));
+        header.set_group(Some("workers".into()));
         let result = api
-            .query_consume_time_span(
-                &address,
-                &QueryConsumeTimeSpanRequestHeader {
-                    topic: Some("orders".into()),
-                    group: Some("workers".into()),
-                    ..Default::default()
-                },
-                Instant::now() + Duration::from_secs(3),
-            )
+            .query_consume_time_span(&address, &header, Instant::now() + Duration::from_secs(3))
             .await
             .unwrap();
 

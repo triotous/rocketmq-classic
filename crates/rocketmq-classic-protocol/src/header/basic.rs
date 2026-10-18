@@ -33,6 +33,73 @@ macro_rules! impl_rpc_request_header_semantics {
     };
 }
 
+macro_rules! impl_rpc_request_header_accessors {
+    ($($header:ty),+ $(,)?) => {
+        $(
+            impl $header {
+                pub fn get_namespace(&self) -> Option<&str> {
+                    self.namespace.as_deref()
+                }
+
+                pub fn set_namespace(&mut self, value: Option<String>) {
+                    self.namespace = value;
+                }
+
+                pub fn get_namespaced(&self) -> Option<bool> {
+                    self.namespaced
+                }
+
+                pub fn set_namespaced(&mut self, value: Option<bool>) {
+                    self.namespaced = value;
+                }
+
+                pub fn get_broker_name(&self) -> Option<&str> {
+                    self.broker_name.as_deref()
+                }
+
+                pub fn set_broker_name(&mut self, value: Option<String>) {
+                    self.broker_name = value;
+                }
+
+                #[deprecated(note = "use get_broker_name")]
+                pub fn get_bname(&self) -> Option<&str> {
+                    self.get_broker_name()
+                }
+
+                #[deprecated(note = "use set_broker_name")]
+                pub fn set_bname(&mut self, value: Option<String>) {
+                    self.set_broker_name(value);
+                }
+
+                pub fn get_oneway(&self) -> Option<bool> {
+                    self.oneway
+                }
+
+                pub fn set_oneway(&mut self, value: Option<bool>) {
+                    self.oneway = value;
+                }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_topic_request_header_accessors {
+    ($($header:ty),+ $(,)?) => {
+        impl_rpc_request_header_accessors!($($header),+);
+        $(
+            impl $header {
+                pub fn get_lo(&self) -> Option<bool> {
+                    self.logical
+                }
+
+                pub fn set_lo(&mut self, value: Option<bool>) {
+                    self.logical = value;
+                }
+            }
+        )+
+    };
+}
+
 impl_rpc_request_header_semantics!(
     QueryConsumerOffsetRequestHeader,
     UpdateConsumerOffsetRequestHeader,
@@ -479,15 +546,43 @@ impl CommandHeader for QueryConsumerOffsetResponseHeader {
     }
 }
 
+/// Pinned Java `QueryConsumeTimeSpanRequestHeader`, including its inherited
+/// nullable `TopicRequestHeader.lo` property.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryConsumeTimeSpanRequestHeader;
+/// let _ = QueryConsumeTimeSpanRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryConsumeTimeSpanRequestHeader {
-    pub topic: Option<String>,
-    pub group: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) group: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
+
+impl QueryConsumeTimeSpanRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+}
+
+impl_topic_request_header_accessors!(QueryConsumeTimeSpanRequestHeader);
 
 impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
@@ -497,6 +592,7 @@ impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
         put_optional(fields, "nsd", self.namespaced);
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -505,6 +601,7 @@ impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
             topic: optional_string(fields, "topic"),
             group: optional_string(fields, "group"),
         })
@@ -513,15 +610,32 @@ impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
 
 /// Java `GetTopicStatsInfoRequestHeader`; its annotated topic is nullable at
 /// decode time because `checkFields()` is a no-op.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetTopicStatsInfoRequestHeader;
+/// let _ = GetTopicStatsInfoRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetTopicStatsInfoRequestHeader {
-    pub topic: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
+
+impl GetTopicStatsInfoRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+}
+
+impl_topic_request_header_accessors!(GetTopicStatsInfoRequestHeader);
 
 impl CommandHeader for GetTopicStatsInfoRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
@@ -547,15 +661,32 @@ impl CommandHeader for GetTopicStatsInfoRequestHeader {
 
 /// Pinned Java `DeleteTopicRequestHeader`; its annotated topic remains
 /// nullable because Java's `checkFields()` is a no-op.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::DeleteTopicRequestHeader;
+/// let _ = DeleteTopicRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct DeleteTopicRequestHeader {
-    pub topic: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
+
+impl DeleteTopicRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+}
+
+impl_topic_request_header_accessors!(DeleteTopicRequestHeader);
 
 impl CommandHeader for DeleteTopicRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
@@ -581,16 +712,41 @@ impl CommandHeader for DeleteTopicRequestHeader {
 
 /// Pinned Java Namesrv `DeleteTopicFromNamesrvRequestHeader`. Its annotated
 /// topic is nullable because Java's `checkFields()` is a no-op.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::DeleteTopicFromNamesrvRequestHeader;
+/// let _ = DeleteTopicFromNamesrvRequestHeader::default().cluster_name;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct DeleteTopicFromNamesrvRequestHeader {
-    pub topic: Option<String>,
-    pub cluster_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) cluster_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
+
+impl DeleteTopicFromNamesrvRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_cluster_name(&self) -> Option<&str> {
+        self.cluster_name.as_deref()
+    }
+
+    pub fn set_cluster_name(&mut self, value: Option<String>) {
+        self.cluster_name = value;
+    }
+}
+
+impl_topic_request_header_accessors!(DeleteTopicFromNamesrvRequestHeader);
 
 impl CommandHeader for DeleteTopicFromNamesrvRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
@@ -641,15 +797,40 @@ impl CommandHeader for DeleteKvConfigRequestHeader {
 /// Pinned Java `DeleteSubscriptionGroupRequestHeader`. Its annotated group
 /// name remains nullable because Java's `checkFields()` is a no-op; the
 /// primitive `cleanOffset` field defaults to and encodes `false`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::DeleteSubscriptionGroupRequestHeader;
+/// let _ = DeleteSubscriptionGroupRequestHeader::default().group_name;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct DeleteSubscriptionGroupRequestHeader {
-    pub group_name: Option<String>,
-    pub clean_offset: bool,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) group_name: Option<String>,
+    pub(crate) clean_offset: bool,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
+
+impl DeleteSubscriptionGroupRequestHeader {
+    pub fn get_group_name(&self) -> Option<&str> {
+        self.group_name.as_deref()
+    }
+
+    pub fn set_group_name(&mut self, value: Option<String>) {
+        self.group_name = value;
+    }
+
+    pub fn is_clean_offset(&self) -> bool {
+        self.clean_offset
+    }
+
+    pub fn set_clean_offset(&mut self, value: bool) {
+        self.clean_offset = value;
+    }
+}
+
+impl_rpc_request_header_accessors!(DeleteSubscriptionGroupRequestHeader);
 
 impl CommandHeader for DeleteSubscriptionGroupRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {

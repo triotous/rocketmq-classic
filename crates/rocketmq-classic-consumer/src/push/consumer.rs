@@ -1216,11 +1216,9 @@ impl PushConsumer {
                 "null BrokerData list in consume-time-span route",
             ),
         )?;
-        let header = QueryConsumeTimeSpanRequestHeader {
-            topic: Some(topic.to_owned()),
-            group: self.group_name(),
-            ..QueryConsumeTimeSpanRequestHeader::default()
-        };
+        let mut header = QueryConsumeTimeSpanRequestHeader::default();
+        header.set_topic(Some(topic.to_owned()));
+        header.set_group(self.group_name());
         let mut spans = Vec::new();
         for broker in brokers {
             let broker = broker.ok_or_else(|| {

@@ -344,14 +344,13 @@ async fn delete_topic_in_broker_matches_mq_client_admin_success_fixture() {
     let expected = &fixture["deleteTopicInBroker"]["success"];
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
-    let header = DeleteTopicRequestHeader {
-        topic: Some("orders".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-        logical: Some(true),
-    };
+    let mut header = DeleteTopicRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
 
     api.delete_topic_in_broker(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
@@ -391,19 +390,15 @@ async fn delete_topic_in_broker_preserves_java_broker_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = DeleteTopicRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
     let error = api
-        .delete_topic_in_broker(
-            &addr,
-            &DeleteTopicRequestHeader {
-                topic: Some("orders".into()),
-                namespace: Some("tenant".into()),
-                namespaced: Some(true),
-                broker_name: Some("broker-a".into()),
-                oneway: Some(false),
-                logical: Some(true),
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .delete_topic_in_broker(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -430,15 +425,14 @@ async fn delete_topic_in_nameserver_matches_mq_client_admin_success_fixture() {
     let expected = &fixture["deleteTopicInNameserver"]["success"];
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
-    let header = DeleteTopicFromNamesrvRequestHeader {
-        topic: Some("orders".into()),
-        cluster_name: Some("cluster-a".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-        logical: Some(true),
-    };
+    let mut header = DeleteTopicFromNamesrvRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_cluster_name(Some("cluster-a".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
 
     api.delete_topic_in_nameserver(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
@@ -478,20 +472,16 @@ async fn delete_topic_in_nameserver_preserves_java_broker_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = DeleteTopicFromNamesrvRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_cluster_name(Some("cluster-a".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
     let error = api
-        .delete_topic_in_nameserver(
-            &addr,
-            &DeleteTopicFromNamesrvRequestHeader {
-                topic: Some("orders".into()),
-                cluster_name: Some("cluster-a".into()),
-                namespace: Some("tenant".into()),
-                namespaced: Some(true),
-                broker_name: Some("broker-a".into()),
-                oneway: Some(false),
-                logical: Some(true),
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .delete_topic_in_nameserver(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -596,14 +586,13 @@ async fn delete_subscription_group_matches_mq_client_admin_success_fixture() {
     let expected = &fixture["deleteSubscriptionGroup"]["success"];
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
-    let header = DeleteSubscriptionGroupRequestHeader {
-        group_name: Some("workers".into()),
-        clean_offset: true,
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-    };
+    let mut header = DeleteSubscriptionGroupRequestHeader::default();
+    header.set_group_name(Some("workers".into()));
+    header.set_clean_offset(true);
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
 
     api.delete_subscription_group(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
@@ -643,19 +632,15 @@ async fn delete_subscription_group_preserves_java_broker_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = DeleteSubscriptionGroupRequestHeader::default();
+    header.set_group_name(Some("workers".into()));
+    header.set_clean_offset(true);
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
     let error = api
-        .delete_subscription_group(
-            &addr,
-            &DeleteSubscriptionGroupRequestHeader {
-                group_name: Some("workers".into()),
-                clean_offset: true,
-                namespace: Some("tenant".into()),
-                namespaced: Some(true),
-                broker_name: Some("broker-a".into()),
-                oneway: Some(false),
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .delete_subscription_group(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -927,14 +912,13 @@ async fn get_topic_stats_info_sends_java_header_and_decodes_topic_stats_table() 
         .to_vec();
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
     let (api, client) = api().await;
-    let header = GetTopicStatsInfoRequestHeader {
-        topic: Some("orders".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-        logical: Some(true),
-    };
+    let mut header = GetTopicStatsInfoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
 
     let stats = api
         .get_topic_stats_info(&addr, &header, Instant::now() + Duration::from_secs(2))
@@ -967,15 +951,10 @@ async fn get_topic_stats_info_preserves_java_null_body_results() {
     for body in [None, Some(b"null".to_vec())] {
         let (addr, peer) = scripted_peer(response::SUCCESS, None, body).await;
         let (api, client) = api().await;
+        let mut header = GetTopicStatsInfoRequestHeader::default();
+        header.set_topic(Some("orders".into()));
         let result = api
-            .get_topic_stats_info(
-                &addr,
-                &GetTopicStatsInfoRequestHeader {
-                    topic: Some("orders".into()),
-                    ..Default::default()
-                },
-                Instant::now() + Duration::from_secs(2),
-            )
+            .get_topic_stats_info(&addr, &header, Instant::now() + Duration::from_secs(2))
             .await
             .unwrap();
         assert!(result.is_none());
@@ -993,15 +972,10 @@ async fn get_topic_stats_info_preserves_broker_errors_and_rejects_malformed_body
     )
     .await;
     let (client_api, client) = api().await;
+    let mut header = GetTopicStatsInfoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
     let error = client_api
-        .get_topic_stats_info(
-            &addr,
-            &GetTopicStatsInfoRequestHeader {
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .get_topic_stats_info(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -1018,15 +992,10 @@ async fn get_topic_stats_info_preserves_broker_errors_and_rejects_malformed_body
 
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"not-json".to_vec())).await;
     let (api, client) = api().await;
+    let mut header = GetTopicStatsInfoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
     let error = api
-        .get_topic_stats_info(
-            &addr,
-            &GetTopicStatsInfoRequestHeader {
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .get_topic_stats_info(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -1055,14 +1024,13 @@ async fn query_consume_time_span_matches_mq_client_admin_fixture() {
         .to_vec();
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
     let (client_api, client) = api().await;
-    let header = QueryConsumeTimeSpanRequestHeader {
-        topic: Some("orders".into()),
-        group: Some("workers".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-    };
+    let mut header = QueryConsumeTimeSpanRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_group(Some("workers".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
     let spans = client_api
         .query_consume_time_span(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await

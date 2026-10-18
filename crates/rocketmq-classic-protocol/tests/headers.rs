@@ -146,8 +146,8 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-consume-time-span-request",
     ))
     .unwrap();
-    assert_eq!(query_time_span.topic.as_deref(), Some("orders"));
-    assert_eq!(query_time_span.group.as_deref(), Some("workers"));
+    assert_eq!(query_time_span.get_topic(), Some("orders"));
+    assert_eq!(query_time_span.get_group(), Some("workers"));
 
     let update = UpdateConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-update-offset-request",
@@ -1687,8 +1687,8 @@ fn header_validation_matrix() {
             "",
             "",
             "",
-            "topic group ns nsd bname oway",
-            "nsd oway"
+            "topic group ns nsd bname oway lo",
+            "nsd oway lo"
         ),
         row!(
             QueryConsumerOffsetResponseHeader,
@@ -1777,8 +1777,8 @@ fn header_validation_matrix() {
             "consumerGroup topic queueId commitOffset",
             "queueId",
             "commitOffset",
-            "bname ns nsd oway",
-            "nsd oway"
+            "bname ns nsd lo oway",
+            "nsd lo oway"
         ),
         row!(
             SendMessageResponseHeader,

@@ -1141,7 +1141,8 @@ mod tests {
     #[test]
     fn query_admin_header_reflection_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::{
-            CommandHeader, GetTopicStatsInfoRequestHeader, HeaderMap, QueryMessageRequestHeader,
+            CommandHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+            QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
             QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
             QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
             ViewMessageRequestHeader,
@@ -1155,6 +1156,23 @@ mod tests {
             fixture["client"],
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
+
+        for header_name in [
+            "QueryTopicsByConsumerRequestHeader",
+            "QuerySubscriptionByConsumerRequestHeader",
+            "QueryTopicConsumeByWhoRequestHeader",
+            "QueryConsumeTimeSpanRequestHeader",
+            "GetTopicStatsInfoRequestHeader",
+            "DeleteTopicRequestHeader",
+            "DeleteTopicFromNamesrvRequestHeader",
+            "DeleteSubscriptionGroupRequestHeader",
+        ] {
+            assert_eq!(
+                fixture["apiInventories"][header_name]["publicFields"],
+                serde_json::json!([]),
+                "{header_name} public fields"
+            );
+        }
 
         for (case_name, case) in fixture["cases"].as_object().unwrap() {
             let fields = case["fields"]
@@ -1199,6 +1217,31 @@ mod tests {
                                 "bname": header.broker_name,
                                 "oway": header.oneway,
                                 "lo": header.logical,
+                            }),
+                            encoded,
+                        )
+                    }
+                    "query-consume-time-span" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                QueryConsumeTimeSpanRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "topic": header.get_topic(),
+                                "group": header.get_group(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
+                                "lo": header.get_lo(),
                             }),
                             encoded,
                         )
@@ -1326,12 +1369,12 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "topic": header.topic,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
-                                "lo": header.logical,
+                                "topic": header.get_topic(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
+                                "lo": header.get_lo(),
                             }),
                             encoded,
                         )

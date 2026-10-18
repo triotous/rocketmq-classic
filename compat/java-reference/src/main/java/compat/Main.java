@@ -537,6 +537,7 @@ public final class Main {
         QueryConsumeTimeSpanRequestHeader queryConsumeTimeSpan = new QueryConsumeTimeSpanRequestHeader();
         queryConsumeTimeSpan.setTopic("orders");
         queryConsumeTimeSpan.setGroup("workers");
+        queryConsumeTimeSpan.setLo(true);
         writeTypedHeaderFixture(output, "query-consume-time-span-request", 303, queryConsumeTimeSpan);
         QueryTopicsByConsumerRequestHeader queryTopics = new QueryTopicsByConsumerRequestHeader();
         queryTopics.setGroup("workers");
