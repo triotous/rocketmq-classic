@@ -1404,11 +1404,11 @@ impl CommandHeader for UnregisterClientResponseHeader {
 pub struct EndTransactionRequestHeader {
     pub topic: Option<String>,
     pub producer_group: Option<String>,
-    pub transaction_state_table_offset: i64,
-    pub commit_log_offset: i64,
-    pub commit_or_rollback: i32,
+    pub transaction_state_table_offset: Option<i64>,
+    pub commit_log_offset: Option<i64>,
+    pub commit_or_rollback: Option<i32>,
     pub from_transaction_check: Option<bool>,
-    pub msg_id: String,
+    pub msg_id: Option<String>,
     pub transaction_id: Option<String>,
     pub namespace: Option<String>,
     pub namespaced: Option<bool>,
@@ -1421,11 +1421,11 @@ impl Default for EndTransactionRequestHeader {
         Self {
             topic: None,
             producer_group: None,
-            transaction_state_table_offset: 0,
-            commit_log_offset: 0,
-            commit_or_rollback: 0,
+            transaction_state_table_offset: None,
+            commit_log_offset: None,
+            commit_or_rollback: None,
             from_transaction_check: Some(false),
-            msg_id: String::new(),
+            msg_id: None,
             transaction_id: None,
             namespace: None,
             namespaced: None,
@@ -1439,17 +1439,15 @@ impl CommandHeader for EndTransactionRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "topic", self.topic.as_deref());
         put_optional(fields, "producerGroup", self.producer_group.as_deref());
-        fields.insert(
-            "tranStateTableOffset".into(),
-            self.transaction_state_table_offset.to_string(),
+        put_optional(
+            fields,
+            "tranStateTableOffset",
+            self.transaction_state_table_offset,
         );
-        fields.insert("commitLogOffset".into(), self.commit_log_offset.to_string());
-        fields.insert(
-            "commitOrRollback".into(),
-            self.commit_or_rollback.to_string(),
-        );
+        put_optional(fields, "commitLogOffset", self.commit_log_offset);
+        put_optional(fields, "commitOrRollback", self.commit_or_rollback);
         put_optional(fields, "fromTransactionCheck", self.from_transaction_check);
-        fields.insert("msgId".into(), self.msg_id.clone());
+        put_optional(fields, "msgId", self.msg_id.as_deref());
         put_optional(fields, "transactionId", self.transaction_id.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
@@ -1458,24 +1456,43 @@ impl CommandHeader for EndTransactionRequestHeader {
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
-        Ok(Self {
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        let header = Self {
             topic: optional_string(fields, "topic"),
             producer_group: optional_string(fields, "producerGroup"),
-            transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
-            commit_log_offset: required_i64(fields, "commitLogOffset")?,
-            commit_or_rollback: required_i32(fields, "commitOrRollback")?,
-            from_transaction_check: optional_java_boolean(fields, "fromTransactionCheck"),
-            msg_id: required_string(fields, "msgId")?.to_owned(),
+            transaction_state_table_offset: fields
+                .get("tranStateTableOffset")
+                .and_then(|value| parse_java_i64(value)),
+            commit_log_offset: fields
+                .get("commitLogOffset")
+                .and_then(|value| parse_java_i64(value)),
+            commit_or_rollback: fields
+                .get("commitOrRollback")
+                .and_then(|value| parse_java_i32(value)),
+            from_transaction_check: Some(
+                fields
+                    .get("fromTransactionCheck")
+                    .is_some_and(|value| value.eq_ignore_ascii_case("true")),
+            ),
+            msg_id: optional_string(fields, "msgId"),
             transaction_id: optional_string(fields, "transactionId"),
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
-        })
+        };
+        header.check_fields()?;
+        Ok(header)
     }
 
     fn check_fields(&self) -> Result<(), ProtocolError> {
-        if matches!(self.commit_or_rollback, 0 | 8 | 12) {
+        if matches!(self.commit_or_rollback, Some(0 | 8 | 12)) {
             Ok(())
         } else {
             Err(ProtocolError::InvalidField {

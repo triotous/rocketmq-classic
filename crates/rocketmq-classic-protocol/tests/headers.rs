@@ -342,11 +342,11 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     let end = EndTransactionRequestHeader {
         topic: Some("orders".into()),
         producer_group: Some("producers".into()),
-        transaction_state_table_offset: 3,
-        commit_log_offset: 9,
-        commit_or_rollback: 8,
+        transaction_state_table_offset: Some(3),
+        commit_log_offset: Some(9),
+        commit_or_rollback: Some(8),
         from_transaction_check: Some(false),
-        msg_id: "msg-1".into(),
+        msg_id: Some("msg-1".into()),
         transaction_id: Some("tx-1".into()),
         namespace: None,
         namespaced: None,
@@ -357,7 +357,10 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     end.encode_fields(&mut fields);
     assert_eq!(EndTransactionRequestHeader::decode_fields(&fields), Ok(end));
 
-    let null_group_end = EndTransactionRequestHeader::default();
+    let null_group_end = EndTransactionRequestHeader {
+        commit_or_rollback: Some(8),
+        ..EndTransactionRequestHeader::default()
+    };
     fields.clear();
     null_group_end.encode_fields(&mut fields);
     assert!(!fields.contains_key("producerGroup"));
@@ -940,7 +943,7 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         EndTransactionRequestHeader::decode_fields(&transaction)
             .unwrap()
             .from_transaction_check,
-        None
+        Some(false)
     );
 
     let mut v1_fields = HeaderMap::from([
@@ -1240,7 +1243,7 @@ fn header_validation_matrix() {
             "tranStateTableOffset commitLogOffset commitOrRollback msgId",
             "commitOrRollback",
             "tranStateTableOffset commitLogOffset",
-            "producerGroup topic fromTransactionCheck transactionId ns nsd bname oway",
+            "producerGroup topic transactionId ns nsd bname oway",
             "fromTransactionCheck nsd oway"
         ),
         row!(
@@ -1603,10 +1606,19 @@ fn header_validation_matrix() {
             let mut fields = baseline.clone();
             fields.remove(name);
             let decoded = (case.decode)(&fields);
-            if case.model == "CreateTopicRequestHeader" && name == "topicFilterType" {
+            if (case.model == "CreateTopicRequestHeader" && name == "topicFilterType")
+                || (case.model == "EndTransactionRequestHeader" && name == "commitOrRollback")
+            {
                 assert!(
                     matches!(decoded, Err(ProtocolError::InvalidField { field, .. }) if field == name),
                     "{} {name}",
+                    case.fixture
+                );
+            } else if case.model == "EndTransactionRequestHeader" {
+                assert!(decoded.is_ok(), "{} {name}", case.fixture);
+                assert!(
+                    !decoded.unwrap().contains_key(name),
+                    "{} encoded missing Java reflection field {name}",
                     case.fixture
                 );
             } else if case.model == "SendMessageResponseHeader"
@@ -1627,7 +1639,9 @@ fn header_validation_matrix() {
                 );
             }
             fields.insert(name.into(), "".into());
-            let empty_value_is_accepted = if case.model == "CreateTopicRequestHeader" {
+            let empty_value_is_accepted = if case.model == "EndTransactionRequestHeader" {
+                name != "commitOrRollback"
+            } else if case.model == "CreateTopicRequestHeader" {
                 name != "topicFilterType"
             } else {
                 !i32_fields.contains(name) && !i64_fields.contains(name)
@@ -1682,6 +1696,16 @@ fn header_validation_matrix() {
                             "{} reflective decoding should ignore invalid {name}={value}",
                             case.fixture
                         );
+                    } else if case.model == "EndTransactionRequestHeader"
+                        && name != "commitOrRollback"
+                    {
+                        let decoded = (case.decode)(&fields)
+                            .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                        assert!(
+                            !decoded.contains_key(name),
+                            "{} reflective decoding should ignore invalid {name}={value}",
+                            case.fixture
+                        );
                     } else {
                         assert!(
                             matches!((case.decode)(&fields), Err(ProtocolError::InvalidField { field, .. }) if field == name),
@@ -1697,6 +1721,17 @@ fn header_validation_matrix() {
                 } {
                     let mut fields = baseline.clone();
                     fields.insert(name.into(), value.into());
+                    if case.model == "EndTransactionRequestHeader"
+                        && name == "commitOrRollback"
+                        && !["0", "8", "12"].contains(&value)
+                    {
+                        assert!(
+                            matches!((case.decode)(&fields), Err(ProtocolError::InvalidField { field, .. }) if field == name),
+                            "{} {name}={value} is outside the Java commit-state values",
+                            case.fixture
+                        );
+                        continue;
+                    }
                     let decoded = (case.decode)(&fields)
                         .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
                     assert_eq!(

@@ -181,6 +181,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-end-transaction-header-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.EndTransactionHeaderDecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/end-transaction-header-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-offset-boundary-header-decode-mode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

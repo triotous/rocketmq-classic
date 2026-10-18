@@ -116,11 +116,11 @@ async fn java_invoked_producer_requests_and_outcomes_match() {
         let outcome = if name == "end-transaction-oneway" {
             let header = EndTransactionRequestHeader {
                 producer_group: Some("producer".into()),
-                transaction_state_table_offset: 3,
-                commit_log_offset: 9,
-                commit_or_rollback: 8,
+                transaction_state_table_offset: Some(3),
+                commit_log_offset: Some(9),
+                commit_or_rollback: Some(8),
                 from_transaction_check: Some(false),
-                msg_id: "transaction-id".into(),
+                msg_id: Some("transaction-id".into()),
                 ..Default::default()
             };
             api.end_transaction_oneway(&addr, &header, Some("offline end".into()), deadline)

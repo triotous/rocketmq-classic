@@ -1127,6 +1127,69 @@ mod tests {
     }
 
     #[test]
+    fn end_transaction_header_decode_modes_match_invoked_java_551() {
+        use rocketmq_classic_protocol::header::{
+            CommandHeader, EndTransactionRequestHeader, HeaderMap, ProtocolError,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/end-transaction-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let decoded = command
+                    .decode_command_custom_header_directly::<EndTransactionRequestHeader>(
+                        use_fast_encode,
+                    );
+                let expected = &case[mode];
+                if expected["outcome"] == "OK" {
+                    let header = decoded.unwrap_or_else(|error| {
+                        panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
+                    });
+                    let mut encoded = HeaderMap::new();
+                    CommandHeader::encode_fields(&header, &mut encoded);
+                    let expected_fields = expected["encodedFields"]
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                        .collect::<HeaderMap>();
+                    assert_eq!(encoded, expected_fields, "{case_name}/{mode}");
+                } else {
+                    assert!(
+                        matches!(
+                            decoded,
+                            Err(ProtocolError::InvalidField {
+                                field: "commitOrRollback",
+                                ..
+                            })
+                        ),
+                        "{case_name}/{mode}: Java returned {}, Rust did not reject the commit state",
+                        expected["outcome"]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn offset_boundary_response_header_reflection_modes_match_invoked_java() {
         use rocketmq_classic_protocol::header::{
             GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetResponseHeader,
