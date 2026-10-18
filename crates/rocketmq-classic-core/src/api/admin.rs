@@ -6,8 +6,8 @@ use rocketmq_classic_protocol::{
     body::{GroupList, QuerySubscriptionResponseBody, TopicList, TopicStatsTable},
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, GetTopicStatsInfoRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        CommandHeader, CreateTopicRequestHeader, DeleteTopicRequestHeader,
+        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
     },
@@ -379,6 +379,19 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         let code = request::UPDATE_AND_CREATE_TOPIC;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes one topic from a Broker through Java `MqClientAdmin`'s RPC.
+    pub async fn delete_topic_in_broker(
+        &self,
+        addr: &str,
+        header: &DeleteTopicRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_TOPIC_IN_BROKER;
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())
