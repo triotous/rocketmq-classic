@@ -338,10 +338,13 @@ fn java_request_and_response_header_fixtures_decode() {
     for missing in ["popTime", "invisibleTime", "reviveQid"] {
         pop_fields = java_ext_fields("header-pop-lite-response");
         pop_fields.remove(missing);
-        assert!(matches!(
-            PopLiteMessageResponseHeader::decode_fields(&pop_fields),
-            Err(rocketmq_classic_protocol::header::ProtocolError::MissingField(field)) if field == missing
-        ));
+        let decoded = PopLiteMessageResponseHeader::decode_fields(&pop_fields).unwrap();
+        match missing {
+            "popTime" => assert_eq!(decoded.pop_time, 0),
+            "invisibleTime" => assert_eq!(decoded.invisible_time, 0),
+            "reviveQid" => assert_eq!(decoded.revive_queue_id, 0),
+            _ => unreachable!("test field list is exhaustive"),
+        }
     }
 }
 
@@ -365,7 +368,7 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     );
     assert_eq!(fixture["serverContacted"], false);
     let cases = fixture["cases"].as_object().unwrap();
-    assert_eq!(cases.len(), 12);
+    assert_eq!(cases.len(), 18);
 
     for (case_name, case) in cases {
         let header_type = case["headerType"].as_str().unwrap();
@@ -396,6 +399,12 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
                 "pop-lite" => {
                     encode_decoded_header::<PopLiteMessageRequestHeader>(&fields, use_fast_encode)
                 }
+                "pop-response" => {
+                    encode_decoded_header::<PopMessageResponseHeader>(&fields, use_fast_encode)
+                }
+                "pop-lite-response" => {
+                    encode_decoded_header::<PopLiteMessageResponseHeader>(&fields, use_fast_encode)
+                }
                 other => panic!("unknown Java header type {other}"),
             }
             .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
@@ -424,6 +433,24 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     assert_eq!(default_lite_header.client_id, None);
     assert_eq!(default_lite_header.consumer_group, None);
     assert_eq!(default_lite_header.topic, None);
+
+    let default_pop_response = PopMessageResponseHeader::default();
+    let mut default_pop_response_fields = HeaderMap::new();
+    default_pop_response.encode_fields(&mut default_pop_response_fields);
+    let expected_pop_response_fields: HeaderMap = serde_json::from_value(
+        cases["pop-response-defaults"]["reflection"]["encodedFields"].clone(),
+    )
+    .unwrap();
+    assert_eq!(default_pop_response_fields, expected_pop_response_fields);
+
+    let default_lite_response = PopLiteMessageResponseHeader::default();
+    let mut default_lite_response_fields = HeaderMap::new();
+    default_lite_response.encode_fields(&mut default_lite_response_fields);
+    let expected_lite_response_fields: HeaderMap = serde_json::from_value(
+        cases["pop-lite-response-defaults"]["reflection"]["encodedFields"].clone(),
+    )
+    .unwrap();
+    assert_eq!(default_lite_response_fields, expected_lite_response_fields);
 
     let timeout_cases = fixture["popLiteTimeoutCases"].as_object().unwrap();
     assert_eq!(timeout_cases.len(), 2);
@@ -1803,7 +1830,7 @@ fn header_validation_matrix() {
         row!(
             PopMessageResponseHeader,
             "pop-response",
-            "popTime invisibleTime reviveQid restNum",
+            "",
             "reviveQid",
             "popTime invisibleTime restNum",
             "startOffsetInfo msgOffsetInfo orderCountInfo",
@@ -1821,7 +1848,7 @@ fn header_validation_matrix() {
         row!(
             PopLiteMessageResponseHeader,
             "pop-lite-response",
-            "popTime invisibleTime reviveQid",
+            "",
             "reviveQid",
             "popTime invisibleTime",
             "startOffsetInfo msgOffsetInfo orderCountInfo",
@@ -2062,6 +2089,11 @@ fn header_validation_matrix() {
                 name != "commitOrRollback"
             } else if case.model == "CreateTopicRequestHeader" {
                 name != "topicFilterType"
+            } else if matches!(
+                case.model,
+                "PopMessageResponseHeader" | "PopLiteMessageResponseHeader"
+            ) {
+                true
             } else {
                 !i32_fields.contains(name) && !i64_fields.contains(name)
             };
@@ -2110,6 +2142,8 @@ fn header_validation_matrix() {
                         "ChangeInvisibleTimeResponseHeader"
                             | "PopMessageRequestHeader"
                             | "PopLiteMessageRequestHeader"
+                            | "PopMessageResponseHeader"
+                            | "PopLiteMessageResponseHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

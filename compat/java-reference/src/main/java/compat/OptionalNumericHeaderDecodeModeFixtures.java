@@ -30,6 +30,8 @@ import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResult
 import org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
@@ -93,6 +95,22 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
             "maxMsgNum", "١٦", "invisibleTime", "٣٠٠٠٠", "pollTime", "١٠٠٠",
             "bornTime", "١٧١٢٣٤٥٦٧٨٩٠١", "attemptId", "attempt",
             "ns", "tenant", "nsd", "not-a-boolean", "bname", "broker-a", "oway", "true")));
+        cases.put("pop-response-defaults", decodeModes("pop-response", fields()));
+        cases.put("pop-response-invalid-primitive-fields", decodeModes("pop-response", fields(
+            "popTime", "not-a-long", "invisibleTime", "9223372036854775808",
+            "reviveQid", "not-an-int", "restNum", "-9223372036854775809")));
+        cases.put("pop-response-valid-unicode-fields", decodeModes("pop-response", fields(
+            "popTime", "١٠", "invisibleTime", "٢٠", "reviveQid", "١", "restNum", "٣",
+            "startOffsetInfo", "orders@0:100", "msgOffsetInfo", "orders@0:101",
+            "orderCountInfo", "0")));
+        cases.put("pop-lite-response-defaults", decodeModes("pop-lite-response", fields()));
+        cases.put("pop-lite-response-invalid-primitive-fields", decodeModes(
+            "pop-lite-response", fields("popTime", "not-a-long", "invisibleTime",
+                "9223372036854775808", "reviveQid", "not-an-int")));
+        cases.put("pop-lite-response-valid-unicode-fields", decodeModes(
+            "pop-lite-response", fields("popTime", "١٠", "invisibleTime", "٢٠",
+                "reviveQid", "١", "startOffsetInfo", "orders@0:100",
+                "msgOffsetInfo", "orders@0:101", "orderCountInfo", "0")));
         fixture.put("cases", cases);
 
         Map<String, Object> popLiteTimeoutCases = new TreeMap<>();
@@ -201,6 +219,12 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
                     break;
                 case "pop-lite":
                     headerClass = PopLiteMessageRequestHeader.class;
+                    break;
+                case "pop-response":
+                    headerClass = PopMessageResponseHeader.class;
+                    break;
+                case "pop-lite-response":
+                    headerClass = PopLiteMessageResponseHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

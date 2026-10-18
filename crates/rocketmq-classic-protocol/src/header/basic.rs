@@ -2500,14 +2500,23 @@ impl CommandHeader for PopMessageResponseHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            pop_time: required_i64(fields, "popTime")?,
-            invisible_time: required_i64(fields, "invisibleTime")?,
-            revive_queue_id: required_i32(fields, "reviveQid")?,
-            rest_num: required_i64(fields, "restNum")?,
+            pop_time: optional_i64_with_mode(fields, "popTime", false)?.unwrap_or_default(),
+            invisible_time: optional_i64_with_mode(fields, "invisibleTime", false)?
+                .unwrap_or_default(),
+            revive_queue_id: optional_i32_with_mode(fields, "reviveQid", false)?
+                .unwrap_or_default(),
+            rest_num: optional_i64_with_mode(fields, "restNum", false)?.unwrap_or_default(),
             start_offset_info: optional_string(fields, "startOffsetInfo"),
             msg_offset_info: optional_string(fields, "msgOffsetInfo"),
             order_count_info: optional_string(fields, "orderCountInfo"),
         })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields(fields)
     }
 }
 
@@ -2540,13 +2549,22 @@ impl CommandHeader for PopLiteMessageResponseHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            pop_time: required_i64(fields, "popTime")?,
-            invisible_time: required_i64(fields, "invisibleTime")?,
-            revive_queue_id: required_i32(fields, "reviveQid")?,
+            pop_time: optional_i64_with_mode(fields, "popTime", false)?.unwrap_or_default(),
+            invisible_time: optional_i64_with_mode(fields, "invisibleTime", false)?
+                .unwrap_or_default(),
+            revive_queue_id: optional_i32_with_mode(fields, "reviveQid", false)?
+                .unwrap_or_default(),
             start_offset_info: optional_string(fields, "startOffsetInfo"),
             msg_offset_info: optional_string(fields, "msgOffsetInfo"),
             order_count_info: optional_string(fields, "orderCountInfo"),
         })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields(fields)
     }
 }
 
