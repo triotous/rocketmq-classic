@@ -108,12 +108,12 @@ pub(crate) async fn create_topic(
     });
 
     let header = CreateTopicRequestHeader {
-        topic: topic.to_owned(),
-        default_topic: key.to_owned(),
-        read_queue_nums: queue_num,
-        write_queue_nums: queue_num,
-        perm: 6,
-        topic_filter_type: "SINGLE_TAG".into(),
+        topic: Some(topic.to_owned()),
+        default_topic: Some(key.to_owned()),
+        read_queue_nums: Some(queue_num),
+        write_queue_nums: Some(queue_num),
+        perm: Some(6),
+        topic_filter_type: Some("SINGLE_TAG".into()),
         topic_sys_flag: Some(topic_sys_flag),
         order: Some(false),
         attributes: Some(String::new()),

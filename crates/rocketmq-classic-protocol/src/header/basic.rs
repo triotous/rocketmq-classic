@@ -948,12 +948,12 @@ impl CommandHeader for GetRouteInfoRequestHeader {
 /// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
 #[derive(Debug, Clone)]
 pub struct CreateTopicRequestHeader {
-    pub topic: String,
-    pub default_topic: String,
-    pub read_queue_nums: i32,
-    pub write_queue_nums: i32,
-    pub perm: i32,
-    pub topic_filter_type: String,
+    pub topic: Option<String>,
+    pub default_topic: Option<String>,
+    pub read_queue_nums: Option<i32>,
+    pub write_queue_nums: Option<i32>,
+    pub perm: Option<i32>,
+    pub topic_filter_type: Option<String>,
     pub topic_sys_flag: Option<i32>,
     pub order: Option<bool>,
     pub attributes: Option<String>,
@@ -968,12 +968,12 @@ pub struct CreateTopicRequestHeader {
 impl Default for CreateTopicRequestHeader {
     fn default() -> Self {
         Self {
-            topic: String::new(),
-            default_topic: String::new(),
-            read_queue_nums: 0,
-            write_queue_nums: 0,
-            perm: 0,
-            topic_filter_type: String::new(),
+            topic: None,
+            default_topic: None,
+            read_queue_nums: None,
+            write_queue_nums: None,
+            perm: None,
+            topic_filter_type: None,
             topic_sys_flag: None,
             order: Some(false),
             attributes: None,
@@ -989,12 +989,12 @@ impl Default for CreateTopicRequestHeader {
 
 impl CommandHeader for CreateTopicRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("defaultTopic".into(), self.default_topic.clone());
-        fields.insert("readQueueNums".into(), self.read_queue_nums.to_string());
-        fields.insert("writeQueueNums".into(), self.write_queue_nums.to_string());
-        fields.insert("perm".into(), self.perm.to_string());
-        fields.insert("topicFilterType".into(), self.topic_filter_type.clone());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "defaultTopic", self.default_topic.as_deref());
+        put_optional(fields, "readQueueNums", self.read_queue_nums);
+        put_optional(fields, "writeQueueNums", self.write_queue_nums);
+        put_optional(fields, "perm", self.perm);
+        put_optional(fields, "topicFilterType", self.topic_filter_type.as_deref());
         put_optional(fields, "topicSysFlag", self.topic_sys_flag);
         put_optional(fields, "order", self.order);
         put_optional(fields, "attributes", self.attributes.as_deref());
@@ -1007,18 +1007,38 @@ impl CommandHeader for CreateTopicRequestHeader {
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
-        let topic_filter_type = required_string(fields, "topicFilterType")?.to_owned();
+        Self::decode_fields_with_mode(fields, true)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         let header = Self {
-            topic: required_string(fields, "topic")?.to_owned(),
-            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
-            read_queue_nums: required_i32(fields, "readQueueNums")?,
-            write_queue_nums: required_i32(fields, "writeQueueNums")?,
-            perm: required_i32(fields, "perm")?,
-            topic_filter_type,
-            topic_sys_flag: optional_i32(fields, "topicSysFlag")?,
-            order: Some(optional_java_boolean(fields, "order").unwrap_or(false)),
+            topic: optional_string(fields, "topic"),
+            default_topic: optional_string(fields, "defaultTopic"),
+            read_queue_nums: fields
+                .get("readQueueNums")
+                .and_then(|value| parse_java_i32(value)),
+            write_queue_nums: fields
+                .get("writeQueueNums")
+                .and_then(|value| parse_java_i32(value)),
+            perm: fields.get("perm").and_then(|value| parse_java_i32(value)),
+            topic_filter_type: optional_string(fields, "topicFilterType"),
+            topic_sys_flag: fields
+                .get("topicSysFlag")
+                .and_then(|value| parse_java_i32(value)),
+            order: Some(
+                fields
+                    .get("order")
+                    .is_some_and(|value| value.eq_ignore_ascii_case("true")),
+            ),
             attributes: optional_string(fields, "attributes"),
-            force: Some(optional_java_boolean(fields, "force").unwrap_or(false)),
+            force: Some(
+                fields
+                    .get("force")
+                    .is_some_and(|value| value.eq_ignore_ascii_case("true")),
+            ),
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
@@ -1030,12 +1050,18 @@ impl CommandHeader for CreateTopicRequestHeader {
     }
 
     fn check_fields(&self) -> Result<(), ProtocolError> {
-        if matches!(self.topic_filter_type.as_str(), "SINGLE_TAG" | "MULTI_TAG") {
+        if matches!(
+            self.topic_filter_type.as_deref(),
+            Some("SINGLE_TAG" | "MULTI_TAG")
+        ) {
             Ok(())
         } else {
             Err(ProtocolError::InvalidField {
                 field: "topicFilterType",
-                reason: format!("unknown Java TopicFilterType {}", self.topic_filter_type),
+                reason: format!(
+                    "unknown Java TopicFilterType {}",
+                    self.topic_filter_type.as_deref().unwrap_or("null")
+                ),
             })
         }
     }
@@ -2884,8 +2910,8 @@ mod tests {
         check_rpc_request_header!(
             CreateTopicRequestHeader,
             broker_name,
-            |h: &mut CreateTopicRequestHeader| h.topic_filter_type = "SINGLE_TAG".into(),
-            |h: &mut CreateTopicRequestHeader| h.topic = "payload".into()
+            |h: &mut CreateTopicRequestHeader| h.topic_filter_type = Some("SINGLE_TAG".into()),
+            |h: &mut CreateTopicRequestHeader| h.topic = Some("payload".into())
         );
         check_rpc_request_header!(
             QueryMessageRequestHeader,

@@ -73,12 +73,15 @@ fn java_request_and_response_header_fixtures_decode() {
     let create_topic =
         CreateTopicRequestHeader::decode_fields(&java_ext_fields("header-create-topic-request"))
             .unwrap();
-    assert_eq!(create_topic.topic, "orders");
-    assert_eq!(create_topic.default_topic, "TBW102");
-    assert_eq!(create_topic.read_queue_nums, 4);
-    assert_eq!(create_topic.write_queue_nums, 4);
-    assert_eq!(create_topic.perm, 6);
-    assert_eq!(create_topic.topic_filter_type, "SINGLE_TAG");
+    assert_eq!(create_topic.topic.as_deref(), Some("orders"));
+    assert_eq!(create_topic.default_topic.as_deref(), Some("TBW102"));
+    assert_eq!(create_topic.read_queue_nums, Some(4));
+    assert_eq!(create_topic.write_queue_nums, Some(4));
+    assert_eq!(create_topic.perm, Some(6));
+    assert_eq!(
+        create_topic.topic_filter_type.as_deref(),
+        Some("SINGLE_TAG")
+    );
     assert_eq!(create_topic.topic_sys_flag, Some(3));
     assert_eq!(
         create_topic.attributes.as_deref(),
@@ -1600,7 +1603,15 @@ fn header_validation_matrix() {
             let mut fields = baseline.clone();
             fields.remove(name);
             let decoded = (case.decode)(&fields);
-            if case.model == "SendMessageResponseHeader" {
+            if case.model == "CreateTopicRequestHeader" && name == "topicFilterType" {
+                assert!(
+                    matches!(decoded, Err(ProtocolError::InvalidField { field, .. }) if field == name),
+                    "{} {name}",
+                    case.fixture
+                );
+            } else if case.model == "SendMessageResponseHeader"
+                || (case.model == "CreateTopicRequestHeader" && name != "topicFilterType")
+            {
                 assert!(decoded.is_ok(), "{} {name}", case.fixture);
                 assert!(
                     !decoded.unwrap().contains_key(name),
@@ -1616,11 +1627,14 @@ fn header_validation_matrix() {
                 );
             }
             fields.insert(name.into(), "".into());
+            let empty_value_is_accepted = if case.model == "CreateTopicRequestHeader" {
+                name != "topicFilterType"
+            } else {
+                !i32_fields.contains(name) && !i64_fields.contains(name)
+            };
             assert_eq!(
                 (case.decode)(&fields).is_ok(),
-                !(i32_fields.contains(name)
-                    || i64_fields.contains(name)
-                    || (case.model == "CreateTopicRequestHeader" && name == "topicFilterType")),
+                empty_value_is_accepted,
                 "{} empty required {name}",
                 case.fixture
             );
@@ -1658,6 +1672,14 @@ fn header_validation_matrix() {
                             decoded.get(name).map(String::as_str),
                             Some("0"),
                             "{} primitive reflection decoding should retain zero for invalid {name}={value}",
+                            case.fixture
+                        );
+                    } else if case.model == "CreateTopicRequestHeader" {
+                        let decoded = (case.decode)(&fields)
+                            .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
+                        assert!(
+                            !decoded.contains_key(name),
+                            "{} reflective decoding should ignore invalid {name}={value}",
                             case.fixture
                         );
                     } else {

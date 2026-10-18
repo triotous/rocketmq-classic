@@ -161,12 +161,12 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
     let header = CreateTopicRequestHeader {
-        topic: "orders".into(),
-        default_topic: "TBW102".into(),
-        read_queue_nums: 4,
-        write_queue_nums: 4,
-        perm: 6,
-        topic_filter_type: "SINGLE_TAG".into(),
+        topic: Some("orders".into()),
+        default_topic: Some("TBW102".into()),
+        read_queue_nums: Some(4),
+        write_queue_nums: Some(4),
+        perm: Some(6),
+        topic_filter_type: Some("SINGLE_TAG".into()),
         topic_sys_flag: Some(3),
         order: Some(false),
         attributes: Some("+unit=true".into()),
@@ -194,8 +194,8 @@ async fn create_topic_preserves_broker_permission_error() {
         .create_topic(
             &addr,
             &CreateTopicRequestHeader {
-                topic: "orders".into(),
-                default_topic: "TBW102".into(),
+                topic: Some("orders".into()),
+                default_topic: Some("TBW102".into()),
                 ..Default::default()
             },
             Instant::now() + Duration::from_secs(2),

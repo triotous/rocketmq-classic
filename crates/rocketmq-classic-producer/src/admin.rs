@@ -296,12 +296,12 @@ impl Producer {
         });
 
         let header = CreateTopicRequestHeader {
-            topic,
-            default_topic: route_topic,
-            read_queue_nums: queue_num,
-            write_queue_nums: queue_num,
-            perm: 6,
-            topic_filter_type: "SINGLE_TAG".into(),
+            topic: Some(topic),
+            default_topic: Some(route_topic),
+            read_queue_nums: Some(queue_num),
+            write_queue_nums: Some(queue_num),
+            perm: Some(6),
+            topic_filter_type: Some("SINGLE_TAG".into()),
             topic_sys_flag: Some(topic_sys_flag),
             order: Some(false),
             // DefaultMQProducer's public overloads accept the Java Map
