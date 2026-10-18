@@ -4117,13 +4117,18 @@ where
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<BatchAckMessageRequestBody>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::BatchAckMessageRequestBody;
+/// let _ = BatchAckMessageRequestBody::default().broker_name;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchAckMessageRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub broker_name: Option<String>,
+    broker_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acks: Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>>,
+    acks: Option<SharedValue<Vec<Option<SharedValue<BatchAck>>>>>,
 }
 
 #[derive(Deserialize)]
@@ -4252,6 +4257,11 @@ impl BatchAckMessageRequestBody {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<BatchAck>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::BatchAck;
+/// let _ = BatchAck::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct BatchAck {
     #[serde(
@@ -4259,28 +4269,28 @@ pub struct BatchAck {
         alias = "consumerGroup",
         skip_serializing_if = "Option::is_none"
     )]
-    pub consumer_group: Option<String>,
+    consumer_group: Option<String>,
     #[serde(rename = "t", alias = "topic", skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
+    topic: Option<String>,
     #[serde(rename = "r", alias = "retry", skip_serializing_if = "Option::is_none")]
-    pub retry: Option<String>,
+    retry: Option<String>,
     #[serde(rename = "so", alias = "startOffset")]
-    pub start_offset: i64,
+    start_offset: i64,
     #[serde(rename = "q", alias = "queueId")]
-    pub queue_id: i32,
+    queue_id: i32,
     #[serde(rename = "rq", alias = "reviveQueueId")]
-    pub revive_queue_id: i32,
+    revive_queue_id: i32,
     #[serde(rename = "pt", alias = "popTime")]
-    pub pop_time: i64,
+    pop_time: i64,
     #[serde(rename = "it", alias = "invisibleTime")]
-    pub invisible_time: i64,
+    invisible_time: i64,
     #[serde(
         rename = "b",
         alias = "bitSet",
         with = "bitset_base64",
         skip_serializing_if = "is_empty_bitset"
     )]
-    pub bit_set: Option<SharedValue<BitSet>>,
+    bit_set: Option<SharedValue<BitSet>>,
 }
 
 #[derive(Deserialize)]
@@ -8430,6 +8440,7 @@ mod tests {
             api["batchAckPublicConstructors"],
             json!(["org.apache.rocketmq.remoting.protocol.body.BatchAck()"])
         );
+        assert_eq!(api["batchAckPublicFields"], json!([]));
         assert_eq!(
             api["batchAckDeclaredPublicMethods"]
                 .as_array()
@@ -8445,6 +8456,7 @@ mod tests {
             api["bodyPublicConstructors"],
             json!(["org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody()"])
         );
+        assert_eq!(api["bodyPublicFields"], json!([]));
         assert_eq!(
             api["bodyDeclaredPublicMethods"].as_array().unwrap().len(),
             4

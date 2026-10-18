@@ -2800,18 +2800,10 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.BatchAck ack =
             new org.apache.rocketmq.remoting.protocol.body.BatchAck();
         Map<String, Object> item = new TreeMap<>();
-        item.put("batchAckPublicConstructors", publicConstructorSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
-        item.put("batchAckDeclaredPublicMethods", declaredPublicMethodSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
-        item.put("batchAckCallablePublicMethods", callablePublicMethodSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAck.class));
-        item.put("bodyPublicConstructors", publicConstructorSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
-        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
-        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(
-            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class));
+        recordPublicApiInventory(item, "batchAck",
+            org.apache.rocketmq.remoting.protocol.body.BatchAck.class);
+        recordPublicApiInventory(item, "body",
+            org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody.class);
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("consumerGroup", ack.getConsumerGroup());
         defaults.put("topic", ack.getTopic());

@@ -826,27 +826,24 @@ fn generate_p4_bodies(output: &std::path::Path) {
             )]))),
         },
     );
-    write_body(
-        output,
-        "body-batch-ack.bin",
-        200151,
-        &BatchAckMessageRequestBody {
-            broker_name: Some("broker-a".into()),
-            acks: Some(SharedValue::new(vec![Some(SharedValue::new(BatchAck {
-                consumer_group: Some("workers".into()),
-                topic: Some("orders".into()),
-                retry: Some("0".into()),
-                start_offset: 100,
-                queue_id: 1,
-                revive_queue_id: 0,
-                pop_time: 10,
-                invisible_time: 20,
-                bit_set: Some(SharedValue::new(
-                    rocketmq_classic_protocol::body::BitSet::from_byte_array(&[0b0000_0101]),
-                )),
-            }))])),
-        },
-    );
+    let mut batch_ack = BatchAck::default();
+    batch_ack.set_consumer_group(Some("workers".into()));
+    batch_ack.set_topic(Some("orders".into()));
+    batch_ack.set_retry(Some("0".into()));
+    batch_ack.set_start_offset(100);
+    batch_ack.set_queue_id(1);
+    batch_ack.set_revive_queue_id(0);
+    batch_ack.set_pop_time(10);
+    batch_ack.set_invisible_time(20);
+    batch_ack.set_bit_set(Some(SharedValue::new(
+        rocketmq_classic_protocol::body::BitSet::from_byte_array(&[0b0000_0101]),
+    )));
+    let mut batch_ack_body = BatchAckMessageRequestBody::default();
+    batch_ack_body.set_broker_name(Some("broker-a".into()));
+    batch_ack_body.set_acks(Some(SharedValue::new(vec![Some(SharedValue::new(
+        batch_ack,
+    ))])));
+    write_body(output, "body-batch-ack.bin", 200151, &batch_ack_body);
     let mut reset_offset = ResetOffsetBody::default();
     reset_offset.set_offset_table(Some(SharedValue::new(vec![(
         rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),

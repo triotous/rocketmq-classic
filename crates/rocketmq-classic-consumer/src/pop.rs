@@ -577,16 +577,18 @@ fn build_batch_ack_body(
             receipt.checkpoint_queue_offset,
             receipt.pop_time,
         );
-        let batch = batches.entry(key).or_insert_with(|| BatchAck {
-            consumer_group: Some(consumer_group.to_owned()),
-            topic: Some(topic.to_owned()),
-            retry: Some(receipt.retry.clone()),
-            start_offset: receipt.checkpoint_queue_offset,
-            queue_id: receipt.queue_id,
-            revive_queue_id: receipt.revive_queue_id,
-            pop_time: receipt.pop_time,
-            invisible_time: receipt.invisible_time,
-            bit_set: Some(SharedValue::new(BitSet::new())),
+        let batch = batches.entry(key).or_insert_with(|| {
+            let mut batch = BatchAck::default();
+            batch.set_consumer_group(Some(consumer_group.to_owned()));
+            batch.set_topic(Some(topic.to_owned()));
+            batch.set_retry(Some(receipt.retry.clone()));
+            batch.set_start_offset(receipt.checkpoint_queue_offset);
+            batch.set_queue_id(receipt.queue_id);
+            batch.set_revive_queue_id(receipt.revive_queue_id);
+            batch.set_pop_time(receipt.pop_time);
+            batch.set_invisible_time(receipt.invisible_time);
+            batch.set_bit_set(Some(SharedValue::new(BitSet::new())));
+            batch
         });
         let bit_index = receipt
             .queue_offset
@@ -595,23 +597,22 @@ fn build_batch_ack_body(
             .filter(|offset| *offset >= 0)
             .ok_or(PopReceiptError::BatchAckOffsetOutOfRange)?;
         let bit_set = batch
-            .bit_set
-            .as_ref()
+            .get_bit_set()
             .ok_or(PopReceiptError::BatchAckOffsetOutOfRange)?;
         bit_set
             .with_mut(|bit_set| bit_set.set(bit_index))
             .map_err(|_| PopReceiptError::BatchAckOffsetOutOfRange)?;
     }
 
-    Ok(BatchAckMessageRequestBody {
-        broker_name,
-        acks: Some(SharedValue::new(
-            batches
-                .into_values()
-                .map(|ack| Some(SharedValue::new(ack)))
-                .collect(),
-        )),
-    })
+    let mut body = BatchAckMessageRequestBody::default();
+    body.set_broker_name(broker_name);
+    body.set_acks(Some(SharedValue::new(
+        batches
+            .into_values()
+            .map(|ack| Some(SharedValue::new(ack)))
+            .collect(),
+    )));
+    Ok(body)
 }
 
 fn parse_i64(value: &str, field: &'static str, kind: &'static str) -> Result<i64, PopReceiptError> {
@@ -778,9 +779,9 @@ mod tests {
             PopReceipt::parse("20 200 300 3 2 broker-a 2 21").unwrap(),
         ];
         let body = build_batch_ack_body(&receipts, "orders", "workers").unwrap();
-        assert_eq!(body.broker_name.as_deref(), Some("broker-a"));
+        assert_eq!(body.get_broker_name(), Some("broker-a"));
         let batches = body
-            .acks
+            .get_acks()
             .unwrap()
             .snapshot()
             .into_iter()
@@ -790,20 +791,19 @@ mod tests {
         assert_eq!(batches.len(), 2);
         let first = batches
             .iter()
-            .find(|batch| batch.start_offset == 10)
+            .find(|batch| batch.get_start_offset() == 10)
             .unwrap();
-        let bits = first.bit_set.as_ref().unwrap().snapshot();
+        let bits = first.get_bit_set().unwrap().snapshot();
         assert!(bits.get(0).unwrap());
         assert!(bits.get(2).unwrap());
         let retry = batches
             .iter()
-            .find(|batch| batch.start_offset == 20)
+            .find(|batch| batch.get_start_offset() == 20)
             .unwrap();
-        assert_eq!(retry.retry.as_deref(), Some("2"));
+        assert_eq!(retry.get_retry(), Some("2"));
         assert!(
             retry
-                .bit_set
-                .as_ref()
+                .get_bit_set()
                 .unwrap()
                 .with(|bits| bits.get(1).unwrap())
         );

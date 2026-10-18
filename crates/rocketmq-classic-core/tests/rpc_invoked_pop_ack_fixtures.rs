@@ -209,17 +209,12 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                 )
                 .await,
             ),
-            "batch-ack" => ack_outcome(
-                api.batch_ack_message(
-                    &addr,
-                    &BatchAckMessageRequestBody {
-                        broker_name: Some("broker".into()),
-                        acks: Some(SharedValue::new(vec![])),
-                    },
-                    deadline,
-                )
-                .await,
-            ),
+            "batch-ack" => {
+                let mut body = BatchAckMessageRequestBody::default();
+                body.set_broker_name(Some("broker".into()));
+                body.set_acks(Some(SharedValue::new(vec![])));
+                ack_outcome(api.batch_ack_message(&addr, &body, deadline).await)
+            }
             "change" => {
                 match api
                     .change_invisible_time(
