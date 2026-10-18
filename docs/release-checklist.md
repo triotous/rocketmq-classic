@@ -4867,3 +4867,22 @@ owner-specific checks belong in the manual handoff.
   server-free gate, P18-V03 provenance/version/registry preflight, current
   Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30 local Docker/Broker
   scenario runners and required profiles remain open.
+
+## P18-V01 LockBatchResponseBody API inventory — 2026-10-18 (43a7cebb)
+
+- [x] The invoked Java 5.5.1 fixture records the public no-argument
+  constructor, getter/setter signatures, and empty public-field inventory.
+  Rust asserts those declarations and compile-fail checks that
+  lock_okmq_set is private. Existing default/null, shared Set/element alias,
+  and Java identity behavior remain covered. Fixture SHA-256:
+  bf612d3a20c17748bd2026256383e92dfb8f0dcde455677583036fcdbc92543c.
+- [x] Protocol/Core tests and doctests pass; strict all-target/all-feature
+  Clippy passes for Protocol, Core, and Remoting; the Remoting fixture
+  generator example compiles; pinned Maven verify passes all 37 scenarios,
+  fixture checks, 66 typed-header and 15 typed-body cross-decodes. Formatting
+  and diff checks pass.
+- Broad P18-V01 bidirectional reconciliation remains open. P18-V02's complete
+  workspace server-free gate must be refreshed after this change. P18-V03
+  provenance/version/registry preflight, current Ubuntu/native Windows P18-V04
+  evidence, and Phase 19's 30 local Docker/Broker scenario runners and required
+  profiles remain open.
