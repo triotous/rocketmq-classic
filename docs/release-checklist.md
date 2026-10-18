@@ -4363,3 +4363,28 @@ owner-specific checks belong in the manual handoff.
   provenance review, P18-V04 Ubuntu/Windows evidence, and Phase 19 local
   Docker/Broker scenarios and profiles remain open. Owner-only validation
   remains in the separate manual handoff.
+
+## P18-V01 `getConsumerRunningInfo` admin RPC — 2026-10-18 (`f05833a7`)
+
+- [x] Added `MQClientApi::mq_client_admin().get_consumer_running_info` for Java
+  request code 307. The adapter sends `GetConsumerRunningInfoRequestHeader`,
+  decodes Java's object-valued `MessageQueue` map keys into the typed running-
+  info snapshot, returns `None` for a success response without a body, and
+  preserves Broker response codes and remarks.
+- [x] Extended the pinned Java fixture with the direct async RPC signature,
+  request fields, existing rich running-info body, decoded result, null-body
+  result and Broker error. Rust tests verify properties, subscriptions,
+  normal/POP queue rows, status, user info and jstack; they also cover missing
+  body, Broker error and malformed success body. Fixture SHA-256:
+  `ae970b21d7822f9d213477bf47a227125b5d6242634a18c490001837b5828851`.
+- [x] Protocol all-feature tests passed (141 unit tests, all integration
+  targets and 51 doctests); Core `admin_rpc` passed all 50 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting and Core. Pinned
+  Maven `verify` passed all 37 scenarios, 66 typed-header cross-decodes and 15
+  typed-body cross-decodes. Formatting and `git diff --check` passed.
+- Code commit: `f05833a7`. All 19 source-backed `MqClientAdmin` RPC slices are
+  present. Broad P18-V01 public DTO/API, settings, input/error/flow and reverse-
+  export audit remains open, as do current-revision full-workspace P18-V02,
+  P18-V03 package/provenance, P18-V04 Ubuntu/Windows evidence and Phase 19
+  local Docker/Broker scenarios and profiles. Owner-only validation remains
+  in the separate manual handoff.
