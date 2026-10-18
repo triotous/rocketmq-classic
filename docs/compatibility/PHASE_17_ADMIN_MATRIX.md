@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Eight methods now have source-backed
-typed RPC slices; the other 11 still need reconciliation. Their public status
+method-by-method mapping has been verified. Nine methods now have source-backed
+typed RPC slices; the other 10 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -153,7 +153,19 @@ cross-decode and inherited `RpcRequestHeader` equality inventory coverage are
 included. Shared admin fixture SHA-256:
 `ee0c842383a4150957dddd40baa9a948cf536b0e00a72989ee8ee62fc71cdcc3`.
 
-The other 11 interface methods remain to reconcile.
+Ninth reconciled method slice (code/test commit `7cb6fb49`): Java
+`deleteKvConfig(address, requestHeader, timeoutMillis)` sends request code 102
+with the Namesrv `DeleteKVConfigRequestHeader` and completes with `null` only
+on `SUCCESS`. Rust exposes nullable `namespace` and `key` fields through its
+typed header and `MQClientApi::delete_kv_config`; the RPC sends directly to the
+provided address with no body. The invoked Java fixture records the method
+signature, timeout, request fields, success result, and `MQClientException`
+response code/remark. Rust scripted Core tests compare the request fields and
+error mapping to that fixture. Java/Rust typed-header cross-decode and the
+header inventory include this request. Shared admin fixture SHA-256:
+`ceafece5e4c70efab31e34760b8485b631a5691a46000c8d6bff32448fedbb0c`.
+
+The other 10 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;

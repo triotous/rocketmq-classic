@@ -4090,3 +4090,28 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation stays in
   the separate manual handoff.
+
+## P18-V01 `deleteKvConfig` admin RPC — 2026-10-18 (`7cb6fb49`)
+
+- [x] Added `DeleteKvConfigRequestHeader` with nullable `namespace` and `key`,
+  matching Java's no-op `checkFields()`. Added `MQClientApi::delete_kv_config`
+  using request code 102, the supplied address, and no request body.
+- [x] The invoked Java 5.5.1 fixture covers the method signature, header
+  fields, timeout, success completion, and `MQClientException` response code
+  and remark. Rust scripted Core tests compare the request and error mapping
+  to the fixture. Java/Rust typed-header cross-decode and header inventory
+  coverage include the new header. Shared admin fixture SHA-256:
+  `ceafece5e4c70efab31e34760b8485b631a5691a46000c8d6bff32448fedbb0c`.
+- [x] Protocol all-feature tests passed (132 unit tests, all integration
+  targets, 49 doctests); Core `admin_rpc` passed all 36 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core.
+  Pinned Maven `verify` passed all 37 scenarios and fixture checks, including
+  63 typed-header and 14 typed-body cross-decodes. Formatting and diff checks
+  passed. Code commit: `7cb6fb49`.
+- The source-backed `MqClientAdmin` method count is now 9/19; 10 methods and
+  broad P18-V01 reconciliation remain open. Refresh full-workspace P18-V02
+  after remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation stays in
+  the separate manual handoff.
