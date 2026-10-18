@@ -4115,3 +4115,32 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation stays in
   the separate manual handoff.
+
+## P18-V01 `deleteSubscriptionGroup` admin RPC — 2026-10-18 (`ec8b7c41`)
+
+- [x] Added `DeleteSubscriptionGroupRequestHeader` with nullable `groupName`,
+  Java primitive `cleanOffset` defaulting to `false`, and inherited nullable
+  RPC fields. Its equality and hash behavior uses the four inherited RPC
+  fields. Added `MQClientApi::delete_subscription_group` using request code
+  207, the supplied Broker address, and no request body.
+- [x] The invoked Java 5.5.1 fixture covers the method signature, typed header,
+  timeout, success completion, and `MQClientException` response code and
+  remark. Rust scripted Core tests compare the exact request and error mapping.
+  Java/Rust typed-header cross-decode, the header validation matrix, and the
+  request-header identity fixture cover the new header. Shared admin fixture
+  SHA-256: `d2da8387de557de716a1a8eb87c4aabde190d6409ef677ddacc735c5467cac8c`;
+  identity fixture SHA-256:
+  `81325ef5905ee81e3fbc6af951568afdf88851220a7a0d0ecb0c3b3989d1f2ef`.
+- [x] Protocol all-feature tests passed (132 unit tests, all integration
+  targets, 49 doctests); Core `admin_rpc` passed all 38 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core.
+  Pinned Maven `verify` passed all 37 scenarios and fixture checks, including
+  64 typed-header and 14 typed-body cross-decodes. Formatting and diff checks
+  passed. Code commit: `ec8b7c41`.
+- The source-backed `MqClientAdmin` method count is now 10/19; nine methods
+  and broad P18-V01 reconciliation remain open. Refresh full-workspace P18-V02
+  after remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation stays in
+  the separate manual handoff.
