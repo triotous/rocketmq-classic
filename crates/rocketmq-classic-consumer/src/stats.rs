@@ -156,15 +156,16 @@ impl TopicStats {
         } else {
             minute_consume_rt.0
         };
-        ConsumerConsumeStatus {
-            pull_rt: self.pull_rt.minute.average().0,
-            pull_tps: self.pull_tps.minute.rate(),
-            consume_rt,
-            consume_ok_tps: self.consume_ok_tps.minute.rate(),
-            consume_failed_tps: self.consume_failed_tps.minute.rate(),
-            consume_failed_msgs: i64::try_from(self.consume_failed_tps.hour.sum())
-                .unwrap_or(i64::MAX),
-        }
+        let mut status = ConsumerConsumeStatus::default();
+        status.set_pull_rt(self.pull_rt.minute.average().0);
+        status.set_pull_tps(self.pull_tps.minute.rate());
+        status.set_consume_rt(consume_rt);
+        status.set_consume_ok_tps(self.consume_ok_tps.minute.rate());
+        status.set_consume_failed_tps(self.consume_failed_tps.minute.rate());
+        status.set_consume_failed_msgs(
+            i64::try_from(self.consume_failed_tps.hour.sum()).unwrap_or(i64::MAX),
+        );
+        status
     }
 
     fn advance(&mut self, now: Instant) {
@@ -420,15 +421,15 @@ mod tests {
         topic.advance(minute_target);
         let status = topic.status(minute_target);
 
-        assert_eq!(status.pull_rt, 500.0);
-        assert_eq!(status.consume_rt, 8.0);
-        assert!(status.pull_tps > 0.0);
-        assert!(status.consume_ok_tps > 0.0);
-        assert!(status.consume_failed_tps > 0.0);
-        assert_eq!(status.consume_failed_msgs, 1);
+        assert_eq!(status.get_pull_rt(), 500.0);
+        assert_eq!(status.get_consume_rt(), 8.0);
+        assert!(status.get_pull_tps() > 0.0);
+        assert!(status.get_consume_ok_tps() > 0.0);
+        assert!(status.get_consume_failed_tps() > 0.0);
+        assert_eq!(status.get_consume_failed_msgs(), 1);
         let hour_target = minute_target + Duration::from_secs(10 * 60);
         let hour_status = topic.status(hour_target);
-        assert_eq!(hour_status.consume_failed_msgs, 3);
+        assert_eq!(hour_status.get_consume_failed_msgs(), 3);
         drop(topics);
         assert_eq!(
             serde_json::to_value(stats.status_at("client-b", "workers", "orders", hour_target))

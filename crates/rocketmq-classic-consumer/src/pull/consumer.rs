@@ -287,16 +287,17 @@ impl PullConsumer {
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        ConsumerRunningInfoBody {
-            properties: crate::admin::pull_running_info_properties(
+        let mut body = ConsumerRunningInfoBody::default();
+        body.set_properties(Some(SharedValue::new(
+            crate::admin::pull_running_info_properties(
                 &self.config,
                 runtime,
                 self.consumer_start_timestamp.load(Ordering::Acquire),
             ),
-            subscription_set: subscriptions,
-            jstack,
-            ..ConsumerRunningInfoBody::default()
-        }
+        )));
+        body.set_subscription_set(Some(SharedValue::new(subscriptions)));
+        body.set_jstack(jstack);
+        body
     }
 
     /// Returns the local `ConsumerRunningInfo` snapshot exposed by Java's
@@ -345,11 +346,12 @@ impl PullConsumer {
         if self.get_offset_store().is_some() {
             properties.insert("offsetStore".into(), "<configured>".into());
         }
-        ConsumerRunningInfoBody {
-            properties,
-            subscription_set: self.subscriptions().into_iter().collect(),
-            ..ConsumerRunningInfoBody::default()
-        }
+        let mut body = ConsumerRunningInfoBody::default();
+        body.set_properties(Some(SharedValue::new(properties)));
+        body.set_subscription_set(Some(SharedValue::new(
+            self.subscriptions().into_iter().collect(),
+        )));
+        body
     }
 
     /// Java initializes this timestamp when the implementation is constructed,
@@ -3756,7 +3758,7 @@ mod tests {
                 .unwrap()
         );
         let info = consumer.consumer_running_info();
-        let mut normalized_properties = info.properties.clone();
+        let mut normalized_properties = info.get_properties().unwrap().snapshot();
         if normalized_properties.contains_key("clientIP") {
             normalized_properties.insert("clientIP".into(), "<present>".into());
         }
@@ -3766,17 +3768,21 @@ mod tests {
             expected["directRunningInfoProperties"]
         );
         assert_eq!(
-            info.subscription_set.len(),
+            info.get_subscription_set().unwrap().with(Vec::len),
             expected["directRunningInfoSubscriptions"]
                 .as_array()
                 .unwrap()
                 .len()
         );
-        assert!(info.mq_table.is_empty());
-        assert!(info.mq_pop_table.is_empty());
-        assert!(info.status_table.is_empty());
-        assert!(info.user_consumer_info.is_empty());
-        assert!(info.jstack.is_none());
+        assert!(info.get_mq_table().unwrap().with(Vec::is_empty));
+        assert!(info.get_mq_pop_table().unwrap().with(Vec::is_empty));
+        assert!(info.get_status_table().unwrap().with(BTreeMap::is_empty));
+        assert!(
+            info.get_user_consumer_info()
+                .unwrap()
+                .with(BTreeMap::is_empty)
+        );
+        assert!(info.get_jstack().is_none());
 
         consumer.start().await.unwrap();
         assert_eq!(consumer.consumer_start_timestamp(), start_timestamp);

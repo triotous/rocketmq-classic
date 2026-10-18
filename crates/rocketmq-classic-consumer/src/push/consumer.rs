@@ -1656,16 +1656,18 @@ impl PushConsumer {
             "pullThresholdSizeForQueue".into(),
             self.config.pull_threshold_size_for_queue_mib().to_string(),
         );
-        let mut body = ConsumerRunningInfoBody {
-            properties,
-            subscription_set: read_lock(&self.subscriptions).values().cloned().collect(),
-            jstack,
-            ..ConsumerRunningInfoBody::default()
-        };
+        let mut body = ConsumerRunningInfoBody::default();
+        body.set_properties(Some(SharedValue::new(properties)));
+        body.set_subscription_set(Some(SharedValue::new(
+            read_lock(&self.subscriptions).values().cloned().collect(),
+        )));
+        body.set_jstack(jstack);
 
-        body.status_table = body
-            .subscription_set
-            .iter()
+        let status_table = body
+            .get_subscription_set()
+            .unwrap()
+            .with(|subscription_set| subscription_set.clone())
+            .into_iter()
             .filter_map(|subscription| {
                 subscription.topic.as_ref().map(|topic| {
                     (
@@ -1679,6 +1681,7 @@ impl PushConsumer {
                 })
             })
             .collect();
+        body.set_status_table(Some(SharedValue::new(status_table)));
 
         let offset_table = offset_store
             .map(|offset_store| offset_store.clone_offset_table(None))
@@ -1693,58 +1696,53 @@ impl PushConsumer {
                 )
             })
             .collect::<Vec<_>>();
-        body.mq_table = process_queues
+        let mq_table = process_queues
             .into_iter()
             .filter_map(|(queue, process_queue, generation)| {
                 let snapshot = process_queue.snapshot(generation).ok()?;
-                Some((
-                    queue.clone(),
-                    ConsumerProcessQueueInfo {
-                        commit_offset: offset_table.get(&queue).copied().unwrap_or(-1),
-                        cached_msg_min_offset: snapshot.minimum_offset.unwrap_or(0),
-                        cached_msg_max_offset: snapshot.maximum_offset.unwrap_or(0),
-                        cached_msg_count: i32::try_from(snapshot.cached_count).unwrap_or(i32::MAX),
-                        cached_msg_size_in_mi_b: i32::try_from(
-                            snapshot.cached_bytes / (1024 * 1024),
-                        )
-                        .unwrap_or(i32::MAX),
-                        locked: snapshot.locked,
-                        try_unlock_times: i64::try_from(snapshot.try_unlock_times)
-                            .unwrap_or(i64::MAX),
-                        last_lock_timestamp: snapshot.last_lock_timestamp_millis,
-                        droped: snapshot.dropped,
-                        last_pull_timestamp: snapshot.last_pull_timestamp_millis,
-                        last_consume_timestamp: snapshot.last_consume_timestamp_millis,
-                        ..ConsumerProcessQueueInfo::default()
-                    },
-                ))
+                let mut info = ConsumerProcessQueueInfo::default();
+                info.set_commit_offset(offset_table.get(&queue).copied().unwrap_or(-1));
+                info.set_cached_msg_min_offset(snapshot.minimum_offset.unwrap_or(0));
+                info.set_cached_msg_max_offset(snapshot.maximum_offset.unwrap_or(0));
+                info.set_cached_msg_count(i32::try_from(snapshot.cached_count).unwrap_or(i32::MAX));
+                info.set_cached_msg_size_in_mib(
+                    i32::try_from(snapshot.cached_bytes / (1024 * 1024)).unwrap_or(i32::MAX),
+                );
+                info.set_locked(snapshot.locked);
+                info.set_try_unlock_times(
+                    i64::try_from(snapshot.try_unlock_times).unwrap_or(i64::MAX),
+                );
+                info.set_last_lock_timestamp(snapshot.last_lock_timestamp_millis);
+                info.set_droped(snapshot.dropped);
+                info.set_last_pull_timestamp(snapshot.last_pull_timestamp_millis);
+                info.set_last_consume_timestamp(snapshot.last_consume_timestamp_millis);
+                Some((queue.clone(), info))
             })
             .collect();
+        body.set_mq_table(Some(SharedValue::new(mq_table)));
 
         let pop_process_queues = read_lock(&self.pop_process_queues)
             .iter()
             .map(|(queue, process_queue)| (queue.clone(), process_queue.clone()))
             .collect::<Vec<_>>();
-        body.mq_pop_table = pop_process_queues
+        let mq_pop_table = pop_process_queues
             .into_iter()
             .map(|(queue, process_queue)| {
                 let wait_ack_count = process_queue.wait_ack_count();
-                (
-                    queue,
-                    ConsumerPopProcessQueueInfo {
-                        wait_ack_count: i32::try_from(wait_ack_count).unwrap_or_else(|_| {
-                            if wait_ack_count.is_negative() {
-                                i32::MIN
-                            } else {
-                                i32::MAX
-                            }
-                        }),
-                        droped: process_queue.is_dropped(),
-                        last_pop_timestamp: process_queue.last_pop_timestamp(),
-                    },
-                )
+                let mut info = ConsumerPopProcessQueueInfo::default();
+                info.set_wait_ack_count(i32::try_from(wait_ack_count).unwrap_or_else(|_| {
+                    if wait_ack_count.is_negative() {
+                        i32::MIN
+                    } else {
+                        i32::MAX
+                    }
+                }));
+                info.set_droped(process_queue.is_dropped());
+                info.set_last_pop_timestamp(process_queue.last_pop_timestamp());
+                (queue, info)
             })
             .collect();
+        body.set_mq_pop_table(Some(SharedValue::new(mq_pop_table)));
 
         body
     }
@@ -8059,7 +8057,7 @@ mod tests {
         let status = consumer
             .stats
             .status(runtime.client_id(), "pop-lifecycle-group", "orders");
-        assert!(status.consume_ok_tps > 0.0);
+        assert!(status.get_consume_ok_tps() > 0.0);
 
         broker_peer.await.unwrap();
         runtime.shutdown().await.unwrap();
@@ -8231,7 +8229,7 @@ mod tests {
             while consumer
                 .stats
                 .status(runtime.client_id(), "pop-assignment-flow", "orders")
-                .pull_rt
+                .get_pull_rt()
                 <= 0.0
             {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -8242,8 +8240,14 @@ mod tests {
         let status = consumer
             .stats
             .status(runtime.client_id(), "pop-assignment-flow", "orders");
-        assert!(status.pull_rt > 0.0, "unexpected POP stats: {status:?}");
-        assert!(status.pull_tps > 0.0, "unexpected POP stats: {status:?}");
+        assert!(
+            status.get_pull_rt() > 0.0,
+            "unexpected POP stats: {status:?}"
+        );
+        assert!(
+            status.get_pull_tps() > 0.0,
+            "unexpected POP stats: {status:?}"
+        );
         let process_queue = read_lock(&consumer.pop_process_queues)
             .get(&queue)
             .cloned()
@@ -9846,7 +9850,7 @@ mod tests {
             "stats-isolation-group",
             "stats-isolation-topic",
         );
-        assert_eq!(second_status.pull_tps, 0.0);
+        assert_eq!(second_status.get_pull_tps(), 0.0);
 
         first_runtime.shutdown().await.unwrap();
         second_runtime.shutdown().await.unwrap();
@@ -10309,44 +10313,47 @@ mod tests {
         consumer.consume_core_pool_size.store(7, Ordering::Release);
         let raw_running_info = consumer.consumer_running_info().await.unwrap();
         assert_eq!(
-            raw_running_info.subscription_set.len(),
+            raw_running_info
+                .get_subscription_set()
+                .unwrap()
+                .with(Vec::len),
             raw_running_info_fixture["rawRunningInfoSubscriptionCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            raw_running_info.mq_table.len(),
+            raw_running_info.get_mq_table().unwrap().with(Vec::len),
             raw_running_info_fixture["rawRunningInfoQueueCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            raw_running_info.mq_pop_table.len(),
+            raw_running_info.get_mq_pop_table().unwrap().with(Vec::len),
             raw_running_info_fixture["rawRunningInfoPopQueueCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            raw_running_info.status_table.len(),
+            raw_running_info
+                .get_status_table()
+                .unwrap()
+                .with(BTreeMap::len),
             raw_running_info_fixture["rawRunningInfoStatusCount"]
                 .as_u64()
                 .unwrap() as usize
         );
+        let properties = raw_running_info.get_properties().unwrap().snapshot();
         assert_eq!(
-            raw_running_info.properties["PROP_THREADPOOL_CORE_SIZE"],
+            properties["PROP_THREADPOOL_CORE_SIZE"],
             raw_running_info_fixture["rawRunningInfoCorePoolSize"]
                 .as_str()
                 .unwrap()
         );
         assert_eq!(
-            raw_running_info.properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
+            properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
             "false"
         );
-        assert!(
-            !raw_running_info
-                .properties
-                .contains_key("PROP_CONSUME_ORDERLY")
-        );
+        assert!(!properties.contains_key("PROP_CONSUME_ORDERLY"));
 
         let processor = crate::admin::ConsumerRunningInfoProcessor::for_push(
             Arc::downgrade(&consumer),
@@ -10468,7 +10475,9 @@ mod tests {
             consumer.running_info_body(&runtime, None, Some(store_dyn.clone()));
         assert!(
             !null_group_running_info
-                .properties
+                .get_properties()
+                .unwrap()
+                .snapshot()
                 .contains_key("consumerGroup")
         );
         consumer.set_consumer_group(Some("running-info-snapshot".into()));
@@ -10476,25 +10485,31 @@ mod tests {
         consumer.shutdown().await.unwrap();
         let shutdown_running_info = consumer.consumer_running_info().await.unwrap();
         assert_eq!(
-            shutdown_running_info.mq_table.len(),
+            shutdown_running_info.get_mq_table().unwrap().with(Vec::len),
             raw_running_info_fixture["rawRunningInfoAfterShutdownQueueCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            shutdown_running_info.mq_pop_table.len(),
+            shutdown_running_info
+                .get_mq_pop_table()
+                .unwrap()
+                .with(Vec::len),
             raw_running_info_fixture["rawRunningInfoAfterShutdownPopQueueCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            shutdown_running_info.status_table.len(),
+            shutdown_running_info
+                .get_status_table()
+                .unwrap()
+                .with(BTreeMap::len),
             raw_running_info_fixture["rawRunningInfoAfterShutdownStatusCount"]
                 .as_u64()
                 .unwrap() as usize
         );
         assert_eq!(
-            shutdown_running_info.properties["PROP_THREADPOOL_CORE_SIZE"],
+            shutdown_running_info.get_properties().unwrap().snapshot()["PROP_THREADPOOL_CORE_SIZE"],
             raw_running_info_fixture["rawRunningInfoAfterShutdownCorePoolSize"]
                 .as_str()
                 .unwrap()
@@ -11145,14 +11160,14 @@ mod tests {
             consumer
                 .stats
                 .status("pull-stats-client", request_group, "orders")
-                .pull_tps
+                .get_pull_tps()
                 > 0.0
         );
         assert_eq!(
             consumer
                 .stats
                 .status("pull-stats-client", "pull-stats-mutated-group", "orders")
-                .pull_tps,
+                .get_pull_tps(),
             0.0
         );
     }

@@ -5112,24 +5112,143 @@ impl<'de> Deserialize<'de> for GetConsumerStatusBody {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerProcessQueueInfo>();
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerProcessQueueInfo;
+/// let _ = ConsumerProcessQueueInfo::default().commit_offset;
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ConsumerProcessQueueInfo {
-    pub commit_offset: i64,
-    pub cached_msg_min_offset: i64,
-    pub cached_msg_max_offset: i64,
-    pub cached_msg_count: i32,
+    commit_offset: i64,
+    cached_msg_min_offset: i64,
+    cached_msg_max_offset: i64,
+    cached_msg_count: i32,
     #[serde(rename = "cachedMsgSizeInMiB")]
-    pub cached_msg_size_in_mi_b: i32,
-    pub transaction_msg_min_offset: i64,
-    pub transaction_msg_max_offset: i64,
-    pub transaction_msg_count: i32,
-    pub locked: bool,
-    pub try_unlock_times: i64,
-    pub last_lock_timestamp: i64,
-    pub droped: bool,
-    pub last_pull_timestamp: i64,
-    pub last_consume_timestamp: i64,
+    cached_msg_size_in_mi_b: i32,
+    transaction_msg_min_offset: i64,
+    transaction_msg_max_offset: i64,
+    transaction_msg_count: i32,
+    locked: bool,
+    try_unlock_times: i64,
+    last_lock_timestamp: i64,
+    droped: bool,
+    last_pull_timestamp: i64,
+    last_consume_timestamp: i64,
+}
+
+impl ConsumerProcessQueueInfo {
+    pub fn get_commit_offset(&self) -> i64 {
+        self.commit_offset
+    }
+
+    pub fn set_commit_offset(&mut self, value: i64) {
+        self.commit_offset = value;
+    }
+
+    pub fn get_cached_msg_min_offset(&self) -> i64 {
+        self.cached_msg_min_offset
+    }
+
+    pub fn set_cached_msg_min_offset(&mut self, value: i64) {
+        self.cached_msg_min_offset = value;
+    }
+
+    pub fn get_cached_msg_max_offset(&self) -> i64 {
+        self.cached_msg_max_offset
+    }
+
+    pub fn set_cached_msg_max_offset(&mut self, value: i64) {
+        self.cached_msg_max_offset = value;
+    }
+
+    pub fn get_cached_msg_count(&self) -> i32 {
+        self.cached_msg_count
+    }
+
+    pub fn set_cached_msg_count(&mut self, value: i32) {
+        self.cached_msg_count = value;
+    }
+
+    pub fn get_cached_msg_size_in_mib(&self) -> i32 {
+        self.cached_msg_size_in_mi_b
+    }
+
+    pub fn set_cached_msg_size_in_mib(&mut self, value: i32) {
+        self.cached_msg_size_in_mi_b = value;
+    }
+
+    pub fn get_transaction_msg_min_offset(&self) -> i64 {
+        self.transaction_msg_min_offset
+    }
+
+    pub fn set_transaction_msg_min_offset(&mut self, value: i64) {
+        self.transaction_msg_min_offset = value;
+    }
+
+    pub fn get_transaction_msg_max_offset(&self) -> i64 {
+        self.transaction_msg_max_offset
+    }
+
+    pub fn set_transaction_msg_max_offset(&mut self, value: i64) {
+        self.transaction_msg_max_offset = value;
+    }
+
+    pub fn get_transaction_msg_count(&self) -> i32 {
+        self.transaction_msg_count
+    }
+
+    pub fn set_transaction_msg_count(&mut self, value: i32) {
+        self.transaction_msg_count = value;
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked
+    }
+
+    pub fn set_locked(&mut self, value: bool) {
+        self.locked = value;
+    }
+
+    pub fn get_try_unlock_times(&self) -> i64 {
+        self.try_unlock_times
+    }
+
+    pub fn set_try_unlock_times(&mut self, value: i64) {
+        self.try_unlock_times = value;
+    }
+
+    pub fn get_last_lock_timestamp(&self) -> i64 {
+        self.last_lock_timestamp
+    }
+
+    pub fn set_last_lock_timestamp(&mut self, value: i64) {
+        self.last_lock_timestamp = value;
+    }
+
+    pub fn is_droped(&self) -> bool {
+        self.droped
+    }
+
+    pub fn set_droped(&mut self, value: bool) {
+        self.droped = value;
+    }
+
+    pub fn get_last_pull_timestamp(&self) -> i64 {
+        self.last_pull_timestamp
+    }
+
+    pub fn set_last_pull_timestamp(&mut self, value: i64) {
+        self.last_pull_timestamp = value;
+    }
+
+    pub fn get_last_consume_timestamp(&self) -> i64 {
+        self.last_consume_timestamp
+    }
+
+    pub fn set_last_consume_timestamp(&mut self, value: i64) {
+        self.last_consume_timestamp = value;
+    }
 }
 
 /// Java `PopProcessQueueInfo` inherits identity-based `Object.equals`.
@@ -5139,12 +5258,43 @@ pub struct ConsumerProcessQueueInfo {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerPopProcessQueueInfo>();
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerPopProcessQueueInfo;
+/// let _ = ConsumerPopProcessQueueInfo::default().wait_ack_count;
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ConsumerPopProcessQueueInfo {
-    pub wait_ack_count: i32,
-    pub droped: bool,
-    pub last_pop_timestamp: i64,
+    wait_ack_count: i32,
+    droped: bool,
+    last_pop_timestamp: i64,
+}
+
+impl ConsumerPopProcessQueueInfo {
+    pub fn get_wait_ack_count(&self) -> i32 {
+        self.wait_ack_count
+    }
+
+    pub fn set_wait_ack_count(&mut self, value: i32) {
+        self.wait_ack_count = value;
+    }
+
+    pub fn is_droped(&self) -> bool {
+        self.droped
+    }
+
+    pub fn set_droped(&mut self, value: bool) {
+        self.droped = value;
+    }
+
+    pub fn get_last_pop_timestamp(&self) -> i64 {
+        self.last_pop_timestamp
+    }
+
+    pub fn set_last_pop_timestamp(&mut self, value: i64) {
+        self.last_pop_timestamp = value;
+    }
 }
 
 /// Java `ConsumeStatus` inherits identity-based `Object.equals`.
@@ -5154,20 +5304,75 @@ pub struct ConsumerPopProcessQueueInfo {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerConsumeStatus>();
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerConsumeStatus;
+/// let _ = ConsumerConsumeStatus::default().pull_rt;
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ConsumerConsumeStatus {
     #[serde(rename = "pullRT")]
-    pub pull_rt: f64,
+    pull_rt: f64,
     #[serde(rename = "pullTPS")]
-    pub pull_tps: f64,
+    pull_tps: f64,
     #[serde(rename = "consumeRT")]
-    pub consume_rt: f64,
+    consume_rt: f64,
     #[serde(rename = "consumeOKTPS")]
-    pub consume_ok_tps: f64,
+    consume_ok_tps: f64,
     #[serde(rename = "consumeFailedTPS")]
-    pub consume_failed_tps: f64,
-    pub consume_failed_msgs: i64,
+    consume_failed_tps: f64,
+    consume_failed_msgs: i64,
+}
+
+impl ConsumerConsumeStatus {
+    pub fn get_pull_rt(&self) -> f64 {
+        self.pull_rt
+    }
+
+    pub fn set_pull_rt(&mut self, value: f64) {
+        self.pull_rt = value;
+    }
+
+    pub fn get_pull_tps(&self) -> f64 {
+        self.pull_tps
+    }
+
+    pub fn set_pull_tps(&mut self, value: f64) {
+        self.pull_tps = value;
+    }
+
+    pub fn get_consume_rt(&self) -> f64 {
+        self.consume_rt
+    }
+
+    pub fn set_consume_rt(&mut self, value: f64) {
+        self.consume_rt = value;
+    }
+
+    pub fn get_consume_ok_tps(&self) -> f64 {
+        self.consume_ok_tps
+    }
+
+    pub fn set_consume_ok_tps(&mut self, value: f64) {
+        self.consume_ok_tps = value;
+    }
+
+    pub fn get_consume_failed_tps(&self) -> f64 {
+        self.consume_failed_tps
+    }
+
+    pub fn set_consume_failed_tps(&mut self, value: f64) {
+        self.consume_failed_tps = value;
+    }
+
+    pub fn get_consume_failed_msgs(&self) -> i64 {
+        self.consume_failed_msgs
+    }
+
+    pub fn set_consume_failed_msgs(&mut self, value: i64) {
+        self.consume_failed_msgs = value;
+    }
 }
 
 /// Pinned Java `ConsumerRunningInfo` JSON body. Fastjson encodes the
@@ -5179,15 +5384,34 @@ pub struct ConsumerConsumeStatus {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerRunningInfoBody>();
 /// ```
-#[derive(Debug, Clone, Default)]
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerRunningInfoBody;
+/// let _ = ConsumerRunningInfoBody::default().properties;
+/// ```
+#[derive(Debug, Clone)]
 pub struct ConsumerRunningInfoBody {
-    pub properties: BTreeMap<String, String>,
-    pub subscription_set: Vec<SubscriptionData>,
-    pub mq_table: Vec<(MessageQueue, ConsumerProcessQueueInfo)>,
-    pub mq_pop_table: Vec<(MessageQueue, ConsumerPopProcessQueueInfo)>,
-    pub status_table: BTreeMap<String, ConsumerConsumeStatus>,
-    pub user_consumer_info: BTreeMap<String, String>,
-    pub jstack: Option<String>,
+    properties: Option<SharedValue<BTreeMap<String, String>>>,
+    subscription_set: Option<SharedValue<Vec<SubscriptionData>>>,
+    mq_table: Option<SharedValue<Vec<(MessageQueue, ConsumerProcessQueueInfo)>>>,
+    mq_pop_table: Option<SharedValue<Vec<(MessageQueue, ConsumerPopProcessQueueInfo)>>>,
+    status_table: Option<SharedValue<BTreeMap<String, ConsumerConsumeStatus>>>,
+    user_consumer_info: Option<SharedValue<BTreeMap<String, String>>>,
+    jstack: Option<String>,
+}
+
+impl Default for ConsumerRunningInfoBody {
+    fn default() -> Self {
+        Self {
+            properties: Some(SharedValue::new(BTreeMap::new())),
+            subscription_set: Some(SharedValue::new(Vec::new())),
+            mq_table: Some(SharedValue::new(Vec::new())),
+            mq_pop_table: Some(SharedValue::new(Vec::new())),
+            status_table: Some(SharedValue::new(BTreeMap::new())),
+            user_consumer_info: Some(SharedValue::new(BTreeMap::new())),
+            jstack: None,
+        }
+    }
 }
 
 impl ConsumerRunningInfoBody {
@@ -5205,25 +5429,82 @@ impl ConsumerRunningInfoBody {
     /// Java `ConsumerRunningInfo.PROP_CONSUMER_START_TIMESTAMP` constant.
     pub const PROP_CONSUMER_START_TIMESTAMP: &str = "PROP_CONSUMER_START_TIMESTAMP";
 
+    pub fn get_properties(&self) -> Option<SharedValue<BTreeMap<String, String>>> {
+        self.properties.clone()
+    }
+
+    pub fn set_properties(&mut self, value: Option<SharedValue<BTreeMap<String, String>>>) {
+        self.properties = value;
+    }
+
+    pub fn get_subscription_set(&self) -> Option<SharedValue<Vec<SubscriptionData>>> {
+        self.subscription_set.clone()
+    }
+
+    pub fn set_subscription_set(&mut self, value: Option<SharedValue<Vec<SubscriptionData>>>) {
+        self.subscription_set = value;
+    }
+
+    pub fn get_mq_table(
+        &self,
+    ) -> Option<SharedValue<Vec<(MessageQueue, ConsumerProcessQueueInfo)>>> {
+        self.mq_table.clone()
+    }
+
+    pub fn set_mq_table(
+        &mut self,
+        value: Option<SharedValue<Vec<(MessageQueue, ConsumerProcessQueueInfo)>>>,
+    ) {
+        self.mq_table = value;
+    }
+
+    pub fn get_mq_pop_table(
+        &self,
+    ) -> Option<SharedValue<Vec<(MessageQueue, ConsumerPopProcessQueueInfo)>>> {
+        self.mq_pop_table.clone()
+    }
+
+    pub fn set_mq_pop_table(
+        &mut self,
+        value: Option<SharedValue<Vec<(MessageQueue, ConsumerPopProcessQueueInfo)>>>,
+    ) {
+        self.mq_pop_table = value;
+    }
+
+    pub fn get_status_table(&self) -> Option<SharedValue<BTreeMap<String, ConsumerConsumeStatus>>> {
+        self.status_table.clone()
+    }
+
+    pub fn set_status_table(
+        &mut self,
+        value: Option<SharedValue<BTreeMap<String, ConsumerConsumeStatus>>>,
+    ) {
+        self.status_table = value;
+    }
+
+    pub fn get_user_consumer_info(&self) -> Option<SharedValue<BTreeMap<String, String>>> {
+        self.user_consumer_info.clone()
+    }
+
+    pub fn get_jstack(&self) -> Option<&str> {
+        self.jstack.as_deref()
+    }
+
+    pub fn set_jstack(&mut self, value: Option<String>) {
+        self.jstack = value;
+    }
+
     pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
-        let mut subscription_set = self.subscription_set.clone();
+        let mut subscription_set = self
+            .subscription_set
+            .as_ref()
+            .map(SharedValue::snapshot)
+            .unwrap_or_default();
         subscription_set.sort_by(|left, right| left.java_compare_to(right).cmp(&0));
         let subscription_set = subscription_set
             .iter()
             .map(encode_java_subscription_data)
             .collect::<Result<Vec<_>, _>>()?;
-        let mut queues = self.mq_table.iter().collect::<Vec<_>>();
-        queues.sort_by(|left, right| left.0.cmp(&right.0));
-        let mut mq_table = Vec::with_capacity(queues.len());
-        for (queue, info) in queues {
-            mq_table.push((queue.clone(), serde_json::to_string(info)?));
-        }
-        let mut pop_queues = self.mq_pop_table.iter().collect::<Vec<_>>();
-        pop_queues.sort_by(|left, right| left.0.cmp(&right.0));
-        let mut mq_pop_table = Vec::with_capacity(pop_queues.len());
-        for (queue, info) in pop_queues {
-            mq_pop_table.push((queue.clone(), serde_json::to_string(info)?));
-        }
 
         let mut fields = Vec::with_capacity(7);
         if let Some(jstack) = &self.jstack {
@@ -5231,27 +5512,27 @@ impl ConsumerRunningInfoBody {
         }
         fields.push(format!(
             "\"mqPopTable\":{}",
-            encode_java_object_key_map(&mq_pop_table)?
+            encode_running_info_queue_table(self.mq_pop_table.as_ref().map(SharedValue::snapshot))?
         ));
         fields.push(format!(
             "\"mqTable\":{}",
-            encode_java_object_key_map(&mq_table)?
+            encode_running_info_queue_table(self.mq_table.as_ref().map(SharedValue::snapshot))?
         ));
         fields.push(format!(
             "\"properties\":{}",
-            serde_json::to_string(&self.properties)?
+            serde_json::to_string(&self.properties.as_ref().map(SharedValue::snapshot))?
         ));
         fields.push(format!(
             "\"statusTable\":{}",
-            serde_json::to_string(&self.status_table)?
+            serde_json::to_string(&self.status_table.as_ref().map(SharedValue::snapshot))?
         ));
         fields.push(format!(
             "\"subscriptionSet\":{}",
-            serde_json::to_string(&subscription_set)?
+            serde_json::to_string(&self.subscription_set.as_ref().map(|_| subscription_set))?
         ));
         fields.push(format!(
             "\"userConsumerInfo\":{}",
-            serde_json::to_string(&self.user_consumer_info)?
+            serde_json::to_string(&self.user_consumer_info.as_ref().map(SharedValue::snapshot))?
         ));
         Ok(format!("{{{}}}", fields.join(",")).into_bytes())
     }
@@ -5268,12 +5549,12 @@ impl ConsumerRunningInfoBody {
         let value = Self::decode_java_json(input)?;
         let mut fields: BTreeMap<String, serde_json::Value> = serde_json::from_value(value)?;
         Ok(Self {
-            properties: take_running_info_field(&mut fields, "properties")?,
-            subscription_set: take_running_info_field(&mut fields, "subscriptionSet")?,
+            properties: take_nullable_running_info_field(&mut fields, "properties")?,
+            subscription_set: take_nullable_running_info_field(&mut fields, "subscriptionSet")?,
             mq_table: decode_running_info_queue_table(fields.remove("mqTable"))?,
             mq_pop_table: decode_running_info_queue_table(fields.remove("mqPopTable"))?,
-            status_table: take_running_info_field(&mut fields, "statusTable")?,
-            user_consumer_info: take_running_info_field(&mut fields, "userConsumerInfo")?,
+            status_table: take_nullable_running_info_field(&mut fields, "statusTable")?,
+            user_consumer_info: take_nullable_running_info_field(&mut fields, "userConsumerInfo")?,
             jstack: fields
                 .remove("jstack")
                 .filter(|value| !value.is_null())
@@ -5283,37 +5564,59 @@ impl ConsumerRunningInfoBody {
     }
 }
 
-fn take_running_info_field<T>(
+fn take_nullable_running_info_field<T>(
     fields: &mut BTreeMap<String, serde_json::Value>,
     name: &str,
-) -> Result<T, serde_json::Error>
+) -> Result<Option<SharedValue<T>>, serde_json::Error>
 where
     T: de::DeserializeOwned + Default,
 {
     match fields.remove(name) {
-        None | Some(serde_json::Value::Null) => Ok(T::default()),
-        Some(value) => serde_json::from_value(value),
+        None => Ok(Some(SharedValue::new(T::default()))),
+        Some(serde_json::Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value).map(|value| Some(SharedValue::new(value))),
     }
 }
 
+type RunningInfoQueueTable<T> = Option<SharedValue<Vec<(MessageQueue, T)>>>;
+
 fn decode_running_info_queue_table<T>(
     value: Option<serde_json::Value>,
-) -> Result<Vec<(MessageQueue, T)>, serde_json::Error>
+) -> Result<RunningInfoQueueTable<T>, serde_json::Error>
 where
     T: de::DeserializeOwned + Default,
 {
-    let Some(value) = value.filter(|value| !value.is_null()) else {
-        return Ok(Vec::new());
+    let Some(value) = value else {
+        return Ok(Some(SharedValue::new(Vec::new())));
+    };
+    if value.is_null() {
+        return Ok(None);
     };
     let fields: BTreeMap<String, serde_json::Value> = serde_json::from_value(value)?;
-    fields
+    let entries = fields
         .into_iter()
         .map(|(encoded_queue, info)| {
             let queue = serde_json::from_str(&encoded_queue)?;
             let info = serde_json::from_value(info)?;
             Ok((queue, info))
         })
-        .collect()
+        .collect::<Result<Vec<_>, serde_json::Error>>()?;
+    Ok(Some(SharedValue::new(entries)))
+}
+
+fn encode_running_info_queue_table<T: Serialize>(
+    table: Option<Vec<(MessageQueue, T)>>,
+) -> Result<String, serde_json::Error> {
+    let Some(table) = table else {
+        return Ok("null".to_owned());
+    };
+    let mut queues = table.iter().collect::<Vec<_>>();
+    queues.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut entries = Vec::with_capacity(queues.len());
+    for (queue, info) in queues {
+        entries.push((queue.clone(), serde_json::to_string(info)?));
+    }
+    encode_java_object_key_map(&entries)
 }
 
 fn encode_java_subscription_data(

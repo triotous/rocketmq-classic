@@ -903,6 +903,25 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
             "{name}"
         );
     }
+    let api_inventories = &fixture["apiInventories"];
+    assert_eq!(
+        api_inventories["ConsumerRunningInfo"]["publicFields"],
+        serde_json::json!([
+            "PROP_CLIENT_VERSION",
+            "PROP_CONSUMER_START_TIMESTAMP",
+            "PROP_CONSUME_ORDERLY",
+            "PROP_CONSUME_TYPE",
+            "PROP_NAMESERVER_ADDR",
+            "PROP_THREADPOOL_CORE_SIZE"
+        ])
+    );
+    for class in ["ProcessQueueInfo", "PopProcessQueueInfo", "ConsumeStatus"] {
+        assert_eq!(
+            api_inventories[class]["publicFields"],
+            serde_json::json!([]),
+            "{class} must expose no public instance fields"
+        );
+    }
     let identity = &fixture["identitySemantics"];
     for class in [
         "ConsumerRunningInfo",
@@ -933,75 +952,69 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
         Some("blue".to_owned()),
         Some("green".to_owned()),
     ])));
-    let body = ConsumerRunningInfoBody {
-        properties: std::collections::BTreeMap::from([
-            (
-                ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR.into(),
-                "127.0.0.1:9876;".into(),
-            ),
-            (
-                ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY.into(),
-                "true".into(),
-            ),
-            (
-                ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE.into(),
-                "7".into(),
-            ),
-            (
-                ConsumerRunningInfoBody::PROP_CONSUME_TYPE.into(),
-                "CONSUME_PASSIVELY".into(),
-            ),
-            (
-                ConsumerRunningInfoBody::PROP_CLIENT_VERSION.into(),
-                "V5_5_1".into(),
-            ),
-            (
-                ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP.into(),
-                "1700000000000".into(),
-            ),
-        ]),
-        subscription_set: vec![subscription],
-        mq_table: vec![(
-            queue,
-            ConsumerProcessQueueInfo {
-                commit_offset: 17,
-                cached_msg_min_offset: 11,
-                cached_msg_max_offset: 20,
-                cached_msg_count: 3,
-                cached_msg_size_in_mi_b: 2,
-                transaction_msg_min_offset: 2,
-                transaction_msg_max_offset: 3,
-                transaction_msg_count: 1,
-                locked: true,
-                try_unlock_times: 4,
-                last_lock_timestamp: 1_700_000_000_002,
-                droped: false,
-                last_pull_timestamp: 1_700_000_000_003,
-                last_consume_timestamp: 1_700_000_000_004,
-            },
-        )],
-        mq_pop_table: vec![(
-            pop_queue,
-            ConsumerPopProcessQueueInfo {
-                wait_ack_count: 2,
-                droped: false,
-                last_pop_timestamp: 1_700_000_000_005,
-            },
-        )],
-        status_table: std::collections::BTreeMap::from([(
-            "orders".into(),
-            ConsumerConsumeStatus {
-                pull_rt: 0.5,
-                pull_tps: 2.5,
-                consume_rt: 3.5,
-                consume_ok_tps: 4.5,
-                consume_failed_tps: 0.25,
-                consume_failed_msgs: 6,
-            },
-        )]),
-        user_consumer_info: std::collections::BTreeMap::from([("fixture".into(), "value".into())]),
-        jstack: Some("jstack-fixture".into()),
-    };
+    let mut properties = std::collections::BTreeMap::new();
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR.into(),
+        "127.0.0.1:9876;".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY.into(),
+        "true".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE.into(),
+        "7".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CONSUME_TYPE.into(),
+        "CONSUME_PASSIVELY".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CLIENT_VERSION.into(),
+        "V5_5_1".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP.into(),
+        "1700000000000".into(),
+    );
+    let mut process_queue = ConsumerProcessQueueInfo::default();
+    process_queue.set_commit_offset(17);
+    process_queue.set_cached_msg_min_offset(11);
+    process_queue.set_cached_msg_max_offset(20);
+    process_queue.set_cached_msg_count(3);
+    process_queue.set_cached_msg_size_in_mib(2);
+    process_queue.set_transaction_msg_min_offset(2);
+    process_queue.set_transaction_msg_max_offset(3);
+    process_queue.set_transaction_msg_count(1);
+    process_queue.set_locked(true);
+    process_queue.set_try_unlock_times(4);
+    process_queue.set_last_lock_timestamp(1_700_000_000_002);
+    process_queue.set_droped(false);
+    process_queue.set_last_pull_timestamp(1_700_000_000_003);
+    process_queue.set_last_consume_timestamp(1_700_000_000_004);
+    let mut pop_process_queue = ConsumerPopProcessQueueInfo::default();
+    pop_process_queue.set_wait_ack_count(2);
+    pop_process_queue.set_droped(false);
+    pop_process_queue.set_last_pop_timestamp(1_700_000_000_005);
+    let mut status = ConsumerConsumeStatus::default();
+    status.set_pull_rt(0.5);
+    status.set_pull_tps(2.5);
+    status.set_consume_rt(3.5);
+    status.set_consume_ok_tps(4.5);
+    status.set_consume_failed_tps(0.25);
+    status.set_consume_failed_msgs(6);
+    let mut body = ConsumerRunningInfoBody::default();
+    body.set_properties(Some(SharedValue::new(properties)));
+    body.set_subscription_set(Some(SharedValue::new(vec![subscription])));
+    body.set_mq_table(Some(SharedValue::new(vec![(queue, process_queue)])));
+    body.set_mq_pop_table(Some(SharedValue::new(vec![(pop_queue, pop_process_queue)])));
+    body.set_status_table(Some(SharedValue::new(std::collections::BTreeMap::from([
+        ("orders".into(), status),
+    ]))));
+    body.get_user_consumer_info()
+        .unwrap()
+        .with_mut(|values| values.insert("fixture".into(), "value".into()));
+    body.set_jstack(Some("jstack-fixture".into()));
     let encoded = body.encode_java_json().unwrap();
     let mut expected =
         ConsumerRunningInfoBody::decode_java_json(fixture["body"].as_str().unwrap()).unwrap();
@@ -1016,40 +1029,40 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
 
     let running_info =
         ConsumerRunningInfoBody::decode_java_json_body(fixture["body"].as_str().unwrap()).unwrap();
+    let properties = running_info.get_properties().unwrap().snapshot();
     assert_eq!(
-        running_info.properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
+        properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
         "true"
     );
     assert_eq!(
-        running_info.properties[ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE],
+        properties[ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE],
         "7"
     );
     assert_eq!(
-        running_info
-            .properties
-            .get("PROP_CONSUME_TYPE")
-            .map(String::as_str),
+        properties.get("PROP_CONSUME_TYPE").map(String::as_str),
         Some("CONSUME_PASSIVELY")
     );
-    assert_eq!(running_info.subscription_set.len(), 1);
-    assert_eq!(running_info.mq_table.len(), 1);
-    let (queue, process_queue) = &running_info.mq_table[0];
+    let subscriptions = running_info.get_subscription_set().unwrap().snapshot();
+    let mq_table = running_info.get_mq_table().unwrap().snapshot();
+    let mq_pop_table = running_info.get_mq_pop_table().unwrap().snapshot();
+    let status_table = running_info.get_status_table().unwrap().snapshot();
+    let user_consumer_info = running_info.get_user_consumer_info().unwrap().snapshot();
+    assert_eq!(subscriptions.len(), 1);
+    assert_eq!(mq_table.len(), 1);
+    let (queue, process_queue) = &mq_table[0];
     assert_eq!(queue.topic(), Some("orders"));
     assert_eq!(queue.broker_name(), Some("broker-a"));
     assert_eq!(queue.queue_id(), 1);
-    assert_eq!(process_queue.commit_offset, 17);
-    assert!(process_queue.locked);
-    assert_eq!(running_info.mq_pop_table.len(), 1);
-    assert_eq!(running_info.mq_pop_table[0].1.wait_ack_count, 2);
-    assert_eq!(running_info.status_table["orders"].consume_failed_msgs, 6);
+    assert_eq!(process_queue.get_commit_offset(), 17);
+    assert!(process_queue.is_locked());
+    assert_eq!(mq_pop_table.len(), 1);
+    assert_eq!(mq_pop_table[0].1.get_wait_ack_count(), 2);
+    assert_eq!(status_table["orders"].get_consume_failed_msgs(), 6);
     assert_eq!(
-        running_info
-            .user_consumer_info
-            .get("fixture")
-            .map(String::as_str),
+        user_consumer_info.get("fixture").map(String::as_str),
         Some("value")
     );
-    assert_eq!(running_info.jstack.as_deref(), Some("jstack-fixture"));
+    assert_eq!(running_info.get_jstack(), Some("jstack-fixture"));
 }
 
 fn sort_java_hash_set_fields(value: &mut serde_json::Value) {

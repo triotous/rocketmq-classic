@@ -2018,34 +2018,34 @@ async fn mq_client_admin_get_consumer_running_info_matches_invoked_java_fixture(
         serde_json::to_value(command.ext_fields).unwrap(),
         success["requestExtFields"]
     );
+    let properties = result.get_properties().unwrap().snapshot();
+    let subscription_set = result.get_subscription_set().unwrap().snapshot();
+    let mq_table = result.get_mq_table().unwrap().snapshot();
+    let mq_pop_table = result.get_mq_pop_table().unwrap().snapshot();
+    let status_table = result.get_status_table().unwrap().snapshot();
+    let user_consumer_info = result.get_user_consumer_info().unwrap().snapshot();
     assert_eq!(
-        result
-            .properties
-            .get("PROP_CONSUME_TYPE")
-            .map(String::as_str),
+        properties.get("PROP_CONSUME_TYPE").map(String::as_str),
         Some("CONSUME_PASSIVELY")
     );
-    assert_eq!(result.subscription_set.len(), 1);
-    assert_eq!(result.subscription_set[0].topic.as_deref(), Some("orders"));
-    assert_eq!(result.mq_table.len(), 1);
-    assert_eq!(result.mq_table[0].0.queue_id(), 1);
-    assert_eq!(result.mq_table[0].1.commit_offset, 17);
-    assert_eq!(result.mq_pop_table[0].1.wait_ack_count, 2);
-    assert_eq!(result.status_table["orders"].consume_failed_msgs, 6);
+    assert_eq!(subscription_set.len(), 1);
+    assert_eq!(subscription_set[0].topic.as_deref(), Some("orders"));
+    assert_eq!(mq_table.len(), 1);
+    assert_eq!(mq_table[0].0.queue_id(), 1);
+    assert_eq!(mq_table[0].1.get_commit_offset(), 17);
+    assert_eq!(mq_pop_table[0].1.get_wait_ack_count(), 2);
+    assert_eq!(status_table["orders"].get_consume_failed_msgs(), 6);
     assert_eq!(
-        result.user_consumer_info.get("fixture").map(String::as_str),
+        user_consumer_info.get("fixture").map(String::as_str),
         Some("value")
     );
-    assert_eq!(result.jstack.as_deref(), Some("jstack-fixture"));
+    assert_eq!(result.get_jstack(), Some("jstack-fixture"));
     assert_eq!(
         success["result"]["subscriptionSetSize"].as_u64(),
-        Some(result.subscription_set.len() as u64)
+        Some(subscription_set.len() as u64)
     );
-    assert_eq!(success["result"]["mqTableSize"], result.mq_table.len());
-    assert_eq!(
-        success["result"]["mqPopTableSize"],
-        result.mq_pop_table.len()
-    );
+    assert_eq!(success["result"]["mqTableSize"], mq_table.len());
+    assert_eq!(success["result"]["mqPopTableSize"], mq_pop_table.len());
     client.shutdown().await;
 
     let no_body_case = &operation["successWithoutBody"];

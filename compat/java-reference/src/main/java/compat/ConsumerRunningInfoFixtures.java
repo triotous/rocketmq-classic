@@ -18,14 +18,20 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeStatus;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
@@ -118,8 +124,51 @@ public final class ConsumerRunningInfoFixtures {
         propertyKeys.put("PROP_CONSUMER_START_TIMESTAMP", ConsumerRunningInfo.PROP_CONSUMER_START_TIMESTAMP);
         fixture.put("propertyKeys", propertyKeys);
         fixture.put("identitySemantics", identitySemantics());
+        fixture.put("apiInventories", apiInventories());
         fixture.put("body", new String(info.encode(), StandardCharsets.UTF_8));
         return fixture;
+    }
+
+    private static Map<String, Object> apiInventories() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ConsumerRunningInfo", apiInventory(ConsumerRunningInfo.class));
+        result.put("ProcessQueueInfo", apiInventory(ProcessQueueInfo.class));
+        result.put("PopProcessQueueInfo", apiInventory(PopProcessQueueInfo.class));
+        result.put("ConsumeStatus", apiInventory(ConsumeStatus.class));
+        return result;
+    }
+
+    private static Map<String, Object> apiInventory(Class<?> type) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("publicConstructors", Arrays.stream(type.getConstructors())
+            .map(ConsumerRunningInfoFixtures::constructorSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("publicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName).sorted().collect(Collectors.toList()));
+        result.put("declaredPublicMethods", Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(ConsumerRunningInfoFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("callablePublicMethods", Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(ConsumerRunningInfoFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "("
+            + String.join(",", Arrays.stream(constructor.getParameterTypes())
+                .map(Class::getTypeName).collect(Collectors.toList())) + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " "
+            + method.getDeclaringClass().getName() + "." + method.getName() + "("
+            + String.join(",", Arrays.stream(method.getParameterTypes())
+                .map(Class::getTypeName).collect(Collectors.toList())) + ")";
     }
 
     private static Map<String, Object> identitySemantics() throws Exception {
