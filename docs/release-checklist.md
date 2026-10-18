@@ -4915,3 +4915,23 @@ owner-specific checks belong in the manual handoff.
   version and registry preflight, and current Ubuntu/native Windows P18-V04
   evidence remain open. Phase 19's remaining local scenario runners and
   profiles are separate work.
+
+## P18-V03 Java provenance and package preparation — 2026-10-18
+
+- [x] Reconfirmed the pinned Maven dependency tree is Java client 5.5.1,
+  remoting 5.5.1, and common 5.5.1. Local binary JAR, source JAR and POM
+  checksums match Maven Central's published SHA-1 values. Four representative
+  source-JAR files byte-match the exact Apache RocketMQ 5.5.1 tag commit.
+  Details and SHA-256 values are in
+  [PHASE_18_JAVA_PROVENANCE.md](compatibility/PHASE_18_JAVA_PROVENANCE.md).
+- [x] Reviewed the locked Rust package graph, product package contents,
+  LICENSE/NOTICE inclusion, dependency direction, package order and compatibility
+  baselines. Facade examples and Phase 18 server-free checks pass. The source
+  tag's OpenPGP signature is present but could not be verified because gpg is
+  unavailable in this environment; the exact tag target and source-file
+  comparisons are recorded.
+- P18-V03 preparation review is complete. Workspace crates remain explicitly
+  unpublished at 0.1.0. Confirming the release version, checking registry
+  resolution, enabling publication, publishing or tagging remains
+  post-Phase-19 work. Broad P18-V01 and current Ubuntu/native Windows P18-V04
+  evidence remain open.

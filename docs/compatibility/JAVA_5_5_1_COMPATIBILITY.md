@@ -12,6 +12,32 @@ server-side evidence and the remaining local coverage are tracked in
 This does not close the broad Phase 18 API/settings/flow audit or the other
 Phase 19 cases.
 
+## Java 5.5.1 release provenance (rechecked 2026-10-18)
+
+The Java harness pins org.apache.rocketmq:rocketmq-client:5.5.1. Its resolved
+RocketMQ dependency tree is rocketmq-client 5.5.1 → rocketmq-remoting 5.5.1 →
+rocketmq-common 5.5.1. Each resolved binary JAR's embedded Maven pom.properties
+reports the same group, artifact, and version. The corresponding source JARs
+and POMs are also present. SHA-256 values for these nine artifacts and
+comparisons against Maven Central's published SHA-1 files are recorded in
+[PHASE_18_JAVA_PROVENANCE.md](PHASE_18_JAVA_PROVENANCE.md).
+
+The Apache RocketMQ repository's annotated rocketmq-all-5.5.1 tag resolves to
+commit efa1be59d6fc747ad220f036c86030f05f0419f9, and that commit object is
+present. Four representative Java files from the client, common, and remoting
+source JARs byte-match files at that tag: MQClientAPIImpl,
+DefaultMQPushConsumerImpl, MessageExt, and LockBatchResponseBody. The external
+checkout's current HEAD is not substituted for this release tag. The tag
+contains an OpenPGP signature, but local signature verification was unavailable
+because this environment has no gpg executable; artifact checksums and tagged
+source byte comparisons are the provenance evidence recorded here.
+
+This client baseline remains separate from the Phase 19 RocketMQ Broker 5.3.4
+baseline. The Rust workspace metadata review and package-content checks are
+summarized in the provenance record. All workspace packages are currently
+version 0.1.0 and explicitly unpublished; registry availability and any release
+version change remain pre-publication work after Phase 19.
+
 Phase 8 message records and pull-result processing: source/field mappings and P8-V01–V03 evidence are recorded in [PHASE_8_OFFLINE_METHOD_MATRIX.md](PHASE_8_OFFLINE_METHOD_MATRIX.md). Pinned fixture bytes and source hash are in `fixtures/messages/records.json` and `P8_MESSAGE_FIXTURE_SHA256SUMS.txt`; tests cover both versions, host and compression variants, limits and pull post-processing. No live Broker or Filter Server was contacted; those checks remain Phase 19.
 
 Phase 9 pull consumers, offset stores and boundary RPCs: source mappings and P9-V01/V02/U01 evidence are recorded in [PHASE_9_OFFLINE_METHOD_MATRIX.md](PHASE_9_OFFLINE_METHOD_MATRIX.md). Offline pull/offset checks pass, including Java 5.5.1 boundary request codes 29–32 and successful `-1` offsets. P9-V03 live Broker pull/restart remains `PENDING_PHASE_19`.
