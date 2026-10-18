@@ -71,6 +71,7 @@ import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHead
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
@@ -586,6 +587,16 @@ public final class Main {
         deleteKvConfig.setNamespace("config-namespace");
         deleteKvConfig.setKey("config-key");
         writeTypedHeaderFixture(output, "delete-kv-config-request", 102, deleteKvConfig);
+        DeleteSubscriptionGroupRequestHeader deleteSubscriptionGroup =
+            new DeleteSubscriptionGroupRequestHeader();
+        deleteSubscriptionGroup.setGroupName("workers");
+        deleteSubscriptionGroup.setCleanOffset(true);
+        deleteSubscriptionGroup.setNamespace("tenant");
+        deleteSubscriptionGroup.setNamespaced(true);
+        deleteSubscriptionGroup.setBrokerName("broker-a");
+        deleteSubscriptionGroup.setOneway(false);
+        writeTypedHeaderFixture(output, "delete-subscription-group-request", 207,
+            deleteSubscriptionGroup);
         QueryConsumerOffsetResponseHeader queryResponse = new QueryConsumerOffsetResponseHeader();
         queryResponse.setOffset(9L);
         writeTypedHeaderFixture(output, "query-offset-response",
@@ -970,6 +981,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
             assertAllExtFields(byName, "typed-delete-kv-config-request.bin", 102);
+            assertAllExtFields(byName, "typed-delete-subscription-group-request.bin", 207);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
             assertAllExtFields(byName, "typed-check-transaction.bin", 39);
@@ -1040,6 +1052,10 @@ public final class Main {
                 "namespace", "config-namespace");
             assertExtField(byName, "typed-delete-kv-config-request.bin", 102,
                 "key", "config-key");
+            assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
+                "groupName", "workers");
+            assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
+                "cleanOffset", "true");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "boundaryType", "UPPER");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "timestamp", "1712345678901");
@@ -1111,6 +1127,7 @@ public final class Main {
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
             case "typed-delete-kv-config-request.bin": fixtureStem = "header-delete-kv-config-request"; break;
+            case "typed-delete-subscription-group-request.bin": fixtureStem = "header-delete-subscription-group-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;
             case "typed-check-transaction.bin": fixtureStem = "header-check-transaction-request"; break;

@@ -45,6 +45,7 @@ macro_rules! inventory {
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
             DeleteKvConfigRequestHeader => ("header-delete-kv-config-request", "typed-delete-kv-config-request.bin"),
+            DeleteSubscriptionGroupRequestHeader => ("header-delete-subscription-group-request", "typed-delete-subscription-group-request.bin"),
             ViewMessageRequestHeader => ("header-view-message-request", "typed-view-message-request.bin"),
             LockBatchMqRequestHeader => ("header-lock-batch-request", "typed-lock-batch-request.bin"),
             UnlockBatchMqRequestHeader => ("header-unlock-batch-request", "typed-unlock-batch-request.bin"),

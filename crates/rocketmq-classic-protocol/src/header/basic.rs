@@ -47,6 +47,7 @@ impl_rpc_request_header_semantics!(
     CreateTopicRequestHeader,
     DeleteTopicRequestHeader,
     DeleteTopicFromNamesrvRequestHeader,
+    DeleteSubscriptionGroupRequestHeader,
     QueryMessageRequestHeader,
     QueryTopicsByConsumerRequestHeader,
     QuerySubscriptionByConsumerRequestHeader,
@@ -399,6 +400,41 @@ impl CommandHeader for DeleteKvConfigRequestHeader {
         Ok(Self {
             namespace: optional_string(fields, "namespace"),
             key: optional_string(fields, "key"),
+        })
+    }
+}
+
+/// Pinned Java `DeleteSubscriptionGroupRequestHeader`. Its annotated group
+/// name remains nullable because Java's `checkFields()` is a no-op; the
+/// primitive `cleanOffset` field defaults to and encodes `false`.
+#[derive(Debug, Clone, Default)]
+pub struct DeleteSubscriptionGroupRequestHeader {
+    pub group_name: Option<String>,
+    pub clean_offset: bool,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl CommandHeader for DeleteSubscriptionGroupRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "groupName", self.group_name.as_deref());
+        fields.insert("cleanOffset".into(), self.clean_offset.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group_name: optional_string(fields, "groupName"),
+            clean_offset: java_boolean(fields, "cleanOffset"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }
@@ -3091,7 +3127,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 38);
+        assert_eq!(cases.len(), 39);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -3224,6 +3260,12 @@ mod tests {
             broker_name,
             |_| {},
             |h: &mut DeleteTopicFromNamesrvRequestHeader| h.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            DeleteSubscriptionGroupRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut DeleteSubscriptionGroupRequestHeader| h.group_name = Some("payload".into())
         );
         check_rpc_request_header!(
             QueryMessageRequestHeader,

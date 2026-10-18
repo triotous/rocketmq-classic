@@ -7,10 +7,11 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
-        DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
+        DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader,
+        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+        QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -419,6 +420,19 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         let code = request::DELETE_KV_CONFIG;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes a subscription group from a Broker through Java `MqClientAdmin`'s RPC.
+    pub async fn delete_subscription_group(
+        &self,
+        addr: &str,
+        header: &DeleteSubscriptionGroupRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_SUBSCRIPTIONGROUP;
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())

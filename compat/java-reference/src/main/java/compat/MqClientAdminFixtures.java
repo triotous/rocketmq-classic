@@ -42,6 +42,7 @@ import org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody;
 import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
@@ -182,6 +183,7 @@ public final class MqClientAdminFixtures {
         fixture.put("deleteTopicInBroker", deleteTopicInBroker());
         fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
         fixture.put("deleteKvConfig", deleteKvConfig());
+        fixture.put("deleteSubscriptionGroup", deleteSubscriptionGroup());
         return fixture;
     }
 
@@ -325,6 +327,62 @@ public final class MqClientAdminFixtures {
         try {
             errorAdmin.deleteKvConfig(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
             throw new IllegalStateException("expected MqClientAdmin delete KV config error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            outcome.put("exceptionClass", clientException.getClass().getName());
+            outcome.put("responseCode", clientException.getResponseCode());
+            outcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", outcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> deleteSubscriptionGroup() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("deleteSubscriptionGroup",
+            String.class, DeleteSubscriptionGroupRequestHeader.class, long.class);
+        DeleteSubscriptionGroupRequestHeader header = new DeleteSubscriptionGroupRequestHeader();
+        header.setGroupName("workers");
+        header.setCleanOffset(true);
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        MqClientAdminImpl successAdmin = new MqClientAdminImpl(successCapture.proxy());
+        successAdmin.deleteSubscriptionGroup(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("completed", true);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "subscription group delete failed");
+        MqClientAdminImpl errorAdmin = new MqClientAdminImpl(errorCapture.proxy());
+        Map<String, Object> outcome = new LinkedHashMap<>();
+        try {
+            errorAdmin.deleteSubscriptionGroup(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin delete subscription group error");
         } catch (ExecutionException exception) {
             if (!(exception.getCause() instanceof MQClientException)) {
                 throw exception;

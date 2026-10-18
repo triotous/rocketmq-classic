@@ -14,7 +14,8 @@ use rocketmq_classic_protocol::{
         ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
         CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        CreateTopicRequestHeader, DeleteKvConfigRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
@@ -1116,6 +1117,15 @@ fn header_validation_matrix() {
             "",
             "namespace key",
             ""
+        ),
+        row!(
+            DeleteSubscriptionGroupRequestHeader,
+            "delete-subscription-group-request",
+            "",
+            "",
+            "",
+            "groupName ns nsd bname oway",
+            "cleanOffset nsd oway"
         ),
         row!(
             ViewMessageRequestHeader,
