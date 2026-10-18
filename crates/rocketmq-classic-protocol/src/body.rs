@@ -2911,7 +2911,12 @@ impl OffsetWrapper {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::TopicOffset;
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
-/// fn main() { requires_java_identity::<TopicOffset>(); }
+/// requires_java_identity::<TopicOffset>();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicOffset;
+/// let _ = TopicOffset::default().min_offset;
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -2989,7 +2994,12 @@ impl std::fmt::Display for TopicOffset {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::TopicStatsTable;
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
-/// fn main() { requires_java_identity::<TopicStatsTable>(); }
+/// requires_java_identity::<TopicStatsTable>();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicStatsTable;
+/// let _ = TopicStatsTable::default().topic_put_tps;
 /// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -7027,6 +7037,14 @@ mod tests {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
         assert_eq!(
+            fixture["topicStatsTablePublicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable()"])
+        );
+        assert_eq!(
+            fixture["topicOffsetPublicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.admin.TopicOffset()"])
+        );
+        assert_eq!(
             fixture["topicStatsTablePublicMethods"],
             json!([
                 "double getTopicPutTps()",
@@ -7077,6 +7095,22 @@ mod tests {
             fixture["defaultOffsetToString"].as_str().unwrap()
         );
         assert_eq!(fixture["defaultOffsetValues"], json!([0, 0, 0]));
+        assert_eq!(
+            fixture["offsetSetterValues"],
+            json!([i64::MIN, i64::MAX, -9])
+        );
+        let mut setter_probe = TopicOffset::default();
+        setter_probe.set_min_offset(i64::MIN);
+        setter_probe.set_max_offset(i64::MAX);
+        setter_probe.set_last_update_timestamp(-9);
+        assert_eq!(
+            [
+                setter_probe.get_min_offset(),
+                setter_probe.get_max_offset(),
+                setter_probe.get_last_update_timestamp()
+            ],
+            [i64::MIN, i64::MAX, -9]
+        );
 
         let populated_json = fixture["populatedJson"].as_str().unwrap();
         let decoded = TopicStatsTable::java_from_json(populated_json).unwrap();

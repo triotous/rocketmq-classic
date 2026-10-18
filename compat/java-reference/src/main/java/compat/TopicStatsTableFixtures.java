@@ -18,6 +18,7 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
@@ -60,6 +61,11 @@ public final class TopicStatsTableFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("topicStatsTablePublicConstructors",
+            Arrays.stream(TopicStatsTable.class.getConstructors())
+                .map(TopicStatsTableFixtures::constructorSignature)
+                .sorted()
+                .collect(Collectors.toList()));
         fixture.put("topicStatsTablePublicFields", Arrays.stream(TopicStatsTable.class.getFields())
             .filter(field -> Modifier.isPublic(field.getModifiers()))
             .map(java.lang.reflect.Field::getName)
@@ -70,6 +76,11 @@ public final class TopicStatsTableFixtures {
             .map(TopicStatsTableFixtures::methodSignature)
             .sorted()
             .collect(Collectors.toList()));
+        fixture.put("topicOffsetPublicConstructors",
+            Arrays.stream(TopicOffset.class.getConstructors())
+                .map(TopicStatsTableFixtures::constructorSignature)
+                .sorted()
+                .collect(Collectors.toList()));
         fixture.put("topicOffsetPublicFields", Arrays.stream(TopicOffset.class.getFields())
             .filter(field -> Modifier.isPublic(field.getModifiers()))
             .map(java.lang.reflect.Field::getName)
@@ -94,6 +105,15 @@ public final class TopicStatsTableFixtures {
             defaultOffset.getMaxOffset(),
             defaultOffset.getLastUpdateTimestamp()));
         fixture.put("defaultOffsetToString", defaultOffset.toString());
+
+        TopicOffset setterProbe = new TopicOffset();
+        setterProbe.setMinOffset(Long.MIN_VALUE);
+        setterProbe.setMaxOffset(Long.MAX_VALUE);
+        setterProbe.setLastUpdateTimestamp(-9);
+        fixture.put("offsetSetterValues", Arrays.asList(
+            setterProbe.getMinOffset(),
+            setterProbe.getMaxOffset(),
+            setterProbe.getLastUpdateTimestamp()));
 
         TopicOffset assignedOffset = new TopicOffset();
         assignedOffset.setMinOffset(10);
@@ -129,5 +149,10 @@ public final class TopicStatsTableFixtures {
     private static String methodSignature(Method method) {
         return method.getReturnType().getName() + " " + method.getName() + "(" +
             Arrays.stream(method.getParameterTypes()).map(Class::getName).collect(Collectors.joining(",")) + ")";
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "(" +
+            Arrays.stream(constructor.getParameterTypes()).map(Class::getName).collect(Collectors.joining(",")) + ")";
     }
 }
