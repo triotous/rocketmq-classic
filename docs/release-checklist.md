@@ -5131,3 +5131,23 @@ owner-specific checks belong in the manual handoff.
   P18-V01 bidirectional reconciliation, the final current-revision P18-V02
   gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
   30 missing local Broker/Docker scenario runners/profiles remain open.
+
+## P18-V01 offset-boundary header field visibility — 2026-10-18 (`c648552f`)
+
+- [x] Pinned Java 5.5.1 inventories confirm no public fields on the four
+  offset-boundary request headers and four response headers. Rust fields are
+  crate-private with Java-equivalent getters/setters, including inherited
+  topic/queue/request properties and the Search boundary getter's `LOWER`
+  fallback. The invoked fast/reflection fixture now captures full Java public
+  API inventories and asserts the empty public-field lists. Fixture SHA-256:
+  `ab124c979a93556d65660bcc8b9aeaf680649a3c7eb787dc21cb1ef843c167ad`.
+- [x] Workspace all-target/all-feature check; offset-boundary Protocol tests
+  and 97 doctests; Remoting request/response decode-mode differentials; Core
+  invoked offset RPC and admin regressions; Producer and Consumer offset facade
+  regressions; strict workspace Clippy; offline Maven `verify` (37 scenarios,
+  fixture checks, 66 typed-header and 15 typed-body cross-decodes); formatting
+  and diff checks pass. Code commit: `c648552f`.
+- This closes only these eight header field-visibility rows. Broad P18-V01
+  bidirectional reconciliation, the final current-revision P18-V02 gate,
+  current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
+  missing local Broker/Docker scenario runners/profiles remain open.
