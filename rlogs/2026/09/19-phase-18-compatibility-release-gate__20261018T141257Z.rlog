@@ -32,3 +32,37 @@
 - Pre-existing Phase 19 runner/README edits remain unstaged and were not
   included in the Phase 18 implementation or documentation commits. No plan
   files were modified.
+
+## P18-V02 current-revision supplementary gate — 2026-10-18T14:29:06Z
+
+- Revision under test: `6b40e86c` (`fix(protocol): complete ClusterInfo DTO
+  parity`). Environment: macOS ARM64, Apple M5 Max, Rust 1.85.0. Cargo artifacts
+  were isolated under `/tmp/rocketmq-classic-target`.
+- `cargo test --workspace --locked -- --test-threads=1` and the corresponding
+  `--all-features` command: PASS, including integration targets and doctests.
+  `cargo check --workspace --all-targets --all-features --locked --offline` and
+  strict all-target/all-feature workspace Clippy: PASS.
+- Maven offline `verify`: PASS (37 scenarios, 66 typed headers, 15 typed
+  bodies). The Java run emitted existing JDK `Unsafe` and reflective-final-
+  field warnings, then exited 0.
+- Differential comparator self-test and 37-row manifest validation: PASS.
+  `bash tests/stress/run-offline-smoke.sh`: PASS, 16 race/leak cases × 3.
+  `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked
+  --offline`: PASS, 120 frame seeds, 11 message seeds, 2,096 mutations, 164
+  frame decodes and 120 message decodes.
+- Release examples, `cargo bench --workspace --no-run --locked --offline`, and
+  `cargo bench -p rocketmq-classic --bench offline --locked --offline`: PASS.
+  Observed ns/iteration: frame encode/decode 2,367.5; Zstd message decode
+  1,220.3; Producer request construction 1,244.3; 128-entry route lookup 17.1;
+  loopback pending completion 28,162.1. Allocation results are in command
+  output; measurements are observations, not thresholds.
+- `cargo package --workspace --list --locked --allow-dirty` and
+  `scripts/check-workspace-metadata.py`: PASS; seven product package listings
+  include `LICENSE` and `NOTICE`, and dependency direction/license metadata
+  pass. Four Unique ID tests pass under both `TZ=UTC` and `TZ=Asia/Taipei`.
+  Locked Cargo metadata, format, and `git diff --check`: PASS.
+- P18-V02 server-free evidence is complete on `6b40e86c`. P18-V01's broad
+  bidirectional audit, final P18-V03 package/provenance and version/registry
+  preflight, P18-V04 current-revision Ubuntu/native Windows evidence, and
+  Phase 19's 30 local Docker/Broker runners and required profiles remain open.
+  MAN-01–04 remain owner checks; MAN-05 awaits local-matrix completion.

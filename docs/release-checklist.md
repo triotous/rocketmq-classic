@@ -4680,3 +4680,29 @@ owner-specific checks belong in the manual handoff.
   P18-V04 evidence remain open. Phase 19 still needs 30 local Docker/Broker
   scenario runners and required profiles. MAN-01–04 remain owner-environment
   checks; MAN-05 awaits the completed local matrix.
+
+## P18-V02 current-revision supplementary gate — 2026-10-18 (`6b40e86c`)
+
+- [x] On macOS ARM64 Apple M5 Max with Rust 1.85.0, default and all-feature
+  workspace tests pass, including integration targets and doctests. Workspace
+  all-target/all-feature `cargo check` and strict Clippy pass.
+- [x] Maven offline `verify` passes all 37 scenarios, fixture checks, 66
+  typed-header and 15 typed-body Java/Rust cross-decodes. Differential
+  comparator self-test and 37-row manifest validation pass.
+- [x] Deterministic race/leak smoke passes 16 cases × 3. Bounded fuzz smoke
+  passes 120 frame seeds, 11 message seeds, 2,096 mutations, 164 frame decodes,
+  and 120 message decodes. Release examples and all workspace benchmark targets
+  build; the offline benchmark runs.
+- [x] Locked workspace metadata, package dependency/license checks and seven
+  package-content listings pass. Four Unique ID tests pass under both UTC and
+  Asia/Taipei. Formatting and `git diff --check` pass.
+- Benchmark observations (not thresholds): frame encode/decode 2,367.5
+  ns/iteration; Zstd message decode 1,220.3 ns; Producer request construction
+  1,244.3 ns; route lookup 17.1 ns; loopback pending completion 28,162.1 ns.
+  Allocation observations are recorded by the benchmark harness.
+- P18-V02 server-free gates are now complete on this code revision. Broad
+  P18-V01 bidirectional reconciliation, final P18-V03 package/provenance and
+  version/registry preflight, and current-revision Ubuntu/native Windows
+  P18-V04 evidence remain open. Phase 19 still needs 30 local Docker/Broker
+  scenario runners and required profiles. MAN-01–04 remain owner-environment
+  checks; MAN-05 awaits the completed local matrix.
