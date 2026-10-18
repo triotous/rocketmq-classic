@@ -4336,3 +4336,30 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation stays in
   the separate manual handoff.
+
+## P18-V01 `updateOrCreateSubscriptionGroup` admin RPC — 2026-10-18 (`10db6f10`)
+
+- [x] Added `MQClientApi::mq_client_admin().update_or_create_subscription_group`
+  for Java request code 200. It sends the provided address, no ext-fields, and
+  the Fastjson `SubscriptionGroupConfig` body; success returns `()` and Broker
+  errors preserve the response code/remark.
+- [x] Added `SubscriptionGroupConfig` and its retry-policy DTOs with the Java
+  public accessor surface, defaults, equality/hash, Lite attribute helpers,
+  alias behavior, display and serialization. `SubscriptionDataSet` now has
+  insertion-ordered Java Set membership: equality ignores subscription
+  `version`, duplicate equal values and duplicate nulls collapse, and Set
+  equality ignores iteration order.
+- [x] The invoked pinned Java fixture covers the interface method, request
+  body, defaults, DTO methods, alias semantics, and Set duplicate/null cases.
+  Core `admin_rpc` passed all 49 tests; Protocol all-feature tests passed 141
+  unit tests, all integration targets and 51 doctests. Strict all-target/all-
+  feature Clippy passed for Protocol, Remoting and Core. Maven `verify` passed
+  all 37 scenarios, 66 typed-header cross-decodes and 15 typed-body
+  cross-decodes. Formatting and `git diff --check` passed. Fixture SHA-256:
+  `21985c21ea6f73efda1c5eceeff45359b937f112d181321b8237a1f431fee8a2`.
+- Code commit: `10db6f10`. The source-backed `MqClientAdmin` count is now
+  18/19; `getConsumerRunningInfo` is the remaining method slice. Broad P18-V01
+  reconciliation, current-revision full-workspace P18-V02, P18-V03 package/
+  provenance review, P18-V04 Ubuntu/Windows evidence, and Phase 19 local
+  Docker/Broker scenarios and profiles remain open. Owner-only validation
+  remains in the separate manual handoff.

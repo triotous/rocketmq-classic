@@ -29,11 +29,10 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Sixteen methods now have
-source-backed typed RPC slices; two still need reconciliation:
-`updateOrCreateSubscriptionGroup` and `getConsumerRunningInfo`. Public status
-and proxy call sites do not establish an exclusion from the client parity
-contract.
+method-by-method mapping has been verified. Eighteen methods now have
+source-backed typed RPC slices; `getConsumerRunningInfo` remains to be
+reconciled. Public status and proxy call sites do not establish an exclusion
+from the client parity contract.
 
 The Java method inventory is `queryMessage`, `getTopicStatsInfo`,
 `queryConsumeTimeSpan`, `updateOrCreateTopic`,
@@ -231,12 +230,36 @@ error mapping to that fixture. Java/Rust typed-header cross-decode and the
 header inventory include this request. Shared admin fixture SHA-256:
 `ceafece5e4c70efab31e34760b8485b631a5691a46000c8d6bff32448fedbb0c`.
 
-Three interface methods remain to reconcile.
+One interface method remains to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;
 add missing typed APIs and invoked fixtures. This is not a Phase 19 manual
 handoff.
+
+## P18-V01 `updateOrCreateSubscriptionGroup` admin RPC — 2026-10-18 (`10db6f10`)
+
+Rust exposes `MQClientApi::mq_client_admin().update_or_create_subscription_group`
+for Java request code 200. The request sends the supplied address without
+ext-fields and Fastjson-encodes `SubscriptionGroupConfig`; success completes
+with `()`, while Broker errors preserve their response code and remark.
+`SubscriptionDataSet` keeps insertion order for deterministic wire text while
+matching Java Set membership, equality, null-member and duplicate behavior;
+`SimpleSubscriptionData` equality and hash ignore `version` as in Java.
+
+The invoked Java fixture records the interface signature, request body,
+success/error behavior, DTO public methods/defaults, and Set duplicate/null
+semantics. Core scripted tests cover request code/body and Broker errors;
+Protocol tests cover serialization, DTO equality/hash and mutable shared
+aliases. Fixture SHA-256 is `21985c21ea6f73efda1c5eceeff45359b937f112d181321b8237a1f431fee8a2`.
+Protocol all-feature tests passed (141 unit tests, all integration targets and
+51 doctests); Core `admin_rpc` passed all 49 tests. Strict all-target/all-feature
+Clippy passed for Protocol, Remoting and Core. Pinned Maven `verify` passed all
+37 scenarios, 66 typed-header cross-decodes and 15 typed-body cross-decodes;
+format and diff checks passed. `getConsumerRunningInfo` is the only remaining
+unreconciled `MqClientAdmin` method. Broad P18-V01 reconciliation,
+current-revision full-workspace P18-V02, P18-V03 package/provenance review,
+P18-V04 Ubuntu/Windows evidence and Phase 19 local scenarios remain open.
 
 ## Tools-only admin extension scope audit
 
