@@ -1957,7 +1957,12 @@ impl QueryConsumeTimeSpanBody {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::TopicList;
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
-/// fn main() { requires_java_identity::<TopicList>(); }
+/// requires_java_identity::<TopicList>();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicList;
+/// let _ = TopicList::default().topic_list;
 /// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -7606,6 +7611,20 @@ mod tests {
             fixture["artifact"],
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
+        assert_eq!(
+            fixture["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.TopicList()"])
+        );
+        assert_eq!(fixture["publicFields"], json!([]));
+        assert_eq!(
+            fixture["publicMethods"],
+            json!([
+                "java.lang.String getBrokerAddr()",
+                "java.util.Set getTopicList()",
+                "void setBrokerAddr(java.lang.String)",
+                "void setTopicList(java.util.Set)"
+            ])
+        );
 
         let default = TopicList::default();
         assert!(default.get_broker_addr().is_none());
@@ -7646,6 +7665,11 @@ mod tests {
         let assigned = SharedValue::new(std::collections::HashSet::from(["orders".to_owned()]));
         let mut value = TopicList::default();
         value.set_topic_list(Some(assigned.clone()));
+        value.set_broker_addr(Some("broker-a".to_owned()));
+        assert_eq!(
+            value.get_broker_addr(),
+            Some(fixture["brokerAddrGetter"].as_str().unwrap())
+        );
         let getter = value.get_topic_list().unwrap();
         assert_eq!(
             assigned.ptr_eq(&getter),

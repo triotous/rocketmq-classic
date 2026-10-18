@@ -18,6 +18,7 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
@@ -59,6 +60,10 @@ public final class TopicListFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("publicConstructors", Arrays.stream(TopicList.class.getConstructors())
+            .map(TopicListFixtures::constructorSignature)
+            .sorted()
+            .collect(Collectors.toList()));
         fixture.put("publicFields", Arrays.stream(TopicList.class.getFields())
             .filter(field -> Modifier.isPublic(field.getModifiers()))
             .map(java.lang.reflect.Field::getName)
@@ -98,5 +103,10 @@ public final class TopicListFixtures {
     private static String methodSignature(Method method) {
         return method.getReturnType().getName() + " " + method.getName() + "(" +
             Arrays.stream(method.getParameterTypes()).map(Class::getName).collect(Collectors.joining(",")) + ")";
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "(" +
+            Arrays.stream(constructor.getParameterTypes()).map(Class::getName).collect(Collectors.joining(",")) + ")";
     }
 }
