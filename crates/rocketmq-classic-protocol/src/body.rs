@@ -2454,6 +2454,14 @@ impl Default for ConsumerConnection {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ConsumerConnectionComputeMinVersionError {
+    #[error("Java ConsumerConnection.computeMinVersion dereferences a null connectionSet")]
+    NullConnectionSet,
+    #[error("Java ConsumerConnection.computeMinVersion dereferences a null Connection")]
+    NullConnection,
+}
+
 impl ConsumerConnection {
     pub fn get_connection_set(&self) -> Option<SharedValue<Vec<Option<SharedValue<Connection>>>>> {
         self.connection_set.clone()
@@ -2501,6 +2509,26 @@ impl ConsumerConnection {
 
     pub fn set_consume_from_where(&mut self, value: Option<ConsumeFromWhere>) {
         self.consume_from_where = value;
+    }
+
+    /// Computes the minimum Java `Connection.version`, returning `i32::MAX`
+    /// for an empty set. Java throws `NullPointerException` when the set or an
+    /// element is null; Rust reports those cases as typed errors.
+    pub fn compute_min_version(&self) -> Result<i32, ConsumerConnectionComputeMinVersionError> {
+        let connections = self
+            .connection_set
+            .as_ref()
+            .ok_or(ConsumerConnectionComputeMinVersionError::NullConnectionSet)?;
+        connections.with(|connections| {
+            connections
+                .iter()
+                .try_fold(i32::MAX, |minimum, connection| {
+                    let connection = connection
+                        .as_ref()
+                        .ok_or(ConsumerConnectionComputeMinVersionError::NullConnection)?;
+                    Ok(connection.with(|connection| minimum.min(connection.version)))
+                })
+        })
     }
 }
 
@@ -6965,6 +6993,88 @@ mod tests {
         assert_eq!(
             assigned.compute_inflight_total_diff(),
             Err(ConsumeStatsComputationError::NullOffsetWrapper)
+        );
+    }
+
+    #[test]
+    fn consumer_connection_min_version_matches_invoked_java_api() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/admin/query-consume-time-span.json"
+        ))
+        .unwrap();
+        let api = &fixture["getConsumerConnectionList"]["success"]["consumerConnectionApi"];
+        assert_eq!(
+            api["computeMinVersionMethod"],
+            "public int org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.computeMinVersion()"
+        );
+
+        let connection = |version| {
+            let mut connection = Connection::default();
+            connection.set_version(version);
+            Some(SharedValue::new(connection))
+        };
+
+        let default = ConsumerConnection::default();
+        assert_eq!(
+            default.compute_min_version().unwrap(),
+            api["defaultEmpty"]["value"].as_i64().unwrap() as i32
+        );
+
+        let mut explicit_empty = ConsumerConnection::default();
+        explicit_empty.set_connection_set(Some(SharedValue::new(Vec::new())));
+        assert_eq!(
+            explicit_empty.compute_min_version().unwrap(),
+            api["explicitEmpty"]["value"].as_i64().unwrap() as i32
+        );
+
+        let mut default_connection = ConsumerConnection::default();
+        default_connection.set_connection_set(Some(SharedValue::new(vec![connection(0)])));
+        assert_eq!(
+            default_connection.compute_min_version().unwrap(),
+            api["defaultConnection"]["value"].as_i64().unwrap() as i32
+        );
+
+        let mut mixed_versions = ConsumerConnection::default();
+        mixed_versions.set_connection_set(Some(SharedValue::new(vec![
+            connection(9),
+            connection(-3),
+            connection(4),
+        ])));
+        assert_eq!(
+            mixed_versions.compute_min_version().unwrap(),
+            api["mixedVersions"]["value"].as_i64().unwrap() as i32
+        );
+
+        let mut integer_bounds = ConsumerConnection::default();
+        integer_bounds.set_connection_set(Some(SharedValue::new(vec![
+            connection(i32::MAX),
+            connection(i32::MIN),
+        ])));
+        assert_eq!(
+            integer_bounds.compute_min_version().unwrap(),
+            api["integerBounds"]["value"].as_i64().unwrap() as i32
+        );
+
+        let mut null_set = ConsumerConnection::default();
+        null_set.set_connection_set(None);
+        assert_eq!(
+            api["nullSet"]["exceptionClass"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(
+            null_set.compute_min_version(),
+            Err(ConsumerConnectionComputeMinVersionError::NullConnectionSet)
+        );
+
+        let mut null_element = ConsumerConnection::default();
+        null_element.set_connection_set(Some(SharedValue::new(vec![None])));
+        assert_eq!(
+            api["nullElement"]["exceptionClass"],
+            "java.lang.NullPointerException"
+        );
+        assert_eq!(
+            null_element.compute_min_version(),
+            Err(ConsumerConnectionComputeMinVersionError::NullConnection)
         );
     }
 

@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -280,6 +281,7 @@ public final class MqClientAdminFixtures {
         success.put("responseCode", successCapture.response.getCode());
         success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
         success.put("result", consumerConnectionSnapshot(value));
+        success.put("consumerConnectionApi", consumerConnectionApi());
 
         Capture noBodyCapture = new Capture();
         noBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
@@ -847,6 +849,59 @@ public final class MqClientAdminFixtures {
         result.put("consumeType", value.getConsumeType());
         result.put("messageModel", value.getMessageModel());
         result.put("consumeFromWhere", value.getConsumeFromWhere());
+        return result;
+    }
+
+    private static Map<String, Object> consumerConnectionApi() throws Exception {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Method method = ConsumerConnection.class.getMethod("computeMinVersion");
+        result.put("computeMinVersionMethod", method.toGenericString());
+        result.put("defaultEmpty", computeMinVersionOutcome(new ConsumerConnection()));
+
+        ConsumerConnection explicitEmpty = new ConsumerConnection();
+        explicitEmpty.setConnectionSet(new HashSet<>());
+        result.put("explicitEmpty", computeMinVersionOutcome(explicitEmpty));
+
+        Connection defaultVersion = new Connection();
+        ConsumerConnection defaultConnection = new ConsumerConnection();
+        defaultConnection.getConnectionSet().add(defaultVersion);
+        result.put("defaultConnection", computeMinVersionOutcome(defaultConnection));
+
+        Connection high = new Connection();
+        high.setVersion(9);
+        Connection low = new Connection();
+        low.setVersion(-3);
+        Connection middle = new Connection();
+        middle.setVersion(4);
+        ConsumerConnection mixedVersions = new ConsumerConnection();
+        mixedVersions.setConnectionSet(new HashSet<>(List.of(high, low, middle)));
+        result.put("mixedVersions", computeMinVersionOutcome(mixedVersions));
+
+        Connection maximum = new Connection();
+        maximum.setVersion(Integer.MAX_VALUE);
+        Connection minimum = new Connection();
+        minimum.setVersion(Integer.MIN_VALUE);
+        ConsumerConnection integerBounds = new ConsumerConnection();
+        integerBounds.setConnectionSet(new HashSet<>(List.of(maximum, minimum)));
+        result.put("integerBounds", computeMinVersionOutcome(integerBounds));
+
+        ConsumerConnection nullSet = new ConsumerConnection();
+        nullSet.setConnectionSet(null);
+        result.put("nullSet", computeMinVersionOutcome(nullSet));
+
+        ConsumerConnection nullElement = new ConsumerConnection();
+        nullElement.getConnectionSet().add(null);
+        result.put("nullElement", computeMinVersionOutcome(nullElement));
+        return result;
+    }
+
+    private static Map<String, Object> computeMinVersionOutcome(ConsumerConnection value) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        try {
+            result.put("value", value.computeMinVersion());
+        } catch (NullPointerException exception) {
+            result.put("exceptionClass", exception.getClass().getName());
+        }
         return result;
     }
 
