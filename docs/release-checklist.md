@@ -5113,3 +5113,21 @@ owner-specific checks belong in the manual handoff.
   mapping. Broad P18-V01 reconciliation, the final current-revision P18-V02
   gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
   30 missing local Broker/Docker scenario runners/profiles remain open.
+
+## P18-V01 `DeleteKVConfigRequestHeader` visibility — 2026-10-18 (`cd3742dc`)
+
+- [x] Pinned Java 5.5.1 inventory confirms `DeleteKVConfigRequestHeader`
+  exposes no public fields. Rust `namespace` and `key` are crate-private with
+  Java-equivalent accessors; a compile-fail doctest guards field privacy. The
+  invoked fast/reflection decode fixture now captures this API and both decode
+  modes. Query-admin fixture SHA-256:
+  `645d41ced3b7bb8ccb355be4546867207335bf7eb2f40aab889d2583aac5d461`.
+- [x] Workspace all-target/all-feature check, Protocol header validation and
+  89 doctests, Remoting query/admin differential, both Core Delete KV RPC
+  regressions, strict Clippy for Protocol/Remoting/Core, offline Maven
+  `verify` (37 scenarios, fixture checks, 66 typed-header and 15 typed-body
+  cross-decodes), formatting, and diff checks pass. Code commit: `cd3742dc`.
+- This closes only the `DeleteKVConfigRequestHeader` visibility row. Broad
+  P18-V01 bidirectional reconciliation, the final current-revision P18-V02
+  gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
+  30 missing local Broker/Docker scenario runners/profiles remain open.
