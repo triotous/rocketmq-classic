@@ -13,8 +13,10 @@ use rocketmq_classic_protocol::{
         BoundaryType, CommandHeader, CreateTopicRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
         HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        QuerySubscriptionByConsumerRequestHeader, SearchOffsetRequestHeader,
+        ViewMessageRequestHeader,
     },
+    heartbeat::SubscriptionData,
     route::TopicRouteData,
 };
 use rocketmq_classic_remoting::{
@@ -211,6 +213,128 @@ async fn create_topic_preserves_broker_permission_error() {
         }
     ));
     assert_eq!(peer.await.unwrap().code, request::UPDATE_AND_CREATE_TOPIC);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_subscription_by_consumer_sends_java_header_and_decodes_subscription() {
+    let body = serde_json::json!({
+        "subscriptionData": {
+            "classFilterMode": false,
+            "topic": "orders",
+            "subString": "tag-a",
+            "subVersion": 123,
+            "expressionType": "TAG",
+            "tagsSet": [],
+            "codeSet": []
+        },
+        "group": "workers",
+        "topic": "orders"
+    });
+    let (addr, peer) =
+        scripted_peer(response::SUCCESS, None, Some(body.to_string().into_bytes())).await;
+    let (api, client) = api().await;
+    let header = QuerySubscriptionByConsumerRequestHeader {
+        group: Some("workers".into()),
+        topic: Some("orders".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+        logical: Some(true),
+    };
+
+    let subscription = api
+        .query_subscription_by_consumer(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .expect("the Java response contains SubscriptionData");
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::QUERY_SUBSCRIPTION_BY_CONSUMER);
+    let mut expected_fields = HeaderMap::new();
+    header.encode_fields(&mut expected_fields);
+    assert_eq!(command.ext_fields, Some(expected_fields.into()));
+    assert_eq!(
+        subscription.with(|data: &SubscriptionData| {
+            (
+                data.get_topic().map(str::to_owned),
+                data.get_sub_string().map(str::to_owned),
+                data.get_sub_version(),
+            )
+        }),
+        (Some("orders".into()), Some("tag-a".into()), 123)
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_subscription_by_consumer_preserves_nullable_subscription_data() {
+    let (addr, peer) = scripted_peer(
+        response::SUCCESS,
+        None,
+        Some(br#"{"subscriptionData":null,"group":"workers","topic":"orders"}"#.to_vec()),
+    )
+    .await;
+    let (api, client) = api().await;
+
+    let result = api
+        .query_subscription_by_consumer(
+            &addr,
+            &QuerySubscriptionByConsumerRequestHeader {
+                group: Some("workers".into()),
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+
+    assert!(result.is_none());
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::QUERY_SUBSCRIPTION_BY_CONSUMER
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_subscription_by_consumer_preserves_broker_error() {
+    let (addr, peer) = scripted_peer(
+        response::SUBSCRIPTION_NOT_EXIST,
+        None,
+        Some(b"ignored on error".to_vec()),
+    )
+    .await;
+    let (api, client) = api().await;
+
+    let error = api
+        .query_subscription_by_consumer(
+            &addr,
+            &QuerySubscriptionByConsumerRequestHeader {
+                group: Some("workers".into()),
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_SUBSCRIPTION_BY_CONSUMER,
+            peer,
+            code: response::SUBSCRIPTION_NOT_EXIST,
+            remark: None,
+        } if peer == addr
+    ));
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::QUERY_SUBSCRIPTION_BY_CONSUMER
+    );
     client.shutdown().await;
 }
 

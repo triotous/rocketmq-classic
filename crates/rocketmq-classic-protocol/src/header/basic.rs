@@ -302,6 +302,44 @@ impl CommandHeader for QueryTopicsByConsumerRequestHeader {
     }
 }
 
+/// Pinned Java `QuerySubscriptionByConsumerRequestHeader` used by
+/// `QUERY_SUBSCRIPTION_BY_CONSUMER`. Java's `checkFields()` is a no-op, so the
+/// annotated group and the TopicRequestHeader fields remain nullable.
+#[derive(Debug, Clone, Default)]
+pub struct QuerySubscriptionByConsumerRequestHeader {
+    pub group: Option<String>,
+    pub topic: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for QuerySubscriptionByConsumerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "group", self.group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group: optional_string(fields, "group"),
+            topic: optional_string(fields, "topic"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
 /// Pinned Java `org.apache.rocketmq.common.BoundaryType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundaryType {

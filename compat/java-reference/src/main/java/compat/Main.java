@@ -67,6 +67,7 @@ import org.apache.rocketmq.remoting.protocol.header.RecallMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.UnregisterClientResponseHeader;
@@ -239,6 +240,10 @@ public final class Main {
         }
         if (args.length > 0 && "topic-list-fixture".equals(args[0])) {
             TopicListFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
+        if (args.length > 0 && "query-subscription-body-fixture".equals(args[0])) {
+            QuerySubscriptionBodyFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
         if (args.length > 0 && "offset-boundary-header-decode-mode-fixtures".equals(args[0])) {
@@ -516,6 +521,15 @@ public final class Main {
         queryTopics.setBrokerName("broker-a");
         queryTopics.setOneway(false);
         writeTypedHeaderFixture(output, "query-topics-by-consumer-request", 343, queryTopics);
+        QuerySubscriptionByConsumerRequestHeader querySubscription = new QuerySubscriptionByConsumerRequestHeader();
+        querySubscription.setGroup("workers");
+        querySubscription.setTopic("orders");
+        querySubscription.setNamespace("tenant");
+        querySubscription.setNamespaced(true);
+        querySubscription.setBrokerName("broker-a");
+        querySubscription.setOneway(false);
+        querySubscription.setLo(true);
+        writeTypedHeaderFixture(output, "query-subscription-by-consumer-request", 345, querySubscription);
         QueryConsumerOffsetResponseHeader queryResponse = new QueryConsumerOffsetResponseHeader();
         queryResponse.setOffset(9L);
         writeTypedHeaderFixture(output, "query-offset-response",
@@ -894,6 +908,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-query-offset.bin", 14);
             assertAllExtFields(byName, "typed-query-consume-time-span-request.bin", 303);
             assertAllExtFields(byName, "typed-query-topics-by-consumer-request.bin", 343);
+            assertAllExtFields(byName, "typed-query-subscription-by-consumer-request.bin", 345);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
             assertAllExtFields(byName, "typed-check-transaction.bin", 39);
@@ -953,6 +968,7 @@ public final class Main {
             assertExtField(byName, "typed-query-offset.bin", 14, "consumerGroup", "workers");
             assertExtField(byName, "typed-query-consume-time-span-request.bin", 303, "group", "workers");
             assertExtField(byName, "typed-query-topics-by-consumer-request.bin", 343, "group", "workers");
+            assertExtField(byName, "typed-query-subscription-by-consumer-request.bin", 345, "group", "workers");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "boundaryType", "UPPER");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "timestamp", "1712345678901");
@@ -1018,6 +1034,7 @@ public final class Main {
             case "typed-query-offset.bin": fixtureStem = "header-query-offset-request"; break;
             case "typed-query-consume-time-span-request.bin": fixtureStem = "header-query-consume-time-span-request"; break;
             case "typed-query-topics-by-consumer-request.bin": fixtureStem = "header-query-topics-by-consumer-request"; break;
+            case "typed-query-subscription-by-consumer-request.bin": fixtureStem = "header-query-subscription-by-consumer-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;
             case "typed-check-transaction.bin": fixtureStem = "header-check-transaction-request"; break;

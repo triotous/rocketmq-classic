@@ -3,12 +3,14 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::TopicList,
+    body::{QuerySubscriptionResponseBody, TopicList},
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
+        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
     },
+    heartbeat::SubscriptionData,
     route::TopicRouteData,
 };
 use tokio::{
@@ -202,6 +204,20 @@ impl std::fmt::Display for QueryResult {
 }
 
 impl MQClientApi {
+    /// Queries one Broker for a group's subscription to a topic.
+    pub async fn query_subscription_by_consumer(
+        &self,
+        addr: &str,
+        header: &QuerySubscriptionByConsumerRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<SharedValue<SubscriptionData>>, RpcError> {
+        let code = request::QUERY_SUBSCRIPTION_BY_CONSUMER;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        let body: QuerySubscriptionResponseBody = decode_body(&reply, code, addr)?;
+        Ok(body.get_subscription_data())
+    }
+
     /// Queries one Broker for the topics consumed by a group.
     pub async fn query_topics_by_consumer(
         &self,

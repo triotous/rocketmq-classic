@@ -636,6 +636,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-query-subscription-body-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.QuerySubscriptionBodyFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/admin/query-subscription-response-body.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-producer-lifecycle-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

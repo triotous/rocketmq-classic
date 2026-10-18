@@ -1991,6 +1991,88 @@ impl TopicList {
     }
 }
 
+/// Java response wrapper returned by `QUERY_SUBSCRIPTION_BY_CONSUMER`.
+///
+/// The nested `SubscriptionData` object is nullable and the Java getter returns
+/// the same mutable object assigned through the setter.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QuerySubscriptionResponseBody;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<QuerySubscriptionResponseBody>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QuerySubscriptionResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscription_data: Option<SharedValue<SubscriptionData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuerySubscriptionResponseBodyFields {
+    #[serde(default)]
+    subscription_data: Option<SubscriptionData>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    group: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for QuerySubscriptionResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QuerySubscriptionResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            subscription_data: fields.subscription_data.map(SharedValue::new),
+            group: fields.group,
+            topic: fields.topic,
+        })
+    }
+}
+
+impl QuerySubscriptionResponseBody {
+    pub fn get_subscription_data(&self) -> Option<SharedValue<SubscriptionData>> {
+        self.subscription_data.clone()
+    }
+
+    pub fn set_subscription_data(
+        &mut self,
+        subscription_data: Option<SharedValue<SubscriptionData>>,
+    ) {
+        self.subscription_data = subscription_data;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, group: Option<String>) {
+        self.group = group;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, topic: Option<String>) {
+        self.topic = topic;
+    }
+}
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5296,6 +5378,69 @@ fn write_java_remoting_body_indent(output: &mut String, depth: usize, indent: Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn query_subscription_response_body_matches_java_null_and_alias_semantics() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/admin/query-subscription-response-body.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["artifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        let default = QuerySubscriptionResponseBody::default();
+        assert!(default.get_subscription_data().is_none());
+        assert!(default.get_group().is_none());
+        assert!(default.get_topic().is_none());
+        assert_eq!(
+            serde_json::to_value(&default).unwrap(),
+            serde_json::from_str::<serde_json::Value>(fixture["defaultJson"].as_str().unwrap())
+                .unwrap()
+        );
+
+        let populated_json: serde_json::Value =
+            serde_json::from_str(fixture["populatedJson"].as_str().unwrap()).unwrap();
+        let decoded: QuerySubscriptionResponseBody =
+            serde_json::from_value(populated_json.clone()).unwrap();
+        assert_eq!(decoded.get_group(), Some("workers"));
+        assert_eq!(decoded.get_topic(), Some("orders"));
+        assert_eq!(
+            serde_json::to_value(&decoded).unwrap(),
+            populated_json,
+            "the Java response body JSON must round-trip"
+        );
+
+        let assigned = SharedValue::new(SubscriptionData::default());
+        let mut value = QuerySubscriptionResponseBody::default();
+        value.set_subscription_data(Some(assigned.clone()));
+        let getter = value.get_subscription_data().unwrap();
+        assert_eq!(
+            getter.ptr_eq(&assigned),
+            fixture["getterReturnsStoredSubscriptionDataIdentity"]
+        );
+        getter.with_mut(|subscription| {
+            subscription.set_sub_string(Some("tag-b".into()));
+        });
+        assert_eq!(
+            assigned.with(|subscription| subscription.get_sub_string().map(str::to_owned)),
+            Some("tag-b".to_owned()),
+            "mutating through the getter must update the assigned object"
+        );
+        assert_eq!(fixture["getterMutationVisibleToAssignedObject"], true);
+
+        let explicit_null: QuerySubscriptionResponseBody =
+            serde_json::from_str(r#"{"subscriptionData":null,"group":null,"topic":null}"#).unwrap();
+        assert!(explicit_null.get_subscription_data().is_none());
+        assert_eq!(
+            serde_json::to_value(explicit_null).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                fixture["explicitNullJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+    }
 
     #[test]
     fn topic_list_matches_java_default_null_and_alias_semantics() {

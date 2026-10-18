@@ -28,11 +28,11 @@ use rocketmq_classic_protocol::{
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
         QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
         QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicsByConsumerRequestHeader,
+        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -104,6 +104,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-query-topics-by-consumer-request.bin",
         "header-query-topics-by-consumer-request",
         343,
+    );
+    write_oracle_header::<QuerySubscriptionByConsumerRequestHeader>(
+        output,
+        "typed-query-subscription-by-consumer-request.bin",
+        "header-query-subscription-by-consumer-request",
+        345,
     );
     write_oracle_header::<QueryMessageResponseHeader>(
         output,

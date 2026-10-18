@@ -26,11 +26,12 @@ use rocketmq_classic_protocol::{
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
         PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicsByConsumerRequestHeader,
+        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -1050,6 +1051,24 @@ fn header_validation_matrix() {
             "indexLastUpdateTimestamp indexLastUpdatePhyoffset",
             "",
             ""
+        ),
+        row!(
+            QueryTopicsByConsumerRequestHeader,
+            "query-topics-by-consumer-request",
+            "",
+            "",
+            "",
+            "group ns nsd bname oway",
+            "nsd oway"
+        ),
+        row!(
+            QuerySubscriptionByConsumerRequestHeader,
+            "query-subscription-by-consumer-request",
+            "",
+            "",
+            "",
+            "group topic ns nsd bname oway lo",
+            "nsd oway lo"
         ),
         row!(
             ViewMessageRequestHeader,

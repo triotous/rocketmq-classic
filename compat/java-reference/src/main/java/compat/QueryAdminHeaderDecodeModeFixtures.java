@@ -30,6 +30,7 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 
@@ -72,6 +73,13 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("query-topics-by-consumer-missing", decodeModes("query-topics", fields()));
         cases.put("query-topics-by-consumer-malformed-booleans", decodeModes("query-topics", fields(
             "group", "workers", "nsd", "malformed", "oway", "malformed")));
+        cases.put("query-subscription-by-consumer-valid", decodeModes("query-subscription", fields(
+            "group", "workers", "topic", "orders", "ns", "tenant", "nsd", "true",
+            "bname", "broker-a", "oway", "false", "lo", "true")));
+        cases.put("query-subscription-by-consumer-missing", decodeModes("query-subscription", fields()));
+        cases.put("query-subscription-by-consumer-malformed-booleans", decodeModes("query-subscription", fields(
+            "group", "workers", "topic", "orders", "nsd", "malformed", "oway", "malformed",
+            "lo", "malformed")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -99,7 +107,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
     private static Map<String, Object> decode(String type, Map<String, String> fields,
         boolean useFastEncode) {
         Map<String, Object> result = new TreeMap<>();
-        int code = "query-topics".equals(type) ? 343 : 12;
+        int code = 12;
+        if ("query-topics".equals(type)) {
+            code = 343;
+        } else if ("query-subscription".equals(type)) {
+            code = 345;
+        }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
         try {
@@ -116,6 +129,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "query-topics":
                     headerClass = QueryTopicsByConsumerRequestHeader.class;
+                    break;
+                case "query-subscription":
+                    headerClass = QuerySubscriptionByConsumerRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);
