@@ -2208,6 +2208,13 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody body =
             new org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody();
         Map<String, Object> item = new TreeMap<>();
+        item.put("publicConstructors", publicConstructorSignatures(body.getClass()));
+        item.put("declaredPublicMethods", declaredPublicMethodSignatures(body.getClass()));
+        item.put("publicFields", Arrays.stream(body.getClass().getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
         item.put("defaultLockOKMQSet", messageQueueApiValues(body.getLockOKMQSet()));
         Set<org.apache.rocketmq.common.message.MessageQueue> queues = oneQueueSet();
         body.setLockOKMQSet(queues);

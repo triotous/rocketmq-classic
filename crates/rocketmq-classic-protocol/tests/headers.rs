@@ -1120,7 +1120,7 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
     assert!(unlock.only_this_broker);
     let response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-lock-response")).unwrap();
-    let response_set = response.lock_okmq_set.as_ref().unwrap().with(|queues| {
+    let response_set = response.get_lock_okmq_set().unwrap().with(|queues| {
         queues
             .iter()
             .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
@@ -1138,16 +1138,12 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
     );
     let unlock_response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-unlock-response")).unwrap();
-    let unlock_response_set = unlock_response
-        .lock_okmq_set
-        .as_ref()
-        .unwrap()
-        .with(|queues| {
-            queues
-                .iter()
-                .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
-                .collect::<std::collections::HashSet<_>>()
-        });
+    let unlock_response_set = unlock_response.get_lock_okmq_set().unwrap().with(|queues| {
+        queues
+            .iter()
+            .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
+            .collect::<std::collections::HashSet<_>>()
+    });
     assert_eq!(
         unlock_response_set
             .iter()

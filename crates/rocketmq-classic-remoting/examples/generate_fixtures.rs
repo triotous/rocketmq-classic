@@ -965,24 +965,18 @@ fn generate_p4_bodies(output: &std::path::Path) {
             )]))),
         },
     );
-    write_body(
-        output,
-        "body-lock-response.bin",
-        41,
-        &LockBatchResponseBody {
-            lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                SharedValue::new(queue.clone()),
-            )]))),
-        },
-    );
-    write_body(
-        output,
-        "body-unlock-response.bin",
-        42,
-        &LockBatchResponseBody {
-            lock_okmq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                SharedValue::new(queue),
-            )]))),
-        },
-    );
+    write_body(output, "body-lock-response.bin", 41, &{
+        let mut body = LockBatchResponseBody::default();
+        body.set_lock_okmq_set(Some(SharedValue::new(std::collections::HashSet::from([
+            Some(SharedValue::new(queue.clone())),
+        ]))));
+        body
+    });
+    write_body(output, "body-unlock-response.bin", 42, &{
+        let mut body = LockBatchResponseBody::default();
+        body.set_lock_okmq_set(Some(SharedValue::new(std::collections::HashSet::from([
+            Some(SharedValue::new(queue)),
+        ]))));
+        body
+    });
 }

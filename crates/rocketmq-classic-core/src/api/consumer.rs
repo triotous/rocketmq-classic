@@ -398,7 +398,7 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
-        Ok(body.lock_okmq_set.map(|queues| {
+        Ok(body.get_lock_okmq_set().map(|queues| {
             queues.with(|queues| {
                 queues
                     .iter()

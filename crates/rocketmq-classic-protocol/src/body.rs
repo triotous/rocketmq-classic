@@ -4790,11 +4790,17 @@ fn java_message_queue_set_text(queues: &Option<SharedMessageQueueSet>) -> String
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<LockBatchResponseBody>(); }
 /// ```
+///
+/// Java exposes the Set through accessors rather than a public field.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::LockBatchResponseBody;
+/// let _ = LockBatchResponseBody::default().lock_okmq_set;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchResponseBody {
     #[serde(rename = "lockOKMQSet", skip_serializing_if = "Option::is_none")]
-    pub lock_okmq_set: Option<SharedMessageQueueSet>,
+    lock_okmq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -9358,6 +9364,18 @@ mod tests {
         assert_eq!(unlock_case["nullSettersRemainNull"], true);
 
         let lock_response_case = &fixture["lockBatchResponseApiCase"];
+        assert_eq!(
+            lock_response_case["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody()"])
+        );
+        assert_eq!(
+            lock_response_case["declaredPublicMethods"],
+            json!([
+                "java.util.Set org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.getLockOKMQSet()",
+                "void org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody.setLockOKMQSet(java.util.Set)"
+            ])
+        );
+        assert_eq!(lock_response_case["publicFields"], json!([]));
         let mut lock_response = LockBatchResponseBody::default();
         assert_eq!(
             serde_json::to_value(lock_response.get_lock_okmq_set()).unwrap(),
