@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Twelve methods now have source-backed
-typed RPC slices; the other seven still need reconciliation. Their public status
+method-by-method mapping has been verified. Thirteen methods now have
+source-backed typed RPC slices; six still need reconciliation. Public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -53,6 +53,16 @@ filtered by topic and either unique message ID or exact key token. Broker
 preserved. The invoked Java fixture and scripted Core differential cover
 compressed/uncompressed bodies, key and unique-key filtering, no result, and a
 Broker error.
+
+Thirteenth reconciled method slice (code commit `4d6cb941`): Rust exposes
+`MQClientApi::mq_client_admin().view_message`, matching Java's direct
+`MqClientAdmin.viewMessage(address, requestHeader, timeoutMillis)` path. It
+sends request code 33 with `ViewMessageRequestHeader` through asynchronous
+remoting, decodes the returned Broker message body, and preserves Broker
+response codes and remarks. The invoked Java fixture records the signature,
+timeout, request fields, encoded response body, decoded message, and Broker
+error. Scripted Core tests compare the request and returned message to the
+fixture and cover the Broker error path.
 
 First reconciled method slice (code commit `07865bde`): Java
 `queryTopicsByConsumer(address, requestHeader, timeoutMillis)` sends request
@@ -176,7 +186,7 @@ error mapping to that fixture. Java/Rust typed-header cross-decode and the
 header inventory include this request. Shared admin fixture SHA-256:
 `ceafece5e4c70efab31e34760b8485b631a5691a46000c8d6bff32448fedbb0c`.
 
-The other eight interface methods remain to reconcile.
+Six interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;
