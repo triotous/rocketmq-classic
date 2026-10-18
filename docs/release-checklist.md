@@ -4144,3 +4144,28 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation stays in
   the separate manual handoff.
+
+## P18-V01 `invokeBrokerToResetOffset` admin RPC — 2026-10-18 (`859c152a`)
+
+- [x] Added `MQClientApi::invoke_broker_to_reset_offset` with request code 222
+  and Java `ResetOffsetRequestHeader`. It decodes the Java `ResetOffsetBody`
+  object-key map into shared queue/offset entries, preserves a nullable
+  offset table, and maps a successful response without a body to Java's
+  `MQClientException` response code 0.
+- [x] The invoked Java fixture covers the method signature, full request
+  fields, timeout, successful offset table, Broker error, and success-without-
+  body error. Core scripted tests compare request fields, result contents,
+  response code/remark, and the null-body branch. Shared admin fixture
+  SHA-256: `dc98c4a44b5994bb30bdf55b72abae40727e852e6b7dafdd4e7b4b8e8747b9c0`.
+- [x] Core `admin_rpc` passed all 41 tests. Strict all-target/all-feature
+  Clippy passed for Protocol, Remoting, and Core. Pinned Maven `verify` passed
+  all 37 scenarios and fixture checks, including 64 typed-header and 14
+  typed-body cross-decodes. Formatting and diff checks passed. Code commit:
+  `859c152a`.
+- The source-backed `MqClientAdmin` method count is now 11/19; eight methods
+  and broad P18-V01 reconciliation remain open. Refresh full-workspace P18-V02
+  after remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation stays in
+  the separate manual handoff.

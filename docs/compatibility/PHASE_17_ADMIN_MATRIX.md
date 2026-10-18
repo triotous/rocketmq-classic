@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Ten methods now have source-backed
-typed RPC slices; the other nine still need reconciliation. Their public status
+method-by-method mapping has been verified. Eleven methods now have source-backed
+typed RPC slices; the other eight still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -165,7 +165,7 @@ error mapping to that fixture. Java/Rust typed-header cross-decode and the
 header inventory include this request. Shared admin fixture SHA-256:
 `ceafece5e4c70efab31e34760b8485b631a5691a46000c8d6bff32448fedbb0c`.
 
-The other nine interface methods remain to reconcile.
+The other eight interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;
