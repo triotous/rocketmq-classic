@@ -1202,7 +1202,7 @@ One hundred forty-three direct Java input cases cover decoded fields, accepted/r
 | --- | --- |
 | `ConsumerRunningInfo`, `ProcessQueueInfo`, `PopProcessQueueInfo`, and `ConsumeStatus`; each inherits `Object.equals/hashCode` | `ConsumerRunningInfoBody`, `ConsumerProcessQueueInfo`, `ConsumerPopProcessQueueInfo`, and `ConsumerConsumeStatus` intentionally do not implement structural `PartialEq`/`Eq` |
 
-The invoked Java fixture reflects both inherited methods and confirms that separately constructed default instances compare unequal for all four classes. Compile-fail doctests guard the Rust trait boundary. The Rust body round-trip differential compares normalized JSON values, preserving the wire/API check without adding value equality. Fixture SHA-256: `a16ba3fd660aa1b8ad6ef2150163a9657283ada56c728f6769f39f98b0a5fbe8`.
+The invoked Java fixture reflects both inherited methods and confirms that separately constructed default instances compare unequal for all four classes. Compile-fail doctests guard the Rust trait boundary. The Rust body round-trip differential compares normalized JSON values, preserving the wire/API check without adding value equality. The fixture now also carries the invoked public-field/API inventories and the nested DTO text-rendering outputs. Fixture SHA-256: `cefcb0d2f68f88acc12996a5068e9f12449676d8313b502fe8d2e9eeccbc69c5`.
 
 ### Running Info public property-key constants
 
@@ -1215,7 +1215,16 @@ The invoked Java fixture reflects both inherited methods and confirms that separ
 | `PROP_CLIENT_VERSION` | `PROP_CLIENT_VERSION` | `ConsumerRunningInfoBody::PROP_CLIENT_VERSION` |
 | `PROP_CONSUMER_START_TIMESTAMP` | `PROP_CONSUMER_START_TIMESTAMP` | `ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP` |
 
-The DTO's Java instance accessors map to the public Rust fields; the typed body and its nested queue/status structs retain the corresponding wire data. Push/Pull Running Info generation uses these constants. The regression fixture pins the unusual `PROP_CONSUME_ORDERLY` value and the generated Push body rejects the incorrect underscore spelling. Fixture SHA-256 values: `fixtures/consumer/running-info.json` `54ba7d8dba8b942528eed61d3d15a273a23b944ba4653824300d09c579ef026e`; dependent `fixtures/admin/query-consume-time-span.json` `ae161fbf6d2ba14453c7ff91b99ca5be3ae9aaae7f55d46026276ade1de6fe60`.
+The DTO's Java instance accessors map to public Rust getters/setters while the backing fields remain private, matching Java visibility; the typed body and its nested queue/status structs retain the corresponding wire data. Push/Pull Running Info generation uses these constants. The regression fixture pins the unusual `PROP_CONSUME_ORDERLY` value and the generated Push body rejects the incorrect underscore spelling. Fixture SHA-256 values: `fixtures/consumer/running-info.json` `cefcb0d2f68f88acc12996a5068e9f12449676d8313b502fe8d2e9eeccbc69c5`; dependent `fixtures/admin/query-consume-time-span.json` `a2702341491aea02ece8494c65ac0dc5544e69947d42987414c171f2fb96cc31`.
+
+### Running Info nested DTO text rendering
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `ProcessQueueInfo.toString()` | `ConsumerProcessQueueInfo` implements `Display`/`ToString` with Java field labels, timestamp formatting, and output text |
+| `PopProcessQueueInfo.toString()` | `ConsumerPopProcessQueueInfo` implements `Display`/`ToString` with Java labels, separators, and output text |
+
+The invoked Java fixture records both rendered strings; the Protocol differential compares them exactly. The public `ConsumerRunningInfo` analysis/formatting helpers remain excluded from client flow because pinned-source call sites place them in the separate `rocketmq-tools` artifact.
 
 `analyzeSubscription`, `isPushType`, `analyzeRebalance`, `analyzeProcessQueue`, and `formatString` have call sites in the separate `rocketmq-tools` artifact; pinned-source search found no `rocketmq-client` callers. Phase 17 explicitly excludes the tools suite, so these tools-only helpers are not client-flow gaps.
 

@@ -5035,3 +5035,17 @@ owner-specific checks belong in the manual handoff.
   broad P18-V01 API/settings/input/error/flow and Rust reverse-export audit is
   complete. The final current-revision P18-V02 gate and current Ubuntu/native
   Windows P18-V04 evidence remain open.
+
+## P18-V01 Running Info nested DTO `toString` — 2026-10-18 (`4953cde5`)
+
+- [x] Added Java-compatible Rust `Display`/`ToString` implementations for
+  `ProcessQueueInfo` and `PopProcessQueueInfo`. The pinned Java fixture records
+  both outputs, including local timestamp formatting for `ProcessQueueInfo`;
+  the Protocol differential checks exact strings. Fixture SHA-256:
+  `cefcb0d2f68f88acc12996a5068e9f12449676d8313b502fe8d2e9eeccbc69c5`.
+- [x] The focused Protocol test and strict all-target/all-feature Protocol
+  Clippy passed. Offline Maven `verify` passed all 37 scenarios, fixture
+  checks, 66 typed-header and 15 typed-body cross-decodes. Formatting and diff
+  checks passed. Code commit: `4953cde5`.
+- This closes only the two nested DTO text methods. Full P18-V01 and the final
+  workspace P18-V02 gate remain open.
