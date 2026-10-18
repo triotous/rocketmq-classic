@@ -6,11 +6,11 @@ use rocketmq_classic_protocol::{
     body::{GroupList, QuerySubscriptionResponseBody, TopicList, TopicStatsTable},
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-        QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-        ViewMessageRequestHeader,
+        CommandHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
+        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -406,6 +406,19 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         let code = request::DELETE_TOPIC_IN_NAMESRV;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes a NameServer KV config entry through Java `MqClientAdmin`'s RPC.
+    pub async fn delete_kv_config(
+        &self,
+        addr: &str,
+        header: &DeleteKvConfigRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_KV_CONFIG;
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())

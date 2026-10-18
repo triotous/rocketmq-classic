@@ -16,8 +16,8 @@ use rocketmq_classic_protocol::{
         ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
         CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        CreateTopicRequestHeader, DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        EndTransactionRequestHeader, EndTransactionResponseHeader,
+        CreateTopicRequestHeader, DeleteKvConfigRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
@@ -137,6 +137,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-delete-topic-from-namesrv-request.bin",
         "header-delete-topic-from-namesrv-request",
         216,
+    );
+    write_oracle_header::<DeleteKvConfigRequestHeader>(
+        output,
+        "typed-delete-kv-config-request.bin",
+        "header-delete-kv-config-request",
+        102,
     );
     write_oracle_header::<QueryMessageResponseHeader>(
         output,

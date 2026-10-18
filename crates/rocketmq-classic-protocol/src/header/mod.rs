@@ -11,7 +11,7 @@ pub use basic::{
     AckMessageRequestHeader, BoundaryType, ChangeInvisibleTimeRequestHeader,
     ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
     CheckTransactionStateResponseHeader, ConsumeMessageDirectlyResultRequestHeader,
-    ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader,
+    ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
     DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader, EndTransactionRequestHeader,
     EndTransactionResponseHeader, GetConsumerListByGroupRequestHeader,
     GetConsumerRunningInfoRequestHeader, GetConsumerStatusRequestHeader,

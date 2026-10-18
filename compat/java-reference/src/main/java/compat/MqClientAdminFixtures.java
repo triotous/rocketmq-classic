@@ -43,6 +43,7 @@ import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 
 /** Invokes the pinned Java MqClientAdmin asynchronous administrative RPCs. */
@@ -180,6 +181,7 @@ public final class MqClientAdminFixtures {
         fixture.put("updateOrCreateTopic", updateOrCreateTopic());
         fixture.put("deleteTopicInBroker", deleteTopicInBroker());
         fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
+        fixture.put("deleteKvConfig", deleteKvConfig());
         return fixture;
     }
 
@@ -271,6 +273,58 @@ public final class MqClientAdminFixtures {
         try {
             errorAdmin.deleteTopicInNameserver(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
             throw new IllegalStateException("expected MqClientAdmin nameserver delete error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            outcome.put("exceptionClass", clientException.getClass().getName());
+            outcome.put("responseCode", clientException.getResponseCode());
+            outcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", outcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> deleteKvConfig() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("deleteKvConfig",
+            String.class, DeleteKVConfigRequestHeader.class, long.class);
+        DeleteKVConfigRequestHeader header = new DeleteKVConfigRequestHeader();
+        header.setNamespace("config-namespace");
+        header.setKey("config-key");
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        MqClientAdminImpl successAdmin = new MqClientAdminImpl(successCapture.proxy());
+        successAdmin.deleteKvConfig(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("completed", true);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "kv config delete failed");
+        MqClientAdminImpl errorAdmin = new MqClientAdminImpl(errorCapture.proxy());
+        Map<String, Object> outcome = new LinkedHashMap<>();
+        try {
+            errorAdmin.deleteKvConfig(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin delete KV config error");
         } catch (ExecutionException exception) {
             if (!(exception.getCause() instanceof MQClientException)) {
                 throw exception;

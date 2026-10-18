@@ -381,6 +381,28 @@ impl CommandHeader for DeleteTopicFromNamesrvRequestHeader {
     }
 }
 
+/// Pinned Java Namesrv `DeleteKVConfigRequestHeader`. Its annotated namespace
+/// and key remain nullable because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct DeleteKvConfigRequestHeader {
+    pub namespace: Option<String>,
+    pub key: Option<String>,
+}
+
+impl CommandHeader for DeleteKvConfigRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "namespace", self.namespace.as_deref());
+        put_optional(fields, "key", self.key.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "namespace"),
+            key: optional_string(fields, "key"),
+        })
+    }
+}
+
 /// Pinned Java `QueryTopicsByConsumerRequestHeader` used by
 /// `QUERY_TOPICS_BY_CONSUMER`. Java's `checkFields()` is a no-op even though
 /// `group` carries a non-null annotation, so the request remains nullable here.

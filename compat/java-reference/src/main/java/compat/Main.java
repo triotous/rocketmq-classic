@@ -70,6 +70,7 @@ import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
@@ -581,6 +582,10 @@ public final class Main {
         deleteTopicFromNamesrv.setLo(true);
         writeTypedHeaderFixture(output, "delete-topic-from-namesrv-request", 216,
             deleteTopicFromNamesrv);
+        DeleteKVConfigRequestHeader deleteKvConfig = new DeleteKVConfigRequestHeader();
+        deleteKvConfig.setNamespace("config-namespace");
+        deleteKvConfig.setKey("config-key");
+        writeTypedHeaderFixture(output, "delete-kv-config-request", 102, deleteKvConfig);
         QueryConsumerOffsetResponseHeader queryResponse = new QueryConsumerOffsetResponseHeader();
         queryResponse.setOffset(9L);
         writeTypedHeaderFixture(output, "query-offset-response",
@@ -964,6 +969,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
+            assertAllExtFields(byName, "typed-delete-kv-config-request.bin", 102);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
             assertAllExtFields(byName, "typed-check-transaction.bin", 39);
@@ -1030,6 +1036,10 @@ public final class Main {
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "lo", "true");
             assertExtField(byName, "typed-delete-topic-from-namesrv-request.bin", 216,
                 "clusterName", "cluster-a");
+            assertExtField(byName, "typed-delete-kv-config-request.bin", 102,
+                "namespace", "config-namespace");
+            assertExtField(byName, "typed-delete-kv-config-request.bin", 102,
+                "key", "config-key");
             assertExtField(byName, "typed-update-offset.bin", 15, "commitOffset", "9");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "boundaryType", "UPPER");
             assertExtField(byName, "typed-search-offset-request.bin", 29, "timestamp", "1712345678901");
@@ -1100,6 +1110,7 @@ public final class Main {
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
+            case "typed-delete-kv-config-request.bin": fixtureStem = "header-delete-kv-config-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;
             case "typed-check-transaction.bin": fixtureStem = "header-check-transaction-request"; break;

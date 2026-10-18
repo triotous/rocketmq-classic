@@ -14,8 +14,8 @@ use rocketmq_classic_protocol::{
         ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
         CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        CreateTopicRequestHeader, DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        EndTransactionRequestHeader, EndTransactionResponseHeader,
+        CreateTopicRequestHeader, DeleteKvConfigRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
@@ -1107,6 +1107,15 @@ fn header_validation_matrix() {
             "",
             "topic clusterName ns nsd bname oway lo",
             "nsd oway lo"
+        ),
+        row!(
+            DeleteKvConfigRequestHeader,
+            "delete-kv-config-request",
+            "",
+            "",
+            "",
+            "namespace key",
+            ""
         ),
         row!(
             ViewMessageRequestHeader,
