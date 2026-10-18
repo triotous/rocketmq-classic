@@ -29,6 +29,8 @@ import org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody;
 import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody;
+import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
+import org.apache.rocketmq.remoting.protocol.admin.TopicStatsTable;
 
 /** Invoked Java 5.5.1 identity-equality oracle for protocol DTOs. */
 public final class ProtocolDtoIdentityFixtures {
@@ -72,6 +74,8 @@ public final class ProtocolDtoIdentityFixtures {
         result.put("ResetOffsetBody", identityCase(new ResetOffsetBody(), new ResetOffsetBody()));
         result.put("ConsumeMessageDirectlyResult", identityCase(
             new ConsumeMessageDirectlyResult(), new ConsumeMessageDirectlyResult()));
+        result.put("TopicOffset", identityCase(new TopicOffset(), new TopicOffset()));
+        result.put("TopicStatsTable", identityCase(new TopicStatsTable(), new TopicStatsTable()));
         return result;
     }
 

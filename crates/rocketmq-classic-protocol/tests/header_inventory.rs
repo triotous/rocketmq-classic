@@ -41,6 +41,7 @@ macro_rules! inventory {
             QueryTopicsByConsumerRequestHeader => ("header-query-topics-by-consumer-request", "typed-query-topics-by-consumer-request.bin"),
             QuerySubscriptionByConsumerRequestHeader => ("header-query-subscription-by-consumer-request", "typed-query-subscription-by-consumer-request.bin"),
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
+            GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             ViewMessageRequestHeader => ("header-view-message-request", "typed-view-message-request.bin"),
             LockBatchMqRequestHeader => ("header-lock-batch-request", "typed-lock-batch-request.bin"),
             UnlockBatchMqRequestHeader => ("header-unlock-batch-request", "typed-unlock-batch-request.bin"),

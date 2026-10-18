@@ -30,6 +30,7 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
@@ -87,6 +88,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("query-topic-consume-by-who-missing", decodeModes("query-topic-consumers", fields()));
         cases.put("query-topic-consume-by-who-malformed-booleans", decodeModes("query-topic-consumers", fields(
             "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
+        cases.put("topic-stats-info-valid", decodeModes("topic-stats-info", fields(
+            "topic", "orders", "ns", "tenant", "nsd", "true", "bname", "broker-a",
+            "oway", "false", "lo", "true")));
+        cases.put("topic-stats-info-missing", decodeModes("topic-stats-info", fields()));
+        cases.put("topic-stats-info-malformed-booleans", decodeModes("topic-stats-info", fields(
+            "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -121,6 +128,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 345;
         } else if ("query-topic-consumers".equals(type)) {
             code = 300;
+        } else if ("topic-stats-info".equals(type)) {
+            code = 202;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -145,6 +154,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                 case "query-topic-consumers":
                     headerClass = QueryTopicConsumeByWhoRequestHeader.class;
                     break;
+                case "topic-stats-info":
+                    headerClass = GetTopicStatsInfoRequestHeader.class;
+                    break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);
             }
@@ -153,7 +165,7 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             result.put("outcome", "OK");
             result.put("decodedFields", readFields(header));
 
-            RemotingCommand encoded = RemotingCommand.createRequestCommand(12, null);
+            RemotingCommand encoded = RemotingCommand.createRequestCommand(code, null);
             encoded.setExtFields(new HashMap<>());
             encoded.writeCustomHeader(header);
             encoded.makeCustomHeaderToNet();

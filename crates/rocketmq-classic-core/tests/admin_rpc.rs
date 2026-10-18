@@ -12,9 +12,9 @@ use rocketmq_classic_protocol::{
     header::{
         BoundaryType, CommandHeader, CreateTopicRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
-        HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, QueryMessageRequestHeader,
+        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+        QueryTopicConsumeByWhoRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -335,6 +335,133 @@ async fn query_subscription_by_consumer_preserves_broker_error() {
         peer.await.unwrap().code,
         request::QUERY_SUBSCRIPTION_BY_CONSUMER
     );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn get_topic_stats_info_sends_java_header_and_decodes_topic_stats_table() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/topic-stats-table.json"
+    ))
+    .unwrap();
+    let body = fixture["populatedJson"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (api, client) = api().await;
+    let header = GetTopicStatsInfoRequestHeader {
+        topic: Some("orders".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+        logical: Some(true),
+    };
+
+    let stats = api
+        .get_topic_stats_info(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_TOPIC_STATS_INFO);
+    let mut expected_fields = HeaderMap::new();
+    header.encode_fields(&mut expected_fields);
+    assert_eq!(command.ext_fields, Some(expected_fields.into()));
+    assert_eq!(stats.get_topic_put_tps(), 1.25);
+    let table = stats.get_offset_table().unwrap();
+    assert_eq!(table.with(|table| table.len()), 1);
+    assert_eq!(
+        table.with(|table| {
+            table[&rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1)]
+                .as_ref()
+                .unwrap()
+                .with(|offset| offset.get_max_offset())
+        }),
+        16
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn get_topic_stats_info_preserves_java_null_body_results() {
+    for body in [None, Some(b"null".to_vec())] {
+        let (addr, peer) = scripted_peer(response::SUCCESS, None, body).await;
+        let (api, client) = api().await;
+        let result = api
+            .get_topic_stats_info(
+                &addr,
+                &GetTopicStatsInfoRequestHeader {
+                    topic: Some("orders".into()),
+                    ..Default::default()
+                },
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert!(result.is_none());
+        assert_eq!(peer.await.unwrap().code, request::GET_TOPIC_STATS_INFO);
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn get_topic_stats_info_preserves_broker_errors_and_rejects_malformed_body() {
+    let (addr, peer) = scripted_peer(
+        response::TOPIC_NOT_EXIST,
+        None,
+        Some(b"ignored on error".to_vec()),
+    )
+    .await;
+    let (client_api, client) = api().await;
+    let error = client_api
+        .get_topic_stats_info(
+            &addr,
+            &GetTopicStatsInfoRequestHeader {
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::GET_TOPIC_STATS_INFO,
+            peer,
+            code: response::TOPIC_NOT_EXIST,
+            remark: None,
+        } if peer == addr
+    ));
+    assert_eq!(peer.await.unwrap().code, request::GET_TOPIC_STATS_INFO);
+    client.shutdown().await;
+
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"not-json".to_vec())).await;
+    let (api, client) = api().await;
+    let error = api
+        .get_topic_stats_info(
+            &addr,
+            &GetTopicStatsInfoRequestHeader {
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::GET_TOPIC_STATS_INFO,
+            peer,
+            ..
+        } if peer == addr
+    ));
+    assert_eq!(peer.await.unwrap().code, request::GET_TOPIC_STATS_INFO);
     client.shutdown().await;
 }
 

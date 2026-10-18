@@ -2138,6 +2138,212 @@ impl GroupList {
     }
 }
 
+/// Java `TopicOffset`; its boxed-looking accessors actually expose primitive
+/// `long` fields with zero defaults.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicOffset;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<TopicOffset>(); }
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicOffset {
+    min_offset: i64,
+    max_offset: i64,
+    last_update_timestamp: i64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct TopicOffsetFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    min_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    max_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    last_update_timestamp: i64,
+}
+
+impl<'de> Deserialize<'de> for TopicOffset {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: TopicOffsetFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            min_offset: fields.min_offset,
+            max_offset: fields.max_offset,
+            last_update_timestamp: fields.last_update_timestamp,
+        })
+    }
+}
+
+impl TopicOffset {
+    pub fn get_min_offset(&self) -> i64 {
+        self.min_offset
+    }
+
+    pub fn set_min_offset(&mut self, value: i64) {
+        self.min_offset = value;
+    }
+
+    pub fn get_max_offset(&self) -> i64 {
+        self.max_offset
+    }
+
+    pub fn set_max_offset(&mut self, value: i64) {
+        self.max_offset = value;
+    }
+
+    pub fn get_last_update_timestamp(&self) -> i64 {
+        self.last_update_timestamp
+    }
+
+    pub fn set_last_update_timestamp(&mut self, value: i64) {
+        self.last_update_timestamp = value;
+    }
+}
+
+impl std::fmt::Display for TopicOffset {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "TopicOffset{{minOffset={}, maxOffset={}, lastUpdateTimestamp={}}}",
+            self.min_offset, self.max_offset, self.last_update_timestamp
+        )
+    }
+}
+
+/// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
+/// retain Java nullability and the map handle returned by the getter.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicStatsTable;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<TopicStatsTable>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicStatsTable {
+    topic_put_tps: f64,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "topic_stats_offset_table"
+    )]
+    offset_table: Option<SharedTopicStatsOffsetTable>,
+}
+
+pub type TopicStatsOffsetTable =
+    std::collections::HashMap<MessageQueue, Option<SharedValue<TopicOffset>>>;
+pub type SharedTopicStatsOffsetTable = SharedValue<TopicStatsOffsetTable>;
+
+fn default_topic_stats_offset_table() -> Option<SharedTopicStatsOffsetTable> {
+    Some(SharedValue::new(std::collections::HashMap::new()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct TopicStatsTableFields {
+    #[serde(deserialize_with = "deserialize_fastjson_f64")]
+    topic_put_tps: f64,
+    #[serde(
+        default = "default_topic_stats_offset_table",
+        with = "topic_stats_offset_table"
+    )]
+    offset_table: Option<SharedTopicStatsOffsetTable>,
+}
+
+impl Default for TopicStatsTableFields {
+    fn default() -> Self {
+        Self {
+            topic_put_tps: 0.0,
+            offset_table: default_topic_stats_offset_table(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TopicStatsTable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: TopicStatsTableFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic_put_tps: fields.topic_put_tps,
+            offset_table: fields.offset_table,
+        })
+    }
+}
+
+fn deserialize_fastjson_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let raw = raw.get().trim();
+    match raw {
+        "null" | "false" => Ok(0.0),
+        "true" => Ok(1.0),
+        _ if raw.starts_with('"') => {
+            let value = serde_json::from_str::<String>(raw).map_err(de::Error::custom)?;
+            value.parse::<f64>().map_err(de::Error::custom)
+        }
+        _ => raw.parse::<f64>().map_err(de::Error::custom),
+    }
+}
+
+impl Default for TopicStatsTable {
+    fn default() -> Self {
+        Self {
+            topic_put_tps: 0.0,
+            offset_table: default_topic_stats_offset_table(),
+        }
+    }
+}
+
+impl TopicStatsTable {
+    pub fn get_offset_table(&self) -> Option<SharedTopicStatsOffsetTable> {
+        self.offset_table.clone()
+    }
+
+    pub fn set_offset_table(&mut self, value: Option<SharedTopicStatsOffsetTable>) {
+        self.offset_table = value;
+    }
+
+    pub fn get_topic_put_tps(&self) -> f64 {
+        self.topic_put_tps
+    }
+
+    pub fn set_topic_put_tps(&mut self, value: f64) {
+        self.topic_put_tps = value;
+    }
+
+    /// Encodes using Fastjson's MessageQueue object-key representation.
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let mut fields = Vec::with_capacity(2);
+        if let Some(offset_table) = &self.offset_table {
+            fields.push(format!(
+                "\"offsetTable\":{}",
+                offset_table.with(topic_stats_offset_table::encode_java_json)?
+            ));
+        }
+        fields.push(format!(
+            "\"topicPutTps\":{}",
+            serde_json::to_string(&self.topic_put_tps)?
+        ));
+        Ok(format!("{{{}}}", fields.join(",")).into_bytes())
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized =
+            normalize_java_object_map_keys(&serde_fastjson::normalize_json_input(input))?;
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -4791,6 +4997,125 @@ mod optional_message_queue_offset_table {
     }
 }
 
+mod topic_stats_offset_table {
+    use super::{
+        MessageQueue, SharedTopicStatsOffsetTable, TopicOffset, TopicStatsOffsetTable,
+        encode_java_message_queue_key,
+    };
+    use crate::{SharedValue, serde_fastjson};
+    use serde::de::{MapAccess, Visitor};
+    use serde::ser::SerializeMap;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S>(
+        entries: &Option<SharedTopicStatsOffsetTable>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(entries) = entries else {
+            return serializer.serialize_none();
+        };
+        let mut encoded = entries
+            .with(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|(queue, offset)| {
+                        offset.as_ref().map(|offset| {
+                            Ok((encode_java_message_queue_key(queue)?, Some(offset.clone())))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, serde_json::Error>>()
+            })
+            .map_err(serde::ser::Error::custom)?;
+        encoded.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut map = serializer.serialize_map(Some(encoded.len()))?;
+        for (key, offset) in encoded {
+            map.serialize_entry(&key, &offset)?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<SharedTopicStatsOffsetTable>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let Some(encoded) = Option::<RawTopicStatsOffsetTable>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        let mut table = TopicStatsOffsetTable::new();
+        for (key, raw_offset) in encoded.0 {
+            let queue: MessageQueue =
+                serde_fastjson::from_fastjson_str(&key).map_err(serde::de::Error::custom)?;
+            let offset =
+                serde_fastjson::from_fastjson_str_nullable::<TopicOffset>(Some(raw_offset.get()))
+                    .map_err(serde::de::Error::custom)?
+                    .map(SharedValue::new);
+            table.insert(queue, offset);
+        }
+        Ok(Some(SharedValue::new(table)))
+    }
+
+    pub(super) fn encode_java_json(
+        entries: &TopicStatsOffsetTable,
+    ) -> Result<String, serde_json::Error> {
+        let mut rows = Vec::new();
+        for (queue, offset) in entries {
+            let Some(offset) = offset else {
+                continue;
+            };
+            rows.push((
+                encode_java_message_queue_key(queue)?,
+                serde_json::to_value(offset)?.to_string(),
+            ));
+        }
+        rows.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(format!(
+            "{{{}}}",
+            rows.into_iter()
+                .map(|(key, value)| format!("{key}:{value}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))
+    }
+
+    struct RawTopicStatsOffsetTable(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+    impl<'de> Deserialize<'de> for RawTopicStatsOffsetTable {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TableVisitor;
+
+            impl<'de> Visitor<'de> for TableVisitor {
+                type Value = RawTopicStatsOffsetTable;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a MessageQueue-keyed TopicOffset object")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut entries = Vec::new();
+                    while let Some((key, value)) = map.next_entry()? {
+                        entries.push((key, value));
+                    }
+                    Ok(RawTopicStatsOffsetTable(entries))
+                }
+            }
+
+            deserializer.deserialize_map(TableVisitor)
+        }
+    }
+}
+
 /// Java `ConsumeMessageDirectlyResult` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5091,7 +5416,11 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
     };
 }
 
-impl_java_remoting_serializable_body_adapters!(GetConsumerStatusBody, ResetOffsetBody);
+impl_java_remoting_serializable_body_adapters!(
+    TopicStatsTable,
+    GetConsumerStatusBody,
+    ResetOffsetBody,
+);
 
 fn java_fastjson_remoting_body_json<T: Serialize>(
     value: &T,
@@ -5560,6 +5889,152 @@ mod tests {
                 fixture["explicitNullJson"].as_str().unwrap()
             )
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn topic_stats_table_matches_java_defaults_nulls_keys_and_aliases() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/admin/topic-stats-table.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["artifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["topicStatsTablePublicMethods"],
+            json!([
+                "double getTopicPutTps()",
+                "java.util.Map getOffsetTable()",
+                "void setOffsetTable(java.util.Map)",
+                "void setTopicPutTps(double)"
+            ])
+        );
+        assert_eq!(fixture["topicStatsTablePublicFields"], json!([]));
+        assert_eq!(
+            fixture["topicOffsetPublicMethods"],
+            json!([
+                "java.lang.String toString()",
+                "long getLastUpdateTimestamp()",
+                "long getMaxOffset()",
+                "long getMinOffset()",
+                "void setLastUpdateTimestamp(long)",
+                "void setMaxOffset(long)",
+                "void setMinOffset(long)"
+            ])
+        );
+        assert_eq!(fixture["topicOffsetPublicFields"], json!([]));
+
+        let default = TopicStatsTable::default();
+        let default_table = default.get_offset_table().unwrap();
+        assert!(default_table.with(|table| table.is_empty()));
+        assert_eq!(default.get_topic_put_tps(), 0.0);
+        assert_eq!(fixture["defaultOffsetTableNonNull"], true);
+        assert_eq!(fixture["defaultOffsetTableEmpty"], true);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&default.java_to_json(false).unwrap())
+                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(fixture["defaultJson"].as_str().unwrap())
+                .unwrap()
+        );
+
+        let default_offset = TopicOffset::default();
+        assert_eq!(
+            [
+                default_offset.get_min_offset(),
+                default_offset.get_max_offset(),
+                default_offset.get_last_update_timestamp(),
+            ],
+            [0, 0, 0]
+        );
+        assert_eq!(
+            default_offset.to_string(),
+            fixture["defaultOffsetToString"].as_str().unwrap()
+        );
+        assert_eq!(fixture["defaultOffsetValues"], json!([0, 0, 0]));
+
+        let populated_json = fixture["populatedJson"].as_str().unwrap();
+        let decoded = TopicStatsTable::java_from_json(populated_json).unwrap();
+        assert_eq!(decoded.get_topic_put_tps(), 1.25);
+        let table = decoded.get_offset_table().unwrap();
+        assert_eq!(table.with(|table| table.len()), 1);
+        let first_queue = MessageQueue::new("orders", "broker-a", 1);
+        let first_offset = table.with(|table| table[&first_queue].as_ref().unwrap().clone());
+        assert_eq!(first_offset.with(|offset| offset.get_min_offset()), 10);
+        assert_eq!(first_offset.with(|offset| offset.get_max_offset()), 16);
+        assert_eq!(
+            first_offset.with(|offset| offset.get_last_update_timestamp()),
+            100
+        );
+        let encoded = decoded.java_to_json(false).unwrap();
+        assert_eq!(encoded, populated_json);
+        assert_eq!(decoded.java_encode().unwrap(), populated_json.as_bytes());
+        let with_null_values =
+            TopicStatsTable::java_from_json(fixture["writeNullMapValuesJson"].as_str().unwrap())
+                .unwrap();
+        let table_with_nulls = with_null_values.get_offset_table().unwrap();
+        assert_eq!(table_with_nulls.with(|table| table.len()), 3);
+        assert!(
+            table_with_nulls
+                .with(|table| { table[&MessageQueue::new("orders", "broker-b", 2)].is_none() })
+        );
+        assert!(
+            table_with_nulls
+                .with(|table| { table[&MessageQueue::new("orders", "broker-c", 3)].is_none() })
+        );
+
+        let assigned_offset = SharedValue::new(TopicOffset::default());
+        let assigned_table = SharedValue::new(std::collections::HashMap::from([(
+            MessageQueue::new("orders", "broker-a", 1),
+            Some(assigned_offset.clone()),
+        )]));
+        let mut assigned = TopicStatsTable::default();
+        assigned.set_offset_table(Some(assigned_table.clone()));
+        assert!(assigned.get_offset_table().unwrap().ptr_eq(&assigned_table));
+        let returned_offset = assigned.get_offset_table().unwrap().with(|table| {
+            table[&MessageQueue::new("orders", "broker-a", 1)]
+                .clone()
+                .unwrap()
+        });
+        assert!(returned_offset.ptr_eq(&assigned_offset));
+        returned_offset.with_mut(|offset| offset.set_max_offset(29));
+        assert_eq!(assigned_offset.with(|offset| offset.get_max_offset()), 29);
+        assert_eq!(fixture["setterRetainsMapIdentity"], true);
+        assert_eq!(fixture["getterReturnsStoredMapIdentity"], true);
+        assert_eq!(fixture["getterReturnsStoredOffsetIdentity"], true);
+        assert_eq!(fixture["getterMutationVisibleToAssignedOffset"], true);
+        assert_eq!(fixture["getterMutationVisibleToAssignedMap"], true);
+
+        let missing: TopicStatsTable = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.get_topic_put_tps(), 0.0);
+        assert!(
+            missing
+                .get_offset_table()
+                .unwrap()
+                .with(|table| table.is_empty())
+        );
+        let explicit_null: TopicStatsTable =
+            serde_json::from_str(r#"{"topicPutTps":1.25,"offsetTable":null}"#).unwrap();
+        assert!(explicit_null.get_offset_table().is_none());
+        assert_eq!(fixture["setterPreservesNull"], true);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&explicit_null.java_to_json(false).unwrap())
+                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                fixture["explicitNullJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+        assert!(
+            TopicStatsTable::java_decode_nullable(None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            TopicStatsTable::java_from_json_nullable(Some("null"))
+                .unwrap()
+                .is_none()
         );
     }
 
@@ -6905,6 +7380,8 @@ mod tests {
             "GetConsumerStatusBody",
             "ResetOffsetBody",
             "ConsumeMessageDirectlyResult",
+            "TopicOffset",
+            "TopicStatsTable",
         ] {
             let identity = &fixture["identityCases"][dto];
             assert_eq!(identity["equalsDeclaredBy"], "java.lang.Object", "{dto}");

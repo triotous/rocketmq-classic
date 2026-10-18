@@ -1129,9 +1129,10 @@ mod tests {
     #[test]
     fn query_admin_header_reflection_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::{
-            CommandHeader, HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
-            QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-            QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
+            CommandHeader, GetTopicStatsInfoRequestHeader, HeaderMap, QueryMessageRequestHeader,
+            QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+            QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
+            ViewMessageRequestHeader,
         };
 
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1280,6 +1281,30 @@ mod tests {
                             .decode_command_custom_header_directly::<
                                 QueryTopicConsumeByWhoRequestHeader,
                             >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                                "lo": header.logical,
+                            }),
+                            encoded,
+                        )
+                    }
+                    "topic-stats-info" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<GetTopicStatsInfoRequestHeader>(
+                                use_fast_encode,
+                            )
                             .unwrap_or_else(|error| {
                                 panic!(
                                     "{case_name}/{mode}: Java returned OK, Rust returned {error}"

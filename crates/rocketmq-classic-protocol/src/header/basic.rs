@@ -49,6 +49,7 @@ impl_rpc_request_header_semantics!(
     QueryTopicsByConsumerRequestHeader,
     QuerySubscriptionByConsumerRequestHeader,
     QueryTopicConsumeByWhoRequestHeader,
+    GetTopicStatsInfoRequestHeader,
     GetConsumerListByGroupRequestHeader,
     LockBatchMqRequestHeader,
     UnlockBatchMqRequestHeader,
@@ -269,6 +270,40 @@ impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
             oneway: optional_java_boolean(fields, "oway"),
             topic: optional_string(fields, "topic"),
             group: optional_string(fields, "group"),
+        })
+    }
+}
+
+/// Java `GetTopicStatsInfoRequestHeader`; its annotated topic is nullable at
+/// decode time because `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct GetTopicStatsInfoRequestHeader {
+    pub topic: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for GetTopicStatsInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
         })
     }
 }
@@ -2961,7 +2996,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 35);
+        assert_eq!(cases.len(), 36);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -3103,6 +3138,12 @@ mod tests {
             broker_name,
             |_| {},
             |h: &mut QueryTopicConsumeByWhoRequestHeader| h.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            GetTopicStatsInfoRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetTopicStatsInfoRequestHeader| h.topic = Some("payload".into())
         );
         check_rpc_request_header!(
             GetConsumerListByGroupRequestHeader,

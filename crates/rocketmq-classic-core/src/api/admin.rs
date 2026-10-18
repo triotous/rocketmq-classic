@@ -3,13 +3,13 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{GroupList, QuerySubscriptionResponseBody, TopicList},
+    body::{GroupList, QuerySubscriptionResponseBody, TopicList, TopicStatsTable},
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-        QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-        ViewMessageRequestHeader,
+        CommandHeader, CreateTopicRequestHeader, GetTopicStatsInfoRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -205,6 +205,25 @@ impl std::fmt::Display for QueryResult {
 }
 
 impl MQClientApi {
+    /// Gets one Broker's topic statistics and offset table.
+    pub async fn get_topic_stats_info(
+        &self,
+        addr: &str,
+        header: &GetTopicStatsInfoRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<TopicStatsTable>, RpcError> {
+        let code = request::GET_TOPIC_STATS_INFO;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        TopicStatsTable::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
     /// Queries one Broker for the consumer groups subscribed to a topic.
     pub async fn query_topic_consume_by_who(
         &self,
