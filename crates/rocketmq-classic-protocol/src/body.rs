@@ -2041,7 +2041,12 @@ impl TopicList {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::QuerySubscriptionResponseBody;
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
-/// fn main() { requires_java_identity::<QuerySubscriptionResponseBody>(); }
+/// requires_java_identity::<QuerySubscriptionResponseBody>();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QuerySubscriptionResponseBody;
+/// let _ = QuerySubscriptionResponseBody::default().group;
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -6905,6 +6910,22 @@ mod tests {
             fixture["artifact"],
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
+        assert_eq!(
+            fixture["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.QuerySubscriptionResponseBody()"])
+        );
+        assert_eq!(fixture["publicFields"], json!([]));
+        assert_eq!(
+            fixture["publicMethods"],
+            json!([
+                "java.lang.String getGroup()",
+                "java.lang.String getTopic()",
+                "org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData getSubscriptionData()",
+                "void setGroup(java.lang.String)",
+                "void setSubscriptionData(org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData)",
+                "void setTopic(java.lang.String)"
+            ])
+        );
 
         let default = QuerySubscriptionResponseBody::default();
         assert!(default.get_subscription_data().is_none());
@@ -6945,6 +6966,25 @@ mod tests {
             "mutating through the getter must update the assigned object"
         );
         assert_eq!(fixture["getterMutationVisibleToAssignedObject"], true);
+
+        value.set_group(Some("workers".to_owned()));
+        value.set_topic(Some("orders".to_owned()));
+        assert_eq!(value.get_group(), Some("workers"));
+        assert_eq!(value.get_topic(), Some("orders"));
+
+        value.set_subscription_data(None);
+        value.set_group(None);
+        value.set_topic(None);
+        assert!(value.get_subscription_data().is_none());
+        assert!(value.get_group().is_none());
+        assert!(value.get_topic().is_none());
+        assert_eq!(
+            serde_json::to_value(&value).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                fixture["explicitNullJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
 
         let explicit_null: QuerySubscriptionResponseBody =
             serde_json::from_str(r#"{"subscriptionData":null,"group":null,"topic":null}"#).unwrap();
