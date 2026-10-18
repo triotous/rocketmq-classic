@@ -66,3 +66,25 @@
   and broad P18-V01 remain open; full-workspace P18-V02, Ubuntu/native Windows
   P18-V04, final P18-V03 package/provenance review and local Phase 19 matrix
   remain pending. Existing Phase 19 worktree changes remain unstaged.
+
+## P18-V01 `updateOrCreateTopic` admin RPC — 2026-10-18T02:58:08Z
+
+- Extended the invoked `MqClientAdminImpl` fixture with Java
+  `updateOrCreateTopic(address, CreateTopicRequestHeader, timeoutMillis)`.
+  The evidence covers request code 17, all header fields, a null request body,
+  direct broker address, success completion and Broker exception mapping.
+  Reused the fixture harness and file from the query-time-span slice.
+- Code/test commit: `24eae6bf` (`test(admin): cover topic update admin RPC`).
+  Existing `MQClientApi::create_topic` matched the fixture; no production RPC
+  change was needed. The first compile missed `CreateTopicRequestHeader.logical`
+  in the error-case literal; adding its Java-default `None` fixed the test.
+- Passed Core `admin_rpc` (30 tests), strict all-target/all-feature Core
+  Clippy, format/diff checks, and Maven `verify` (37 scenarios, fixture checks,
+  60 typed-header and 14 typed-body cross-decodes). The current shared admin
+  fixture SHA-256 is
+  `16939c20d844e02921a2634dc32af32521b8a36b5d0de27b256ae88c777056aa`.
+- Updated the Phase 17 admin matrix to 6/19 source-backed methods and appended
+  release evidence. Thirteen `MqClientAdmin` methods and broad P18-V01 remain
+  open; P18-V02 full workspace, P18-V03 package review, P18-V04 current
+  platform CI, and Phase 19 local Docker automation remain pending. The Phase
+  18 plan remains unchanged.

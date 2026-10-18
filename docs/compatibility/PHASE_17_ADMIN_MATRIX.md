@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Five methods now have source-backed
-typed RPC slices; the other 14 still need reconciliation. Their public status
+method-by-method mapping has been verified. Six methods now have source-backed
+typed RPC slices; the other 13 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -109,9 +109,21 @@ the method signature, direct address, timeout, inherited request fields,
 response body/list values, and Broker exception. Rust tests cover those fields,
 the returned values, exact Broker error forwarding, direct addressing with VIP
 enabled, and Push Consumer VIP routing. Fixture SHA-256:
-`5689eea4d53809d6ce2caa6bebc14ba4ebeb8b49b8fffe3000432bbe73dfaa4e`.
+`16939c20d844e02921a2634dc32af32521b8a36b5d0de27b256ae88c777056aa`.
 
-The other 14 interface methods remain to reconcile.
+Sixth reconciled method slice (test/fixture commit `24eae6bf`): Java
+`updateOrCreateTopic(address, requestHeader, timeoutMillis)` sends request code
+17 with `CreateTopicRequestHeader` and completes with `null` only on `SUCCESS`.
+Rust reuses `MQClientApi::create_topic`, which sends the same header directly
+and maps Broker response code/remark into `RpcError`. The invoked Java fixture
+records the exact method signature, request fields, null body, success result,
+and `MQClientException` error code/remark. Rust tests compare success fields
+and error mapping with that fixture while retaining the separate permission-
+error regression. Both methods are recorded in
+`fixtures/admin/query-consume-time-span.json`; SHA-256:
+`16939c20d844e02921a2634dc32af32521b8a36b5d0de27b256ae88c777056aa`.
+
+The other 13 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;

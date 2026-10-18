@@ -4012,3 +4012,27 @@ owner-specific checks belong in the manual handoff.
   scenarios/profiles and full runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation remains the
   separate manual handoff.
+
+## P18-V01 `updateOrCreateTopic` admin RPC — 2026-10-18 (`24eae6bf`)
+
+- [x] Extended the invoked Java `MqClientAdminImpl` fixture with
+  `updateOrCreateTopic`, request code 17, full `CreateTopicRequestHeader`
+  fields, direct address, null request body, successful completion and
+  `MQClientException` code/remark. The fixture is
+  `fixtures/admin/query-consume-time-span.json` (shared with the preceding
+  method slice), SHA-256
+  `16939c20d844e02921a2634dc32af32521b8a36b5d0de27b256ae88c777056aa`.
+- [x] Rust's existing `MQClientApi::create_topic` matches the Java request
+  and response paths. Core admin RPC tests now compare the successful header
+  and Broker error to the Java fixture; the existing permission-error test
+  remains. Core `admin_rpc` passed all 30 tests; strict all-target/all-feature
+  Core Clippy, formatting, and diff checks passed.
+- [x] Pinned Maven `verify` passed after fixture regeneration: 37 scenarios,
+  fixture drift checks, 60 typed-header cross-decodes and 14 typed-body
+  cross-decodes. Test/fixture commit: `24eae6bf`.
+- The source-backed `MqClientAdmin` method count is now 6/19; 13 methods and
+  the broad P18-V01 public API/settings/input/error/flow/reverse-export audit
+  remain open. Full-workspace P18-V02, current-revision Ubuntu/native Windows
+  P18-V04, final P18-V03 package/provenance review, Phase 19 local Docker
+  scenarios/profiles and full runner reconciliation, and pre-publication
+  version/registry checks remain open. Owner-only validation stays separate.
