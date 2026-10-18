@@ -111,11 +111,11 @@ fn java_request_and_response_header_fixtures_decode() {
     ))
     .unwrap();
     assert_eq!(
-        query_message_response.index_last_update_timestamp,
+        query_message_response.get_index_last_update_timestamp(),
         Some(1_712_345_679_000)
     );
     assert_eq!(
-        query_message_response.index_last_update_phyoffset,
+        query_message_response.get_index_last_update_phyoffset(),
         Some(9876)
     );
 
@@ -1403,8 +1403,14 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
     assert_eq!(query_message.begin_timestamp, None);
     assert_eq!(query_message.end_timestamp, None);
     let query_message_response = QueryMessageResponseHeader::decode_fields(&empty).unwrap();
-    assert_eq!(query_message_response.index_last_update_timestamp, None);
-    assert_eq!(query_message_response.index_last_update_phyoffset, None);
+    assert_eq!(
+        query_message_response.get_index_last_update_timestamp(),
+        None
+    );
+    assert_eq!(
+        query_message_response.get_index_last_update_phyoffset(),
+        None
+    );
     let view_message = ViewMessageRequestHeader::decode_fields(&empty).unwrap();
     assert_eq!(view_message.topic, None);
     assert_eq!(view_message.offset, None);

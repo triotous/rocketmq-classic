@@ -331,11 +331,10 @@ async fn broker_peer_with_responses(
                             (query_response_code, None, None)
                         } else {
                             let mut fields = HeaderMap::new();
-                            QueryMessageResponseHeader {
-                                index_last_update_timestamp: Some(200),
-                                index_last_update_phyoffset: Some(100),
-                            }
-                            .encode_fields(&mut fields);
+                            let mut header = QueryMessageResponseHeader::default();
+                            header.set_index_last_update_timestamp(Some(200));
+                            header.set_index_last_update_phyoffset(Some(100));
+                            header.encode_fields(&mut fields);
                             write_response(
                                 &mut stream,
                                 &command,

@@ -129,6 +129,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(DeleteSubscriptionGroupRequestHeader.class));
         apiInventories.put("DeleteKVConfigRequestHeader",
             apiInventory(DeleteKVConfigRequestHeader.class));
+        apiInventories.put("QueryMessageResponseHeader",
+            apiInventory(QueryMessageResponseHeader.class));
         fixture.put("apiInventories", apiInventories);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";

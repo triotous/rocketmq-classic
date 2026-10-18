@@ -1184,6 +1184,7 @@ mod tests {
             "DeleteTopicFromNamesrvRequestHeader",
             "DeleteSubscriptionGroupRequestHeader",
             "DeleteKVConfigRequestHeader",
+            "QueryMessageResponseHeader",
         ] {
             assert_eq!(
                 fixture["apiInventories"][header_name]["publicFields"],
@@ -1298,8 +1299,10 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "indexLastUpdateTimestamp": header.index_last_update_timestamp,
-                                "indexLastUpdatePhyoffset": header.index_last_update_phyoffset,
+                                "indexLastUpdateTimestamp":
+                                    header.get_index_last_update_timestamp(),
+                                "indexLastUpdatePhyoffset":
+                                    header.get_index_last_update_phyoffset(),
                             }),
                             encoded,
                         )

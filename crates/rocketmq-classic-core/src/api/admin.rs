@@ -585,14 +585,13 @@ impl MQClientApi {
         for message in &mut message_list {
             client_decode_message(message);
         }
-        let index_last_update_timestamp =
-            response_header.index_last_update_timestamp.ok_or_else(|| {
-                RpcError::MalformedResponse {
-                    request_code: code,
-                    peer: addr.to_owned(),
-                    reason: "missing or invalid response header field `indexLastUpdateTimestamp`"
-                        .into(),
-                }
+        let index_last_update_timestamp = response_header
+            .get_index_last_update_timestamp()
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: "missing or invalid response header field `indexLastUpdateTimestamp`"
+                    .into(),
             })?;
         Ok(QueryResult::new(
             index_last_update_timestamp,

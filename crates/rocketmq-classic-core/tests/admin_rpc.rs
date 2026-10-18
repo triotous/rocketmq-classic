@@ -127,6 +127,16 @@ async fn api() -> (MQClientApi, RemotingClient) {
     (MQClientApi::new(client.clone()), client)
 }
 
+fn java_query_message_response_header(
+    timestamp: i64,
+    phyoffset: i64,
+) -> QueryMessageResponseHeader {
+    let mut header = QueryMessageResponseHeader::default();
+    header.set_index_last_update_timestamp(Some(timestamp));
+    header.set_index_last_update_phyoffset(Some(phyoffset));
+    header
+}
+
 fn java_reset_offset_header() -> ResetOffsetRequestHeader {
     ResetOffsetRequestHeader {
         group: "workers".into(),
@@ -1214,11 +1224,8 @@ async fn offset_admin_rpcs_preserve_broker_errors_and_reject_missing_response_fi
 #[tokio::test]
 async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     let mut fields = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(1_700_000_200_041),
-        index_last_update_phyoffset: Some(1_700_000_000_041),
-    }
-    .encode_fields(&mut fields);
+    java_query_message_response_header(1_700_000_200_041, 1_700_000_000_041)
+        .encode_fields(&mut fields);
     let message_record = java_message_record("ipv4-v1");
     let (addr, peer) = scripted_peer(
         response::SUCCESS,
@@ -2247,11 +2254,7 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
     assert_ne!(offset_message_id, unique_key);
 
     let mut first_header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(1),
-    }
-    .encode_fields(&mut first_header);
+    java_query_message_response_header(100, 1).encode_fields(&mut first_header);
     let (first_address, first_peer) = scripted_peer(
         response::SUCCESS,
         Some(first_header),
@@ -2260,11 +2263,7 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
     .await;
 
     let mut second_header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(200),
-        index_last_update_phyoffset: Some(2),
-    }
-    .encode_fields(&mut second_header);
+    java_query_message_response_header(200, 2).encode_fields(&mut second_header);
     let (second_address, second_peer) = scripted_peer(
         response::SUCCESS,
         Some(second_header),
@@ -2331,11 +2330,7 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
     second_record[body_offset..body_offset + body_marker.len()].copy_from_slice(b"hello-v2");
 
     let mut first_header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(200),
-        index_last_update_phyoffset: Some(20),
-    }
-    .encode_fields(&mut first_header);
+    java_query_message_response_header(200, 20).encode_fields(&mut first_header);
     let (first_address, first_peer) = scripted_peer_after(
         response::SUCCESS,
         Some(first_header),
@@ -2345,11 +2340,7 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
     .await;
 
     let mut second_header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(10),
-    }
-    .encode_fields(&mut second_header);
+    java_query_message_response_header(100, 10).encode_fields(&mut second_header);
     let (second_address, second_peer) =
         scripted_peer(response::SUCCESS, Some(second_header), Some(second_record)).await;
 
@@ -2444,11 +2435,7 @@ async fn query_fanout_maps_only_terminal_broker_failures_to_java_no_message() {
 async fn query_fanout_returns_java_no_message_error_after_filtering() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(1),
-    }
-    .encode_fields(&mut header);
+    java_query_message_response_header(100, 1).encode_fields(&mut header);
     let (address, peer) =
         scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
     let route = TopicRouteData::java_decode(
@@ -2486,11 +2473,7 @@ async fn query_fanout_returns_java_no_message_error_after_filtering() {
 async fn query_fanout_matches_java_null_index_type_filter() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(1),
-    }
-    .encode_fields(&mut header);
+    java_query_message_response_header(100, 1).encode_fields(&mut header);
     let (address, peer) =
         scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
     let route = TopicRouteData::java_decode(
@@ -2560,11 +2543,7 @@ async fn query_fanout_returns_java_no_message_error_for_empty_routes() {
 async fn query_fanout_applies_java_cluster_filter_and_last_key() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(1),
-    }
-    .encode_fields(&mut header);
+    java_query_message_response_header(100, 1).encode_fields(&mut header);
     let (selected_address, selected_peer) =
         scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
     let (filtered_address, mut filtered_peer) = scripted_peer(response::SUCCESS, None, None).await;
@@ -2610,11 +2589,7 @@ async fn query_fanout_applies_java_cluster_filter_and_last_key() {
 async fn query_fanout_uses_cluster_for_logical_topic_route_and_request() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
-    QueryMessageResponseHeader {
-        index_last_update_timestamp: Some(100),
-        index_last_update_phyoffset: Some(1),
-    }
-    .encode_fields(&mut header);
+    java_query_message_response_header(100, 1).encode_fields(&mut header);
     let (address, peer) =
         scripted_peer(response::SUCCESS, Some(header), Some(message_record)).await;
     let route = TopicRouteData::java_decode(

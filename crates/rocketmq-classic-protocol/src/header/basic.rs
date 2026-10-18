@@ -2416,10 +2416,33 @@ impl CommandHeader for QueryMessageRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<QueryMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryMessageResponseHeader;
+/// let _ = QueryMessageResponseHeader::default().index_last_update_timestamp;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryMessageResponseHeader {
-    pub index_last_update_timestamp: Option<i64>,
-    pub index_last_update_phyoffset: Option<i64>,
+    pub(crate) index_last_update_timestamp: Option<i64>,
+    pub(crate) index_last_update_phyoffset: Option<i64>,
+}
+
+impl QueryMessageResponseHeader {
+    pub fn get_index_last_update_timestamp(&self) -> Option<i64> {
+        self.index_last_update_timestamp
+    }
+
+    pub fn set_index_last_update_timestamp(&mut self, value: Option<i64>) {
+        self.index_last_update_timestamp = value;
+    }
+
+    pub fn get_index_last_update_phyoffset(&self) -> Option<i64> {
+        self.index_last_update_phyoffset
+    }
+
+    pub fn set_index_last_update_phyoffset(&mut self, value: Option<i64>) {
+        self.index_last_update_phyoffset = value;
+    }
 }
 
 impl CommandHeader for QueryMessageResponseHeader {
