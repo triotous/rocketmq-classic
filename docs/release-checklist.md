@@ -4036,3 +4036,30 @@ owner-specific checks belong in the manual handoff.
   P18-V04, final P18-V03 package/provenance review, Phase 19 local Docker
   scenarios/profiles and full runner reconciliation, and pre-publication
   version/registry checks remain open. Owner-only validation stays separate.
+
+## P18-V01 `deleteTopicInBroker` admin RPC — 2026-10-18 (`74c52143`)
+
+- [x] Added `DeleteTopicRequestHeader` with Java's nullable topic and inherited
+  `RpcRequestHeader`/`TopicRequestHeader` fields. Java's `checkFields()` is a
+  no-op, and inherited equality/hash behavior only uses `ns`, `nsd`, `bname`,
+  and `oway`. Added `MQClientApi::delete_topic_in_broker` using request code
+  215, the direct address, and no request body.
+- [x] The invoked Java 5.5.1 fixture covers `deleteTopicInBroker` request
+  fields, timeout, success completion, and `MQClientException` response code
+  and remark. Rust scripted Core tests compare the request and Broker error to
+  the fixture. Java/Rust typed-header cross-decode and the request-header
+  identity inventory include the new header. Shared admin fixture SHA-256:
+  `2a113cbc01a9e5bdce353b6705c6ebd734a5dd33832b147135eebdf6030d177b`.
+- [x] Protocol all-feature tests passed (132 unit tests, all integration
+  targets, 49 doctests); Core `admin_rpc` passed all 32 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core.
+  Pinned Maven `verify` passed all 37 scenarios and fixture checks, including
+  61 typed-header and 14 typed-body cross-decodes. Formatting and diff checks
+  passed.
+- The source-backed `MqClientAdmin` method count is now 7/19; 12 methods and
+  broad P18-V01 reconciliation remain open. Refresh full-workspace P18-V02
+  after the remaining implementation work. Current-revision Ubuntu/native
+  Windows P18-V04 evidence, final P18-V03 package/provenance review, Phase 19
+  local Docker scenarios/profiles and runner reconciliation, and
+  pre-publication version/registry checks also remain open. Owner-only
+  validation stays in the separate manual handoff.

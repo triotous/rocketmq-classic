@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Six methods now have source-backed
-typed RPC slices; the other 13 still need reconciliation. Their public status
+method-by-method mapping has been verified. Seven methods now have source-backed
+typed RPC slices; the other 12 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -123,7 +123,22 @@ error regression. Both methods are recorded in
 `fixtures/admin/query-consume-time-span.json`; SHA-256:
 `16939c20d844e02921a2634dc32af32521b8a36b5d0de27b256ae88c777056aa`.
 
-The other 13 interface methods remain to reconcile.
+Seventh reconciled method slice (code/test commit `74c52143`): Java
+`deleteTopicInBroker(address, requestHeader, timeoutMillis)` sends request code
+215 with `DeleteTopicRequestHeader` and completes with `null` only on
+`SUCCESS`. Rust exposes the nullable Java header (including inherited `ns`,
+`nsd`, `bname`, `oway`, and `lo`) and
+`MQClientApi::delete_topic_in_broker`; it sends the request directly to the
+provided Broker address with no body. The invoked Java fixture records the
+method signature, timeout, request fields, success result, and
+`MQClientException` response code/remark. Rust scripted tests compare the
+request fields and Broker error mapping to that fixture. Typed-header
+cross-decode and inherited `RpcRequestHeader` equality inventory coverage are
+included. The shared invoked Java fixture is
+`fixtures/admin/query-consume-time-span.json`, SHA-256
+`2a113cbc01a9e5bdce353b6705c6ebd734a5dd33832b147135eebdf6030d177b`.
+
+The other 12 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;
