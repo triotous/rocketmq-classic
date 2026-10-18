@@ -4935,3 +4935,45 @@ owner-specific checks belong in the manual handoff.
   resolution, enabling publication, publishing or tagging remains
   post-Phase-19 work. Broad P18-V01 and current Ubuntu/native Windows P18-V04
   evidence remain open.
+
+## P18-V01 Java body DTO public-field inventory — 2026-10-18 (`2b15d393`)
+
+- [x] Reconciled ten body DTOs whose Rust fields were public while the Java
+  fields are private: `CheckClientRequestBody`, `QueryAssignmentRequestBody`,
+  `QueryAssignmentResponseBody`, `SetMessageRequestModeRequestBody`,
+  `LockBatchRequestBody`, `UnlockBatchRequestBody`,
+  `ConsumeMessageDirectlyResult`, `MessageRequestModeSerializeWrapper`,
+  `GetConsumerStatusBody`, and `ResetOffsetBody`. Rust callers now use the
+  Java-equivalent accessors. Compile-fail doctests guard representative
+  private fields; the invoked Java fixture records empty public-field lists.
+  Fixture SHA-256:
+  `dd9fb47b7ee42cf67e602e691baf52d0a1b4ba7dffdb0bef0fa158412a2aba16`.
+- [x] Code and fixture commit: `2b15d393`.
+- This closes the identified body DTO field-visibility slice. Broad P18-V01
+  source/API/settings/input/error/flow and reverse-export reconciliation
+  remains open.
+
+## P18-V02 current-worktree server-free gate — 2026-10-18 (`2b15d393`)
+
+- [x] Default and all-feature locked workspace tests, all-target/all-feature
+  workspace check, and strict workspace Clippy pass. Offline Maven `verify`
+  passes all 37 scenarios, fixture drift checks, and Java/Rust cross-decodes
+  (66 typed headers and 15 typed bodies). Differential comparator self-test
+  and 37-row scenario-manifest validation pass.
+- [x] Deterministic race/leak smoke passes 16 cases × 3. Fixed-seed fuzz
+  smoke passes 120 frame seeds, 11 message seeds, 2,096 mutations, 164 frame
+  decodes, and 120 message decodes. Release facade examples and the offline
+  benchmark compile; the benchmark runs on macOS ARM64 Apple M5 Max
+  (18 logical CPUs), Rust 1.85.0. Observations: frame encode/decode 2,058.9
+  ns; Zstd message decode 1,079.7 ns; Producer request construction 1,189.2
+  ns; 128-entry route lookup 15.6 ns; loopback pending completion 67,962.2
+  ns. These are observations, not thresholds.
+- [x] Locked Cargo metadata resolves 216 packages (208 registry packages).
+  Workspace metadata/license/dependency checks and seven package listings
+  pass with `LICENSE` and `NOTICE`; four Unique ID tests pass under both UTC
+  and Asia/Taipei. Formatting and diff checks pass.
+- P18-V02 server-free gates are complete on `2b15d393`. Broad P18-V01,
+  current-revision GitHub Ubuntu address-profile evidence, and native Windows
+  stack-runtime evidence remain open. Phase 19 still needs 30 of 37 local
+  Docker/Broker scenario runners and required profiles; this is Phase 19
+  automation work.
