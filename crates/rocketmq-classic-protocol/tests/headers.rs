@@ -606,6 +606,38 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
         "efa1be59d6fc747ad220f036c86030f05f0419f9"
     );
     assert_eq!(fixture["serverContacted"], false);
+    for (name, value) in [
+        (
+            "PROP_NAMESERVER_ADDR",
+            ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR,
+        ),
+        (
+            "PROP_THREADPOOL_CORE_SIZE",
+            ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE,
+        ),
+        (
+            "PROP_CONSUME_ORDERLY",
+            ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY,
+        ),
+        (
+            "PROP_CONSUME_TYPE",
+            ConsumerRunningInfoBody::PROP_CONSUME_TYPE,
+        ),
+        (
+            "PROP_CLIENT_VERSION",
+            ConsumerRunningInfoBody::PROP_CLIENT_VERSION,
+        ),
+        (
+            "PROP_CONSUMER_START_TIMESTAMP",
+            ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP,
+        ),
+    ] {
+        assert_eq!(
+            fixture["propertyKeys"][name].as_str(),
+            Some(value),
+            "{name}"
+        );
+    }
     let identity = &fixture["identitySemantics"];
     for class in [
         "ConsumerRunningInfo",
@@ -638,11 +670,28 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
     ])));
     let body = ConsumerRunningInfoBody {
         properties: std::collections::BTreeMap::from([
-            ("PROP_NAMESERVER_ADDR".into(), "127.0.0.1:9876;".into()),
-            ("PROP_CONSUME_TYPE".into(), "CONSUME_PASSIVELY".into()),
-            ("PROP_CLIENT_VERSION".into(), "V5_5_1".into()),
             (
-                "PROP_CONSUMER_START_TIMESTAMP".into(),
+                ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR.into(),
+                "127.0.0.1:9876;".into(),
+            ),
+            (
+                ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY.into(),
+                "true".into(),
+            ),
+            (
+                ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE.into(),
+                "7".into(),
+            ),
+            (
+                ConsumerRunningInfoBody::PROP_CONSUME_TYPE.into(),
+                "CONSUME_PASSIVELY".into(),
+            ),
+            (
+                ConsumerRunningInfoBody::PROP_CLIENT_VERSION.into(),
+                "V5_5_1".into(),
+            ),
+            (
+                ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP.into(),
                 "1700000000000".into(),
             ),
         ]),
@@ -702,6 +751,14 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
 
     let running_info =
         ConsumerRunningInfoBody::decode_java_json_body(fixture["body"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        running_info.properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
+        "true"
+    );
+    assert_eq!(
+        running_info.properties[ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE],
+        "7"
+    );
     assert_eq!(
         running_info
             .properties

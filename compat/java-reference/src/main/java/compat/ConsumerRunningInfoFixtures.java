@@ -59,6 +59,8 @@ public final class ConsumerRunningInfoFixtures {
         ConsumerRunningInfo info = new ConsumerRunningInfo();
         Properties properties = new Properties();
         properties.setProperty(ConsumerRunningInfo.PROP_NAMESERVER_ADDR, "127.0.0.1:9876;");
+        properties.setProperty(ConsumerRunningInfo.PROP_CONSUME_ORDERLY, "true");
+        properties.setProperty(ConsumerRunningInfo.PROP_THREADPOOL_CORE_SIZE, "7");
         properties.setProperty(ConsumerRunningInfo.PROP_CONSUME_TYPE, "CONSUME_PASSIVELY");
         properties.setProperty(ConsumerRunningInfo.PROP_CLIENT_VERSION, "V5_5_1");
         properties.setProperty(ConsumerRunningInfo.PROP_CONSUMER_START_TIMESTAMP, "1700000000000");
@@ -107,6 +109,14 @@ public final class ConsumerRunningInfoFixtures {
         fixture.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
         fixture.put("serverContacted", false);
+        Map<String, String> propertyKeys = new LinkedHashMap<>();
+        propertyKeys.put("PROP_NAMESERVER_ADDR", ConsumerRunningInfo.PROP_NAMESERVER_ADDR);
+        propertyKeys.put("PROP_THREADPOOL_CORE_SIZE", ConsumerRunningInfo.PROP_THREADPOOL_CORE_SIZE);
+        propertyKeys.put("PROP_CONSUME_ORDERLY", ConsumerRunningInfo.PROP_CONSUME_ORDERLY);
+        propertyKeys.put("PROP_CONSUME_TYPE", ConsumerRunningInfo.PROP_CONSUME_TYPE);
+        propertyKeys.put("PROP_CLIENT_VERSION", ConsumerRunningInfo.PROP_CLIENT_VERSION);
+        propertyKeys.put("PROP_CONSUMER_START_TIMESTAMP", ConsumerRunningInfo.PROP_CONSUMER_START_TIMESTAMP);
+        fixture.put("propertyKeys", propertyKeys);
         fixture.put("identitySemantics", identitySemantics());
         fixture.put("body", new String(info.encode(), StandardCharsets.UTF_8));
         return fixture;

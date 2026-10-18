@@ -17,7 +17,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{GetConsumerStatusBody, ResetOffsetBody},
+    body::{ConsumerRunningInfoBody, GetConsumerStatusBody, ResetOffsetBody},
     codes::{request, response},
     header::{
         CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
@@ -391,17 +391,26 @@ pub(crate) fn push_running_info_properties(
         nameserver_address,
         &mut properties,
     );
-    properties.insert("PROP_CONSUME_ORDERLY".into(), consume_orderly.to_string());
     properties.insert(
-        "PROP_THREADPOOL_CORE_SIZE".into(),
+        ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY.into(),
+        consume_orderly.to_string(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE.into(),
         core_pool_size.to_string(),
     );
     properties.insert(
-        "PROP_CONSUMER_START_TIMESTAMP".into(),
+        ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP.into(),
         start_timestamp.to_string(),
     );
-    properties.insert("PROP_CONSUME_TYPE".into(), "CONSUME_PASSIVELY".into());
-    properties.insert("PROP_CLIENT_VERSION".into(), "V5_5_1".into());
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CONSUME_TYPE.into(),
+        "CONSUME_PASSIVELY".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CLIENT_VERSION.into(),
+        "V5_5_1".into(),
+    );
     properties
 }
 
@@ -412,8 +421,14 @@ pub(crate) fn pull_running_info_properties(
 ) -> BTreeMap<String, String> {
     let mut properties = pull_consumer_running_info_properties(config, start_timestamp);
     append_client_runtime_properties(runtime, &mut properties);
-    properties.insert("PROP_CONSUME_TYPE".into(), "CONSUME_ACTIVELY".into());
-    properties.insert("PROP_CLIENT_VERSION".into(), "V5_5_1".into());
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CONSUME_TYPE.into(),
+        "CONSUME_ACTIVELY".into(),
+    );
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_CLIENT_VERSION.into(),
+        "V5_5_1".into(),
+    );
     properties
 }
 
@@ -455,7 +470,7 @@ pub(crate) fn pull_consumer_running_info_properties(
         config.client_config(),
     ));
     properties.insert(
-        "PROP_CONSUMER_START_TIMESTAMP".into(),
+        ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP.into(),
         start_timestamp.to_string(),
     );
     properties
@@ -467,7 +482,10 @@ fn append_client_running_info_properties(
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.extend(client_config_running_info_properties(config));
-    properties.insert("PROP_NAMESERVER_ADDR".into(), nameserver_address.to_owned());
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR.into(),
+        nameserver_address.to_owned(),
+    );
 }
 
 fn client_config_running_info_properties(config: &ClientConfig) -> BTreeMap<String, String> {
@@ -487,7 +505,10 @@ fn append_client_runtime_properties(
         nameserver_address.push_str(address);
         nameserver_address.push(';');
     }
-    properties.insert("PROP_NAMESERVER_ADDR".into(), nameserver_address);
+    properties.insert(
+        ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR.into(),
+        nameserver_address,
+    );
 }
 
 impl RequestProcessor for DirectConsumeProcessor {

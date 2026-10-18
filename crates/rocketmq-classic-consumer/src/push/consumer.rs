@@ -10352,6 +10352,15 @@ mod tests {
                 .as_str()
                 .unwrap()
         );
+        assert_eq!(
+            raw_running_info.properties[ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY],
+            "false"
+        );
+        assert!(
+            !raw_running_info
+                .properties
+                .contains_key("PROP_CONSUME_ORDERLY")
+        );
 
         let processor = crate::admin::ConsumerRunningInfoProcessor::for_push(
             Arc::downgrade(&consumer),

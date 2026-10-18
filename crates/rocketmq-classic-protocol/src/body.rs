@@ -4794,6 +4794,20 @@ pub struct ConsumerRunningInfoBody {
 }
 
 impl ConsumerRunningInfoBody {
+    /// Java `ConsumerRunningInfo.PROP_NAMESERVER_ADDR` constant.
+    pub const PROP_NAMESERVER_ADDR: &str = "PROP_NAMESERVER_ADDR";
+    /// Java `ConsumerRunningInfo.PROP_THREADPOOL_CORE_SIZE` constant.
+    pub const PROP_THREADPOOL_CORE_SIZE: &str = "PROP_THREADPOOL_CORE_SIZE";
+    /// Java `ConsumerRunningInfo.PROP_CONSUME_ORDERLY` constant. Its value
+    /// intentionally omits the underscore before `ORDERLY`.
+    pub const PROP_CONSUME_ORDERLY: &str = "PROP_CONSUMEORDERLY";
+    /// Java `ConsumerRunningInfo.PROP_CONSUME_TYPE` constant.
+    pub const PROP_CONSUME_TYPE: &str = "PROP_CONSUME_TYPE";
+    /// Java `ConsumerRunningInfo.PROP_CLIENT_VERSION` constant.
+    pub const PROP_CLIENT_VERSION: &str = "PROP_CLIENT_VERSION";
+    /// Java `ConsumerRunningInfo.PROP_CONSUMER_START_TIMESTAMP` constant.
+    pub const PROP_CONSUMER_START_TIMESTAMP: &str = "PROP_CONSUMER_START_TIMESTAMP";
+
     pub fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
         let mut subscription_set = self.subscription_set.clone();
         subscription_set.sort_by(|left, right| left.java_compare_to(right).cmp(&0));
