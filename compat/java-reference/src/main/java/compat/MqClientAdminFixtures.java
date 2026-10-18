@@ -53,6 +53,7 @@ import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
@@ -191,6 +192,7 @@ public final class MqClientAdminFixtures {
         fixture.put("success", success);
         fixture.put("brokerError", error);
         fixture.put("queryMessage", queryMessage());
+        fixture.put("viewMessage", viewMessage());
         fixture.put("updateOrCreateTopic", updateOrCreateTopic());
         fixture.put("deleteTopicInBroker", deleteTopicInBroker());
         fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
@@ -361,6 +363,54 @@ public final class MqClientAdminFixtures {
         result.put("sysFlag", message.getSysFlag());
         result.put("keys", message.getKeys());
         result.put("properties", new TreeMap<>(message.getProperties()));
+        return result;
+    }
+
+    private static Map<String, Object> viewMessage() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("viewMessage", String.class,
+            ViewMessageRequestHeader.class, long.class);
+        ViewMessageRequestHeader header = new ViewMessageRequestHeader();
+        header.setTopic("orders");
+        header.setOffset(4L);
+        byte[] responseBody = MessageDecoder.encode(
+            queryMessageRecord("orders", "view-body", 4, 0, "view-key", "view-unique"), false);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(responseBody);
+        MessageExt message = new MqClientAdminImpl(successCapture.proxy())
+            .viewMessage(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>(queryMessageCapture(successCapture));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBodyBase64", Base64.getEncoder().encodeToString(responseBody));
+        success.put("result", queryMessageSnapshot(message));
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(ResponseCode.TOPIC_NOT_EXIST,
+            "view topic not found");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .viewMessage(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin view message error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>(queryMessageCapture(errorCapture));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
         return result;
     }
 

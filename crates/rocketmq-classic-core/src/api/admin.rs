@@ -563,7 +563,9 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<MessageExt, RpcError> {
         let code = request::VIEW_MESSAGE_BY_ID;
-        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = self
+            .request_future(addr, code, header, None, deadline)
+            .await?;
         let reply = classify(reply, code, addr)?;
         let body = reply
             .body
@@ -651,6 +653,16 @@ impl MqClientAdmin {
             })
         });
         Ok(messages)
+    }
+
+    /// Views one Broker message by its physical commit-log offset.
+    pub async fn view_message(
+        &self,
+        addr: &str,
+        header: &ViewMessageRequestHeader,
+        deadline: Instant,
+    ) -> Result<MessageExt, RpcError> {
+        self.api.view_message(addr, header, deadline).await
     }
 }
 

@@ -1482,6 +1482,74 @@ async fn mq_client_admin_query_message_matches_invoked_java_fixture() {
 }
 
 #[tokio::test]
+async fn mq_client_admin_view_message_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let view = &fixture["viewMessage"];
+    let success = &view["success"];
+    let response_body = base64::engine::general_purpose::STANDARD
+        .decode(success["responseBodyBase64"].as_str().unwrap())
+        .unwrap();
+    let header = ViewMessageRequestHeader {
+        topic: Some("orders".into()),
+        offset: Some(4),
+        ..Default::default()
+    };
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(response_body)).await;
+    let (view_api, client) = api().await;
+    let message = view_api
+        .mq_client_admin()
+        .view_message(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::VIEW_MESSAGE_BY_ID);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        success["requestExtFields"]
+    );
+    assert_eq!(
+        serde_json::json!({
+            "topic": message.topic(),
+            "messageId": message.message_id(),
+            "offsetMessageId": message.offset_message_id(),
+            "bodyBase64": base64::engine::general_purpose::STANDARD.encode(message.body().as_ref()),
+            "sysFlag": message.sys_flag(),
+            "keys": message.keys(),
+            "properties": serde_json::to_value(message.properties()).unwrap(),
+        }),
+        success["result"]
+    );
+    client.shutdown().await;
+
+    let error_case = &view["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .view_message(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::VIEW_MESSAGE_BY_ID);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 17, remark: Some(remark), .. }
+            if remark == "view topic not found"
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_message_preserves_broker_response_code_and_remark() {
     let (addr, peer) = scripted_peer(17, None, None).await;
     let (api, client) = api().await;
