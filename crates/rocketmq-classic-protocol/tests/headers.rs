@@ -304,7 +304,7 @@ fn java_request_and_response_header_fixtures_decode() {
     let assignment: QueryAssignmentRequestBody =
         serde_json::from_slice(&java_body("body-query-assignment")).unwrap();
     assert_eq!(
-        assignment.message_model,
+        assignment.get_message_model(),
         Some(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering)
     );
 
@@ -755,16 +755,16 @@ fn transaction_end_response_and_reply_property_names_are_java_constants() {
 fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
     let assignment: QueryAssignmentRequestBody =
         serde_json::from_slice(&java_body("body-query-assignment")).unwrap();
-    assert_eq!(assignment.topic.as_deref(), Some("orders"));
+    assert_eq!(assignment.get_topic(), Some("orders"));
     assert_eq!(
-        assignment.strategy_name.as_deref(),
+        assignment.get_strategy_name(),
         Some("AllocateMessageQueueAveragely")
     );
 
     let mode: SetMessageRequestModeRequestBody =
         serde_json::from_slice(&java_body("body-set-request-mode")).unwrap();
-    assert_eq!(mode.mode, Some(MessageRequestMode::Pop));
-    assert_eq!(mode.pop_share_queue_num, 2);
+    assert_eq!(mode.get_mode(), Some(MessageRequestMode::Pop));
+    assert_eq!(mode.get_pop_share_queue_num(), 2);
 
     let lite: LiteSubscriptionCtlRequestBody =
         serde_json::from_slice(&java_body("body-lite-subscription")).unwrap();
@@ -815,7 +815,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                     .unwrap(),
                 9
             );
-            let offset_table = typed.offset_table.as_ref().unwrap().snapshot();
+            let offset_table = typed.get_offset_table().unwrap().snapshot();
             let (queue, offset) = &offset_table[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
@@ -834,7 +834,7 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
                     .unwrap(),
                 9
             );
-            let message_queue_table = typed.message_queue_table.as_ref().unwrap().snapshot();
+            let message_queue_table = typed.get_message_queue_table().unwrap().snapshot();
             let (queue, offset) = &message_queue_table[0];
             assert_eq!(queue.topic(), Some("orders"));
             assert_eq!(queue.broker_name(), Some("broker-a"));
@@ -845,7 +845,10 @@ fn java_json_body_fixtures_decode_to_typed_assignment_lite_and_batch_models() {
 
     let direct: ConsumeMessageDirectlyResult =
         serde_json::from_slice(&java_body("body-consume-directly")).unwrap();
-    assert_eq!(direct.consume_result, Some(ConsumeMessageResult::CrSuccess));
+    assert_eq!(
+        direct.get_consume_result(),
+        Some(ConsumeMessageResult::CrSuccess)
+    );
     assert_eq!(
         serde_json::to_value(&direct).unwrap(),
         serde_json::from_slice::<serde_json::Value>(&java_body("body-consume-directly")).unwrap()
@@ -1100,7 +1103,7 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
         serde_json::from_slice(&read_body("body-lock-request")).unwrap();
     let unlock: UnlockBatchRequestBody =
         serde_json::from_slice(&read_body("body-unlock-request")).unwrap();
-    let lock_mq_set = lock.mq_set.as_ref().unwrap().with(|queues| {
+    let lock_mq_set = lock.get_mq_set().unwrap().with(|queues| {
         queues
             .iter()
             .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
@@ -1116,8 +1119,8 @@ fn java_consumer_list_and_lock_bodies_preserve_optional_and_collection_semantics
             .broker_name(),
         Some("broker-a")
     );
-    assert!(!lock.only_this_broker);
-    assert!(unlock.only_this_broker);
+    assert!(!lock.is_only_this_broker());
+    assert!(unlock.is_only_this_broker());
     let response: LockBatchResponseBody =
         serde_json::from_slice(&read_body("body-lock-response")).unwrap();
     let response_set = response.get_lock_okmq_set().unwrap().with(|queues| {

@@ -172,22 +172,15 @@ async fn assignment_and_request_mode_shapes() {
     ] {
         let (api, client, addr, task) =
             peer(request::QUERY_ASSIGNMENT, status, body.clone(), None).await;
-        let result = api
-            .query_assignment(
-                &addr,
-                &QueryAssignmentRequestBody {
-                    topic: Some("orders".into()),
-                    ..Default::default()
-                },
-                deadline(),
-            )
-            .await;
+        let mut request = QueryAssignmentRequestBody::default();
+        request.set_topic(Some("orders".into()));
+        let result = api.query_assignment(&addr, &request, deadline()).await;
         match (status, body) {
             (response::SUCCESS, Some(_)) => {
                 assert_eq!(
                     result
                         .unwrap()
-                        .message_queue_assignments
+                        .get_message_queue_assignments()
                         .unwrap()
                         .snapshot()
                         .len(),
@@ -608,7 +601,7 @@ async fn assignment_invalid_json_and_heartbeat_v2_default_flags() {
             Err(RpcError::MalformedResponse { request_code, .. }) => {
                 assert_eq!(request_code, request::QUERY_ASSIGNMENT)
             }
-            Ok(body) => assert!(body.message_queue_assignments.is_none()),
+            Ok(body) => assert!(body.get_message_queue_assignments().is_none()),
             other => panic!("unexpected assignment reply: {other:?}"),
         }
         task.await.unwrap();
@@ -650,7 +643,7 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         .await
         .unwrap();
     let assignments = result
-        .message_queue_assignments
+        .get_message_queue_assignments()
         .unwrap()
         .snapshot()
         .into_iter()

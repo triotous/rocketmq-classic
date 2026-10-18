@@ -580,7 +580,7 @@ impl RequestProcessor for ResetOffsetProcessor {
             .map_err(|error| error.to_string())?
             .unwrap_or_default();
         let offsets = body
-            .offset_table
+            .get_offset_table()
             .map(|table| table.snapshot())
             .unwrap_or_default();
         let (Some(consumer), Some(runtime)) = (self.consumer.upgrade(), self.runtime.upgrade())
@@ -627,12 +627,12 @@ impl RequestProcessor for ConsumerStatusProcessor {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let body = GetConsumerStatusBody {
-            message_queue_table: Some(SharedValue::new(message_queue_table)),
-            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::new())),
-        }
-        .encode_java_json()
-        .map_err(|error| error.to_string())?;
+        let mut status_body = GetConsumerStatusBody::default();
+        status_body.set_message_queue_table(Some(SharedValue::new(message_queue_table)));
+        status_body.set_consumer_table(Some(SharedValue::new(std::collections::BTreeMap::new())));
+        let body = status_body
+            .encode_java_json()
+            .map_err(|error| error.to_string())?;
         Ok(Some(RemotingCommand {
             code: response::SUCCESS,
             body: Some(body),
@@ -749,7 +749,7 @@ mod tests {
         let body = String::from_utf8(response.body.unwrap()).unwrap();
         let body = GetConsumerStatusBody::decode_java_json(&body).unwrap();
         assert_eq!(
-            body.message_queue_table.unwrap().snapshot(),
+            body.get_message_queue_table().unwrap().snapshot(),
             vec![(selected, Some(17))]
         );
     }

@@ -987,6 +987,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper wrapper =
             new org.apache.rocketmq.remoting.protocol.body.MessageRequestModeSerializeWrapper();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, wrapper.getClass());
         item.put("equalsDeclaringClass", wrapper.getClass().getMethod("equals", Object.class)
             .getDeclaringClass().getName());
         item.put("hashCodeDeclaringClass", wrapper.getClass().getMethod("hashCode")
@@ -1051,6 +1052,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("topic", body.getTopic());
         defaults.put("consumerGroup", body.getConsumerGroup());
@@ -1158,6 +1160,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody body =
             new org.apache.rocketmq.remoting.protocol.body.QueryAssignmentResponseBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         try {
             item.put("equalsDeclaringClass", body.getClass().getMethod("equals", Object.class)
                 .getDeclaringClass().getName());
@@ -1242,6 +1245,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.SetMessageRequestModeRequestBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("topic", body.getTopic());
         defaults.put("consumerGroup", body.getConsumerGroup());
@@ -1274,9 +1278,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.CheckClientRequestBody();
         Map<String, Object> item = new TreeMap<>();
-        item.put("bodyPublicConstructors", publicConstructorSignatures(body.getClass()));
-        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(body.getClass()));
-        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(body.getClass()));
+        recordBodyApiInventory(item, body.getClass());
         item.put("bodyInheritedSerializableMethods", Arrays.stream(body.getClass().getMethods())
             .filter(method -> method.getDeclaringClass()
                 == org.apache.rocketmq.remoting.protocol.RemotingSerializable.class)
@@ -2100,6 +2102,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("consumerGroup", body.getConsumerGroup());
         defaults.put("clientId", body.getClientId());
@@ -2154,6 +2157,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody body =
             new org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("consumerGroup", body.getConsumerGroup());
         defaults.put("clientId", body.getClientId());
@@ -2244,6 +2248,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult result =
             new org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, result.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("order", result.isOrder());
         defaults.put("autoCommit", result.isAutoCommit());
@@ -2303,6 +2308,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody body =
             new org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         Map<String, Object> defaults = new TreeMap<>();
         defaults.put("messageQueueTable", queueOffsetApiValues(body.getMessageQueueTable()));
         defaults.put("consumerTable", consumerTableApiValues(body.getConsumerTable()));
@@ -2358,6 +2364,7 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody body =
             new org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody();
         Map<String, Object> item = new TreeMap<>();
+        recordBodyApiInventory(item, body.getClass());
         item.put("defaults", queueOffsetApiValues(body.getOffsetTable()));
 
         Map<org.apache.rocketmq.common.message.MessageQueue, Long> offsetTable =
@@ -3146,6 +3153,17 @@ public final class RuntimeLookupFixtures {
                 .map(Class::getName).collect(java.util.stream.Collectors.joining(",")) + ")")
             .sorted()
             .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static void recordBodyApiInventory(Map<String, Object> item, Class<?> type) {
+        item.put("bodyPublicConstructors", publicConstructorSignatures(type));
+        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(type));
+        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(type));
+        item.put("bodyPublicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
     }
 
     private static List<String> declaredPublicMethodSignatures(Class<?> type) {

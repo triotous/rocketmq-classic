@@ -42,15 +42,15 @@ impl ClientRuntime {
                         self.config_read().vip_channel_enabled,
                         &address,
                     )?;
+                    let mut body = CheckClientRequestBody::default();
+                    body.set_client_id(Some(self.client_id().into()));
+                    body.set_group(Some(group.clone()));
+                    body.set_subscription_data(Some(subscription.into()));
+                    body.set_namespace(None);
                     self.api()
                         .check_client_in_broker(
                             &address,
-                            &CheckClientRequestBody {
-                                client_id: Some(self.client_id().into()),
-                                group: Some(group.clone()),
-                                subscription_data: Some(subscription.into()),
-                                namespace: None,
-                            },
+                            &body,
                             tokio::time::Instant::now() + self.rpc_timeout(),
                         )
                         .await?;

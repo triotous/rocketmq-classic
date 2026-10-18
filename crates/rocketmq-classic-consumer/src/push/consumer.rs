@@ -5700,18 +5700,17 @@ impl PushConsumer {
                 .iter()
                 .filter_map(|queue| queue.as_ref().cloned())
                 .collect::<Vec<_>>();
-            let body = LockBatchRequestBody {
-                consumer_group: Some(consumer_group.clone()),
-                client_id: Some(client_id.clone()),
-                only_this_broker: false,
-                mq_set: Some(SharedValue::new(
-                    requested
-                        .iter()
-                        .cloned()
-                        .map(|queue| queue.map(SharedValue::new))
-                        .collect(),
-                )),
-            };
+            let mut body = LockBatchRequestBody::default();
+            body.set_consumer_group(Some(consumer_group.clone()));
+            body.set_client_id(Some(client_id.clone()));
+            body.set_only_this_broker(false);
+            body.set_mq_set(Some(SharedValue::new(
+                requested
+                    .iter()
+                    .cloned()
+                    .map(|queue| queue.map(SharedValue::new))
+                    .collect(),
+            )));
             match self
                 .request_orderly_lock_batch(runtime, &broker_name, &topic, &body)
                 .await
@@ -5771,18 +5770,17 @@ impl PushConsumer {
 
         let mut unlocked = HashSet::new();
         for (broker_name, (topic, requested)) in groups {
-            let body = UnlockBatchRequestBody {
-                consumer_group: Some(consumer_group.clone()),
-                client_id: Some(client_id.clone()),
-                only_this_broker: false,
-                mq_set: Some(SharedValue::new(
-                    requested
-                        .iter()
-                        .cloned()
-                        .map(|queue| queue.map(SharedValue::new))
-                        .collect(),
-                )),
-            };
+            let mut body = UnlockBatchRequestBody::default();
+            body.set_consumer_group(Some(consumer_group.clone()));
+            body.set_client_id(Some(client_id.clone()));
+            body.set_only_this_broker(false);
+            body.set_mq_set(Some(SharedValue::new(
+                requested
+                    .iter()
+                    .cloned()
+                    .map(|queue| queue.map(SharedValue::new))
+                    .collect(),
+            )));
             match self
                 .request_orderly_unlock_batch(runtime, &broker_name, &topic, &body)
                 .await
@@ -10582,7 +10580,7 @@ mod tests {
             std::str::from_utf8(response.body.as_deref().unwrap()).unwrap(),
         )
         .unwrap();
-        body.message_queue_table
+        body.get_message_queue_table()
             .unwrap()
             .with(|entries| assert_eq!(entries, &vec![(queue.clone(), Some(42))]));
 
@@ -13131,7 +13129,7 @@ mod tests {
             let mut grouped_queue_counts = scripted
                 .lock_bodies
                 .iter()
-                .map(|body| body.mq_set.as_ref().unwrap().with(|set| set.len()))
+                .map(|body| body.get_mq_set().unwrap().with(|set| set.len()))
                 .collect::<Vec<_>>();
             grouped_queue_counts.sort_unstable();
             assert_eq!(grouped_queue_counts, vec![1, 2]);
@@ -13177,13 +13175,8 @@ mod tests {
             HashSet::from([queue])
         );
         assert_eq!(
-            consumer.scripted_lock_transport.lock().unwrap().lock_bodies[0].consumer_group,
-            Some(
-                fixture["rebalanceConsumerGroupAfterFacadeMutation"]
-                    .as_str()
-                    .unwrap()
-                    .to_owned()
-            )
+            consumer.scripted_lock_transport.lock().unwrap().lock_bodies[0].get_consumer_group(),
+            fixture["rebalanceConsumerGroupAfterFacadeMutation"].as_str()
         );
 
         consumer.shutdown().await.unwrap();
@@ -13576,7 +13569,7 @@ mod tests {
             let scripted = consumer.scripted_lock_transport.lock().unwrap();
             assert_eq!(scripted.lock_bodies.len(), 2);
             assert!(scripted.lock_bodies.iter().all(|body| {
-                body.mq_set.as_ref().is_some_and(|set| {
+                body.get_mq_set().is_some_and(|set| {
                     set.with(|queues| queues.contains(&Some(SharedValue::new(queue.clone()))))
                 })
             }));

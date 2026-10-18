@@ -233,14 +233,12 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                 other => panic!("unexpected pull result: {other:?}"),
             }
         } else if name.starts_with("lock-") {
-            let body = LockBatchRequestBody {
-                consumer_group: Some("consumer".into()),
-                client_id: Some("client".into()),
-                mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                    SharedValue::new(queue),
-                )]))),
-                ..Default::default()
-            };
+            let mut body = LockBatchRequestBody::default();
+            body.set_consumer_group(Some("consumer".into()));
+            body.set_client_id(Some("client".into()));
+            body.set_mq_set(Some(SharedValue::new(std::collections::HashSet::from([
+                Some(SharedValue::new(queue)),
+            ]))));
             match api.lock_batch_mq(&addr, &body, deadline).await {
                 Ok(Some(queues)) => {
                     assert_eq!(queues.len(), 1);
@@ -258,14 +256,12 @@ async fn java_invoked_consumer_more_requests_and_outcomes_match() {
                 other => panic!("unexpected lock result: {other:?}"),
             }
         } else {
-            let body = UnlockBatchRequestBody {
-                consumer_group: Some("consumer".into()),
-                client_id: Some("client".into()),
-                mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                    SharedValue::new(queue),
-                )]))),
-                ..Default::default()
-            };
+            let mut body = UnlockBatchRequestBody::default();
+            body.set_consumer_group(Some("consumer".into()));
+            body.set_client_id(Some("client".into()));
+            body.set_mq_set(Some(SharedValue::new(std::collections::HashSet::from([
+                Some(SharedValue::new(queue)),
+            ]))));
             match api
                 .unlock_batch_mq(&addr, &body, name == "unlock-oneway", deadline)
                 .await

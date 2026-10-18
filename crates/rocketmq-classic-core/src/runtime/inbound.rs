@@ -736,7 +736,7 @@ mod tests {
                 let body =
                     GetConsumerStatusBody::decode_java_json(std::str::from_utf8(&body).unwrap())
                         .unwrap();
-                body.message_queue_table
+                body.get_message_queue_table()
                     .unwrap()
                     .with(|entries| assert!(entries.is_empty()));
             }

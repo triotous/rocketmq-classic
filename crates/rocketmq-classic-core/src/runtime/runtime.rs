@@ -636,20 +636,19 @@ impl ClientRuntime {
         };
         let address =
             crate::route::broker_vip_channel(self.config_read().vip_channel_enabled, &address)?;
-        let body = rocketmq_classic_protocol::body::QueryAssignmentRequestBody {
-            topic: Some(topic.into()),
-            consumer_group: consumer_group.map(str::to_owned),
-            client_id: Some(self.client_id.clone()),
-            strategy_name: strategy_name.map(str::to_owned),
-            message_model,
-        };
+        let mut body = rocketmq_classic_protocol::body::QueryAssignmentRequestBody::default();
+        body.set_topic(Some(topic.into()));
+        body.set_consumer_group(consumer_group.map(str::to_owned));
+        body.set_client_id(Some(self.client_id.clone()));
+        body.set_strategy_name(strategy_name.map(str::to_owned));
+        body.set_message_model(message_model);
         let deadline = tokio::time::Instant::now()
             + tokio::time::Duration::from_millis(timeout_millis.max(0) as u64);
         Ok(self
             .api
             .query_assignment(&address, &body, deadline)
             .await?
-            .message_queue_assignments
+            .get_message_queue_assignments()
             .map(|assignments| {
                 assignments
                     .snapshot()

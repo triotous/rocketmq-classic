@@ -137,17 +137,23 @@ macro_rules! impl_java_remoting_serializable_adapters {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<CheckClientRequestBody>(); }
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::CheckClientRequestBody;
+/// let _ = CheckClientRequestBody::default().client_id;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckClientRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
+    client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
+    group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subscription_data: Option<SharedValue<super::heartbeat::SubscriptionData>>,
+    subscription_data: Option<SharedValue<super::heartbeat::SubscriptionData>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub namespace: Option<String>,
+    namespace: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1222,23 +1228,29 @@ impl<'de> Deserialize<'de> for LiteSubscription {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<QueryAssignmentRequestBody>();
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueryAssignmentRequestBody;
+/// let _ = QueryAssignmentRequestBody::default().topic;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
+    topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
+    consumer_group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
+    client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub strategy_name: Option<String>,
+    strategy_name: Option<String>,
     #[serde(
         default,
         deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
         skip_serializing_if = "Option::is_none"
     )]
-    pub message_model: Option<super::heartbeat::MessageModel>,
+    message_model: Option<super::heartbeat::MessageModel>,
 }
 
 #[derive(Deserialize)]
@@ -1525,6 +1537,12 @@ impl Default for MessageQueueAssignment {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<QueryAssignmentResponseBody>(); }
 /// ```
+///
+/// Java keeps this property private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueryAssignmentResponseBody;
+/// let _ = QueryAssignmentResponseBody::default().message_queue_assignments;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryAssignmentResponseBody {
@@ -1533,7 +1551,7 @@ pub struct QueryAssignmentResponseBody {
         deserialize_with = "deserialize_optional_assignment_set",
         skip_serializing_if = "Option::is_none"
     )]
-    pub message_queue_assignments: Option<SharedQueryAssignmentSet>,
+    message_queue_assignments: Option<SharedQueryAssignmentSet>,
 }
 
 #[derive(Deserialize)]
@@ -1559,11 +1577,6 @@ impl<'de> Deserialize<'de> for QueryAssignmentResponseBody {
 impl QueryAssignmentResponseBody {
     pub fn get_message_queue_assignments(&self) -> Option<SharedQueryAssignmentSet> {
         self.message_queue_assignments.clone()
-    }
-
-    /// Provides direct access to the assigned identity handle for replacement.
-    pub fn get_message_queue_assignments_mut(&mut self) -> Option<&mut SharedQueryAssignmentSet> {
-        self.message_queue_assignments.as_mut()
     }
 
     pub fn set_message_queue_assignments(
@@ -3289,21 +3302,27 @@ impl ConsumeStats {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<SetMessageRequestModeRequestBody>();
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::SetMessageRequestModeRequestBody;
+/// let _ = SetMessageRequestModeRequestBody::default().topic;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetMessageRequestModeRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub topic: Option<String>,
+    topic: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
+    consumer_group: Option<String>,
     #[serde(
         default = "default_assignment_mode",
         deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum",
         skip_serializing_if = "Option::is_none"
     )]
-    pub mode: Option<MessageRequestMode>,
+    mode: Option<MessageRequestMode>,
     #[serde(default)]
-    pub pop_share_queue_num: i32,
+    pop_share_queue_num: i32,
 }
 
 impl SetMessageRequestModeRequestBody {
@@ -4450,10 +4469,16 @@ pub type SharedMessageRequestModeMap = SharedValue<MessageRequestModeMap>;
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<MessageRequestModeSerializeWrapper>(); }
 /// ```
+///
+/// Java keeps this property private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::MessageRequestModeSerializeWrapper;
+/// let _ = MessageRequestModeSerializeWrapper::default().message_request_mode_map;
+/// ```
 #[serde(rename_all = "camelCase")]
 pub struct MessageRequestModeSerializeWrapper {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_request_mode_map: Option<SharedMessageRequestModeMap>,
+    message_request_mode_map: Option<SharedMessageRequestModeMap>,
 }
 
 impl Default for MessageRequestModeSerializeWrapper {
@@ -4467,10 +4492,6 @@ impl Default for MessageRequestModeSerializeWrapper {
 impl MessageRequestModeSerializeWrapper {
     pub fn get_message_request_mode_map(&self) -> Option<SharedMessageRequestModeMap> {
         self.message_request_mode_map.clone()
-    }
-
-    pub fn get_message_request_mode_map_mut(&mut self) -> Option<&mut SharedMessageRequestModeMap> {
-        self.message_request_mode_map.as_mut()
     }
 
     pub fn set_message_request_mode_map(
@@ -4538,17 +4559,23 @@ impl<'de> Deserialize<'de> for MessageRequestModeSerializeWrapper {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<LockBatchRequestBody>(); }
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::LockBatchRequestBody;
+/// let _ = LockBatchRequestBody::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LockBatchRequestBody {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
+    consumer_group: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
+    client_id: Option<String>,
     #[serde(default)]
-    pub only_this_broker: bool,
+    only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<SharedMessageQueueSet>,
+    mq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -4655,16 +4682,22 @@ impl std::fmt::Display for LockBatchRequestBody {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<UnlockBatchRequestBody>(); }
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::UnlockBatchRequestBody;
+/// let _ = UnlockBatchRequestBody::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnlockBatchRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_group: Option<String>,
+    consumer_group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-    pub only_this_broker: bool,
+    client_id: Option<String>,
+    only_this_broker: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mq_set: Option<SharedMessageQueueSet>,
+    mq_set: Option<SharedMessageQueueSet>,
 }
 
 #[derive(Deserialize)]
@@ -4940,13 +4973,19 @@ impl ConsumerListByGroupResponseBody {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<GetConsumerStatusBody>();
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GetConsumerStatusBody;
+/// let _ = GetConsumerStatusBody::default().message_queue_table;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetConsumerStatusBody {
     #[serde(with = "message_queue_offset_table")]
-    pub message_queue_table: Option<SharedQueueOffsetEntries>,
+    message_queue_table: Option<SharedQueueOffsetEntries>,
     #[serde(with = "nested_message_queue_offset_table")]
-    pub consumer_table: Option<SharedConsumerQueueOffsets>,
+    consumer_table: Option<SharedConsumerQueueOffsets>,
 }
 
 impl GetConsumerStatusBody {
@@ -4995,20 +5034,12 @@ impl GetConsumerStatusBody {
         self.message_queue_table.clone()
     }
 
-    pub fn get_message_queue_table_mut(&mut self) -> Option<SharedQueueOffsetEntries> {
-        self.get_message_queue_table()
-    }
-
     pub fn set_message_queue_table(&mut self, value: Option<SharedQueueOffsetEntries>) {
         self.message_queue_table = value;
     }
 
     pub fn get_consumer_table(&self) -> Option<SharedConsumerQueueOffsets> {
         self.consumer_table.clone()
-    }
-
-    pub fn get_consumer_table_mut(&mut self) -> Option<SharedConsumerQueueOffsets> {
-        self.get_consumer_table()
     }
 
     pub fn set_consumer_table(&mut self, value: Option<SharedConsumerQueueOffsets>) {
@@ -5524,6 +5555,12 @@ fn previous_json_byte(bytes: &[u8], index: usize) -> Option<u8> {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ResetOffsetBody>();
 /// ```
+///
+/// Java keeps this property private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ResetOffsetBody;
+/// let _ = ResetOffsetBody::default().offset_table;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetOffsetBody {
@@ -5531,7 +5568,7 @@ pub struct ResetOffsetBody {
         skip_serializing_if = "Option::is_none",
         with = "optional_message_queue_offset_table"
     )]
-    pub offset_table: Option<SharedQueueOffsetEntries>,
+    offset_table: Option<SharedQueueOffsetEntries>,
 }
 
 impl ResetOffsetBody {
@@ -5551,10 +5588,6 @@ impl ResetOffsetBody {
 
     pub fn get_offset_table(&self) -> Option<SharedQueueOffsetEntries> {
         self.offset_table.clone()
-    }
-
-    pub fn get_offset_table_mut(&mut self) -> Option<SharedQueueOffsetEntries> {
-        self.get_offset_table()
     }
 
     pub fn set_offset_table(&mut self, value: Option<SharedQueueOffsetEntries>) {
@@ -6261,16 +6294,22 @@ mod consume_stats_offset_table {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumeMessageDirectlyResult>();
 /// ```
+///
+/// Java keeps these properties private and exposes accessors.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumeMessageDirectlyResult;
+/// let _ = ConsumeMessageDirectlyResult::default().order;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumeMessageDirectlyResult {
-    pub order: bool,
-    pub auto_commit: bool,
+    order: bool,
+    auto_commit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consume_result: Option<ConsumeMessageResult>,
+    consume_result: Option<ConsumeMessageResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remark: Option<String>,
-    pub spent_time_mills: i64,
+    remark: Option<String>,
+    spent_time_mills: i64,
 }
 
 impl Default for ConsumeMessageDirectlyResult {
@@ -8834,6 +8873,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
 
         let request_case = &fixture["queryAssignmentRequestApiCase"];
+        assert_eq!(request_case["bodyPublicFields"], json!([]));
         let mut request = QueryAssignmentRequestBody::default();
         assert_eq!(
             json!({
@@ -8884,6 +8924,7 @@ mod tests {
         );
 
         let response_case = &fixture["queryAssignmentResponseApiCase"];
+        assert_eq!(response_case["bodyPublicFields"], json!([]));
         assert_eq!(response_case["equalsDeclaringClass"], "java.lang.Object");
         assert_eq!(response_case["hashCodeDeclaringClass"], "java.lang.Object");
         assert_eq!(response_case["sameInstanceEquals"], true);
@@ -8996,6 +9037,7 @@ mod tests {
         assert_eq!(response_case["nullSetterRemainsNull"], true);
 
         let mode_case = &fixture["setRequestModeRequestApiCase"];
+        assert_eq!(mode_case["bodyPublicFields"], json!([]));
         let mut mode_body = SetMessageRequestModeRequestBody::default();
         assert_eq!(
             json!({
@@ -9079,6 +9121,7 @@ mod tests {
         assert_eq!(check_case["equalsEqualFieldsDistinctInstance"], false);
         assert_eq!(check_case["equalsDeclaringClass"], "java.lang.Object");
         assert_eq!(check_case["hashCodeDeclaringClass"], "java.lang.Object");
+        assert_eq!(check_case["bodyPublicFields"], json!([]));
         assert_eq!(
             json!({
                 "clientId": check.get_client_id(),
@@ -9207,6 +9250,7 @@ mod tests {
         assert_eq!(list_case["equalValuesDistinctInstanceEquals"], false);
 
         let lock_case = &fixture["lockBatchRequestApiCase"];
+        assert_eq!(lock_case["bodyPublicFields"], json!([]));
         let mut lock = LockBatchRequestBody::default();
         assert_eq!(
             json!({
@@ -9285,6 +9329,7 @@ mod tests {
         assert_eq!(lock_case["nullSettersRemainNull"], true);
 
         let unlock_case = &fixture["unlockBatchRequestApiCase"];
+        assert_eq!(unlock_case["bodyPublicFields"], json!([]));
         let mut unlock = UnlockBatchRequestBody::default();
         assert_eq!(
             json!({
@@ -9435,6 +9480,7 @@ mod tests {
         assert_eq!(lock_response_case["nullSetterRemainsNull"], true);
 
         let direct_case = &fixture["consumeDirectResultApiCase"];
+        assert_eq!(direct_case["bodyPublicFields"], json!([]));
         let mut direct = ConsumeMessageDirectlyResult::default();
         assert_eq!(
             json!({
@@ -9479,6 +9525,7 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
 
         let status_case = &fixture["consumerStatusBodyApiCase"];
+        assert_eq!(status_case["bodyPublicFields"], json!([]));
         let mut status = GetConsumerStatusBody::default();
         assert_eq!(
             serde_json::to_value(status.get_message_queue_table()).unwrap(),
@@ -9572,6 +9619,7 @@ mod tests {
         assert_eq!(status_case["nullSettersRemainNull"], true);
 
         let reset_case = &fixture["resetOffsetBodyApiCase"];
+        assert_eq!(reset_case["bodyPublicFields"], json!([]));
         let mut reset = ResetOffsetBody::default();
         assert_eq!(
             serde_json::to_value(reset.get_offset_table()).unwrap(),
@@ -11558,6 +11606,7 @@ mod tests {
         );
 
         let api = &fixture["messageRequestModeWrapperApiCase"];
+        assert_eq!(api["bodyPublicFields"], json!([]));
         let mut wrapper = MessageRequestModeSerializeWrapper::default();
         assert_eq!(api["equalsDeclaringClass"], "java.lang.Object");
         assert_eq!(api["hashCodeDeclaringClass"], "java.lang.Object");
@@ -11638,7 +11687,7 @@ mod tests {
             api["populatedMap"]
         );
         assert_eq!(api["getterMutationVisible"], true);
-        let map = wrapper.get_message_request_mode_map_mut().unwrap();
+        let map = wrapper.get_message_request_mode_map().unwrap();
         map.with_mut(|map| {
             map.entry("archive".into())
                 .or_insert_with(|| SharedValue::new(std::collections::BTreeMap::new()));

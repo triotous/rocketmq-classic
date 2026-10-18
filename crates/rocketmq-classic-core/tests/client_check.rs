@@ -101,12 +101,13 @@ fn check_client_body_matches_actual_java_api_payload() {
         .iter()
         .filter(|case| case["invocations"] == 1)
     {
-        let body = CheckClientRequestBody {
-            client_id: Some("check-client@DEFAULT".into()),
-            group: Some("registered-group".into()),
-            subscription_data: Some(subscription(case["expression"].as_str().unwrap()).into()),
-            namespace: None,
-        };
+        let mut body = CheckClientRequestBody::default();
+        body.set_client_id(Some("check-client@DEFAULT".into()));
+        body.set_group(Some("registered-group".into()));
+        body.set_subscription_data(Some(
+            subscription(case["expression"].as_str().unwrap()).into(),
+        ));
+        body.set_namespace(None);
         assert_eq!(serde_json::to_value(body).unwrap(), case["body"]);
         assert_eq!(case["requestCode"], request::CHECK_CLIENT_CONFIG);
         assert_eq!(case["language"], "JAVA");

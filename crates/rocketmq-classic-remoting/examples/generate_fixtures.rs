@@ -787,29 +787,22 @@ fn write_body_bytes(output: &std::path::Path, name: &str, code: i32, body: Vec<u
 
 #[allow(clippy::mutable_key_type)] // Java DTO Set keys hash by stable object identity.
 fn generate_p4_bodies(output: &std::path::Path) {
-    write_body(
-        output,
-        "body-query-assignment.bin",
-        400,
-        &QueryAssignmentRequestBody {
-            topic: Some("orders".into()),
-            consumer_group: Some("workers".into()),
-            client_id: Some("client".into()),
-            strategy_name: Some("AllocateMessageQueueAveragely".into()),
-            message_model: Some(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering),
-        },
-    );
-    write_body(
-        output,
-        "body-set-request-mode.bin",
-        401,
-        &SetMessageRequestModeRequestBody {
-            topic: Some("orders".into()),
-            consumer_group: Some("workers".into()),
-            mode: Some(MessageRequestMode::Pop),
-            pop_share_queue_num: 2,
-        },
-    );
+    let mut query_assignment = QueryAssignmentRequestBody::default();
+    query_assignment.set_topic(Some("orders".into()));
+    query_assignment.set_consumer_group(Some("workers".into()));
+    query_assignment.set_client_id(Some("client".into()));
+    query_assignment.set_strategy_name(Some("AllocateMessageQueueAveragely".into()));
+    query_assignment.set_message_model(Some(
+        rocketmq_classic_protocol::heartbeat::MessageModel::Clustering,
+    ));
+    write_body(output, "body-query-assignment.bin", 400, &query_assignment);
+
+    let mut request_mode = SetMessageRequestModeRequestBody::default();
+    request_mode.set_topic(Some("orders".into()));
+    request_mode.set_consumer_group(Some("workers".into()));
+    request_mode.set_mode(Some(MessageRequestMode::Pop));
+    request_mode.set_pop_share_queue_num(2);
+    write_body(output, "body-set-request-mode.bin", 401, &request_mode);
     write_body(
         output,
         "body-lite-subscription.bin",
@@ -854,32 +847,33 @@ fn generate_p4_bodies(output: &std::path::Path) {
             }))])),
         },
     );
+    let mut reset_offset = ResetOffsetBody::default();
+    reset_offset.set_offset_table(Some(SharedValue::new(vec![(
+        rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
+        Some(9),
+    )])));
     write_body_bytes(
         output,
         "body-reset-offset.bin",
         212,
-        ResetOffsetBody {
-            offset_table: Some(SharedValue::new(vec![(
-                rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
-                Some(9),
-            )])),
-        }
-        .encode_java_json()
-        .expect("encode Java-compatible reset body"),
+        reset_offset
+            .encode_java_json()
+            .expect("encode Java-compatible reset body"),
     );
+
+    let mut consumer_status = GetConsumerStatusBody::default();
+    consumer_status.set_message_queue_table(Some(SharedValue::new(vec![(
+        rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
+        Some(9),
+    )])));
+    consumer_status.set_consumer_table(Some(SharedValue::new(std::collections::BTreeMap::new())));
     write_body_bytes(
         output,
         "body-consumer-status.bin",
         223,
-        GetConsumerStatusBody {
-            message_queue_table: Some(SharedValue::new(vec![(
-                rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
-                Some(9),
-            )])),
-            consumer_table: Some(SharedValue::new(std::collections::BTreeMap::new())),
-        }
-        .encode_java_json()
-        .expect("encode Java-compatible consumer status body"),
+        consumer_status
+            .encode_java_json()
+            .expect("encode Java-compatible consumer status body"),
     );
     let mut orders_offset = OffsetWrapper::default();
     orders_offset.set_broker_offset(29);
@@ -911,18 +905,13 @@ fn generate_p4_bodies(output: &std::path::Path) {
             .java_encode()
             .expect("encode Java-compatible consume stats body"),
     );
-    write_body(
-        output,
-        "body-consume-directly.bin",
-        309,
-        &ConsumeMessageDirectlyResult {
-            order: false,
-            auto_commit: true,
-            consume_result: Some(ConsumeMessageResult::CrSuccess),
-            remark: None,
-            spent_time_mills: 2,
-        },
-    );
+    let mut consume_directly = ConsumeMessageDirectlyResult::default();
+    consume_directly.set_order(false);
+    consume_directly.set_auto_commit(true);
+    consume_directly.set_consume_result(Some(ConsumeMessageResult::CrSuccess));
+    consume_directly.set_remark(None);
+    consume_directly.set_spent_time_mills(2);
+    write_body(output, "body-consume-directly.bin", 309, &consume_directly);
     let queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1);
     let absent_consumer_list = ConsumerListByGroupResponseBody::default();
     let mut empty_consumer_list = ConsumerListByGroupResponseBody::default();
@@ -939,32 +928,24 @@ fn generate_p4_bodies(output: &std::path::Path) {
     ] {
         write_body(output, name, 38, &body);
     }
-    write_body(
-        output,
-        "body-lock-request.bin",
-        41,
-        &LockBatchRequestBody {
-            consumer_group: Some("workers".into()),
-            client_id: Some("client".into()),
-            only_this_broker: false,
-            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                SharedValue::new(queue.clone()),
-            )]))),
-        },
-    );
-    write_body(
-        output,
-        "body-unlock-request.bin",
-        42,
-        &UnlockBatchRequestBody {
-            consumer_group: Some("workers".into()),
-            client_id: Some("client".into()),
-            only_this_broker: true,
-            mq_set: Some(SharedValue::new(std::collections::HashSet::from([Some(
-                SharedValue::new(queue.clone()),
-            )]))),
-        },
-    );
+    let queues = || {
+        SharedValue::new(std::collections::HashSet::from([Some(SharedValue::new(
+            queue.clone(),
+        ))]))
+    };
+    let mut lock_request = LockBatchRequestBody::default();
+    lock_request.set_consumer_group(Some("workers".into()));
+    lock_request.set_client_id(Some("client".into()));
+    lock_request.set_only_this_broker(false);
+    lock_request.set_mq_set(Some(queues()));
+    write_body(output, "body-lock-request.bin", 41, &lock_request);
+
+    let mut unlock_request = UnlockBatchRequestBody::default();
+    unlock_request.set_consumer_group(Some("workers".into()));
+    unlock_request.set_client_id(Some("client".into()));
+    unlock_request.set_only_this_broker(true);
+    unlock_request.set_mq_set(Some(queues()));
+    write_body(output, "body-unlock-request.bin", 42, &unlock_request);
     write_body(output, "body-lock-response.bin", 41, &{
         let mut body = LockBatchResponseBody::default();
         body.set_lock_okmq_set(Some(SharedValue::new(std::collections::HashSet::from([

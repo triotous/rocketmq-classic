@@ -158,17 +158,16 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 other => panic!("unexpected unregister result: {other:?}"),
             }
         } else if name.starts_with("assignment-") {
-            let request = QueryAssignmentRequestBody {
-                topic: Some("oracle-topic".into()),
-                consumer_group: Some("consumer".into()),
-                client_id: Some("client".into()),
-                strategy_name: Some("AVG".into()),
-                message_model: Some(MessageModel::Clustering),
-            };
+            let mut request = QueryAssignmentRequestBody::default();
+            request.set_topic(Some("oracle-topic".into()));
+            request.set_consumer_group(Some("consumer".into()));
+            request.set_client_id(Some("client".into()));
+            request.set_strategy_name(Some("AVG".into()));
+            request.set_message_model(Some(MessageModel::Clustering));
             match api.query_assignment(&addr, &request, deadline).await {
                 Ok(v) => {
                     let assignments = v
-                        .message_queue_assignments
+                        .get_message_queue_assignments()
                         .map(|assignments| assignments.snapshot().into_iter().collect::<Vec<_>>())
                         .unwrap_or_default();
                     if name == "assignment-populated" {
@@ -201,12 +200,11 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 other => panic!("unexpected assignment result: {other:?}"),
             }
         } else {
-            let request = SetMessageRequestModeRequestBody {
-                topic: Some("oracle-topic".into()),
-                consumer_group: Some("consumer".into()),
-                mode: Some(MessageRequestMode::Pop),
-                pop_share_queue_num: 2,
-            };
+            let mut request = SetMessageRequestModeRequestBody::default();
+            request.set_topic(Some("oracle-topic".into()));
+            request.set_consumer_group(Some("consumer".into()));
+            request.set_mode(Some(MessageRequestMode::Pop));
+            request.set_pop_share_queue_num(2);
             match api
                 .set_message_request_mode(&addr, &request, deadline)
                 .await
