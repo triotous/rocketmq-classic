@@ -3889,3 +3889,21 @@ owner-specific checks belong in the manual handoff.
   evidence for every method before closing P18-V01. See the inventory and
   source path in `docs/compatibility/PHASE_17_ADMIN_MATRIX.md`. This is local
   implementation work, not final manual validation.
+
+## P18-V01 `queryTopicsByConsumer` slice — 2026-10-18
+
+- [x] Code commit `07865bde` adds `MQClientApi::query_topics_by_consumer`,
+  `QueryTopicsByConsumerRequestHeader`, and Java-compatible `TopicList` defaults,
+  null handling, Set aliasing, and JSON fields. The invoked Java fixture covers
+  both decoder mode hints, inherited request fields, and `TopicList` accessor
+  identity/default behavior. Rust covers the decoded fields and a scripted
+  successful request/response exchange.
+- [x] Targeted Protocol, Remoting, and Core tests pass; strict all-target,
+  all-feature Clippy passes for those three crates; Maven `verify` passes all
+  37 scenarios and Java/Rust cross-decodes 57 typed headers and 14 typed bodies.
+  Formatting and diff checks pass.
+- The method's error response branch still needs a direct scripted regression;
+  the other 18 `MqClientAdmin` methods and broad P18-V01 reverse/API/settings
+  reconciliation remain open. Refresh the full current-revision P18-V02
+  workspace gates after this change. Current-revision Ubuntu/Windows CI and
+  final P18-V03 package/provenance review also remain open.
