@@ -4,11 +4,11 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        ConsumerListByGroupResponseBody, GetConsumerStatusBody, LiteSubscriptionAction,
-        LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
-        LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType,
-        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
-        UnlockBatchRequestBody,
+        ConsumeStats, ConsumerListByGroupResponseBody, GetConsumerStatusBody,
+        LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LiteSubscriptionDto,
+        LockBatchRequestBody, LockBatchResponseBody, MessageRequestMode, OffsetOption,
+        OffsetOptionType, OffsetWrapper, QueryAssignmentRequestBody, ResetOffsetBody,
+        SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
@@ -294,7 +294,7 @@ fn generate_p4_headers(output: &std::path::Path) {
         output,
         "typed-consume-stats-request.bin",
         "header-consume-stats-request",
-        303,
+        208,
     );
     write_oracle_header::<GetConsumerRunningInfoRequestHeader>(
         output,
@@ -880,6 +880,36 @@ fn generate_p4_bodies(output: &std::path::Path) {
         }
         .encode_java_json()
         .expect("encode Java-compatible consumer status body"),
+    );
+    let mut orders_offset = OffsetWrapper::default();
+    orders_offset.set_broker_offset(29);
+    orders_offset.set_consumer_offset(20);
+    orders_offset.set_pull_offset(25);
+    orders_offset.set_last_timestamp(1000);
+    let mut payments_offset = OffsetWrapper::default();
+    payments_offset.set_broker_offset(42);
+    payments_offset.set_consumer_offset(38);
+    payments_offset.set_pull_offset(41);
+    payments_offset.set_last_timestamp(2000);
+    let mut consume_stats = ConsumeStats::default();
+    consume_stats.set_offset_table(Some(SharedValue::new(std::collections::HashMap::from([
+        (
+            rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1),
+            Some(SharedValue::new(orders_offset)),
+        ),
+        (
+            rocketmq_classic_common::message::MessageQueue::new("payments", "broker-b", 2),
+            Some(SharedValue::new(payments_offset)),
+        ),
+    ]))));
+    consume_stats.set_consume_tps(1.25);
+    write_body_bytes(
+        output,
+        "body-consume-stats.bin",
+        208,
+        consume_stats
+            .java_encode()
+            .expect("encode Java-compatible consume stats body"),
     );
     write_body(
         output,

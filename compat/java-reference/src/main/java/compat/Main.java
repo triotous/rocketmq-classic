@@ -818,7 +818,7 @@ public final class Main {
         consumeStats.setTopicList("orders;payments;"); consumeStats.setNamespace("tenant");
         consumeStats.setNamespaced(true); consumeStats.setBrokerName("broker-a");
         consumeStats.setOneway(false);
-        writeTypedHeaderFixture(output, "consume-stats-request", 303, consumeStats);
+        writeTypedHeaderFixture(output, "consume-stats-request", 208, consumeStats);
         GetConsumerRunningInfoRequestHeader runningInfo = new GetConsumerRunningInfoRequestHeader();
         runningInfo.setConsumerGroup("workers"); runningInfo.setClientId("client-running-info");
         runningInfo.setJstackEnable(true); runningInfo.setNamespace("tenant");
@@ -858,6 +858,22 @@ public final class Main {
         statusBody.setMessageQueueTable(java.util.Map.of(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), 9L));
         statusBody.setConsumerTable(java.util.Map.of());
         writeJsonBodyFixture(output, "body-consumer-status", 223, statusBody.encode());
+
+        org.apache.rocketmq.remoting.protocol.admin.ConsumeStats consumeStatsBody =
+            new org.apache.rocketmq.remoting.protocol.admin.ConsumeStats();
+        org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper ordersOffset =
+            new org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper();
+        ordersOffset.setBrokerOffset(29L); ordersOffset.setConsumerOffset(20L);
+        ordersOffset.setPullOffset(25L); ordersOffset.setLastTimestamp(1000L);
+        org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper paymentsOffset =
+            new org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper();
+        paymentsOffset.setBrokerOffset(42L); paymentsOffset.setConsumerOffset(38L);
+        paymentsOffset.setPullOffset(41L); paymentsOffset.setLastTimestamp(2000L);
+        consumeStatsBody.setOffsetTable(java.util.Map.of(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), ordersOffset,
+            new org.apache.rocketmq.common.message.MessageQueue("payments", "broker-b", 2), paymentsOffset));
+        consumeStatsBody.setConsumeTps(1.25);
+        writeJsonBodyFixture(output, "body-consume-stats", 208, consumeStatsBody.encode());
 
         SetMessageRequestModeRequestBody modeBody = new SetMessageRequestModeRequestBody();
         modeBody.setTopic("orders"); modeBody.setConsumerGroup("workers");
@@ -1033,7 +1049,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-end-transaction-response.bin", 0);
             assertAllExtFields(byName, "typed-consumer-status-request.bin", 221);
             assertAllExtFields(byName, "typed-consumer-connection-list-request.bin", 203);
-            assertAllExtFields(byName, "typed-consume-stats-request.bin", 303);
+            assertAllExtFields(byName, "typed-consume-stats-request.bin", 208);
             assertAllExtFields(byName, "typed-consumer-running-info-request.bin", 307);
             assertAllExtFields(byName, "typed-heartbeat-request.bin", 34);
             assertAllExtFields(byName, "typed-polling-request.bin", 200055);
@@ -1207,7 +1223,7 @@ public final class Main {
                 decoded.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
             }
         }
-        require(decoded.size() == 14, "all Rust typed JSON body frames decoded");
+        require(decoded.size() == 15, "all Rust typed JSON body frames decoded");
         for (String name : decoded.keySet()) {
             String stem = name.replace(".bin", "");
             byte[] rustFrame = Files.readAllBytes(directory.resolve(name));
@@ -1249,6 +1265,7 @@ public final class Main {
         assertBodyField(directory, decoded, "body-batch-ack.bin", 200151, "brokerName", "broker-a");
         assertBodyField(directory, decoded, "body-reset-offset.bin", 212, "offsetTable", null);
         assertBodyField(directory, decoded, "body-consumer-status.bin", 223, "messageQueueTable", null);
+        assertBodyField(directory, decoded, "body-consume-stats.bin", 208, "offsetTable", null);
         assertBodyField(directory, decoded, "body-consume-directly.bin", 309, "consumeResult", "CR_SUCCESS");
         assertBodyField(directory, decoded, "body-consumer-list-empty.bin", 38, "consumerIdList", null);
         assertBodyField(directory, decoded, "body-consumer-list-populated.bin", 38, "consumerIdList", null);

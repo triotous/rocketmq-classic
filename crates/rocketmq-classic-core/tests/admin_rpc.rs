@@ -13,12 +13,13 @@ use rocketmq_classic_protocol::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
-        GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        DeleteTopicRequestHeader, GetConsumeStatsRequestHeader,
+        GetConsumerConnectionListRequestHeader, GetEarliestMsgStoretimeRequestHeader,
+        GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader,
+        HeaderMap, QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
+        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+        QueryTopicConsumeByWhoRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -1850,6 +1851,119 @@ async fn mq_client_admin_get_consumer_connection_list_matches_invoked_java_fixtu
         error,
         RpcError::MalformedResponse {
             request_code: request::GET_CONSUMER_CONNECTION_LIST,
+            ..
+        }
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_get_consume_stats_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let consume_stats = &fixture["getConsumeStats"];
+    assert_eq!(
+        consume_stats["method"],
+        "public abstract java.util.concurrent.CompletableFuture<org.apache.rocketmq.remoting.protocol.admin.ConsumeStats> org.apache.rocketmq.client.MqClientAdmin.getConsumeStats(java.lang.String,org.apache.rocketmq.remoting.protocol.header.GetConsumeStatsRequestHeader,long)"
+    );
+    let success = &consume_stats["success"];
+    let header = GetConsumeStatsRequestHeader {
+        consumer_group: Some("workers".into()),
+        topic: Some("ignored-topic".into()),
+        topic_list: Some("orders;payments;".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+    };
+    let body = success["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (admin_api, client) = api().await;
+    let result = admin_api
+        .mq_client_admin()
+        .get_consume_stats(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUME_STATS);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        success["requestExtFields"]
+    );
+    assert_eq!(result.get_consume_tps(), 1.25);
+    assert_eq!(result.compute_total_diff().unwrap(), 13);
+    assert_eq!(result.compute_inflight_total_diff().unwrap(), 8);
+    let offsets = result.get_offset_table().unwrap().snapshot();
+    assert_eq!(offsets.len(), 2);
+    let orders = offsets
+        [&rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1)]
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(orders.with(|offset| offset.get_last_timestamp()), 1000);
+    client.shutdown().await;
+
+    let no_body_case = &consume_stats["successWithoutBody"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (no_body_api, client) = api().await;
+    let result = no_body_api
+        .mq_client_admin()
+        .get_consume_stats(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUME_STATS);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        no_body_case["requestExtFields"]
+    );
+    assert!(result.is_none());
+    client.shutdown().await;
+
+    let error_case = &consume_stats["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .get_consume_stats(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUME_STATS);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "consume stats unavailable"
+    ));
+    client.shutdown().await;
+
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"{".to_vec())).await;
+    let (malformed_api, client) = api().await;
+    let error = malformed_api
+        .mq_client_admin()
+        .get_consume_stats(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUME_STATS);
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::GET_CONSUME_STATS,
             ..
         }
     ));

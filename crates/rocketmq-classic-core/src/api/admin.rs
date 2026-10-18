@@ -4,7 +4,7 @@ use rocketmq_classic_common::message::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        ClusterInfo, ConsumeMessageDirectlyResult, ConsumerConnection, GroupList,
+        ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection, GroupList,
         QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries, TopicList,
         TopicStatsTable,
     },
@@ -13,8 +13,8 @@ use rocketmq_classic_protocol::{
         CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        GetConsumerConnectionListRequestHeader, GetTopicStatsInfoRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
+        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -251,6 +251,27 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         ConsumerConnection::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Retrieves one Broker's Java `ConsumeStats` response.
+    pub async fn get_consume_stats(
+        &self,
+        addr: &str,
+        header: &GetConsumeStatsRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumeStats>, RpcError> {
+        let code = request::GET_CONSUME_STATS;
+        let reply = self
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        ConsumeStats::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
             RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -664,6 +685,16 @@ impl MqClientAdmin {
         self.api
             .get_consumer_connection_list(addr, header, deadline)
             .await
+    }
+
+    /// Retrieves one Broker's consume offsets and rate through Java `MqClientAdmin`.
+    pub async fn get_consume_stats(
+        &self,
+        addr: &str,
+        header: &GetConsumeStatsRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumeStats>, RpcError> {
+        self.api.get_consume_stats(addr, header, deadline).await
     }
 
     /// Queries one Broker and applies Java's topic/key filter to returned

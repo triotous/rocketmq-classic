@@ -2504,6 +2504,85 @@ impl ConsumerConnection {
     }
 }
 
+/// Java `OffsetWrapper` returned by `ConsumeStats`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::OffsetWrapper;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<OffsetWrapper>(); }
+/// ```
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OffsetWrapper {
+    broker_offset: i64,
+    consumer_offset: i64,
+    pull_offset: i64,
+    last_timestamp: i64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct OffsetWrapperFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    broker_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    consumer_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    pull_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    last_timestamp: i64,
+}
+
+impl<'de> Deserialize<'de> for OffsetWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: OffsetWrapperFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            broker_offset: fields.broker_offset,
+            consumer_offset: fields.consumer_offset,
+            pull_offset: fields.pull_offset,
+            last_timestamp: fields.last_timestamp,
+        })
+    }
+}
+
+impl OffsetWrapper {
+    pub fn get_broker_offset(&self) -> i64 {
+        self.broker_offset
+    }
+
+    pub fn set_broker_offset(&mut self, value: i64) {
+        self.broker_offset = value;
+    }
+
+    pub fn get_consumer_offset(&self) -> i64 {
+        self.consumer_offset
+    }
+
+    pub fn set_consumer_offset(&mut self, value: i64) {
+        self.consumer_offset = value;
+    }
+
+    pub fn get_pull_offset(&self) -> i64 {
+        self.pull_offset
+    }
+
+    pub fn set_pull_offset(&mut self, value: i64) {
+        self.pull_offset = value;
+    }
+
+    pub fn get_last_timestamp(&self) -> i64 {
+        self.last_timestamp
+    }
+
+    pub fn set_last_timestamp(&mut self, value: i64) {
+        self.last_timestamp = value;
+    }
+}
+
 /// Java `TopicOffset`; its boxed-looking accessors actually expose primitive
 /// `long` fields with zero defaults.
 ///
@@ -2700,6 +2779,162 @@ impl TopicStatsTable {
             "\"topicPutTps\":{}",
             serde_json::to_string(&self.topic_put_tps)?
         ));
+        Ok(format!("{{{}}}", fields.join(",")).into_bytes())
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized =
+            normalize_java_object_map_keys(&serde_fastjson::normalize_json_input(input))?;
+        serde_json::from_str(&normalized)
+    }
+}
+
+/// Java `ConsumeStats` response DTO, including the mutable MessageQueue-keyed
+/// offset table.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumeStats;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<ConsumeStats>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumeStats {
+    consume_tps: f64,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        with = "consume_stats_offset_table"
+    )]
+    offset_table: Option<SharedConsumeStatsOffsetTable>,
+}
+
+pub type ConsumeStatsOffsetTable =
+    std::collections::HashMap<MessageQueue, Option<SharedValue<OffsetWrapper>>>;
+pub type SharedConsumeStatsOffsetTable = SharedValue<ConsumeStatsOffsetTable>;
+
+fn default_consume_stats_offset_table() -> Option<SharedConsumeStatsOffsetTable> {
+    Some(SharedValue::new(ConsumeStatsOffsetTable::new()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ConsumeStatsFields {
+    #[serde(deserialize_with = "deserialize_fastjson_f64")]
+    consume_tps: f64,
+    #[serde(
+        default = "default_consume_stats_offset_table",
+        with = "consume_stats_offset_table"
+    )]
+    offset_table: Option<SharedConsumeStatsOffsetTable>,
+}
+
+impl Default for ConsumeStatsFields {
+    fn default() -> Self {
+        Self {
+            consume_tps: 0.0,
+            offset_table: default_consume_stats_offset_table(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConsumeStats {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConsumeStatsFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consume_tps: fields.consume_tps,
+            offset_table: fields.offset_table,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ConsumeStatsComputationError {
+    #[error("offsetTable is null")]
+    NullOffsetTable,
+    #[error("offsetTable contains a null OffsetWrapper")]
+    NullOffsetWrapper,
+}
+
+impl Default for ConsumeStats {
+    fn default() -> Self {
+        Self {
+            consume_tps: 0.0,
+            offset_table: default_consume_stats_offset_table(),
+        }
+    }
+}
+
+impl ConsumeStats {
+    pub fn get_offset_table(&self) -> Option<SharedConsumeStatsOffsetTable> {
+        self.offset_table.clone()
+    }
+
+    pub fn set_offset_table(&mut self, value: Option<SharedConsumeStatsOffsetTable>) {
+        self.offset_table = value;
+    }
+
+    pub fn get_consume_tps(&self) -> f64 {
+        self.consume_tps
+    }
+
+    pub fn set_consume_tps(&mut self, value: f64) {
+        self.consume_tps = value;
+    }
+
+    /// Computes Java's broker-minus-consumer offset total with signed-long
+    /// wrapping arithmetic. Null tables or entries are returned as errors.
+    pub fn compute_total_diff(&self) -> Result<i64, ConsumeStatsComputationError> {
+        let table = self
+            .offset_table
+            .as_ref()
+            .ok_or(ConsumeStatsComputationError::NullOffsetTable)?;
+        table.with(|entries| {
+            entries.values().try_fold(0_i64, |total, offset| {
+                let offset = offset
+                    .as_ref()
+                    .ok_or(ConsumeStatsComputationError::NullOffsetWrapper)?;
+                Ok(total.wrapping_add(
+                    offset.with(|offset| offset.broker_offset.wrapping_sub(offset.consumer_offset)),
+                ))
+            })
+        })
+    }
+
+    /// Computes Java's pull-minus-consumer in-flight total with signed-long
+    /// wrapping arithmetic. Null tables or entries are returned as errors.
+    pub fn compute_inflight_total_diff(&self) -> Result<i64, ConsumeStatsComputationError> {
+        let table = self
+            .offset_table
+            .as_ref()
+            .ok_or(ConsumeStatsComputationError::NullOffsetTable)?;
+        table.with(|entries| {
+            entries.values().try_fold(0_i64, |total, offset| {
+                let offset = offset
+                    .as_ref()
+                    .ok_or(ConsumeStatsComputationError::NullOffsetWrapper)?;
+                Ok(total.wrapping_add(
+                    offset.with(|offset| offset.pull_offset.wrapping_sub(offset.consumer_offset)),
+                ))
+            })
+        })
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let mut fields = Vec::with_capacity(2);
+        fields.push(format!(
+            "\"consumeTps\":{}",
+            serde_json::to_string(&self.consume_tps)?
+        ));
+        if let Some(offset_table) = &self.offset_table {
+            fields.push(format!(
+                "\"offsetTable\":{}",
+                offset_table.with(consume_stats_offset_table::encode_java_json)?
+            ));
+        }
         Ok(format!("{{{}}}", fields.join(",")).into_bytes())
     }
 
@@ -5482,6 +5717,125 @@ mod topic_stats_offset_table {
     }
 }
 
+mod consume_stats_offset_table {
+    use super::{
+        ConsumeStatsOffsetTable, MessageQueue, OffsetWrapper, SharedConsumeStatsOffsetTable,
+        encode_java_message_queue_key,
+    };
+    use crate::{SharedValue, serde_fastjson};
+    use serde::de::{MapAccess, Visitor};
+    use serde::ser::SerializeMap;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S>(
+        entries: &Option<SharedConsumeStatsOffsetTable>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let Some(entries) = entries else {
+            return serializer.serialize_none();
+        };
+        let mut encoded = entries
+            .with(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|(queue, offset)| {
+                        offset.as_ref().map(|offset| {
+                            Ok((encode_java_message_queue_key(queue)?, Some(offset.clone())))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, serde_json::Error>>()
+            })
+            .map_err(serde::ser::Error::custom)?;
+        encoded.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut map = serializer.serialize_map(Some(encoded.len()))?;
+        for (key, offset) in encoded {
+            map.serialize_entry(&key, &offset)?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<SharedConsumeStatsOffsetTable>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let Some(encoded) = Option::<RawConsumeStatsOffsetTable>::deserialize(deserializer)? else {
+            return Ok(None);
+        };
+        let mut table = ConsumeStatsOffsetTable::new();
+        for (key, raw_offset) in encoded.0 {
+            let queue: MessageQueue =
+                serde_fastjson::from_fastjson_str(&key).map_err(serde::de::Error::custom)?;
+            let offset =
+                serde_fastjson::from_fastjson_str_nullable::<OffsetWrapper>(Some(raw_offset.get()))
+                    .map_err(serde::de::Error::custom)?
+                    .map(SharedValue::new);
+            table.insert(queue, offset);
+        }
+        Ok(Some(SharedValue::new(table)))
+    }
+
+    pub(super) fn encode_java_json(
+        entries: &ConsumeStatsOffsetTable,
+    ) -> Result<String, serde_json::Error> {
+        let mut rows = Vec::new();
+        for (queue, offset) in entries {
+            let Some(offset) = offset else {
+                continue;
+            };
+            rows.push((
+                encode_java_message_queue_key(queue)?,
+                serde_json::to_value(offset)?.to_string(),
+            ));
+        }
+        rows.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(format!(
+            "{{{}}}",
+            rows.into_iter()
+                .map(|(key, value)| format!("{key}:{value}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))
+    }
+
+    struct RawConsumeStatsOffsetTable(Vec<(String, Box<serde_json::value::RawValue>)>);
+
+    impl<'de> Deserialize<'de> for RawConsumeStatsOffsetTable {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            struct TableVisitor;
+
+            impl<'de> Visitor<'de> for TableVisitor {
+                type Value = RawConsumeStatsOffsetTable;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    formatter.write_str("a MessageQueue-keyed OffsetWrapper object")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut entries = Vec::new();
+                    while let Some((key, value)) = map.next_entry()? {
+                        entries.push((key, value));
+                    }
+                    Ok(RawConsumeStatsOffsetTable(entries))
+                }
+            }
+
+            deserializer.deserialize_map(TableVisitor)
+        }
+    }
+}
+
 /// Java `ConsumeMessageDirectlyResult` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5785,6 +6139,7 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
 
 impl_java_remoting_serializable_body_adapters!(
     TopicStatsTable,
+    ConsumeStats,
     GetConsumerStatusBody,
     ResetOffsetBody,
 );
@@ -6402,6 +6757,146 @@ mod tests {
             TopicStatsTable::java_from_json_nullable(Some("null"))
                 .unwrap()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn consume_stats_matches_invoked_java_admin_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/admin/query-consume-time-span.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["artifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        let consume_stats_fixture = &fixture["getConsumeStats"];
+        assert_eq!(
+            consume_stats_fixture["method"],
+            "public abstract java.util.concurrent.CompletableFuture<org.apache.rocketmq.remoting.protocol.admin.ConsumeStats> org.apache.rocketmq.client.MqClientAdmin.getConsumeStats(java.lang.String,org.apache.rocketmq.remoting.protocol.header.GetConsumeStatsRequestHeader,long)"
+        );
+        assert_eq!(
+            consume_stats_fixture["consumeStatsPublicMethods"],
+            json!([
+                "public double org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.getConsumeTps()",
+                "public java.util.Map<org.apache.rocketmq.common.message.MessageQueue, org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper> org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.getOffsetTable()",
+                "public long org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.computeInflightTotalDiff()",
+                "public long org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.computeTotalDiff()",
+                "public void org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.setConsumeTps(double)",
+                "public void org.apache.rocketmq.remoting.protocol.admin.ConsumeStats.setOffsetTable(java.util.Map<org.apache.rocketmq.common.message.MessageQueue, org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper>)"
+            ])
+        );
+        assert_eq!(
+            consume_stats_fixture["offsetWrapperPublicMethods"],
+            json!([
+                "public long org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.getBrokerOffset()",
+                "public long org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.getConsumerOffset()",
+                "public long org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.getLastTimestamp()",
+                "public long org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.getPullOffset()",
+                "public void org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.setBrokerOffset(long)",
+                "public void org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.setConsumerOffset(long)",
+                "public void org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.setLastTimestamp(long)",
+                "public void org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper.setPullOffset(long)"
+            ])
+        );
+        let dto_semantics = &consume_stats_fixture["dtoSemantics"];
+        assert_eq!(dto_semantics["defaultConsumeTps"], 0.0);
+        assert_eq!(dto_semantics["defaultOffsetTableNonNull"], true);
+        assert_eq!(dto_semantics["defaultOffsetTableEmpty"], true);
+        assert_eq!(dto_semantics["defaultOffsetValues"], json!([0, 0, 0, 0]));
+        assert_eq!(dto_semantics["setterRetainsMapIdentity"], true);
+        assert_eq!(dto_semantics["getterReturnsStoredOffsetIdentity"], true);
+        assert_eq!(dto_semantics["getterMutationVisibleToAssignedOffset"], true);
+        assert_eq!(dto_semantics["getterMutationVisibleToAssignedMap"], true);
+        assert_eq!(dto_semantics["setterPreservesNull"], true);
+        let java_stats = &fixture["getConsumeStats"]["success"];
+        assert_eq!(java_stats["requestCode"], 208);
+        assert_eq!(java_stats["result"]["computeTotalDiff"], 13);
+        assert_eq!(java_stats["result"]["computeInflightTotalDiff"], 8);
+
+        let body = java_stats["responseBody"].as_str().unwrap();
+        let decoded = ConsumeStats::java_from_json(body).unwrap();
+        assert_eq!(decoded.get_consume_tps(), 1.25);
+        let table = decoded.get_offset_table().unwrap();
+        assert_eq!(table.with(|table| table.len()), 2);
+        let orders = table.with(|table| {
+            table[&MessageQueue::new("orders", "broker-a", 1)]
+                .as_ref()
+                .unwrap()
+                .clone()
+        });
+        assert_eq!(orders.with(|offset| offset.get_broker_offset()), 29);
+        assert_eq!(orders.with(|offset| offset.get_consumer_offset()), 20);
+        assert_eq!(orders.with(|offset| offset.get_pull_offset()), 25);
+        assert_eq!(orders.with(|offset| offset.get_last_timestamp()), 1000);
+        assert_eq!(decoded.compute_total_diff().unwrap(), 13);
+        assert_eq!(decoded.compute_inflight_total_diff().unwrap(), 8);
+        assert_eq!(
+            decoded.java_to_json(false).unwrap(),
+            body,
+            "the MessageQueue-keyed Fastjson body must round-trip byte-for-byte"
+        );
+        assert_eq!(decoded.java_encode().unwrap(), body.as_bytes());
+        assert!(ConsumeStats::java_decode_nullable(None).unwrap().is_none());
+
+        let default = ConsumeStats::default();
+        assert_eq!(default.get_consume_tps(), 0.0);
+        assert!(
+            default
+                .get_offset_table()
+                .unwrap()
+                .with(|table| table.is_empty())
+        );
+        assert_eq!(
+            default.java_to_json(false).unwrap(),
+            dto_semantics["defaultJson"]
+        );
+        let missing: ConsumeStats = serde_json::from_str("{}").unwrap();
+        assert_eq!(missing.get_consume_tps(), 0.0);
+        assert!(
+            missing
+                .get_offset_table()
+                .unwrap()
+                .with(|table| table.is_empty())
+        );
+
+        let explicit_null: ConsumeStats =
+            serde_json::from_str(r#"{"consumeTps":1.25,"offsetTable":null}"#).unwrap();
+        assert!(explicit_null.get_offset_table().is_none());
+        assert_eq!(
+            explicit_null.compute_total_diff(),
+            Err(ConsumeStatsComputationError::NullOffsetTable)
+        );
+        let mut null_default = ConsumeStats::default();
+        null_default.set_offset_table(None);
+        assert_eq!(
+            null_default.java_to_json(false).unwrap(),
+            dto_semantics["explicitNullJson"]
+        );
+
+        let queue = MessageQueue::new("orders", "broker-a", 1);
+        let assigned_offset = SharedValue::new(OffsetWrapper::default());
+        let assigned_table = SharedValue::new(std::collections::HashMap::from([(
+            queue.clone(),
+            Some(assigned_offset.clone()),
+        )]));
+        let mut assigned = ConsumeStats::default();
+        assigned.set_offset_table(Some(assigned_table.clone()));
+        assert!(assigned.get_offset_table().unwrap().ptr_eq(&assigned_table));
+        let returned_offset = assigned
+            .get_offset_table()
+            .unwrap()
+            .with(|table| table[&queue].as_ref().unwrap().clone());
+        assert!(returned_offset.ptr_eq(&assigned_offset));
+        returned_offset.with_mut(|offset| offset.set_broker_offset(9));
+        assert_eq!(assigned_offset.with(|offset| offset.get_broker_offset()), 9);
+        assert_eq!(assigned.compute_total_diff().unwrap(), 9);
+
+        let null_offset_table = SharedValue::new(std::collections::HashMap::from([(queue, None)]));
+        assigned.set_offset_table(Some(null_offset_table));
+        assert_eq!(
+            assigned.compute_inflight_total_diff(),
+            Err(ConsumeStatsComputationError::NullOffsetWrapper)
         );
     }
 

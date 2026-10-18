@@ -58,6 +58,8 @@ import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
 import org.apache.rocketmq.remoting.protocol.body.Connection;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerConnection;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
+import org.apache.rocketmq.remoting.protocol.admin.ConsumeStats;
+import org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
@@ -66,6 +68,7 @@ import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerConnectionListRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumeStatsRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -219,6 +222,7 @@ public final class MqClientAdminFixtures {
         fixture.put("consumeMessageDirectly", consumeMessageDirectly());
         fixture.put("getBrokerClusterInfo", getBrokerClusterInfo());
         fixture.put("getConsumerConnectionList", getConsumerConnectionList());
+        fixture.put("getConsumeStats", getConsumeStats());
         return fixture;
     }
 
@@ -309,6 +313,168 @@ public final class MqClientAdminFixtures {
         result.put("success", success);
         result.put("successWithoutBody", successWithoutBody);
         result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> getConsumeStats() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("getConsumeStats", String.class,
+            GetConsumeStatsRequestHeader.class, long.class);
+        GetConsumeStatsRequestHeader header = new GetConsumeStatsRequestHeader();
+        header.setConsumerGroup("workers");
+        header.setTopic("ignored-topic");
+        header.setTopicList("orders;payments;");
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+
+        ConsumeStats expected = new ConsumeStats();
+        Map<MessageQueue, OffsetWrapper> offsets = new LinkedHashMap<>();
+        MessageQueue orders = new MessageQueue("orders", "broker-a", 1);
+        OffsetWrapper ordersOffset = new OffsetWrapper();
+        ordersOffset.setBrokerOffset(29L);
+        ordersOffset.setConsumerOffset(20L);
+        ordersOffset.setPullOffset(25L);
+        ordersOffset.setLastTimestamp(1000L);
+        offsets.put(orders, ordersOffset);
+        MessageQueue payments = new MessageQueue("payments", "broker-b", 2);
+        OffsetWrapper paymentsOffset = new OffsetWrapper();
+        paymentsOffset.setBrokerOffset(42L);
+        paymentsOffset.setConsumerOffset(38L);
+        paymentsOffset.setPullOffset(41L);
+        paymentsOffset.setLastTimestamp(2000L);
+        offsets.put(payments, paymentsOffset);
+        expected.setOffsetTable(offsets);
+        expected.setConsumeTps(1.25);
+        byte[] bodyBytes = RemotingSerializable.encode(expected);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        ConsumeStats value = new MqClientAdminImpl(successCapture.proxy())
+            .getConsumeStats(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
+        success.put("result", consumeStatsSnapshot(value));
+
+        Capture noBodyCapture = new Capture();
+        noBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        ConsumeStats noBody = new MqClientAdminImpl(noBodyCapture.proxy())
+            .getConsumeStats(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> successWithoutBody = new LinkedHashMap<>();
+        successWithoutBody.put("address", noBodyCapture.address);
+        successWithoutBody.put("timeoutMillis", noBodyCapture.timeoutMillis);
+        successWithoutBody.put("requestCode", noBodyCapture.request.getCode());
+        successWithoutBody.put("requestExtFields", new TreeMap<>(noBodyCapture.request.getExtFields()));
+        successWithoutBody.put("responseCode", noBodyCapture.response.getCode());
+        successWithoutBody.put("result", noBody == null ? null : consumeStatsSnapshot(noBody));
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "consume stats unavailable");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .getConsumeStats(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin consume stats error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("method", method.toGenericString());
+        result.put("consumeStatsPublicMethods", publicMethodSignatures(ConsumeStats.class));
+        result.put("offsetWrapperPublicMethods", publicMethodSignatures(OffsetWrapper.class));
+        result.put("dtoSemantics", consumeStatsDtoSemantics());
+        result.put("success", success);
+        result.put("successWithoutBody", successWithoutBody);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static List<String> publicMethodSignatures(Class<?> type) {
+        List<String> signatures = new ArrayList<>();
+        for (Method method : type.getDeclaredMethods()) {
+            if (java.lang.reflect.Modifier.isPublic(method.getModifiers())) {
+                signatures.add(method.toGenericString());
+            }
+        }
+        signatures.sort(String::compareTo);
+        return signatures;
+    }
+
+    private static Map<String, Object> consumeStatsDtoSemantics() {
+        ConsumeStats defaults = new ConsumeStats();
+        OffsetWrapper defaultOffset = new OffsetWrapper();
+        Map<String, Object> semantics = new TreeMap<>();
+        semantics.put("defaultJson", new String(RemotingSerializable.encode(defaults), StandardCharsets.UTF_8));
+        semantics.put("defaultConsumeTps", defaults.getConsumeTps());
+        semantics.put("defaultOffsetTableNonNull", defaults.getOffsetTable() != null);
+        semantics.put("defaultOffsetTableEmpty", defaults.getOffsetTable().isEmpty());
+        semantics.put("defaultOffsetValues", List.of(
+            defaultOffset.getBrokerOffset(), defaultOffset.getConsumerOffset(),
+            defaultOffset.getPullOffset(), defaultOffset.getLastTimestamp()));
+
+        MessageQueue queue = new MessageQueue("orders", "broker-a", 1);
+        OffsetWrapper assignedOffset = new OffsetWrapper();
+        Map<MessageQueue, OffsetWrapper> assignedMap = new LinkedHashMap<>();
+        assignedMap.put(queue, assignedOffset);
+        ConsumeStats assigned = new ConsumeStats();
+        assigned.setOffsetTable(assignedMap);
+        semantics.put("setterRetainsMapIdentity", assigned.getOffsetTable() == assignedMap);
+        semantics.put("getterReturnsStoredOffsetIdentity", assigned.getOffsetTable().get(queue) == assignedOffset);
+        assigned.getOffsetTable().get(queue).setBrokerOffset(9L);
+        semantics.put("getterMutationVisibleToAssignedOffset", assignedOffset.getBrokerOffset() == 9L);
+        semantics.put("getterMutationVisibleToAssignedMap", assignedMap.get(queue).getBrokerOffset() == 9L);
+
+        assigned.setOffsetTable(null);
+        semantics.put("setterPreservesNull", assigned.getOffsetTable() == null);
+        semantics.put("explicitNullJson", new String(RemotingSerializable.encode(assigned), StandardCharsets.UTF_8));
+        return semantics;
+    }
+
+    private static Map<String, Object> consumeStatsSnapshot(ConsumeStats value) {
+        List<Map<String, Object>> offsets = new ArrayList<>();
+        for (Map.Entry<MessageQueue, OffsetWrapper> entry : value.getOffsetTable().entrySet()) {
+            MessageQueue queue = entry.getKey();
+            OffsetWrapper offset = entry.getValue();
+            Map<String, Object> row = new TreeMap<>();
+            row.put("topic", queue.getTopic());
+            row.put("brokerName", queue.getBrokerName());
+            row.put("queueId", queue.getQueueId());
+            row.put("brokerOffset", offset.getBrokerOffset());
+            row.put("consumerOffset", offset.getConsumerOffset());
+            row.put("pullOffset", offset.getPullOffset());
+            row.put("lastTimestamp", offset.getLastTimestamp());
+            offsets.add(row);
+        }
+        offsets.sort(Comparator.comparing((Map<String, Object> row) -> (String) row.get("topic"))
+            .thenComparing(row -> (String) row.get("brokerName"))
+            .thenComparingInt(row -> (Integer) row.get("queueId")));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("consumeTps", value.getConsumeTps());
+        result.put("offsetTable", offsets);
+        result.put("computeTotalDiff", value.computeTotalDiff());
+        result.put("computeInflightTotalDiff", value.computeInflightTotalDiff());
         return result;
     }
 
