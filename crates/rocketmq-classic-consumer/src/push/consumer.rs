@@ -1244,11 +1244,20 @@ impl PushConsumer {
                     reason: "selected Broker address is null".into(),
                 }
             })?;
+            let request_address =
+                broker_vip_channel(self.config.client_config().vip_channel_enabled(), &address)
+                    .map_err(
+                        |error| rocketmq_classic_core::error::RpcError::MalformedResponse {
+                            request_code: request::QUERY_CONSUME_TIME_SPAN,
+                            peer: address.clone(),
+                            reason: error.to_string(),
+                        },
+                    )?;
             let response = context
                 .runtime
                 .api()
                 .query_consume_time_span(
-                    &address,
+                    &request_address,
                     &header,
                     Instant::now() + CONSUME_TIME_SPAN_TIMEOUT,
                 )

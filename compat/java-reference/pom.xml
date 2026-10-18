@@ -378,6 +378,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-mq-client-admin-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.MqClientAdminFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/admin/query-consume-time-span.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-client-check-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

@@ -17,7 +17,7 @@ use rocketmq_classic_protocol::{
 };
 use tokio::time::Instant;
 
-use super::{MQClientApi, classify, decode_body, decode_header, read_shared_client_config};
+use super::{MQClientApi, classify, decode_body, decode_header};
 use crate::error::RpcError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,8 +109,8 @@ fn pull_request_code(header: &PullMessageRequestHeader) -> Result<i32, ProtocolE
 }
 
 impl MQClientApi {
-    /// Queries one Broker for consume timestamp ranges. The caller owns route
-    /// iteration and result concatenation, matching Java's consumer wrapper.
+    /// Queries one Broker directly for consume timestamp ranges. The caller
+    /// supplies the address unchanged, matching Java's MqClientAdmin path.
     pub async fn query_consume_time_span(
         &self,
         addr: &str,
@@ -118,22 +118,9 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<Option<Vec<Option<QueueTimeSpan>>>, RpcError> {
         let code = request::QUERY_CONSUME_TIME_SPAN;
-        let vip_enabled = self
-            .config
-            .as_ref()
-            .is_some_and(|config| read_shared_client_config(config).vip_channel_enabled);
-        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr).map_err(|error| {
-            RpcError::MalformedResponse {
-                request_code: code,
-                peer: addr.to_owned(),
-                reason: error.to_string(),
-            }
-        })?;
-        let reply = self
-            .request(&broker_addr, code, header, None, deadline)
-            .await?;
-        let reply = classify(reply, code, &broker_addr)?;
-        let body: QueryConsumeTimeSpanBody = decode_body(&reply, code, &broker_addr)?;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        let body: QueryConsumeTimeSpanBody = decode_body(&reply, code, addr)?;
         Ok(body.consume_time_span_set)
     }
 
@@ -654,6 +641,56 @@ mod tests {
                 remark: Some(remark),
             } if peer == error_address && remark == case["topicNotExistMessage"].as_str().unwrap()
         ));
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn query_consume_time_span_admin_call_uses_the_supplied_address_with_vip_enabled() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let incoming = read_command(&mut stream).await;
+            assert_eq!(incoming.code, request::QUERY_CONSUME_TIME_SPAN);
+            assert_eq!(
+                incoming
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("topic"))
+                    .map(String::as_str),
+                Some("orders")
+            );
+            reply(
+                &mut stream,
+                &incoming,
+                response::SUCCESS,
+                None,
+                Some(br#"{"consumeTimeSpanSet":[]}"#.to_vec()),
+            )
+            .await;
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = crate::config::ClientConfig::new("admin-query-time-span-vip");
+        config.set_vip_channel_enabled(true);
+        let config = std::sync::Arc::new(std::sync::RwLock::new(config));
+        let api = MQClientApi::with_config(remoting.clone(), config);
+        let result = api
+            .query_consume_time_span(
+                &address,
+                &QueryConsumeTimeSpanRequestHeader {
+                    topic: Some("orders".into()),
+                    group: Some("workers".into()),
+                    ..Default::default()
+                },
+                Instant::now() + Duration::from_secs(3),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.unwrap().len(), 0);
+        peer.await.unwrap();
         remoting.shutdown().await;
     }
 }

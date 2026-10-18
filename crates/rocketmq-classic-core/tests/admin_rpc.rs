@@ -12,9 +12,10 @@ use rocketmq_classic_protocol::{
     header::{
         BoundaryType, CommandHeader, CreateTopicRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
-        GetTopicStatsInfoRequestHeader, HeaderMap, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-        QueryTopicConsumeByWhoRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -54,6 +55,25 @@ async fn scripted_peer_after(
     body: Option<Vec<u8>>,
     response_delay: Duration,
 ) -> (String, tokio::task::JoinHandle<RemotingCommand>) {
+    scripted_peer_after_with_remark(code, None, header, body, response_delay).await
+}
+
+async fn scripted_peer_with_remark(
+    code: i32,
+    remark: Option<String>,
+    header: Option<HeaderMap>,
+    body: Option<Vec<u8>>,
+) -> (String, tokio::task::JoinHandle<RemotingCommand>) {
+    scripted_peer_after_with_remark(code, remark, header, body, Duration::ZERO).await
+}
+
+async fn scripted_peer_after_with_remark(
+    code: i32,
+    remark: Option<String>,
+    header: Option<HeaderMap>,
+    body: Option<Vec<u8>>,
+    response_delay: Duration,
+) -> (String, tokio::task::JoinHandle<RemotingCommand>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     let task = tokio::spawn(async move {
@@ -63,6 +83,7 @@ async fn scripted_peer_after(
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
+            remark,
             ext_fields: header.map(Into::into),
             body,
             ..RemotingCommand::default()
@@ -462,6 +483,105 @@ async fn get_topic_stats_info_preserves_broker_errors_and_rejects_malformed_body
         } if peer == addr
     ));
     assert_eq!(peer.await.unwrap().code, request::GET_TOPIC_STATS_INFO);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_consume_time_span_matches_mq_client_admin_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let success_case = &fixture["success"];
+    let body = success_case["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (client_api, client) = api().await;
+    let header = QueryConsumeTimeSpanRequestHeader {
+        topic: Some("orders".into()),
+        group: Some("workers".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+    };
+    let spans = client_api
+        .query_consume_time_span(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(
+        command.code,
+        success_case["requestCode"].as_i64().unwrap() as i32
+    );
+    let actual_fields = command.ext_fields.as_ref().unwrap();
+    let expected_fields = success_case["requestExtFields"].as_object().unwrap();
+    assert_eq!(actual_fields.len(), expected_fields.len());
+    for (key, value) in expected_fields {
+        assert_eq!(
+            actual_fields.get(key).map(String::as_str),
+            value.as_str(),
+            "field {key}"
+        );
+    }
+    assert_eq!(
+        spans.len(),
+        success_case["result"].as_array().unwrap().len()
+    );
+    let span = spans[0].as_ref().unwrap();
+    let expected = &success_case["result"][0];
+    let queue = span.message_queue.as_ref().unwrap();
+    assert_eq!(queue.topic(), expected["topic"].as_str());
+    assert_eq!(queue.broker_name(), expected["brokerName"].as_str());
+    assert_eq!(
+        queue.queue_id(),
+        expected["queueId"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        span.min_time_stamp,
+        expected["minTimeStamp"].as_i64().unwrap()
+    );
+    assert_eq!(
+        span.max_time_stamp,
+        expected["maxTimeStamp"].as_i64().unwrap()
+    );
+    assert_eq!(
+        span.consume_time_stamp,
+        expected["consumeTimeStamp"].as_i64().unwrap()
+    );
+    assert_eq!(span.delay_time, expected["delayTime"].as_i64().unwrap());
+    client.shutdown().await;
+
+    let error_case = &fixture["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .query_consume_time_span(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_CONSUME_TIME_SPAN,
+            peer,
+            code,
+            remark: Some(remark),
+        } if peer == addr
+            && code == error_case["responseCode"].as_i64().unwrap() as i32
+            && remark == error_case["responseRemark"].as_str().unwrap()
+    ));
+    assert_eq!(peer.await.unwrap().code, request::QUERY_CONSUME_TIME_SPAN);
     client.shutdown().await;
 }
 
