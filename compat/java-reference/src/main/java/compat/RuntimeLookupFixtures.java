@@ -1,5 +1,6 @@
 package compat;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
@@ -1674,6 +1675,13 @@ public final class RuntimeLookupFixtures {
         org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody body =
             new org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody();
         Map<String, Object> item = new TreeMap<>();
+        item.put("publicConstructors", publicConstructorSignatures(body.getClass()));
+        item.put("declaredPublicMethods", declaredPublicMethodSignatures(body.getClass()));
+        item.put("publicFields", Arrays.stream(body.getClass().getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
         item.put("defaultConsumerIds", body.getConsumerIdList());
         List<String> consumerIds = new ArrayList<>(List.of("client-a", "client-b"));
         body.setConsumerIdList(consumerIds);

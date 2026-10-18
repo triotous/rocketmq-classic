@@ -924,28 +924,18 @@ fn generate_p4_bodies(output: &std::path::Path) {
         },
     );
     let queue = rocketmq_classic_common::message::MessageQueue::new("orders", "broker-a", 1);
+    let absent_consumer_list = ConsumerListByGroupResponseBody::default();
+    let mut empty_consumer_list = ConsumerListByGroupResponseBody::default();
+    empty_consumer_list.set_consumer_id_list(Some(SharedValue::new(vec![])));
+    let mut populated_consumer_list = ConsumerListByGroupResponseBody::default();
+    populated_consumer_list.set_consumer_id_list(Some(SharedValue::new(vec![
+        Some("client-a".into()),
+        Some("client-b".into()),
+    ])));
     for (name, body) in [
-        (
-            "body-consumer-list-absent.bin",
-            ConsumerListByGroupResponseBody {
-                consumer_id_list: None,
-            },
-        ),
-        (
-            "body-consumer-list-empty.bin",
-            ConsumerListByGroupResponseBody {
-                consumer_id_list: Some(SharedValue::new(vec![])),
-            },
-        ),
-        (
-            "body-consumer-list-populated.bin",
-            ConsumerListByGroupResponseBody {
-                consumer_id_list: Some(SharedValue::new(vec![
-                    Some("client-a".into()),
-                    Some("client-b".into()),
-                ])),
-            },
-        ),
+        ("body-consumer-list-absent.bin", absent_consumer_list),
+        ("body-consumer-list-empty.bin", empty_consumer_list),
+        ("body-consumer-list-populated.bin", populated_consumer_list),
     ] {
         write_body(output, name, 38, &body);
     }

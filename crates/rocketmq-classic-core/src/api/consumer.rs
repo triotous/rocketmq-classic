@@ -363,7 +363,7 @@ impl MQClientApi {
         }
         let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
         Ok(body
-            .consumer_id_list
+            .get_consumer_id_list()
             .map(|consumer_ids| consumer_ids.snapshot()))
     }
 

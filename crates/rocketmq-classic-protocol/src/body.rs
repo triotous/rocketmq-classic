@@ -4847,11 +4847,18 @@ impl LockBatchResponseBody {
 /// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// fn main() { require_java_identity::<ConsumerListByGroupResponseBody>(); }
 /// ```
+///
+/// Java exposes this DTO's list through accessors rather than a public field.
+/// The field must stay private so Rust callers cannot bypass those methods.
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ConsumerListByGroupResponseBody;
+/// let _ = ConsumerListByGroupResponseBody::default().consumer_id_list;
+/// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerListByGroupResponseBody {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub consumer_id_list: Option<SharedValue<Vec<Option<String>>>>,
+    consumer_id_list: Option<SharedValue<Vec<Option<String>>>>,
 }
 
 impl<'de> Deserialize<'de> for ConsumerListByGroupResponseBody {
@@ -9142,6 +9149,20 @@ mod tests {
         assert_eq!(check_case["nullSettersRemainNull"], true);
 
         let list_case = &fixture["consumerListApiCase"];
+        assert_eq!(
+            list_case["publicConstructors"],
+            json!([
+                "org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody()"
+            ])
+        );
+        assert_eq!(
+            list_case["declaredPublicMethods"],
+            json!([
+                "java.util.List org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.getConsumerIdList()",
+                "void org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody.setConsumerIdList(java.util.List)"
+            ])
+        );
+        assert_eq!(list_case["publicFields"], json!([]));
         let mut consumer_list = ConsumerListByGroupResponseBody::default();
         assert_eq!(
             serde_json::to_value(consumer_list.get_consumer_id_list()).unwrap(),
@@ -10745,7 +10766,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            populated.consumer_id_list.unwrap().snapshot(),
+            populated.get_consumer_id_list().unwrap().snapshot(),
             vec![Some("client".into())]
         );
     }
@@ -11046,7 +11067,7 @@ mod tests {
             );
             if let Ok(decoded) = decoded {
                 assert_eq!(
-                    serde_json::to_value(&decoded.consumer_id_list).unwrap(),
+                    serde_json::to_value(decoded.get_consumer_id_list()).unwrap(),
                     case["ids"],
                     "{}",
                     case["name"]
@@ -11080,7 +11101,7 @@ mod tests {
             );
             if let Ok(decoded) = decoded {
                 assert_eq!(
-                    serde_json::to_value(&decoded.consumer_id_list).unwrap(),
+                    serde_json::to_value(decoded.get_consumer_id_list()).unwrap(),
                     case["ids"],
                     "{}",
                     case["name"]
