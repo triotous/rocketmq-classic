@@ -699,12 +699,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-change-invisible.bin",
         200053,
         &ChangeInvisibleTimeRequestHeader {
-            consumer_group: "workers".into(),
-            topic: "orders".into(),
-            queue_id: 1,
-            extra_info: "startOffset popTime invisibleTime queueId".into(),
-            offset: 9,
-            invisible_time: 60_000,
+            consumer_group: Some("workers".into()),
+            topic: Some("orders".into()),
+            queue_id: Some(1),
+            extra_info: Some("startOffset popTime invisibleTime queueId".into()),
+            offset: Some(9),
+            invisible_time: Some(60_000),
             lite_topic: None,
             suspend: false,
             ..ChangeInvisibleTimeRequestHeader::default()

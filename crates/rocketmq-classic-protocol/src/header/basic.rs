@@ -2501,14 +2501,16 @@ impl CommandHeader for AckMessageRequestHeader {
     }
 }
 
+/// Java's `ChangeInvisibleTimeRequestHeader` uses nullable strings and boxed
+/// numeric fields; invalid reflection conversions leave those fields unset.
 #[derive(Debug, Clone, Default)]
 pub struct ChangeInvisibleTimeRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub extra_info: String,
-    pub offset: i64,
-    pub invisible_time: i64,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
+    pub queue_id: Option<i32>,
+    pub extra_info: Option<String>,
+    pub offset: Option<i64>,
+    pub invisible_time: Option<i64>,
     pub lite_topic: Option<String>,
     pub suspend: bool,
     pub namespace: Option<String>,
@@ -2776,12 +2778,12 @@ impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
 
 impl CommandHeader for ChangeInvisibleTimeRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("queueId".into(), self.queue_id.to_string());
-        fields.insert("extraInfo".into(), self.extra_info.clone());
-        fields.insert("offset".into(), self.offset.to_string());
-        fields.insert("invisibleTime".into(), self.invisible_time.to_string());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "queueId", self.queue_id);
+        put_optional(fields, "extraInfo", self.extra_info.as_deref());
+        put_optional(fields, "offset", self.offset);
+        put_optional(fields, "invisibleTime", self.invisible_time);
         put_optional(fields, "liteTopic", self.lite_topic.as_deref());
         fields.insert("suspend".into(), self.suspend.to_string());
         put_optional(fields, "ns", self.namespace.as_deref());
@@ -2791,17 +2793,24 @@ impl CommandHeader for ChangeInvisibleTimeRequestHeader {
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, false)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
-            extra_info: required_string(fields, "extraInfo")?.to_owned(),
-            offset: required_i64(fields, "offset")?,
-            invisible_time: required_i64(fields, "invisibleTime")?,
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?,
+            extra_info: optional_string(fields, "extraInfo"),
+            offset: optional_i64_with_mode(fields, "offset", false)?,
+            invisible_time: optional_i64_with_mode(fields, "invisibleTime", false)?,
             lite_topic: optional_string(fields, "liteTopic"),
             suspend: java_boolean(fields, "suspend"),
         })
@@ -3617,7 +3626,7 @@ mod tests {
             ChangeInvisibleTimeRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut ChangeInvisibleTimeRequestHeader| h.consumer_group = "payload".into()
+            |h: &mut ChangeInvisibleTimeRequestHeader| h.consumer_group = Some("payload".into())
         );
         check_rpc_request_header!(
             PollingInfoRequestHeader,

@@ -211,7 +211,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-change-invisible-request",
     ))
     .unwrap();
-    assert_eq!(change.invisible_time, 60_000);
+    assert_eq!(change.invisible_time, Some(60_000));
     let notification =
         NotificationRequestHeader::decode_fields(&java_ext_fields("header-notification-request"))
             .unwrap();
@@ -396,6 +396,59 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
             }
             .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
             assert_eq!(actual, expected, "{case_name} {mode_name}");
+        }
+    }
+}
+
+#[test]
+fn change_invisible_time_header_decode_modes_match_java_551() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(format!(
+            "{root}/fixtures/remoting/change-invisible-time-header-decode-modes.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        fixture["clientArtifact"],
+        "org.apache.rocketmq:rocketmq-client:5.5.1"
+    );
+    assert_eq!(
+        fixture["sourceCommit"],
+        "efa1be59d6fc747ad220f036c86030f05f0419f9"
+    );
+    assert_eq!(fixture["serverContacted"], false);
+    let cases = fixture["cases"].as_object().unwrap();
+    assert_eq!(cases.len(), 2);
+
+    for (case_name, case) in cases {
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for (mode_name, use_fast_encode) in [("fast", true), ("reflection", false)] {
+            let expected_mode = &case[mode_name];
+            assert_eq!(expected_mode["outcome"], "OK", "{case_name} {mode_name}");
+            let header =
+                ChangeInvisibleTimeRequestHeader::decode_fields_with_mode(&fields, use_fast_encode)
+                    .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
+            let mut encoded = HeaderMap::new();
+            header.encode_fields(&mut encoded);
+            let expected: HeaderMap =
+                serde_json::from_value(expected_mode["encodedFields"].clone()).unwrap();
+            assert_eq!(encoded, expected, "{case_name} {mode_name}");
+            assert_eq!(
+                serde_json::json!({
+                    "consumerGroup": header.consumer_group,
+                    "topic": header.topic,
+                    "queueId": header.queue_id,
+                    "extraInfo": header.extra_info,
+                    "offset": header.offset,
+                    "invisibleTime": header.invisible_time,
+                    "liteTopic": header.lite_topic,
+                    "suspend": header.suspend,
+                }),
+                expected_mode["values"],
+                "{case_name} {mode_name} values"
+            );
         }
     }
 }
@@ -1669,10 +1722,10 @@ fn header_validation_matrix() {
         row!(
             ChangeInvisibleTimeRequestHeader,
             "change-invisible-request",
-            "consumerGroup topic queueId extraInfo offset invisibleTime",
+            "",
             "queueId",
             "offset invisibleTime",
-            "liteTopic ns nsd bname oway",
+            "consumerGroup topic queueId extraInfo offset invisibleTime liteTopic ns nsd bname oway",
             "suspend nsd oway"
         ),
         row!(
@@ -1922,7 +1975,8 @@ fn header_validation_matrix() {
                     fields.insert(name.into(), value.into());
                     if matches!(
                         case.model,
-                        "SendMessageRequestHeaderV2"
+                        "ChangeInvisibleTimeRequestHeader"
+                            | "SendMessageRequestHeaderV2"
                             | "QueryMessageRequestHeader"
                             | "QueryMessageResponseHeader"
                             | "ViewMessageRequestHeader"

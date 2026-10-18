@@ -226,12 +226,12 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                         &addr,
                         "broker",
                         &ChangeInvisibleTimeRequestHeader {
-                            consumer_group: "consumer".into(),
-                            topic: "oracle-topic".into(),
-                            queue_id: 2,
-                            offset: 17,
-                            extra_info: "checkpoint".into(),
-                            invisible_time: 456,
+                            consumer_group: Some("consumer".into()),
+                            topic: Some("oracle-topic".into()),
+                            queue_id: Some(2),
+                            offset: Some(17),
+                            extra_info: Some("checkpoint".into()),
+                            invisible_time: Some(456),
                             ..Default::default()
                         },
                         deadline,

@@ -544,12 +544,12 @@ impl PopReceipt {
         invisible_time: i64,
     ) -> ChangeInvisibleTimeRequestHeader {
         ChangeInvisibleTimeRequestHeader {
-            consumer_group: consumer_group.to_owned(),
-            topic: self.real_topic(topic, consumer_group),
-            queue_id: self.queue_id,
-            extra_info: self.raw.clone(),
-            offset: self.queue_offset,
-            invisible_time,
+            consumer_group: Some(consumer_group.to_owned()),
+            topic: Some(self.real_topic(topic, consumer_group)),
+            queue_id: Some(self.queue_id),
+            extra_info: Some(self.raw.clone()),
+            offset: Some(self.queue_offset),
+            invisible_time: Some(invisible_time),
             lite_topic: None,
             suspend: false,
             ..ChangeInvisibleTimeRequestHeader::default()
@@ -661,10 +661,12 @@ mod tests {
         assert_eq!(ack.offset, 19);
         assert_eq!(ack.extra_info, receipt.raw());
         let change = receipt.change_invisible_header("orders", "workers", 9_000);
-        assert_eq!(change.topic, ack.topic);
-        assert_eq!(change.offset, 19);
-        assert_eq!(change.invisible_time, 9_000);
-        assert_eq!(change.extra_info, receipt.raw());
+        assert_eq!(change.consumer_group.as_deref(), Some("workers"));
+        assert_eq!(change.topic.as_deref(), Some(ack.topic.as_str()));
+        assert_eq!(change.queue_id, Some(4));
+        assert_eq!(change.offset, Some(19));
+        assert_eq!(change.invisible_time, Some(9_000));
+        assert_eq!(change.extra_info.as_deref(), Some(receipt.raw()));
     }
 
     #[test]

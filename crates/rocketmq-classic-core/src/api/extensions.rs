@@ -10,7 +10,7 @@ use rocketmq_classic_protocol::{
         ChangeInvisibleTimeResponseHeader, HeartbeatRequestHeader,
         LiteSubscriptionCtlRequestHeader, PopLiteMessageRequestHeader,
         PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        UnregisterClientRequestHeader,
+        ProtocolError, UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -472,19 +472,25 @@ impl MQClientApi {
                 extra_info: None,
             });
         }
+        let offset = header.offset.ok_or(ProtocolError::MissingField("offset"))?;
+        let topic = header.topic.as_deref();
+        let queue_id = header
+            .queue_id
+            .ok_or(ProtocolError::MissingField("queueId"))?;
+        let topic = topic.ok_or(ProtocolError::MissingField("topic"))?;
         Ok(ChangeInvisibleTimeResult {
             status: AckStatus::Ok,
             pop_time: Some(pop_time),
             invisible_time: Some(invisible_time),
             revive_qid: Some(revive_qid),
             extra_info: Some(change_invisible_extra_info(
-                header.offset,
+                offset,
                 pop_time,
                 invisible_time,
                 revive_qid,
-                &header.topic,
+                topic,
                 broker_name,
-                header.queue_id,
+                queue_id,
             )),
         })
     }

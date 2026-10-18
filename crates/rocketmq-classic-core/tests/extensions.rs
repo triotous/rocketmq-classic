@@ -14,7 +14,10 @@ use rocketmq_classic_protocol::{
         SetMessageRequestModeRequestBody,
     },
     codes::{request, response},
-    header::{PopLiteMessageRequestHeader, PopMessageRequestHeader, UnregisterClientRequestHeader},
+    header::{
+        ChangeInvisibleTimeRequestHeader, PopLiteMessageRequestHeader, PopMessageRequestHeader,
+        ProtocolError, UnregisterClientRequestHeader,
+    },
     heartbeat::HeartbeatData,
 };
 use rocketmq_classic_remoting::{
@@ -73,6 +76,18 @@ async fn peer(
 
 fn deadline() -> Instant {
     Instant::now() + Duration::from_secs(3)
+}
+
+fn valid_change_invisible_header() -> ChangeInvisibleTimeRequestHeader {
+    ChangeInvisibleTimeRequestHeader {
+        consumer_group: Some("consumer".into()),
+        topic: Some("oracle-topic".into()),
+        queue_id: Some(2),
+        extra_info: Some("checkpoint".into()),
+        offset: Some(17),
+        invisible_time: Some(456),
+        ..Default::default()
+    }
 }
 
 #[tokio::test]
@@ -291,7 +306,12 @@ async fn change_invisible_time_returns_java_ack_metadata() {
         let (api, client, addr, task) =
             peer(request::CHANGE_MESSAGE_INVISIBLETIME, status, None, fields).await;
         let result = api
-            .change_invisible_time(&addr, "broker", &Default::default(), deadline())
+            .change_invisible_time(
+                &addr,
+                "broker",
+                &valid_change_invisible_header(),
+                deadline(),
+            )
             .await;
         match status {
             response::SUCCESS => {
@@ -306,7 +326,7 @@ async fn change_invisible_time_returns_java_ack_metadata() {
                     result.extra_info.as_deref(),
                     Some(
                         format!(
-                            "0 {} {} {} 0 broker 0 0",
+                            "17 {} {} {} 0 broker 2 17",
                             pop_time.unwrap(),
                             invisible_time.unwrap(),
                             revive_qid.unwrap()
@@ -324,6 +344,43 @@ async fn change_invisible_time_returns_java_ack_metadata() {
                 );
             }
         }
+        task.await.unwrap();
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn change_invisible_time_success_requires_request_fields_used_by_java_callback() {
+    for missing_field in ["offset", "topic", "queueId"] {
+        let (api, client, addr, task) = peer(
+            request::CHANGE_MESSAGE_INVISIBLETIME,
+            response::SUCCESS,
+            None,
+            Some(
+                [
+                    ("popTime".into(), "12".into()),
+                    ("invisibleTime".into(), "30".into()),
+                    ("reviveQid".into(), "2".into()),
+                ]
+                .into(),
+            ),
+        )
+        .await;
+        let mut header = valid_change_invisible_header();
+        match missing_field {
+            "offset" => header.offset = None,
+            "topic" => header.topic = None,
+            "queueId" => header.queue_id = None,
+            _ => unreachable!(),
+        }
+
+        let result = api
+            .change_invisible_time(&addr, "broker", &header, deadline())
+            .await;
+        assert!(matches!(
+            result,
+            Err(RpcError::Header(ProtocolError::MissingField(field))) if field == missing_field
+        ));
         task.await.unwrap();
         client.shutdown().await;
     }
@@ -515,7 +572,12 @@ async fn async_extension_status_and_malformed_matrix() {
             )
             .await;
             let result = api
-                .change_invisible_time(&addr, "broker", &Default::default(), deadline())
+                .change_invisible_time(
+                    &addr,
+                    "broker",
+                    &valid_change_invisible_header(),
+                    deadline(),
+                )
                 .await;
             let result = result.unwrap();
             assert_eq!(result.status, AckStatus::Ok);
@@ -831,7 +893,12 @@ async fn change_invisibility_defaults_revive_queue_id_outside_i32() {
         )
         .await;
         let result = api
-            .change_invisible_time(&addr, "broker", &Default::default(), deadline())
+            .change_invisible_time(
+                &addr,
+                "broker",
+                &valid_change_invisible_header(),
+                deadline(),
+            )
             .await;
         let result = result.unwrap();
         assert_eq!(result.status, AckStatus::Ok);
