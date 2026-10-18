@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Two methods now have source-backed
-typed RPC slices; the other 17 still need reconciliation. Their public status
+method-by-method mapping has been verified. Three methods now have source-backed
+typed RPC slices; the other 16 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -72,11 +72,24 @@ RPC tests cover request fields, successful subscription decoding, nullable
 subscription data, and Broker error mapping. Typed Java/Rust header
 cross-decode and Rust header-inventory/validation rows are included.
 
-The other 17 interface methods remain to reconcile.
+Third reconciled method slice (code commit `c091d507`): Java
+`queryTopicConsumeByWho(address, requestHeader, timeoutMillis)` sends request
+code 300 with `QueryTopicConsumeByWhoRequestHeader` and decodes a `GroupList`
+only on `SUCCESS`. Rust exposes `MQClientApi::query_topic_consume_by_who`,
+the typed header, and `GroupList`. The header keeps topic and inherited
+`ns`, `nsd`, `bname`, `oway`, and `lo` values nullable; the invoked
+decode-mode fixture covers valid, missing, and malformed Boolean fields under
+both Java hints. The GroupList fixture pins the empty-set default, nullable Set
+and elements, JSON shape, and getter alias identity. Scripted Rust RPC tests
+cover request fields, successful decoding, nullable response data, and Broker
+error mapping. Header identity and validation rows include this third query
+header.
 
-Status: **OPEN P18-V01 local parity work**. Reconcile every method's request
-header/body, response type, error path and call behavior against Rust; add the
-remaining typed APIs and invoked fixtures. This is not a Phase 19 manual
+The other 16 interface methods remain to reconcile.
+
+Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
+request header/body, response type, error path and call behavior against Rust;
+add missing typed APIs and invoked fixtures. This is not a Phase 19 manual
 handoff.
 
 ## Tools-only admin extension scope audit

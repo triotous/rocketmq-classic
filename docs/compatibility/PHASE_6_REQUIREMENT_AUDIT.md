@@ -1026,3 +1026,5 @@ types, results, error mapping and control flow have not been reconciled. The
 19-method inventory and required follow-up are recorded in
 `PHASE_17_ADMIN_MATRIX.md`; implementation and invoked Rust/Java evidence are
 still required. This remains local parity work, not manual validation.
+
+P18-V01 query/admin header continuation (`c091d507`, pinned Java client source `efa1be59d6fc747ad220f036c86030f05f0419f9`): `QueryTopicsByConsumerRequestHeader`, `QuerySubscriptionByConsumerRequestHeader`, and `QueryTopicConsumeByWhoRequestHeader` now share the Java `RpcRequestHeader` equality/hash contract; the invoked identity fixture and Rust tests cover 35 request-header classes. Fixture SHA-256: `2849daef72f0bbc29c64f311b8dc41761602845ef1256f12c6937e2ccdbea48f`. The new `queryTopicConsumeByWho` RPC uses request code 300 and a Java-backed `GroupList` DTO fixture (SHA-256 `d033bf2e2cf2e866ba854bf2152ab21f66f43a2bb0212caaf9dbdc4d88f5c38e`). This closes those query/admin header and RPC slices only; broad P18-V01 and Phase 6 API/source/input/platform reconciliation remain open, and P6-V04 remains a Phase 19 handoff.

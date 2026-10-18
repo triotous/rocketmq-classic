@@ -3932,3 +3932,30 @@ owner-specific checks belong in the manual handoff.
   package/provenance review, Phase 19 local Docker/Broker scenarios and
   required profiles, and pre-publication checks also remain open. Owner-only
   production checks stay in the separate manual handoff.
+
+## P18-V01 `queryTopicConsumeByWho` admin RPC — 2026-10-18 (`c091d507`)
+
+- [x] Added `MQClientApi::query_topic_consume_by_who`, the typed request
+  header, and Java-compatible `GroupList` body for request code 300. Invoked
+  Java fixtures cover the header under both decode hints and the DTO's empty
+  default, nullable Set/elements, JSON shape, and getter alias identity.
+  Scripted Core RPC cases cover success, nullable response data, and Broker
+  error mapping. Fixture SHA-256 values: `group-list.json`
+  `d033bf2e2cf2e866ba854bf2152ab21f66f43a2bb0212caaf9dbdc4d88f5c38e`;
+  request-header identity `2849daef72f0bbc29c64f311b8dc41761602845ef1256f12c6937e2ccdbea48f`.
+- [x] Protocol all-feature tests pass (131 unit tests, header inventory and
+  validation, 47 doctests); the Remoting query/admin decode-mode fixture and
+  Core `admin_rpc` suite (25 tests) pass. Strict all-target/all-feature
+  Clippy passes for Protocol, Remoting, and Core. Maven `verify` passes all
+  37 scenarios and fixture checks, with 59 typed-header and 14 typed-body
+  cross-decodes. Formatting and diff checks pass.
+- The `RpcRequestHeader` identity fixture now covers 35 classes. This brings
+  the `MqClientAdmin` source-backed method count to three complete slices,
+  with 16 methods remaining to reconcile.
+- [ ] Refresh full-workspace P18-V02 gates after this code slice. Broad
+  P18-V01 reconciliation remains open; current-revision Ubuntu/native Windows
+  P18-V04 evidence and final P18-V03 package/provenance review remain open.
+  Phase 19 still needs the remaining 30 local scenario runners, required
+  profiles, and passing `run-local.sh --all` reconciliation. Pre-publication
+  version/registry checks remain pending; owner-environment checks stay in the
+  separate manual handoff.
