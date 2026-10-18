@@ -139,3 +139,33 @@
   remain open. Owner-only checks remain separate manual work.
 - The pre-existing uncommitted Phase 19 README/runner changes and their rlog
   were left untouched. No plans or Java oracle files were modified.
+
+## Current-worktree P18-V02 server-free gate — 2026-10-18
+
+- The code revision is `d8f84f2c` (`21ca6993` documentation HEAD). On Linux
+  ARM64 with Rust 1.85.0, the current-worktree default workspace tests, full
+  all-feature workspace tests including unit/integration/doctest targets,
+  all-target/all-feature workspace check, and strict Clippy pass. The full
+  all-feature test exited 0 using an internal container target directory and a
+  temporary runner that clears the signal mask inherited by test processes.
+- PASS on macOS ARM64 Apple M5 Max / Rust 1.85.0: differential comparator
+  self-test; 37-row manifest validation; deterministic race/leak smoke (16
+  cases × 3); fuzz smoke (120 frame seeds, 11 message seeds, 2,096 mutations,
+  164 frame decodes, 120 message decodes); release example build; and offline
+  benchmark run. Benchmark observations: frame encode/decode 2,552 ns/iter,
+  zstd decode 1,193 ns/iter, producer request construction 1,274 ns/iter,
+  route lookup 14.6 ns/iter, and loopback pending completion 77,248 ns/iter.
+- PASS: Maven 3.10.0 / OpenJDK 27 `verify` (37 scenarios, 66 typed-header
+  cross-decodes, 15 typed-body cross-decodes); workspace metadata/license/
+  dependency-direction check; all seven publishable `cargo package --list`
+  outputs include `LICENSE` and `NOTICE`; UTC and Asia/Taipei Unique ID fixture
+  tests; `cargo fmt --all -- --check`; and `git diff --check`.
+- This closes the current-worktree server-free P18-V02 rerun. Broad P18-V01
+  bidirectional source/API/settings/input/error/flow and reverse-export
+  reconciliation, final P18-V03 package/provenance review, current-revision
+  P18-V04 Ubuntu/native Windows evidence, Phase 19 local scenario runners and
+  required profiles, and pre-publication release-version/registry dependency
+  checks remain open. `docs/owner-validation.md` records owner-only MAN-01–04
+  as blocked pending environment inputs; MAN-05 awaits local-matrix
+  classification. Existing uncommitted Phase 19 files were preserved. No plan
+  or Java oracle files were changed.

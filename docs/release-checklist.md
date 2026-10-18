@@ -4441,3 +4441,35 @@ owner-specific checks belong in the manual handoff.
   19 local runner/profile completion, and pre-publication release-version and
   registry dependency checks remain open. Owner-environment checks stay in the
   separate manual handoff.
+
+## P18-V02 current-worktree server-free gate — 2026-10-18 (`d8f84f2c`)
+
+- [x] The current code revision passes the full Linux ARM64 Rust 1.85.0
+  default workspace tests, the full all-feature workspace tests including
+  integration tests and doctests, workspace all-target/all-feature `cargo
+  check`, and strict workspace Clippy. The full all-feature test used
+  `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target` inside the container and a
+  temporary test runner that clears the inherited signal mask; it exited 0.
+- [x] On macOS ARM64 Apple M5 Max with Rust 1.85.0, differential comparator
+  self-test and 37-scenario manifest validation pass. The deterministic
+  race/leak suite passes 16 cases × 3; fuzz smoke passes 120 frame seeds, 11
+  message seeds, 2,096 bounded mutations, 164 frame decodes, and 120 message
+  decodes. Release examples build and the offline benchmark completes.
+- [x] Maven 3.10.0 / OpenJDK 27 `verify` passes all 37 scenarios, fixture
+  checks, 66 typed-header and 15 typed-body cross-decodes. Workspace metadata,
+  license and dependency-direction checks pass; each of the seven publishable
+  package listings includes `LICENSE` and `NOTICE`. UTC and Asia/Taipei
+  Unique ID fixture tests each pass. Formatting and `git diff --check` pass.
+- The offline benchmark ran on macOS ARM64 Apple M5 Max with Rust 1.85.0:
+  frame encode/decode 2,552 ns/iteration, zstd message decode 1,193 ns,
+  producer request construction 1,274 ns, route lookup 14.6 ns, and loopback
+  pending completion 77,248 ns. Allocation observations were recorded by the
+  harness; these are measurements, not acceptance thresholds.
+- This closes the current-revision server-free P18-V02 rerun. Broad P18-V01
+  bidirectional source/API/settings/input/error/flow and reverse-export audit,
+  final P18-V03 package/provenance review, current-revision P18-V04 Ubuntu and
+  native Windows evidence, Phase 19 local runners/profiles, and pre-publication
+  release-version and registry dependency checks remain open. Owner checks
+  MAN-01–04 remain in the separate handoff; MAN-05 awaits local-matrix
+  classification. The pre-existing uncommitted Phase 19 runner files were
+  left untouched.
