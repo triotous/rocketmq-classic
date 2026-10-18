@@ -152,22 +152,42 @@ impl MessageHostAddress {
     }
 
     /// Write Java's host-byte layout into a caller-provided Rust byte slice.
-    /// Returns the number of bytes written; the destination is unchanged on error.
+    /// Java writes the address before the port, so a short slice may contain
+    /// the address prefix when the typed insufficient-buffer error is returned.
     pub fn write_network_bytes(
         &self,
         output: &mut [u8],
     ) -> Result<usize, MessageHostAddressBytesError> {
-        let bytes = self
-            .network_bytes()
+        let address = self
+            .address
             .ok_or(MessageHostAddressBytesError::UnresolvedAddress)?;
-        if output.len() < bytes.len() {
+        let mut address_bytes = [0_u8; 16];
+        let address_len = match address.ip() {
+            IpAddr::V4(address) => {
+                address_bytes[..4].copy_from_slice(&address.octets());
+                4
+            }
+            IpAddr::V6(address) => {
+                address_bytes.copy_from_slice(&address.octets());
+                16
+            }
+        };
+        let needed = address_len + 4;
+        if output.len() < address_len {
             return Err(MessageHostAddressBytesError::BufferTooSmall {
-                needed: bytes.len(),
+                needed,
                 actual: output.len(),
             });
         }
-        output[..bytes.len()].copy_from_slice(&bytes);
-        Ok(bytes.len())
+        output[..address_len].copy_from_slice(&address_bytes[..address_len]);
+        if output.len() < needed {
+            return Err(MessageHostAddressBytesError::BufferTooSmall {
+                needed,
+                actual: output.len(),
+            });
+        }
+        output[address_len..needed].copy_from_slice(&i32::from(self.port).to_be_bytes());
+        Ok(needed)
     }
 
     /// Java `InetSocketAddress.toString()` form used by the message fixture model.

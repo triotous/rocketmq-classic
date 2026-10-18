@@ -1123,6 +1123,17 @@ public final class MessageDecodeFixtures {
         }
     }
 
+    private static boolean throwsBufferOverflow(Runnable action) {
+        try {
+            action.run();
+            return false;
+        } catch (java.nio.BufferOverflowException expected) {
+            return true;
+        } catch (RuntimeException unexpected) {
+            return false;
+        }
+    }
+
     private static boolean throwsMessageIdNullPointer(String value) {
         try {
             MessageDecoder.decodeMessageId(value);
@@ -1259,6 +1270,14 @@ public final class MessageDecodeFixtures {
         InetSocketAddress unresolved = InetSocketAddress.createUnresolved("broker.invalid", 10912);
         MessageExt message = new MessageExt();
         Map<String, Object> expected = new TreeMap<>();
+        expected.put("defaultBornHostBytesThrowsNullPointer",
+            throwsNullPointer(message::getBornHostBytes));
+        expected.put("defaultBornHostBufferBytesThrowsNullPointer",
+            throwsNullPointer(() -> message.getBornHostBytes(ByteBuffer.allocate(8))));
+        expected.put("defaultStoreHostBytesThrowsNullPointer",
+            throwsNullPointer(message::getStoreHostBytes));
+        expected.put("defaultStoreHostBufferBytesThrowsNullPointer",
+            throwsNullPointer(() -> message.getStoreHostBytes(ByteBuffer.allocate(20))));
         expected.put("messageIdPublicConstructors", publicConstructorSignatures(MessageId.class));
         expected.put("messageIdDeclaredPublicMethods", publicMethodSignatures(MessageId.class));
         expected.put("brokerNameDefault", message.getBrokerName());
@@ -1277,6 +1296,12 @@ public final class MessageDecodeFixtures {
         expected.put("ipv4SocketAddressString", NetworkUtil.socketAddress2String(born));
         expected.put("bornHostBytes", byteBufferBase64(message.getBornHostBytes()));
         expected.put("bornHostBufferBytes", byteBufferBase64(message.getBornHostBytes(ByteBuffer.allocate(8))));
+        ByteBuffer shortIpv4Buffer = ByteBuffer.allocate(7);
+        expected.put("ipv4ShortBufferOverflows",
+            throwsBufferOverflow(() -> message.getBornHostBytes(shortIpv4Buffer)));
+        expected.put("ipv4ShortBufferPosition", shortIpv4Buffer.position());
+        expected.put("ipv4ShortBufferBytes",
+            Base64.getEncoder().encodeToString(shortIpv4Buffer.array()));
         expected.put("storeHostClass", message.getStoreHost().getClass().getName());
         expected.put("storeHostToString", message.getStoreHost().toString());
         expected.put("storeHostUnresolved", ((InetSocketAddress) message.getStoreHost()).isUnresolved());
@@ -1291,6 +1316,12 @@ public final class MessageDecodeFixtures {
         expected.put("ipv6SocketAddressString", NetworkUtil.socketAddress2String(ipv6));
         expected.put("ipv6HostBytes", byteBufferBase64(ipv6Message.getBornHostBytes()));
         expected.put("ipv6HostBufferBytes", byteBufferBase64(ipv6Message.getBornHostBytes(ByteBuffer.allocate(20))));
+        ByteBuffer shortIpv6Buffer = ByteBuffer.allocate(19);
+        expected.put("ipv6ShortBufferOverflows",
+            throwsBufferOverflow(() -> ipv6Message.getBornHostBytes(shortIpv6Buffer)));
+        expected.put("ipv6ShortBufferPosition", shortIpv6Buffer.position());
+        expected.put("ipv6ShortBufferBytes",
+            Base64.getEncoder().encodeToString(shortIpv6Buffer.array()));
         ipv6Message.setStoreHost(ipv6);
         expected.put("ipv6StoreHostBytes", byteBufferBase64(ipv6Message.getStoreHostBytes()));
 
@@ -1301,6 +1332,8 @@ public final class MessageDecodeFixtures {
             unresolvedBytesThrow = true;
         }
         expected.put("unresolvedHostBytesThrow", unresolvedBytesThrow);
+        expected.put("unresolvedHostBufferBytesThrow",
+            throwsNullPointer(() -> message.getStoreHostBytes(ByteBuffer.allocate(20))));
 
         InetSocketAddress fromHost = new InetSocketAddress("127.0.0.1", 10913);
         MessageExt fromHostMessage = new MessageExt();
@@ -1316,6 +1349,17 @@ public final class MessageDecodeFixtures {
         expected.put("constructorStoreTimestamp", constructed.getStoreTimestamp());
         expected.put("constructorStoreHost", constructed.getStoreHost().toString());
         expected.put("constructorMessageId", constructed.getMsgId());
+
+        MessageExt nullHostConstructed = new MessageExt(-7, Long.MIN_VALUE, null,
+            Long.MAX_VALUE, null, null);
+        expected.put("nullHostConstructorQueueId", nullHostConstructed.getQueueId());
+        expected.put("nullHostConstructorBornTimestamp", nullHostConstructed.getBornTimestamp());
+        expected.put("nullHostConstructorBornHostIsNull",
+            nullHostConstructed.getBornHost() == null);
+        expected.put("nullHostConstructorStoreTimestamp", nullHostConstructed.getStoreTimestamp());
+        expected.put("nullHostConstructorStoreHostIsNull",
+            nullHostConstructed.getStoreHost() == null);
+        expected.put("nullHostConstructorMessageIdIsNull", nullHostConstructed.getMsgId() == null);
 
         InetSocketAddress messageIdIpv4Address = new InetSocketAddress(
             InetAddress.getByAddress(new byte[] {(byte) 192, 0, 2, 10}), 10911);

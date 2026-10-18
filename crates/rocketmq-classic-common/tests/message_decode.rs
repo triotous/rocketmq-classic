@@ -623,6 +623,32 @@ fn message_ext_socket_address_api_matches_java_551() {
     let from_socket_addr = MessageHostAddress::from_socket_addr(born_socket_addr);
     let store = MessageHostAddress::unresolved("broker.invalid", 10912);
     let mut message = MessageExt::default();
+    assert_eq!(expected["defaultBornHostBytesThrowsNullPointer"], true);
+    assert_eq!(
+        expected["defaultBornHostBufferBytesThrowsNullPointer"],
+        true
+    );
+    assert_eq!(expected["defaultStoreHostBytesThrowsNullPointer"], true);
+    assert_eq!(
+        expected["defaultStoreHostBufferBytesThrowsNullPointer"],
+        true
+    );
+    assert_eq!(
+        message.born_host_bytes(),
+        Err(MessageHostAddressBytesError::MissingAddress)
+    );
+    assert_eq!(
+        message.store_host_bytes(),
+        Err(MessageHostAddressBytesError::MissingAddress)
+    );
+    assert_eq!(
+        message.write_born_host_bytes(&mut [0_u8; 8]),
+        Err(MessageHostAddressBytesError::MissingAddress)
+    );
+    assert_eq!(
+        message.write_store_host_bytes(&mut [0_u8; 20]),
+        Err(MessageHostAddressBytesError::MissingAddress)
+    );
     assert_eq!(
         message.broker_name(),
         expected["brokerNameDefault"].as_str()
@@ -688,6 +714,13 @@ fn message_ext_socket_address_api_matches_java_551() {
             actual: 7
         })
     );
+    assert_eq!(expected["ipv4ShortBufferOverflows"], true);
+    assert_eq!(expected["ipv4ShortBufferPosition"], 4);
+    assert_eq!(&short_output[..4], &born_bytes[..4]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(short_output),
+        expected["ipv4ShortBufferBytes"]
+    );
     assert_eq!(expected["bornHostGetterRetainsObject"], true);
     assert_eq!(expected["storeHostClass"], "java.net.InetSocketAddress");
     assert_eq!(store.to_string(), expected["storeHostToString"]);
@@ -702,6 +735,11 @@ fn message_ext_socket_address_api_matches_java_551() {
         Err(MessageHostAddressBytesError::UnresolvedAddress)
     );
     assert_eq!(expected["unresolvedHostBytesThrow"], true);
+    assert_eq!(expected["unresolvedHostBufferBytesThrow"], true);
+    assert_eq!(
+        message.write_store_host_bytes(&mut [0_u8; 20]),
+        Err(MessageHostAddressBytesError::UnresolvedAddress)
+    );
     let constructed = MessageExt::with_socket_addresses(
         7,
         13,
@@ -731,6 +769,40 @@ fn message_ext_socket_address_api_matches_java_551() {
         constructed.message_id(),
         expected["constructorMessageId"].as_str()
     );
+    let null_host_constructed = MessageExt::with_socket_addresses(
+        expected["nullHostConstructorQueueId"].as_i64().unwrap() as i32,
+        expected["nullHostConstructorBornTimestamp"]
+            .as_i64()
+            .unwrap(),
+        None,
+        expected["nullHostConstructorStoreTimestamp"]
+            .as_i64()
+            .unwrap(),
+        None,
+        None,
+    );
+    assert_eq!(
+        null_host_constructed.queue_id(),
+        expected["nullHostConstructorQueueId"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        null_host_constructed.born_timestamp(),
+        expected["nullHostConstructorBornTimestamp"]
+            .as_i64()
+            .unwrap()
+    );
+    assert_eq!(null_host_constructed.born_host(), None);
+    assert_eq!(
+        null_host_constructed.store_timestamp(),
+        expected["nullHostConstructorStoreTimestamp"]
+            .as_i64()
+            .unwrap()
+    );
+    assert_eq!(null_host_constructed.store_host(), None);
+    assert_eq!(null_host_constructed.message_id(), None);
+    assert_eq!(expected["nullHostConstructorBornHostIsNull"], true);
+    assert_eq!(expected["nullHostConstructorStoreHostIsNull"], true);
+    assert_eq!(expected["nullHostConstructorMessageIdIsNull"], true);
 
     let ipv6 = MessageHostAddress::from_ip_address(
         IpAddr::V6("2001:db8::20".parse::<Ipv6Addr>().unwrap()),
@@ -761,11 +833,27 @@ fn message_ext_socket_address_api_matches_java_551() {
         expected["ipv6HostBufferBytes"]
     );
     let mut ipv6_message = MessageExt::default();
+    ipv6_message.set_born_host(Some(ipv6.clone()));
     ipv6_message.set_store_host(Some(ipv6.clone()));
     assert_eq!(ipv6_message.store_host_bytes().unwrap(), ipv6_bytes);
     assert_eq!(
         base64::engine::general_purpose::STANDARD.encode(ipv6_message.store_host_bytes().unwrap()),
         expected["ipv6StoreHostBytes"]
+    );
+    let mut short_ipv6_output = [0_u8; 19];
+    assert_eq!(
+        ipv6_message.write_born_host_bytes(&mut short_ipv6_output),
+        Err(MessageHostAddressBytesError::BufferTooSmall {
+            needed: 20,
+            actual: 19
+        })
+    );
+    assert_eq!(expected["ipv6ShortBufferOverflows"], true);
+    assert_eq!(expected["ipv6ShortBufferPosition"], 16);
+    assert_eq!(&short_ipv6_output[..16], &ipv6_bytes[..16]);
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(short_ipv6_output),
+        expected["ipv6ShortBufferBytes"]
     );
 
     let from_host = MessageHostAddress::new("127.0.0.1", 10913);
