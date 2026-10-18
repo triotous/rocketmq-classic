@@ -498,3 +498,20 @@ Java `HashMap`/`HashSet` iteration order is unspecified; the retrieval
 differential uses singleton collections and does not claim cross-language
 multi-element ordering. This closes only the `ClusterInfo` DTO slice; broad
 P18-V01 reconciliation remains open.
+
+## P18-V01 `QueueTimeSpan` and `QueryConsumeTimeSpanBody` DTO API — 2026-10-18 (`423bcdbc`)
+
+The pinned Java `QueueTimeSpan` fields are private, and
+`QueryConsumeTimeSpanBody.consumeTimeSpanSet` is package-private. Rust now
+matches those visibility boundaries and exposes the Java getter/setter surface.
+`SharedValue` preserves the assigned `MessageQueue`, list, and non-null list-row
+identities, including mutations through either side; explicit null remains
+null, and the default list remains empty. Core snapshots the decoded rows into
+its existing owned return type.
+
+The invoked Java fixture records constructors, declared public methods,
+defaults, null setters, object/list identity, element identity, and mutations.
+Protocol and Core differentials cover the DTO and admin RPC boundaries. Fixture
+SHA-256: `3012f8dfb49f4bd404e1d29a7e27cdbe14d47435347bcb55ac807e5649085af5`.
+This closes only the consume-time-span DTO API slice; broad P18-V01
+reconciliation remains open.

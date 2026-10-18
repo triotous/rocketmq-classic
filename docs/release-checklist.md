@@ -4726,3 +4726,23 @@ owner-specific checks belong in the manual handoff.
   local Docker/Broker scenario runners and required profiles remain open.
   MAN-01–04 remain owner-environment checks; MAN-05 awaits local-matrix
   completion.
+
+## P18-V01 `QueueTimeSpan` DTO API — 2026-10-18 (`423bcdbc`)
+
+- [x] Aligned Rust field visibility with Java: `QueueTimeSpan` fields are
+  private, and `QueryConsumeTimeSpanBody.consumeTimeSpanSet` is private. Its
+  default empty list, explicit null, nullable rows, and shared identity/mutation
+  behavior are covered by an invoked Java fixture and Rust differentials.
+- [x] Core preserves its owned response type by snapshotting decoded shared
+  DTO handles. Protocol doctests passed (53); focused Protocol/Core Java fixture
+  and admin RPC tests passed; strict all-target/all-feature Clippy passed for
+  Protocol and Core. Offline Maven `verify` passed all 37 scenarios, fixture
+  checks, 66 typed-header and 15 typed-body cross-decodes. Formatting and diff
+  checks passed. Fixture SHA-256:
+  `3012f8dfb49f4bd404e1d29a7e27cdbe14d47435347bcb55ac807e5649085af5`.
+- Code commit: `423bcdbc`. Broad P18-V01 bidirectional reconciliation remains
+  open. P18-V02 must be rerun on this newer revision; final P18-V03
+  package/provenance and version/registry preflight, current-revision Ubuntu
+  and native Windows P18-V04 evidence, and Phase 19's 30 local Docker/Broker
+  scenario runners and required profiles remain open. MAN-01–04 remain
+  owner-environment checks; MAN-05 awaits completion of the local matrix.

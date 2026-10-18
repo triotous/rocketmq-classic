@@ -1,0 +1,32 @@
+# P18-V01 consume-time-span DTO API closure — 2026-10-18T15:03:28Z
+
+- Branch: `phase/18-phase-18-compatibility-closure`. Pinned Java oracle at
+  `/Users/bruce.tsai/Projects/3rd/rocketmq` remained read-only at commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- Corrected `QueueTimeSpan` field visibility and
+  `QueryConsumeTimeSpanBody.consumeTimeSpanSet` visibility to match Java. Added
+  `SharedValue` identity preservation for the queue, list and non-null rows;
+  Core snapshots shared rows into its existing owned result. Java fixtures now
+  cover declared public methods, defaults, null setters, identity and mutation
+  visibility. Fixture SHA-256:
+  `3012f8dfb49f4bd404e1d29a7e27cdbe14d47435347bcb55ac807e5649085af5`.
+- Verification: Protocol doctests PASS (53); Protocol invoked-body differential
+  PASS; Core invoked lookup fixture PASS; Core `admin_rpc` focused case PASS;
+  strict Protocol/Core all-target/all-feature Clippy PASS; offline Maven
+  `verify` PASS (37 scenarios, fixture checks, 66 typed-header and 15 typed-body
+  cross-decodes); `cargo fmt --all -- --check` and `git diff --check` PASS.
+- The first Clippy run rejected explicit `fn main` wrappers in the new
+  compile-fail doctests. Removed those wrappers; doctests and strict Clippy then
+  passed. No functional test failure occurred.
+- Code commit: `423bcdbc` (`fix(protocol): match consume span DTO API`). The
+  Phase 17 admin matrix, release checklist and this execution record are being
+  committed separately.
+- Broad P18-V01 bidirectional source/API/settings/input/error/flow and
+  reverse-export reconciliation remains open. The P18-V02 supplementary gate
+  needs a complete rerun on this newer code revision. Final P18-V03
+  package/provenance and version/registry preflight, current-revision Ubuntu
+  and native Windows P18-V04 evidence, and Phase 19's 30 local Docker/Broker
+  scenario runners and required profiles remain open. MAN-01–04 remain owner
+  environment checks; MAN-05 awaits completion of the local matrix.
+- Existing Phase 19 runner/README edits and its untracked log remain untouched
+  and unstaged. No plan, Java oracle, remote CI, Broker or Docker state changed.
