@@ -5015,3 +5015,23 @@ owner-specific checks belong in the manual handoff.
   P18-V01 API/settings/input/error/flow and Rust reverse-export reconciliation,
   the final workspace P18-V02 gate, and current Ubuntu/native Windows P18-V04
   evidence remain open.
+
+## P18-V01 Consumer Running Info DTO field visibility — 2026-10-18 (`8e9b8821`)
+
+- [x] Pinned Java 5.5.1 reflection confirms `ConsumerRunningInfo` exposes its
+  six documented public constants while `ProcessQueueInfo`,
+  `PopProcessQueueInfo`, and `ConsumeStatus` expose no public fields. Rust
+  instance fields are private and callers use accessors. The invoked fixture
+  records constructor, public-field, declared-method, and callable-method
+  inventories plus identity semantics. Fixture SHA-256:
+  `728c824865b335c102c653e36f19676d6bfd935bad1b473f6ce0676f461091de`.
+- [x] All-feature locked/offline tests passed for Protocol, Consumer, and Core;
+  strict all-target/all-feature Clippy passed for Protocol, Consumer, Remoting,
+  and Core. Offline Maven `verify` passed all 37 scenarios, fixture checks,
+  66 typed-header and 15 typed-body cross-decodes. Formatting and diff checks
+  passed. Code commit: `8e9b8821`.
+- This closes only these DTO field-visibility rows. The captured method
+  inventory is evidence for continued API reconciliation, not a claim that the
+  broad P18-V01 API/settings/input/error/flow and Rust reverse-export audit is
+  complete. The final current-revision P18-V02 gate and current Ubuntu/native
+  Windows P18-V04 evidence remain open.
