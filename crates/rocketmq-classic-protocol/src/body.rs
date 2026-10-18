@@ -2073,6 +2073,71 @@ impl QuerySubscriptionResponseBody {
     }
 }
 
+/// Java `GroupList` body returned by `QUERY_TOPIC_CONSUME_BY_WHO`.
+///
+/// The Java DTO defaults to an empty mutable Set, permits a null Set and null
+/// Set elements, and returns the stored Set object from its getter.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GroupList;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<GroupList>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupList {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_list: Option<SharedValue<std::collections::HashSet<Option<String>>>>,
+}
+
+fn default_group_list() -> Option<std::collections::HashSet<Option<String>>> {
+    Some(std::collections::HashSet::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupListFields {
+    #[serde(
+        default = "default_group_list",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_set"
+    )]
+    group_list: Option<std::collections::HashSet<Option<String>>>,
+}
+
+impl<'de> Deserialize<'de> for GroupList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GroupListFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            group_list: fields.group_list.map(SharedValue::new),
+        })
+    }
+}
+
+impl Default for GroupList {
+    fn default() -> Self {
+        Self {
+            group_list: default_group_list().map(SharedValue::new),
+        }
+    }
+}
+
+impl GroupList {
+    pub fn get_group_list(&self) -> Option<SharedValue<std::collections::HashSet<Option<String>>>> {
+        self.group_list.clone()
+    }
+
+    pub fn set_group_list(
+        &mut self,
+        group_list: Option<SharedValue<std::collections::HashSet<Option<String>>>>,
+    ) {
+        self.group_list = group_list;
+    }
+}
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5433,6 +5498,62 @@ mod tests {
         let explicit_null: QuerySubscriptionResponseBody =
             serde_json::from_str(r#"{"subscriptionData":null,"group":null,"topic":null}"#).unwrap();
         assert!(explicit_null.get_subscription_data().is_none());
+        assert_eq!(
+            serde_json::to_value(explicit_null).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                fixture["explicitNullJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn group_list_matches_java_default_null_element_and_alias_semantics() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/admin/group-list.json")).unwrap();
+        assert_eq!(
+            fixture["artifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        let default = GroupList::default();
+        let default_set = default.get_group_list().unwrap();
+        assert!(default_set.with(|set| set.is_empty()));
+        assert_eq!(fixture["defaultGroupListNull"], false);
+        assert_eq!(fixture["defaultGroupListEmpty"], true);
+        assert_eq!(
+            serde_json::to_value(&default).unwrap(),
+            serde_json::from_str::<serde_json::Value>(fixture["defaultJson"].as_str().unwrap())
+                .unwrap()
+        );
+
+        let populated_json: serde_json::Value =
+            serde_json::from_str(fixture["populatedJson"].as_str().unwrap()).unwrap();
+        let decoded: GroupList = serde_json::from_value(populated_json.clone()).unwrap();
+        let groups = decoded.get_group_list().unwrap();
+        assert!(groups.with(|set| set.contains(&Some("workers".into()))));
+        assert!(groups.with(|set| set.contains(&None)));
+
+        let assigned = SharedValue::new(std::collections::HashSet::from([
+            Some("workers".to_owned()),
+            None,
+        ]));
+        let mut value = GroupList::default();
+        value.set_group_list(Some(assigned.clone()));
+        let getter = value.get_group_list().unwrap();
+        assert_eq!(
+            getter.ptr_eq(&assigned),
+            fixture["getterReturnsStoredSetIdentity"]
+        );
+        getter.with_mut(|groups| {
+            groups.insert(Some("billing".into()));
+        });
+        assert!(assigned.with(|groups| groups.contains(&Some("billing".into()))));
+        assert_eq!(fixture["getterMutationVisibleToAssignedSet"], true);
+
+        let explicit_null: GroupList = serde_json::from_str(r#"{"groupList":null}"#).unwrap();
+        assert!(explicit_null.get_group_list().is_none());
+        assert_eq!(fixture["setterPreservesNull"], true);
         assert_eq!(
             serde_json::to_value(explicit_null).unwrap(),
             serde_json::from_str::<serde_json::Value>(

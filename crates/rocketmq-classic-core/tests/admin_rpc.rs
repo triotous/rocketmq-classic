@@ -13,8 +13,8 @@ use rocketmq_classic_protocol::{
         BoundaryType, CommandHeader, CreateTopicRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
         HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, SearchOffsetRequestHeader,
-        ViewMessageRequestHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -334,6 +334,108 @@ async fn query_subscription_by_consumer_preserves_broker_error() {
     assert_eq!(
         peer.await.unwrap().code,
         request::QUERY_SUBSCRIPTION_BY_CONSUMER
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_topic_consume_by_who_sends_java_header_and_decodes_group_list() {
+    let (addr, peer) = scripted_peer(
+        response::SUCCESS,
+        None,
+        Some(br#"{"groupList":["workers",null]}"#.to_vec()),
+    )
+    .await;
+    let (api, client) = api().await;
+    let header = QueryTopicConsumeByWhoRequestHeader {
+        topic: Some("orders".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+        logical: Some(true),
+    };
+
+    let groups = api
+        .query_topic_consume_by_who(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::QUERY_TOPIC_CONSUME_BY_WHO);
+    let mut expected_fields = HeaderMap::new();
+    header.encode_fields(&mut expected_fields);
+    assert_eq!(command.ext_fields, Some(expected_fields.into()));
+    let group_list = groups.get_group_list().unwrap();
+    assert!(group_list.with(|values| values.contains(&Some("workers".into()))));
+    assert!(group_list.with(|values| values.contains(&None)));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_topic_consume_by_who_preserves_nullable_group_list() {
+    let (addr, peer) = scripted_peer(
+        response::SUCCESS,
+        None,
+        Some(br#"{"groupList":null}"#.to_vec()),
+    )
+    .await;
+    let (api, client) = api().await;
+
+    let result = api
+        .query_topic_consume_by_who(
+            &addr,
+            &QueryTopicConsumeByWhoRequestHeader {
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+
+    assert!(result.get_group_list().is_none());
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::QUERY_TOPIC_CONSUME_BY_WHO
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn query_topic_consume_by_who_preserves_broker_error() {
+    let (addr, peer) = scripted_peer(
+        response::TOPIC_NOT_EXIST,
+        None,
+        Some(b"ignored on error".to_vec()),
+    )
+    .await;
+    let (api, client) = api().await;
+
+    let error = api
+        .query_topic_consume_by_who(
+            &addr,
+            &QueryTopicConsumeByWhoRequestHeader {
+                topic: Some("orders".into()),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::QUERY_TOPIC_CONSUME_BY_WHO,
+            peer,
+            code: response::TOPIC_NOT_EXIST,
+            remark: None,
+        } if peer == addr
+    ));
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::QUERY_TOPIC_CONSUME_BY_WHO
     );
     client.shutdown().await;
 }

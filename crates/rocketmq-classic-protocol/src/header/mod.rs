@@ -23,12 +23,12 @@ pub use basic::{
     PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
     PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
     QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-    QuerySubscriptionByConsumerRequestHeader, QueryTopicsByConsumerRequestHeader,
-    RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-    ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+    QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+    QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader, RecallMessageResponseHeader,
+    ReplyMessageRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+    SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

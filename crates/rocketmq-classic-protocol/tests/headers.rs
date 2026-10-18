@@ -27,11 +27,12 @@ use rocketmq_classic_protocol::{
         PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, QueryTopicsByConsumerRequestHeader,
-        RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
+        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
+        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
+        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -1068,6 +1069,15 @@ fn header_validation_matrix() {
             "",
             "",
             "group topic ns nsd bname oway lo",
+            "nsd oway lo"
+        ),
+        row!(
+            QueryTopicConsumeByWhoRequestHeader,
+            "query-topic-consume-by-who-request",
+            "",
+            "",
+            "",
+            "topic ns nsd bname oway lo",
             "nsd oway lo"
         ),
         row!(

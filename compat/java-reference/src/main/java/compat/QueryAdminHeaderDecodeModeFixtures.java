@@ -31,6 +31,7 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 
@@ -80,6 +81,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("query-subscription-by-consumer-malformed-booleans", decodeModes("query-subscription", fields(
             "group", "workers", "topic", "orders", "nsd", "malformed", "oway", "malformed",
             "lo", "malformed")));
+        cases.put("query-topic-consume-by-who-valid", decodeModes("query-topic-consumers", fields(
+            "topic", "orders", "ns", "tenant", "nsd", "true", "bname", "broker-a",
+            "oway", "false", "lo", "true")));
+        cases.put("query-topic-consume-by-who-missing", decodeModes("query-topic-consumers", fields()));
+        cases.put("query-topic-consume-by-who-malformed-booleans", decodeModes("query-topic-consumers", fields(
+            "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -112,6 +119,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 343;
         } else if ("query-subscription".equals(type)) {
             code = 345;
+        } else if ("query-topic-consumers".equals(type)) {
+            code = 300;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -132,6 +141,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "query-subscription":
                     headerClass = QuerySubscriptionByConsumerRequestHeader.class;
+                    break;
+                case "query-topic-consumers":
+                    headerClass = QueryTopicConsumeByWhoRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

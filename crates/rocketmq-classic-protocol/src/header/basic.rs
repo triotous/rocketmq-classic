@@ -46,6 +46,9 @@ impl_rpc_request_header_semantics!(
     GetRouteInfoRequestHeader,
     CreateTopicRequestHeader,
     QueryMessageRequestHeader,
+    QueryTopicsByConsumerRequestHeader,
+    QuerySubscriptionByConsumerRequestHeader,
+    QueryTopicConsumeByWhoRequestHeader,
     GetConsumerListByGroupRequestHeader,
     LockBatchMqRequestHeader,
     UnlockBatchMqRequestHeader,
@@ -330,6 +333,41 @@ impl CommandHeader for QuerySubscriptionByConsumerRequestHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             group: optional_string(fields, "group"),
+            topic: optional_string(fields, "topic"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+/// Pinned Java `QueryTopicConsumeByWhoRequestHeader` used by
+/// `QUERY_TOPIC_CONSUME_BY_WHO`. Java's `checkFields()` is a no-op, so its topic
+/// and inherited `RpcRequestHeader`/`TopicRequestHeader` fields remain nullable.
+#[derive(Debug, Clone, Default)]
+pub struct QueryTopicConsumeByWhoRequestHeader {
+    pub topic: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for QueryTopicConsumeByWhoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
             topic: optional_string(fields, "topic"),
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
@@ -2923,7 +2961,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 32);
+        assert_eq!(cases.len(), 35);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -3047,6 +3085,24 @@ mod tests {
             broker_name,
             |_| {},
             |h: &mut QueryMessageRequestHeader| h.key = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            QueryTopicsByConsumerRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QueryTopicsByConsumerRequestHeader| h.group = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            QuerySubscriptionByConsumerRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QuerySubscriptionByConsumerRequestHeader| h.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            QueryTopicConsumeByWhoRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut QueryTopicConsumeByWhoRequestHeader| h.topic = Some("payload".into())
         );
         check_rpc_request_header!(
             GetConsumerListByGroupRequestHeader,

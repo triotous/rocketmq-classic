@@ -648,6 +648,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-group-list-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.GroupListFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/admin/group-list.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-producer-lifecycle-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
