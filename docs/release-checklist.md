@@ -4388,3 +4388,28 @@ owner-specific checks belong in the manual handoff.
   P18-V03 package/provenance, P18-V04 Ubuntu/Windows evidence and Phase 19
   local Docker/Broker scenarios and profiles. Owner-only validation remains
   in the separate manual handoff.
+
+## P18-V01 ConsumerRunningInfo property-key correction — 2026-10-18 (`a56ee59d`)
+
+- [x] Added Rust associated constants for all six pinned Java
+  `ConsumerRunningInfo` property keys. Push/Pull Running Info generation uses
+  these constants; the orderly property now uses Java's exact value,
+  `PROP_CONSUMEORDERLY`.
+- [x] Expanded the Java Running Info fixture and its dependent MqClientAdmin
+  fixture. The Protocol body test checks the constant values and encoded
+  fields; the Push generator regression checks the correct key and absence of
+  the former misspelling. Fixture SHA-256 values:
+  `fixtures/consumer/running-info.json`:
+  `54ba7d8dba8b942528eed61d3d15a273a23b944ba4653824300d09c579ef026e`;
+  `fixtures/admin/query-consume-time-span.json`:
+  `ae161fbf6d2ba14453c7ff91b99ca5be3ae9aaae7f55d46026276ade1de6fe60`.
+- [x] Protocol and Push targeted tests passed. Strict all-target/all-feature
+  Clippy passed for Protocol and Consumer; formatting and `git diff --check`
+  passed. Pinned Java `mvn -f compat/java-reference/pom.xml verify` passed 37
+  scenarios, 66 typed-header cross-decodes and 15 typed-body cross-decodes.
+- `analyzeSubscription`, `isPushType`, `analyzeRebalance`,
+  `analyzeProcessQueue`, and `formatString` are used by `rocketmq-tools`, which
+  Phase 17 excludes; pinned-source review found no client call sites. Broader
+  P18-V01 API/settings/input/error/flow/reverse-export reconciliation remains
+  open, as do current-revision workspace/P18-V02, P18-V03 package/provenance,
+  P18-V04 platform evidence and the Phase 19 local scenarios.

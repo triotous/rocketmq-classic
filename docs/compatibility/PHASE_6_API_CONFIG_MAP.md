@@ -1204,6 +1204,21 @@ One hundred forty-three direct Java input cases cover decoded fields, accepted/r
 
 The invoked Java fixture reflects both inherited methods and confirms that separately constructed default instances compare unequal for all four classes. Compile-fail doctests guard the Rust trait boundary. The Rust body round-trip differential compares normalized JSON values, preserving the wire/API check without adding value equality. Fixture SHA-256: `a16ba3fd660aa1b8ad6ef2150163a9657283ada56c728f6769f39f98b0a5fbe8`.
 
+### Running Info public property-key constants
+
+| Pinned Java 5.5.1 field | Java string value | Rust counterpart |
+| --- | --- | --- |
+| `PROP_NAMESERVER_ADDR` | `PROP_NAMESERVER_ADDR` | `ConsumerRunningInfoBody::PROP_NAMESERVER_ADDR` |
+| `PROP_THREADPOOL_CORE_SIZE` | `PROP_THREADPOOL_CORE_SIZE` | `ConsumerRunningInfoBody::PROP_THREADPOOL_CORE_SIZE` |
+| `PROP_CONSUME_ORDERLY` | `PROP_CONSUMEORDERLY` | `ConsumerRunningInfoBody::PROP_CONSUME_ORDERLY` |
+| `PROP_CONSUME_TYPE` | `PROP_CONSUME_TYPE` | `ConsumerRunningInfoBody::PROP_CONSUME_TYPE` |
+| `PROP_CLIENT_VERSION` | `PROP_CLIENT_VERSION` | `ConsumerRunningInfoBody::PROP_CLIENT_VERSION` |
+| `PROP_CONSUMER_START_TIMESTAMP` | `PROP_CONSUMER_START_TIMESTAMP` | `ConsumerRunningInfoBody::PROP_CONSUMER_START_TIMESTAMP` |
+
+The DTO's Java instance accessors map to the public Rust fields; the typed body and its nested queue/status structs retain the corresponding wire data. Push/Pull Running Info generation uses these constants. The regression fixture pins the unusual `PROP_CONSUME_ORDERLY` value and the generated Push body rejects the incorrect underscore spelling. Fixture SHA-256 values: `fixtures/consumer/running-info.json` `54ba7d8dba8b942528eed61d3d15a273a23b944ba4653824300d09c579ef026e`; dependent `fixtures/admin/query-consume-time-span.json` `ae161fbf6d2ba14453c7ff91b99ca5be3ae9aaae7f55d46026276ade1de6fe60`.
+
+`analyzeSubscription`, `isPushType`, `analyzeRebalance`, `analyzeProcessQueue`, and `formatString` have call sites in the separate `rocketmq-tools` artifact; pinned-source search found no `rocketmq-client` callers. Phase 17 explicitly excludes the tools suite, so these tools-only helpers are not client-flow gaps.
+
 ## Protocol body DTO identity traits
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |

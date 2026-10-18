@@ -285,6 +285,26 @@ broader API, settings, input/error/flow and reverse-export audit remains open,
 as do current-revision full-workspace P18-V02, P18-V03 package/provenance,
 P18-V04 Ubuntu/Windows evidence, and Phase 19 local Docker/Broker scenarios.
 
+## P18-V01 Running Info property-key follow-up — 2026-10-18 (`a56ee59d`)
+
+Pinned `ConsumerRunningInfo` declares six public property-key constants. The
+Rust body now exposes matching associated constants, and Push/Pull Running
+Info generation uses them. This caught and fixed a wire mismatch:
+`PROP_CONSUME_ORDERLY`'s Java value is `PROP_CONSUMEORDERLY`, without the
+underscore. The Java fixture now records all six names/values and includes the
+orderly and thread-pool properties. The dependent MqClientAdmin fixture was
+regenerated from the pinned oracle.
+
+The Protocol Running Info body test and Push property-generation regression
+both passed; strict all-target/all-feature Clippy passed for Protocol and
+Consumer; formatting and diff checks passed. Pinned Maven `verify` passed 37
+scenarios, 66 typed-header cross-decodes and 15 typed-body cross-decodes.
+Fixture SHA-256 values are recorded in the [DTO mapping](PHASE_6_API_CONFIG_MAP.md#running-info-public-property-key-constants).
+
+The class's analysis/formatting helpers are called only from the separately
+excluded `rocketmq-tools` artifact. The broader P18-V01 client DTO/API,
+settings, input/error/flow and reverse-export audit remains open.
+
 ## Tools-only admin extension scope audit
 
 The pinned Java client implementation also contains public
