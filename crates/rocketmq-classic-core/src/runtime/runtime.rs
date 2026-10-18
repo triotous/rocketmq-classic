@@ -19,14 +19,10 @@ use crate::{
     config::{ClientConfig, SharedClientConfig, read_shared_client_config},
 };
 
-fn callback_executor_threads(configured: i32) -> usize {
+fn callback_executor_threads(configured: i32) -> i32 {
     // NettyRemotingClient uses four public executor threads for any nonpositive
     // value; ClientConfig and sharing metadata still retain the signed input.
-    if configured <= 0 {
-        4
-    } else {
-        configured as usize
-    }
+    if configured <= 0 { 4 } else { configured }
 }
 
 fn epoch_millis(time: std::time::SystemTime) -> i64 {
@@ -1570,7 +1566,7 @@ mod tests {
             let configured = i32::try_from(java["input"].as_i64().unwrap()).unwrap();
             assert_eq!(
                 callback_executor_threads(configured),
-                usize::try_from(java["effective"].as_u64().unwrap()).unwrap(),
+                i32::try_from(java["effective"].as_i64().unwrap()).unwrap(),
                 "{java}"
             );
         }
