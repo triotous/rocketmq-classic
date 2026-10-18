@@ -2425,7 +2425,9 @@ fn quote_unquoted_numeric_object_keys(input: &str) -> String {
     output
 }
 
-fn parse_java_route_json<T: DeserializeOwned>(input: &str) -> Result<T, serde_json::Error> {
+pub(crate) fn parse_java_route_json<T: DeserializeOwned>(
+    input: &str,
+) -> Result<T, serde_json::Error> {
     let normalized = serde_fastjson::normalize_json_input(input);
     let quoted_keys = quote_unquoted_numeric_object_keys(&normalized);
     serde_json::from_str(&quoted_keys)

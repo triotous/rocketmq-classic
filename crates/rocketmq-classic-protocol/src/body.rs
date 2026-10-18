@@ -1,10 +1,14 @@
+use crate::route::BrokerData;
 use crate::{
     JavaJsonWriterFeature, SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData,
     serde_fastjson,
 };
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct};
-use std::{collections::BTreeMap, hash::Hash};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    hash::Hash,
+};
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -2135,6 +2139,115 @@ impl GroupList {
         group_list: Option<SharedValue<std::collections::HashSet<Option<String>>>>,
     ) {
         self.group_list = group_list;
+    }
+}
+
+/// Java `ClusterInfo` response DTO returned by `GET_BROKER_CLUSTER_INFO`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broker_addr_table: Option<HashMap<String, Option<BrokerData>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_addr_table: Option<HashMap<String, Option<HashSet<Option<String>>>>>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ClusterInfoFields {
+    broker_addr_table: Option<HashMap<String, Option<BrokerData>>>,
+    cluster_addr_table: Option<HashMap<String, Option<HashSet<Option<String>>>>>,
+}
+
+impl<'de> Deserialize<'de> for ClusterInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ClusterInfoFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            broker_addr_table: fields.broker_addr_table,
+            cluster_addr_table: fields.cluster_addr_table,
+        })
+    }
+}
+
+impl ClusterInfo {
+    pub fn get_broker_addr_table(&self) -> Option<&HashMap<String, Option<BrokerData>>> {
+        self.broker_addr_table.as_ref()
+    }
+
+    pub fn get_cluster_addr_table(
+        &self,
+    ) -> Option<&HashMap<String, Option<HashSet<Option<String>>>>> {
+        self.cluster_addr_table.as_ref()
+    }
+
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(crate::route::java_fastjson_json(self, false)?.into_bytes())
+    }
+
+    pub fn java_encode_optional(
+        value: Option<&Self>,
+    ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+        value.map(Self::java_encode).transpose()
+    }
+
+    pub fn java_encode_with_features(
+        &self,
+        features: &[JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(crate::route::java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        crate::route::java_fastjson_json(self, pretty_format)
+    }
+
+    pub fn java_to_json_optional(
+        value: Option<&Self>,
+        pretty_format: bool,
+    ) -> Result<String, serde_json::Error> {
+        value.map_or_else(
+            || Ok("null".to_owned()),
+            |value| value.java_to_json(pretty_format),
+        )
+    }
+
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        crate::route::parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        let Some(data) = data else {
+            return Ok(None);
+        };
+        crate::route::parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        crate::route::parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        let Some(data) = data else {
+            return Ok(None);
+        };
+        crate::route::parse_java_route_json(&String::from_utf8_lossy(data))
+    }
+
+    pub fn java_from_json(input: &str) -> Result<Self, serde_json::Error> {
+        crate::route::parse_java_route_json(input)
+    }
+
+    pub fn java_from_json_nullable(input: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        let Some(input) = input else {
+            return Ok(None);
+        };
+        crate::route::parse_java_route_json(input)
     }
 }
 

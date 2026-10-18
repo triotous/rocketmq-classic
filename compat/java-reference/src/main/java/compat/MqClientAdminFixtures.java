@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,7 @@ import org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody;
 import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.body.CMResult;
+import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
@@ -61,6 +63,7 @@ import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
+import org.apache.rocketmq.remoting.protocol.route.BrokerData;
 
 /** Invokes the pinned Java MqClientAdmin asynchronous administrative RPCs. */
 public final class MqClientAdminFixtures {
@@ -203,7 +206,102 @@ public final class MqClientAdminFixtures {
         fixture.put("deleteSubscriptionGroup", deleteSubscriptionGroup());
         fixture.put("invokeBrokerToResetOffset", invokeBrokerToResetOffset());
         fixture.put("consumeMessageDirectly", consumeMessageDirectly());
+        fixture.put("getBrokerClusterInfo", getBrokerClusterInfo());
         return fixture;
+    }
+
+    private static Map<String, Object> getBrokerClusterInfo() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("getBrokerClusterInfo", String.class, long.class);
+        BrokerData broker = new BrokerData();
+        broker.setCluster("cluster-a");
+        broker.setBrokerName("broker-a");
+        HashMap<Long, String> brokerAddrs = new HashMap<>();
+        brokerAddrs.put(0L, BROKER_ADDRESS);
+        broker.setBrokerAddrs(brokerAddrs);
+        broker.setZoneName("zone-a");
+        broker.setEnableActingMaster(false);
+
+        ClusterInfo expected = new ClusterInfo();
+        Map<String, BrokerData> brokerAddrTable = new TreeMap<>();
+        brokerAddrTable.put("broker-a", broker);
+        expected.setBrokerAddrTable(brokerAddrTable);
+        Map<String, java.util.Set<String>> clusterAddrTable = new TreeMap<>();
+        clusterAddrTable.put("cluster-a", new java.util.TreeSet<>(List.of("broker-a")));
+        expected.setClusterAddrTable(clusterAddrTable);
+        byte[] bodyBytes = RemotingSerializable.encode(expected);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        ClusterInfo value = new MqClientAdminImpl(successCapture.proxy())
+            .getBrokerClusterInfo(BROKER_ADDRESS, TIMEOUT_MILLIS).get();
+        Map<String, Object> brokerSnapshot = new LinkedHashMap<>();
+        BrokerData returnedBroker = value.getBrokerAddrTable().get("broker-a");
+        brokerSnapshot.put("cluster", returnedBroker.getCluster());
+        brokerSnapshot.put("brokerName", returnedBroker.getBrokerName());
+        Map<String, String> addressSnapshot = new TreeMap<>();
+        returnedBroker.getBrokerAddrs().forEach((id, address) ->
+            addressSnapshot.put(Long.toString(id), address));
+        brokerSnapshot.put("brokerAddrs", addressSnapshot);
+        brokerSnapshot.put("zoneName", returnedBroker.getZoneName());
+        brokerSnapshot.put("enableActingMaster", returnedBroker.isEnableActingMaster());
+        Map<String, Object> brokerTableSnapshot = new TreeMap<>();
+        brokerTableSnapshot.put("broker-a", brokerSnapshot);
+        Map<String, Object> resultSnapshot = new LinkedHashMap<>();
+        resultSnapshot.put("brokerAddrTable", brokerTableSnapshot);
+        resultSnapshot.put("clusterAddrTable", new TreeMap<>(value.getClusterAddrTable()));
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", successCapture.request.getExtFields());
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
+        success.put("result", resultSnapshot);
+
+        Capture nullBodyCapture = new Capture();
+        nullBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        ClusterInfo nullBodyResult = new MqClientAdminImpl(nullBodyCapture.proxy())
+            .getBrokerClusterInfo(BROKER_ADDRESS, TIMEOUT_MILLIS).get();
+        Map<String, Object> successWithoutBody = new LinkedHashMap<>();
+        successWithoutBody.put("address", nullBodyCapture.address);
+        successWithoutBody.put("timeoutMillis", nullBodyCapture.timeoutMillis);
+        successWithoutBody.put("requestCode", nullBodyCapture.request.getCode());
+        successWithoutBody.put("responseCode", nullBodyCapture.response.getCode());
+        successWithoutBody.put("result", nullBodyResult);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "cluster info unavailable");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .getBrokerClusterInfo(BROKER_ADDRESS, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin cluster info error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", errorCapture.request.getExtFields());
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("successWithoutBody", successWithoutBody);
+        result.put("brokerError", brokerError);
+        return result;
     }
 
     private static Map<String, Object> consumeMessageDirectly() throws Exception {

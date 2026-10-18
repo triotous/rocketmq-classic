@@ -71,6 +71,22 @@ impl MQClientApi {
             .await
     }
 
+    async fn request_future_without_header(
+        &self,
+        addr: &str,
+        code: i32,
+        body: Option<Vec<u8>>,
+        deadline: Instant,
+    ) -> Result<RemotingCommand, RpcError> {
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            body,
+            ..Default::default()
+        };
+        Ok(self.remoting.invoke(addr, command, deadline).await?)
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn request_with_mode<H: CommandHeader>(
         &self,

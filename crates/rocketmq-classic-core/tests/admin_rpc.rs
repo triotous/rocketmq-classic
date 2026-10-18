@@ -1642,6 +1642,73 @@ async fn consume_message_directly_rejects_malformed_success_body() {
 }
 
 #[tokio::test]
+async fn mq_client_admin_get_broker_cluster_info_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let cluster = &fixture["getBrokerClusterInfo"];
+    let success = &cluster["success"];
+    let body = success["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (admin_api, client) = api().await;
+    let result = admin_api
+        .mq_client_admin()
+        .get_broker_cluster_info(&addr, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_BROKER_CLUSTER_INFO);
+    assert!(command.ext_fields.is_none());
+    assert_eq!(serde_json::to_value(result).unwrap(), success["result"]);
+    client.shutdown().await;
+
+    let no_body_case = &cluster["successWithoutBody"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (no_body_api, client) = api().await;
+    let result = no_body_api
+        .mq_client_admin()
+        .get_broker_cluster_info(&addr, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_BROKER_CLUSTER_INFO);
+    assert!(command.ext_fields.is_none());
+    assert_eq!(
+        serde_json::to_value(result).unwrap(),
+        no_body_case["result"]
+    );
+    client.shutdown().await;
+
+    let error_case = &cluster["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .get_broker_cluster_info(&addr, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_BROKER_CLUSTER_INFO);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "cluster info unavailable"
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_message_preserves_broker_response_code_and_remark() {
     let (addr, peer) = scripted_peer(17, None, None).await;
     let (api, client) = api().await;
