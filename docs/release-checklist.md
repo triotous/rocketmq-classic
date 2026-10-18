@@ -3986,3 +3986,29 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and `run-local.sh --all`, and pre-publication
   version/registry checks remain open. Owner-only production validation stays
   in the separate manual handoff.
+
+## P18-V01 `queryConsumeTimeSpan` admin RPC — 2026-10-18 (`72a37b17`)
+
+- [x] Added an invoked Java 5.5.1 `MqClientAdminImpl.queryConsumeTimeSpan`
+  fixture for request code 303. It records the direct broker address and
+  timeout, all typed request fields, the decoded `QueueTimeSpan` result, and
+  `MQClientException` code/remark. Fixture SHA-256:
+  `5689eea4d53809d6ce2caa6bebc14ba4ebeb8b49b8fffe3000432bbe73dfaa4e`.
+- [x] The Rust Core method now sends to the supplied address directly, as the
+  Java `MqClientAdmin` adapter does. Push Consumer applies the configured VIP
+  mapping before invoking Core, preserving the Java push facade's Broker
+  address behavior. Tests cover the direct method with VIP enabled, success
+  decoding and Broker error mapping, plus Push Consumer's VIP route.
+- [x] Core query-time-span tests passed (2); Core `admin_rpc` passed (29); the
+  focused Consumer VIP route test passed. Strict all-target/all-feature
+  Clippy passed for Core and Consumer. Pinned Maven `verify` passed all 37
+  scenarios and fixture checks, including 60 typed-header and 14 typed-body
+  cross-decodes. Formatting and `git diff --check` pass. Code commit:
+  `72a37b17`.
+- The source-backed `MqClientAdmin` method count is now 5/19; the remaining 14
+  methods and broad P18-V01 API/settings/input/error/flow/reverse-export audit
+  remain open. Full-workspace P18-V02, current-revision Ubuntu/native Windows
+  P18-V04, final P18-V03 package/provenance review, Phase 19 local Docker
+  scenarios/profiles and full runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation remains the
+  separate manual handoff.

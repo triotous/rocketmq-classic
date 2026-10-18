@@ -38,3 +38,31 @@
 - Phase 19 still lacks 30/37 local scenario runners, required Docker profiles,
   and a passing full `run-local.sh --all` reconciliation. Owner-only production
   validation remains separate and was not run.
+
+## P18-V01 `queryConsumeTimeSpan` admin RPC — 2026-10-18T02:53:02Z
+
+- Reconciled Java `MqClientAdminImpl.queryConsumeTimeSpan` (request 303) and
+  added an invoked fixture for the raw address, timeout, inherited header
+  fields, result body/list, and Broker exception. Rust's existing Core RPC now
+  sends to the provided address directly; Push Consumer applies VIP mapping
+  before the call to preserve its Java facade behavior. Added a VIP-enabled
+  Core direct-address regression and a fixture-driven Core RPC test.
+- Code commit: `72a37b17` (`feat(admin): reconcile query consume time span RPC`).
+- First fixture invocation used the fixed `compat.Main` entry point and failed
+  its usage check; added a Main dispatcher and regenerated through it. Initial
+  Core test compilation exposed a fixture-field type mismatch and local API
+  binding shadowing; corrected. The first Broker-error assertion showed the
+  scripted peer helper discarded remarks; added a remark-capable helper and
+  the comparison now passes.
+- Passed: Core query-time-span unit tests (2), Core `admin_rpc` (29), focused
+  Consumer VIP routing test, strict all-target/all-feature Clippy for Core and
+  Consumer, `cargo fmt --all -- --check`, `git diff --check`, and Maven
+  `verify` (37 scenarios, fixture checks, 60 typed-header and 14 typed-body
+  cross-decodes). The Java fixture is
+  `fixtures/admin/query-consume-time-span.json` (SHA-256
+  `5689eea4d53809d6ce2caa6bebc14ba4ebeb8b49b8fffe3000432bbe73dfaa4e`).
+- Updated Phase 17's admin matrix to 5/19 source-backed methods and appended
+  this evidence to the release checklist. Remaining 14 `MqClientAdmin` methods
+  and broad P18-V01 remain open; full-workspace P18-V02, Ubuntu/native Windows
+  P18-V04, final P18-V03 package/provenance review and local Phase 19 matrix
+  remain pending. Existing Phase 19 worktree changes remain unstaged.

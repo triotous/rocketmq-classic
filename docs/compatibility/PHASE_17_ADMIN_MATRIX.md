@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Four methods now have source-backed
-typed RPC slices; the other 15 still need reconciliation. Their public status
+method-by-method mapping has been verified. Five methods now have source-backed
+typed RPC slices; the other 14 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -97,7 +97,21 @@ Scripted RPC tests cover success, absent/JSON-null response bodies, Broker
 errors, and malformed JSON. Fixture SHA-256:
 `12c3a17f32ffb2b3b60e1e27d57ce8a96a199cb3ba0c7b1201790461b5ecd669`.
 
-The other 15 interface methods remain to reconcile.
+Fifth reconciled method slice (code commit `72a37b17`): Java
+`queryConsumeTimeSpan(address, requestHeader, timeoutMillis)` sends request
+code 303 and returns the decoded `QueryConsumeTimeSpanBody` list only on
+`SUCCESS`. Rust reuses the typed header, `QueueTimeSpan` model, and
+`MQClientApi::query_consume_time_span`; the Core call now uses the supplied
+address unchanged to match `MqClientAdminImpl`. Push Consumer applies its
+configured VIP address mapping before calling Core, preserving the Java
+`MQClientAPIImpl` route used by that facade. The invoked Java fixture records
+the method signature, direct address, timeout, inherited request fields,
+response body/list values, and Broker exception. Rust tests cover those fields,
+the returned values, exact Broker error forwarding, direct addressing with VIP
+enabled, and Push Consumer VIP routing. Fixture SHA-256:
+`5689eea4d53809d6ce2caa6bebc14ba4ebeb8b49b8fffe3000432bbe73dfaa4e`.
+
+The other 14 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;
