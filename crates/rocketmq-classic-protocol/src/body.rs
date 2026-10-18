@@ -1,4 +1,4 @@
-use crate::route::BrokerData;
+use crate::route::{BrokerData, SharedBrokerDataHandle};
 use crate::{
     JavaJsonWriterFeature, SharedValue,
     codes::{JavaEnumLookupError, LanguageCode},
@@ -6,7 +6,10 @@ use crate::{
     serde_fastjson,
 };
 use rocketmq_classic_common::message::MessageQueue;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser::SerializeStruct};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer, de,
+    ser::{SerializeMap, SerializeStruct},
+};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
@@ -2144,14 +2147,69 @@ impl GroupList {
     }
 }
 
+/// A Java `ClusterInfo.brokerAddrTable` reference, including nullable Java
+/// string keys and nullable `BrokerData` values.
+pub type SharedClusterBrokerAddrTable =
+    SharedValue<HashMap<Option<String>, Option<SharedBrokerDataHandle>>>;
+/// A Java `ClusterInfo.clusterAddrTable` reference, including nullable Java
+/// string keys and nullable broker-name sets.
+pub type SharedClusterAddrTable =
+    SharedValue<HashMap<Option<String>, Option<SharedClusterBrokerNames>>>;
+/// A Java cluster's mutable broker-name set.
+pub type SharedClusterBrokerNames = SharedValue<HashSet<Option<String>>>;
+
+fn serialize_cluster_broker_addr_table<S>(
+    value: &Option<SharedClusterBrokerAddrTable>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let Some(table) = value else {
+        return serializer.serialize_none();
+    };
+    table.with(|entries| {
+        let mut output = serializer.serialize_map(Some(entries.len()))?;
+        for (key, broker) in entries {
+            output.serialize_entry(key.as_deref().unwrap_or("null"), broker)?;
+        }
+        output.end()
+    })
+}
+
+fn serialize_cluster_addr_table<S>(
+    value: &Option<SharedClusterAddrTable>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let Some(table) = value else {
+        return serializer.serialize_none();
+    };
+    table.with(|entries| {
+        let mut output = serializer.serialize_map(Some(entries.len()))?;
+        for (key, names) in entries {
+            output.serialize_entry(key.as_deref().unwrap_or("null"), names)?;
+        }
+        output.end()
+    })
+}
+
 /// Java `ClusterInfo` response DTO returned by `GET_BROKER_CLUSTER_INFO`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClusterInfo {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub broker_addr_table: Option<HashMap<String, Option<BrokerData>>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cluster_addr_table: Option<HashMap<String, Option<HashSet<Option<String>>>>>,
+    #[serde(
+        serialize_with = "serialize_cluster_broker_addr_table",
+        skip_serializing_if = "Option::is_none"
+    )]
+    broker_addr_table: Option<SharedClusterBrokerAddrTable>,
+    #[serde(
+        serialize_with = "serialize_cluster_addr_table",
+        skip_serializing_if = "Option::is_none"
+    )]
+    cluster_addr_table: Option<SharedClusterAddrTable>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2169,21 +2227,219 @@ impl<'de> Deserialize<'de> for ClusterInfo {
         let fields: ClusterInfoFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            broker_addr_table: fields.broker_addr_table,
-            cluster_addr_table: fields.cluster_addr_table,
+            broker_addr_table: fields.broker_addr_table.map(|table| {
+                SharedValue::new(
+                    table
+                        .into_iter()
+                        .map(|(name, broker)| (Some(name), broker.map(SharedValue::new)))
+                        .collect(),
+                )
+            }),
+            cluster_addr_table: fields.cluster_addr_table.map(|table| {
+                SharedValue::new(
+                    table
+                        .into_iter()
+                        .map(|(name, brokers)| (Some(name), brokers.map(SharedValue::new)))
+                        .collect(),
+                )
+            }),
         })
     }
 }
 
+impl PartialEq for ClusterInfo {
+    fn eq(&self, other: &Self) -> bool {
+        let broker_tables_equal = match (&self.broker_addr_table, &other.broker_addr_table) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                cluster_broker_tables_equal(&left.snapshot(), &right.snapshot())
+            }
+            _ => false,
+        };
+        broker_tables_equal
+            && match (&self.cluster_addr_table, &other.cluster_addr_table) {
+                (None, None) => true,
+                (Some(left), Some(right)) => {
+                    cluster_name_tables_equal(&left.snapshot(), &right.snapshot())
+                }
+                _ => false,
+            }
+    }
+}
+
+impl Eq for ClusterInfo {}
+
+fn cluster_broker_tables_equal(
+    left: &HashMap<Option<String>, Option<SharedBrokerDataHandle>>,
+    right: &HashMap<Option<String>, Option<SharedBrokerDataHandle>>,
+) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|(name, left_broker)| {
+            let Some(right_broker) = right.get(name) else {
+                return false;
+            };
+            match (left_broker, right_broker) {
+                (None, None) => true,
+                (Some(left), Some(right)) => left.snapshot() == right.snapshot(),
+                _ => false,
+            }
+        })
+}
+
+fn cluster_name_tables_equal(
+    left: &HashMap<Option<String>, Option<SharedClusterBrokerNames>>,
+    right: &HashMap<Option<String>, Option<SharedClusterBrokerNames>>,
+) -> bool {
+    left.len() == right.len()
+        && left.iter().all(|(name, left_brokers)| {
+            let Some(right_brokers) = right.get(name) else {
+                return false;
+            };
+            match (left_brokers, right_brokers) {
+                (None, None) => true,
+                (Some(left), Some(right)) => left.snapshot() == right.snapshot(),
+                _ => false,
+            }
+        })
+}
+
+fn cluster_info_java_string_hash_code(value: &str) -> i32 {
+    value.encode_utf16().fold(0i32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(i32::from(unit))
+    })
+}
+
+fn cluster_broker_table_hash(
+    table: &HashMap<Option<String>, Option<SharedBrokerDataHandle>>,
+) -> i32 {
+    table.iter().fold(0i32, |hash, (name, broker)| {
+        let key_hash = name
+            .as_deref()
+            .map(cluster_info_java_string_hash_code)
+            .unwrap_or(0);
+        let value_hash = broker
+            .as_ref()
+            .map(|broker| broker.with(BrokerData::java_hash_code))
+            .unwrap_or(0);
+        hash.wrapping_add(key_hash ^ value_hash)
+    })
+}
+
+fn cluster_name_table_hash(
+    table: &HashMap<Option<String>, Option<SharedClusterBrokerNames>>,
+) -> i32 {
+    table.iter().fold(0i32, |hash, (name, brokers)| {
+        let key_hash = name
+            .as_deref()
+            .map(cluster_info_java_string_hash_code)
+            .unwrap_or(0);
+        let value_hash = brokers
+            .as_ref()
+            .map(|brokers| {
+                brokers.with(|names| {
+                    names.iter().fold(0i32, |hash, name| {
+                        hash.wrapping_add(
+                            name.as_deref()
+                                .map(cluster_info_java_string_hash_code)
+                                .unwrap_or(0),
+                        )
+                    })
+                })
+            })
+            .unwrap_or(0);
+        hash.wrapping_add(key_hash ^ value_hash)
+    })
+}
+
+/// Java `NullPointerException` branches from `ClusterInfo` query methods.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ClusterInfoLookupError {
+    #[error("ClusterInfo.clusterAddrTable is null (Java NullPointerException)")]
+    NullClusterAddrTable,
+    #[error("ClusterInfo cluster broker-name set is null (Java NullPointerException)")]
+    NullClusterBrokerNames,
+    #[error("ClusterInfo.brokerAddrTable is null (Java NullPointerException)")]
+    NullBrokerAddrTable,
+    #[error("BrokerData.brokerAddrs is null (Java NullPointerException)")]
+    NullBrokerAddressMap,
+}
+
 impl ClusterInfo {
-    pub fn get_broker_addr_table(&self) -> Option<&HashMap<String, Option<BrokerData>>> {
-        self.broker_addr_table.as_ref()
+    pub fn get_broker_addr_table(&self) -> Option<SharedClusterBrokerAddrTable> {
+        self.broker_addr_table.clone()
     }
 
-    pub fn get_cluster_addr_table(
+    pub fn set_broker_addr_table(&mut self, table: Option<SharedClusterBrokerAddrTable>) {
+        self.broker_addr_table = table;
+    }
+
+    pub fn get_cluster_addr_table(&self) -> Option<SharedClusterAddrTable> {
+        self.cluster_addr_table.clone()
+    }
+
+    pub fn set_cluster_addr_table(&mut self, table: Option<SharedClusterAddrTable>) {
+        self.cluster_addr_table = table;
+    }
+
+    pub fn retrieve_all_addr_by_cluster(
         &self,
-    ) -> Option<&HashMap<String, Option<HashSet<Option<String>>>>> {
-        self.cluster_addr_table.as_ref()
+        cluster: Option<&str>,
+    ) -> Result<Vec<Option<String>>, ClusterInfoLookupError> {
+        let table = self
+            .cluster_addr_table
+            .as_ref()
+            .ok_or(ClusterInfoLookupError::NullClusterAddrTable)?;
+        let cluster = cluster.map(str::to_owned);
+        let Some(names) = table.with(|entries| entries.get(&cluster).cloned()) else {
+            return Ok(Vec::new());
+        };
+        let names = names.ok_or(ClusterInfoLookupError::NullClusterBrokerNames)?;
+        let broker_names = names.snapshot();
+        let mut addresses = Vec::new();
+        for broker_name in broker_names {
+            let table = self
+                .broker_addr_table
+                .as_ref()
+                .ok_or(ClusterInfoLookupError::NullBrokerAddrTable)?;
+            let Some(broker) = table.with(|entries| entries.get(&broker_name).cloned().flatten())
+            else {
+                continue;
+            };
+            let broker_addresses = broker
+                .with(|broker| broker.broker_addrs.clone())
+                .ok_or(ClusterInfoLookupError::NullBrokerAddressMap)?;
+            broker_addresses.with(|entries| {
+                addresses.extend(entries.values().cloned());
+            });
+        }
+        Ok(addresses)
+    }
+
+    pub fn retrieve_all_cluster_names(
+        &self,
+    ) -> Result<Vec<Option<String>>, ClusterInfoLookupError> {
+        let table = self
+            .cluster_addr_table
+            .as_ref()
+            .ok_or(ClusterInfoLookupError::NullClusterAddrTable)?;
+        Ok(table.with(|entries| entries.keys().cloned().collect()))
+    }
+
+    /// Returns the pinned Java 5.5.1 `ClusterInfo.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let broker_table_hash = self
+            .broker_addr_table
+            .as_ref()
+            .map(|table| table.with(cluster_broker_table_hash))
+            .unwrap_or(0);
+        let cluster_table_hash = self
+            .cluster_addr_table
+            .as_ref()
+            .map(|table| table.with(cluster_name_table_hash))
+            .unwrap_or(0);
+        31i32
+            .wrapping_mul(31i32.wrapping_add(broker_table_hash))
+            .wrapping_add(cluster_table_hash)
     }
 
     pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {

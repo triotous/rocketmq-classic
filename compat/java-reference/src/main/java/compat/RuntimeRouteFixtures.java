@@ -3257,6 +3257,258 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static Map<String, Object> clusterInfoAccessorCases() {
+        Map<String, Object> result = new TreeMap<>();
+        List<String> publicMethods = new ArrayList<>();
+        for (java.lang.reflect.Method method : org.apache.rocketmq.remoting.protocol.body.ClusterInfo.class
+            .getDeclaredMethods()) {
+            if (java.lang.reflect.Modifier.isPublic(method.getModifiers())) {
+                publicMethods.add(method.toGenericString());
+            }
+        }
+        publicMethods.sort(String::compareTo);
+        result.put("declaredPublicMethods", publicMethods);
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo info =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        result.put("defaultBrokerAddrTableIsNull", info.getBrokerAddrTable() == null);
+        result.put("defaultClusterAddrTableIsNull", info.getClusterAddrTable() == null);
+
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> brokerTable = new HashMap<>();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> brokerAddresses = new HashMap<>();
+        brokerAddresses.put(0L, "master:10911");
+        broker.setBrokerName("broker-a");
+        broker.setBrokerAddrs(brokerAddresses);
+        brokerTable.put("broker-a", broker);
+        HashMap<String, java.util.Set<String>> clusterTable = new HashMap<>();
+        clusterTable.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        info.setBrokerAddrTable(brokerTable);
+        info.setClusterAddrTable(clusterTable);
+        result.put("brokerSetterRetainsMap", info.getBrokerAddrTable() == brokerTable);
+        result.put("clusterSetterRetainsMap", info.getClusterAddrTable() == clusterTable);
+        result.put("brokerGetterReturnsValue", info.getBrokerAddrTable().get("broker-a") == broker);
+        result.put("clusterGetterReturnsValue",
+            info.getClusterAddrTable().get("cluster-a").contains("broker-a"));
+        info.setBrokerAddrTable(null);
+        info.setClusterAddrTable(null);
+        result.put("brokerSetterPreservesNull", info.getBrokerAddrTable() == null);
+        result.put("clusterSetterPreservesNull", info.getClusterAddrTable() == null);
+        return result;
+    }
+
+    private static Map<String, Object> clusterInfoReferenceAliasCases() {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo info =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> callerBrokerTable = new HashMap<>();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(0L, "master:10911");
+        broker.setBrokerAddrs(addresses);
+        callerBrokerTable.put("broker-a", broker);
+        info.setBrokerAddrTable(callerBrokerTable);
+        result.put("brokerSetterRetainsMap", info.getBrokerAddrTable() == callerBrokerTable);
+        result.put("brokerGetterIsStable", info.getBrokerAddrTable() == info.getBrokerAddrTable());
+        result.put("brokerElementIdentityRetained", info.getBrokerAddrTable().get("broker-a") == broker);
+        callerBrokerTable.put("caller-broker", new org.apache.rocketmq.remoting.protocol.route.BrokerData());
+        result.put("brokerCallerMutationVisible", info.getBrokerAddrTable().size() == 2);
+        info.getBrokerAddrTable().put("getter-broker", new org.apache.rocketmq.remoting.protocol.route.BrokerData());
+        result.put("brokerGetterMutationVisible", callerBrokerTable.containsKey("getter-broker"));
+        broker.setZoneName("caller-zone");
+        result.put("brokerElementCallerMutationVisible",
+            "caller-zone".equals(info.getBrokerAddrTable().get("broker-a").getZoneName()));
+        info.getBrokerAddrTable().get("broker-a").setZoneName("getter-zone");
+        result.put("brokerElementGetterMutationVisible", "getter-zone".equals(broker.getZoneName()));
+
+        HashMap<String, java.util.Set<String>> callerClusterTable = new HashMap<>();
+        java.util.Set<String> callerBrokerNames = new java.util.HashSet<>();
+        callerBrokerNames.add("broker-a");
+        callerClusterTable.put("cluster-a", callerBrokerNames);
+        info.setClusterAddrTable(callerClusterTable);
+        result.put("clusterSetterRetainsMap", info.getClusterAddrTable() == callerClusterTable);
+        result.put("clusterGetterIsStable", info.getClusterAddrTable() == info.getClusterAddrTable());
+        result.put("clusterSetIdentityRetained", info.getClusterAddrTable().get("cluster-a") == callerBrokerNames);
+        callerClusterTable.put("caller-cluster", new java.util.HashSet<>(java.util.Set.of("broker-b")));
+        result.put("clusterCallerMutationVisible", info.getClusterAddrTable().size() == 2);
+        info.getClusterAddrTable().put("getter-cluster", new java.util.HashSet<>(java.util.Set.of("broker-c")));
+        result.put("clusterGetterMutationVisible", callerClusterTable.containsKey("getter-cluster"));
+        callerBrokerNames.add("caller-broker");
+        result.put("clusterSetCallerMutationVisible",
+            info.getClusterAddrTable().get("cluster-a").contains("caller-broker"));
+        info.getClusterAddrTable().get("cluster-a").add("getter-broker");
+        result.put("clusterSetGetterMutationVisible", callerBrokerNames.contains("getter-broker"));
+        return result;
+    }
+
+    private static Map<String, Object> clusterInfoRetrievalCases() {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo empty =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        empty.setBrokerAddrTable(new HashMap<>());
+        empty.setClusterAddrTable(new HashMap<>());
+        result.put("emptyClusterNames", java.util.Arrays.asList(empty.retrieveAllClusterNames()));
+        result.put("missingClusterAddresses", java.util.Arrays.asList(empty.retrieveAllAddrByCluster("missing")));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo populated =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> brokers = new HashMap<>();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(0L, "master:10911");
+        broker.setBrokerAddrs(addresses);
+        brokers.put("broker-a", broker);
+        populated.setBrokerAddrTable(brokers);
+        HashMap<String, java.util.Set<String>> clusters = new HashMap<>();
+        clusters.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        populated.setClusterAddrTable(clusters);
+        result.put("clusterNames", java.util.Arrays.asList(populated.retrieveAllClusterNames()));
+        result.put("clusterAddresses", java.util.Arrays.asList(populated.retrieveAllAddrByCluster("cluster-a")));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo missingBroker =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        missingBroker.setBrokerAddrTable(new HashMap<>());
+        HashMap<String, java.util.Set<String>> missingBrokerClusters = new HashMap<>();
+        missingBrokerClusters.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("missing")));
+        missingBroker.setClusterAddrTable(missingBrokerClusters);
+        result.put("missingBrokerAddresses", java.util.Arrays.asList(missingBroker.retrieveAllAddrByCluster("cluster-a")));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullBroker =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> nullBrokerTable = new HashMap<>();
+        nullBrokerTable.put("broker-a", null);
+        nullBroker.setBrokerAddrTable(nullBrokerTable);
+        HashMap<String, java.util.Set<String>> nullBrokerClusters = new HashMap<>();
+        nullBrokerClusters.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        nullBroker.setClusterAddrTable(nullBrokerClusters);
+        result.put("nullBrokerDataAddresses", java.util.Arrays.asList(nullBroker.retrieveAllAddrByCluster("cluster-a")));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullAddress =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData nullAddressBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> nullAddressMap = new HashMap<>();
+        nullAddressMap.put(0L, null);
+        nullAddressBroker.setBrokerAddrs(nullAddressMap);
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> nullAddressBrokers = new HashMap<>();
+        nullAddressBrokers.put("broker-a", nullAddressBroker);
+        nullAddress.setBrokerAddrTable(nullAddressBrokers);
+        HashMap<String, java.util.Set<String>> nullAddressClusters = new HashMap<>();
+        nullAddressClusters.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        nullAddress.setClusterAddrTable(nullAddressClusters);
+        result.put("nullBrokerAddressValue", java.util.Arrays.asList(nullAddress.retrieveAllAddrByCluster("cluster-a")));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullKeys =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData nullKeyBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<Long, String> nullKeyAddresses = new HashMap<>();
+        nullKeyAddresses.put(0L, "null-key:10911");
+        nullKeyBroker.setBrokerAddrs(nullKeyAddresses);
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> nullKeyBrokers = new HashMap<>();
+        nullKeyBrokers.put(null, nullKeyBroker);
+        nullKeys.setBrokerAddrTable(nullKeyBrokers);
+        HashMap<String, java.util.Set<String>> nullKeyClusters = new HashMap<>();
+        java.util.Set<String> nullBrokerNames = new java.util.HashSet<>();
+        nullBrokerNames.add(null);
+        nullKeyClusters.put(null, nullBrokerNames);
+        nullKeys.setClusterAddrTable(nullKeyClusters);
+        result.put("nullClusterName", java.util.Arrays.asList(nullKeys.retrieveAllClusterNames()));
+        result.put("nullClusterBrokerAddress", java.util.Arrays.asList(nullKeys.retrieveAllAddrByCluster(null)));
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullTables =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        result.put("nullClusterTableNamesOutcome", nullPointerOutcome(nullTables::retrieveAllClusterNames));
+        result.put("nullClusterTableAddressesOutcome",
+            nullPointerOutcome(() -> nullTables.retrieveAllAddrByCluster("cluster-a")));
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullBrokerNamesInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        HashMap<String, java.util.Set<String>> nullSetTable = new HashMap<>();
+        nullSetTable.put("cluster-a", null);
+        nullBrokerNamesInfo.setClusterAddrTable(nullSetTable);
+        result.put("nullBrokerNameSetOutcome",
+            nullPointerOutcome(() -> nullBrokerNamesInfo.retrieveAllAddrByCluster("cluster-a")));
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullBrokerTableInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        HashMap<String, java.util.Set<String>> presentSetTable = new HashMap<>();
+        presentSetTable.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        nullBrokerTableInfo.setClusterAddrTable(presentSetTable);
+        result.put("nullBrokerTableOutcome",
+            nullPointerOutcome(() -> nullBrokerTableInfo.retrieveAllAddrByCluster("cluster-a")));
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo nullBrokerAddressTableInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData noAddressTableBroker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> noAddressTableBrokers = new HashMap<>();
+        noAddressTableBrokers.put("broker-a", noAddressTableBroker);
+        nullBrokerAddressTableInfo.setBrokerAddrTable(noAddressTableBrokers);
+        nullBrokerAddressTableInfo.setClusterAddrTable(presentSetTable);
+        result.put("nullBrokerAddressTableOutcome",
+            nullPointerOutcome(() -> nullBrokerAddressTableInfo.retrieveAllAddrByCluster("cluster-a")));
+        return result;
+    }
+
+    private static String nullPointerOutcome(Runnable action) {
+        try {
+            action.run();
+            return "OK";
+        } catch (NullPointerException error) {
+            return "NullPointerException";
+        }
+    }
+
+    private static Map<String, Object> clusterInfoValueMethodCases() {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo defaults =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo sameDefaults =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        result.put("defaultEquals", defaults.equals(sameDefaults));
+        result.put("defaultHashCode", defaults.hashCode());
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo empty =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        empty.setBrokerAddrTable(new HashMap<>());
+        result.put("nullVersusEmptyEquals", defaults.equals(empty));
+        result.put("emptyHashCode", empty.hashCode());
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo left = clusterInfoForValueMethod("cluster-a", "master");
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo right = clusterInfoForValueMethod("cluster-b", "master");
+        result.put("metadataOnlyBrokerChangeEquals", left.equals(right));
+        result.put("metadataOnlyBrokerLeftHashCode", left.hashCode());
+        result.put("metadataOnlyBrokerRightHashCode", right.hashCode());
+
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo changed = clusterInfoForValueMethod("cluster-a", "slave");
+        result.put("changedBrokerAddressEquals", left.equals(changed));
+        result.put("changedBrokerAddressHashCode", changed.hashCode());
+        return result;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.body.ClusterInfo clusterInfoForValueMethod(
+        String brokerCluster, String address) {
+        org.apache.rocketmq.remoting.protocol.body.ClusterInfo info =
+            new org.apache.rocketmq.remoting.protocol.body.ClusterInfo();
+        org.apache.rocketmq.remoting.protocol.route.BrokerData broker =
+            new org.apache.rocketmq.remoting.protocol.route.BrokerData();
+        broker.setCluster(brokerCluster);
+        broker.setBrokerName("broker-a");
+        broker.setEnableActingMaster("cluster-a".equals(brokerCluster));
+        HashMap<Long, String> addresses = new HashMap<>();
+        addresses.put(0L, address);
+        broker.setBrokerAddrs(addresses);
+        HashMap<String, org.apache.rocketmq.remoting.protocol.route.BrokerData> brokers = new HashMap<>();
+        brokers.put("broker-a", broker);
+        HashMap<String, java.util.Set<String>> clusters = new HashMap<>();
+        clusters.put("cluster-a", new java.util.HashSet<>(java.util.Set.of("broker-a")));
+        info.setBrokerAddrTable(brokers);
+        info.setClusterAddrTable(clusters);
+        return info;
+    }
+
     private static List<Object> topicRouteDataToStringCases() {
         String populated = "{\"orderTopicConf\":\"broker:1\",\"queueDatas\":[{\"brokerName\":\"broker\","
             + "\"readQueueNums\":1,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":0}],"
@@ -3873,6 +4125,10 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("routeDtoAccessors", routeDtoAccessorCases());
         fixture.put("routeDtoReferenceAliases", routeDtoReferenceAliasCases());
+        fixture.put("clusterInfoAccessors", clusterInfoAccessorCases());
+        fixture.put("clusterInfoReferenceAliases", clusterInfoReferenceAliasCases());
+        fixture.put("clusterInfoRetrieval", clusterInfoRetrievalCases());
+        fixture.put("clusterInfoValueMethods", clusterInfoValueMethodCases());
         fixture.put("topicRouteDataToString", topicRouteDataToStringCases());
         fixture.put("inheritedSerializationCases", inheritedSerializationCases());
         fixture.put("referenceDetectionSharedRouteCase", referenceDetectionSharedRouteCase());

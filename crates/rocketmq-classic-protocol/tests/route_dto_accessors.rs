@@ -1,11 +1,18 @@
-use rocketmq_classic_protocol::route::{
-    BrokerData, QueueData, SharedBrokerAddressMap, SharedBrokerDataHandle, SharedFilterServerList,
-    SharedFilterServerTable, SharedQueueDataHandle, SharedRouteBrokerDataList,
-    SharedRouteQueueDataList, SharedTopicQueueMappingIds, SharedTopicQueueMappingInfoHandle,
-    SharedTopicQueueMappingTable, TopicQueueMappingInfo, TopicRouteData,
+use rocketmq_classic_protocol::{
+    body::{
+        ClusterInfo, ClusterInfoLookupError, SharedClusterAddrTable, SharedClusterBrokerAddrTable,
+        SharedClusterBrokerNames,
+    },
+    route::{
+        BrokerData, QueueData, SharedBrokerAddressMap, SharedBrokerDataHandle,
+        SharedFilterServerList, SharedFilterServerTable, SharedQueueDataHandle,
+        SharedRouteBrokerDataList, SharedRouteQueueDataList, SharedTopicQueueMappingIds,
+        SharedTopicQueueMappingInfoHandle, SharedTopicQueueMappingTable, TopicQueueMappingInfo,
+        TopicRouteData,
+    },
 };
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn route_fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap()
@@ -434,4 +441,443 @@ fn topic_route_data_collection_accessors_preserve_java_aliases() {
     });
     assert_eq!(caller_mappings.with(|mappings| mappings.len()), 3);
     assert_eq!(java["routeMappingGetterMutationVisible"], true);
+}
+
+#[test]
+fn cluster_info_accessors_match_invoked_java_surface_and_nullability() {
+    let fixture = route_fixture();
+    let java = &fixture["clusterInfoAccessors"];
+    let methods = java["declaredPublicMethods"].as_array().unwrap();
+    let method_names = [
+        "getBrokerAddrTable",
+        "setBrokerAddrTable",
+        "getClusterAddrTable",
+        "setClusterAddrTable",
+        "retrieveAllAddrByCluster",
+        "retrieveAllClusterNames",
+        "equals",
+        "hashCode",
+    ];
+    for name in method_names {
+        assert!(
+            methods
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(name)),
+            "Java ClusterInfo is missing {name}"
+        );
+    }
+    assert_eq!(methods.len(), method_names.len());
+
+    let mut info = ClusterInfo::default();
+    assert!(info.get_broker_addr_table().is_none());
+    assert!(info.get_cluster_addr_table().is_none());
+    assert_eq!(java["defaultBrokerAddrTableIsNull"], true);
+    assert_eq!(java["defaultClusterAddrTableIsNull"], true);
+
+    let broker = SharedBrokerDataHandle::new(BrokerData {
+        broker_name: Some("broker-a".to_owned()),
+        broker_addrs: Some(BTreeMap::from([(Some(0), Some("master:10911".to_owned()))]).into()),
+        ..Default::default()
+    });
+    let brokers: SharedClusterBrokerAddrTable =
+        HashMap::from([(Some("broker-a".to_owned()), Some(broker.clone()))]).into();
+    let names: SharedClusterBrokerNames = HashSet::from([Some("broker-a".to_owned())]).into();
+    let clusters: SharedClusterAddrTable =
+        HashMap::from([(Some("cluster-a".to_owned()), Some(names))]).into();
+    info.set_broker_addr_table(Some(brokers));
+    info.set_cluster_addr_table(Some(clusters));
+    assert_eq!(
+        info.get_broker_addr_table()
+            .unwrap()
+            .with(|table| table[&Some("broker-a".to_owned())].is_some()),
+        java["brokerGetterReturnsValue"]
+    );
+    assert_eq!(
+        info.get_cluster_addr_table().unwrap().with(|table| {
+            table[&Some("cluster-a".to_owned())]
+                .as_ref()
+                .unwrap()
+                .with(|names| names.contains(&Some("broker-a".to_owned())))
+        }),
+        java["clusterGetterReturnsValue"]
+    );
+    info.set_broker_addr_table(None);
+    info.set_cluster_addr_table(None);
+    assert!(info.get_broker_addr_table().is_none());
+    assert!(info.get_cluster_addr_table().is_none());
+    assert_eq!(java["brokerSetterPreservesNull"], true);
+    assert_eq!(java["clusterSetterPreservesNull"], true);
+}
+
+#[test]
+fn cluster_info_mutable_tables_and_nested_values_preserve_java_aliases() {
+    let fixture = route_fixture();
+    let java = &fixture["clusterInfoReferenceAliases"];
+    let mut info = ClusterInfo::default();
+
+    let caller_broker = SharedBrokerDataHandle::new(BrokerData::default());
+    let caller_brokers: SharedClusterBrokerAddrTable =
+        HashMap::from([(Some("broker-a".to_owned()), Some(caller_broker.clone()))]).into();
+    info.set_broker_addr_table(Some(caller_brokers.clone()));
+    let getter_brokers = info.get_broker_addr_table().unwrap();
+    assert_eq!(
+        caller_brokers.ptr_eq(&getter_brokers),
+        java["brokerSetterRetainsMap"]
+    );
+    assert_eq!(
+        getter_brokers.ptr_eq(&info.get_broker_addr_table().unwrap()),
+        java["brokerGetterIsStable"]
+    );
+    assert_eq!(
+        caller_broker.ptr_eq(&getter_brokers.with(|table| {
+            table[&Some("broker-a".to_owned())]
+                .as_ref()
+                .unwrap()
+                .clone()
+        })),
+        java["brokerElementIdentityRetained"]
+    );
+    caller_brokers.with_mut(|table| {
+        table.insert(
+            Some("caller-broker".to_owned()),
+            Some(SharedBrokerDataHandle::new(BrokerData::default())),
+        );
+    });
+    assert_eq!(getter_brokers.with(|table| table.len()), 2);
+    assert_eq!(java["brokerCallerMutationVisible"], true);
+    getter_brokers.with_mut(|table| {
+        table.insert(
+            Some("getter-broker".to_owned()),
+            Some(SharedBrokerDataHandle::new(BrokerData::default())),
+        );
+    });
+    assert!(caller_brokers.with(|table| table.contains_key(&Some("getter-broker".to_owned()))));
+    assert_eq!(java["brokerGetterMutationVisible"], true);
+    caller_broker.with_mut(|broker| broker.zone_name = Some("caller-zone".to_owned()));
+    assert_eq!(
+        caller_broker.with(|broker| broker.zone_name.clone()),
+        Some("caller-zone".to_owned())
+    );
+    assert_eq!(java["brokerElementCallerMutationVisible"], true);
+    getter_brokers.with(|table| {
+        table[&Some("broker-a".to_owned())]
+            .as_ref()
+            .unwrap()
+            .with_mut(|broker| broker.zone_name = Some("getter-zone".to_owned()));
+    });
+    assert_eq!(
+        caller_broker.with(|broker| broker.zone_name.clone()),
+        Some("getter-zone".to_owned())
+    );
+    assert_eq!(java["brokerElementGetterMutationVisible"], true);
+
+    let caller_names: SharedClusterBrokerNames =
+        HashSet::from([Some("broker-a".to_owned())]).into();
+    let caller_clusters: SharedClusterAddrTable =
+        HashMap::from([(Some("cluster-a".to_owned()), Some(caller_names.clone()))]).into();
+    info.set_cluster_addr_table(Some(caller_clusters.clone()));
+    let getter_clusters = info.get_cluster_addr_table().unwrap();
+    assert_eq!(
+        caller_clusters.ptr_eq(&getter_clusters),
+        java["clusterSetterRetainsMap"]
+    );
+    assert_eq!(
+        getter_clusters.ptr_eq(&info.get_cluster_addr_table().unwrap()),
+        java["clusterGetterIsStable"]
+    );
+    assert_eq!(
+        caller_names.ptr_eq(&getter_clusters.with(|table| {
+            table[&Some("cluster-a".to_owned())]
+                .as_ref()
+                .unwrap()
+                .clone()
+        })),
+        java["clusterSetIdentityRetained"]
+    );
+    caller_clusters.with_mut(|table| {
+        table.insert(
+            Some("caller-cluster".to_owned()),
+            Some(HashSet::from([Some("broker-b".to_owned())]).into()),
+        );
+    });
+    assert_eq!(getter_clusters.with(|table| table.len()), 2);
+    assert_eq!(java["clusterCallerMutationVisible"], true);
+    getter_clusters.with_mut(|table| {
+        table.insert(
+            Some("getter-cluster".to_owned()),
+            Some(HashSet::from([Some("broker-c".to_owned())]).into()),
+        );
+    });
+    assert!(caller_clusters.with(|table| table.contains_key(&Some("getter-cluster".to_owned()))));
+    assert_eq!(java["clusterGetterMutationVisible"], true);
+    caller_names.with_mut(|names| {
+        names.insert(Some("caller-broker".to_owned()));
+    });
+    assert!(getter_clusters.with(|table| {
+        table[&Some("cluster-a".to_owned())]
+            .as_ref()
+            .unwrap()
+            .with(|names| names.contains(&Some("caller-broker".to_owned())))
+    }));
+    assert_eq!(java["clusterSetCallerMutationVisible"], true);
+    getter_clusters.with(|table| {
+        table[&Some("cluster-a".to_owned())]
+            .as_ref()
+            .unwrap()
+            .with_mut(|names| {
+                names.insert(Some("getter-broker".to_owned()));
+            });
+    });
+    assert!(caller_names.with(|names| names.contains(&Some("getter-broker".to_owned()))));
+    assert_eq!(java["clusterSetGetterMutationVisible"], true);
+}
+
+#[test]
+fn cluster_info_retrieval_matches_java_null_and_missing_boundaries() {
+    let fixture = route_fixture();
+    let java = &fixture["clusterInfoRetrieval"];
+
+    let mut empty = ClusterInfo::default();
+    empty.set_broker_addr_table(Some(HashMap::new().into()));
+    empty.set_cluster_addr_table(Some(HashMap::new().into()));
+    assert_eq!(
+        serde_json::json!(empty.retrieve_all_cluster_names().unwrap()),
+        java["emptyClusterNames"]
+    );
+    assert_eq!(
+        serde_json::json!(empty.retrieve_all_addr_by_cluster(Some("missing")).unwrap()),
+        java["missingClusterAddresses"]
+    );
+
+    let broker = SharedBrokerDataHandle::new(BrokerData {
+        broker_addrs: Some(BTreeMap::from([(Some(0), Some("master:10911".to_owned()))]).into()),
+        ..Default::default()
+    });
+    let mut populated = ClusterInfo::default();
+    populated.set_broker_addr_table(Some(
+        HashMap::from([(Some("broker-a".to_owned()), Some(broker))]).into(),
+    ));
+    populated.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("broker-a".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    assert_eq!(
+        serde_json::json!(populated.retrieve_all_cluster_names().unwrap()),
+        java["clusterNames"]
+    );
+    assert_eq!(
+        serde_json::json!(
+            populated
+                .retrieve_all_addr_by_cluster(Some("cluster-a"))
+                .unwrap()
+        ),
+        java["clusterAddresses"]
+    );
+
+    let mut missing_broker = ClusterInfo::default();
+    missing_broker.set_broker_addr_table(Some(HashMap::new().into()));
+    missing_broker.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("missing".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    assert_eq!(
+        serde_json::json!(
+            missing_broker
+                .retrieve_all_addr_by_cluster(Some("cluster-a"))
+                .unwrap()
+        ),
+        java["missingBrokerAddresses"]
+    );
+
+    let mut null_broker = ClusterInfo::default();
+    null_broker.set_broker_addr_table(Some(
+        HashMap::from([(Some("broker-a".to_owned()), None)]).into(),
+    ));
+    null_broker.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("broker-a".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    assert_eq!(
+        serde_json::json!(
+            null_broker
+                .retrieve_all_addr_by_cluster(Some("cluster-a"))
+                .unwrap()
+        ),
+        java["nullBrokerDataAddresses"]
+    );
+
+    let null_address = SharedBrokerDataHandle::new(BrokerData {
+        broker_addrs: Some(BTreeMap::from([(Some(0), None)]).into()),
+        ..Default::default()
+    });
+    let mut null_address_info = ClusterInfo::default();
+    null_address_info.set_broker_addr_table(Some(
+        HashMap::from([(Some("broker-a".to_owned()), Some(null_address))]).into(),
+    ));
+    null_address_info.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("broker-a".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    assert_eq!(
+        serde_json::json!(
+            null_address_info
+                .retrieve_all_addr_by_cluster(Some("cluster-a"))
+                .unwrap()
+        ),
+        java["nullBrokerAddressValue"]
+    );
+
+    let null_key_broker = SharedBrokerDataHandle::new(BrokerData {
+        broker_addrs: Some(BTreeMap::from([(Some(0), Some("null-key:10911".to_owned()))]).into()),
+        ..Default::default()
+    });
+    let mut null_keys = ClusterInfo::default();
+    null_keys.set_broker_addr_table(Some(HashMap::from([(None, Some(null_key_broker))]).into()));
+    null_keys.set_cluster_addr_table(Some(
+        HashMap::from([(None, Some(HashSet::from([None]).into()))]).into(),
+    ));
+    assert_eq!(
+        serde_json::json!(null_keys.retrieve_all_cluster_names().unwrap()),
+        java["nullClusterName"]
+    );
+    assert_eq!(
+        serde_json::json!(null_keys.retrieve_all_addr_by_cluster(None).unwrap()),
+        java["nullClusterBrokerAddress"]
+    );
+
+    let mut null_tables = ClusterInfo::default();
+    assert_eq!(
+        null_tables.retrieve_all_cluster_names(),
+        Err(ClusterInfoLookupError::NullClusterAddrTable)
+    );
+    assert_eq!(
+        null_tables.retrieve_all_addr_by_cluster(Some("cluster-a")),
+        Err(ClusterInfoLookupError::NullClusterAddrTable)
+    );
+    assert_eq!(java["nullClusterTableNamesOutcome"], "NullPointerException");
+    assert_eq!(
+        java["nullClusterTableAddressesOutcome"],
+        "NullPointerException"
+    );
+
+    null_tables.set_cluster_addr_table(Some(
+        HashMap::from([(Some("cluster-a".to_owned()), None)]).into(),
+    ));
+    assert_eq!(
+        null_tables.retrieve_all_addr_by_cluster(Some("cluster-a")),
+        Err(ClusterInfoLookupError::NullClusterBrokerNames)
+    );
+    assert_eq!(java["nullBrokerNameSetOutcome"], "NullPointerException");
+
+    null_tables.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("broker-a".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    assert_eq!(
+        null_tables.retrieve_all_addr_by_cluster(Some("cluster-a")),
+        Err(ClusterInfoLookupError::NullBrokerAddrTable)
+    );
+    assert_eq!(java["nullBrokerTableOutcome"], "NullPointerException");
+
+    let no_address_table = SharedBrokerDataHandle::new(BrokerData::default());
+    null_tables.set_broker_addr_table(Some(
+        HashMap::from([(Some("broker-a".to_owned()), Some(no_address_table))]).into(),
+    ));
+    assert_eq!(
+        null_tables.retrieve_all_addr_by_cluster(Some("cluster-a")),
+        Err(ClusterInfoLookupError::NullBrokerAddressMap)
+    );
+    assert_eq!(
+        java["nullBrokerAddressTableOutcome"],
+        "NullPointerException"
+    );
+
+    null_tables.set_cluster_addr_table(Some(
+        HashMap::from([(Some("cluster-a".to_owned()), Some(HashSet::new().into()))]).into(),
+    ));
+    null_tables.set_broker_addr_table(None);
+    assert_eq!(
+        null_tables.retrieve_all_addr_by_cluster(Some("cluster-a")),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn cluster_info_equality_and_hash_match_java_implementations() {
+    let fixture = route_fixture();
+    let java = &fixture["clusterInfoValueMethods"];
+    let defaults = ClusterInfo::default();
+    assert_eq!(defaults, ClusterInfo::default());
+    assert_eq!(
+        defaults.java_hash_code(),
+        java["defaultHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(java["defaultEquals"], true);
+
+    let mut empty = ClusterInfo::default();
+    empty.set_broker_addr_table(Some(HashMap::new().into()));
+    assert_ne!(defaults, empty);
+    assert_eq!(
+        empty.java_hash_code(),
+        java["emptyHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(java["nullVersusEmptyEquals"], false);
+
+    let left = cluster_info_for_value_method("cluster-a", "master");
+    let right = cluster_info_for_value_method("cluster-b", "master");
+    assert_eq!(left, right);
+    assert_eq!(
+        left.java_hash_code(),
+        java["metadataOnlyBrokerLeftHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        right.java_hash_code(),
+        java["metadataOnlyBrokerRightHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(java["metadataOnlyBrokerChangeEquals"], true);
+
+    let changed = cluster_info_for_value_method("cluster-a", "slave");
+    assert_ne!(left, changed);
+    assert_eq!(
+        changed.java_hash_code(),
+        java["changedBrokerAddressHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(java["changedBrokerAddressEquals"], false);
+}
+
+fn cluster_info_for_value_method(broker_cluster: &str, address: &str) -> ClusterInfo {
+    let broker = SharedBrokerDataHandle::new(BrokerData {
+        cluster: Some(broker_cluster.to_owned()),
+        broker_name: Some("broker-a".to_owned()),
+        broker_addrs: Some(BTreeMap::from([(Some(0), Some(address.to_owned()))]).into()),
+        enable_acting_master: broker_cluster == "cluster-a",
+        ..Default::default()
+    });
+    let mut info = ClusterInfo::default();
+    info.set_broker_addr_table(Some(
+        HashMap::from([(Some("broker-a".to_owned()), Some(broker))]).into(),
+    ));
+    info.set_cluster_addr_table(Some(
+        HashMap::from([(
+            Some("cluster-a".to_owned()),
+            Some(HashSet::from([Some("broker-a".to_owned())]).into()),
+        )])
+        .into(),
+    ));
+    info
 }
