@@ -181,6 +181,11 @@ async fn invoke_offset_operation(
 
 #[tokio::test]
 async fn create_topic_sends_java_request_code_and_header_fields() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["updateOrCreateTopic"]["success"];
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
     let header = CreateTopicRequestHeader {
@@ -194,6 +199,10 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
         order: Some(false),
         attributes: Some("+unit=true".into()),
         force: Some(false),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
         ..Default::default()
     };
 
@@ -202,10 +211,21 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
         .unwrap();
 
     let command = peer.await.unwrap();
-    assert_eq!(command.code, request::UPDATE_AND_CREATE_TOPIC);
-    let mut fields = HeaderMap::new();
-    header.encode_fields(&mut fields);
-    assert_eq!(command.ext_fields, Some(fields.into()));
+    assert_eq!(
+        command.code,
+        expected["requestCode"].as_i64().unwrap() as i32
+    );
+    assert!(command.body.is_none());
+    let actual_fields = command.ext_fields.as_ref().unwrap();
+    let expected_fields = expected["requestExtFields"].as_object().unwrap();
+    assert_eq!(actual_fields.len(), expected_fields.len());
+    for (key, value) in expected_fields {
+        assert_eq!(
+            actual_fields.get(key).map(String::as_str),
+            value.as_str(),
+            "field {key}"
+        );
+    }
     client.shutdown().await;
 }
 
@@ -232,6 +252,60 @@ async fn create_topic_preserves_broker_permission_error() {
             code: response::NO_PERMISSION,
             ..
         }
+    ));
+    assert_eq!(peer.await.unwrap().code, request::UPDATE_AND_CREATE_TOPIC);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_topic_matches_mq_client_admin_error_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["updateOrCreateTopic"]["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        expected["responseCode"].as_i64().unwrap() as i32,
+        Some(expected["responseRemark"].as_str().unwrap().to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (api, client) = api().await;
+    let error = api
+        .create_topic(
+            &addr,
+            &CreateTopicRequestHeader {
+                topic: Some("orders".into()),
+                default_topic: Some("TBW102".into()),
+                read_queue_nums: Some(4),
+                write_queue_nums: Some(4),
+                perm: Some(6),
+                topic_filter_type: Some("SINGLE_TAG".into()),
+                topic_sys_flag: Some(3),
+                order: Some(false),
+                attributes: Some("+unit=true".into()),
+                force: Some(false),
+                namespace: Some("tenant".into()),
+                namespaced: Some(true),
+                broker_name: Some("broker-a".into()),
+                oneway: Some(false),
+                ..Default::default()
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::UPDATE_AND_CREATE_TOPIC,
+            peer,
+            code,
+            remark: Some(remark),
+        } if peer == addr
+            && code == expected["responseCode"].as_i64().unwrap() as i32
+            && remark == expected["responseRemark"].as_str().unwrap()
     ));
     assert_eq!(peer.await.unwrap().code, request::UPDATE_AND_CREATE_TOPIC);
     client.shutdown().await;
