@@ -4252,3 +4252,31 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation remains the
   separate manual handoff.
+
+## P18-V01 `getBrokerClusterInfo` admin RPC — 2026-10-18 (`b274784c`)
+
+- [x] Added `MQClientApi::mq_client_admin().get_broker_cluster_info` using
+  Java's headerless asynchronous request code 106. The typed `ClusterInfo`
+  decoder handles unquoted numeric Broker-address keys and maps a null
+  response body to `None`.
+- [x] The invoked Java 5.5.1 fixture records the method signature, direct
+  address/timeout, response tables, null-body outcome, and Broker error.
+  Scripted Core tests compare request shape and decoded tables and cover null
+  and error outcomes. Fixture SHA-256:
+  `3c3c9e711dbb34e9eb97824cbec676e131990e4a03f9628ab76a119d2b9356d5`.
+- [x] Core `admin_rpc` passed all 46 tests; Core all-feature tests passed 171
+  unit tests, all integration targets, and 14 doctests. Protocol all-feature
+  tests passed 132 unit tests, all integration targets, and 49 doctests.
+  Strict all-target/all-feature Core and Protocol Clippy passed. Pinned Maven
+  `verify` passed all 37 scenarios and fixture checks, including 64 typed-header
+  and 14 typed-body cross-decodes. Formatting and `git diff --check` passed.
+  Code commit: `b274784c`.
+- The source-backed `MqClientAdmin` count is now 15/19. Four methods remain:
+  `updateOrCreateSubscriptionGroup`, `getConsumerConnectionList`,
+  `getConsumeStats`, and `getConsumerRunningInfo`. Broad P18-V01
+  API/settings/input/error/flow and reverse-export reconciliation remains
+  open. Refresh full-workspace P18-V02 after remaining implementation work;
+  current-revision Ubuntu/native Windows P18-V04 evidence, final P18-V03
+  package/provenance review, Phase 19 local Docker scenarios/profiles and
+  runner reconciliation, and pre-publication version/registry checks also
+  remain open. Owner-only validation remains the separate manual handoff.
