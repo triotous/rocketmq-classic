@@ -10,6 +10,18 @@ class-name suppression flags. See the current writer-feature summary in the
 slice only; the broader P18-V01 bidirectional API/settings/source/input/error/
 flow/reverse-export audit remains PARTIAL.
 
+P18-V01 `MqClientAdmin` inventory reconciliation (2026-10-18): the separate
+Java `MqClientAdmin` interface now has all 19 declared operations recorded in
+the [Phase 17 admin matrix](PHASE_17_ADMIN_MATRIX.md), with source-backed typed
+RPC slices and invoked Java/Rust evidence. This supersedes the earlier finding
+below that the interface had no complete Rust crosswalk, at the operation-
+presence level only. The reverse-surface pass also found the public
+`ConsumerConnection.computeMinVersion()` method; its Rust mapping and invoked
+Java fixture now cover the method and null/empty/version boundary cases. Full
+reconciliation of each DTO's public methods and
+defaults, overload/input/error/control-flow branches, and Rust reverse exports
+remains open P18-V01 work; this does not close the broader audit.
+
 ## Current closure state (2026-10-16)
 
 The Phase 6 local behavioral gates P6-V01/V02/V03 and P6-U01 remain verified; P6-V04 is a Phase 19 live Broker check. The broad compatibility audit is still **PARTIAL**, for these concrete non-manual reasons:

@@ -4413,3 +4413,31 @@ owner-specific checks belong in the manual handoff.
   P18-V01 API/settings/input/error/flow/reverse-export reconciliation remains
   open, as do current-revision workspace/P18-V02, P18-V03 package/provenance,
   P18-V04 platform evidence and the Phase 19 local scenarios.
+
+## P18-V01 `ConsumerConnection.computeMinVersion` DTO method — 2026-10-18 (`d8f84f2c`)
+
+- [x] Added the Rust `ConsumerConnection::compute_min_version` API for the
+  pinned Java method. Empty sets return `i32::MAX`, versions use Java's signed
+  minimum rule, and null sets/elements return typed errors at the Java
+  `NullPointerException` boundaries. The invoked Java fixture covers defaults,
+  empty sets, default/mixed versions, integer limits, nulls, and the reflected
+  method signature. Fixture SHA-256:
+  `748138c8020551f397ab68bbb24e8e858b5345e95fb78998d0051cea5bbd5f20`.
+- [x] Protocol all-feature tests pass (142 unit tests, all integration targets
+  and 51 doctests); strict Protocol Clippy passes. Pinned Maven `verify` passes
+  all 37 scenarios, 66 typed-header and 15 typed-body cross-decodes. Formatting
+  and diff checks pass.
+- [x] Current-worktree Linux ARM64 Rust 1.85.0 default workspace tests pass.
+  All-feature workspace unit and integration tests pass when the temporary
+  Cargo runner clears its inherited signal mask before launching test binaries.
+  Workspace all-target/all-feature check and strict Clippy also pass. A full
+  all-feature workspace test rerun was stopped during Consumer doctests after
+  the unchanged Common compile-fail doctests took 306 seconds; this is not
+  recorded as a full P18-V02 pass. The latest complete P18-V02 gate remains
+  `411d4efb`, before this DTO slice.
+- The P18-V01 broad source/API/settings/input/error/flow and reverse-export
+  audit remains open. Current-revision P18-V02 full rerun, final P18-V03
+  package/provenance review, P18-V04 Ubuntu/native Windows CI evidence, Phase
+  19 local runner/profile completion, and pre-publication release-version and
+  registry dependency checks remain open. Owner-environment checks stay in the
+  separate manual handoff.

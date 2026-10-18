@@ -102,3 +102,40 @@
   semantics`. The crosswalk, requirement audit, release checklist, and this log
   are pending a separate documentation commit. Broad P18-V01 remains open; the
   final P18-V02 gate must be rerun after the remaining implementation changes.
+
+## ConsumerConnection minimum-version DTO slice — 2026-10-18
+
+- Pinned Java source `ConsumerConnection.computeMinVersion()` initializes with
+  `Integer.MAX_VALUE`, returns it for an empty set, and otherwise returns the
+  minimum `Connection.version`. A null set or element throws
+  `NullPointerException`. Added `ConsumerConnection::compute_min_version` with
+  Java-equivalent empty/minimum behavior and typed errors at those null
+  boundaries. The invoked fixture checks default/explicit empty sets, default
+  and mixed versions, `i32` bounds, null set/member, and method signature.
+  Fixture SHA-256: `748138c8020551f397ab68bbb24e8e858b5345e95fb78998d0051cea5bbd5f20`.
+- Code commit: `d8f84f2c feat(protocol): map ConsumerConnection minimum version`.
+- PASS: focused Protocol regression; Protocol all-feature tests (142 unit,
+  all integration targets, 51 doctests); strict Protocol all-target/all-
+  feature Clippy; pinned Maven verify (37 scenarios, 66 typed-header and 15
+  typed-body cross-decodes); `cargo fmt --all -- --check`; `git diff --check`.
+- Linux ARM64, Rust 1.85.0: current-worktree default workspace tests pass with
+  `--init` and a temporary Cargo target runner that clears the inherited
+  signal mask before `exec` of test binaries. Without the runner, Cargo-launched
+  Consumer tests had one jstack serialization failure because all candidate
+  signals were blocked; the same Consumer unit binary passed 224/224 when run
+  directly, and the focused test passed through the runner.
+- All-feature workspace unit and integration targets passed through the
+  Consumer doctest stage. The full all-feature workspace command was stopped
+  during Consumer doctests after the Common compile-fail doctest target took
+  306.29 seconds and Consumer compile-fail cases continued slowly; this
+  attempt is incomplete and is not counted as a P18-V02 pass. On the changed
+  Protocol crate, all 51 all-feature doctests passed. Current-worktree
+  all-target/all-feature workspace `cargo check` and strict Clippy pass.
+- The previous complete P18-V02 gate was on `411d4efb`, before this DTO slice.
+  Broad bidirectional P18-V01 source/API/settings/input/error/flow and
+  reverse-export reconciliation, final P18-V03 package/provenance review,
+  current-revision P18-V04 Ubuntu/native Windows evidence, Phase 19 local
+  runner/profile completion, and pre-publication version/registry checks
+  remain open. Owner-only checks remain separate manual work.
+- The pre-existing uncommitted Phase 19 README/runner changes and their rlog
+  were left untouched. No plans or Java oracle files were modified.

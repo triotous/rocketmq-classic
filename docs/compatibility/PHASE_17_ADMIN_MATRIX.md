@@ -458,3 +458,20 @@ consumer crate also passes locked Windows x86_64 GNU `cargo check` and strict
 all-target/all-feature Clippy in a Rust 1.85.0 MinGW container. An isolated
 stack harness with warnings denied passes for Windows x86_64 GNU and ARM64
 MSVC. No native Windows runtime or Broker-backed Phase 19 validation was run.
+
+## P18-V01 `ConsumerConnection.computeMinVersion` DTO method — 2026-10-18 (`d8f84f2c`)
+
+The pinned Java `ConsumerConnection.computeMinVersion()` initializes its
+minimum to `Integer.MAX_VALUE` and returns that for an empty connection set;
+otherwise it returns the minimum `Connection.version`. A null set or null
+member throws `NullPointerException`. Rust now exposes
+`ConsumerConnection::compute_min_version`, preserves the empty-set result and
+reports typed errors at those two null boundaries. The invoked Java fixture
+and Protocol regression cover default/explicit empty sets, default and mixed
+versions, signed integer bounds, null sets, null members, and the reflected
+method signature. Fixture SHA-256:
+`748138c8020551f397ab68bbb24e8e858b5345e95fb78998d0051cea5bbd5f20`.
+
+This closes this response DTO method slice only. All 19 source-backed
+`MqClientAdmin` RPC slices are present, but the broader P18-V01 Java/Rust
+source/API/settings/input/error/flow and reverse-export audit remains open.
