@@ -410,7 +410,7 @@ async fn view(
             broker_address,
             &ViewMessageRequestHeader {
                 topic: Some(topic.to_owned()),
-                offset: physical_offset,
+                offset: Some(physical_offset),
             },
             Instant::now() + Duration::from_secs(10),
         )
@@ -446,7 +446,7 @@ async fn view_batch(
                     broker_address,
                     &ViewMessageRequestHeader {
                         topic: Some(topic.to_owned()),
-                        offset: physical_offset,
+                        offset: Some(physical_offset),
                     },
                     Instant::now() + Duration::from_secs(10),
                 )
