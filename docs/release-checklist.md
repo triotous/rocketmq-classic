@@ -4886,3 +4886,32 @@ owner-specific checks belong in the manual handoff.
   provenance/version/registry preflight, current Ubuntu/native Windows P18-V04
   evidence, and Phase 19's 30 local Docker/Broker scenario runners and required
   profiles remain open.
+
+## P18-V02 current-worktree full server-free gate — 2026-10-18 (43a7cebb)
+
+- [x] Default and all-feature locked workspace tests, all-target/all-feature
+  workspace check and strict Clippy pass. Maven verify passes all 37
+  scenarios, fixture drift checks, 66 typed-header and 15 typed-body
+  cross-decodes. Differential comparator self-test and 37-scenario manifest
+  validation pass.
+- [x] Offline race/leak smoke passes 16 cases × 3. Fixed-seed fuzz smoke
+  passes 120 frame seeds, 11 message seeds, 2,096 mutations, 164 frame
+  decodes, and 120 message decodes. Release facade examples and all workspace
+  benchmark targets compile.
+- [x] The offline benchmark ran on macOS ARM64 Apple M5 Max (18 logical CPUs)
+  with Rust 1.85.0. Per-iteration observations: frame encode/decode
+  2,237.8 ns; Zstd message decode 1,143.4 ns; Producer request construction
+  1,195.5 ns; 128-entry route lookup 14.8 ns; loopback pending completion
+  65,795.8 ns. Allocation counts/bytes per iteration were respectively
+  40/4,676; 17/197,493; 54/3,665; 0/0; and 81/9,546. These are observations,
+  not thresholds.
+- [x] Locked Cargo metadata resolves 216 packages (208 registry packages);
+  workspace metadata/license/dependency checks and seven product package
+  listings pass, with LICENSE and NOTICE in each listing. Four Unique ID tests
+  pass under both UTC and Asia/Taipei. Formatting and diff checks pass.
+- This closes the P18-V02 server-free gate on code revision 43a7cebb. Broad
+  P18-V01 bidirectional API/settings/input/error/flow reconciliation and Rust
+  reverse-export audit remain open. P18-V03 Java artifact/source provenance,
+  version and registry preflight, and current Ubuntu/native Windows P18-V04
+  evidence remain open. Phase 19's remaining local scenario runners and
+  profiles are separate work.
