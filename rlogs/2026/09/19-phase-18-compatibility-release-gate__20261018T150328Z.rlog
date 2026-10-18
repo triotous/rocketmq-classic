@@ -94,3 +94,20 @@
 - Test/fixture commit: `93412b9a`. Matrix and release-checklist updates are
   recorded separately. Broad P18-V01, final current-revision P18-V02,
   P18-V03/V04 and Phase 19 local matrix work remain open.
+
+## P18-V01 QuerySubscriptionResponseBody API follow-up — 2026-10-18T15:24:29Z
+
+- The Java fixture for `QuerySubscriptionResponseBody` recorded public methods
+  and fields but omitted constructors; the Rust test did not assert the API
+  inventory or call group/topic setters. Added constructor reflection, exact
+  declaration assertions, field-privacy compile-fail, and direct setter/null
+  reset checks. Existing default, JSON and shared nested-object alias checks
+  remain. Fixture SHA-256:
+  `e5c6405810fbe550a58bd7ce3b843b3e21410fc3e1674c1692f18836a2e969af`.
+- Verification: focused Protocol differential PASS; Protocol doctests PASS
+  (58); strict all-target/all-feature Protocol Clippy PASS; offline Maven
+  `verify` PASS (37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes); formatting and diff checks PASS.
+- Test/fixture commit: `67edffe7`. Matrix and release-checklist updates are
+  recorded separately. Broad P18-V01, final current-revision P18-V02,
+  P18-V03/V04 and Phase 19 local matrix work remain open.

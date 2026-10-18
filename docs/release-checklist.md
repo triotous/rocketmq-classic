@@ -4796,3 +4796,20 @@ owner-specific checks belong in the manual handoff.
   revision; P18-V03 package/provenance and registry preflight,
   current-revision Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
   local Docker/Broker runners and required profiles remain open.
+
+## P18-V01 `QuerySubscriptionResponseBody` API inventory — 2026-10-18 (`67edffe7`)
+
+- [x] The invoked Java fixture now includes the public no-argument constructor,
+  six declared accessor signatures and empty public-field list. Rust asserts
+  those declarations, checks field privacy, directly exercises the setters and
+  null reset, and retains the shared `SubscriptionData` identity/mutation
+  differential. Fixture SHA-256:
+  `e5c6405810fbe550a58bd7ce3b843b3e21410fc3e1674c1692f18836a2e969af`.
+- [x] Focused Protocol differential, 58 Protocol doctests, strict all-target /
+  all-feature Protocol Clippy, pinned Maven `verify` (37 scenarios, fixture
+  checks, 66 typed-header and 15 typed-body cross-decodes), formatting and diff
+  checks passed. Test/fixture commit: `67edffe7`.
+- Broad P18-V01 remains open. P18-V02 requires another final rerun on this
+  latest revision. P18-V03 package/provenance and registry preflight,
+  current-revision Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
+  local Docker/Broker runners and required profiles also remain open.

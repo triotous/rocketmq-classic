@@ -552,3 +552,15 @@ cover Java defaults, formatting, nullable map values, map/entry aliasing, and
 `9b1bd6d1cebd844db4415a45e60cee14442e76dc235662d5189056977da0aeb6`.
 This closes only these response DTO API inventory items; broad P18-V01
 reconciliation remains open.
+
+## P18-V01 `QuerySubscriptionResponseBody` API inventory — 2026-10-18 (`67edffe7`)
+
+The Java fixture now includes its public no-argument constructor and exact
+declared getter/setter signatures alongside the empty public-field inventory.
+Rust asserts that inventory, compile-fail checks its private fields, and
+directly exercises the subscription, group and topic setters including null
+reset. Existing tests cover defaults, JSON behavior, and shared
+`SubscriptionData` identity/mutation. Fixture SHA-256:
+`e5c6405810fbe550a58bd7ce3b843b3e21410fc3e1674c1692f18836a2e969af`.
+This closes only this DTO API inventory slice; broad P18-V01 reconciliation
+remains open.
