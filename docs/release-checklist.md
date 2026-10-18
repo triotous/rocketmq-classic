@@ -4849,3 +4849,21 @@ owner-specific checks belong in the manual handoff.
   Phase 19 runner/README changes remain unstaged and outside this Phase 18
   gate. No plan, Java oracle, remote CI, Broker/Docker state, publication,
   release tag, or push changed.
+
+## P18-V01 `GetConsumerListByGroupResponseBody` API inventory — 2026-10-18 (`e5887718`)
+
+- [x] The invoked Java 5.5.1 fixture records the public no-argument constructor,
+  two declared public accessor signatures, and empty public-field inventory.
+  Rust asserts this inventory and compile-fail checks that `consumer_id_list`
+  is private. Existing default/null, alias mutation, and Java identity checks
+  remain covered. Fixture SHA-256:
+  `21f6d58affb63528aad0ccc25ac21e4b8e2131c8521ccbdffeb8c68eccf8408c`.
+- [x] Protocol/core tests passed; all 59 Protocol doctests passed; strict
+  all-target/all-feature Clippy passed for Protocol, Core, and Remoting; the
+  Remoting fixture generator example compiled; Maven `verify` passed all 37
+  scenarios, fixture drift checks, 66 typed-header and 15 typed-body
+  cross-decodes. Formatting and diff checks passed. Code commit: `e5887718`.
+- Broad P18-V01 bidirectional reconciliation remains open. P18-V02's full
+  server-free gate, P18-V03 provenance/version/registry preflight, current
+  Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30 local Docker/Broker
+  scenario runners and required profiles remain open.
