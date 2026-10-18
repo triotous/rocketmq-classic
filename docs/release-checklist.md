@@ -3851,3 +3851,23 @@ owner-specific checks belong in the manual handoff.
   Ubuntu/native Windows P18-V04 evidence and the final P18-V03 package and
   provenance review remain open. Phase 19 Broker scenarios/profiles and owner
   checks remain separate obligations; no live Broker was contacted.
+
+## EndTransactionRequestHeader reflection decoding — 2026-10-18 (`0961d24d`)
+
+- [x] Closed this P18-V01 header-decoding slice against the pinned Java 5.5.1
+  implementation. Both decode-mode hints use the reflection path. Per-field
+  missing/invalid conversion failures are skipped; nullable offset, group, and
+  message-ID values remain absent; `fromTransactionCheck` defaults to false;
+  malformed Boolean values decode as false; and commit state is validated
+  after field decoding. The invoked fixture covers 13 cases in both modes.
+  Fixture SHA-256: `78605a0c0cd70f33553813559e2e6b4c9fe82589a08acd83ca18a9ebc616ab5d`.
+- [x] Protocol header tests (12), Producer tests, Core invoked-producer fixture,
+  Remoting mode fixture, Maven `verify`, affected-crate strict Clippy, format,
+  and diff checks pass on code commit `0961d24d`. The Maven run verified the
+  new Java fixture, 37 differential scenarios, 56 typed-header cross-decodes,
+  and 14 typed-body cross-decodes.
+- This closes only the EndTransaction decode slice. Broad P18-V01 remains open;
+  the full workspace P18-V02 gate must be refreshed after remaining Phase 18
+  implementation work. Current-revision Ubuntu/native Windows P18-V04 evidence
+  and final P18-V03 package/provenance review also remain open. The Phase 19
+  runner worktree changes were excluded from this commit.
