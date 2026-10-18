@@ -8,6 +8,7 @@ use rocketmq_classic_core::{
     error::RpcError,
 };
 use rocketmq_classic_protocol::{
+    SharedValue,
     codes::{request, response},
     header::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
@@ -23,6 +24,10 @@ use rocketmq_classic_protocol::{
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
+    subscription::{
+        ExponentialRetryPolicy, GroupRetryPolicy, GroupRetryPolicyType, SimpleSubscriptionData,
+        SubscriptionDataSet, SubscriptionGroupConfig,
+    },
 };
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -1966,6 +1971,113 @@ async fn mq_client_admin_get_consume_stats_matches_invoked_java_fixture() {
             request_code: request::GET_CONSUME_STATS,
             ..
         }
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_update_or_create_subscription_group_matches_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let operation = &fixture["updateOrCreateSubscriptionGroup"];
+    assert_eq!(
+        operation["method"],
+        "public abstract java.util.concurrent.CompletableFuture<java.lang.Void> org.apache.rocketmq.client.MqClientAdmin.updateOrCreateSubscriptionGroup(java.lang.String,org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig,long)"
+    );
+
+    let mut config = SubscriptionGroupConfig::default();
+    config.set_group_name(Some("workers".into()));
+    config.set_consume_enable(false);
+    config.set_consume_from_min_enable(false);
+    config.set_consume_broadcast_enable(false);
+    config.set_consume_message_orderly(true);
+    config.set_retry_queue_nums(4);
+    config.set_retry_max_times(8);
+    let mut retry = GroupRetryPolicy::default();
+    retry.set_type(Some(GroupRetryPolicyType::Exponential));
+    retry.set_exponential_retry_policy(Some(SharedValue::new(ExponentialRetryPolicy::new(
+        1_000, 60_000, 3,
+    ))));
+    config.set_group_retry_policy(Some(SharedValue::new(retry)));
+    config.set_broker_id(7);
+    config.set_which_broker_when_consume_slowly(9);
+    config.set_notify_consumer_ids_changed_enable(false);
+    config.set_group_sys_flag(3);
+    config.set_consume_timeout_minute(12);
+    let subscriptions: SubscriptionDataSet = [
+        Some(SharedValue::new(SimpleSubscriptionData::new(
+            Some("orders".into()),
+            Some("TAG".into()),
+            Some("tag-a || tag-b".into()),
+            10,
+        ))),
+        Some(SharedValue::new(SimpleSubscriptionData::new(
+            Some("payments".into()),
+            Some("SQL92".into()),
+            Some("amount > 0".into()),
+            20,
+        ))),
+    ]
+    .into_iter()
+    .collect();
+    config.set_subscription_data_set(Some(SharedValue::new(subscriptions)));
+    config.get_attributes().unwrap().with_mut(|attributes| {
+        attributes.insert("tenant".into(), Some("north".into()));
+        attributes.insert("stage".into(), Some("blue".into()));
+    });
+
+    let success = &operation["success"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (admin_api, client) = api().await;
+    admin_api
+        .mq_client_admin()
+        .update_or_create_subscription_group(
+            &addr,
+            &config,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP);
+    assert_eq!(command.ext_fields, None);
+    assert_eq!(
+        command.body.as_deref().unwrap(),
+        success["requestBody"].as_str().unwrap().as_bytes()
+    );
+    client.shutdown().await;
+
+    let error_case = &operation["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .update_or_create_subscription_group(
+            &addr,
+            &config,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP);
+    assert_eq!(command.ext_fields, None);
+    assert_eq!(
+        command.body.as_deref().unwrap(),
+        error_case["requestBody"].as_str().unwrap().as_bytes()
+    );
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "subscription group update failed"
     ));
     client.shutdown().await;
 }

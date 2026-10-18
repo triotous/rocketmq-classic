@@ -26,6 +26,7 @@ pub mod namespace;
 pub mod route;
 pub(crate) mod serde_fastjson;
 pub mod shared;
+pub mod subscription;
 pub mod writer_feature;
 
 pub use namespace::NamespaceUtil;

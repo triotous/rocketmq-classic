@@ -20,6 +20,7 @@ use rocketmq_classic_protocol::{
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
+    subscription::SubscriptionGroupConfig,
 };
 use rocketmq_classic_remoting::RemotingCommand;
 use tokio::{
@@ -666,6 +667,29 @@ impl MQClientApi {
 }
 
 impl MqClientAdmin {
+    /// Creates or updates one Broker's subscription group through Java
+    /// `MqClientAdmin.updateOrCreateSubscriptionGroup`.
+    pub async fn update_or_create_subscription_group(
+        &self,
+        addr: &str,
+        config: &SubscriptionGroupConfig,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP;
+        let body = config
+            .java_encode()
+            .map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        let reply = self
+            .api
+            .request_future_without_header(addr, code, Some(body), deadline)
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     /// Retrieves one Broker's cluster metadata through Java `MqClientAdmin`.
     pub async fn get_broker_cluster_info(
         &self,

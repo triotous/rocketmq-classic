@@ -60,6 +60,13 @@ import org.apache.rocketmq.remoting.protocol.body.ConsumerConnection;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
 import org.apache.rocketmq.remoting.protocol.admin.ConsumeStats;
 import org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper;
+import org.apache.rocketmq.remoting.protocol.subscription.CustomizedRetryPolicy;
+import org.apache.rocketmq.remoting.protocol.subscription.ExponentialRetryPolicy;
+import org.apache.rocketmq.remoting.protocol.subscription.GroupRetryPolicy;
+import org.apache.rocketmq.remoting.protocol.subscription.GroupRetryPolicyType;
+import org.apache.rocketmq.remoting.protocol.subscription.RetryPolicy;
+import org.apache.rocketmq.remoting.protocol.subscription.SimpleSubscriptionData;
+import org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig;
 import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
 import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
@@ -223,6 +230,7 @@ public final class MqClientAdminFixtures {
         fixture.put("getBrokerClusterInfo", getBrokerClusterInfo());
         fixture.put("getConsumerConnectionList", getConsumerConnectionList());
         fixture.put("getConsumeStats", getConsumeStats());
+        fixture.put("updateOrCreateSubscriptionGroup", updateOrCreateSubscriptionGroup());
         return fixture;
     }
 
@@ -475,6 +483,240 @@ public final class MqClientAdminFixtures {
         result.put("offsetTable", offsets);
         result.put("computeTotalDiff", value.computeTotalDiff());
         result.put("computeInflightTotalDiff", value.computeInflightTotalDiff());
+        return result;
+    }
+
+    private static Map<String, Object> updateOrCreateSubscriptionGroup() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("updateOrCreateSubscriptionGroup", String.class,
+            SubscriptionGroupConfig.class, long.class);
+        SubscriptionGroupConfig config = subscriptionGroupConfig();
+        byte[] bodyBytes = RemotingSerializable.encode(config);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        new MqClientAdminImpl(successCapture.proxy())
+            .updateOrCreateSubscriptionGroup(BROKER_ADDRESS, config, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", successCapture.request.getExtFields() == null
+            ? Map.of() : new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("requestBody", new String(successCapture.request.getBody(), StandardCharsets.UTF_8));
+        success.put("completed", true);
+        success.put("configToString", config.toString());
+        success.put("result", subscriptionGroupConfigSnapshot(config));
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "subscription group update failed");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .updateOrCreateSubscriptionGroup(BROKER_ADDRESS, config, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin subscription-group error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", errorCapture.request.getExtFields() == null
+            ? Map.of() : new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("requestBody", new String(errorCapture.request.getBody(), StandardCharsets.UTF_8));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("method", method.toGenericString());
+        result.put("configPublicMethods", publicMethodSignatures(SubscriptionGroupConfig.class));
+        result.put("groupRetryPolicyPublicMethods", publicMethodSignatures(GroupRetryPolicy.class));
+        result.put("simpleSubscriptionDataPublicMethods", publicMethodSignatures(SimpleSubscriptionData.class));
+        result.put("exponentialRetryPolicyPublicMethods", publicMethodSignatures(ExponentialRetryPolicy.class));
+        result.put("customizedRetryPolicyPublicMethods", publicMethodSignatures(CustomizedRetryPolicy.class));
+        result.put("retryPolicyPublicMethods", publicMethodSignatures(RetryPolicy.class));
+        result.put("groupRetryPolicyTypeNames", List.of(
+            GroupRetryPolicyType.EXPONENTIAL.name(), GroupRetryPolicyType.CUSTOMIZED.name()));
+        result.put("dtoSemantics", subscriptionGroupConfigSemantics());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static SubscriptionGroupConfig subscriptionGroupConfig() {
+        SubscriptionGroupConfig config = new SubscriptionGroupConfig();
+        config.setGroupName("workers");
+        config.setConsumeEnable(false);
+        config.setConsumeFromMinEnable(false);
+        config.setConsumeBroadcastEnable(false);
+        config.setConsumeMessageOrderly(true);
+        config.setRetryQueueNums(4);
+        config.setRetryMaxTimes(8);
+        GroupRetryPolicy retryPolicy = new GroupRetryPolicy();
+        retryPolicy.setType(GroupRetryPolicyType.EXPONENTIAL);
+        retryPolicy.setExponentialRetryPolicy(new ExponentialRetryPolicy(1000L, 60_000L, 3L));
+        config.setGroupRetryPolicy(retryPolicy);
+        config.setBrokerId(7L);
+        config.setWhichBrokerWhenConsumeSlowly(9L);
+        config.setNotifyConsumerIdsChangedEnable(false);
+        config.setGroupSysFlag(3);
+        config.setConsumeTimeoutMinute(12);
+        java.util.Set<SimpleSubscriptionData> subscriptions = new java.util.LinkedHashSet<>();
+        subscriptions.add(new SimpleSubscriptionData("orders", "TAG", "tag-a || tag-b", 10L));
+        subscriptions.add(new SimpleSubscriptionData("payments", "SQL92", "amount > 0", 20L));
+        config.setSubscriptionDataSet(subscriptions);
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("stage", "blue");
+        attributes.put("tenant", "north");
+        config.setAttributes(attributes);
+        return config;
+    }
+
+    private static Map<String, Object> subscriptionGroupConfigSemantics() {
+        SubscriptionGroupConfig defaults = new SubscriptionGroupConfig();
+        Map<String, Object> semantics = new TreeMap<>();
+        semantics.put("defaultJson", new String(RemotingSerializable.encode(defaults), StandardCharsets.UTF_8));
+        semantics.put("defaultConsumeValues", List.of(
+            defaults.isConsumeEnable(), defaults.isConsumeFromMinEnable(), defaults.isConsumeBroadcastEnable(),
+            defaults.isConsumeMessageOrderly(), defaults.getRetryQueueNums(), defaults.getRetryMaxTimes(),
+            defaults.getBrokerId(), defaults.getWhichBrokerWhenConsumeSlowly(),
+            defaults.isNotifyConsumerIdsChangedEnable(), defaults.getGroupSysFlag(),
+            defaults.getConsumeTimeoutMinute()));
+        semantics.put("defaultGroupNameIsNull", defaults.getGroupName() == null);
+        semantics.put("defaultGroupRetryPolicyType", defaults.getGroupRetryPolicy().getType().name());
+        semantics.put("defaultSubscriptionDataSetIsNull", defaults.getSubscriptionDataSet() == null);
+        semantics.put("defaultAttributesEmpty", defaults.getAttributes().isEmpty());
+        semantics.put("defaultConfigHashCode", defaults.hashCode());
+        semantics.put("defaultRetryDelayAtZero", defaults.getGroupRetryPolicy().getRetryPolicy().nextDelayDuration(0));
+
+        SimpleSubscriptionData left = new SimpleSubscriptionData("orders", "TAG", "a", 1L);
+        SimpleSubscriptionData sameIgnoringVersion = new SimpleSubscriptionData("orders", "TAG", "a", 2L);
+        semantics.put("simpleSubscriptionEqualityIgnoresVersion", left.equals(sameIgnoringVersion));
+        semantics.put("simpleSubscriptionHashCodesMatchIgnoringVersion",
+            left.hashCode() == sameIgnoringVersion.hashCode());
+        Set<SimpleSubscriptionData> versionEqualitySet = new java.util.LinkedHashSet<>();
+        versionEqualitySet.add(left);
+        versionEqualitySet.add(sameIgnoringVersion);
+        semantics.put("setDeduplicatesVersionOnlyDifference", versionEqualitySet.size() == 1);
+        Set<SimpleSubscriptionData> nullableSubscriptionSet = new java.util.LinkedHashSet<>();
+        nullableSubscriptionSet.add(null);
+        nullableSubscriptionSet.add(null);
+        semantics.put("setPreservesOneNullElement",
+            nullableSubscriptionSet.size() == 1 && nullableSubscriptionSet.contains(null));
+        semantics.put("simpleSubscriptionJavaHashCode", left.hashCode());
+        semantics.put("simpleSubscriptionToString", left.toString());
+        semantics.put("simpleSubscriptionVersionValue", sameIgnoringVersion.getVersion());
+
+        SubscriptionGroupConfig brokerIdLeft = new SubscriptionGroupConfig();
+        SubscriptionGroupConfig brokerIdRight = new SubscriptionGroupConfig();
+        brokerIdRight.setBrokerId(19L);
+        semantics.put("configEqualityIgnoresBrokerId", brokerIdLeft.equals(brokerIdRight));
+        semantics.put("configHashCodesDifferByBrokerId",
+            brokerIdLeft.hashCode() != brokerIdRight.hashCode());
+
+        SubscriptionGroupConfig liteDefaults = new SubscriptionGroupConfig();
+        semantics.put("defaultPriorityFactor", liteDefaults.getPriorityFactor());
+        semantics.put("defaultLiteSubClientQuota", liteDefaults.getLiteSubClientQuota());
+        semantics.put("defaultMaxClientEventCount", liteDefaults.getMaxClientEventCount());
+        Map<String, String> liteAttributes = new LinkedHashMap<>();
+        SubscriptionGroupConfig lite = new SubscriptionGroupConfig();
+        lite.setAttributes(liteAttributes);
+        lite.setLiteBindTopic("lite-orders");
+        lite.setLiteSubExclusive(true);
+        lite.setWildcardLiteGroup(true);
+        liteAttributes.put("priority.factor", "17");
+        liteAttributes.put("lite.sub.client.quota", "123");
+        liteAttributes.put("lite.sub.client.max.event.cnt", "42");
+        liteAttributes.put("lite.sub.reset.offset.exclusive", "TRUE");
+        liteAttributes.put("lite.sub.reset.offset.unsubscribe", "false");
+        semantics.put("liteBindTopic", lite.getLiteBindTopic());
+        semantics.put("liteSubExclusive", lite.isLiteSubExclusive());
+        semantics.put("wildcardLiteGroup", lite.isWildcardLiteGroup());
+        semantics.put("priorityFactor", lite.getPriorityFactor());
+        semantics.put("liteSubClientQuota", lite.getLiteSubClientQuota());
+        semantics.put("maxClientEventCount", lite.getMaxClientEventCount());
+        semantics.put("resetOffsetInExclusiveMode", lite.isResetOffsetInExclusiveMode());
+        semantics.put("resetOffsetOnUnsubscribe", lite.isResetOffsetOnUnsubscribe());
+        lite.setLiteBindTopic(null);
+        lite.setLiteSubExclusive(false);
+        lite.setWildcardLiteGroup(false);
+        semantics.put("falseLiteSettersPreserveAttributes", "lite-orders".equals(lite.getLiteBindTopic())
+            && "Exclusive".equals(liteAttributes.get("lite.sub.model"))
+            && "true".equals(liteAttributes.get("lite.sub.wildcard")));
+        liteAttributes.put("priority.factor", "invalid");
+        liteAttributes.put("lite.sub.client.max.event.cnt", "invalid");
+        semantics.put("invalidPriorityFactorUsesDefault", lite.getPriorityFactor() == 100);
+        semantics.put("invalidMaxClientEventCountUsesDefault", lite.getMaxClientEventCount() == -1);
+
+        GroupRetryPolicy exponential = new GroupRetryPolicy();
+        exponential.setType(GroupRetryPolicyType.EXPONENTIAL);
+        exponential.setExponentialRetryPolicy(new ExponentialRetryPolicy(1000L, 60_000L, 3L));
+        semantics.put("exponentialRetryDelays", List.of(
+            exponential.getRetryPolicy().nextDelayDuration(-1),
+            exponential.getRetryPolicy().nextDelayDuration(0),
+            exponential.getRetryPolicy().nextDelayDuration(1),
+            exponential.getRetryPolicy().nextDelayDuration(5),
+            exponential.getRetryPolicy().nextDelayDuration(33)));
+
+        Map<String, String> attributes = new LinkedHashMap<>();
+        java.util.Set<SimpleSubscriptionData> subscriptions = new java.util.LinkedHashSet<>();
+        GroupRetryPolicy policy = new GroupRetryPolicy();
+        SubscriptionGroupConfig assigned = new SubscriptionGroupConfig();
+        assigned.setAttributes(attributes);
+        assigned.setSubscriptionDataSet(subscriptions);
+        assigned.setGroupRetryPolicy(policy);
+        semantics.put("setterRetainsAttributesIdentity", assigned.getAttributes() == attributes);
+        semantics.put("setterRetainsSubscriptionSetIdentity", assigned.getSubscriptionDataSet() == subscriptions);
+        semantics.put("setterRetainsRetryPolicyIdentity", assigned.getGroupRetryPolicy() == policy);
+        semantics.put("getterReturnsAssignedRetryPolicy", assigned.getGroupRetryPolicy() == policy);
+        assigned.setAttributes(null);
+        assigned.setSubscriptionDataSet(null);
+        assigned.setGroupRetryPolicy(null);
+        semantics.put("nullableReferencesPreserved", assigned.getAttributes() == null
+            && assigned.getSubscriptionDataSet() == null && assigned.getGroupRetryPolicy() == null);
+        return semantics;
+    }
+
+    private static Map<String, Object> subscriptionGroupConfigSnapshot(SubscriptionGroupConfig config) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("groupName", config.getGroupName());
+        result.put("consumeEnable", config.isConsumeEnable());
+        result.put("consumeFromMinEnable", config.isConsumeFromMinEnable());
+        result.put("consumeBroadcastEnable", config.isConsumeBroadcastEnable());
+        result.put("consumeMessageOrderly", config.isConsumeMessageOrderly());
+        result.put("retryQueueNums", config.getRetryQueueNums());
+        result.put("retryMaxTimes", config.getRetryMaxTimes());
+        result.put("brokerId", config.getBrokerId());
+        result.put("whichBrokerWhenConsumeSlowly", config.getWhichBrokerWhenConsumeSlowly());
+        result.put("notifyConsumerIdsChangedEnable", config.isNotifyConsumerIdsChangedEnable());
+        result.put("groupSysFlag", config.getGroupSysFlag());
+        result.put("consumeTimeoutMinute", config.getConsumeTimeoutMinute());
+        result.put("groupRetryPolicyType", config.getGroupRetryPolicy().getType().name());
+        result.put("retryDelays", List.of(
+            config.getGroupRetryPolicy().getRetryPolicy().nextDelayDuration(0),
+            config.getGroupRetryPolicy().getRetryPolicy().nextDelayDuration(1),
+            config.getGroupRetryPolicy().getRetryPolicy().nextDelayDuration(5)));
+        List<Map<String, Object>> subscriptions = new ArrayList<>();
+        for (SimpleSubscriptionData subscription : config.getSubscriptionDataSet()) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("topic", subscription.getTopic());
+            row.put("expressionType", subscription.getExpressionType());
+            row.put("expression", subscription.getExpression());
+            row.put("version", subscription.getVersion());
+            subscriptions.add(row);
+        }
+        subscriptions.sort(Comparator.comparing(row -> (String) row.get("topic")));
+        result.put("subscriptionDataSet", subscriptions);
+        result.put("attributes", new TreeMap<>(config.getAttributes()));
         return result;
     }
 
