@@ -232,6 +232,10 @@ public final class Main {
             EndTransactionHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "query-admin-header-decode-mode-fixtures".equals(args[0])) {
+            QueryAdminHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "offset-boundary-header-decode-mode-fixtures".equals(args[0])) {
             OffsetBoundaryHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

@@ -248,11 +248,11 @@ impl MQClientApi {
             &query.topic
         };
         let header = QueryMessageRequestHeader {
-            topic: request_topic.to_owned(),
-            key: query.key.clone(),
-            max_num: query.max_num,
-            begin_timestamp: query.begin_timestamp,
-            end_timestamp: query.end_timestamp,
+            topic: Some(request_topic.to_owned()),
+            key: Some(query.key.clone()),
+            max_num: Some(query.max_num),
+            begin_timestamp: Some(query.begin_timestamp),
+            end_timestamp: Some(query.end_timestamp),
             index_type: query.index_type.clone(),
             last_key: query.last_key.clone(),
             ..QueryMessageRequestHeader::default()
@@ -358,8 +358,17 @@ impl MQClientApi {
         for message in &mut message_list {
             client_decode_message(message);
         }
+        let index_last_update_timestamp =
+            response_header.index_last_update_timestamp.ok_or_else(|| {
+                RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: "missing or invalid response header field `indexLastUpdateTimestamp`"
+                        .into(),
+                }
+            })?;
         Ok(QueryResult::new(
-            response_header.index_last_update_timestamp,
+            index_last_update_timestamp,
             Some(SharedValue::from(
                 message_list
                     .into_iter()

@@ -332,8 +332,8 @@ async fn broker_peer_with_responses(
                         } else {
                             let mut fields = HeaderMap::new();
                             QueryMessageResponseHeader {
-                                index_last_update_timestamp: 200,
-                                index_last_update_phyoffset: 100,
+                                index_last_update_timestamp: Some(200),
+                                index_last_update_phyoffset: Some(100),
                             }
                             .encode_fields(&mut fields);
                             write_response(

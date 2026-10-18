@@ -93,11 +93,11 @@ fn java_request_and_response_header_fixtures_decode() {
     let query_message =
         QueryMessageRequestHeader::decode_fields(&java_ext_fields("header-query-message-request"))
             .unwrap();
-    assert_eq!(query_message.topic, "orders");
-    assert_eq!(query_message.key, "order-42");
-    assert_eq!(query_message.max_num, 32);
-    assert_eq!(query_message.begin_timestamp, 1_712_345_678_000);
-    assert_eq!(query_message.end_timestamp, 1_712_345_679_000);
+    assert_eq!(query_message.topic.as_deref(), Some("orders"));
+    assert_eq!(query_message.key.as_deref(), Some("order-42"));
+    assert_eq!(query_message.max_num, Some(32));
+    assert_eq!(query_message.begin_timestamp, Some(1_712_345_678_000));
+    assert_eq!(query_message.end_timestamp, Some(1_712_345_679_000));
     assert_eq!(query_message.index_type.as_deref(), Some("UNIQUE_KEY"));
     assert_eq!(query_message.last_key.as_deref(), Some("last-index-key"));
 
@@ -107,15 +107,18 @@ fn java_request_and_response_header_fixtures_decode() {
     .unwrap();
     assert_eq!(
         query_message_response.index_last_update_timestamp,
-        1_712_345_679_000
+        Some(1_712_345_679_000)
     );
-    assert_eq!(query_message_response.index_last_update_phyoffset, 9876);
+    assert_eq!(
+        query_message_response.index_last_update_phyoffset,
+        Some(9876)
+    );
 
     let view_message =
         ViewMessageRequestHeader::decode_fields(&java_ext_fields("header-view-message-request"))
             .unwrap();
     assert_eq!(view_message.topic.as_deref(), Some("orders"));
-    assert_eq!(view_message.offset, 9876);
+    assert_eq!(view_message.offset, Some(9876));
 
     let lite_pop =
         PopLiteMessageResponseHeader::decode_fields(&java_ext_fields("header-pop-lite-response"))
@@ -853,7 +856,7 @@ fn typed_header_update_preserves_unknown_fields_and_lite_requireds_fail() {
 }
 
 #[test]
-fn required_header_fields_reject_absence_at_protocol_boundary() {
+fn header_required_and_nullable_fields_follow_java_contracts() {
     let empty = HeaderMap::new();
     let err = GetRouteInfoRequestHeader::decode_fields(&empty)
         .unwrap_err()
@@ -889,18 +892,18 @@ fn required_header_fields_reject_absence_at_protocol_boundary() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("offset"));
-    let err = QueryMessageRequestHeader::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("topic"));
-    let err = QueryMessageResponseHeader::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("indexLastUpdateTimestamp"));
-    let err = ViewMessageRequestHeader::decode_fields(&empty)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("offset"));
+    let query_message = QueryMessageRequestHeader::decode_fields(&empty).unwrap();
+    assert_eq!(query_message.topic, None);
+    assert_eq!(query_message.key, None);
+    assert_eq!(query_message.max_num, None);
+    assert_eq!(query_message.begin_timestamp, None);
+    assert_eq!(query_message.end_timestamp, None);
+    let query_message_response = QueryMessageResponseHeader::decode_fields(&empty).unwrap();
+    assert_eq!(query_message_response.index_last_update_timestamp, None);
+    assert_eq!(query_message_response.index_last_update_phyoffset, None);
+    let view_message = ViewMessageRequestHeader::decode_fields(&empty).unwrap();
+    assert_eq!(view_message.topic, None);
+    assert_eq!(view_message.offset, None);
     let err = CreateTopicRequestHeader::decode_fields(&empty)
         .unwrap_err()
         .to_string();
@@ -1033,16 +1036,16 @@ fn header_validation_matrix() {
         row!(
             QueryMessageRequestHeader,
             "query-message-request",
-            "topic key maxNum beginTimestamp endTimestamp",
+            "",
             "maxNum",
             "beginTimestamp endTimestamp",
-            "indexType lastKey ns nsd bname oway lo",
+            "topic key indexType lastKey ns nsd bname oway lo",
             "nsd oway lo"
         ),
         row!(
             QueryMessageResponseHeader,
             "query-message-response",
-            "indexLastUpdateTimestamp indexLastUpdatePhyoffset",
+            "",
             "",
             "indexLastUpdateTimestamp indexLastUpdatePhyoffset",
             "",
@@ -1051,7 +1054,7 @@ fn header_validation_matrix() {
         row!(
             ViewMessageRequestHeader,
             "view-message-request",
-            "offset",
+            "",
             "",
             "offset",
             "topic",
@@ -1671,7 +1674,13 @@ fn header_validation_matrix() {
                 ] {
                     let mut fields = baseline.clone();
                     fields.insert(name.into(), value.into());
-                    if case.model == "SendMessageRequestHeaderV2" {
+                    if matches!(
+                        case.model,
+                        "SendMessageRequestHeaderV2"
+                            | "QueryMessageRequestHeader"
+                            | "QueryMessageResponseHeader"
+                            | "ViewMessageRequestHeader"
+                    ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
                         assert!(

@@ -1127,6 +1127,130 @@ mod tests {
     }
 
     #[test]
+    fn query_admin_header_reflection_modes_match_invoked_java_551() {
+        use rocketmq_classic_protocol::header::{
+            CommandHeader, HeaderMap, QueryMessageRequestHeader, QueryMessageResponseHeader,
+            ViewMessageRequestHeader,
+        };
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["client"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        for (case_name, case) in fixture["cases"].as_object().unwrap() {
+            let fields = case["fields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<HeaderMap>();
+
+            for (mode, use_fast_encode) in [("fast", true), ("reflection", false)] {
+                let command = RemotingCommand {
+                    ext_fields: Some(fields.clone().into()),
+                    ..Default::default()
+                };
+                let expected = &case[mode];
+                assert_eq!(expected["outcome"], "OK", "{case_name}/{mode}");
+
+                let (decoded_fields, encoded_fields) = match case["headerType"].as_str().unwrap() {
+                    "query-request" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<QueryMessageRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "topic": header.topic,
+                                "key": header.key,
+                                "maxNum": header.max_num,
+                                "beginTimestamp": header.begin_timestamp,
+                                "endTimestamp": header.end_timestamp,
+                                "indexType": header.index_type,
+                                "lastKey": header.last_key,
+                                "ns": header.namespace,
+                                "nsd": header.namespaced,
+                                "bname": header.broker_name,
+                                "oway": header.oneway,
+                                "lo": header.logical,
+                            }),
+                            encoded,
+                        )
+                    }
+                    "query-response" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<QueryMessageResponseHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "indexLastUpdateTimestamp": header.index_last_update_timestamp,
+                                "indexLastUpdatePhyoffset": header.index_last_update_phyoffset,
+                            }),
+                            encoded,
+                        )
+                    }
+                    "view-request" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<ViewMessageRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"topic": header.topic, "offset": header.offset}),
+                            encoded,
+                        )
+                    }
+                    other => panic!("{case_name}: unknown header type {other}"),
+                };
+
+                assert_eq!(
+                    expected["decodedFields"], decoded_fields,
+                    "{case_name}/{mode} decoded values"
+                );
+                let expected_encoded = expected["encodedFields"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<HeaderMap>();
+                assert_eq!(encoded_fields, expected_encoded, "{case_name}/{mode}");
+
+                if case["headerType"] == "view-request" {
+                    assert_eq!(expected["equalsDeclaredBy"], "java.lang.Object");
+                    assert_eq!(expected["hashCodeDeclaredBy"], "java.lang.Object");
+                    assert_eq!(expected["distinctDefaultObjectsEquals"], false);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn end_transaction_header_decode_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::{
             CommandHeader, EndTransactionRequestHeader, HeaderMap, ProtocolError,

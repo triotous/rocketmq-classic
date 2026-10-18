@@ -1068,13 +1068,15 @@ impl CommandHeader for CreateTopicRequestHeader {
 }
 
 /// Pinned Java `QueryMessageRequestHeader` used by `QUERY_MESSAGE`.
+/// Pinned Java `QueryMessageRequestHeader` keeps its String, Integer, and Long
+/// values nullable; its `checkFields()` method does not require them.
 #[derive(Debug, Clone, Default)]
 pub struct QueryMessageRequestHeader {
-    pub topic: String,
-    pub key: String,
-    pub max_num: i32,
-    pub begin_timestamp: i64,
-    pub end_timestamp: i64,
+    pub topic: Option<String>,
+    pub key: Option<String>,
+    pub max_num: Option<i32>,
+    pub begin_timestamp: Option<i64>,
+    pub end_timestamp: Option<i64>,
     pub index_type: Option<String>,
     pub last_key: Option<String>,
     pub namespace: Option<String>,
@@ -1086,11 +1088,11 @@ pub struct QueryMessageRequestHeader {
 
 impl CommandHeader for QueryMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("topic".into(), self.topic.clone());
-        fields.insert("key".into(), self.key.clone());
-        fields.insert("maxNum".into(), self.max_num.to_string());
-        fields.insert("beginTimestamp".into(), self.begin_timestamp.to_string());
-        fields.insert("endTimestamp".into(), self.end_timestamp.to_string());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "key", self.key.as_deref());
+        put_optional(fields, "maxNum", self.max_num);
+        put_optional(fields, "beginTimestamp", self.begin_timestamp);
+        put_optional(fields, "endTimestamp", self.end_timestamp);
         put_optional(fields, "indexType", self.index_type.as_deref());
         put_optional(fields, "lastKey", self.last_key.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
@@ -1102,11 +1104,11 @@ impl CommandHeader for QueryMessageRequestHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            topic: required_string(fields, "topic")?.to_owned(),
-            key: required_string(fields, "key")?.to_owned(),
-            max_num: required_i32(fields, "maxNum")?,
-            begin_timestamp: required_i64(fields, "beginTimestamp")?,
-            end_timestamp: required_i64(fields, "endTimestamp")?,
+            topic: optional_string(fields, "topic"),
+            key: optional_string(fields, "key"),
+            max_num: optional_i32_with_mode(fields, "maxNum", false)?,
+            begin_timestamp: optional_i64_with_mode(fields, "beginTimestamp", false)?,
+            end_timestamp: optional_i64_with_mode(fields, "endTimestamp", false)?,
             index_type: optional_string(fields, "indexType"),
             last_key: optional_string(fields, "lastKey"),
             namespace: optional_string(fields, "ns"),
@@ -1116,9 +1118,17 @@ impl CommandHeader for QueryMessageRequestHeader {
             logical: optional_java_boolean(fields, "lo"),
         })
     }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields(fields)
+    }
 }
 
-/// Pinned Java `QueryMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
+/// Pinned Java `QueryMessageResponseHeader` keeps both Long values nullable and
+/// inherits identity-based `Object.equals` and `hashCode`.
 ///
 /// ```compile_fail
 /// use rocketmq_classic_protocol::header::QueryMessageResponseHeader;
@@ -1127,47 +1137,79 @@ impl CommandHeader for QueryMessageRequestHeader {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryMessageResponseHeader {
-    pub index_last_update_timestamp: i64,
-    pub index_last_update_phyoffset: i64,
+    pub index_last_update_timestamp: Option<i64>,
+    pub index_last_update_phyoffset: Option<i64>,
 }
 
 impl CommandHeader for QueryMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert(
-            "indexLastUpdateTimestamp".into(),
-            self.index_last_update_timestamp.to_string(),
+        put_optional(
+            fields,
+            "indexLastUpdateTimestamp",
+            self.index_last_update_timestamp,
         );
-        fields.insert(
-            "indexLastUpdatePhyoffset".into(),
-            self.index_last_update_phyoffset.to_string(),
+        put_optional(
+            fields,
+            "indexLastUpdatePhyoffset",
+            self.index_last_update_phyoffset,
         );
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            index_last_update_timestamp: required_i64(fields, "indexLastUpdateTimestamp")?,
-            index_last_update_phyoffset: required_i64(fields, "indexLastUpdatePhyoffset")?,
+            index_last_update_timestamp: optional_i64_with_mode(
+                fields,
+                "indexLastUpdateTimestamp",
+                false,
+            )?,
+            index_last_update_phyoffset: optional_i64_with_mode(
+                fields,
+                "indexLastUpdatePhyoffset",
+                false,
+            )?,
         })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields(fields)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Pinned Java `ViewMessageRequestHeader` keeps its String and Long values
+/// nullable and inherits identity-based `Object.equals` and `hashCode`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ViewMessageRequestHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<ViewMessageRequestHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct ViewMessageRequestHeader {
     pub topic: Option<String>,
-    pub offset: i64,
+    pub offset: Option<i64>,
 }
 
 impl CommandHeader for ViewMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "topic", self.topic.as_deref());
-        fields.insert("offset".into(), self.offset.to_string());
+        put_optional(fields, "offset", self.offset);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             topic: optional_string(fields, "topic"),
-            offset: required_i64(fields, "offset")?,
+            offset: optional_i64_with_mode(fields, "offset", false)?,
         })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_fields(fields)
     }
 }
 
@@ -2934,7 +2976,7 @@ mod tests {
             QueryMessageRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut QueryMessageRequestHeader| h.key = "payload".into()
+            |h: &mut QueryMessageRequestHeader| h.key = Some("payload".into())
         );
         check_rpc_request_header!(
             GetConsumerListByGroupRequestHeader,
@@ -2969,7 +3011,7 @@ mod tests {
         check_rpc_request_header!(
             EndTransactionRequestHeader,
             broker_name,
-            |_| {},
+            |h: &mut EndTransactionRequestHeader| h.commit_or_rollback = Some(8),
             |h: &mut EndTransactionRequestHeader| h.transaction_id = Some("payload".into())
         );
         check_rpc_request_header!(

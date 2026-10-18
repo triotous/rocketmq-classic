@@ -255,8 +255,8 @@ async fn offset_admin_rpcs_preserve_broker_errors_and_reject_missing_response_fi
 async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     let mut fields = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 1_700_000_200_041,
-        index_last_update_phyoffset: 1_700_000_000_041,
+        index_last_update_timestamp: Some(1_700_000_200_041),
+        index_last_update_phyoffset: Some(1_700_000_000_041),
     }
     .encode_fields(&mut fields);
     let message_record = java_message_record("ipv4-v1");
@@ -268,11 +268,11 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     .await;
     let (api, client) = api().await;
     let header = QueryMessageRequestHeader {
-        topic: "orders".into(),
-        key: "producer-unique-1".into(),
-        max_num: 32,
-        begin_timestamp: 1_700_000_000_000,
-        end_timestamp: 1_700_000_300_000,
+        topic: Some("orders".into()),
+        key: Some("producer-unique-1".into()),
+        max_num: Some(32),
+        begin_timestamp: Some(1_700_000_000_000),
+        end_timestamp: Some(1_700_000_300_000),
         index_type: Some("UNIQUE_KEY".into()),
         ..Default::default()
     };
@@ -371,6 +371,42 @@ async fn query_message_rejects_success_without_response_header() {
 }
 
 #[tokio::test]
+async fn query_message_unboxes_nullable_java_timestamp_at_the_result_boundary() {
+    let (api, client) = api().await;
+    for timestamp in [None, Some("not-a-long")] {
+        let mut fields = HeaderMap::from([("indexLastUpdatePhyoffset".into(), "7".into())]);
+        if let Some(timestamp) = timestamp {
+            fields.insert("indexLastUpdateTimestamp".into(), timestamp.into());
+        }
+        let (addr, peer) = scripted_peer(
+            response::SUCCESS,
+            Some(fields),
+            Some(java_message_record("ipv4-v1")),
+        )
+        .await;
+        let error = api
+            .query_message(
+                &addr,
+                &QueryMessageRequestHeader::default(),
+                false,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap_err();
+        peer.await.unwrap();
+        assert!(matches!(
+            error,
+            RpcError::MalformedResponse {
+                request_code: request::QUERY_MESSAGE,
+                reason,
+                ..
+            } if reason.contains("indexLastUpdateTimestamp")
+        ));
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_message_rejects_malformed_success_body() {
     let mut fields = HeaderMap::new();
     QueryMessageResponseHeader::default().encode_fields(&mut fields);
@@ -406,8 +442,8 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
 
     let mut first_header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 1,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(1),
     }
     .encode_fields(&mut first_header);
     let (first_address, first_peer) = scripted_peer(
@@ -419,8 +455,8 @@ async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_suc
 
     let mut second_header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 200,
-        index_last_update_phyoffset: 2,
+        index_last_update_timestamp: Some(200),
+        index_last_update_phyoffset: Some(2),
     }
     .encode_fields(&mut second_header);
     let (second_address, second_peer) = scripted_peer(
@@ -490,8 +526,8 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
 
     let mut first_header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 200,
-        index_last_update_phyoffset: 20,
+        index_last_update_timestamp: Some(200),
+        index_last_update_phyoffset: Some(20),
     }
     .encode_fields(&mut first_header);
     let (first_address, first_peer) = scripted_peer_after(
@@ -504,8 +540,8 @@ async fn query_fanout_preserves_java_response_completion_order_and_time_bounds()
 
     let mut second_header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 10,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(10),
     }
     .encode_fields(&mut second_header);
     let (second_address, second_peer) =
@@ -603,8 +639,8 @@ async fn query_fanout_returns_java_no_message_error_after_filtering() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 1,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(1),
     }
     .encode_fields(&mut header);
     let (address, peer) =
@@ -645,8 +681,8 @@ async fn query_fanout_matches_java_null_index_type_filter() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 1,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(1),
     }
     .encode_fields(&mut header);
     let (address, peer) =
@@ -719,8 +755,8 @@ async fn query_fanout_applies_java_cluster_filter_and_last_key() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 1,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(1),
     }
     .encode_fields(&mut header);
     let (selected_address, selected_peer) =
@@ -769,8 +805,8 @@ async fn query_fanout_uses_cluster_for_logical_topic_route_and_request() {
     let message_record = java_message_record("ipv4-v1");
     let mut header = HeaderMap::new();
     QueryMessageResponseHeader {
-        index_last_update_timestamp: 100,
-        index_last_update_phyoffset: 1,
+        index_last_update_timestamp: Some(100),
+        index_last_update_phyoffset: Some(1),
     }
     .encode_fields(&mut header);
     let (address, peer) =
@@ -809,7 +845,7 @@ async fn view_message_sends_physical_offset_and_decodes_one_java_message() {
     let (api, client) = api().await;
     let header = ViewMessageRequestHeader {
         topic: Some("orders".into()),
-        offset: 1_700_000_000_041,
+        offset: Some(1_700_000_000_041),
     };
 
     let message = api
