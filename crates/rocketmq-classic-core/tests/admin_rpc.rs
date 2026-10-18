@@ -1359,6 +1359,129 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
 }
 
 #[tokio::test]
+async fn mq_client_admin_query_message_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let query = &fixture["queryMessage"];
+    let response_body = base64::engine::general_purpose::STANDARD
+        .decode(query["responseBodyBase64"].as_str().unwrap())
+        .unwrap();
+
+    for case_name in ["keyQueryDecompressed", "keyQueryCompressed", "uniqueQuery"] {
+        let case = &query[case_name];
+        let unique_key = case["uniqueKeyFlag"].as_bool().unwrap();
+        let decompress_body = case["decompressBody"].as_bool().unwrap();
+        let header = QueryMessageRequestHeader {
+            topic: Some("orders".into()),
+            key: Some(if unique_key { "unique-1" } else { "green" }.into()),
+            max_num: Some(3),
+            begin_timestamp: Some(1_700_000_000_000),
+            end_timestamp: Some(1_700_000_300_000),
+            index_type: Some("KEY".into()),
+            ..Default::default()
+        };
+        let (addr, peer) =
+            scripted_peer(response::SUCCESS, None, Some(response_body.clone())).await;
+        let (api, client) = api().await;
+        let messages = api
+            .mq_client_admin()
+            .query_message(
+                &addr,
+                unique_key,
+                decompress_body,
+                &header,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+
+        let command = peer.await.unwrap();
+        assert_eq!(command.code, request::QUERY_MESSAGE);
+        assert_eq!(
+            serde_json::to_value(command.ext_fields).unwrap(),
+            case["requestExtFields"]
+        );
+        let actual = messages
+            .iter()
+            .map(|message| {
+                serde_json::json!({
+                    "topic": message.topic(),
+                    "messageId": message.message_id(),
+                    "offsetMessageId": message.offset_message_id(),
+                    "bodyBase64": base64::engine::general_purpose::STANDARD.encode(message.body().as_ref()),
+                    "sysFlag": message.sys_flag(),
+                    "keys": message.keys(),
+                    "properties": serde_json::to_value(message.properties()).unwrap(),
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(Value::Array(actual), case["result"]);
+        client.shutdown().await;
+    }
+
+    let header = QueryMessageRequestHeader {
+        topic: Some("orders".into()),
+        key: Some("green".into()),
+        max_num: Some(3),
+        begin_timestamp: Some(1_700_000_000_000),
+        end_timestamp: Some(1_700_000_300_000),
+        index_type: Some("KEY".into()),
+        ..Default::default()
+    };
+    let (not_found_address, not_found_peer) = scripted_peer_with_remark(
+        response::QUERY_NOT_FOUND,
+        Some("query not found".into()),
+        None,
+        None,
+    )
+    .await;
+    let (not_found_api, client) = api().await;
+    let messages = not_found_api
+        .mq_client_admin()
+        .query_message(
+            &not_found_address,
+            false,
+            true,
+            &header,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    assert!(messages.is_empty());
+    let command = not_found_peer.await.unwrap();
+    assert_eq!(command.code, request::QUERY_MESSAGE);
+    client.shutdown().await;
+
+    let (error_address, error_peer) = scripted_peer_with_remark(
+        response::SYSTEM_ERROR,
+        Some("query failed".into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .query_message(
+            &error_address,
+            false,
+            true,
+            &header,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    let command = error_peer.await.unwrap();
+    assert_eq!(command.code, request::QUERY_MESSAGE);
+    assert!(
+        matches!(error, RpcError::Response { code: 1, remark: Some(remark), .. } if remark == "query failed")
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn query_message_preserves_broker_response_code_and_remark() {
     let (addr, peer) = scripted_peer(17, None, None).await;
     let (api, client) = api().await;

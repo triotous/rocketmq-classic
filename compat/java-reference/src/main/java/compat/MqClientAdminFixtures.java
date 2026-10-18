@@ -19,10 +19,13 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +35,11 @@ import java.util.concurrent.ExecutionException;
 import org.apache.rocketmq.client.MqClientAdmin;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.impl.admin.MqClientAdminImpl;
+import org.apache.rocketmq.common.message.MessageAccessor;
+import org.apache.rocketmq.common.message.MessageClientExt;
+import org.apache.rocketmq.common.message.MessageDecoder;
+import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.RemotingClient;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
@@ -44,6 +52,7 @@ import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
@@ -181,6 +190,7 @@ public final class MqClientAdminFixtures {
         fixture.put("method", method.toGenericString());
         fixture.put("success", success);
         fixture.put("brokerError", error);
+        fixture.put("queryMessage", queryMessage());
         fixture.put("updateOrCreateTopic", updateOrCreateTopic());
         fixture.put("deleteTopicInBroker", deleteTopicInBroker());
         fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
@@ -188,6 +198,170 @@ public final class MqClientAdminFixtures {
         fixture.put("deleteSubscriptionGroup", deleteSubscriptionGroup());
         fixture.put("invokeBrokerToResetOffset", invokeBrokerToResetOffset());
         return fixture;
+    }
+
+    private static Map<String, Object> queryMessage() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("queryMessage", String.class, boolean.class,
+            boolean.class, QueryMessageRequestHeader.class, long.class);
+        QueryMessageRequestHeader keyHeader = queryHeader("green");
+        QueryMessageRequestHeader uniqueHeader = queryHeader("unique-1");
+
+        MessageExt compressedMatch = queryMessageRecord("orders", "compressed-body", 1,
+            MessageSysFlag.COMPRESSED_FLAG | MessageSysFlag.COMPRESSION_ZLIB_TYPE,
+            "red green", "unique-1");
+        MessageExt wrongKey = queryMessageRecord("orders", "unmatched-body", 2, 0,
+            "greenish", "unique-2");
+        MessageExt wrongTopic = queryMessageRecord("other", "wrong-topic-body", 3, 0,
+            "green", "unique-3");
+        byte[] responseBody = encodeQueryMessages(List.of(compressedMatch, wrongKey, wrongTopic));
+
+        Map<String, Object> keyQueryDecompressed = queryMessageCall(false, true, keyHeader, responseBody);
+        Map<String, Object> keyQueryCompressed = queryMessageCall(false, false, keyHeader, responseBody);
+        Map<String, Object> uniqueQuery = queryMessageCall(true, false, uniqueHeader, responseBody);
+
+        Capture notFoundCapture = new Capture();
+        notFoundCapture.response = RemotingCommand.createResponseCommand(ResponseCode.QUERY_NOT_FOUND,
+            "query not found");
+        List<MessageExt> notFoundMessages = new MqClientAdminImpl(notFoundCapture.proxy())
+            .queryMessage(BROKER_ADDRESS, false, true, keyHeader, TIMEOUT_MILLIS).get();
+        Map<String, Object> notFound = queryMessageCallResult(notFoundCapture, notFoundMessages);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR,
+            "query failed");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .queryMessage(BROKER_ADDRESS, false, true, keyHeader, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin query error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>(queryMessageCapture(errorCapture));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("responseBodyBase64", Base64.getEncoder().encodeToString(responseBody));
+        result.put("keyQueryDecompressed", keyQueryDecompressed);
+        result.put("keyQueryCompressed", keyQueryCompressed);
+        result.put("uniqueQuery", uniqueQuery);
+        result.put("queryNotFound", notFound);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static QueryMessageRequestHeader queryHeader(String key) {
+        QueryMessageRequestHeader header = new QueryMessageRequestHeader();
+        header.setTopic("orders");
+        header.setKey(key);
+        header.setMaxNum(3);
+        header.setBeginTimestamp(1_700_000_000_000L);
+        header.setEndTimestamp(1_700_000_300_000L);
+        header.setIndexType("KEY");
+        return header;
+    }
+
+    private static MessageExt queryMessageRecord(String topic, String body, long queueOffset,
+        int sysFlag, String keys, String uniqueKey) throws Exception {
+        MessageExt message = new MessageExt();
+        message.setTopic(topic);
+        message.setBody(body.getBytes(StandardCharsets.UTF_8));
+        message.setQueueId(1);
+        message.setQueueOffset(queueOffset);
+        message.setCommitLogOffset(1_700_000_000_000L + queueOffset);
+        message.setSysFlag(sysFlag);
+        message.setFlag(0);
+        message.setBodyCRC(0);
+        message.setBornTimestamp(1_700_000_100_000L + queueOffset);
+        message.setStoreTimestamp(1_700_000_200_000L + queueOffset);
+        message.setBornHost(new InetSocketAddress(InetAddress.getByName("192.0.2.1"), 10911));
+        message.setStoreHost(new InetSocketAddress(InetAddress.getByName("192.0.2.2"), 10911));
+        message.setReconsumeTimes(0);
+        message.setPreparedTransactionOffset(0);
+        MessageAccessor.putProperty(message, org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS, keys);
+        MessageAccessor.putProperty(message,
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, uniqueKey);
+        return message;
+    }
+
+    private static byte[] encodeQueryMessages(List<MessageExt> messages) throws Exception {
+        List<byte[]> records = new ArrayList<>();
+        int length = 0;
+        for (MessageExt message : messages) {
+            byte[] record = MessageDecoder.encode(message, true);
+            records.add(record);
+            length += record.length;
+        }
+        byte[] result = new byte[length];
+        int offset = 0;
+        for (byte[] record : records) {
+            System.arraycopy(record, 0, result, offset, record.length);
+            offset += record.length;
+        }
+        return result;
+    }
+
+    private static Map<String, Object> queryMessageCall(boolean uniqueKey, boolean decompressBody,
+        QueryMessageRequestHeader header, byte[] responseBody) throws Exception {
+        Capture capture = new Capture();
+        capture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        capture.response.setBody(responseBody);
+        List<MessageExt> messages = new MqClientAdminImpl(capture.proxy())
+            .queryMessage(BROKER_ADDRESS, uniqueKey, decompressBody, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> result = new LinkedHashMap<>(queryMessageCapture(capture));
+        result.put("uniqueKeyFlag", uniqueKey);
+        result.put("decompressBody", decompressBody);
+        result.put("responseCode", capture.response.getCode());
+        result.put("result", queryMessageSnapshots(messages));
+        return result;
+    }
+
+    private static Map<String, Object> queryMessageCapture(Capture capture) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("address", capture.address);
+        result.put("timeoutMillis", capture.timeoutMillis);
+        result.put("requestCode", capture.request.getCode());
+        result.put("requestExtFields", new TreeMap<>(capture.request.getExtFields()));
+        return result;
+    }
+
+    private static Map<String, Object> queryMessageCallResult(Capture capture, List<MessageExt> messages) {
+        Map<String, Object> result = new LinkedHashMap<>(queryMessageCapture(capture));
+        result.put("responseCode", capture.response.getCode());
+        result.put("responseRemark", capture.response.getRemark());
+        result.put("result", queryMessageSnapshots(messages));
+        return result;
+    }
+
+    private static List<Map<String, Object>> queryMessageSnapshots(List<MessageExt> messages) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (MessageExt message : messages) {
+            result.add(queryMessageSnapshot(message));
+        }
+        return result;
+    }
+
+    private static Map<String, Object> queryMessageSnapshot(MessageExt message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("topic", message.getTopic());
+        result.put("messageId", message.getMsgId());
+        result.put("offsetMessageId", message instanceof MessageClientExt
+            ? ((MessageClientExt) message).getOffsetMsgId() : null);
+        result.put("bodyBase64", message.getBody() == null
+            ? null : Base64.getEncoder().encodeToString(message.getBody()));
+        result.put("sysFlag", message.getSysFlag());
+        result.put("keys", message.getKeys());
+        result.put("properties", new TreeMap<>(message.getProperties()));
+        return result;
     }
 
     private static Map<String, Object> deleteTopicInBroker() throws Exception {

@@ -19,6 +19,7 @@ use rocketmq_classic_protocol::{
     heartbeat::SubscriptionData,
     route::TopicRouteData,
 };
+use rocketmq_classic_remoting::RemotingCommand;
 use tokio::{
     task::JoinSet,
     time::{Instant, timeout_at},
@@ -41,6 +42,13 @@ use crate::error::RpcError;
 pub struct QueryResult {
     pub(crate) index_last_update_timestamp: i64,
     pub(crate) message_list: Option<QueryMessageList>,
+}
+
+/// Direct asynchronous admin operations from Java's `MqClientAdmin` surface.
+/// The object shares the underlying remoting client with `MQClientApi`.
+#[derive(Clone)]
+pub struct MqClientAdmin {
+    api: MQClientApi,
 }
 
 /// A mutable list handle corresponding to Java's retained `List<MessageExt>`.
@@ -210,6 +218,11 @@ impl std::fmt::Display for QueryResult {
 }
 
 impl MQClientApi {
+    /// Returns the direct admin adapter exposed by Java's `MQClientAPIExt`.
+    pub fn mq_client_admin(&self) -> MqClientAdmin {
+        MqClientAdmin { api: self.clone() }
+    }
+
     /// Gets one Broker's topic statistics and offset table.
     pub async fn get_topic_stats_info(
         &self,
@@ -485,11 +498,8 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<QueryResult, RpcError> {
         let code = request::QUERY_MESSAGE;
-        let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
-        header.encode_fields(&mut fields);
-        fields.insert("_UNIQUE_KEY_QUERY".into(), unique_key.to_string());
         let reply = self
-            .request_fields_with_mode(addr, code, fields, None, deadline, true)
+            .query_message_response(addr, header, unique_key, deadline)
             .await?;
         let reply = classify(reply, code, addr)?;
         let response_header: QueryMessageResponseHeader = decode_header(&reply, code, addr)?;
@@ -531,6 +541,20 @@ impl MQClientApi {
         ))
     }
 
+    async fn query_message_response(
+        &self,
+        addr: &str,
+        header: &QueryMessageRequestHeader,
+        unique_key: bool,
+        deadline: Instant,
+    ) -> Result<RemotingCommand, RpcError> {
+        let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
+        header.encode_fields(&mut fields);
+        fields.insert("_UNIQUE_KEY_QUERY".into(), unique_key.to_string());
+        self.request_fields_with_mode(addr, request::QUERY_MESSAGE, fields, None, deadline, false)
+            .await
+    }
+
     /// Views one physical message by the Broker's commit-log offset.
     pub async fn view_message(
         &self,
@@ -559,6 +583,74 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: error.to_string(),
             })
+    }
+}
+
+impl MqClientAdmin {
+    /// Queries one Broker and applies Java's topic/key filter to returned
+    /// messages. A Broker `QUERY_NOT_FOUND` response produces an empty list.
+    pub async fn query_message(
+        &self,
+        addr: &str,
+        unique_key_flag: bool,
+        decompress_body: bool,
+        header: &QueryMessageRequestHeader,
+        deadline: Instant,
+    ) -> Result<Vec<MessageExt>, RpcError> {
+        let code = request::QUERY_MESSAGE;
+        let reply = self
+            .api
+            .query_message_response(addr, header, unique_key_flag, deadline)
+            .await?;
+        if reply.code == response::QUERY_NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let reply = classify(reply, code, addr)?;
+        let body = reply
+            .body
+            .as_deref()
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: "missing response body".into(),
+            })?;
+        let mut messages = decode_many(
+            body,
+            DecodeOptions {
+                decompress_body,
+                ..DecodeOptions::default()
+            },
+        )
+        .map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer: addr.to_owned(),
+            reason: error.to_string(),
+        })?;
+        for message in &mut messages {
+            client_decode_message(message);
+        }
+
+        let Some(topic) = header.topic.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let Some(key) = header.key.as_deref() else {
+            return Ok(Vec::new());
+        };
+        messages.retain(|message| {
+            if message.topic() != topic {
+                return false;
+            }
+            if unique_key_flag {
+                return message.message_id() == Some(key);
+            }
+            message.keys().is_some_and(|keys| {
+                !keys.trim().is_empty()
+                    && keys
+                        .split(constants::KEY_SEPARATOR)
+                        .any(|message_key| !message_key.is_empty() && message_key == key)
+            })
+        });
+        Ok(messages)
     }
 }
 
