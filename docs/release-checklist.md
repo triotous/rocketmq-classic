@@ -4491,3 +4491,27 @@ owner-specific checks belong in the manual handoff.
   P18-V04 evidence, final P18-V03 package/provenance review, Phase 19's 30
   remaining local scenarios and required profiles, and pre-publication version/
   registry checks remain open. Owner-only checks stay in the separate handoff.
+
+## P18-V01 `ChangeInvisibleTimeRequestHeader` nullable reflection fields — 2026-10-18 (`8f64dde3`)
+
+- [x] Pinned Java 5.5.1 fixture covers both decode hints. Nullable strings and
+  boxed numeric fields remain unset for missing or invalid input; Arabic-Indic
+  decimal digits decode, and primitive `suspend` defaults to false. Fixture
+  SHA-256: `01b6c6fdbcc09ef278509f92e58e117c025222ca1e99755ff23168b570c95890`.
+- [x] Rust header and POP request construction preserve the nullable fields.
+  Core returns typed missing-field errors for absent success-path `offset`,
+  `topic`, or `queueId`; non-success responses return `NoExist` without reading
+  those fields. The regression covers each missing-field branch.
+- [x] Four affected crates pass all-feature unit, integration, and doctests in
+  a Rust 1.85.0 Linux container. Strict all-target/all-feature Clippy passes
+  for those crates; Maven `verify` passes 37 scenarios, 66 typed-header and 15
+  typed-body cross-decodes. Formatting and diff checks pass. The initial
+  macOS run stalled at a launched-suspended codec test process; the Linux
+  container run completed the full affected-crate test command.
+- This closes only the named header and callback paths. Other header branches
+  and broad P18-V01 remain open. Refresh the full-workspace P18-V02 gate after
+  remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19's 30
+  remaining local scenarios and required profiles, and pre-publication
+  version/registry checks remain open. Owner-only checks stay in the separate
+  handoff.
