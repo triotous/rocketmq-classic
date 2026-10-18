@@ -5071,3 +5071,23 @@ owner-specific checks belong in the manual handoff.
   Broker/Docker scenario runners/profiles remain open. P18-V03 tag-signature
   verification is unavailable without GPG; release version/registry preflight
   is deferred until after Phase 19.
+
+## P18-V01 query/admin header field visibility — 2026-10-18 (`78ac649f`)
+
+- [x] Pinned Java 5.5.1 inventories confirm that
+  `QueryTopicsByConsumerRequestHeader`,
+  `QuerySubscriptionByConsumerRequestHeader`, and
+  `QueryTopicConsumeByWhoRequestHeader` expose no public fields. Rust fields
+  are crate-private and the Java-equivalent getters/setters cover owned and
+  inherited request values. Compile-fail doctests guard representative fields;
+  decode-mode fixture checks both reflection modes and the Java API inventory.
+  Fixture SHA-256:
+  `1a526e62792d4207d3d0455ff47d9ba86e23a162a368255b59656701eb1f8e1b`.
+- [x] Workspace all-target/all-feature check, focused Remoting and Core admin
+  tests, Protocol doctests, strict Clippy for Protocol/Remoting/Core, offline
+  Maven `verify` (37 scenarios, fixture drift and 66 typed-header/15 typed-body
+  cross-decodes), formatting, and diff checks pass. Code commit: `78ac649f`.
+- This closes only these three header visibility rows. Broad P18-V01
+  bidirectional reconciliation, the final current-revision P18-V02 gate,
+  current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
+  missing local Broker/Docker scenario runners/profiles remain open.
