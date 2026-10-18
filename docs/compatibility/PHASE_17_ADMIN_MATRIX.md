@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Eleven methods now have source-backed
-typed RPC slices; the other eight still need reconciliation. Their public status
+method-by-method mapping has been verified. Twelve methods now have source-backed
+typed RPC slices; the other seven still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -42,6 +42,17 @@ The Java method inventory is `queryMessage`, `getTopicStatsInfo`,
 `getConsumerConnectionList`, `queryTopicsByConsumer`,
 `querySubscriptionByConsumer`, `getConsumeStats`, `queryTopicConsumeByWho`,
 `getConsumerRunningInfo`, and `consumeMessageDirectly`.
+
+Twelfth reconciled method slice (code commit `ae420dc6`): Rust exposes
+`MQClientApi::mq_client_admin().query_message`, matching Java's direct
+`MqClientAdmin.queryMessage` path. The request preserves the supplied address
+and unique-key flag, uses the asynchronous remoting path, and decodes each
+message with the requested decompression setting. Returned messages are
+filtered by topic and either unique message ID or exact key token. Broker
+`QUERY_NOT_FOUND` returns an empty list; other response codes and remarks are
+preserved. The invoked Java fixture and scripted Core differential cover
+compressed/uncompressed bodies, key and unique-key filtering, no result, and a
+Broker error.
 
 First reconciled method slice (code commit `07865bde`): Java
 `queryTopicsByConsumer(address, requestHeader, timeoutMillis)` sends request

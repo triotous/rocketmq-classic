@@ -4169,3 +4169,33 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation stays in
   the separate manual handoff.
+
+## P18-V01 `queryMessage` direct admin adapter — 2026-10-18 (`ae420dc6`)
+
+- [x] Added the Rust `MqClientAdmin` adapter and
+  `MQClientApi::mq_client_admin().query_message`. It sends Java's request code
+  12 through asynchronous remoting, preserves `_UNIQUE_KEY_QUERY`, applies the
+  caller's body-decompression setting, filters by topic and exact key or
+  unique message ID, returns an empty list for `QUERY_NOT_FOUND`, and preserves
+  other Broker response codes and remarks.
+- [x] The invoked Java 5.5.1 fixture covers matching and nonmatching messages,
+  compressed and decompressed bodies, key and unique-key query modes,
+  `QUERY_NOT_FOUND`, and Broker failure. Fixture SHA-256:
+  `09f2aac28d54e335d591f92359863f5ebae152e19a9d806881bddb6c5c93c320`.
+  Core scripted differential compares request fields and decoded message
+  fields/body against the fixture.
+- [x] Core `admin_rpc` passed all 42 tests. Core all-feature tests passed 171
+  unit tests, all integration targets, and 14 doctests. Strict all-target,
+  all-feature Core Clippy passed. Pinned Maven `verify` passed all 37 scenarios
+  and fixture checks, including 64 typed-header and 14 typed-body cross-decodes.
+  Formatting and `git diff --check` passed. Code commit: `ae420dc6`.
+- The source-backed `MqClientAdmin` count is now 12/19. Seven methods remain:
+  `updateOrCreateSubscriptionGroup`, `viewMessage`, `getBrokerClusterInfo`,
+  `getConsumerConnectionList`, `getConsumeStats`, `getConsumerRunningInfo`,
+  and `consumeMessageDirectly`. Broad P18-V01 API/settings/input/error/flow and
+  reverse-export reconciliation remains open. Refresh full-workspace P18-V02
+  after remaining implementation work; current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation remains the
+  separate manual handoff.
