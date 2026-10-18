@@ -346,6 +346,71 @@ fn java_request_and_response_header_fixtures_decode() {
 }
 
 #[test]
+fn optional_numeric_header_reflection_failures_match_java_551() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(format!(
+            "{root}/fixtures/remoting/optional-numeric-header-decode-modes.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        fixture["client"],
+        "org.apache.rocketmq:rocketmq-client:5.5.1"
+    );
+    assert_eq!(
+        fixture["sourceCommit"],
+        "efa1be59d6fc747ad220f036c86030f05f0419f9"
+    );
+    assert_eq!(fixture["serverContacted"], false);
+    let cases = fixture["cases"].as_object().unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for (case_name, case) in cases {
+        let header_type = case["headerType"].as_str().unwrap();
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for (mode_name, use_fast_encode) in [("fast", true), ("reflection", false)] {
+            let expected_mode = &case[mode_name];
+            assert_eq!(expected_mode["outcome"], "OK", "{case_name} {mode_name}");
+            let expected: HeaderMap =
+                serde_json::from_value(expected_mode["encodedFields"].clone()).unwrap();
+            let actual = match header_type {
+                "send-back" => encode_decoded_header::<ConsumerSendMsgBackRequestHeader>(
+                    &fields,
+                    use_fast_encode,
+                ),
+                "reset-offset" => {
+                    encode_decoded_header::<ResetOffsetRequestHeader>(&fields, use_fast_encode)
+                }
+                "consume-directly" => encode_decoded_header::<
+                    ConsumeMessageDirectlyResultRequestHeader,
+                >(&fields, use_fast_encode),
+                "reply-message" => {
+                    encode_decoded_header::<ReplyMessageRequestHeader>(&fields, use_fast_encode)
+                }
+                "send-v1" => {
+                    encode_decoded_header::<SendMessageRequestHeaderV1>(&fields, use_fast_encode)
+                }
+                other => panic!("unknown Java header type {other}"),
+            }
+            .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
+            assert_eq!(actual, expected, "{case_name} {mode_name}");
+        }
+    }
+}
+
+fn encode_decoded_header<T: CommandHeader>(
+    fields: &HeaderMap,
+    use_fast_encode: bool,
+) -> Result<HeaderMap, rocketmq_classic_protocol::header::ProtocolError> {
+    let decoded = T::decode_fields_with_mode(fields, use_fast_encode)?;
+    let mut encoded = HeaderMap::new();
+    decoded.encode_fields(&mut encoded);
+    Ok(encoded)
+}
+
+#[test]
 fn transaction_and_reply_headers_round_trip_typed_fields() {
     let end = EndTransactionRequestHeader {
         topic: Some("orders".into()),

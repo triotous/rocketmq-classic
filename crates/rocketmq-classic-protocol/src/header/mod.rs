@@ -133,25 +133,32 @@ fn optional_string(fields: &HeaderMap, field: &str) -> Option<String> {
 }
 
 fn required_i32(fields: &HeaderMap, field: &'static str) -> Result<i32, ProtocolError> {
-    parse_number(required_string(fields, field)?, field)
+    parse_java_i32(required_string(fields, field)?).ok_or_else(|| invalid_number(field))
 }
 
 fn optional_i32(fields: &HeaderMap, field: &'static str) -> Result<Option<i32>, ProtocolError> {
     fields
         .get(field)
-        .map(|value| parse_number(value, field))
+        .map(|value| parse_java_i32(value).ok_or_else(|| invalid_number(field)))
         .transpose()
 }
 
 fn required_i64(fields: &HeaderMap, field: &'static str) -> Result<i64, ProtocolError> {
-    parse_number(required_string(fields, field)?, field)
+    parse_java_i64(required_string(fields, field)?).ok_or_else(|| invalid_number(field))
 }
 
 fn optional_i64(fields: &HeaderMap, field: &'static str) -> Result<Option<i64>, ProtocolError> {
     fields
         .get(field)
-        .map(|value| parse_number(value, field))
+        .map(|value| parse_java_i64(value).ok_or_else(|| invalid_number(field)))
         .transpose()
+}
+
+fn invalid_number(field: &'static str) -> ProtocolError {
+    ProtocolError::InvalidField {
+        field,
+        reason: "expected a valid number".into(),
+    }
 }
 
 fn optional_i32_with_mode(
@@ -190,16 +197,6 @@ fn optional_java_boolean(fields: &HeaderMap, field: &str) -> Option<bool> {
     fields
         .get(field)
         .map(|value| value.eq_ignore_ascii_case("true"))
-}
-
-fn parse_number<T>(value: &str, field: &'static str) -> Result<T, ProtocolError>
-where
-    T: std::str::FromStr,
-{
-    value.parse().map_err(|_| ProtocolError::InvalidField {
-        field,
-        reason: "expected a valid number".into(),
-    })
 }
 
 #[cfg(test)]

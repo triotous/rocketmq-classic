@@ -1617,6 +1617,27 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
                 .is_some_and(|value| value.eq_ignore_ascii_case("true")),
         })
     }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            oneway: optional_java_boolean(fields, "oway"),
+            group: required_string(fields, "group")?.to_owned(),
+            broker_name: optional_string(fields, "bname"),
+            origin_topic: required_string(fields, "originTopic")?.to_owned(),
+            offset: required_i64(fields, "offset")?,
+            delay_level: required_i32(fields, "delayLevel")?,
+            origin_msg_id: optional_string(fields, "originMsgId"),
+            max_reconsume_times: optional_i32_with_mode(fields, "maxReconsumeTimes", false)?,
+            unit_mode: fields
+                .get("unitMode")
+                .is_some_and(|value| value.eq_ignore_ascii_case("true")),
+        })
+    }
 }
 
 /// Java 5.5.1 `RecallMessageRequestHeader`, including nullable fields inherited
@@ -2081,6 +2102,24 @@ impl CommandHeader for ResetOffsetRequestHeader {
             topic: required_string(fields, "topic")?.to_owned(),
             queue_id: optional_i32(fields, "queueId")?.unwrap_or(-1),
             offset: optional_i64(fields, "offset")?,
+            timestamp: required_i64(fields, "timestamp")?,
+            force: java_boolean(fields, "isForce"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            group: required_string(fields, "group")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?.unwrap_or(-1),
+            offset: optional_i64_with_mode(fields, "offset", false)?,
             timestamp: required_i64(fields, "timestamp")?,
             force: java_boolean(fields, "isForce"),
         })
@@ -2843,6 +2882,25 @@ impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
             group_sys_flag: optional_i32(fields, "groupSysFlag")?,
         })
     }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            rpc_broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
+            client_id: optional_string(fields, "clientId"),
+            msg_id: optional_string(fields, "msgId"),
+            broker_name: optional_string(fields, "brokerName"),
+            topic: optional_string(fields, "topic"),
+            topic_sys_flag: optional_i32_with_mode(fields, "topicSysFlag", false)?,
+            group_sys_flag: optional_i32_with_mode(fields, "groupSysFlag", false)?,
+        })
+    }
 }
 
 impl CommandHeader for ReplyMessageRequestHeader {
@@ -2886,6 +2944,32 @@ impl CommandHeader for ReplyMessageRequestHeader {
             flag: required_i32(fields, "flag")?,
             properties: optional_string(fields, "properties"),
             reconsume_times: optional_i32(fields, "reconsumeTimes")?,
+            unit_mode: java_boolean(fields, "unitMode"),
+            born_host: required_string(fields, "bornHost")?.to_owned(),
+            store_host: required_string(fields, "storeHost")?.to_owned(),
+            store_timestamp: required_i64(fields, "storeTimestamp")?,
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            producer_group: required_string(fields, "producerGroup")?.to_owned(),
+            topic: required_string(fields, "topic")?.to_owned(),
+            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
+            default_topic_queue_nums: required_i32(fields, "defaultTopicQueueNums")?,
+            queue_id: required_i32(fields, "queueId")?,
+            sys_flag: required_i32(fields, "sysFlag")?,
+            born_timestamp: required_i64(fields, "bornTimestamp")?,
+            flag: required_i32(fields, "flag")?,
+            properties: optional_string(fields, "properties"),
+            reconsume_times: optional_i32_with_mode(fields, "reconsumeTimes", false)?,
             unit_mode: java_boolean(fields, "unitMode"),
             born_host: required_string(fields, "bornHost")?.to_owned(),
             store_host: required_string(fields, "storeHost")?.to_owned(),
@@ -3101,6 +3185,32 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
             reconsume_times: optional_i32(fields, "reconsumeTimes")?,
             unit_mode: optional_java_boolean(fields, "unitMode"),
             max_reconsume_times: optional_i32(fields, "maxReconsumeTimes")?,
+            batch: optional_java_boolean(fields, "batch"),
+        })
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            producer_group: optional_string(fields, "producerGroup"),
+            topic: required_string(fields, "topic")?.to_owned(),
+            default_topic: required_string(fields, "defaultTopic")?.to_owned(),
+            default_topic_queue_nums: required_i32(fields, "defaultTopicQueueNums")?,
+            queue_id: required_i32(fields, "queueId")?,
+            sys_flag: required_i32(fields, "sysFlag")?,
+            born_timestamp: required_i64(fields, "bornTimestamp")?,
+            flag: required_i32(fields, "flag")?,
+            properties: optional_string(fields, "properties"),
+            reconsume_times: optional_i32_with_mode(fields, "reconsumeTimes", false)?,
+            unit_mode: optional_java_boolean(fields, "unitMode"),
+            max_reconsume_times: optional_i32_with_mode(fields, "maxReconsumeTimes", false)?,
             batch: optional_java_boolean(fields, "batch"),
         })
     }

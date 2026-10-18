@@ -217,6 +217,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-optional-numeric-header-decode-mode-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.OptionalNumericHeaderDecodeModeFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/optional-numeric-header-decode-modes.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-change-invisible-time-response-header-fixture</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
