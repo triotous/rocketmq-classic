@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Seven methods now have source-backed
-typed RPC slices; the other 12 still need reconciliation. Their public status
+method-by-method mapping has been verified. Eight methods now have source-backed
+typed RPC slices; the other 11 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -138,7 +138,22 @@ included. The shared invoked Java fixture is
 `fixtures/admin/query-consume-time-span.json`, SHA-256
 `2a113cbc01a9e5bdce353b6705c6ebd734a5dd33832b147135eebdf6030d177b`.
 
-The other 12 interface methods remain to reconcile.
+Eighth reconciled method slice (code/test commit `fb1e43b5`): Java
+`deleteTopicInNameserver(address, requestHeader, timeoutMillis)` sends request
+code 216 with the Namesrv
+`DeleteTopicFromNamesrvRequestHeader` and completes with `null` only on
+`SUCCESS`. Rust exposes the nullable `topic`, `clusterName`, and inherited
+`ns`, `nsd`, `bname`, `oway`, and `lo` fields through its typed header and
+`MQClientApi::delete_topic_in_nameserver`; the RPC sends directly to the
+provided NameServer address with no body. The invoked Java fixture records the
+method signature, timeout, request fields, success result, and
+`MQClientException` response code/remark. Rust scripted tests compare the
+request fields and NameServer response mapping to that fixture. Typed-header
+cross-decode and inherited `RpcRequestHeader` equality inventory coverage are
+included. Shared admin fixture SHA-256:
+`ee0c842383a4150957dddd40baa9a948cf536b0e00a72989ee8ee62fc71cdcc3`.
+
+The other 11 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;

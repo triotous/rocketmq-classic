@@ -4063,3 +4063,30 @@ owner-specific checks belong in the manual handoff.
   local Docker scenarios/profiles and runner reconciliation, and
   pre-publication version/registry checks also remain open. Owner-only
   validation stays in the separate manual handoff.
+
+## P18-V01 `deleteTopicInNameserver` admin RPC — 2026-10-18 (`fb1e43b5`)
+
+- [x] Added `DeleteTopicFromNamesrvRequestHeader` with nullable `topic`,
+  `clusterName`, and inherited topic/RPC fields. Java's `checkFields()` is a
+  no-op, and inherited equality/hash behavior uses only `ns`, `nsd`, `bname`,
+  and `oway`. Added `MQClientApi::delete_topic_in_nameserver` using request
+  code 216, the supplied NameServer address, and no request body.
+- [x] The invoked Java 5.5.1 fixture covers the exact method signature, header
+  fields, timeout, success completion, and `MQClientException` response code
+  and remark. Rust scripted Core tests compare the request and error result to
+  the fixture. The header is included in Java/Rust typed-header cross-decode
+  and request-header identity inventory. Shared admin fixture SHA-256:
+  `ee0c842383a4150957dddd40baa9a948cf536b0e00a72989ee8ee62fc71cdcc3`.
+- [x] Protocol all-feature tests passed (132 unit tests, all integration
+  targets, 49 doctests); Core `admin_rpc` passed all 34 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core.
+  Pinned Maven `verify` passed all 37 scenarios and fixture checks, including
+  62 typed-header and 14 typed-body cross-decodes. Formatting and diff checks
+  passed.
+- The source-backed `MqClientAdmin` method count is now 8/19; 11 methods and
+  broad P18-V01 reconciliation remain open. Refresh full-workspace P18-V02
+  after remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation stays in
+  the separate manual handoff.
