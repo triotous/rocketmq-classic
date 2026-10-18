@@ -14,6 +14,7 @@ pub use basic::{
     ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
     DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
     DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
+    GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
     GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
     GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
     GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader,

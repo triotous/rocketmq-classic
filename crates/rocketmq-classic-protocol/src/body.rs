@@ -1,6 +1,8 @@
 use crate::route::BrokerData;
 use crate::{
-    JavaJsonWriterFeature, SharedValue, codes::JavaEnumLookupError, heartbeat::SubscriptionData,
+    JavaJsonWriterFeature, SharedValue,
+    codes::{JavaEnumLookupError, LanguageCode},
+    heartbeat::{ConsumeFromWhere, ConsumeType, MessageModel, SubscriptionData},
     serde_fastjson,
 };
 use rocketmq_classic_common::message::MessageQueue;
@@ -2248,6 +2250,257 @@ impl ClusterInfo {
             return Ok(None);
         };
         crate::route::parse_java_route_json(input)
+    }
+}
+
+/// Java `Connection` values returned inside a `ConsumerConnection` body.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Connection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_addr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<LanguageCode>,
+    version: i32,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ConnectionFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_addr: Option<String>,
+    language: Option<LanguageCode>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    version: i32,
+}
+
+impl<'de> Deserialize<'de> for Connection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConnectionFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            client_id: fields.client_id,
+            client_addr: fields.client_addr,
+            language: fields.language,
+            version: fields.version,
+        })
+    }
+}
+
+impl Connection {
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, value: Option<String>) {
+        self.client_id = value;
+    }
+
+    pub fn get_client_addr(&self) -> Option<&str> {
+        self.client_addr.as_deref()
+    }
+
+    pub fn set_client_addr(&mut self, value: Option<String>) {
+        self.client_addr = value;
+    }
+
+    pub fn get_language(&self) -> Option<LanguageCode> {
+        self.language
+    }
+
+    pub fn set_language(&mut self, value: Option<LanguageCode>) {
+        self.language = value;
+    }
+
+    pub fn get_version(&self) -> i32 {
+        self.version
+    }
+
+    pub fn set_version(&mut self, value: i32) {
+        self.version = value;
+    }
+}
+
+/// Java `ConsumerConnection` response DTO returned by
+/// `GET_CONSUMER_CONNECTION_LIST`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumerConnection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connection_set: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscription_table: Option<SharedValue<HashMap<String, Option<SharedValue<SubscriptionData>>>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    consume_type: Option<ConsumeType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_model: Option<MessageModel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    consume_from_where: Option<ConsumeFromWhere>,
+}
+
+fn default_consumer_connection_set() -> Option<Vec<Option<Connection>>> {
+    Some(Vec::new())
+}
+
+fn default_consumer_connection_subscription_table()
+-> Option<HashMap<String, Option<SubscriptionData>>> {
+    Some(HashMap::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ConsumerConnectionFields {
+    #[serde(default = "default_consumer_connection_set")]
+    connection_set: Option<Vec<Option<Connection>>>,
+    #[serde(default = "default_consumer_connection_subscription_table")]
+    subscription_table: Option<HashMap<String, Option<SubscriptionData>>>,
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    consume_type: Option<ConsumeType>,
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    message_model: Option<MessageModel>,
+    #[serde(
+        default,
+        deserialize_with = "super::heartbeat::deserialize_fastjson_optional_enum"
+    )]
+    consume_from_where: Option<ConsumeFromWhere>,
+}
+
+impl Default for ConsumerConnectionFields {
+    fn default() -> Self {
+        Self {
+            connection_set: default_consumer_connection_set(),
+            subscription_table: default_consumer_connection_subscription_table(),
+            consume_type: None,
+            message_model: None,
+            consume_from_where: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConsumerConnection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConsumerConnectionFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            connection_set: fields.connection_set.map(|values| {
+                SharedValue::new(
+                    values
+                        .into_iter()
+                        .map(|value| value.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+            subscription_table: fields.subscription_table.map(|values| {
+                SharedValue::new(
+                    values
+                        .into_iter()
+                        .map(|(topic, value)| (topic, value.map(SharedValue::new)))
+                        .collect(),
+                )
+            }),
+            consume_type: fields.consume_type,
+            message_model: fields.message_model,
+            consume_from_where: fields.consume_from_where,
+        })
+    }
+}
+
+impl Default for ConsumerConnection {
+    fn default() -> Self {
+        let fields = ConsumerConnectionFields::default();
+        Self {
+            connection_set: fields.connection_set.map(|values| {
+                SharedValue::new(
+                    values
+                        .into_iter()
+                        .map(|value| value.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+            subscription_table: fields.subscription_table.map(|values| {
+                SharedValue::new(
+                    values
+                        .into_iter()
+                        .map(|(topic, value)| (topic, value.map(SharedValue::new)))
+                        .collect(),
+                )
+            }),
+            consume_type: None,
+            message_model: None,
+            consume_from_where: None,
+        }
+    }
+}
+
+impl ConsumerConnection {
+    pub fn get_connection_set(&self) -> Option<SharedValue<Vec<Option<SharedValue<Connection>>>>> {
+        self.connection_set.clone()
+    }
+
+    pub fn set_connection_set(
+        &mut self,
+        value: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+    ) {
+        self.connection_set = value;
+    }
+
+    pub fn get_subscription_table(
+        &self,
+    ) -> Option<SharedValue<HashMap<String, Option<SharedValue<SubscriptionData>>>>> {
+        self.subscription_table.clone()
+    }
+
+    pub fn set_subscription_table(
+        &mut self,
+        value: Option<SharedValue<HashMap<String, Option<SharedValue<SubscriptionData>>>>>,
+    ) {
+        self.subscription_table = value;
+    }
+
+    pub fn get_consume_type(&self) -> Option<ConsumeType> {
+        self.consume_type
+    }
+
+    pub fn set_consume_type(&mut self, value: Option<ConsumeType>) {
+        self.consume_type = value;
+    }
+
+    pub fn get_message_model(&self) -> Option<MessageModel> {
+        self.message_model
+    }
+
+    pub fn set_message_model(&mut self, value: Option<MessageModel>) {
+        self.message_model = value;
+    }
+
+    pub fn get_consume_from_where(&self) -> Option<ConsumeFromWhere> {
+        self.consume_from_where
+    }
+
+    pub fn set_consume_from_where(&mut self, value: Option<ConsumeFromWhere>) {
+        self.consume_from_where = value;
     }
 }
 
@@ -5417,6 +5670,7 @@ impl_java_remoting_serializable_adapters!(
     UnlockBatchRequestBody,
     LockBatchResponseBody,
     ConsumerListByGroupResponseBody,
+    ConsumerConnection,
     ConsumeMessageDirectlyResult,
 );
 

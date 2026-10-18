@@ -17,6 +17,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
+        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
@@ -1413,6 +1414,24 @@ fn header_validation_matrix() {
             "",
             "",
             "clientAddr ns nsd bname oway",
+            "nsd oway"
+        ),
+        row!(
+            GetConsumerConnectionListRequestHeader,
+            "consumer-connection-list-request",
+            "",
+            "",
+            "",
+            "consumerGroup ns nsd bname oway",
+            "nsd oway"
+        ),
+        row!(
+            GetConsumeStatsRequestHeader,
+            "consume-stats-request",
+            "",
+            "",
+            "",
+            "consumerGroup topic topicList ns nsd bname oway",
             "nsd oway"
         ),
         row!(

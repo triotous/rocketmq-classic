@@ -42,6 +42,7 @@ macro_rules! inventory {
             QuerySubscriptionByConsumerRequestHeader => ("header-query-subscription-by-consumer-request", "typed-query-subscription-by-consumer-request.bin"),
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
+            GetConsumeStatsRequestHeader => ("header-consume-stats-request", "typed-consume-stats-request.bin"),
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
             DeleteKvConfigRequestHeader => ("header-delete-kv-config-request", "typed-delete-kv-config-request.bin"),
@@ -61,6 +62,7 @@ macro_rules! inventory {
             NotificationResponseHeader => ("header-notification-response", "typed-notification-response.bin"),
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
             GetConsumerStatusRequestHeader => ("header-consumer-status-request", "typed-consumer-status-request.bin"),
+            GetConsumerConnectionListRequestHeader => ("header-consumer-connection-list-request", "typed-consumer-connection-list-request.bin"),
             PopMessageRequestHeader => ("header-pop-request", "typed-pop.bin"),
             PopMessageResponseHeader => ("header-pop-response", "typed-pop-response.bin"),
             PopLiteMessageResponseHeader => ("header-pop-lite-response", "typed-pop-lite-response.bin"),
@@ -160,4 +162,22 @@ fn heartbeat_request_header_inherits_java_rpc_surface() {
         header.java_to_string(),
         java["baseToString"].as_str().unwrap()
     );
+}
+
+#[test]
+fn consume_stats_topic_list_helpers_match_java_header_behavior() {
+    let mut header =
+        GetConsumeStatsRequestHeader::decode_fields(&java_fields("header-consume-stats-request"))
+            .unwrap();
+    assert_eq!(header.fetch_topic_list(), ["orders", "payments"]);
+
+    let current = header.topic_list.clone();
+    header.update_topic_list(None);
+    header.update_topic_list(Some(&[]));
+    assert_eq!(header.topic_list, current);
+
+    let topics = [Some("orders".to_owned()), None, Some("payments".to_owned())];
+    header.update_topic_list(Some(&topics));
+    assert_eq!(header.topic_list.as_deref(), Some("orders;null;payments;"));
+    assert_eq!(header.fetch_topic_list(), ["orders", "null", "payments"]);
 }

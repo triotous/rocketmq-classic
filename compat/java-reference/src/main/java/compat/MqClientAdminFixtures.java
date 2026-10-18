@@ -26,11 +26,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.apache.rocketmq.client.MqClientAdmin;
@@ -52,9 +55,17 @@ import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.body.CMResult;
 import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
+import org.apache.rocketmq.remoting.protocol.body.Connection;
+import org.apache.rocketmq.remoting.protocol.body.ConsumerConnection;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
+import org.apache.rocketmq.remoting.protocol.LanguageCode;
+import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
+import org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerConnectionListRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -207,7 +218,133 @@ public final class MqClientAdminFixtures {
         fixture.put("invokeBrokerToResetOffset", invokeBrokerToResetOffset());
         fixture.put("consumeMessageDirectly", consumeMessageDirectly());
         fixture.put("getBrokerClusterInfo", getBrokerClusterInfo());
+        fixture.put("getConsumerConnectionList", getConsumerConnectionList());
         return fixture;
+    }
+
+    private static Map<String, Object> getConsumerConnectionList() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("getConsumerConnectionList", String.class,
+            GetConsumerConnectionListRequestHeader.class, long.class);
+        GetConsumerConnectionListRequestHeader header = new GetConsumerConnectionListRequestHeader();
+        header.setConsumerGroup("workers");
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+
+        ConsumerConnection expected = new ConsumerConnection();
+        Connection first = new Connection();
+        first.setClientId("client-a");
+        first.setClientAddr("192.0.2.10:10911");
+        first.setLanguage(LanguageCode.RUST);
+        first.setVersion(55);
+        expected.getConnectionSet().add(first);
+
+        SubscriptionData subscription = new SubscriptionData("orders", "tag-a || tag-b");
+        subscription.setClassFilterMode(true);
+        subscription.setTagsSet(new TreeSet<>(Set.of("tag-a", "tag-b")));
+        subscription.setCodeSet(new TreeSet<>(Set.of(1, 2)));
+        subscription.setSubVersion(123L);
+        subscription.setExpressionType("SQL92");
+        expected.getSubscriptionTable().put("orders", subscription);
+        expected.setConsumeType(ConsumeType.CONSUME_PASSIVELY);
+        expected.setMessageModel(MessageModel.CLUSTERING);
+        expected.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_LAST_OFFSET);
+        byte[] bodyBytes = RemotingSerializable.encode(expected);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        ConsumerConnection value = new MqClientAdminImpl(successCapture.proxy())
+            .getConsumerConnectionList(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
+        success.put("result", consumerConnectionSnapshot(value));
+
+        Capture noBodyCapture = new Capture();
+        noBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        ConsumerConnection noBody = new MqClientAdminImpl(noBodyCapture.proxy())
+            .getConsumerConnectionList(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> successWithoutBody = new LinkedHashMap<>();
+        successWithoutBody.put("address", noBodyCapture.address);
+        successWithoutBody.put("timeoutMillis", noBodyCapture.timeoutMillis);
+        successWithoutBody.put("requestCode", noBodyCapture.request.getCode());
+        successWithoutBody.put("requestExtFields", new TreeMap<>(noBodyCapture.request.getExtFields()));
+        successWithoutBody.put("responseCode", noBodyCapture.response.getCode());
+        successWithoutBody.put("result", noBody == null ? null : consumerConnectionSnapshot(noBody));
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "consumer connections unavailable");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .getConsumerConnectionList(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin consumer connection error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("successWithoutBody", successWithoutBody);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> consumerConnectionSnapshot(ConsumerConnection value) {
+        List<Map<String, Object>> connections = new ArrayList<>();
+        for (Connection connection : value.getConnectionSet()) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("clientId", connection.getClientId());
+            row.put("clientAddr", connection.getClientAddr());
+            row.put("language", connection.getLanguage());
+            row.put("version", connection.getVersion());
+            connections.add(row);
+        }
+        connections.sort(Comparator.comparing(row -> (String) row.get("clientId")));
+
+        Map<String, Object> subscriptions = new TreeMap<>();
+        for (Map.Entry<String, SubscriptionData> entry : value.getSubscriptionTable().entrySet()) {
+            SubscriptionData subscription = entry.getValue();
+            Map<String, Object> row = new TreeMap<>();
+            row.put("classFilterMode", subscription.isClassFilterMode());
+            row.put("topic", subscription.getTopic());
+            row.put("subString", subscription.getSubString());
+            row.put("tagsSet", new TreeSet<>(subscription.getTagsSet()));
+            row.put("codeSet", new TreeSet<>(subscription.getCodeSet()));
+            row.put("subVersion", subscription.getSubVersion());
+            row.put("expressionType", subscription.getExpressionType());
+            subscriptions.put(entry.getKey(), row);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("connectionSet", connections);
+        result.put("subscriptionTable", subscriptions);
+        result.put("consumeType", value.getConsumeType());
+        result.put("messageModel", value.getMessageModel());
+        result.put("consumeFromWhere", value.getConsumeFromWhere());
+        return result;
     }
 
     private static Map<String, Object> getBrokerClusterInfo() throws Exception {

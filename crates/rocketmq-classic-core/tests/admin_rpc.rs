@@ -13,9 +13,10 @@ use rocketmq_classic_protocol::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
-        GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        DeleteTopicRequestHeader, GetConsumerConnectionListRequestHeader,
+        GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -27,7 +28,7 @@ use rocketmq_classic_remoting::{
     client::{RemotingClient, TransportMode},
     codec::frame,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -1704,6 +1705,153 @@ async fn mq_client_admin_get_broker_cluster_info_matches_invoked_java_fixture() 
         error,
         RpcError::Response { code: 1, remark: Some(remark), .. }
             if remark == "cluster info unavailable"
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_get_consumer_connection_list_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let connection_list = &fixture["getConsumerConnectionList"];
+    let success = &connection_list["success"];
+    let header = GetConsumerConnectionListRequestHeader {
+        consumer_group: Some("workers".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+    };
+    let body = success["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (admin_api, client) = api().await;
+    let result = admin_api
+        .mq_client_admin()
+        .get_consumer_connection_list(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_CONNECTION_LIST);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        success["requestExtFields"]
+    );
+
+    let connections = result
+        .get_connection_set()
+        .unwrap()
+        .snapshot()
+        .into_iter()
+        .map(|connection| {
+            connection.unwrap().with(|connection| {
+                json!({
+                    "clientId": connection.get_client_id(),
+                    "clientAddr": connection.get_client_addr(),
+                    "language": connection.get_language().map(|language| language.name()),
+                    "version": connection.get_version(),
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let subscription_table = result.get_subscription_table().unwrap().snapshot();
+    let subscription = subscription_table["orders"]
+        .as_ref()
+        .unwrap()
+        .with(|subscription| {
+            let mut tags = subscription
+                .get_tags_set()
+                .unwrap()
+                .snapshot()
+                .into_iter()
+                .collect::<Vec<_>>();
+            tags.sort();
+            let mut codes = subscription
+                .get_code_set()
+                .unwrap()
+                .snapshot()
+                .into_iter()
+                .collect::<Vec<_>>();
+            codes.sort();
+            json!({
+                "classFilterMode": subscription.is_class_filter_mode(),
+                "topic": subscription.get_topic(),
+                "subString": subscription.get_sub_string(),
+                "tagsSet": tags,
+                "codeSet": codes,
+                "subVersion": subscription.get_sub_version(),
+                "expressionType": subscription.get_expression_type(),
+            })
+        });
+    let actual = json!({
+        "connectionSet": connections,
+        "subscriptionTable": {"orders": subscription},
+        "consumeType": result.get_consume_type().map(|value| value.name()),
+        "messageModel": result.get_message_model().map(|value| value.name()),
+        "consumeFromWhere": result.get_consume_from_where().map(|value| value.name()),
+    });
+    assert_eq!(actual, success["result"]);
+    client.shutdown().await;
+
+    let no_body_case = &connection_list["successWithoutBody"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (no_body_api, client) = api().await;
+    let result = no_body_api
+        .mq_client_admin()
+        .get_consumer_connection_list(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_CONNECTION_LIST);
+    assert_eq!(result.is_none(), no_body_case["result"].is_null());
+    client.shutdown().await;
+
+    let error_case = &connection_list["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .get_consumer_connection_list(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_CONNECTION_LIST);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "consumer connections unavailable"
+    ));
+    client.shutdown().await;
+
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"{".to_vec())).await;
+    let (malformed_api, client) = api().await;
+    let error = malformed_api
+        .mq_client_admin()
+        .get_consumer_connection_list(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_CONNECTION_LIST);
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::GET_CONSUMER_CONNECTION_LIST,
+            ..
+        }
     ));
     client.shutdown().await;
 }

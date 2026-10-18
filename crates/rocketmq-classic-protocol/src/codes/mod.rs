@@ -1,6 +1,8 @@
 pub mod request;
 pub mod response;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum JavaEnumLookupError {
     #[error("Name is null")]
@@ -20,7 +22,8 @@ pub enum LanguageCodeLookupError {
     UnknownName(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum LanguageCode {
     Java,
     Cpp,
@@ -35,6 +38,7 @@ pub enum LanguageCode {
     Php,
     Oms,
     Rust,
+    #[serde(rename = "NODE_JS")]
     NodeJs,
 }
 
@@ -250,6 +254,18 @@ mod tests {
             assert_eq!(LanguageCode::from_java_byte(code), None);
         }
         assert_eq!(LanguageCode::Rust.code(), 12);
+    }
+
+    #[test]
+    fn language_code_json_names_match_java_enum_names() {
+        for language in LanguageCode::values() {
+            let encoded = serde_json::to_string(&language).unwrap();
+            assert_eq!(encoded, format!("\"{}\"", language.name()));
+            assert_eq!(
+                serde_json::from_str::<LanguageCode>(&encoded).unwrap(),
+                language
+            );
+        }
     }
 
     #[test]

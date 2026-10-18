@@ -65,6 +65,8 @@ impl_rpc_request_header_semantics!(
     ResetOffsetRequestHeader,
     HeartbeatRequestHeader,
     GetConsumerStatusRequestHeader,
+    GetConsumerConnectionListRequestHeader,
+    GetConsumeStatsRequestHeader,
     GetConsumerRunningInfoRequestHeader,
     PopMessageRequestHeader,
     AckMessageRequestHeader,
@@ -2120,6 +2122,105 @@ impl CommandHeader for GetConsumerStatusRequestHeader {
     }
 }
 
+/// Pinned Java `GetConsumerConnectionListRequestHeader`. Java's
+/// `checkFields()` is a no-op, so the annotated group remains nullable.
+#[derive(Debug, Clone, Default)]
+pub struct GetConsumerConnectionListRequestHeader {
+    pub consumer_group: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl CommandHeader for GetConsumerConnectionListRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: optional_string(fields, "consumerGroup"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
+/// Pinned Java `GetConsumeStatsRequestHeader`, including its no-op validation
+/// and the inherited nullable `TopicRequestHeader`/`RpcRequestHeader` fields.
+#[derive(Debug, Clone, Default)]
+pub struct GetConsumeStatsRequestHeader {
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
+    pub topic_list: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl GetConsumeStatsRequestHeader {
+    pub fn fetch_topic_list(&self) -> Vec<String> {
+        if self
+            .topic_list
+            .as_deref()
+            .is_none_or(|topic_list| topic_list.trim().is_empty())
+        {
+            return Vec::new();
+        }
+        self.topic_list
+            .as_deref()
+            .unwrap_or_default()
+            .split(';')
+            .filter(|topic| !topic.is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    pub fn update_topic_list(&mut self, topics: Option<&[Option<String>]>) {
+        let Some(topics) = topics.filter(|topics| !topics.is_empty()) else {
+            return;
+        };
+        let mut value = String::new();
+        for topic in topics {
+            value.push_str(topic.as_deref().unwrap_or("null"));
+            value.push(';');
+        }
+        self.topic_list = Some(value);
+    }
+}
+
+impl CommandHeader for GetConsumeStatsRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "topicList", self.topic_list.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            topic_list: optional_string(fields, "topicList"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
 /// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
 /// `RpcRequestHeader` namespace and broker-routing fields.
 #[derive(Debug, Clone, Default)]
@@ -3127,7 +3228,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 39);
+        assert_eq!(cases.len(), 41);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -3362,6 +3463,20 @@ mod tests {
             broker_name,
             |_| {},
             |h: &mut GetConsumerStatusRequestHeader| h.topic = "payload".into()
+        );
+        check_rpc_request_header!(
+            GetConsumerConnectionListRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetConsumerConnectionListRequestHeader| {
+                h.consumer_group = Some("payload".into())
+            }
+        );
+        check_rpc_request_header!(
+            GetConsumeStatsRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut GetConsumeStatsRequestHeader| { h.consumer_group = Some("payload".into()) }
         );
         check_rpc_request_header!(
             GetConsumerRunningInfoRequestHeader,

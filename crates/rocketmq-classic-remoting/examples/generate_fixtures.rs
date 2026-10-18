@@ -19,6 +19,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
+        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
@@ -282,6 +283,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-consumer-status-request.bin",
         "header-consumer-status-request",
         221,
+    );
+    write_oracle_header::<GetConsumerConnectionListRequestHeader>(
+        output,
+        "typed-consumer-connection-list-request.bin",
+        "header-consumer-connection-list-request",
+        203,
+    );
+    write_oracle_header::<GetConsumeStatsRequestHeader>(
+        output,
+        "typed-consume-stats-request.bin",
+        "header-consume-stats-request",
+        303,
     );
     write_oracle_header::<GetConsumerRunningInfoRequestHeader>(
         output,

@@ -4,15 +4,17 @@ use rocketmq_classic_common::message::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        ClusterInfo, ConsumeMessageDirectlyResult, GroupList, QuerySubscriptionResponseBody,
-        ResetOffsetBody, SharedQueueOffsetEntries, TopicList, TopicStatsTable,
+        ClusterInfo, ConsumeMessageDirectlyResult, ConsumerConnection, GroupList,
+        QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries, TopicList,
+        TopicStatsTable,
     },
     codes::{request, response},
     header::{
         CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetConsumerConnectionListRequestHeader, GetTopicStatsInfoRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -230,6 +232,25 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         ClusterInfo::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Retrieves one Broker's Java `ConsumerConnection` response.
+    pub async fn get_consumer_connection_list(
+        &self,
+        addr: &str,
+        header: &GetConsumerConnectionListRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumerConnection>, RpcError> {
+        let code = request::GET_CONSUMER_CONNECTION_LIST;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        ConsumerConnection::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
             RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -631,6 +652,18 @@ impl MqClientAdmin {
         deadline: Instant,
     ) -> Result<Option<ClusterInfo>, RpcError> {
         self.api.get_broker_cluster_info(addr, deadline).await
+    }
+
+    /// Retrieves one Broker's consumer connections through Java `MqClientAdmin`.
+    pub async fn get_consumer_connection_list(
+        &self,
+        addr: &str,
+        header: &GetConsumerConnectionListRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumerConnection>, RpcError> {
+        self.api
+            .get_consumer_connection_list(addr, header, deadline)
+            .await
     }
 
     /// Queries one Broker and applies Java's topic/key filter to returned
