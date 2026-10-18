@@ -527,3 +527,15 @@ bidirectional Set alias mutation. Fixture SHA-256:
 `5961395fa36f199d8b3745f91d1dcc4941c1d2d8748f272e119ed9c3ae1ad73a`.
 This closes only the `GroupList` public API slice; broad P18-V01 reconciliation
 remains open.
+
+## P18-V01 `TopicList` DTO API inventory — 2026-10-18 (`5233eb2f`)
+
+The Java fixture now includes the public no-argument constructor alongside its
+four declared public accessor signatures and empty public-field set. Rust
+asserts the exact inventory, exercises topic-set and broker-address accessors,
+and compile-fail checks the private topic-set field. Existing tests cover the
+empty default, explicit null, duplicate-set semantics and bidirectional
+set-alias mutation. Fixture SHA-256:
+`11d0a8919e272d3f3ed347695a06220a3688c3437805a0e5737ba4fccd43726b`.
+This closes only the `TopicList` public API slice; broad P18-V01 reconciliation
+remains open.

@@ -59,3 +59,20 @@
 - Test/fixture commit: `3b8a62b3`. Matrix and release-checklist updates are
   recorded separately. Broad P18-V01, final current-revision P18-V02,
   P18-V03/V04 and Phase 19 local matrix work remain open.
+
+## P18-V01 TopicList public API follow-up — 2026-10-18T15:15:47Z
+
+- The pinned Java `TopicList` fixture recorded declared methods and fields but
+  not constructors; the Rust differential did not assert its API inventory or
+  directly exercise `setBrokerAddr`. Added public-constructor reflection,
+  exact constructor/method/field assertions, broker-address setter/getter
+  coverage, and a compile-fail privacy guard. Existing default/null/set alias
+  tests remain. Fixture SHA-256:
+  `11d0a8919e272d3f3ed347695a06220a3688c3437805a0e5737ba4fccd43726b`.
+- Verification: focused Protocol differential PASS; Protocol doctests PASS
+  (55); strict all-target/all-feature Protocol Clippy PASS; offline Maven
+  `verify` PASS (37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes); formatting and diff checks PASS.
+- Test/fixture commit: `5233eb2f`. Matrix and release-checklist updates are
+  recorded separately. Broad P18-V01, final current-revision P18-V02,
+  P18-V03/V04 and Phase 19 local matrix work remain open.

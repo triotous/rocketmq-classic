@@ -4763,3 +4763,19 @@ owner-specific checks belong in the manual handoff.
   this newer revision; P18-V03 package/provenance and version/registry
   preflight, current-revision Ubuntu/native Windows P18-V04 evidence, and Phase
   19's 30 local Docker/Broker runners and required profiles also remain open.
+
+## P18-V01 `TopicList` DTO API inventory — 2026-10-18 (`5233eb2f`)
+
+- [x] Added Java constructor reflection to the existing API fixture. The Rust
+  Protocol differential now checks the constructor, four declared accessor
+  signatures, empty public-field list, mapped accessors and private field
+  visibility, alongside existing default/null/alias behavior. Fixture
+  SHA-256: `11d0a8919e272d3f3ed347695a06220a3688c3437805a0e5737ba4fccd43726b`.
+- [x] The focused Protocol differential, 55 Protocol doctests, strict
+  all-target/all-feature Protocol Clippy, pinned Maven `verify` (37 scenarios,
+  fixture checks, 66 typed-header and 15 typed-body cross-decodes), formatting,
+  and diff checks passed. Test/fixture commit: `5233eb2f`.
+- Broad P18-V01 reconciliation remains open; P18-V02 requires another final
+  rerun on this newer revision. P18-V03 package/provenance and registry
+  preflight, current-revision Ubuntu/native Windows P18-V04 evidence, and Phase
+  19's 30 local Docker/Broker runners and required profiles remain open.
