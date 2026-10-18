@@ -3824,3 +3824,30 @@ owner-specific checks belong in the manual handoff.
   evidence for P18-V04 and final P18-V03 package/provenance review remain open.
   The Phase 19 live Broker matrix remains a separate phase handoff; owner-only
   production checks remain in the final manual handoff.
+
+## CreateTopicRequestHeader reflection decoding — 2026-10-18 (`4f7f9435`)
+
+- [x] Closed a P18-V01 header-decoding slice against the pinned Java 5.5.1
+  implementation. `CreateTopicRequestHeader` does not implement
+  `FastCodesHeader`, so both decode hints use reflection. Conversion failures
+  are caught per field, nullable Java fields remain null, Boolean parsing maps
+  non-`true` text to false, and `checkFields()` runs after the loop. Rust now
+  models the corresponding nullable payload fields as `Option`, skips failed
+  numeric conversions, preserves the Java default values for `order`/`force`,
+  and validates `topicFilterType` after decoding. The invoked fixture covers
+  both mode hints, valid/missing/malformed fields, and final validation. SHA-256:
+  `20e0a1c2dd78af55b220976ad6faecc37673d0d6951954a4a0c2bc433a7053a7`.
+- [x] Refreshed current-revision P18-V02 server-free gates on `4f7f9435`:
+  default/all-feature workspace tests, all-target/all-feature check and strict
+  Clippy, Maven `verify` (37 scenarios, fixture checks, 56 typed-header and 14
+  typed-body cross-decodes), differential self-test and 37-row manifest,
+  deterministic race/leak smoke (16 cases × 3), bounded fuzz smoke (107 frame
+  seeds, 11 message seeds, 1,888 mutations), release examples, workspace bench
+  compilation and offline benchmark, locked Cargo/workspace metadata and
+  package-content checks, UTC/Asia-Taipei Unique ID tests, formatting, and diff
+  checks. Full command/results are in
+  [`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261018T002552Z.rlog`](../rlogs/2026/09/19-phase-18-compatibility-release-gate__20261018T002552Z.rlog).
+- The broader bidirectional P18-V01 audit remains open. Current-revision
+  Ubuntu/native Windows P18-V04 evidence and the final P18-V03 package and
+  provenance review remain open. Phase 19 Broker scenarios/profiles and owner
+  checks remain separate obligations; no live Broker was contacted.
