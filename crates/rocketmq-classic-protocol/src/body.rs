@@ -2118,7 +2118,12 @@ impl QuerySubscriptionResponseBody {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::GroupList;
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
-/// fn main() { requires_java_identity::<GroupList>(); }
+/// requires_java_identity::<GroupList>();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GroupList;
+/// let _ = GroupList::default().group_list;
 /// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -6945,6 +6950,18 @@ mod tests {
         assert_eq!(
             fixture["artifact"],
             "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+        assert_eq!(
+            fixture["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.GroupList()"])
+        );
+        assert_eq!(fixture["publicFields"], json!([]));
+        assert_eq!(
+            fixture["publicMethods"],
+            json!([
+                "java.util.HashSet getGroupList()",
+                "void setGroupList(java.util.HashSet)"
+            ])
         );
 
         let default = GroupList::default();
