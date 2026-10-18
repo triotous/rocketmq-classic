@@ -1575,14 +1575,21 @@ impl QueryAssignmentResponseBody {
 }
 
 /// One queue's broker and consumer timestamp range, matching Java
-/// `org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan`.
+/// `org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan`. Its fields stay
+/// private like Java's; the message-queue accessor returns a shared handle so
+/// getter mutations remain visible through the assigned object.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueueTimeSpan;
+/// let _ = QueueTimeSpan::default().min_time_stamp;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueueTimeSpan {
-    pub message_queue: Option<MessageQueue>,
-    pub min_time_stamp: i64,
-    pub max_time_stamp: i64,
-    pub consume_time_stamp: i64,
-    pub delay_time: i64,
+    message_queue: Option<SharedValue<MessageQueue>>,
+    min_time_stamp: i64,
+    max_time_stamp: i64,
+    consume_time_stamp: i64,
+    delay_time: i64,
 }
 
 impl Serialize for QueueTimeSpan {
@@ -1643,7 +1650,7 @@ impl<'de> Deserialize<'de> for QueueTimeSpan {
         let fields: QueueTimeSpanFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            message_queue: fields.message_queue,
+            message_queue: fields.message_queue.map(SharedValue::new),
             min_time_stamp: fields.min_time_stamp,
             max_time_stamp: fields.max_time_stamp,
             consume_time_stamp: fields.consume_time_stamp,
@@ -1665,11 +1672,11 @@ impl QueueTimeSpan {
         java_format_timestamp_millis(self.consume_time_stamp)
     }
 
-    pub fn get_message_queue(&self) -> Option<&MessageQueue> {
-        self.message_queue.as_ref()
+    pub fn get_message_queue(&self) -> Option<SharedValue<MessageQueue>> {
+        self.message_queue.clone()
     }
 
-    pub fn set_message_queue(&mut self, message_queue: Option<MessageQueue>) {
+    pub fn set_message_queue(&mut self, message_queue: Option<SharedValue<MessageQueue>>) {
         self.message_queue = message_queue;
     }
 
@@ -1857,6 +1864,16 @@ fn days_in_gregorian_month(year: i128, month: i128) -> i128 {
 }
 
 /// Java response wrapper returned by `QUERY_CONSUME_TIME_SPAN`.
+///
+/// The list and each non-null row retain Java reference identity through
+/// shared handles. The default list is non-null and empty; explicit null stays
+/// null. The Java field itself is package-private, so the Rust field is private
+/// and callers use the getter/setter methods.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::QueryConsumeTimeSpanBody;
+/// let _ = QueryConsumeTimeSpanBody::default().consume_time_span_set;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryConsumeTimeSpanBody {
@@ -1865,11 +1882,24 @@ pub struct QueryConsumeTimeSpanBody {
         deserialize_with = "serde_fastjson::deserialize_optional_nullable_vec_or_single",
         skip_serializing_if = "Option::is_none"
     )]
-    pub consume_time_span_set: Option<Vec<Option<QueueTimeSpan>>>,
+    consume_time_span_set: Option<SharedValue<Vec<Option<SharedValue<QueueTimeSpan>>>>>,
 }
 
 fn default_consume_time_span_set() -> Option<Vec<Option<QueueTimeSpan>>> {
     Some(Vec::new())
+}
+
+fn shared_consume_time_span_set(
+    values: Option<Vec<Option<QueueTimeSpan>>>,
+) -> Option<SharedValue<Vec<Option<SharedValue<QueueTimeSpan>>>>> {
+    values.map(|values| {
+        SharedValue::new(
+            values
+                .into_iter()
+                .map(|value| value.map(SharedValue::new))
+                .collect(),
+        )
+    })
 }
 
 #[derive(Deserialize)]
@@ -1890,7 +1920,7 @@ impl<'de> Deserialize<'de> for QueryConsumeTimeSpanBody {
         let fields: QueryConsumeTimeSpanBodyFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            consume_time_span_set: fields.consume_time_span_set,
+            consume_time_span_set: shared_consume_time_span_set(fields.consume_time_span_set),
         })
     }
 }
@@ -1898,23 +1928,21 @@ impl<'de> Deserialize<'de> for QueryConsumeTimeSpanBody {
 impl Default for QueryConsumeTimeSpanBody {
     fn default() -> Self {
         Self {
-            consume_time_span_set: default_consume_time_span_set(),
+            consume_time_span_set: shared_consume_time_span_set(default_consume_time_span_set()),
         }
     }
 }
 
 impl QueryConsumeTimeSpanBody {
-    pub fn get_consume_time_span_set(&self) -> Option<&[Option<QueueTimeSpan>]> {
-        self.consume_time_span_set.as_deref()
-    }
-
-    pub fn get_consume_time_span_set_mut(&mut self) -> Option<&mut Vec<Option<QueueTimeSpan>>> {
-        self.consume_time_span_set.as_mut()
+    pub fn get_consume_time_span_set(
+        &self,
+    ) -> Option<SharedValue<Vec<Option<SharedValue<QueueTimeSpan>>>>> {
+        self.consume_time_span_set.clone()
     }
 
     pub fn set_consume_time_span_set(
         &mut self,
-        consume_time_span_set: Option<Vec<Option<QueueTimeSpan>>>,
+        consume_time_span_set: Option<SharedValue<Vec<Option<SharedValue<QueueTimeSpan>>>>>,
     ) {
         self.consume_time_span_set = consume_time_span_set;
     }
@@ -10355,8 +10383,47 @@ mod tests {
         assert_body_serialization!(ResetOffsetBody, "ResetOffsetBody");
 
         let queue_api = &fixture["queueTimeSpanApiCase"];
+        assert_eq!(
+            queue_api["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan()"])
+        );
+        assert_eq!(
+            queue_api["declaredPublicMethods"],
+            json!([
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getConsumeTimeStampStr()",
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getMaxTimeStampStr()",
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getMinTimeStampStr()",
+                "long org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getConsumeTimeStamp()",
+                "long org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getDelayTime()",
+                "long org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getMaxTimeStamp()",
+                "long org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getMinTimeStamp()",
+                "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.getMessageQueue()",
+                "void org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.setConsumeTimeStamp(long)",
+                "void org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.setDelayTime(long)",
+                "void org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.setMaxTimeStamp(long)",
+                "void org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.setMessageQueue(org.apache.rocketmq.common.message.MessageQueue)",
+                "void org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan.setMinTimeStamp(long)"
+            ])
+        );
         let default_expected = &queue_api["defaultsByTimeZone"][timezone];
         let default_span = QueueTimeSpan::default();
+        assert!(
+            queue_api["defaultAccessors"]["messageQueueNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(default_span.get_message_queue(), None);
+        for (rust_value, key) in [
+            (default_span.get_min_time_stamp(), "minTimeStamp"),
+            (default_span.get_max_time_stamp(), "maxTimeStamp"),
+            (default_span.get_consume_time_stamp(), "consumeTimeStamp"),
+            (default_span.get_delay_time(), "delayTime"),
+        ] {
+            assert_eq!(
+                rust_value,
+                queue_api["defaultAccessors"][key].as_i64().unwrap()
+            );
+        }
         assert_eq!(
             default_span.get_min_time_stamp_str(),
             default_expected["minTimeStampStr"]
@@ -10371,11 +10438,30 @@ mod tests {
         );
         let expected = &queue_api["valuesByTimeZone"][timezone];
         let mut span = QueueTimeSpan::default();
-        span.set_message_queue(Some(MessageQueue::new("orders", "broker-a", 1)));
+        let assigned_queue = SharedValue::new(MessageQueue::new("orders", "broker-a", 1));
+        span.set_message_queue(Some(assigned_queue.clone()));
         span.set_min_time_stamp(1_000);
         span.set_max_time_stamp(9_000);
         span.set_consume_time_stamp(5_000);
         span.set_delay_time(4_000);
+        let returned_queue = span.get_message_queue().unwrap();
+        assert!(
+            queue_api["accessorValues"]["messageQueueReturnsAssignedObject"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(returned_queue.ptr_eq(&assigned_queue));
+        assert!(
+            returned_queue
+                .with(|queue| { queue.topic() == queue_api["accessorValues"]["topic"].as_str() })
+        );
+        assert!(returned_queue.with(|queue| {
+            queue.broker_name() == queue_api["accessorValues"]["brokerName"].as_str()
+        }));
+        assert_eq!(
+            returned_queue.with(|queue| queue.queue_id()),
+            queue_api["accessorValues"]["queueId"].as_i64().unwrap() as i32
+        );
         assert_eq!(span.get_min_time_stamp_str(), expected["minTimeStampStr"]);
         assert_eq!(span.get_max_time_stamp_str(), expected["maxTimeStampStr"]);
         assert_eq!(
@@ -10389,6 +10475,90 @@ mod tests {
             serialized["consumeTimeStampStr"],
             expected["consumeTimeStampStr"]
         );
+        for (rust_value, key) in [
+            (span.get_min_time_stamp(), "minTimeStamp"),
+            (span.get_max_time_stamp(), "maxTimeStamp"),
+            (span.get_consume_time_stamp(), "consumeTimeStamp"),
+            (span.get_delay_time(), "delayTime"),
+        ] {
+            assert_eq!(
+                rust_value,
+                queue_api["accessorValues"][key].as_i64().unwrap()
+            );
+        }
+        returned_queue.with_mut(|queue| queue.set_queue_id(7));
+        assert!(
+            queue_api["messageQueueGetterMutationVisibleToAssignedObject"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(assigned_queue.with(|queue| queue.queue_id()), 7);
+        span.set_message_queue(None);
+        assert!(
+            queue_api["nullMessageQueueSetterPreservesNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(span.get_message_queue().is_none());
+
+        let body_api = &queue_api["queryConsumeTimeSpanBodyApi"];
+        assert_eq!(
+            body_api["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody()"])
+        );
+        assert_eq!(
+            body_api["declaredPublicMethods"],
+            json!([
+                "java.util.List org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.getConsumeTimeSpanSet()",
+                "void org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody.setConsumeTimeSpanSet(java.util.List)"
+            ])
+        );
+        assert!(body_api["defaultListNonNull"].as_bool().unwrap());
+        assert!(body_api["defaultListEmpty"].as_bool().unwrap());
+        assert!(
+            body_api["defaultGetterReturnsStoredList"]
+                .as_bool()
+                .unwrap()
+        );
+        let default_body = QueryConsumeTimeSpanBody::default();
+        let default_list = default_body.get_consume_time_span_set().unwrap();
+        assert!(default_list.snapshot().is_empty());
+        assert!(default_list.ptr_eq(&default_body.get_consume_time_span_set().unwrap()));
+
+        let assigned_span = SharedValue::new(QueueTimeSpan::default());
+        let assigned_list = SharedValue::new(vec![Some(assigned_span.clone())]);
+        let mut body = QueryConsumeTimeSpanBody::default();
+        body.set_consume_time_span_set(Some(assigned_list.clone()));
+        let returned_list = body.get_consume_time_span_set().unwrap();
+        assert!(body_api["setterRetainsAssignedList"].as_bool().unwrap());
+        assert!(body_api["getterReturnsAssignedList"].as_bool().unwrap());
+        assert!(body_api["getterReturnsAssignedElement"].as_bool().unwrap());
+        assert!(returned_list.ptr_eq(&assigned_list));
+        assert!(returned_list.with(|values| {
+            values[0]
+                .as_ref()
+                .is_some_and(|value| value.ptr_eq(&assigned_span))
+        }));
+        returned_list
+            .with_mut(|values| values.push(Some(SharedValue::new(QueueTimeSpan::default()))));
+        assert!(
+            body_api["getterMutationVisibleToAssignedList"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(assigned_list.with(Vec::len), 2);
+        assigned_list.with_mut(|values| values.push(None));
+        assert!(
+            body_api["assignedListMutationVisibleToGetter"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(returned_list.with(Vec::len), 3);
+        assert!(returned_list.with(|values| values[2].is_none()));
+        body.set_consume_time_span_set(None);
+        assert!(body_api["nullSetterPreservesNull"].as_bool().unwrap());
+        assert!(body.get_consume_time_span_set().is_none());
+
         let extreme_expected = &queue_api["extremeValuesByTimeZone"][timezone];
         let mut extremes = QueueTimeSpan::default();
         extremes.set_min_time_stamp(i64::MIN);

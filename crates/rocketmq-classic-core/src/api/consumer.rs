@@ -1,5 +1,6 @@
 use rocketmq_classic_common::{message::MessageQueue, sysflag::pull::has_lite_pull_flag};
 use rocketmq_classic_protocol::{
+    SharedValue,
     body::{
         ConsumerListByGroupResponseBody, LockBatchRequestBody, LockBatchResponseBody,
         QueryConsumeTimeSpanBody, QueueTimeSpan, UnlockBatchRequestBody,
@@ -121,7 +122,14 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         let body: QueryConsumeTimeSpanBody = decode_body(&reply, code, addr)?;
-        Ok(body.consume_time_span_set)
+        Ok(body.get_consume_time_span_set().map(|spans| {
+            spans.with(|spans| {
+                spans
+                    .iter()
+                    .map(|span| span.as_ref().map(SharedValue::snapshot))
+                    .collect()
+            })
+        }))
     }
 
     pub async fn check_client_in_broker(
@@ -589,7 +597,7 @@ mod tests {
                 ),
             };
             let expected_time_strings = &expected["timestampStringsByTimeZone"][timezone];
-            let queue = span.message_queue.as_ref().unwrap();
+            let queue = span.get_message_queue().unwrap().snapshot();
             assert_eq!(queue.topic(), expected["topic"].as_str());
             assert_eq!(queue.broker_name(), expected["brokerName"].as_str());
             assert_eq!(
@@ -597,18 +605,21 @@ mod tests {
                 expected["queueId"].as_i64().unwrap() as i32
             );
             assert_eq!(
-                span.min_time_stamp,
+                span.get_min_time_stamp(),
                 expected["minTimeStamp"].as_i64().unwrap()
             );
             assert_eq!(
-                span.max_time_stamp,
+                span.get_max_time_stamp(),
                 expected["maxTimeStamp"].as_i64().unwrap()
             );
             assert_eq!(
-                span.consume_time_stamp,
+                span.get_consume_time_stamp(),
                 expected["consumeTimeStamp"].as_i64().unwrap()
             );
-            assert_eq!(span.delay_time, expected["delayTime"].as_i64().unwrap());
+            assert_eq!(
+                span.get_delay_time(),
+                expected["delayTime"].as_i64().unwrap()
+            );
             assert_eq!(
                 span.get_min_time_stamp_str(),
                 expected_time_strings["minTimeStampStr"]

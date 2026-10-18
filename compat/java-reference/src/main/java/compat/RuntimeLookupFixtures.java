@@ -1864,7 +1864,9 @@ public final class RuntimeLookupFixtures {
             new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
         org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan extremes =
             new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
-        value.setMessageQueue(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1));
+        org.apache.rocketmq.common.message.MessageQueue assignedQueue =
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1);
+        value.setMessageQueue(assignedQueue);
         value.setMinTimeStamp(1_000L);
         value.setMaxTimeStamp(9_000L);
         value.setConsumeTimeStamp(5_000L);
@@ -1875,6 +1877,29 @@ public final class RuntimeLookupFixtures {
         Map<String, Object> item = new TreeMap<>();
         item.put("publicConstructors", publicConstructorSignatures(value.getClass()));
         item.put("declaredPublicMethods", declaredPublicMethodSignatures(value.getClass()));
+        Map<String, Object> defaultAccessors = new TreeMap<>();
+        defaultAccessors.put("messageQueueNull", defaults.getMessageQueue() == null);
+        defaultAccessors.put("minTimeStamp", defaults.getMinTimeStamp());
+        defaultAccessors.put("maxTimeStamp", defaults.getMaxTimeStamp());
+        defaultAccessors.put("consumeTimeStamp", defaults.getConsumeTimeStamp());
+        defaultAccessors.put("delayTime", defaults.getDelayTime());
+        item.put("defaultAccessors", defaultAccessors);
+        Map<String, Object> accessorValues = new TreeMap<>();
+        accessorValues.put("messageQueueReturnsAssignedObject", value.getMessageQueue() == assignedQueue);
+        accessorValues.put("topic", value.getMessageQueue().getTopic());
+        accessorValues.put("brokerName", value.getMessageQueue().getBrokerName());
+        accessorValues.put("queueId", value.getMessageQueue().getQueueId());
+        accessorValues.put("minTimeStamp", value.getMinTimeStamp());
+        accessorValues.put("maxTimeStamp", value.getMaxTimeStamp());
+        accessorValues.put("consumeTimeStamp", value.getConsumeTimeStamp());
+        accessorValues.put("delayTime", value.getDelayTime());
+        item.put("accessorValues", accessorValues);
+        value.getMessageQueue().setQueueId(7);
+        item.put("messageQueueGetterMutationVisibleToAssignedObject", assignedQueue.getQueueId() == 7);
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan nullQueue =
+            new org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan();
+        nullQueue.setMessageQueue(null);
+        item.put("nullMessageQueueSetterPreservesNull", nullQueue.getMessageQueue() == null);
         Map<String, Object> defaultsByTimeZone = new TreeMap<>();
         Map<String, Object> valuesByTimeZone = new TreeMap<>();
         Map<String, Object> extremeValuesByTimeZone = queueTimeSpanStringsByTimeZone(extremes);
@@ -1899,7 +1924,41 @@ public final class RuntimeLookupFixtures {
         item.put("defaultsByTimeZone", defaultsByTimeZone);
         item.put("valuesByTimeZone", valuesByTimeZone);
         item.put("extremeValuesByTimeZone", extremeValuesByTimeZone);
+        item.put("queryConsumeTimeSpanBodyApi", queryConsumeTimeSpanBodyApi(value, defaults));
         return item;
+    }
+
+    private static Map<String, Object> queryConsumeTimeSpanBodyApi(
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan first,
+        org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan second) {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody defaults =
+            new org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody();
+        List<org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan> defaultSet =
+            defaults.getConsumeTimeSpanSet();
+        result.put("publicConstructors", publicConstructorSignatures(defaults.getClass()));
+        result.put("declaredPublicMethods", declaredPublicMethodSignatures(defaults.getClass()));
+        result.put("defaultListNonNull", defaultSet != null);
+        result.put("defaultListEmpty", defaultSet != null && defaultSet.isEmpty());
+        result.put("defaultGetterReturnsStoredList", defaults.getConsumeTimeSpanSet() == defaultSet);
+
+        List<org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan> assigned = new ArrayList<>();
+        assigned.add(first);
+        defaults.setConsumeTimeSpanSet(assigned);
+        List<org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan> returned =
+            defaults.getConsumeTimeSpanSet();
+        result.put("setterRetainsAssignedList", defaults.getConsumeTimeSpanSet() == assigned);
+        result.put("getterReturnsAssignedList", returned == assigned);
+        result.put("getterReturnsAssignedElement", returned.get(0) == first);
+        returned.add(second);
+        result.put("getterMutationVisibleToAssignedList", assigned.size() == 2);
+        assigned.add(null);
+        result.put("assignedListMutationVisibleToGetter",
+            defaults.getConsumeTimeSpanSet().size() == 3
+                && defaults.getConsumeTimeSpanSet().get(2) == null);
+        defaults.setConsumeTimeSpanSet(null);
+        result.put("nullSetterPreservesNull", defaults.getConsumeTimeSpanSet() == null);
+        return result;
     }
 
     private static Map<String, Object> consumerListNullGroupApiCase() throws Exception {

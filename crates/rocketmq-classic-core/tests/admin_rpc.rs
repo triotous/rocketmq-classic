@@ -1101,7 +1101,7 @@ async fn query_consume_time_span_matches_mq_client_admin_fixture() {
     );
     let span = spans[0].as_ref().unwrap();
     let expected = &success_case["result"][0];
-    let queue = span.message_queue.as_ref().unwrap();
+    let queue = span.get_message_queue().unwrap().snapshot();
     assert_eq!(queue.topic(), expected["topic"].as_str());
     assert_eq!(queue.broker_name(), expected["brokerName"].as_str());
     assert_eq!(
@@ -1109,18 +1109,21 @@ async fn query_consume_time_span_matches_mq_client_admin_fixture() {
         expected["queueId"].as_i64().unwrap() as i32
     );
     assert_eq!(
-        span.min_time_stamp,
+        span.get_min_time_stamp(),
         expected["minTimeStamp"].as_i64().unwrap()
     );
     assert_eq!(
-        span.max_time_stamp,
+        span.get_max_time_stamp(),
         expected["maxTimeStamp"].as_i64().unwrap()
     );
     assert_eq!(
-        span.consume_time_stamp,
+        span.get_consume_time_stamp(),
         expected["consumeTimeStamp"].as_i64().unwrap()
     );
-    assert_eq!(span.delay_time, expected["delayTime"].as_i64().unwrap());
+    assert_eq!(
+        span.get_delay_time(),
+        expected["delayTime"].as_i64().unwrap()
+    );
     client.shutdown().await;
 
     let error_case = &fixture["brokerError"];
