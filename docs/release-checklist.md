@@ -4996,3 +4996,22 @@ owner-specific checks belong in the manual handoff.
   reconciliation remains open. The complete current-revision P18-V02 gate,
   current Ubuntu/native Windows P18-V04 evidence, and remaining Phase 18
   acceptance work are still pending.
+
+## P18-V01 POP batch ACK DTO field visibility — 2026-10-18 (`a300224f`)
+
+- [x] Pinned Java 5.5.1 reflection confirms `BatchAck` and
+  `BatchAckMessageRequestBody` expose no public fields, with their existing
+  constructors and getter/setter inventories. Rust fields are now private;
+  producer code, test fixtures, and integration call sites use the existing
+  Java-equivalent accessors. Compile-fail doctests guard both DTOs. Fixture
+  SHA-256: `1eea96b0635b4a8f8c8f2a82187c1702ac0335f529fa2b6790d0ca2ddab2c53f`.
+- [x] All-feature tests passed for Protocol, Consumer, Remoting, and Core;
+  Protocol passed 143 unit tests and 73 doctests. Strict all-target/all-feature
+  Clippy passed for the four crates. Pinned offline Maven `verify` passed all
+  37 scenarios, fixture checks, 66 typed-header and 15 typed-body
+  cross-decodes. Formatting and diff checks passed. Code/fixture commit:
+  `a300224f`.
+- This closes only the two POP batch ACK DTO field-visibility rows. Broad
+  P18-V01 API/settings/input/error/flow and Rust reverse-export reconciliation,
+  the final workspace P18-V02 gate, and current Ubuntu/native Windows P18-V04
+  evidence remain open.
