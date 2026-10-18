@@ -4280,3 +4280,31 @@ owner-specific checks belong in the manual handoff.
   package/provenance review, Phase 19 local Docker scenarios/profiles and
   runner reconciliation, and pre-publication version/registry checks also
   remain open. Owner-only validation remains the separate manual handoff.
+
+## P18-V01 `getConsumerConnectionList` admin RPC — 2026-10-18 (`eb627fcc`)
+
+- [x] Added `MQClientApi::mq_client_admin().get_consumer_connection_list`
+  using Java's asynchronous request code 203 and
+  `GetConsumerConnectionListRequestHeader`. The typed response preserves the
+  nullable body, connection set, subscription table, and consumer enums.
+- [x] The invoked Java 5.5.1 fixture records request code/fields, the encoded
+  response body, decoded connection and subscription values, null-body result,
+  and Broker error. Core scripted tests compare the request and result and
+  cover null bodies, Broker errors, and malformed successful bodies. Fixture
+  SHA-256: `63fedb0e501c7539fcbf9495a639c41ec59aa8e3e8db39a14a75674c1a1f2a05`.
+- [x] Added bidirectional header fixtures for `GetConsumerConnectionList`
+  and the in-progress `GetConsumeStats` request header. Protocol all-feature
+  tests passed (133 unit tests, all integration targets, 49 doctests); Core
+  `admin_rpc` passed all 47 tests. Strict all-target/all-feature Clippy passed
+  for Protocol, Remoting and Core. Pinned Maven `verify` passed all 37
+  scenarios, 66 typed-header cross-decodes and 14 typed-body cross-decodes.
+  Formatting and `git diff --check` passed.
+- The source-backed `MqClientAdmin` count is now 16/19. Three methods remain:
+  `updateOrCreateSubscriptionGroup`, `getConsumeStats`, and
+  `getConsumerRunningInfo`. Broad P18-V01 API/settings/input/error/flow and
+  reverse-export reconciliation remains open. Refresh full-workspace P18-V02
+  after remaining implementation work; current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks remain open. Owner-only validation remains the
+  separate manual handoff.
