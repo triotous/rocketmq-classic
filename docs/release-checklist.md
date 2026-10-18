@@ -3877,3 +3877,15 @@ owner-specific checks belong in the manual handoff.
 - [x] Closed a P18-V01 query/admin decoder slice against pinned Java 5.5.1. `QueryMessageRequestHeader`, `QueryMessageResponseHeader`, and `ViewMessageRequestHeader` use Java's reflection decoder under both `useFastEncode` hints; Rust now preserves nullable wrapper fields and per-field malformed numeric outcomes. `ViewMessageRequestHeader` keeps Java identity equality, and Core checks the nullable query index timestamp at the Java-equivalent unboxing boundary. The invoked fixture covers both modes and valid, missing, and malformed fields. SHA-256: `abc37ff23edd774910af9093b96fce95ce5e2270c5db7996fb0607df1ef3cc68`.
 - [x] Maven `verify` passed (37 offline scenarios, fixture drift, 56 typed-header cross-decodes, 14 typed-body cross-decodes). Protocol all-feature tests passed (128 unit tests, header matrix/inventory, 44 doctests); Remoting all-feature tests passed (137 unit, 8 codec, 1 fuzz-regression, 7 security, 107 transport, 18 doctests). Core `admin_rpc` (19), Producer admin (11), and Consumer admin (9) tests passed; strict all-target/all-feature Clippy passed for the five affected crates. `cargo fmt --all -- --check` and `git diff --check` pass.
 - [ ] Refresh full-workspace P18-V02 gates after the latest code slice. Broad P18-V01 remains open; current-revision Ubuntu/native Windows P18-V04 evidence and final P18-V03 package/provenance review remain open. Phase 19 still lacks 30 of 37 local scenario runners, the required profiles, and a passing `run-local.sh --all` reconciliation. Pre-publication release-version and registry dependency checks remain pending. Owner-specific manual checks remain a separate handoff.
+
+## P18-V01 `MqClientAdmin` surface inventory discovery — 2026-10-18
+
+- [ ] Reconcile the 19 public methods declared by Java 5.5.1
+  `client/MqClientAdmin.java`, exposed through
+  `MQClientAPIExt.getMqClientAdmin()`. The existing Phase 17 `MQAdmin` matrix
+  did not cover this separate interface. Some operations have similar Rust
+  facade/Core methods, but no complete source/API/input/error/flow crosswalk
+  exists. Add missing typed request/response support and invoked Java/Rust
+  evidence for every method before closing P18-V01. See the inventory and
+  source path in `docs/compatibility/PHASE_17_ADMIN_MATRIX.md`. This is local
+  implementation work, not final manual validation.

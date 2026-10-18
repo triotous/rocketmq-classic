@@ -1013,3 +1013,16 @@ Producer per-request timeout/retry closure (`2026-10-14`, pinned Java source `ef
 P18-V01 `ChangeInvisibleTimeResponseHeader` public-surface closure (2026-10-17): pinned Java 5.5.1 exposes a public constructor, three primitive fields through getter/setter pairs, and inherits identity-based `equals`/`hashCode`. Rust now exports the corresponding `CommandHeader` type, encodes all three primitive values, and preserves per-field zero defaults for missing or malformed reflective inputs in both mode hints. The direct Java fixture also checks signed boundaries and Unicode decimal digits; Rust uses Java-compatible UTF-16 decimal parsing. Fixture SHA-256: `967d3146d0da1467714c96a1fa7464c7375888e2ba09f6fc0c097126bab67c2a`. Remoting's direct header fixture and Core's invoked POP/ACK callback regression pass. This closes the missing typed header surface only; broad P18-V01 remains PARTIAL.
 
 P18-V01 Phase 17 query/admin header reflection slice (code commit `66334aa9`, 2026-10-18, pinned Java client source `efa1be59d6fc747ad220f036c86030f05f0419f9`): `QueryMessageRequestHeader`, `QueryMessageResponseHeader`, and `ViewMessageRequestHeader` are not `FastCodesHeader`; both decode hints use Java's per-field reflection conversion. Rust now models nullable Java `String`/boxed-number fields with `Option`, retains missing or malformed numeric values instead of failing decode, and removes value equality from `ViewMessageRequestHeader`. `QUERY_MESSAGE` validates the nullable index timestamp at the RPC result/unboxing boundary. The invoked fixture covers both hints and valid, missing, and malformed fields; SHA-256 `abc37ff23edd774910af9093b96fce95ce5e2270c5db7996fb0607df1ef3cc68`. Focused Protocol, Remoting, Core, Producer, and Consumer tests and strict Clippy pass; this closes only this decoder/owner-boundary slice and leaves broad P18-V01 PARTIAL.
+
+P18-V01 `MqClientAdmin` public surface inventory (2026-10-18, pinned Java
+client source `efa1be59d6fc747ad220f036c86030f05f0419f9`): source inspection
+found 19 declared methods in `client/MqClientAdmin.java` and the public
+`MQClientAPIExt.getMqClientAdmin()` accessor returning `MqClientAdminImpl`.
+The existing Phase 17 matrix does not include this interface, and the Rust
+`MQClientApi`/facade method inventory has no complete one-to-one crosswalk for
+it. This is a newly confirmed P18-V01 audit gap, not a conclusion that every
+method is absent: similar Rust methods exist for some operations, but request
+types, results, error mapping and control flow have not been reconciled. The
+19-method inventory and required follow-up are recorded in
+`PHASE_17_ADMIN_MATRIX.md`; implementation and invoked Rust/Java evidence are
+still required. This remains local parity work, not manual validation.

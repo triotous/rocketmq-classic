@@ -20,6 +20,31 @@ The Java producer, push consumer, and pull consumer expose the shared
 
 Query header decode follow-up (2026-10-18, code commit `66334aa9`): the pinned Java `QueryMessageRequestHeader`, `QueryMessageResponseHeader`, and `ViewMessageRequestHeader` keep reference/wrapper fields nullable and use reflection under both `useFastEncode` hints. Rust now preserves absent or malformed boxed numeric fields through decode, retains Java identity-based equality for `ViewMessageRequestHeader`, and reports a missing/invalid query timestamp at the RPC result boundary where Java unboxes it. The invoked fixture and Rust differential cover both hints; this closes only this header-decoding slice.
 
+## Additional public client API found during the Phase 18 audit
+
+The pinned Java `client/MqClientAdmin.java` declares 19 public asynchronous
+operations and `MQClientAPIExt.getMqClientAdmin()` exposes its public
+`MqClientAdminImpl`. The interface includes query, topic/subscription-group
+updates and deletion, offset reset, cluster/consumer inspection, statistics,
+and direct-consume operations. The existing matrix covers `MQAdmin` and the
+Producer/Push/Pull facades but does not crosswalk this separate interface.
+Rust has related operations in `MQClientApi` and the facades, but no complete
+method-by-method mapping has been verified. Its public status and proxy call
+sites do not establish an exclusion from the client parity contract.
+
+The Java method inventory is `queryMessage`, `getTopicStatsInfo`,
+`queryConsumeTimeSpan`, `updateOrCreateTopic`,
+`updateOrCreateSubscriptionGroup`, `deleteTopicInBroker`,
+`deleteTopicInNameserver`, `deleteKvConfig`, `deleteSubscriptionGroup`,
+`invokeBrokerToResetOffset`, `viewMessage`, `getBrokerClusterInfo`,
+`getConsumerConnectionList`, `queryTopicsByConsumer`,
+`querySubscriptionByConsumer`, `getConsumeStats`, `queryTopicConsumeByWho`,
+`getConsumerRunningInfo`, and `consumeMessageDirectly`.
+
+Status: **OPEN P18-V01 local parity work**. Reconcile every method's request
+header/body, response type, error path and call behavior against Rust; add the
+missing typed API and invoked fixtures. This is not a Phase 19 manual handoff.
+
 ## Tools-only admin extension scope audit
 
 The pinned Java client implementation also contains public
