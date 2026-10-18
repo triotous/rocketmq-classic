@@ -4779,3 +4779,20 @@ owner-specific checks belong in the manual handoff.
   rerun on this newer revision. P18-V03 package/provenance and registry
   preflight, current-revision Ubuntu/native Windows P18-V04 evidence, and Phase
   19's 30 local Docker/Broker runners and required profiles remain open.
+
+## P18-V01 `TopicStatsTable` and `TopicOffset` API inventory — 2026-10-18 (`93412b9a`)
+
+- [x] Pinned Java fixtures now record public no-argument constructors for both
+  DTOs. Rust asserts the constructor, method and field inventories, guards
+  field privacy, and exercises all `TopicOffset` getters/setters at signed
+  64-bit boundaries. Existing offset-table JSON/null/alias checks remain.
+  Fixture SHA-256:
+  `9b1bd6d1cebd844db4415a45e60cee14442e76dc235662d5189056977da0aeb6`.
+- [x] The focused Protocol differential, 57 Protocol doctests, strict
+  all-target/all-feature Protocol Clippy, pinned Maven `verify` (37 scenarios,
+  fixture checks, 66 typed-header and 15 typed-body cross-decodes), formatting,
+  and diff checks passed. Test/fixture commit: `93412b9a`.
+- Broad P18-V01 remains open. P18-V02 needs a final rerun on this latest code
+  revision; P18-V03 package/provenance and registry preflight,
+  current-revision Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
+  local Docker/Broker runners and required profiles remain open.

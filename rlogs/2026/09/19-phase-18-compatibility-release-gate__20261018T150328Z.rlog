@@ -76,3 +76,21 @@
 - Test/fixture commit: `5233eb2f`. Matrix and release-checklist updates are
   recorded separately. Broad P18-V01, final current-revision P18-V02,
   P18-V03/V04 and Phase 19 local matrix work remain open.
+
+## P18-V01 TopicStatsTable / TopicOffset API follow-up — 2026-10-18T15:20:31Z
+
+- Pinned Java fixtures already listed both DTOs' methods and fields, but did
+  not record constructors. Added public constructor inventories, Rust assertions
+  for those signatures, and compile-fail guards for private fields. Added a
+  direct setter/getter differential for `TopicOffset` at both signed 64-bit
+  bounds and a negative timestamp. Fixture SHA-256:
+  `9b1bd6d1cebd844db4415a45e60cee14442e76dc235662d5189056977da0aeb6`.
+- Verification: focused Protocol differential PASS; Protocol doctests PASS
+  (57); strict all-target/all-feature Protocol Clippy PASS; offline Maven
+  `verify` PASS (37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes); final format and diff checks PASS. The initial
+  format check found one line-wrap mismatch; `cargo fmt --all` corrected it
+  and the final check passed.
+- Test/fixture commit: `93412b9a`. Matrix and release-checklist updates are
+  recorded separately. Broad P18-V01, final current-revision P18-V02,
+  P18-V03/V04 and Phase 19 local matrix work remain open.

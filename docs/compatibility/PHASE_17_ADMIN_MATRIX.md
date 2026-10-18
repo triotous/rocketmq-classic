@@ -539,3 +539,16 @@ set-alias mutation. Fixture SHA-256:
 `11d0a8919e272d3f3ed347695a06220a3688c3437805a0e5737ba4fccd43726b`.
 This closes only the `TopicList` public API slice; broad P18-V01 reconciliation
 remains open.
+
+## P18-V01 `TopicStatsTable` and `TopicOffset` API inventory — 2026-10-18 (`93412b9a`)
+
+The pinned Java fixture now records both public no-argument constructors in
+addition to the declared method and public-field inventories. Rust asserts
+those constructor signatures, guards the private DTO fields with compile-fail
+doctests, and directly checks all three `TopicOffset` setters/getters at
+`i64::MIN`, `i64::MAX`, and a negative timestamp. Existing tests continue to
+cover Java defaults, formatting, nullable map values, map/entry aliasing, and
+`TopicStatsTable` accessors. Fixture SHA-256:
+`9b1bd6d1cebd844db4415a45e60cee14442e76dc235662d5189056977da0aeb6`.
+This closes only these response DTO API inventory items; broad P18-V01
+reconciliation remains open.
