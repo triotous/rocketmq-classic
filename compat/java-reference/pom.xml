@@ -624,6 +624,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-topic-list-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.TopicListFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/admin/topic-list.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-producer-lifecycle-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

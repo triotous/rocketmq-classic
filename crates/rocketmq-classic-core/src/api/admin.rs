@@ -3,10 +3,11 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
+    body::TopicList,
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, ViewMessageRequestHeader,
+        QueryMessageResponseHeader, QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
     },
     route::TopicRouteData,
 };
@@ -15,7 +16,7 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
-use super::{MQClientApi, classify, decode_header};
+use super::{MQClientApi, classify, decode_body, decode_header};
 use crate::error::RpcError;
 
 /// The index watermark and matching messages returned by a Broker query.
@@ -201,6 +202,19 @@ impl std::fmt::Display for QueryResult {
 }
 
 impl MQClientApi {
+    /// Queries one Broker for the topics consumed by a group.
+    pub async fn query_topics_by_consumer(
+        &self,
+        addr: &str,
+        header: &QueryTopicsByConsumerRequestHeader,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        let code = request::QUERY_TOPICS_BY_CONSUMER;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        decode_body(&reply, code, addr)
+    }
+
     /// Fans one Java MQAdmin query out to the selected Brokers on a route.
     /// Individual Broker errors and malformed responses are ignored when
     /// another Broker returns matching messages, as in Java's callback path.
@@ -500,5 +514,105 @@ mod tests {
         let ordinary = AdminQueryRequest::by_key("orders", "k", 32, 0, 1)
             .with_cluster_name(Some("cluster-a".into()));
         assert_eq!(ordinary.route_topic, "orders");
+    }
+
+    #[tokio::test]
+    async fn query_topics_by_consumer_sends_java_header_and_decodes_topic_list() {
+        use crate::api::MQClientApi;
+        use rocketmq_classic_protocol::{
+            codes::{request, response},
+            header::{CommandHeader, HeaderMap, QueryTopicsByConsumerRequestHeader},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::time::Duration;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::QUERY_TOPICS_BY_CONSUMER);
+            assert_eq!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("group"))
+                    .map(String::as_str),
+                Some("workers")
+            );
+            let mut expected_fields = HeaderMap::new();
+            CommandHeader::encode_fields(
+                &QueryTopicsByConsumerRequestHeader {
+                    group: Some("workers".into()),
+                    namespace: Some("tenant".into()),
+                    namespaced: Some(true),
+                    broker_name: Some("broker-a".into()),
+                    oneway: Some(false),
+                },
+                &mut expected_fields,
+            );
+            assert_eq!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, value)| { (key.clone(), value.clone()) })
+                    .collect::<HeaderMap>(),
+                expected_fields
+            );
+
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request.opaque,
+                body: Some(
+                    br#"{"topicList":["orders","billing"],"brokerAddr":"broker-a"}"#.to_vec(),
+                ),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let api = MQClientApi::new(remoting.clone());
+        let result = api
+            .query_topics_by_consumer(
+                &address,
+                &QueryTopicsByConsumerRequestHeader {
+                    group: Some("workers".into()),
+                    namespace: Some("tenant".into()),
+                    namespaced: Some(true),
+                    broker_name: Some("broker-a".into()),
+                    oneway: Some(false),
+                },
+                tokio::time::Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.get_broker_addr(), Some("broker-a"));
+        assert_eq!(
+            result.get_topic_list().unwrap().snapshot(),
+            std::collections::HashSet::from(["orders".to_owned(), "billing".to_owned()])
+        );
+        peer.await.unwrap();
+        remoting.shutdown().await;
     }
 }

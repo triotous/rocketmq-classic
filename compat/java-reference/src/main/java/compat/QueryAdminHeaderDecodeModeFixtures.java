@@ -30,6 +30,7 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 
 /** Invokes Java 5.5.1 admin-query header reflection decoding through both mode hints. */
@@ -64,6 +65,13 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("view-request-missing", decodeModes("view-request", fields()));
         cases.put("view-request-invalid-offset", decodeModes("view-request", fields(
             "topic", "orders", "offset", "not-a-long")));
+
+        cases.put("query-topics-by-consumer-valid", decodeModes("query-topics", fields(
+            "group", "workers", "ns", "tenant", "nsd", "true", "bname", "broker-a",
+            "oway", "false")));
+        cases.put("query-topics-by-consumer-missing", decodeModes("query-topics", fields()));
+        cases.put("query-topics-by-consumer-malformed-booleans", decodeModes("query-topics", fields(
+            "group", "workers", "nsd", "malformed", "oway", "malformed")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -91,7 +99,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
     private static Map<String, Object> decode(String type, Map<String, String> fields,
         boolean useFastEncode) {
         Map<String, Object> result = new TreeMap<>();
-        RemotingCommand command = RemotingCommand.createRequestCommand(12, null);
+        int code = "query-topics".equals(type) ? 343 : 12;
+        RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
         try {
             Class<? extends CommandCustomHeader> headerClass;
@@ -104,6 +113,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "view-request":
                     headerClass = ViewMessageRequestHeader.class;
+                    break;
+                case "query-topics":
+                    headerClass = QueryTopicsByConsumerRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

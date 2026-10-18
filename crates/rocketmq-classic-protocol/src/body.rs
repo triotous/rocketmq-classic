@@ -1911,6 +1911,86 @@ impl QueryConsumeTimeSpanBody {
     }
 }
 
+/// Java response body returned by `QUERY_TOPICS_BY_CONSUMER`.
+///
+/// The topic set is mutable and the Java getter returns the stored set object,
+/// so the Rust getter returns a shared handle. Java initializes the field to an
+/// empty set, while a decoded explicit `null` remains null.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicList;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { requires_java_identity::<TopicList>(); }
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicList {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_list: Option<SharedValue<std::collections::HashSet<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    broker_addr: Option<String>,
+}
+
+fn default_topic_list() -> Option<std::collections::HashSet<String>> {
+    Some(std::collections::HashSet::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopicListFields {
+    #[serde(default = "default_topic_list")]
+    topic_list: Option<std::collections::HashSet<String>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_addr: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for TopicList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: TopicListFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic_list: fields.topic_list.map(SharedValue::new),
+            broker_addr: fields.broker_addr,
+        })
+    }
+}
+
+impl Default for TopicList {
+    fn default() -> Self {
+        Self {
+            topic_list: default_topic_list().map(SharedValue::new),
+            broker_addr: None,
+        }
+    }
+}
+
+impl TopicList {
+    pub fn get_topic_list(&self) -> Option<SharedValue<std::collections::HashSet<String>>> {
+        self.topic_list.clone()
+    }
+
+    pub fn set_topic_list(
+        &mut self,
+        topic_list: Option<SharedValue<std::collections::HashSet<String>>>,
+    ) {
+        self.topic_list = topic_list;
+    }
+
+    pub fn get_broker_addr(&self) -> Option<&str> {
+        self.broker_addr.as_deref()
+    }
+
+    pub fn set_broker_addr(&mut self, broker_addr: Option<String>) {
+        self.broker_addr = broker_addr;
+    }
+}
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5216,6 +5296,69 @@ fn write_java_remoting_body_indent(output: &mut String, depth: usize, indent: Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn topic_list_matches_java_default_null_and_alias_semantics() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/admin/topic-list.json")).unwrap();
+        assert_eq!(
+            fixture["artifact"],
+            "org.apache.rocketmq:rocketmq-client:5.5.1"
+        );
+
+        let default = TopicList::default();
+        assert!(default.get_broker_addr().is_none());
+        assert!(default.get_topic_list().unwrap().snapshot().is_empty());
+        assert_eq!(
+            serde_json::to_value(&default).unwrap(),
+            serde_json::from_str::<serde_json::Value>(fixture["defaultJson"].as_str().unwrap())
+                .unwrap()
+        );
+
+        let missing: TopicList = serde_json::from_str("{}").unwrap();
+        assert!(missing.get_topic_list().unwrap().snapshot().is_empty());
+        let explicit_null: TopicList = serde_json::from_str(r#"{"topicList":null}"#).unwrap();
+        assert!(explicit_null.get_topic_list().is_none());
+        assert_eq!(
+            serde_json::to_value(&explicit_null).unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                fixture["explicitNullJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+
+        let decoded: TopicList = serde_json::from_str(
+            r#"{"topicList":["orders","orders","billing"],"brokerAddr":"broker-a"}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_broker_addr(), Some("broker-a"));
+        let java_populated: serde_json::Value =
+            serde_json::from_str(fixture["populatedJson"].as_str().unwrap()).unwrap();
+        let java_topics = java_populated["topicList"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|topic| topic.as_str().unwrap().to_owned())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(decoded.get_topic_list().unwrap().snapshot(), java_topics);
+
+        let assigned = SharedValue::new(std::collections::HashSet::from(["orders".to_owned()]));
+        let mut value = TopicList::default();
+        value.set_topic_list(Some(assigned.clone()));
+        let getter = value.get_topic_list().unwrap();
+        assert_eq!(
+            assigned.ptr_eq(&getter),
+            fixture["getterReturnsStoredSetIdentity"]
+        );
+        getter.with_mut(|topics| {
+            topics.insert("billing".to_owned());
+        });
+        assert_eq!(assigned.snapshot().len(), 2);
+        assert_eq!(
+            assigned.snapshot().contains("billing"),
+            fixture["getterMutationVisibleToAssignedSet"]
+        );
+    }
 
     #[allow(clippy::mutable_key_type)]
     fn message_queue_set_element_aliases_match(

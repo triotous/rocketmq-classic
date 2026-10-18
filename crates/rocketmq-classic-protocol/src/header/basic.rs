@@ -270,6 +270,38 @@ impl CommandHeader for QueryConsumeTimeSpanRequestHeader {
     }
 }
 
+/// Pinned Java `QueryTopicsByConsumerRequestHeader` used by
+/// `QUERY_TOPICS_BY_CONSUMER`. Java's `checkFields()` is a no-op even though
+/// `group` carries a non-null annotation, so the request remains nullable here.
+#[derive(Debug, Clone, Default)]
+pub struct QueryTopicsByConsumerRequestHeader {
+    pub group: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+}
+
+impl CommandHeader for QueryTopicsByConsumerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "group", self.group.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group: optional_string(fields, "group"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
 /// Pinned Java `org.apache.rocketmq.common.BoundaryType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundaryType {
