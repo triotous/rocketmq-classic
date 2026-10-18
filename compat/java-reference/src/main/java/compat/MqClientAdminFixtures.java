@@ -40,9 +40,11 @@ import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody;
 import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
+import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
@@ -184,6 +186,7 @@ public final class MqClientAdminFixtures {
         fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
         fixture.put("deleteKvConfig", deleteKvConfig());
         fixture.put("deleteSubscriptionGroup", deleteSubscriptionGroup());
+        fixture.put("invokeBrokerToResetOffset", invokeBrokerToResetOffset());
         return fixture;
     }
 
@@ -405,6 +408,107 @@ public final class MqClientAdminFixtures {
         result.put("method", method.toGenericString());
         result.put("success", success);
         result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> invokeBrokerToResetOffset() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("invokeBrokerToResetOffset",
+            String.class, ResetOffsetRequestHeader.class, long.class);
+        ResetOffsetRequestHeader header = new ResetOffsetRequestHeader();
+        header.setGroup("workers");
+        header.setTopic("orders");
+        header.setQueueId(1);
+        header.setOffset(9L);
+        header.setTimestamp(1_712_345_678_901L);
+        header.setForce(true);
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+
+        ResetOffsetBody body = new ResetOffsetBody();
+        body.getOffsetTable().put(new MessageQueue("orders", "broker-a", 1), 9L);
+        byte[] bodyBytes = RemotingSerializable.encode(body);
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        MqClientAdminImpl successAdmin = new MqClientAdminImpl(successCapture.proxy());
+        Map<MessageQueue, Long> offsets = successAdmin
+            .invokeBrokerToResetOffset(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Map.Entry<MessageQueue, Long> entry : offsets.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("topic", entry.getKey().getTopic());
+            row.put("brokerName", entry.getKey().getBrokerName());
+            row.put("queueId", entry.getKey().getQueueId());
+            row.put("offset", entry.getValue());
+            rows.add(row);
+        }
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
+        success.put("result", rows);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "reset offset failed");
+        MqClientAdminImpl errorAdmin = new MqClientAdminImpl(errorCapture.proxy());
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            errorAdmin.invokeBrokerToResetOffset(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin reset offset error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Capture noBodyCapture = new Capture();
+        noBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        MqClientAdminImpl noBodyAdmin = new MqClientAdminImpl(noBodyCapture.proxy());
+        Map<String, Object> noBodyOutcome = new LinkedHashMap<>();
+        try {
+            noBodyAdmin.invokeBrokerToResetOffset(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin reset offset missing-body error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            noBodyOutcome.put("exceptionClass", clientException.getClass().getName());
+            noBodyOutcome.put("responseCode", clientException.getResponseCode());
+            noBodyOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> successWithoutBody = new LinkedHashMap<>();
+        successWithoutBody.put("address", noBodyCapture.address);
+        successWithoutBody.put("timeoutMillis", noBodyCapture.timeoutMillis);
+        successWithoutBody.put("requestCode", noBodyCapture.request.getCode());
+        successWithoutBody.put("requestExtFields", new TreeMap<>(noBodyCapture.request.getExtFields()));
+        successWithoutBody.put("responseCode", noBodyCapture.response.getCode());
+        successWithoutBody.put("responseRemark", noBodyCapture.response.getRemark());
+        successWithoutBody.put("outcome", noBodyOutcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        result.put("successWithoutBody", successWithoutBody);
         return result;
     }
 

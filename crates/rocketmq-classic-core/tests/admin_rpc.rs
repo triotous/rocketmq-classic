@@ -16,7 +16,7 @@ use rocketmq_classic_protocol::{
         GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
         QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -117,6 +117,21 @@ async fn api() -> (MQClientApi, RemotingClient) {
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
     (MQClientApi::new(client.clone()), client)
+}
+
+fn java_reset_offset_header() -> ResetOffsetRequestHeader {
+    ResetOffsetRequestHeader {
+        group: "workers".into(),
+        topic: "orders".into(),
+        queue_id: 1,
+        offset: Some(9),
+        timestamp: 1_712_345_678_901,
+        force: true,
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+    }
 }
 
 async fn invoke_offset_operation(
@@ -647,6 +662,136 @@ async fn delete_subscription_group_preserves_java_broker_error() {
             && remark == expected["responseRemark"].as_str().unwrap()
     ));
     assert_eq!(peer.await.unwrap().code, request::DELETE_SUBSCRIPTIONGROUP);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn invoke_broker_to_reset_offset_matches_mq_client_admin_success_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["invokeBrokerToResetOffset"]["success"];
+    let body = expected["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (api, client) = api().await;
+
+    let result = api
+        .invoke_broker_to_reset_offset(
+            &addr,
+            &java_reset_offset_header(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .snapshot();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::INVOKE_BROKER_TO_RESET_OFFSET);
+    assert!(command.body.is_none());
+    let actual_fields = command.ext_fields.as_ref().unwrap();
+    let expected_fields = expected["requestExtFields"].as_object().unwrap();
+    assert_eq!(actual_fields.len(), expected_fields.len());
+    for (key, value) in expected_fields {
+        assert_eq!(
+            actual_fields.get(key).map(String::as_str),
+            value.as_str(),
+            "field {key}"
+        );
+    }
+    assert_eq!(result.len(), expected["result"].as_array().unwrap().len());
+    for (queue, offset) in result {
+        let expected_entry = expected["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| {
+                entry["topic"] == queue.topic().unwrap()
+                    && entry["brokerName"] == queue.broker_name().unwrap()
+                    && entry["queueId"] == queue.queue_id()
+            })
+            .unwrap();
+        assert_eq!(offset, Some(expected_entry["offset"].as_i64().unwrap()));
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn invoke_broker_to_reset_offset_preserves_java_broker_error() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["invokeBrokerToResetOffset"]["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        expected["responseCode"].as_i64().unwrap() as i32,
+        Some(expected["responseRemark"].as_str().unwrap().to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (api, client) = api().await;
+    let error = api
+        .invoke_broker_to_reset_offset(
+            &addr,
+            &java_reset_offset_header(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::INVOKE_BROKER_TO_RESET_OFFSET,
+            peer,
+            code,
+            remark: Some(remark),
+        } if peer == addr
+            && code == expected["responseCode"].as_i64().unwrap() as i32
+            && remark == expected["responseRemark"].as_str().unwrap()
+    ));
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::INVOKE_BROKER_TO_RESET_OFFSET
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn invoke_broker_to_reset_offset_maps_success_without_body_like_java() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["invokeBrokerToResetOffset"]["successWithoutBody"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (api, client) = api().await;
+    let error = api
+        .invoke_broker_to_reset_offset(
+            &addr,
+            &java_reset_offset_header(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::INVOKE_BROKER_TO_RESET_OFFSET,
+            peer,
+            code,
+            remark: None,
+        } if peer == addr && code == expected["responseCode"].as_i64().unwrap() as i32
+    ));
+    assert_eq!(
+        peer.await.unwrap().code,
+        request::INVOKE_BROKER_TO_RESET_OFFSET
+    );
     client.shutdown().await;
 }
 

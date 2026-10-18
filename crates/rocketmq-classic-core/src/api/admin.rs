@@ -3,7 +3,10 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{GroupList, QuerySubscriptionResponseBody, TopicList, TopicStatsTable},
+    body::{
+        GroupList, QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries,
+        TopicList, TopicStatsTable,
+    },
     codes::{request, response},
     header::{
         CommandHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
@@ -11,7 +14,7 @@ use rocketmq_classic_protocol::{
         DeleteTopicRequestHeader, GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader,
         QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
         QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-        ViewMessageRequestHeader,
+        ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -436,6 +439,39 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Invokes one Broker's Java `MqClientAdmin.invokeBrokerToResetOffset` RPC.
+    pub async fn invoke_broker_to_reset_offset(
+        &self,
+        addr: &str,
+        header: &ResetOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
+        let code = request::INVOKE_BROKER_TO_RESET_OFFSET;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        let body_bytes = reply.body.as_deref().ok_or_else(|| RpcError::Response {
+            request_code: code,
+            peer: addr.to_owned(),
+            code: reply.code,
+            remark: reply.remark.clone(),
+        })?;
+        let response_body =
+            std::str::from_utf8(body_bytes).map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            })?;
+        let body: ResetOffsetBody =
+            ResetOffsetBody::decode_java_json(response_body).map_err(|error| {
+                RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+        Ok(body.get_offset_table())
     }
 
     /// Queries one Broker using Java's `_UNIQUE_KEY_QUERY` extension field.
