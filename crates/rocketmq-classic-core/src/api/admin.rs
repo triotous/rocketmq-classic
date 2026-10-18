@@ -6,10 +6,11 @@ use rocketmq_classic_protocol::{
     body::{GroupList, QuerySubscriptionResponseBody, TopicList, TopicStatsTable},
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, DeleteTopicRequestHeader,
-        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
-        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        QueryTopicsByConsumerRequestHeader, ViewMessageRequestHeader,
+        CommandHeader, CreateTopicRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader,
+        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
+        QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -392,6 +393,19 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         let code = request::DELETE_TOPIC_IN_BROKER;
+        let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes one topic from a NameServer through Java `MqClientAdmin`'s RPC.
+    pub async fn delete_topic_in_nameserver(
+        &self,
+        addr: &str,
+        header: &DeleteTopicFromNamesrvRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_TOPIC_IN_NAMESRV;
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())

@@ -46,6 +46,7 @@ impl_rpc_request_header_semantics!(
     GetRouteInfoRequestHeader,
     CreateTopicRequestHeader,
     DeleteTopicRequestHeader,
+    DeleteTopicFromNamesrvRequestHeader,
     QueryMessageRequestHeader,
     QueryTopicsByConsumerRequestHeader,
     QuerySubscriptionByConsumerRequestHeader,
@@ -334,6 +335,43 @@ impl CommandHeader for DeleteTopicRequestHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             topic: optional_string(fields, "topic"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+/// Pinned Java Namesrv `DeleteTopicFromNamesrvRequestHeader`. Its annotated
+/// topic is nullable because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct DeleteTopicFromNamesrvRequestHeader {
+    pub topic: Option<String>,
+    pub cluster_name: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
+    pub logical: Option<bool>,
+}
+
+impl CommandHeader for DeleteTopicFromNamesrvRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "clusterName", self.cluster_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            cluster_name: optional_string(fields, "clusterName"),
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
@@ -3031,10 +3069,13 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 37);
+        assert_eq!(cases.len(), 38);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
+                    .to_owned()
+            } else if rust_name == "DeleteTopicFromNamesrvRequestHeader" {
+                "org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader"
                     .to_owned()
             } else if rust_name == "SendMessageRequestHeaderV1" {
                 "org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader".to_owned()
@@ -3155,6 +3196,12 @@ mod tests {
             broker_name,
             |_| {},
             |h: &mut DeleteTopicRequestHeader| h.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            DeleteTopicFromNamesrvRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut DeleteTopicFromNamesrvRequestHeader| h.topic = Some("payload".into())
         );
         check_rpc_request_header!(
             QueryMessageRequestHeader,

@@ -42,6 +42,7 @@ import org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody;
 import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 
 /** Invokes the pinned Java MqClientAdmin asynchronous administrative RPCs. */
@@ -178,6 +179,7 @@ public final class MqClientAdminFixtures {
         fixture.put("brokerError", error);
         fixture.put("updateOrCreateTopic", updateOrCreateTopic());
         fixture.put("deleteTopicInBroker", deleteTopicInBroker());
+        fixture.put("deleteTopicInNameserver", deleteTopicInNameserver());
         return fixture;
     }
 
@@ -212,6 +214,63 @@ public final class MqClientAdminFixtures {
         try {
             errorAdmin.deleteTopicInBroker(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
             throw new IllegalStateException("expected MqClientAdmin delete topic error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            outcome.put("exceptionClass", clientException.getClass().getName());
+            outcome.put("responseCode", clientException.getResponseCode());
+            outcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", outcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> deleteTopicInNameserver() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("deleteTopicInNameserver",
+            String.class, DeleteTopicFromNamesrvRequestHeader.class, long.class);
+        DeleteTopicFromNamesrvRequestHeader header = new DeleteTopicFromNamesrvRequestHeader();
+        header.setTopic("orders");
+        header.setClusterName("cluster-a");
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+        header.setLo(true);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        MqClientAdminImpl successAdmin = new MqClientAdminImpl(successCapture.proxy());
+        successAdmin.deleteTopicInNameserver(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("completed", true);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.TOPIC_NOT_EXIST, "topic not exist");
+        MqClientAdminImpl errorAdmin = new MqClientAdminImpl(errorCapture.proxy());
+        Map<String, Object> outcome = new LinkedHashMap<>();
+        try {
+            errorAdmin.deleteTopicInNameserver(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin nameserver delete error");
         } catch (ExecutionException exception) {
             if (!(exception.getCause() instanceof MQClientException)) {
                 throw exception;

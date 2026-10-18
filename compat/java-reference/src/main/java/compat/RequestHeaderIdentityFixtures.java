@@ -39,6 +39,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("ConsumerSendMsgBackRequestHeader", "org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHeader"),
         Map.entry("CreateTopicRequestHeader", "org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader"),
         Map.entry("DeleteTopicRequestHeader", "org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader"),
+        Map.entry("DeleteTopicFromNamesrvRequestHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader"),
         Map.entry("EndTransactionRequestHeader", "org.apache.rocketmq.remoting.protocol.header.EndTransactionRequestHeader"),
         Map.entry("GetConsumerListByGroupRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader"),
         Map.entry("GetConsumerRunningInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader"),

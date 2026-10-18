@@ -43,6 +43,7 @@ macro_rules! inventory {
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
+            DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
             ViewMessageRequestHeader => ("header-view-message-request", "typed-view-message-request.bin"),
             LockBatchMqRequestHeader => ("header-lock-batch-request", "typed-lock-batch-request.bin"),
             UnlockBatchMqRequestHeader => ("header-unlock-batch-request", "typed-unlock-batch-request.bin"),

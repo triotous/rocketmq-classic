@@ -10,10 +10,10 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
-        BoundaryType, CommandHeader, CreateTopicRequestHeader, DeleteTopicRequestHeader,
-        GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
-        GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        BoundaryType, CommandHeader, CreateTopicRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
+        GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+        QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -394,6 +394,94 @@ async fn delete_topic_in_broker_preserves_java_broker_error() {
             && remark == expected["responseRemark"].as_str().unwrap()
     ));
     assert_eq!(peer.await.unwrap().code, request::DELETE_TOPIC_IN_BROKER);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn delete_topic_in_nameserver_matches_mq_client_admin_success_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["deleteTopicInNameserver"]["success"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (api, client) = api().await;
+    let header = DeleteTopicFromNamesrvRequestHeader {
+        topic: Some("orders".into()),
+        cluster_name: Some("cluster-a".into()),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+        logical: Some(true),
+    };
+
+    api.delete_topic_in_nameserver(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(
+        command.code,
+        expected["requestCode"].as_i64().unwrap() as i32
+    );
+    assert!(command.body.is_none());
+    let actual_fields = command.ext_fields.as_ref().unwrap();
+    let expected_fields = expected["requestExtFields"].as_object().unwrap();
+    assert_eq!(actual_fields.len(), expected_fields.len());
+    for (key, value) in expected_fields {
+        assert_eq!(
+            actual_fields.get(key).map(String::as_str),
+            value.as_str(),
+            "field {key}"
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn delete_topic_in_nameserver_preserves_java_broker_error() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["deleteTopicInNameserver"]["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        expected["responseCode"].as_i64().unwrap() as i32,
+        Some(expected["responseRemark"].as_str().unwrap().to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (api, client) = api().await;
+    let error = api
+        .delete_topic_in_nameserver(
+            &addr,
+            &DeleteTopicFromNamesrvRequestHeader {
+                topic: Some("orders".into()),
+                cluster_name: Some("cluster-a".into()),
+                namespace: Some("tenant".into()),
+                namespaced: Some(true),
+                broker_name: Some("broker-a".into()),
+                oneway: Some(false),
+                logical: Some(true),
+            },
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RpcError::Response {
+            request_code: request::DELETE_TOPIC_IN_NAMESRV,
+            peer,
+            code,
+            remark: Some(remark),
+        } if peer == addr
+            && code == expected["responseCode"].as_i64().unwrap() as i32
+            && remark == expected["responseRemark"].as_str().unwrap()
+    ));
+    assert_eq!(peer.await.unwrap().code, request::DELETE_TOPIC_IN_NAMESRV);
     client.shutdown().await;
 }
 
