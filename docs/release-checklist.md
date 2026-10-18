@@ -4615,3 +4615,19 @@ owner-specific checks belong in the manual handoff.
   Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30 remaining local
   scenario runners and required profiles remain open. MAN-01–04 remain owner
   checks; MAN-05 awaits local-matrix classification.
+
+## P18-V01 pinned `Message` declaration crosswalk — 2026-10-18
+
+- The pinned Java 5.5.1 `Message.java` declares five public constructors and
+  34 public methods. The compatibility map now records a Rust counterpart and
+  observed behavior for every declaration, including nullable input, the
+  `String`/`Collection` key overloads, lazy property-map state, property/body
+  aliases, numeric parse/error paths, and `toString()`.
+- On code revision `f5a924fa`,
+  `cargo test -p rocketmq-classic-common --test message_decode
+  message_public_api_matches_java_551_fixture` passed. Offline Maven `verify`
+  passed with 37 scenarios, 11 Java message decode fixtures, fixture drift
+  checks, and Java/Rust cross-decodes. The fixture hash is
+  `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- This closes the declared `Message` API slice. `MessageExt` inherited API and
+  workspace-wide P18-V01 reconciliation remain open.

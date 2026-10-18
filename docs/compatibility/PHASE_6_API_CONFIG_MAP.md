@@ -1263,7 +1263,7 @@ The pinned fixture invokes all constants, validation/classification methods, mut
 | `Message.toString()` / `MessageExt.toString()` | Rust `Display` implementations provide the corresponding `.to_string()` behavior; internal `java_to_string` formatting helpers are not exposed as separate public methods |
 | `InetSocketAddress.toString()` text used by `MessageExt` host fields | `MessageHostAddress` implements `Display`/`ToString`; its internal formatter is not a separate public API |
 
-Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. This closes the formatter-helper boundary only; the remaining Common message constructors, property accessors, overload inputs, and their reverse-export mappings remain part of P18-V01.
+Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. The full declared `Message` constructor and method crosswalk is recorded below; `MessageExt` inherited methods and the workspace-wide reverse-export/source-flow audit remain part of P18-V01.
 
 `messageExtPublicApi` now reflects all 44 declared public `MessageExt` methods, and `messageClientExtApi` reflects all four declared public `MessageClientExt` methods. Rust tests pin both sorted Java signature lists alongside the constructor, scalar, host, and client-ID behavior checks. Host byte-buffer overloads map to `MessageHostAddress`'s network-byte adapters; the broader Rust/Common API reconciliation remains open.
 
@@ -1322,7 +1322,39 @@ The invoked `RuntimeConfigFixtures` records every declared public field/method a
 | --- | --- |
 | `Message.getBody()` returns the live mutable `byte[]`; `Message.setBody(byte[])` and all four body-bearing constructors retain the supplied array reference | `Message::body` and `body_mut` expose borrowed read/write views. `SharedMessageBody` with `set_body_shared` and `shared_body` preserves setter caller/message identity across owned boundaries. `new_shared`, `new_nullable_shared`, `with_tags_shared`, `with_tags_and_keys_shared`, `with_fields_shared`, and `with_nullable_fields_shared` preserve constructor caller/message identity. `with_bytes` and `with_bytes_mut` provide synchronized live access. Owned `set_body` and `set_body_nullable` replace the message's body storage. |
 
-The invoked `messagePublicApi` fixture checks identity for the two-argument, tags, tags-and-keys, and six-argument constructors; caller mutation after construction; setter identity and bidirectional mutation; and detachment after replacement. `message_public_api_matches_java_551_fixture` compares those behaviors with Rust's shared handle and owned replacement setters. Fixture SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`. This closes the body-array alias slice only; the broader Common/P18-V01 source, input, error, control-flow, and reverse-export audit remains open.
+The invoked `messagePublicApi` fixture checks identity for the two-argument, tags, tags-and-keys, and six-argument constructors; caller mutation after construction; setter identity and bidirectional mutation; and detachment after replacement. `message_public_api_matches_java_551_fixture` compares those behaviors with Rust's shared handle and owned replacement setters. Fixture SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`. This closes the body-array alias slice; the broader `MessageExt` inherited API and workspace-wide source, input, error, control-flow, and reverse-export audit remain open.
+
+## Common public API: Message constructors and declared methods
+
+The pinned Java 5.5.1 `Message.java` at source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` declares five public constructors
+and 34 public methods. The fixture records the complete sorted declarations;
+the following crosswalk covers each constructor and method family.
+
+| Java 5.5.1 declaration | Rust counterpart / behavior |
+| --- | --- |
+| `Message()`; `(String, byte[])`; `(String, String, byte[])`; `(String, String, String, byte[])`; `(String, String, String, int, byte[], boolean)` | `Default`, `new_nullable`/`new_nullable_shared`, `with_tags`/`with_tags_shared`, `with_tags_and_keys`/`with_tags_and_keys_shared`, and `with_fields`/`with_fields_shared` or `with_nullable_fields`/`with_nullable_fields_shared`. Constructor defaults, nullable topic/body, tags/keys omission, flag, and wait-store property match the invoked Java outcomes. |
+| `getTopic` / `setTopic`; `getFlag` / `setFlag`; `getBody` / `setBody` | `topic` / `set_topic` plus nullable forms, `flag` / `set_flag`, and the body views/replacement methods in [Message body array aliases](#common-public-api-message-body-array-aliases). Nullable body/topic values are preserved. |
+| `getTags` / `setTags`; `getKeys`; `setKeys(String)` | `tags` / `set_tags` and `set_tags_nullable`; `keys`, `set_keys`, and `set_keys_nullable`. A null property value remains a present map entry with a null value. |
+| `setKeys(Collection<String>)` | `set_keys_from` and `set_keys_from_nullable` preserve collection iteration order and Java `String.join` rendering of null elements as `"null"`; a null collection returns `MessageKeyCollectionError::NullCollection` before mutation, corresponding to Java's `NullPointerException` boundary. |
+| `getProperty` / `getUserProperty` / `hasProperty` | `get_property` / `get_user_property` and nullable-key adapters, plus `has_property` / `has_nullable_property`. Null-key lookup, missing-key behavior, lazy empty-map creation on lookup, and the non-mutating `hasProperty(null)` path are fixture-covered. |
+| `getProperties` | `properties_nullable` / `get_properties` expose null versus present-map state; `shared_properties` provides the mutable live handle needed for Java map identity. `property_entries` exposes nullable Java entries. The invoked `MessageAccessor` fixture covers caller/map aliasing, null keys/values, replacement, and deep-copy behavior. |
+| `getDelayTimeLevel` / `setDelayTimeLevel`; `getDelayTimeSec` / `setDelayTimeSec`; `getDelayTimeMs` / `setDelayTimeMs`; `getDeliverTimeMs` / `setDeliverTimeMs` | `delay_time_level`, `delay_time_sec`, `delay_time_ms`, `deliver_time_ms` and matching setters. Missing values default to zero; signed Java decimal parsing, Unicode decimal digits, malformed values, and numeric overflow are compared. Rust returns typed parse errors at Java's exception boundary. |
+| `getPriority` / `setPriority` | `priority` / `set_priority` match Java's `NumberUtils.toInt(..., -1)` fallback, nonnegative setter validation, no mutation on rejection, and integer boundary behavior. |
+| `isWaitStoreMsgOK` / `setWaitStoreMsgOK`; `setInstanceId`; `getBuyerId` / `setBuyerId`; `getTransactionId` / `setTransactionId` | `is_wait_store_msg_ok` / `set_wait_store_msg_ok`; `set_instance_id` plus nullable form; `buyer_id` / `set_buyer_id` plus nullable form; `transaction_id` / `set_transaction_id`. Null-valued system properties, absent defaults, and transaction field mutation match the fixture. |
+| `putUserProperty`; `toString` | `put_user_property` and its nullable adapter preserve reserved-name precedence, Java `String.trim()` blank validation, and typed error categories. Rust `Display` matches Java message formatting for the invoked null, populated, and nullable-property cases. |
+
+`message_public_api_matches_java_551_fixture` pins all five constructor and 34
+method signatures and compares defaults, overload inputs, nullable values,
+aliasing, property side effects, error branches, numeric boundaries, and text
+formatting. Validation on code revision `f5a924fa`: the focused Common test
+passed; offline Maven `verify` passed with 37 scenarios, 11 Java message decode
+fixtures, fixture drift checks, and Java/Rust cross-decodes. The fixture SHA-256
+is `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`; the
+pinned `Message.java` SHA-256 is
+`c58de775771666448168eb959a1d6ebb98959bb42855a4fadaabb5f8f1d158d7`.
+This closes the declared `Message` API slice; it does not close `MessageExt`
+inherited method reconciliation or the broad P18-V01 bidirectional audit.
 
 ## Common public API: MessageAccessor
 
