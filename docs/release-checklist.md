@@ -4473,3 +4473,21 @@ owner-specific checks belong in the manual handoff.
   MAN-01–04 remain in the separate handoff; MAN-05 awaits local-matrix
   classification. The pre-existing uncommitted Phase 19 runner files were
   left untouched.
+
+## P18-V01 optional numeric header reflection decoding — 2026-10-18 (`1a4924a3`)
+
+- [x] Pinned Java 5.5.1 fixture covers both decode hints for five non-fast
+  headers. Malformed/overflow nullable numeric values are skipped per field,
+  valid Arabic-Indic digits decode like Java, and malformed primitive
+  `ResetOffsetRequestHeader.queueId` preserves Java's initial `-1`. Fixture
+  SHA-256: `f4bc4d7c18fc82a43a07f45f052f710644dcd950f7a5c5c0a0333a25435580f5`.
+- [x] Protocol all-feature tests passed (142 unit tests, all integration
+  targets, 51 doctests); strict all-target/all-feature Protocol Clippy passed.
+  Maven `verify` passed 37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes. Formatting and `git diff --check` passed.
+- This closes only the named header fields. Other primitive/required numeric
+  header branches and broad P18-V01 remain open. Refresh full-workspace P18-V02
+  after remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19's 30
+  remaining local scenarios and required profiles, and pre-publication version/
+  registry checks remain open. Owner-only checks stay in the separate handoff.
