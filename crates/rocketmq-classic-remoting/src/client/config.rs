@@ -1996,7 +1996,8 @@ pub struct ClientConfig {
     pub oneway_semaphore_value: i32,
     /// Java `clientWorkerThreads`; accepts the signed `int` domain and requires a positive value at `start()`.
     pub worker_threads: i32,
-    pub callback_executor_threads: usize,
+    /// Java `clientCallbackExecutorThreads`; non-positive values use four callback workers at start.
+    pub callback_executor_threads: i32,
     pub disable_callback_executor: bool,
     /// Java `clientSocketSndBufSize`; retains the signed `int` value.
     pub client_socket_send_buffer_size: i32,
@@ -2030,7 +2031,7 @@ impl Default for ClientConfig {
             oneway_semaphore_value: defaults.oneway_semaphore_value,
             worker_threads: defaults.worker_threads,
             callback_executor_threads: std::thread::available_parallelism()
-                .map(usize::from)
+                .map(|parallelism| parallelism.get().min(i32::MAX as usize) as i32)
                 .unwrap_or(1),
             disable_callback_executor: false,
             client_socket_send_buffer_size: defaults.client_socket_send_buffer_size,
@@ -2056,11 +2057,6 @@ impl ClientConfig {
     }
 
     pub(super) fn validate(&self) -> Result<(), TransportError> {
-        if i32::try_from(self.callback_executor_threads).is_err() {
-            return Err(TransportError::InvalidConfiguration(
-                "callback executor thread count must fit the Java signed integer range".into(),
-            ));
-        }
         Ok(())
     }
 

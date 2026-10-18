@@ -3143,7 +3143,7 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
     assert_eq!(
         defaults.callback_executor_threads,
         std::thread::available_parallelism()
-            .map(usize::from)
+            .map(|parallelism| parallelism.get().min(i32::MAX as usize) as i32)
             .unwrap_or(1)
     );
     assert_eq!(defaults.channel_not_active_interval, 60_000);
@@ -3254,18 +3254,15 @@ async fn p3_controls_validate_defaults_hooks_callback_and_channel_events() {
         })
         .is_ok()
     );
-    let invalid_capacity = ClientConfig {
-        callback_executor_threads: i32::MAX as usize + 1,
-        ..defaults.clone()
-    };
-    assert!(config_is_accepted(invalid_capacity).is_err());
-    assert!(
-        config_is_accepted(ClientConfig {
-            callback_executor_threads: 0,
-            ..defaults.clone()
-        })
-        .is_ok()
-    );
+    for callback_executor_threads in [i32::MIN, -1, 0, 1, 4, i32::MAX] {
+        assert!(
+            config_is_accepted(ClientConfig {
+                callback_executor_threads,
+                ..defaults.clone()
+            })
+            .is_ok()
+        );
+    }
     assert!(
         config_is_accepted(ClientConfig {
             client_socket_send_buffer_size: i32::MIN,
@@ -3613,7 +3610,7 @@ async fn p3_java_max_callback_capacity_starts_and_grows_on_demand() {
     assert_eq!(java["activeAtConstruction"], 0);
 
     let client = RemotingClient::with_config(ClientConfig {
-        callback_executor_threads: i32::MAX as usize,
+        callback_executor_threads: i32::MAX,
         ..ClientConfig::default()
     })
     .unwrap();

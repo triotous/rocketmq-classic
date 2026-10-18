@@ -53,6 +53,14 @@ fn semaphore_admission_capacity(configured: i32) -> usize {
     capacity.min(tokio::sync::Semaphore::MAX_PERMITS)
 }
 
+fn callback_worker_limit(configured: i32) -> usize {
+    if configured <= 0 {
+        4
+    } else {
+        configured as usize
+    }
+}
+
 #[derive(Clone)]
 pub struct ProcessorRegistration {
     pub processor: Arc<dyn RequestProcessor>,
@@ -1236,11 +1244,7 @@ impl RemotingClient {
             startup_state.channel_event_receiver,
             self.inner.shutdown.subscribe(),
         ));
-        let callback_workers = if self.inner.config.callback_executor_threads == 0 {
-            4
-        } else {
-            self.inner.config.callback_executor_threads
-        };
+        let callback_workers = callback_worker_limit(self.inner.config.callback_executor_threads);
         *self.inner.callback_workers.lock().unwrap() = start_callback_workers(
             startup_state.callback_receiver,
             self.inner.callback_shutdown.subscribe(),
@@ -2857,6 +2861,28 @@ async fn timeout_scheduler(
 mod tests {
     use super::*;
     use crate::codec::frame::DEFAULT_MAX_FRAME_SIZE;
+
+    #[test]
+    fn callback_executor_thread_settings_match_java_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+
+        for case in fixture["callbackThreadsConstruction"].as_array().unwrap() {
+            let configured = i32::try_from(case["input"].as_i64().unwrap()).unwrap();
+            let expected = usize::try_from(case["effective"].as_i64().unwrap()).unwrap();
+            assert_eq!(case["outcome"], "OK");
+            assert_eq!(callback_worker_limit(configured), expected);
+
+            let client = RemotingClient::with_config(ClientConfig {
+                callback_executor_threads: configured,
+                ..ClientConfig::default()
+            })
+            .unwrap();
+            assert_eq!(client.inner.config.callback_executor_threads, configured);
+        }
+    }
 
     #[test]
     fn java_tls_property_file_is_reloaded_for_each_client_context() {
