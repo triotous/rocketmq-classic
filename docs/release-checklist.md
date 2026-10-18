@@ -4585,3 +4585,33 @@ owner-specific checks belong in the manual handoff.
 - [x] Pinned Java 5.5.1 fixture now covers both decode hints for `PopMessageResponseHeader` and `PopLiteMessageResponseHeader`: absent, malformed, and overflowing primitive values retain zero; Arabic-Indic decimal digits decode; default and valid response fields encode identically. Fixture SHA-256: `1a6bd80ad46c645132412e217517de98e7242e88d457034215c921aca4a4e23f`.
 - [x] Rust response-header reflection decoding and the header validation matrix now preserve Java's primitive defaults. Protocol all-feature tests pass (143 unit tests, all integration targets, 51 doctests); strict all-target/all-feature Protocol Clippy passes; Maven `verify` passes the 37-scenario manifest, fixture checks, 66 typed-header and 15 typed-body cross-decodes. Formatting and `git diff --check` pass.
 - This closes only POP response header primitive defaults. Broad P18-V01 source/API/settings/input/error/flow/reverse-export reconciliation remains open. The full-workspace P18-V02 supplement, current-revision P18-V04 Ubuntu/native Windows evidence, final P18-V03 package/provenance and version/registry preflight, and Phase 19 local scenario runners/profiles remain open. MAN-01–04 remain owner-environment handoff items; MAN-05 awaits local-matrix classification.
+
+## Current-worktree P18-V02 server-free gate — 2026-10-18 (`f5a924fa`)
+
+- [x] Linux ARM64, Rust 1.85.0: default and all-feature workspace tests pass,
+  including integration targets and doctests. All-target/all-feature workspace
+  `cargo check` and strict Clippy pass. The container used `--init`, offline
+  dependencies, a temporary runner to clear the inherited signal mask, and the
+  cached `/workspace` mount path. Initial attempts without the runner or with a
+  mismatched cached path were environment failures; neither is counted as a
+  gate pass.
+- [x] Maven `verify` passes all 37 scenarios, fixture checks, and Java/Rust
+  cross-decodes for 66 typed headers and 15 typed bodies. Differential
+  comparator self-test and 37-row manifest validation pass.
+- [x] Deterministic race/leak smoke passes 16 cases × 3. Fuzz smoke passes 120
+  frame seeds, 11 message seeds, 2,096 bounded mutations, 164 frame decodes,
+  and 120 message decodes. Release examples build; workspace benchmarks
+  compile and the offline benchmark runs.
+- [x] Locked Cargo metadata, workspace license/dependency checks, seven
+  publishable package listings with `LICENSE` and `NOTICE`, UTC and
+  Asia/Taipei Unique ID tests, formatting, and `git diff --check` pass.
+- Linux ARM64 Rust 1.85.0 benchmark observations: frame encode/decode 1,217.0
+  ns/iteration; Zstd message decode 711.2 ns; producer request construction
+  906.9 ns; 128-entry route lookup 14.1 ns; pending completion 5,894.3 ns.
+  These are observations, not acceptance thresholds.
+- P18-V02 server-free local gates are complete on this revision. Broad P18-V01
+  source/API/settings/input/error/flow and reverse-export reconciliation,
+  final P18-V03 package/provenance and pre-publication checks, current-revision
+  Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30 remaining local
+  scenario runners and required profiles remain open. MAN-01–04 remain owner
+  checks; MAN-05 awaits local-matrix classification.
