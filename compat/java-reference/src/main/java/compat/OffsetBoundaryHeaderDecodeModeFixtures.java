@@ -19,12 +19,17 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
@@ -88,6 +93,19 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
             "nsd", "malformed", "oway", "malformed")));
         fixture.put("cases", cases);
 
+        Map<String, Object> apiInventories = new TreeMap<>();
+        apiInventories.put("SearchOffsetRequestHeader", apiInventory(SearchOffsetRequestHeader.class));
+        apiInventories.put("GetMaxOffsetRequestHeader", apiInventory(GetMaxOffsetRequestHeader.class));
+        apiInventories.put("GetMinOffsetRequestHeader", apiInventory(GetMinOffsetRequestHeader.class));
+        apiInventories.put("GetEarliestMsgStoretimeRequestHeader",
+            apiInventory(GetEarliestMsgStoretimeRequestHeader.class));
+        apiInventories.put("SearchOffsetResponseHeader", apiInventory(SearchOffsetResponseHeader.class));
+        apiInventories.put("GetMaxOffsetResponseHeader", apiInventory(GetMaxOffsetResponseHeader.class));
+        apiInventories.put("GetMinOffsetResponseHeader", apiInventory(GetMinOffsetResponseHeader.class));
+        apiInventories.put("GetEarliestMsgStoretimeResponseHeader",
+            apiInventory(GetEarliestMsgStoretimeResponseHeader.class));
+        fixture.put("apiInventories", apiInventories);
+
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -117,6 +135,41 @@ public final class OffsetBoundaryHeaderDecodeModeFixtures {
             fields.put(pairs[index], pairs[index + 1]);
         }
         return fields;
+    }
+
+    private static Map<String, Object> apiInventory(Class<?> type) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicConstructors", Arrays.stream(type.getConstructors())
+            .map(OffsetBoundaryHeaderDecodeModeFixtures::constructorSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("publicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName).sorted().collect(Collectors.toList()));
+        result.put("declaredPublicMethods", Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(OffsetBoundaryHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("callablePublicMethods", Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(OffsetBoundaryHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "("
+            + Arrays.stream(constructor.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " " + method.getDeclaringClass().getName()
+            + "." + method.getName() + "("
+            + Arrays.stream(method.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
     }
 
     private static Map<String, Object> decodeModes(String headerType, String fieldName,

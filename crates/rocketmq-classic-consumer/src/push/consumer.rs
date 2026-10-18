@@ -923,19 +923,17 @@ impl PushConsumer {
     ) -> Result<i64, PushConsumerError> {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
-        let header = SearchOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PushConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            timestamp: Some(timestamp_millis),
-            boundary_type: Some(BoundaryType::Lower),
-            broker_name: Some(broker_name),
-            ..SearchOffsetRequestHeader::default()
-        };
+        let mut header = SearchOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_timestamp(Some(timestamp_millis));
+        header.set_boundary_type(Some(BoundaryType::Lower));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .search_offset(&address, &header, deadline)
@@ -976,18 +974,16 @@ impl PushConsumer {
     ) -> Result<i64, PushConsumerError> {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
-        let header = GetMaxOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PushConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            committed: true,
-            broker_name: Some(broker_name),
-            ..GetMaxOffsetRequestHeader::default()
-        };
+        let mut header = GetMaxOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_committed(true);
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_max_offset(&address, &header, deadline)
@@ -1000,17 +996,15 @@ impl PushConsumer {
     ) -> Result<i64, PushConsumerError> {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
-        let header = GetMinOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PushConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some(broker_name),
-            ..GetMinOffsetRequestHeader::default()
-        };
+        let mut header = GetMinOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_min_offset(&address, &header, deadline)
@@ -1023,17 +1017,15 @@ impl PushConsumer {
     ) -> Result<i64, PushConsumerError> {
         let (runtime, queue, broker_name, address, deadline) =
             self.prepare_admin_queue(input_queue).await?;
-        let header = GetEarliestMsgStoretimeRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PushConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some(broker_name),
-            ..GetEarliestMsgStoretimeRequestHeader::default()
-        };
+        let mut header = GetEarliestMsgStoretimeRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PushConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_earliest_msg_storetime(&address, &header, deadline)
@@ -5487,13 +5479,11 @@ impl PushConsumer {
         let address = self
             .find_offset_broker(runtime, topic, broker_name, deadline)
             .await?;
-        let header = GetMaxOffsetRequestHeader {
-            topic: Some(topic.to_owned()),
-            queue_id: Some(queue.queue_id()),
-            committed: true,
-            broker_name: Some(broker_name.to_owned()),
-            ..GetMaxOffsetRequestHeader::default()
-        };
+        let mut header = GetMaxOffsetRequestHeader::default();
+        header.set_topic(Some(topic.to_owned()));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_committed(true);
+        header.set_broker_name(Some(broker_name.to_owned()));
         Ok(runtime
             .api()
             .get_max_offset(&address, &header, deadline)
@@ -5512,15 +5502,13 @@ impl PushConsumer {
         let address = self
             .find_offset_broker(runtime, topic, broker_name, deadline)
             .await?;
-        let header = SearchOffsetRequestHeader {
-            topic: Some(topic.to_owned()),
-            lite_topic: None,
-            queue_id: Some(queue.queue_id()),
-            timestamp: Some(timestamp),
-            boundary_type: Some(BoundaryType::Lower),
-            broker_name: Some(broker_name.to_owned()),
-            ..SearchOffsetRequestHeader::default()
-        };
+        let mut header = SearchOffsetRequestHeader::default();
+        header.set_topic(Some(topic.to_owned()));
+        header.set_lite_topic(None);
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_timestamp(Some(timestamp));
+        header.set_boundary_type(Some(BoundaryType::Lower));
+        header.set_broker_name(Some(broker_name.to_owned()));
         Ok(runtime
             .api()
             .search_offset(&address, &header, deadline)

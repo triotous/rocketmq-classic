@@ -209,15 +209,14 @@ async fn oneway_send_and_query(
 
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
+        let mut header = GetMaxOffsetRequestHeader::default();
+        header.set_topic(Some(topic.to_owned()));
+        header.set_queue_id(Some(0));
+        header.set_broker_name(Some("broker-a".into()));
         let max_offset = api
             .get_max_offset(
                 broker_address,
-                &GetMaxOffsetRequestHeader {
-                    topic: Some(topic.to_owned()),
-                    queue_id: Some(0),
-                    broker_name: Some("broker-a".into()),
-                    ..GetMaxOffsetRequestHeader::default()
-                },
+                &header,
                 Instant::now() + Duration::from_secs(5),
             )
             .await?;

@@ -76,54 +76,54 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
             29 => {
                 let boundary_type =
                     BoundaryType::value_of_name(request["ext"]["boundaryType"].as_str()).unwrap();
-                let header = SearchOffsetRequestHeader {
-                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
-                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
-                    timestamp: Some(
-                        request["ext"]["timestamp"]
-                            .as_str()
-                            .unwrap()
-                            .parse()
-                            .unwrap(),
-                    ),
-                    boundary_type: Some(boundary_type),
-                    broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
-                    ..SearchOffsetRequestHeader::default()
-                };
+                let mut header = SearchOffsetRequestHeader::default();
+                header.set_topic(Some(request["ext"]["topic"].as_str().unwrap().to_owned()));
+                header.set_queue_id(Some(
+                    request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                ));
+                header.set_timestamp(Some(
+                    request["ext"]["timestamp"]
+                        .as_str()
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                ));
+                header.set_boundary_type(Some(boundary_type));
+                header.set_broker_name(request["ext"]["bname"].as_str().map(str::to_owned));
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
                 fields
             }
             30 => {
-                let header = GetMaxOffsetRequestHeader {
-                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
-                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
-                    committed: request["ext"]["committed"] == "true",
-                    broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
-                    ..GetMaxOffsetRequestHeader::default()
-                };
+                let mut header = GetMaxOffsetRequestHeader::default();
+                header.set_topic(Some(request["ext"]["topic"].as_str().unwrap().to_owned()));
+                header.set_queue_id(Some(
+                    request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                ));
+                header.set_committed(request["ext"]["committed"] == "true");
+                header.set_broker_name(request["ext"]["bname"].as_str().map(str::to_owned));
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
                 fields
             }
             31 => {
-                let header = GetMinOffsetRequestHeader {
-                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
-                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
-                    broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
-                    ..GetMinOffsetRequestHeader::default()
-                };
+                let mut header = GetMinOffsetRequestHeader::default();
+                header.set_topic(Some(request["ext"]["topic"].as_str().unwrap().to_owned()));
+                header.set_queue_id(Some(
+                    request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                ));
+                header.set_broker_name(request["ext"]["bname"].as_str().map(str::to_owned));
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
                 fields
             }
             32 => {
-                let header = GetEarliestMsgStoretimeRequestHeader {
-                    topic: Some(request["ext"]["topic"].as_str().unwrap().to_owned()),
-                    queue_id: Some(request["ext"]["queueId"].as_str().unwrap().parse().unwrap()),
-                    broker_name: request["ext"]["bname"].as_str().map(str::to_owned),
-                    ..GetEarliestMsgStoretimeRequestHeader::default()
-                };
+                let mut header = GetEarliestMsgStoretimeRequestHeader::default();
+                header.set_topic(Some(request["ext"]["topic"].as_str().unwrap().to_owned()));
+                header.set_queue_id(Some(
+                    request["ext"]["queueId"].as_str().unwrap().parse().unwrap(),
+                ));
+                header.set_broker_name(request["ext"]["bname"].as_str().map(str::to_owned));
                 let mut fields = HeaderMap::new();
                 header.encode_fields(&mut fields);
                 fields
@@ -139,7 +139,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                 29 => assert_eq!(
                     SearchOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
-                        .offset
+                        .get_offset()
                         .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
@@ -148,7 +148,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                 30 => assert_eq!(
                     GetMaxOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
-                        .offset
+                        .get_offset()
                         .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
@@ -157,7 +157,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                 31 => assert_eq!(
                     GetMinOffsetResponseHeader::decode_fields(&fields)
                         .unwrap()
-                        .offset
+                        .get_offset()
                         .unwrap()
                         .to_string(),
                     response["ext"]["offset"].as_str().unwrap(),
@@ -166,7 +166,7 @@ fn offset_boundary_request_and_response_headers_match_java_551_fixtures() {
                 32 => assert_eq!(
                     GetEarliestMsgStoretimeResponseHeader::decode_fields(&fields)
                         .unwrap()
-                        .timestamp
+                        .get_timestamp()
                         .unwrap()
                         .to_string(),
                     response["ext"]["timestamp"].as_str().unwrap(),

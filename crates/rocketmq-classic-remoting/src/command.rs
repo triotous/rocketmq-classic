@@ -1022,6 +1022,23 @@ mod tests {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
 
+        for header_name in [
+            "SearchOffsetRequestHeader",
+            "GetMaxOffsetRequestHeader",
+            "GetMinOffsetRequestHeader",
+            "GetEarliestMsgStoretimeRequestHeader",
+            "SearchOffsetResponseHeader",
+            "GetMaxOffsetResponseHeader",
+            "GetMinOffsetResponseHeader",
+            "GetEarliestMsgStoretimeResponseHeader",
+        ] {
+            assert_eq!(
+                fixture["apiInventories"][header_name]["publicFields"],
+                serde_json::json!([]),
+                "{header_name} public fields"
+            );
+        }
+
         for (case_name, case) in fixture["cases"].as_object().unwrap() {
             let fields = case["fields"]
                 .as_object()
@@ -1532,7 +1549,7 @@ mod tests {
                                     "{case_name}/{mode}: Java returned OK, Rust returned {error}"
                                 )
                             });
-                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        assert_eq!(header.get_offset(), expected_value, "{case_name}/{mode}");
                         CommandHeader::encode_fields(&header, &mut encoded);
                     }
                     "max" => {
@@ -1545,7 +1562,7 @@ mod tests {
                                     "{case_name}/{mode}: Java returned OK, Rust returned {error}"
                                 )
                             });
-                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        assert_eq!(header.get_offset(), expected_value, "{case_name}/{mode}");
                         CommandHeader::encode_fields(&header, &mut encoded);
                     }
                     "min" => {
@@ -1558,7 +1575,7 @@ mod tests {
                                     "{case_name}/{mode}: Java returned OK, Rust returned {error}"
                                 )
                             });
-                        assert_eq!(header.offset, expected_value, "{case_name}/{mode}");
+                        assert_eq!(header.get_offset(), expected_value, "{case_name}/{mode}");
                         CommandHeader::encode_fields(&header, &mut encoded);
                     }
                     "earliest" => {
@@ -1569,7 +1586,7 @@ mod tests {
                             .unwrap_or_else(|error| {
                                 panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
                             });
-                        assert_eq!(header.timestamp, expected_value, "{case_name}/{mode}");
+                        assert_eq!(header.get_timestamp(), expected_value, "{case_name}/{mode}");
                         CommandHeader::encode_fields(&header, &mut encoded);
                     }
                     other => panic!("{case_name}: unknown header type {other}"),
@@ -1769,16 +1786,17 @@ mod tests {
                             });
                         assert_eq!(
                             serde_json::json!({
-                                "topic": header.topic,
-                                "liteTopic": header.lite_topic,
-                                "queueId": header.queue_id,
-                                "timestamp": header.timestamp,
-                                "boundaryType": header.boundary_type.map(|value| value.name()),
-                                "lo": header.logical,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
+                                "topic": header.get_topic(),
+                                "liteTopic": header.get_lite_topic(),
+                                "queueId": header.get_queue_id(),
+                                "timestamp": header.get_timestamp(),
+                                "boundaryType": fields.contains_key("boundaryType")
+                                    .then(|| header.get_boundary_type().name()),
+                                "lo": header.get_lo(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
                             }),
                             expected["decodedFields"],
                             "{case_name}/{mode}"
@@ -1802,14 +1820,14 @@ mod tests {
                             });
                         assert_eq!(
                             serde_json::json!({
-                                "topic": header.topic,
-                                "queueId": header.queue_id,
-                                "committed": header.committed,
-                                "lo": header.logical,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
+                                "topic": header.get_topic(),
+                                "queueId": header.get_queue_id(),
+                                "committed": header.is_committed(),
+                                "lo": header.get_lo(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
                             }),
                             expected["decodedFields"],
                             "{case_name}/{mode}"
@@ -1828,13 +1846,13 @@ mod tests {
                             });
                         assert_eq!(
                             serde_json::json!({
-                                "topic": header.topic,
-                                "queueId": header.queue_id,
-                                "lo": header.logical,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
+                                "topic": header.get_topic(),
+                                "queueId": header.get_queue_id(),
+                                "lo": header.get_lo(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
                             }),
                             expected["decodedFields"],
                             "{case_name}/{mode}"
@@ -1851,13 +1869,13 @@ mod tests {
                             });
                         assert_eq!(
                             serde_json::json!({
-                                "topic": header.topic,
-                                "queueId": header.queue_id,
-                                "lo": header.logical,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
+                                "topic": header.get_topic(),
+                                "queueId": header.get_queue_id(),
+                                "lo": header.get_lo(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
                             }),
                             expected["decodedFields"],
                             "{case_name}/{mode}"
@@ -2733,15 +2751,12 @@ mod tests {
                     ),
                 )
                 .unwrap(),
-                RemotingCommand::create_response_command_with_header(
-                    75,
-                    Some(
-                        rocketmq_classic_protocol::header::SearchOffsetResponseHeader {
-                            offset: Some(88),
-                        },
-                    ),
-                )
-                .unwrap(),
+                {
+                    let mut header =
+                        rocketmq_classic_protocol::header::SearchOffsetResponseHeader::default();
+                    header.set_offset(Some(88));
+                    RemotingCommand::create_response_command_with_header(75, Some(header)).unwrap()
+                },
                 RemotingCommand::create_response_command_for_header::<
                     rocketmq_classic_protocol::header::UnregisterClientResponseHeader,
                 >()

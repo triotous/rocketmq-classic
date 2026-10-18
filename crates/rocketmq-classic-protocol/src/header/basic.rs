@@ -1250,24 +1250,114 @@ impl std::fmt::Display for BoundaryType {
     }
 }
 
+/// Pinned Java `SearchOffsetRequestHeader` keeps its request fields non-public.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SearchOffsetRequestHeader;
+/// let _ = SearchOffsetRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SearchOffsetRequestHeader {
-    pub topic: Option<String>,
-    pub lite_topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub timestamp: Option<i64>,
-    pub boundary_type: Option<BoundaryType>,
-    pub logical: Option<bool>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) lite_topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) timestamp: Option<i64>,
+    pub(crate) boundary_type: Option<BoundaryType>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl SearchOffsetRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_timestamp(&self) -> Option<i64> {
+        self.timestamp
+    }
+
+    pub fn set_timestamp(&mut self, value: Option<i64>) {
+        self.timestamp = value;
+    }
+
+    pub fn set_boundary_type(&mut self, value: Option<BoundaryType>) {
+        self.boundary_type = value;
+    }
+
     /// Returns Java `SearchOffsetRequestHeader.getBoundaryType()` semantics.
     pub fn get_boundary_type(&self) -> BoundaryType {
         self.boundary_type.unwrap_or_default()
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
     }
 }
 
@@ -1336,16 +1426,96 @@ impl CommandHeader for SearchOffsetRequestHeader {
     }
 }
 
+/// Pinned Java `GetMaxOffsetRequestHeader` keeps its request fields non-public.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMaxOffsetRequestHeader;
+/// let _ = GetMaxOffsetRequestHeader::default().committed;
+/// ```
 #[derive(Debug, Clone)]
 pub struct GetMaxOffsetRequestHeader {
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub committed: bool,
-    pub logical: Option<bool>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) committed: bool,
+    pub(crate) logical: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl GetMaxOffsetRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn is_committed(&self) -> bool {
+        self.committed
+    }
+
+    pub fn set_committed(&mut self, value: bool) {
+        self.committed = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
 }
 
 impl Default for GetMaxOffsetRequestHeader {
@@ -1405,15 +1575,87 @@ impl CommandHeader for GetMaxOffsetRequestHeader {
     }
 }
 
+/// Pinned Java `GetMinOffsetRequestHeader` keeps its request fields non-public.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMinOffsetRequestHeader;
+/// let _ = GetMinOffsetRequestHeader::default().queue_id;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetMinOffsetRequestHeader {
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub logical: Option<bool>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl GetMinOffsetRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
 }
 
 impl CommandHeader for GetMinOffsetRequestHeader {
@@ -1455,15 +1697,87 @@ impl CommandHeader for GetMinOffsetRequestHeader {
     }
 }
 
+/// Pinned Java `GetEarliestMsgStoretimeRequestHeader` keeps its request fields non-public.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetEarliestMsgStoretimeRequestHeader;
+/// let _ = GetEarliestMsgStoretimeRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetEarliestMsgStoretimeRequestHeader {
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub logical: Option<bool>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl GetEarliestMsgStoretimeRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
 }
 
 impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
@@ -1512,9 +1826,24 @@ impl CommandHeader for GetEarliestMsgStoretimeRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<SearchOffsetResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SearchOffsetResponseHeader;
+/// let _ = SearchOffsetResponseHeader::default().offset;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SearchOffsetResponseHeader {
-    pub offset: Option<i64>,
+    pub(crate) offset: Option<i64>,
+}
+
+impl SearchOffsetResponseHeader {
+    pub fn get_offset(&self) -> Option<i64> {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, value: Option<i64>) {
+        self.offset = value;
+    }
 }
 
 impl CommandHeader for SearchOffsetResponseHeader {
@@ -1545,9 +1874,24 @@ impl CommandHeader for SearchOffsetResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<GetMaxOffsetResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMaxOffsetResponseHeader;
+/// let _ = GetMaxOffsetResponseHeader::default().offset;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetMaxOffsetResponseHeader {
-    pub offset: Option<i64>,
+    pub(crate) offset: Option<i64>,
+}
+
+impl GetMaxOffsetResponseHeader {
+    pub fn get_offset(&self) -> Option<i64> {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, value: Option<i64>) {
+        self.offset = value;
+    }
 }
 
 impl CommandHeader for GetMaxOffsetResponseHeader {
@@ -1578,9 +1922,24 @@ impl CommandHeader for GetMaxOffsetResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<GetMinOffsetResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetMinOffsetResponseHeader;
+/// let _ = GetMinOffsetResponseHeader::default().offset;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetMinOffsetResponseHeader {
-    pub offset: Option<i64>,
+    pub(crate) offset: Option<i64>,
+}
+
+impl GetMinOffsetResponseHeader {
+    pub fn get_offset(&self) -> Option<i64> {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, value: Option<i64>) {
+        self.offset = value;
+    }
 }
 
 impl CommandHeader for GetMinOffsetResponseHeader {
@@ -1611,9 +1970,24 @@ impl CommandHeader for GetMinOffsetResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<GetEarliestMsgStoretimeResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetEarliestMsgStoretimeResponseHeader;
+/// let _ = GetEarliestMsgStoretimeResponseHeader::default().timestamp;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetEarliestMsgStoretimeResponseHeader {
-    pub timestamp: Option<i64>,
+    pub(crate) timestamp: Option<i64>,
+}
+
+impl GetEarliestMsgStoretimeResponseHeader {
+    pub fn get_timestamp(&self) -> Option<i64> {
+        self.timestamp
+    }
+
+    pub fn set_timestamp(&mut self, value: Option<i64>) {
+        self.timestamp = value;
+    }
 }
 
 impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {

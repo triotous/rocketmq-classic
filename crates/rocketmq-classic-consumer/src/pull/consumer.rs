@@ -1129,19 +1129,17 @@ impl PullConsumer {
         let queue = self.queue_with_namespace(input_queue)?;
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
-        let header = SearchOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PullConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            timestamp: Some(timestamp_millis),
-            boundary_type: Some(boundary_type),
-            broker_name: Some(broker_name),
-            ..SearchOffsetRequestHeader::default()
-        };
+        let mut header = SearchOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_timestamp(Some(timestamp_millis));
+        header.set_boundary_type(Some(boundary_type));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .search_offset(&address, &header, deadline)
@@ -1156,18 +1154,16 @@ impl PullConsumer {
         let queue = self.queue_with_namespace(input_queue)?;
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
-        let header = GetMaxOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PullConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            committed: true,
-            broker_name: Some(broker_name),
-            ..GetMaxOffsetRequestHeader::default()
-        };
+        let mut header = GetMaxOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_committed(true);
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_max_offset(&address, &header, deadline)
@@ -1182,17 +1178,15 @@ impl PullConsumer {
         let queue = self.queue_with_namespace(input_queue)?;
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
-        let header = GetMinOffsetRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PullConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some(broker_name),
-            ..GetMinOffsetRequestHeader::default()
-        };
+        let mut header = GetMinOffsetRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_min_offset(&address, &header, deadline)
@@ -1207,17 +1201,15 @@ impl PullConsumer {
         let queue = self.queue_with_namespace(input_queue)?;
         let deadline = self.offset_rpc_deadline()?;
         let (broker_name, address) = find_publish_broker(&runtime, &queue, deadline).await?;
-        let header = GetEarliestMsgStoretimeRequestHeader {
-            topic: Some(
-                queue
-                    .topic()
-                    .ok_or(PullConsumerError::InvalidQueue)?
-                    .to_owned(),
-            ),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some(broker_name),
-            ..GetEarliestMsgStoretimeRequestHeader::default()
-        };
+        let mut header = GetEarliestMsgStoretimeRequestHeader::default();
+        header.set_topic(Some(
+            queue
+                .topic()
+                .ok_or(PullConsumerError::InvalidQueue)?
+                .to_owned(),
+        ));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_broker_name(Some(broker_name));
         Ok(runtime
             .api()
             .get_earliest_msg_storetime(&address, &header, deadline)

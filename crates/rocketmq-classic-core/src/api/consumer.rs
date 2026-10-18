@@ -193,7 +193,8 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         required_response_header_field(
-            decode_header_with_mode::<SearchOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            decode_header_with_mode::<SearchOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
             "offset",
             code,
             addr,
@@ -210,7 +211,8 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         required_response_header_field(
-            decode_header_with_mode::<GetMaxOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            decode_header_with_mode::<GetMaxOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
             "offset",
             code,
             addr,
@@ -227,7 +229,8 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         required_response_header_field(
-            decode_header_with_mode::<GetMinOffsetResponseHeader>(&reply, code, addr, true)?.offset,
+            decode_header_with_mode::<GetMinOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
             "offset",
             code,
             addr,
@@ -247,7 +250,7 @@ impl MQClientApi {
             decode_header_with_mode::<GetEarliestMsgStoretimeResponseHeader>(
                 &reply, code, addr, true,
             )?
-            .timestamp,
+            .get_timestamp(),
             "timestamp",
             code,
             addr,

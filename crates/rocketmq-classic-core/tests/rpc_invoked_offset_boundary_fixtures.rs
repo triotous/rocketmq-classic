@@ -38,6 +38,45 @@ fn fixture(name: &str) -> Value {
     serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
 }
 
+fn search_header(queue: &MessageQueue, request: &Value) -> SearchOffsetRequestHeader {
+    let mut header = SearchOffsetRequestHeader::default();
+    header.set_topic(Some(queue.topic().unwrap().to_owned()));
+    header.set_queue_id(Some(queue.queue_id()));
+    header.set_timestamp(Some(
+        request["timestamp"].as_str().unwrap().parse().unwrap(),
+    ));
+    header.set_boundary_type(Some(
+        BoundaryType::value_of_name(request["boundaryType"].as_str()).unwrap(),
+    ));
+    header.set_broker_name(Some("broker".into()));
+    header
+}
+
+fn max_offset_header(queue: &MessageQueue, request: &Value) -> GetMaxOffsetRequestHeader {
+    let mut header = GetMaxOffsetRequestHeader::default();
+    header.set_topic(Some(queue.topic().unwrap().to_owned()));
+    header.set_queue_id(Some(queue.queue_id()));
+    header.set_committed(request["committed"] == "true");
+    header.set_broker_name(Some("broker".into()));
+    header
+}
+
+fn min_offset_header(queue: &MessageQueue) -> GetMinOffsetRequestHeader {
+    let mut header = GetMinOffsetRequestHeader::default();
+    header.set_topic(Some(queue.topic().unwrap().to_owned()));
+    header.set_queue_id(Some(queue.queue_id()));
+    header.set_broker_name(Some("broker".into()));
+    header
+}
+
+fn earliest_storetime_header(queue: &MessageQueue) -> GetEarliestMsgStoretimeRequestHeader {
+    let mut header = GetEarliestMsgStoretimeRequestHeader::default();
+    header.set_topic(Some(queue.topic().unwrap().to_owned()));
+    header.set_queue_id(Some(queue.queue_id()));
+    header.set_broker_name(Some("broker".into()));
+    header
+}
+
 async fn read_command(stream: &mut tokio::net::TcpStream) -> RemotingCommand {
     let mut length = [0; 4];
     stream.read_exact(&mut length).await.unwrap();
@@ -53,47 +92,15 @@ fn rpc_header(fixture: &Value) -> (i32, HeaderMap) {
     let mut fields = HeaderMap::new();
     match request_fixture["code"].as_i64().unwrap() as i32 {
         request::SEARCH_OFFSET_BY_TIMESTAMP => {
-            let boundary_type =
-                BoundaryType::value_of_name(request_fixture["ext"]["boundaryType"].as_str())
-                    .unwrap();
-            SearchOffsetRequestHeader {
-                topic: Some(queue.topic().unwrap().to_owned()),
-                queue_id: Some(queue.queue_id()),
-                timestamp: Some(
-                    request_fixture["ext"]["timestamp"]
-                        .as_str()
-                        .unwrap()
-                        .parse()
-                        .unwrap(),
-                ),
-                boundary_type: Some(boundary_type),
-                broker_name: Some("broker".into()),
-                ..Default::default()
-            }
-            .encode_fields(&mut fields);
+            search_header(&queue, &request_fixture["ext"]).encode_fields(&mut fields);
         }
-        request::GET_MAX_OFFSET => GetMaxOffsetRequestHeader {
-            topic: Some(queue.topic().unwrap().to_owned()),
-            queue_id: Some(queue.queue_id()),
-            committed: request_fixture["ext"]["committed"] == "true",
-            broker_name: Some("broker".into()),
-            ..Default::default()
+        request::GET_MAX_OFFSET => {
+            max_offset_header(&queue, &request_fixture["ext"]).encode_fields(&mut fields);
         }
-        .encode_fields(&mut fields),
-        request::GET_MIN_OFFSET => GetMinOffsetRequestHeader {
-            topic: Some(queue.topic().unwrap().to_owned()),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some("broker".into()),
-            ..Default::default()
+        request::GET_MIN_OFFSET => min_offset_header(&queue).encode_fields(&mut fields),
+        request::GET_EARLIEST_MSG_STORETIME => {
+            earliest_storetime_header(&queue).encode_fields(&mut fields);
         }
-        .encode_fields(&mut fields),
-        request::GET_EARLIEST_MSG_STORETIME => GetEarliestMsgStoretimeRequestHeader {
-            topic: Some(queue.topic().unwrap().to_owned()),
-            queue_id: Some(queue.queue_id()),
-            broker_name: Some("broker".into()),
-            ..Default::default()
-        }
-        .encode_fields(&mut fields),
         code => panic!("unexpected offset boundary request code {code}"),
     }
     (request_fixture["code"].as_i64().unwrap() as i32, fields)
@@ -105,70 +112,21 @@ async fn invoke(api: &MQClientApi, addr: &str, fixture: &Value) -> Result<i64, R
     let deadline = Instant::now() + Duration::from_secs(3);
     match request_fixture["code"].as_i64().unwrap() as i32 {
         request::SEARCH_OFFSET_BY_TIMESTAMP => {
-            api.search_offset(
-                addr,
-                &SearchOffsetRequestHeader {
-                    topic: Some(queue.topic().unwrap().to_owned()),
-                    queue_id: Some(queue.queue_id()),
-                    timestamp: Some(
-                        request_fixture["ext"]["timestamp"]
-                            .as_str()
-                            .unwrap()
-                            .parse()
-                            .unwrap(),
-                    ),
-                    boundary_type: Some(
-                        BoundaryType::value_of_name(
-                            request_fixture["ext"]["boundaryType"].as_str(),
-                        )
-                        .unwrap(),
-                    ),
-                    broker_name: Some("broker".into()),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let header = search_header(&queue, &request_fixture["ext"]);
+            api.search_offset(addr, &header, deadline).await
         }
         request::GET_MAX_OFFSET => {
-            api.get_max_offset(
-                addr,
-                &GetMaxOffsetRequestHeader {
-                    topic: Some(queue.topic().unwrap().to_owned()),
-                    queue_id: Some(queue.queue_id()),
-                    committed: request_fixture["ext"]["committed"] == "true",
-                    broker_name: Some("broker".into()),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let header = max_offset_header(&queue, &request_fixture["ext"]);
+            api.get_max_offset(addr, &header, deadline).await
         }
         request::GET_MIN_OFFSET => {
-            api.get_min_offset(
-                addr,
-                &GetMinOffsetRequestHeader {
-                    topic: Some(queue.topic().unwrap().to_owned()),
-                    queue_id: Some(queue.queue_id()),
-                    broker_name: Some("broker".into()),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let header = min_offset_header(&queue);
+            api.get_min_offset(addr, &header, deadline).await
         }
         request::GET_EARLIEST_MSG_STORETIME => {
-            api.get_earliest_msg_storetime(
-                addr,
-                &GetEarliestMsgStoretimeRequestHeader {
-                    topic: Some(queue.topic().unwrap().to_owned()),
-                    queue_id: Some(queue.queue_id()),
-                    broker_name: Some("broker".into()),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let header = earliest_storetime_header(&queue);
+            api.get_earliest_msg_storetime(addr, &header, deadline)
+                .await
         }
         code => panic!("unexpected offset boundary request code {code}"),
     }

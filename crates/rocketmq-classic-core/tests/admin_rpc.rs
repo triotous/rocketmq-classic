@@ -150,54 +150,31 @@ async fn invoke_offset_operation(
     let deadline = Instant::now() + Duration::from_secs(2);
     match code {
         request::SEARCH_OFFSET_BY_TIMESTAMP => {
-            api.search_offset(
-                addr,
-                &SearchOffsetRequestHeader {
-                    topic: Some("orders".into()),
-                    queue_id: Some(0),
-                    timestamp: Some(1_700_000_000_000),
-                    boundary_type: Some(BoundaryType::value_of_name(Some("LOWER")).unwrap()),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let mut header = SearchOffsetRequestHeader::default();
+            header.set_topic(Some("orders".into()));
+            header.set_queue_id(Some(0));
+            header.set_timestamp(Some(1_700_000_000_000));
+            header.set_boundary_type(Some(BoundaryType::value_of_name(Some("LOWER")).unwrap()));
+            api.search_offset(addr, &header, deadline).await
         }
         request::GET_MAX_OFFSET => {
-            api.get_max_offset(
-                addr,
-                &GetMaxOffsetRequestHeader {
-                    topic: Some("orders".into()),
-                    queue_id: Some(0),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let mut header = GetMaxOffsetRequestHeader::default();
+            header.set_topic(Some("orders".into()));
+            header.set_queue_id(Some(0));
+            api.get_max_offset(addr, &header, deadline).await
         }
         request::GET_MIN_OFFSET => {
-            api.get_min_offset(
-                addr,
-                &GetMinOffsetRequestHeader {
-                    topic: Some("orders".into()),
-                    queue_id: Some(0),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let mut header = GetMinOffsetRequestHeader::default();
+            header.set_topic(Some("orders".into()));
+            header.set_queue_id(Some(0));
+            api.get_min_offset(addr, &header, deadline).await
         }
         request::GET_EARLIEST_MSG_STORETIME => {
-            api.get_earliest_msg_storetime(
-                addr,
-                &GetEarliestMsgStoretimeRequestHeader {
-                    topic: Some("orders".into()),
-                    queue_id: Some(0),
-                    ..Default::default()
-                },
-                deadline,
-            )
-            .await
+            let mut header = GetEarliestMsgStoretimeRequestHeader::default();
+            header.set_topic(Some("orders".into()));
+            header.set_queue_id(Some(0));
+            api.get_earliest_msg_storetime(addr, &header, deadline)
+                .await
         }
         _ => panic!("unexpected admin offset request code {code}"),
     }
