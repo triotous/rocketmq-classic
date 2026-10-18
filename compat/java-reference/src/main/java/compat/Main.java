@@ -869,9 +869,13 @@ public final class Main {
             new org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper();
         paymentsOffset.setBrokerOffset(42L); paymentsOffset.setConsumerOffset(38L);
         paymentsOffset.setPullOffset(41L); paymentsOffset.setLastTimestamp(2000L);
-        consumeStatsBody.setOffsetTable(java.util.Map.of(
-            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), ordersOffset,
-            new org.apache.rocketmq.common.message.MessageQueue("payments", "broker-b", 2), paymentsOffset));
+        Map<org.apache.rocketmq.common.message.MessageQueue,
+            org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper> consumeStatsOffsets = new LinkedHashMap<>();
+        consumeStatsOffsets.put(
+            new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1), ordersOffset);
+        consumeStatsOffsets.put(
+            new org.apache.rocketmq.common.message.MessageQueue("payments", "broker-b", 2), paymentsOffset);
+        consumeStatsBody.setOffsetTable(consumeStatsOffsets);
         consumeStatsBody.setConsumeTps(1.25);
         writeJsonBodyFixture(output, "body-consume-stats", 208, consumeStatsBody.encode());
 
