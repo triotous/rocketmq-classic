@@ -1,0 +1,34 @@
+# Phase 18 ClusterInfo DTO compatibility slice — 2026-10-18T14:12:57Z
+
+- Branch: `phase/18-phase-18-compatibility-closure`. Implementation commit:
+  `6b40e86c` (`fix(protocol): complete ClusterInfo DTO parity`). The Java
+  oracle at `/Users/bruce.tsai/Projects/3rd/rocketmq` remains pinned to
+  `efa1be59d6fc747ad220f036c86030f05f0419f9` and was not modified.
+- Reconciled Java `ClusterInfo` accessors, mutable nested map/set aliases,
+  `retrieveAllClusterNames`, `retrieveAllAddrByCluster`, Java null-failure
+  boundaries, equality, and hash code. The invoked fixture and Protocol
+  differential cover the public method list, null/missing cases, aliases, and
+  value methods; the Core scripted RPC differential still covers
+  `getBrokerClusterInfo`.
+- Fixture `fixtures/runtime/route.json` SHA-256:
+  `56e50086556b77e98b2829708b41a6131909dcbf855109364b49cee73097dfc5`.
+  Java `HashMap`/`HashSet` iteration order is unspecified; this slice does not
+  claim deterministic ordering for multi-element retrieval results.
+- Recorded local verification on macOS ARM64, Rust 1.85.0:
+  `cargo test --workspace --locked -- --test-threads=1` PASS;
+  `cargo test --workspace --all-features --locked -- --test-threads=1` PASS;
+  `cargo check --workspace --all-targets --all-features --locked` PASS;
+  strict all-target/all-feature workspace Clippy PASS; Maven offline `verify`
+  PASS (37 scenarios, 66 typed headers, 15 typed bodies); `cargo fmt --all --
+  --check` and `git diff --check` PASS.
+- This closes only the `ClusterInfo` DTO slice. Broad P18-V01
+  source/API/settings/input/error/flow/reverse-export reconciliation remains
+  open. The P18-V02 supplementary race/fuzz/example/benchmark/package gate
+  needs refresh after the latest implementation. Final P18-V03
+  package/provenance and version/registry preflight, current-revision P18-V04
+  Ubuntu/native Windows evidence, and Phase 19's 30 local Docker/Broker
+  scenario runners and required profiles remain open. MAN-01–04 remain
+  owner-environment checks; MAN-05 awaits the completed local matrix.
+- Pre-existing Phase 19 runner/README edits remain unstaged and were not
+  included in the Phase 18 implementation or documentation commits. No plan
+  files were modified.

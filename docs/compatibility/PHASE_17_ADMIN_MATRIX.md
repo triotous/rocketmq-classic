@@ -475,3 +475,26 @@ method signature. Fixture SHA-256:
 This closes this response DTO method slice only. All 19 source-backed
 `MqClientAdmin` RPC slices are present, but the broader P18-V01 Java/Rust
 source/API/settings/input/error/flow and reverse-export audit remains open.
+
+## P18-V01 `ClusterInfo` DTO surface — 2026-10-18 (`6b40e86c`)
+
+Pinned Java `ClusterInfo` declares private broker/cluster tables with public
+getters and setters, `retrieveAllAddrByCluster`,
+`retrieveAllClusterNames`, `equals`, and `hashCode`. Rust now exposes the
+matching accessors and retrieval methods, preserves mutable aliases for both
+tables and their nested values, and implements the Java value/hash behavior.
+Null table, null broker-name set, null broker-address table, and null
+`BrokerData.brokerAddrs` failures map to typed Rust errors; missing brokers
+remain skipped and nullable returned addresses remain present. The Rust
+retrieval methods return `Result<Vec<Option<String>>, _>` to express Java's
+null members and failure boundary.
+
+The invoked Java fixture and Protocol tests cover the reflected method list,
+defaults, setter/getter identity, nested alias mutation, null/missing lookup
+cases, `equals`, and `hashCode`; the scripted Core test continues to cover the
+`getBrokerClusterInfo` RPC. Fixture SHA-256:
+`56e50086556b77e98b2829708b41a6131909dcbf855109364b49cee73097dfc5`.
+Java `HashMap`/`HashSet` iteration order is unspecified; the retrieval
+differential uses singleton collections and does not claim cross-language
+multi-element ordering. This closes only the `ClusterInfo` DTO slice; broad
+P18-V01 reconciliation remains open.

@@ -4662,3 +4662,21 @@ owner-specific checks belong in the manual handoff.
 - This closes only this host-byte error-ordering slice. Broad P18-V01 remains
   open; the current-revision full-workspace P18-V02 rerun is still required
   after this source change.
+
+## Current-worktree checks after `ClusterInfo` DTO slice — 2026-10-18 (`6b40e86c`)
+
+- [x] Locked default and all-feature workspace tests, all-target/all-feature
+  workspace check and strict Clippy pass on macOS ARM64. `cargo fmt --all --
+  --check` and `git diff --check` pass.
+- [x] Offline Maven `verify` passes the 37-scenario fixture manifest and
+  Java/Rust cross-decodes (66 typed headers and 15 typed bodies).
+- The current default/all-feature test and lint gates include the
+  `ClusterInfo` DTO change. The P18-V02 supplementary race/fuzz/example/
+  benchmark/package gate has not been refreshed after the latest Phase 18
+  implementation and remains open.
+- Broad P18-V01 bidirectional source/API/settings/input/error/flow and
+  reverse-export reconciliation, final P18-V03 package/provenance and
+  version/registry preflight, and current-revision Ubuntu/native Windows
+  P18-V04 evidence remain open. Phase 19 still needs 30 local Docker/Broker
+  scenario runners and required profiles. MAN-01–04 remain owner-environment
+  checks; MAN-05 awaits the completed local matrix.
