@@ -4536,3 +4536,27 @@ owner-specific checks belong in the manual handoff.
   package/provenance and pre-publication checks, current-revision P18-V04
   Ubuntu/native Windows CI evidence, and Phase 19's remaining local scenarios
   and profiles remain open. Owner-only checks stay in the separate handoff.
+
+## P18-V01 Lite POP header parity — 2026-10-18
+
+- [x] `PopLiteMessageRequestHeader` now follows Java reflection defaults:
+  nullable strings remain null; primitive numbers default to zero or retain
+  zero after invalid/overflow input; the four inherited `RpcRequestHeader`
+  fields are represented and encoded. The invoked Java fixture covers both
+  decode hints, Arabic-Indic numerals, nullable fields, inherited identity, and
+  `isTimeoutTooMuch()` elapsed/future cases. The matching timeout helper is
+  implemented for both POP request header types using Java signed arithmetic.
+  Fixture hashes: `fixtures/remoting/optional-numeric-header-decode-modes.json`
+  (`2c7095818dfb39cfd892f84e585b57c4a61cf09f60f4d6dfc5489674ec340424`) and
+  `fixtures/protocol/request-header-identity.json`
+  (`cb0a9c871e95bdb006f7bdb5a8a54c2cf74a214ee79729a6e7470f8b62bce9c1`).
+- [x] Protocol all-feature tests, workspace all-feature tests, strict
+  all-target/all-feature workspace Clippy, Maven `verify` (37 scenarios, 66
+  typed-header and 15 typed-body cross-decodes), formatting, and diff checks
+  pass.
+- This closes only these POP header decode/default/inherited-equality and
+  timeout-helper slices. Broad P18-V01 API/input/flow/reverse-export
+  reconciliation, the complete P18-V02 supplementary gates, final P18-V03
+  package/provenance and pre-publication checks, current-revision P18-V04
+  Ubuntu/native Windows CI evidence, and Phase 19 local runners/profiles remain
+  open. Owner-only checks stay in the separate handoff.

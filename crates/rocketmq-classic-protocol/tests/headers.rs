@@ -263,7 +263,7 @@ fn java_request_and_response_header_fixtures_decode() {
     let lite =
         PopLiteMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-lite-request"))
             .unwrap();
-    assert_eq!(lite.client_id, "client");
+    assert_eq!(lite.client_id.as_deref(), Some("client"));
     assert!(UnregisterClientResponseHeader::decode_fields(&HeaderMap::new()).is_ok());
     assert!(
         UnregisterClientResponseHeader::decode_fields(&java_ext_fields(
@@ -365,7 +365,7 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     );
     assert_eq!(fixture["serverContacted"], false);
     let cases = fixture["cases"].as_object().unwrap();
-    assert_eq!(cases.len(), 9);
+    assert_eq!(cases.len(), 12);
 
     for (case_name, case) in cases {
         let header_type = case["headerType"].as_str().unwrap();
@@ -393,6 +393,9 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
                     encode_decoded_header::<SendMessageRequestHeaderV1>(&fields, use_fast_encode)
                 }
                 "pop" => encode_decoded_header::<PopMessageRequestHeader>(&fields, use_fast_encode),
+                "pop-lite" => {
+                    encode_decoded_header::<PopLiteMessageRequestHeader>(&fields, use_fast_encode)
+                }
                 other => panic!("unknown Java header type {other}"),
             }
             .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
@@ -410,6 +413,53 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     assert_eq!(default_header.consumer_group, None);
     assert_eq!(default_header.topic, None);
     assert_eq!(default_header.order, Some(false));
+
+    let default_lite_header = PopLiteMessageRequestHeader::default();
+    let mut default_lite_fields = HeaderMap::new();
+    default_lite_header.encode_fields(&mut default_lite_fields);
+    let expected_lite_default: HeaderMap =
+        serde_json::from_value(cases["pop-lite-defaults"]["reflection"]["encodedFields"].clone())
+            .unwrap();
+    assert_eq!(default_lite_fields, expected_lite_default);
+    assert_eq!(default_lite_header.client_id, None);
+    assert_eq!(default_lite_header.consumer_group, None);
+    assert_eq!(default_lite_header.topic, None);
+
+    let timeout_cases = fixture["popLiteTimeoutCases"].as_object().unwrap();
+    assert_eq!(timeout_cases.len(), 2);
+    let mut elapsed = PopLiteMessageRequestHeader {
+        born_time: 1,
+        poll_time: 1,
+        ..PopLiteMessageRequestHeader::default()
+    };
+    assert_eq!(
+        elapsed.is_timeout_too_much(),
+        timeout_cases["elapsed"].as_bool().unwrap()
+    );
+    elapsed.born_time = i64::MAX;
+    elapsed.poll_time = 0;
+    assert_eq!(
+        elapsed.is_timeout_too_much(),
+        timeout_cases["far-future"].as_bool().unwrap()
+    );
+
+    let pop_timeout_cases = fixture["popTimeoutCases"].as_object().unwrap();
+    assert_eq!(pop_timeout_cases.len(), 2);
+    let mut elapsed_pop = PopMessageRequestHeader {
+        born_time: 1,
+        poll_time: 1,
+        ..PopMessageRequestHeader::default()
+    };
+    assert_eq!(
+        elapsed_pop.is_timeout_too_much(),
+        pop_timeout_cases["elapsed"].as_bool().unwrap()
+    );
+    elapsed_pop.born_time = i64::MAX;
+    elapsed_pop.poll_time = 0;
+    assert_eq!(
+        elapsed_pop.is_timeout_too_much(),
+        pop_timeout_cases["far-future"].as_bool().unwrap()
+    );
 }
 
 #[test]
@@ -1707,11 +1757,11 @@ fn header_validation_matrix() {
         row!(
             PopLiteMessageRequestHeader,
             "pop-lite-request",
-            "clientId consumerGroup topic maxMsgNum invisibleTime pollTime bornTime",
+            "",
             "maxMsgNum",
             "invisibleTime pollTime bornTime",
-            "attemptId",
-            ""
+            "clientId consumerGroup topic attemptId ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             PopLiteMessageResponseHeader,
@@ -2002,7 +2052,9 @@ fn header_validation_matrix() {
                         );
                     } else if matches!(
                         case.model,
-                        "ChangeInvisibleTimeResponseHeader" | "PopMessageRequestHeader"
+                        "ChangeInvisibleTimeResponseHeader"
+                            | "PopMessageRequestHeader"
+                            | "PopLiteMessageRequestHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

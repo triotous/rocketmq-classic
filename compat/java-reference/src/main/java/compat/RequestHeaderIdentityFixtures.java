@@ -57,6 +57,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("NotificationRequestHeader", "org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader"),
         Map.entry("PollingInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PollingInfoRequestHeader"),
         Map.entry("PopMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader"),
+        Map.entry("PopLiteMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader"),
         Map.entry("PullMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader"),
         Map.entry("QueryConsumeTimeSpanRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader"),
         Map.entry("QueryConsumerOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader"),

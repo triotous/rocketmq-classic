@@ -152,9 +152,9 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                     api.pop_lite_message(
                         &addr,
                         &PopLiteMessageRequestHeader {
-                            client_id: "client".into(),
-                            consumer_group: "consumer".into(),
-                            topic: "oracle-topic".into(),
+                            client_id: Some("client".into()),
+                            consumer_group: Some("consumer".into()),
+                            topic: Some("oracle-topic".into()),
                             max_msg_num: 1,
                             invisible_time: 456,
                             born_time: 123,

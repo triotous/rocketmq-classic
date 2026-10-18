@@ -29,6 +29,7 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
@@ -81,7 +82,39 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
             "maxMsgNums", "١٦", "invisibleTime", "٣٠٠٠٠", "pollTime", "١٠٠٠",
             "bornTime", "١٧١٢٣٤٥٦٧٨٩٠١", "initMode", "٠", "order", "true",
             "ns", "tenant", "nsd", "not-a-boolean", "bname", "broker-a", "oway", "true")));
+        cases.put("pop-lite-defaults", decodeModes("pop-lite", fields()));
+        cases.put("pop-lite-invalid-primitive-fields", decodeModes("pop-lite", fields(
+            "clientId", "client", "consumerGroup", "workers", "topic", "orders",
+            "maxMsgNum", "2147483648", "invisibleTime", "not-a-long",
+            "pollTime", "9223372036854775808", "bornTime", "-9223372036854775809",
+            "nsd", "not-a-boolean")));
+        cases.put("pop-lite-valid-unicode-fields", decodeModes("pop-lite", fields(
+            "clientId", "client", "consumerGroup", "workers", "topic", "orders",
+            "maxMsgNum", "١٦", "invisibleTime", "٣٠٠٠٠", "pollTime", "١٠٠٠",
+            "bornTime", "١٧١٢٣٤٥٦٧٨٩٠١", "attemptId", "attempt",
+            "ns", "tenant", "nsd", "not-a-boolean", "bname", "broker-a", "oway", "true")));
         fixture.put("cases", cases);
+
+        Map<String, Object> popLiteTimeoutCases = new TreeMap<>();
+        PopLiteMessageRequestHeader expired = new PopLiteMessageRequestHeader();
+        expired.setBornTime(1L);
+        expired.setPollTime(1L);
+        popLiteTimeoutCases.put("elapsed", expired.isTimeoutTooMuch());
+        PopLiteMessageRequestHeader future = new PopLiteMessageRequestHeader();
+        future.setBornTime(Long.MAX_VALUE);
+        future.setPollTime(0L);
+        popLiteTimeoutCases.put("far-future", future.isTimeoutTooMuch());
+        fixture.put("popLiteTimeoutCases", popLiteTimeoutCases);
+        Map<String, Object> popTimeoutCases = new TreeMap<>();
+        PopMessageRequestHeader expiredPop = new PopMessageRequestHeader();
+        expiredPop.setBornTime(1L);
+        expiredPop.setPollTime(1L);
+        popTimeoutCases.put("elapsed", expiredPop.isTimeoutTooMuch());
+        PopMessageRequestHeader futurePop = new PopMessageRequestHeader();
+        futurePop.setBornTime(Long.MAX_VALUE);
+        futurePop.setPollTime(0L);
+        popTimeoutCases.put("far-future", futurePop.isTimeoutTooMuch());
+        fixture.put("popTimeoutCases", popTimeoutCases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -130,6 +163,9 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
                     break;
                 case "pop":
                     headerClass = PopMessageRequestHeader.class;
+                    break;
+                case "pop-lite":
+                    headerClass = PopLiteMessageRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

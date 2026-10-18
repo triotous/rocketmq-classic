@@ -69,6 +69,7 @@ impl_rpc_request_header_semantics!(
     GetConsumeStatsRequestHeader,
     GetConsumerRunningInfoRequestHeader,
     PopMessageRequestHeader,
+    PopLiteMessageRequestHeader,
     AckMessageRequestHeader,
     ChangeInvisibleTimeRequestHeader,
     PollingInfoRequestHeader,
@@ -100,6 +101,10 @@ fn put_optional<T: ToString>(fields: &mut HeaderMap, name: &str, value: Option<T
     if let Some(value) = value {
         fields.insert(name.to_owned(), value.to_string());
     }
+}
+
+fn java_pop_timeout_too_much(now_millis: i64, born_time: i64, poll_time: i64) -> bool {
+    now_millis.wrapping_sub(born_time).wrapping_sub(poll_time) > 500
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2407,6 +2412,23 @@ impl CommandHeader for PopMessageRequestHeader {
     }
 }
 
+impl PopMessageRequestHeader {
+    /// Mirrors Java's `isTimeoutTooMuch()` helper using the system wall clock.
+    pub fn is_timeout_too_much(&self) -> bool {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        self.is_timeout_too_much_at(now_millis)
+    }
+
+    fn is_timeout_too_much_at(&self, now_millis: i64) -> bool {
+        java_pop_timeout_too_much(now_millis, self.born_time, self.poll_time)
+    }
+}
+
 /// Pinned Java `PopMessageResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
 ///
 /// ```compile_fail
@@ -2609,41 +2631,80 @@ impl CommandHeader for PollingInfoResponseHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Java 5.5.1's `PopLiteMessageRequestHeader` uses reflection decoding and
+/// inherits equality/hash behavior from `RpcRequestHeader`.
+#[derive(Debug, Clone, Default)]
 pub struct PopLiteMessageRequestHeader {
-    pub client_id: String,
-    pub consumer_group: String,
-    pub topic: String,
+    pub client_id: Option<String>,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
     pub max_msg_num: i32,
     pub invisible_time: i64,
     pub poll_time: i64,
     pub born_time: i64,
     pub attempt_id: Option<String>,
+    pub namespace: Option<String>,
+    pub namespaced: Option<bool>,
+    pub broker_name: Option<String>,
+    pub oneway: Option<bool>,
 }
 
 impl CommandHeader for PopLiteMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("clientId".into(), self.client_id.clone());
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
+        put_optional(fields, "clientId", self.client_id.as_deref());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
         fields.insert("maxMsgNum".into(), self.max_msg_num.to_string());
         fields.insert("invisibleTime".into(), self.invisible_time.to_string());
         fields.insert("pollTime".into(), self.poll_time.to_string());
         fields.insert("bornTime".into(), self.born_time.to_string());
         put_optional(fields, "attemptId", self.attempt_id.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, false)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            client_id: required_string(fields, "clientId")?.to_owned(),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            max_msg_num: required_i32(fields, "maxMsgNum")?,
-            invisible_time: required_i64(fields, "invisibleTime")?,
-            poll_time: required_i64(fields, "pollTime")?,
-            born_time: required_i64(fields, "bornTime")?,
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            client_id: optional_string(fields, "clientId"),
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            max_msg_num: optional_i32_with_mode(fields, "maxMsgNum", false)?.unwrap_or_default(),
+            invisible_time: optional_i64_with_mode(fields, "invisibleTime", false)?
+                .unwrap_or_default(),
+            poll_time: optional_i64_with_mode(fields, "pollTime", false)?.unwrap_or_default(),
+            born_time: optional_i64_with_mode(fields, "bornTime", false)?.unwrap_or_default(),
             attempt_id: optional_string(fields, "attemptId"),
         })
+    }
+}
+
+impl PopLiteMessageRequestHeader {
+    /// Mirrors Java's `isTimeoutTooMuch()` helper using the system wall clock.
+    pub fn is_timeout_too_much(&self) -> bool {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        self.is_timeout_too_much_at(now_millis)
+    }
+
+    fn is_timeout_too_much_at(&self, now_millis: i64) -> bool {
+        java_pop_timeout_too_much(now_millis, self.born_time, self.poll_time)
     }
 }
 
@@ -3378,7 +3439,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 41);
+        assert_eq!(cases.len(), 42);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -3648,6 +3709,18 @@ mod tests {
             |h: &mut PopMessageRequestHeader| h.consumer_group = Some("payload".into())
         );
         check_rpc_request_header!(
+            PopLiteMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut PopLiteMessageRequestHeader| h.client_id = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            PopLiteMessageRequestHeader,
+            broker_name,
+            |_| {},
+            |h: &mut PopLiteMessageRequestHeader| h.client_id = Some("payload".into())
+        );
+        check_rpc_request_header!(
             AckMessageRequestHeader,
             broker_name,
             |_| {},
@@ -3678,6 +3751,31 @@ mod tests {
             |h: &mut SendMessageRequestHeaderV2| h.b = Some("payload".into()),
             false
         );
+    }
+
+    #[test]
+    fn pop_lite_timeout_method_matches_java_arithmetic_and_threshold() {
+        let header = PopLiteMessageRequestHeader {
+            born_time: 100,
+            poll_time: 200,
+            ..PopLiteMessageRequestHeader::default()
+        };
+        assert!(!header.is_timeout_too_much_at(800));
+        assert!(header.is_timeout_too_much_at(801));
+
+        let wrapped = PopLiteMessageRequestHeader {
+            born_time: 1,
+            ..PopLiteMessageRequestHeader::default()
+        };
+        assert!(wrapped.is_timeout_too_much_at(i64::MIN));
+
+        let regular = PopMessageRequestHeader {
+            born_time: 100,
+            poll_time: 200,
+            ..PopMessageRequestHeader::default()
+        };
+        assert!(!regular.is_timeout_too_much_at(800));
+        assert!(regular.is_timeout_too_much_at(801));
     }
 
     #[test]
