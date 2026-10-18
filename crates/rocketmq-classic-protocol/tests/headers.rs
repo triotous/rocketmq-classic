@@ -699,6 +699,35 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
         actual, expected,
         "only Java HashSet iteration order is normalized"
     );
+
+    let running_info =
+        ConsumerRunningInfoBody::decode_java_json_body(fixture["body"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        running_info
+            .properties
+            .get("PROP_CONSUME_TYPE")
+            .map(String::as_str),
+        Some("CONSUME_PASSIVELY")
+    );
+    assert_eq!(running_info.subscription_set.len(), 1);
+    assert_eq!(running_info.mq_table.len(), 1);
+    let (queue, process_queue) = &running_info.mq_table[0];
+    assert_eq!(queue.topic(), Some("orders"));
+    assert_eq!(queue.broker_name(), Some("broker-a"));
+    assert_eq!(queue.queue_id(), 1);
+    assert_eq!(process_queue.commit_offset, 17);
+    assert!(process_queue.locked);
+    assert_eq!(running_info.mq_pop_table.len(), 1);
+    assert_eq!(running_info.mq_pop_table[0].1.wait_ack_count, 2);
+    assert_eq!(running_info.status_table["orders"].consume_failed_msgs, 6);
+    assert_eq!(
+        running_info
+            .user_consumer_info
+            .get("fixture")
+            .map(String::as_str),
+        Some("value")
+    );
+    assert_eq!(running_info.jstack.as_deref(), Some("jstack-fixture"));
 }
 
 fn sort_java_hash_set_fields(value: &mut serde_json::Value) {

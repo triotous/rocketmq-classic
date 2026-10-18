@@ -57,6 +57,7 @@ import org.apache.rocketmq.remoting.protocol.body.CMResult;
 import org.apache.rocketmq.remoting.protocol.body.ClusterInfo;
 import org.apache.rocketmq.remoting.protocol.body.Connection;
 import org.apache.rocketmq.remoting.protocol.body.ConsumerConnection;
+import org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
 import org.apache.rocketmq.remoting.protocol.admin.ConsumeStats;
 import org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper;
@@ -76,6 +77,7 @@ import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerConnectionListRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumeStatsRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -230,6 +232,7 @@ public final class MqClientAdminFixtures {
         fixture.put("getBrokerClusterInfo", getBrokerClusterInfo());
         fixture.put("getConsumerConnectionList", getConsumerConnectionList());
         fixture.put("getConsumeStats", getConsumeStats());
+        fixture.put("getConsumerRunningInfo", getConsumerRunningInfo());
         fixture.put("updateOrCreateSubscriptionGroup", updateOrCreateSubscriptionGroup());
         return fixture;
     }
@@ -413,6 +416,98 @@ public final class MqClientAdminFixtures {
         result.put("consumeStatsPublicMethods", publicMethodSignatures(ConsumeStats.class));
         result.put("offsetWrapperPublicMethods", publicMethodSignatures(OffsetWrapper.class));
         result.put("dtoSemantics", consumeStatsDtoSemantics());
+        result.put("success", success);
+        result.put("successWithoutBody", successWithoutBody);
+        result.put("brokerError", brokerError);
+        return result;
+    }
+
+    private static Map<String, Object> getConsumerRunningInfo() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("getConsumerRunningInfo", String.class,
+            GetConsumerRunningInfoRequestHeader.class, long.class);
+        GetConsumerRunningInfoRequestHeader header = new GetConsumerRunningInfoRequestHeader();
+        header.setConsumerGroup("workers");
+        header.setClientId("client-a");
+        header.setJstackEnable(true);
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBrokerName("broker-a");
+        header.setOneway(false);
+
+        Path runningInfoFixture = Path.of("../../fixtures/consumer/running-info.json");
+        if (!Files.exists(runningInfoFixture)) {
+            runningInfoFixture = Path.of("fixtures/consumer/running-info.json");
+        }
+        String body = JSON.parseObject(Files.readString(runningInfoFixture)).getString("body");
+        byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        ConsumerRunningInfo info = new MqClientAdminImpl(successCapture.proxy())
+            .getConsumerRunningInfo(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, String> properties = new TreeMap<>();
+        for (String name : info.getProperties().stringPropertyNames()) {
+            properties.put(name, info.getProperties().getProperty(name));
+        }
+        Map<String, Object> resultSnapshot = new TreeMap<>();
+        resultSnapshot.put("jstack", info.getJstack());
+        resultSnapshot.put("mqPopTableSize", info.getMqPopTable().size());
+        resultSnapshot.put("mqTableSize", info.getMqTable().size());
+        resultSnapshot.put("properties", properties);
+        resultSnapshot.put("statusTableSize", info.getStatusTable().size());
+        resultSnapshot.put("subscriptionSetSize", info.getSubscriptionSet().size());
+        resultSnapshot.put("userConsumerInfo", new TreeMap<>(info.getUserConsumerInfo()));
+
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", body);
+        success.put("result", resultSnapshot);
+
+        Capture noBodyCapture = new Capture();
+        noBodyCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        ConsumerRunningInfo noBody = new MqClientAdminImpl(noBodyCapture.proxy())
+            .getConsumerRunningInfo(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> successWithoutBody = new LinkedHashMap<>();
+        successWithoutBody.put("address", noBodyCapture.address);
+        successWithoutBody.put("timeoutMillis", noBodyCapture.timeoutMillis);
+        successWithoutBody.put("requestCode", noBodyCapture.request.getCode());
+        successWithoutBody.put("requestExtFields", new TreeMap<>(noBodyCapture.request.getExtFields()));
+        successWithoutBody.put("responseCode", noBodyCapture.response.getCode());
+        successWithoutBody.put("resultIsNull", noBody == null);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "consumer running info unavailable");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .getConsumerRunningInfo(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin consumer running info error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("method", method.toGenericString());
         result.put("success", success);
         result.put("successWithoutBody", successWithoutBody);
         result.put("brokerError", brokerError);

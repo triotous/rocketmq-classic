@@ -15,12 +15,12 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, GetConsumeStatsRequestHeader,
-        GetConsumerConnectionListRequestHeader, GetEarliestMsgStoretimeRequestHeader,
-        GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader,
-        HeaderMap, QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-        QueryTopicConsumeByWhoRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
-        ViewMessageRequestHeader,
+        GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
+        GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -1969,6 +1969,136 @@ async fn mq_client_admin_get_consume_stats_matches_invoked_java_fixture() {
         error,
         RpcError::MalformedResponse {
             request_code: request::GET_CONSUME_STATS,
+            ..
+        }
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_get_consumer_running_info_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let operation = &fixture["getConsumerRunningInfo"];
+    assert_eq!(
+        operation["method"],
+        "public abstract java.util.concurrent.CompletableFuture<org.apache.rocketmq.remoting.protocol.body.ConsumerRunningInfo> org.apache.rocketmq.client.MqClientAdmin.getConsumerRunningInfo(java.lang.String,org.apache.rocketmq.remoting.protocol.header.GetConsumerRunningInfoRequestHeader,long)"
+    );
+    let header = GetConsumerRunningInfoRequestHeader {
+        consumer_group: "workers".into(),
+        client_id: "client-a".into(),
+        jstack_enable: true,
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        broker_name: Some("broker-a".into()),
+        oneway: Some(false),
+    };
+    let success = &operation["success"];
+    let body = success["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (admin_api, client) = api().await;
+    let result = admin_api
+        .mq_client_admin()
+        .get_consumer_running_info(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_RUNNING_INFO);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        success["requestExtFields"]
+    );
+    assert_eq!(
+        result
+            .properties
+            .get("PROP_CONSUME_TYPE")
+            .map(String::as_str),
+        Some("CONSUME_PASSIVELY")
+    );
+    assert_eq!(result.subscription_set.len(), 1);
+    assert_eq!(result.subscription_set[0].topic.as_deref(), Some("orders"));
+    assert_eq!(result.mq_table.len(), 1);
+    assert_eq!(result.mq_table[0].0.queue_id(), 1);
+    assert_eq!(result.mq_table[0].1.commit_offset, 17);
+    assert_eq!(result.mq_pop_table[0].1.wait_ack_count, 2);
+    assert_eq!(result.status_table["orders"].consume_failed_msgs, 6);
+    assert_eq!(
+        result.user_consumer_info.get("fixture").map(String::as_str),
+        Some("value")
+    );
+    assert_eq!(result.jstack.as_deref(), Some("jstack-fixture"));
+    assert_eq!(
+        success["result"]["subscriptionSetSize"].as_u64(),
+        Some(result.subscription_set.len() as u64)
+    );
+    assert_eq!(success["result"]["mqTableSize"], result.mq_table.len());
+    assert_eq!(
+        success["result"]["mqPopTableSize"],
+        result.mq_pop_table.len()
+    );
+    client.shutdown().await;
+
+    let no_body_case = &operation["successWithoutBody"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (no_body_api, client) = api().await;
+    let result = no_body_api
+        .mq_client_admin()
+        .get_consumer_running_info(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_RUNNING_INFO);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        no_body_case["requestExtFields"]
+    );
+    assert!(result.is_none());
+    assert_eq!(no_body_case["resultIsNull"], result.is_none());
+    client.shutdown().await;
+
+    let error_case = &operation["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .get_consumer_running_info(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_RUNNING_INFO);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "consumer running info unavailable"
+    ));
+    client.shutdown().await;
+
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"{".to_vec())).await;
+    let (malformed_api, client) = api().await;
+    let error = malformed_api
+        .mq_client_admin()
+        .get_consumer_running_info(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::GET_CONSUMER_RUNNING_INFO);
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::GET_CONSUMER_RUNNING_INFO,
             ..
         }
     ));

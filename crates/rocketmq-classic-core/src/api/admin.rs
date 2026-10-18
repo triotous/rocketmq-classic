@@ -4,9 +4,9 @@ use rocketmq_classic_common::message::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection, GroupList,
-        QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries, TopicList,
-        TopicStatsTable,
+        ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection,
+        ConsumerRunningInfoBody, GroupList, QuerySubscriptionResponseBody, ResetOffsetBody,
+        SharedQueueOffsetEntries, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -14,7 +14,8 @@ use rocketmq_classic_protocol::{
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetConsumerRunningInfoRequestHeader, GetTopicStatsInfoRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -667,6 +668,37 @@ impl MQClientApi {
 }
 
 impl MqClientAdmin {
+    /// Retrieves one Broker's consumer runtime details through Java
+    /// `MqClientAdmin.getConsumerRunningInfo`.
+    pub async fn get_consumer_running_info(
+        &self,
+        addr: &str,
+        header: &GetConsumerRunningInfoRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<ConsumerRunningInfoBody>, RpcError> {
+        let code = request::GET_CONSUMER_RUNNING_INFO;
+        let reply = self
+            .api
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        let Some(body) = reply.body.as_deref() else {
+            return Ok(None);
+        };
+        let body = std::str::from_utf8(body).map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer: addr.to_owned(),
+            reason: error.to_string(),
+        })?;
+        ConsumerRunningInfoBody::decode_java_json_body(body)
+            .map(Some)
+            .map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            })
+    }
+
     /// Creates or updates one Broker's subscription group through Java
     /// `MqClientAdmin.updateOrCreateSubscriptionGroup`.
     pub async fn update_or_create_subscription_group(

@@ -4715,8 +4715,8 @@ impl<'de> Deserialize<'de> for GetConsumerStatusBody {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerProcessQueueInfo>();
 /// ```
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct ConsumerProcessQueueInfo {
     pub commit_offset: i64,
     pub cached_msg_min_offset: i64,
@@ -4742,8 +4742,8 @@ pub struct ConsumerProcessQueueInfo {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerPopProcessQueueInfo>();
 /// ```
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct ConsumerPopProcessQueueInfo {
     pub wait_ack_count: i32,
     pub droped: bool,
@@ -4757,8 +4757,8 @@ pub struct ConsumerPopProcessQueueInfo {
 /// fn requires_partial_eq<T: PartialEq>() {}
 /// requires_partial_eq::<ConsumerConsumeStatus>();
 /// ```
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
 pub struct ConsumerConsumeStatus {
     #[serde(rename = "pullRT")]
     pub pull_rt: f64,
@@ -4849,6 +4849,60 @@ impl ConsumerRunningInfoBody {
         let normalized = normalize_java_object_map_keys(input)?;
         serde_json::from_str(&normalized)
     }
+
+    /// Decodes a Java `ConsumerRunningInfo` body into a typed Rust snapshot.
+    /// Fastjson's object-valued `MessageQueue` map keys are normalized and
+    /// parsed back into their typed queue and process-info pairs.
+    pub fn decode_java_json_body(input: &str) -> Result<Self, serde_json::Error> {
+        let value = Self::decode_java_json(input)?;
+        let mut fields: BTreeMap<String, serde_json::Value> = serde_json::from_value(value)?;
+        Ok(Self {
+            properties: take_running_info_field(&mut fields, "properties")?,
+            subscription_set: take_running_info_field(&mut fields, "subscriptionSet")?,
+            mq_table: decode_running_info_queue_table(fields.remove("mqTable"))?,
+            mq_pop_table: decode_running_info_queue_table(fields.remove("mqPopTable"))?,
+            status_table: take_running_info_field(&mut fields, "statusTable")?,
+            user_consumer_info: take_running_info_field(&mut fields, "userConsumerInfo")?,
+            jstack: fields
+                .remove("jstack")
+                .filter(|value| !value.is_null())
+                .map(serde_json::from_value)
+                .transpose()?,
+        })
+    }
+}
+
+fn take_running_info_field<T>(
+    fields: &mut BTreeMap<String, serde_json::Value>,
+    name: &str,
+) -> Result<T, serde_json::Error>
+where
+    T: de::DeserializeOwned + Default,
+{
+    match fields.remove(name) {
+        None | Some(serde_json::Value::Null) => Ok(T::default()),
+        Some(value) => serde_json::from_value(value),
+    }
+}
+
+fn decode_running_info_queue_table<T>(
+    value: Option<serde_json::Value>,
+) -> Result<Vec<(MessageQueue, T)>, serde_json::Error>
+where
+    T: de::DeserializeOwned + Default,
+{
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return Ok(Vec::new());
+    };
+    let fields: BTreeMap<String, serde_json::Value> = serde_json::from_value(value)?;
+    fields
+        .into_iter()
+        .map(|(encoded_queue, info)| {
+            let queue = serde_json::from_str(&encoded_queue)?;
+            let info = serde_json::from_value(info)?;
+            Ok((queue, info))
+        })
+        .collect()
 }
 
 fn encode_java_subscription_data(
