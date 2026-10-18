@@ -6831,17 +6831,15 @@ mod tests {
                 .map(|span| {
                     span.as_ref()
                         .unwrap()
-                        .message_queue
-                        .as_ref()
+                        .get_message_queue()
                         .unwrap()
-                        .broker_name()
-                        .unwrap()
+                        .with(|queue| queue.broker_name().unwrap().to_owned())
                 })
                 .collect::<Vec<_>>(),
-            ["broker-z", "broker-a"]
+            ["broker-z".to_owned(), "broker-a".to_owned()]
         );
-        assert_eq!(spans[0].as_ref().unwrap().delay_time, 4);
-        assert_eq!(spans[1].as_ref().unwrap().delay_time, 3);
+        assert_eq!(spans[0].as_ref().unwrap().get_delay_time(), 4);
+        assert_eq!(spans[1].as_ref().unwrap().get_delay_time(), 3);
 
         consumer.set_consumer_group(Some("consume-time-span-group".into()));
         consumer.shutdown().await.unwrap();
