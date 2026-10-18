@@ -40,3 +40,22 @@
   that inventory; broad DTO/API/settings/input/error/flow/reverse-export
   reconciliation remains open. This is a documentation status correction;
   no implementation claim was added beyond the existing matrix evidence.
+
+## P18-V01 GroupList public API follow-up — 2026-10-18T15:11:22Z
+
+- The pinned Java fixture already recorded `GroupList`'s declared public
+  getter/setter methods, but the Protocol differential did not assert the
+  method, constructor or public-field inventory. Added constructor reflection,
+  exact inventory assertions, and a compile-fail guard for Rust field privacy.
+  Existing default/null/nullable-element/alias checks remain. Fixture SHA-256:
+  `5961395fa36f199d8b3745f91d1dcc4941c1d2d8748f272e119ed9c3ae1ad73a`.
+- Verification: focused Protocol differential PASS; Protocol doctests PASS
+  (54); strict all-target/all-feature Protocol Clippy PASS; offline Maven
+  `verify` PASS (37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes); formatting and diff checks PASS. The first Maven
+  fixture-generation invocation used the wrong main-class override and exited
+  with dispatcher usage text; the `compat.Main group-list-fixture <path>`
+  dispatch regenerated the fixture successfully.
+- Test/fixture commit: `3b8a62b3`. Matrix and release-checklist updates are
+  recorded separately. Broad P18-V01, final current-revision P18-V02,
+  P18-V03/V04 and Phase 19 local matrix work remain open.

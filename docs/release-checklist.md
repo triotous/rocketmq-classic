@@ -4746,3 +4746,20 @@ owner-specific checks belong in the manual handoff.
   and native Windows P18-V04 evidence, and Phase 19's 30 local Docker/Broker
   scenario runners and required profiles remain open. MAN-01–04 remain
   owner-environment checks; MAN-05 awaits completion of the local matrix.
+
+## P18-V01 `GroupList` DTO API inventory — 2026-10-18 (`3b8a62b3`)
+
+- [x] The invoked Java fixture now captures its public no-argument constructor,
+  declared getter/setter signatures and empty public-field set. Rust asserts
+  that inventory, calls the matching accessors, and compile-fail checks that
+  the DTO field is private. Existing alias/default/null/nullable-element
+  differentials remain in place. Fixture SHA-256:
+  `5961395fa36f199d8b3745f91d1dcc4941c1d2d8748f272e119ed9c3ae1ad73a`.
+- [x] The focused Protocol differential, 54 Protocol doctests, strict
+  all-target/all-feature Protocol Clippy, pinned Maven `verify` (37 scenarios,
+  fixture checks, 66 typed-header and 15 typed-body cross-decodes), formatting,
+  and diff checks passed. Test/fixture commit: `3b8a62b3`.
+- Broad P18-V01 reconciliation remains open. P18-V02 needs a final rerun on
+  this newer revision; P18-V03 package/provenance and version/registry
+  preflight, current-revision Ubuntu/native Windows P18-V04 evidence, and Phase
+  19's 30 local Docker/Broker runners and required profiles also remain open.

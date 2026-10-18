@@ -515,3 +515,15 @@ Protocol and Core differentials cover the DTO and admin RPC boundaries. Fixture
 SHA-256: `3012f8dfb49f4bd404e1d29a7e27cdbe14d47435347bcb55ac807e5649085af5`.
 This closes only the consume-time-span DTO API slice; broad P18-V01
 reconciliation remains open.
+
+## P18-V01 `GroupList` DTO API inventory — 2026-10-18 (`3b8a62b3`)
+
+The Java fixture now records the public no-argument constructor, empty public
+field set, and the exact declared `getGroupList`/`setGroupList` signatures.
+Rust's differential asserts that inventory and exercises the mapped accessors;
+a compile-fail doctest guards the private DTO field. The existing tests retain
+coverage for the default empty Set, explicit null, nullable elements, and
+bidirectional Set alias mutation. Fixture SHA-256:
+`5961395fa36f199d8b3745f91d1dcc4941c1d2d8748f272e119ed9c3ae1ad73a`.
+This closes only the `GroupList` public API slice; broad P18-V01 reconciliation
+remains open.
