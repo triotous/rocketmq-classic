@@ -615,4 +615,74 @@ mod tests {
         peer.await.unwrap();
         remoting.shutdown().await;
     }
+
+    #[tokio::test]
+    async fn query_topics_by_consumer_preserves_broker_error() {
+        use crate::{api::MQClientApi, error::RpcError};
+        use rocketmq_classic_protocol::{
+            codes::{request, response},
+            header::QueryTopicsByConsumerRequestHeader,
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::time::Duration;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::QUERY_TOPICS_BY_CONSUMER);
+
+            let mut reply = RemotingCommand {
+                code: response::TOPIC_NOT_EXIST,
+                opaque: request.opaque,
+                remark: Some("topic not exist".into()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let api = MQClientApi::new(remoting.clone());
+        let error = api
+            .query_topics_by_consumer(
+                &address,
+                &QueryTopicsByConsumerRequestHeader {
+                    group: Some("workers".into()),
+                    ..QueryTopicsByConsumerRequestHeader::default()
+                },
+                tokio::time::Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RpcError::Response {
+                request_code: request::QUERY_TOPICS_BY_CONSUMER,
+                peer,
+                code: response::TOPIC_NOT_EXIST,
+                remark: Some(remark),
+            } if peer == address && remark == "topic not exist"
+        ));
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
 }
