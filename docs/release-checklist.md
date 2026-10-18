@@ -5151,3 +5151,22 @@ owner-specific checks belong in the manual handoff.
   bidirectional reconciliation, the final current-revision P18-V02 gate,
   current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
   missing local Broker/Docker scenario runners/profiles remain open.
+
+## P18-V01 `QueryMessageResponseHeader` field visibility — 2026-10-18 (`85c9bae5`)
+
+- [x] Pinned Java 5.5.1 inventory confirms
+  `QueryMessageResponseHeader` exposes no public fields. Rust watermark fields
+  are crate-private with Java-equivalent getters/setters; Core, Consumer,
+  Remoting and Protocol callers use the accessors. The invoked Java API inventory
+  and Rust field-visibility differential include the class. Query-admin fixture
+  SHA-256: `482d0d317162c15b8d159326f5ef59822b3142241c0dad00ea2ba293121d35e0`.
+- [x] Workspace all-target/all-feature check, Protocol's 15 header integration
+  tests and 98 doctests, Remoting query/admin differential, six Core query RPC
+  regressions, Consumer query facade regression, strict workspace Clippy,
+  offline Maven `verify` (37 scenarios, fixture checks, 66 typed-header and 15
+  typed-body cross-decodes), formatting, and diff checks pass. Code commit:
+  `85c9bae5`.
+- This closes only the `QueryMessageResponseHeader` visibility row. Broad
+  P18-V01 bidirectional reconciliation, the final current-revision P18-V02
+  gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
+  30 missing local Broker/Docker scenario runners/profiles remain open.
