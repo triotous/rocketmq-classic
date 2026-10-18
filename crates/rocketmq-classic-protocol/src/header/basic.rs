@@ -774,10 +774,33 @@ impl CommandHeader for DeleteTopicFromNamesrvRequestHeader {
 
 /// Pinned Java Namesrv `DeleteKVConfigRequestHeader`. Its annotated namespace
 /// and key remain nullable because Java's `checkFields()` is a no-op.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::DeleteKvConfigRequestHeader;
+/// let _ = DeleteKvConfigRequestHeader::default().key;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct DeleteKvConfigRequestHeader {
-    pub namespace: Option<String>,
-    pub key: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) key: Option<String>,
+}
+
+impl DeleteKvConfigRequestHeader {
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    pub fn set_key(&mut self, value: Option<String>) {
+        self.key = value;
+    }
 }
 
 impl CommandHeader for DeleteKvConfigRequestHeader {

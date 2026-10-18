@@ -32,13 +32,13 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
-import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
@@ -68,6 +68,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("query-consume-time-span-valid", decodeModes("query-consume-time-span", fields(
             "topic", "orders", "group", "workers", "ns", "tenant", "nsd", "true",
             "bname", "broker-a", "oway", "false", "lo", "true")));
+        cases.put("delete-kv-config-valid", decodeModes("delete-kv-config", fields(
+            "namespace", "config-namespace", "key", "config-key")));
 
         cases.put("query-response-valid", decodeModes("query-response", fields(
             "indexLastUpdateTimestamp", "1712345679000", "indexLastUpdatePhyoffset", "9876")));
@@ -125,6 +127,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(DeleteTopicFromNamesrvRequestHeader.class));
         apiInventories.put("DeleteSubscriptionGroupRequestHeader",
             apiInventory(DeleteSubscriptionGroupRequestHeader.class));
+        apiInventories.put("DeleteKVConfigRequestHeader",
+            apiInventory(DeleteKVConfigRequestHeader.class));
         fixture.put("apiInventories", apiInventories);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -163,6 +167,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 300;
         } else if ("topic-stats-info".equals(type)) {
             code = 202;
+        } else if ("delete-kv-config".equals(type)) {
+            code = 102;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -192,6 +198,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "topic-stats-info":
                     headerClass = GetTopicStatsInfoRequestHeader.class;
+                    break;
+                case "delete-kv-config":
+                    headerClass = DeleteKVConfigRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

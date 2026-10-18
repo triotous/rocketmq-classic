@@ -508,10 +508,9 @@ async fn delete_kv_config_matches_mq_client_admin_success_fixture() {
     let expected = &fixture["deleteKvConfig"]["success"];
     let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
     let (api, client) = api().await;
-    let header = DeleteKvConfigRequestHeader {
-        namespace: Some("config-namespace".into()),
-        key: Some("config-key".into()),
-    };
+    let mut header = DeleteKvConfigRequestHeader::default();
+    header.set_namespace(Some("config-namespace".into()));
+    header.set_key(Some("config-key".into()));
 
     api.delete_kv_config(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
@@ -551,15 +550,11 @@ async fn delete_kv_config_preserves_java_nameserver_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = DeleteKvConfigRequestHeader::default();
+    header.set_namespace(Some("config-namespace".into()));
+    header.set_key(Some("config-key".into()));
     let error = api
-        .delete_kv_config(
-            &addr,
-            &DeleteKvConfigRequestHeader {
-                namespace: Some("config-namespace".into()),
-                key: Some("config-key".into()),
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .delete_kv_config(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
     assert!(matches!(

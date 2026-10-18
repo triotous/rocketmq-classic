@@ -1141,7 +1141,7 @@ mod tests {
     #[test]
     fn query_admin_header_reflection_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::{
-            CommandHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+            CommandHeader, DeleteKvConfigRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
             QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
             QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
             QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
@@ -1166,6 +1166,7 @@ mod tests {
             "DeleteTopicRequestHeader",
             "DeleteTopicFromNamesrvRequestHeader",
             "DeleteSubscriptionGroupRequestHeader",
+            "DeleteKVConfigRequestHeader",
         ] {
             assert_eq!(
                 fixture["apiInventories"][header_name]["publicFields"],
@@ -1242,6 +1243,26 @@ mod tests {
                                 "bname": header.get_broker_name(),
                                 "oway": header.get_oneway(),
                                 "lo": header.get_lo(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "delete-kv-config" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<DeleteKvConfigRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "namespace": header.get_namespace(),
+                                "key": header.get_key(),
                             }),
                             encoded,
                         )
