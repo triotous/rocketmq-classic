@@ -1,0 +1,40 @@
+# Phase 18 compatibility release gate — 2026-10-18T02:38:43Z
+
+## Scope
+
+- Continued on `phase/19-phase-18-compatibility-release-gate`.
+- Completed the `MqClientAdmin.getTopicStatsInfo` source-backed slice against
+  the read-only Java 5.5.1 oracle. Added request code 202's typed header,
+  `TopicStatsTable`/`TopicOffset` DTOs, Core RPC, invoked Java fixtures, typed
+  header/body cross-decode fixtures, and scripted success/null/error/malformed
+  response coverage.
+- Code committed separately as `e53ad60c` (`feat(admin): add topic stats info
+  RPC`). Updated the Phase 17 method matrix and appended evidence to the Phase
+  18 release checklist. Phase 18 plan was not modified.
+- Preserved the existing unstaged Phase 19 runner/README/differential changes
+  and their existing rlog; none were included in this commit.
+
+## Validation
+
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed,
+  132 unit tests, all integration targets, 49 doctests.
+- `cargo test -p rocketmq-classic-core --test admin_rpc --locked`: passed,
+  28 tests.
+- Strict all-target/all-feature Clippy for Protocol, Remoting and Core passed.
+  The first run found a derivable `Default` implementation on the new private
+  DTO fields; deriving it fixed the warning, and the strict rerun passed.
+- `mvn -q -f compat/java-reference/pom.xml verify`: passed all 37 scenarios,
+  fixture drift checks, 60 typed-header and 14 typed-body cross-decodes.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+## Remaining work
+
+- `MqClientAdmin` has 4/19 complete source-backed slices; reconcile its other
+  15 methods and finish broad P18-V01 bidirectional public API/configuration,
+  input/error/control-flow and Rust reverse-export audit.
+- Refresh full-workspace P18-V02 after Phase 18 implementation work; obtain
+  current-revision Ubuntu/native Windows P18-V04 evidence and complete final
+  P18-V03 package/provenance review and pre-publication checks.
+- Phase 19 still lacks 30/37 local scenario runners, required Docker profiles,
+  and a passing full `run-local.sh --all` reconciliation. Owner-only production
+  validation remains separate and was not run.

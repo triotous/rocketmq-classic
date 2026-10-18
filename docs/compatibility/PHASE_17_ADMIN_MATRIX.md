@@ -29,8 +29,8 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Three methods now have source-backed
-typed RPC slices; the other 16 still need reconciliation. Their public status
+method-by-method mapping has been verified. Four methods now have source-backed
+typed RPC slices; the other 15 still need reconciliation. Their public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -85,7 +85,19 @@ cover request fields, successful decoding, nullable response data, and Broker
 error mapping. Header identity and validation rows include this third query
 header.
 
-The other 16 interface methods remain to reconcile.
+Fourth reconciled method slice (code commit `e53ad60c`): Java
+`getTopicStatsInfo(address, requestHeader, timeoutMillis)` sends request code
+202 with `GetTopicStatsInfoRequestHeader` and decodes `TopicStatsTable` only on
+`SUCCESS`. Rust exposes the typed header, `TopicOffset` and `TopicStatsTable`,
+and `MQClientApi::get_topic_stats_info`. The DTO fixture pins Java's public
+methods, primitive zero defaults, empty mutable offset-map default, nullable
+map setter/getter alias, MessageQueue object-key JSON, and omission of null map
+values. Header fixtures cover both decoder hints and inherited RPC fields.
+Scripted RPC tests cover success, absent/JSON-null response bodies, Broker
+errors, and malformed JSON. Fixture SHA-256:
+`12c3a17f32ffb2b3b60e1e27d57ce8a96a199cb3ba0c7b1201790461b5ecd669`.
+
+The other 15 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every remaining method's
 request header/body, response type, error path and call behavior against Rust;

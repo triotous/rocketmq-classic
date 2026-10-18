@@ -3959,3 +3959,30 @@ owner-specific checks belong in the manual handoff.
   profiles, and passing `run-local.sh --all` reconciliation. Pre-publication
   version/registry checks remain pending; owner-environment checks stay in the
   separate manual handoff.
+
+## P18-V01 `getTopicStatsInfo` admin RPC — 2026-10-18 (`e53ad60c`)
+
+- [x] Added `MQClientApi::get_topic_stats_info`, request code 202's typed
+  `GetTopicStatsInfoRequestHeader`, and Java-compatible `TopicStatsTable` and
+  `TopicOffset` DTOs. Invoked Java fixtures cover public methods, primitive
+  defaults, nullable map/accessor aliasing, MessageQueue object-key JSON and
+  null map-value omission. Rust RPC regressions cover success, absent/JSON-null
+  bodies, Broker errors, and malformed JSON. Fixture SHA-256:
+  `12c3a17f32ffb2b3b60e1e27d57ce8a96a199cb3ba0c7b1201790461b5ecd669`.
+- [x] Protocol all-feature tests passed (132 unit tests, all integration
+  targets, 49 doctests); Core `admin_rpc` passed (28 tests). Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core after
+  deriving the private fixture fields' `Default` implementation. The first
+  Clippy run reported `derivable_impls`; the correction removed the warning.
+  Formatting and `git diff --check` pass.
+- [x] Pinned Maven `verify` passed all 37 scenarios, fixture drift checks,
+  Java/Rust typed-header cross-decodes (60) and typed-body cross-decodes (14).
+  Code commit: `e53ad60c`.
+- The source-backed `MqClientAdmin` count is now 4/19; the other 15 methods
+  and the broad P18-V01 public API/settings/input/error/flow/reverse-export
+  audit remain open. Full-workspace P18-V02 must be refreshed after the
+  remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and `run-local.sh --all`, and pre-publication
+  version/registry checks remain open. Owner-only production validation stays
+  in the separate manual handoff.
