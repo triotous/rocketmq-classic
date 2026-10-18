@@ -4225,3 +4225,30 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks also remain open. Owner-only validation remains the
   separate manual handoff.
+
+## P18-V01 `consumeMessageDirectly` admin RPC — 2026-10-18 (`183660a5`)
+
+- [x] Added `MQClientApi::mq_client_admin().consume_message_directly` using
+  Java's asynchronous request code 309 path and
+  `ConsumeMessageDirectlyResultRequestHeader`. It decodes the typed result and
+  preserves Broker response-code/remark errors.
+- [x] The invoked Java 5.5.1 fixture records the method signature, timeout,
+  direct and inherited request fields, response body/result, and Broker error.
+  Scripted Core tests compare the request/result and reject malformed success
+  bodies. Fixture SHA-256:
+  `604d2e9f75cfb87e23e7e7fd230a5307ddb51f2356370eda2d3778ae4e7316ef`.
+- [x] Core `admin_rpc` passed all 45 tests. Core all-feature tests passed 171
+  unit tests, all integration targets, and 14 doctests. Strict all-target,
+  all-feature Core Clippy passed. Pinned Maven `verify` passed all 37 scenarios
+  and fixture checks, including 64 typed-header and 14 typed-body cross-decodes.
+  Formatting and `git diff --check` passed. Code commit: `183660a5`.
+- The source-backed `MqClientAdmin` count is now 14/19. Five methods remain:
+  `updateOrCreateSubscriptionGroup`, `getBrokerClusterInfo`,
+  `getConsumerConnectionList`, `getConsumeStats`, and
+  `getConsumerRunningInfo`. Broad P18-V01 API/settings/input/error/flow and
+  reverse-export reconciliation remains open. Refresh full-workspace P18-V02
+  after remaining implementation work; current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation remains the
+  separate manual handoff.
