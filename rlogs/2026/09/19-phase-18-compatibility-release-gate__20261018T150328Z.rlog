@@ -30,3 +30,13 @@
   environment checks; MAN-05 awaits completion of the local matrix.
 - Existing Phase 19 runner/README edits and its untracked log remain untouched
   and unstaged. No plan, Java oracle, remote CI, Broker or Docker state changed.
+
+## Audit-ledger correction — 2026-10-18
+
+- The Phase 6 requirement audit still described the 19-method
+  `MqClientAdmin` inventory as unreconciled, although the Phase 17 matrix and
+  release checklist now contain source-backed slices for all 19 operations.
+  Appended a dated superseding note: there is no missing direct RPC method in
+  that inventory; broad DTO/API/settings/input/error/flow/reverse-export
+  reconciliation remains open. This is a documentation status correction;
+  no implementation claim was added beyond the existing matrix evidence.

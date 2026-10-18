@@ -1040,3 +1040,13 @@ types, results, error mapping and control flow have not been reconciled. The
 still required. This remains local parity work, not manual validation.
 
 P18-V01 query/admin header continuation (`c091d507`, pinned Java client source `efa1be59d6fc747ad220f036c86030f05f0419f9`): `QueryTopicsByConsumerRequestHeader`, `QuerySubscriptionByConsumerRequestHeader`, and `QueryTopicConsumeByWhoRequestHeader` now share the Java `RpcRequestHeader` equality/hash contract; the invoked identity fixture and Rust tests cover 35 request-header classes. Fixture SHA-256: `2849daef72f0bbc29c64f311b8dc41761602845ef1256f12c6937e2ccdbea48f`. The new `queryTopicConsumeByWho` RPC uses request code 300 and a Java-backed `GroupList` DTO fixture (SHA-256 `d033bf2e2cf2e866ba854bf2152ab21f66f43a2bb0212caaf9dbdc4d88f5c38e`). This closes those query/admin header and RPC slices only; broad P18-V01 and Phase 6 API/source/input/platform reconciliation remain open, and P6-V04 remains a Phase 19 handoff.
+
+P18-V01 follow-up — `MqClientAdmin` direct RPC inventory closure (2026-10-18):
+the earlier discovery above is historical. The Phase 17 matrix now records
+source-backed typed RPC slices and invoked Java/Rust evidence for all 19
+declared `MqClientAdmin` operations; `getConsumerRunningInfo` closed the final
+method slice in code commit `f05833a7`. Later DTO API work includes the
+`QueueTimeSpan`/`QueryConsumeTimeSpanBody` slice in code commit `423bcdbc`.
+There is no remaining missing direct RPC method in this 19-method inventory.
+The broader P18-V01 audit remains open for exhaustive public DTO/API,
+settings, input/error/flow, and Rust reverse-export reconciliation.
