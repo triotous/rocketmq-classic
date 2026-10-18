@@ -4216,8 +4216,8 @@ impl PushConsumer {
             };
             let poll_time = BROKER_SUSPEND_MAX_TIME_MILLIS;
             let request = PopMessageRequestHeader {
-                consumer_group: consumer_group.clone(),
-                topic: topic.clone(),
+                consumer_group: Some(consumer_group.clone()),
+                topic: Some(topic.clone()),
                 queue_id: queue.queue_id(),
                 max_msg_nums: self.config.pop_batch_nums(),
                 invisible_time: self.config.pop_invisible_time_millis(),

@@ -641,8 +641,8 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-pop.bin",
         200050,
         &PopMessageRequestHeader {
-            consumer_group: "workers".into(),
-            topic: "orders".into(),
+            consumer_group: Some("workers".into()),
+            topic: Some("orders".into()),
             queue_id: 1,
             max_msg_nums: 16,
             invisible_time: 30_000,

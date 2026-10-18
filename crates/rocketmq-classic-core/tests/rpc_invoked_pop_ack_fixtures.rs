@@ -120,8 +120,8 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                     api.pop_message(
                         &addr,
                         &PopMessageRequestHeader {
-                            consumer_group: "consumer".into(),
-                            topic: "oracle-topic".into(),
+                            consumer_group: Some("consumer".into()),
+                            topic: Some("oracle-topic".into()),
                             queue_id: 2,
                             max_msg_nums: 1,
                             invisible_time: 456,

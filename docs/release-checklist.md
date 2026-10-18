@@ -4515,3 +4515,24 @@ owner-specific checks belong in the manual handoff.
   remaining local scenarios and required profiles, and pre-publication
   version/registry checks remain open. Owner-only checks stay in the separate
   handoff.
+
+## P18-V01 `PopMessageRequestHeader` reflection defaults — 2026-10-18
+
+- [x] The pinned Java 5.5.1 oracle confirms both decode hints use reflection:
+  the header does not implement `FastCodesHeader`, its `checkFields()` is a
+  no-op, nullable group/topic remain null, primitive numeric fields retain zero
+  on absent or malformed input, and primitive `order` defaults to false.
+  Fixtures cover defaults, malformed/overflow values, and valid Arabic-Indic
+  numerals. Fixture: `fixtures/remoting/optional-numeric-header-decode-modes.json`.
+- [x] Rust now represents nullable group/topic as `Option<String>`, preserves
+  Java primitive defaults, and the consumer POP request path supplies present
+  values explicitly.
+- [x] Current-tree default and all-feature workspace tests, strict
+  all-target/all-feature Clippy, Maven `verify` (37 scenarios, 66 typed-header
+  and 15 typed-body cross-decodes), formatting, and diff checks pass.
+- This closes only the `PopMessageRequestHeader` decode/default slice. The
+  complete P18-V02 supplementary race/fuzz/example/benchmark/package gate must
+  be refreshed after implementation work. Broad P18-V01, final P18-V03
+  package/provenance and pre-publication checks, current-revision P18-V04
+  Ubuntu/native Windows CI evidence, and Phase 19's remaining local scenarios
+  and profiles remain open. Owner-only checks stay in the separate handoff.

@@ -365,7 +365,7 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     );
     assert_eq!(fixture["serverContacted"], false);
     let cases = fixture["cases"].as_object().unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 9);
 
     for (case_name, case) in cases {
         let header_type = case["headerType"].as_str().unwrap();
@@ -392,12 +392,24 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
                 "send-v1" => {
                     encode_decoded_header::<SendMessageRequestHeaderV1>(&fields, use_fast_encode)
                 }
+                "pop" => encode_decoded_header::<PopMessageRequestHeader>(&fields, use_fast_encode),
                 other => panic!("unknown Java header type {other}"),
             }
             .unwrap_or_else(|error| panic!("{case_name} {mode_name}: {error}"));
             assert_eq!(actual, expected, "{case_name} {mode_name}");
         }
     }
+
+    let default_header = PopMessageRequestHeader::default();
+    let mut default_fields = HeaderMap::new();
+    default_header.encode_fields(&mut default_fields);
+    let expected_default: HeaderMap =
+        serde_json::from_value(cases["pop-defaults"]["reflection"]["encodedFields"].clone())
+            .unwrap();
+    assert_eq!(default_fields, expected_default);
+    assert_eq!(default_header.consumer_group, None);
+    assert_eq!(default_header.topic, None);
+    assert_eq!(default_header.order, Some(false));
 }
 
 #[test]
@@ -1677,10 +1689,10 @@ fn header_validation_matrix() {
         row!(
             PopMessageRequestHeader,
             "pop-request",
-            "consumerGroup topic queueId maxMsgNums invisibleTime pollTime bornTime initMode",
+            "",
             "queueId maxMsgNums initMode",
             "invisibleTime pollTime bornTime",
-            "expType exp order attemptId ns nsd bname oway",
+            "consumerGroup topic expType exp order attemptId ns nsd bname oway",
             "order nsd oway"
         ),
         row!(
@@ -1988,7 +2000,10 @@ fn header_validation_matrix() {
                             "{} reflection decoding should ignore invalid {name}={value}",
                             case.fixture
                         );
-                    } else if case.model == "ChangeInvisibleTimeResponseHeader" {
+                    } else if matches!(
+                        case.model,
+                        "ChangeInvisibleTimeResponseHeader" | "PopMessageRequestHeader"
+                    ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
                         assert_eq!(
@@ -2088,7 +2103,14 @@ fn header_validation_matrix() {
                 present.insert(name.into(), value.into());
                 let decoded = (case.decode)(&present)
                     .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));
-                assert_ne!(decoded, absent, "{} absent vs {name}={value}", case.fixture);
+                if case.model == "PopMessageRequestHeader"
+                    && name == "order"
+                    && matches!(value, "false" | "")
+                {
+                    assert_eq!(decoded, absent, "{} absent vs {name}={value}", case.fixture);
+                } else {
+                    assert_ne!(decoded, absent, "{} absent vs {name}={value}", case.fixture);
+                }
                 assert_eq!(
                     decoded.get(name).map(String::as_str),
                     Some(if booleans.contains(name) && value.is_empty() {
@@ -2108,7 +2130,9 @@ fn header_validation_matrix() {
             explicit_false.insert(name.into(), "false".into());
             let absent_decoded = (case.decode)(&absent).unwrap();
             let false_decoded = (case.decode)(&explicit_false).unwrap();
-            if optional.contains(name) {
+            if optional.contains(name)
+                && !(case.model == "PopMessageRequestHeader" && name == "order")
+            {
                 assert_ne!(
                     absent_decoded, false_decoded,
                     "{} {name}: None vs Some(false)",

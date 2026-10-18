@@ -2314,10 +2314,10 @@ pub struct ConsumeMessageDirectlyResultRequestHeader {
     pub oneway: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PopMessageRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
+    pub consumer_group: Option<String>,
+    pub topic: Option<String>,
     pub queue_id: i32,
     pub max_msg_nums: i32,
     pub invisible_time: i64,
@@ -2334,10 +2334,33 @@ pub struct PopMessageRequestHeader {
     pub oneway: Option<bool>,
 }
 
+impl Default for PopMessageRequestHeader {
+    fn default() -> Self {
+        Self {
+            consumer_group: None,
+            topic: None,
+            queue_id: 0,
+            max_msg_nums: 0,
+            invisible_time: 0,
+            poll_time: 0,
+            born_time: 0,
+            init_mode: 0,
+            expression_type: None,
+            expression: None,
+            order: Some(false),
+            attempt_id: None,
+            namespace: None,
+            namespaced: None,
+            broker_name: None,
+            oneway: None,
+        }
+    }
+}
+
 impl CommandHeader for PopMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("consumerGroup".into(), self.consumer_group.clone());
-        fields.insert("topic".into(), self.topic.clone());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
         fields.insert("queueId".into(), self.queue_id.to_string());
         fields.insert("maxMsgNums".into(), self.max_msg_nums.to_string());
         fields.insert("invisibleTime".into(), self.invisible_time.to_string());
@@ -2355,22 +2378,30 @@ impl CommandHeader for PopMessageRequestHeader {
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, false)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
-            consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
-            topic: required_string(fields, "topic")?.to_owned(),
-            queue_id: required_i32(fields, "queueId")?,
-            max_msg_nums: required_i32(fields, "maxMsgNums")?,
-            invisible_time: required_i64(fields, "invisibleTime")?,
-            poll_time: required_i64(fields, "pollTime")?,
-            born_time: required_i64(fields, "bornTime")?,
-            init_mode: required_i32(fields, "initMode")?,
+            consumer_group: optional_string(fields, "consumerGroup"),
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32_with_mode(fields, "queueId", false)?.unwrap_or_default(),
+            max_msg_nums: optional_i32_with_mode(fields, "maxMsgNums", false)?.unwrap_or_default(),
+            invisible_time: optional_i64_with_mode(fields, "invisibleTime", false)?
+                .unwrap_or_default(),
+            poll_time: optional_i64_with_mode(fields, "pollTime", false)?.unwrap_or_default(),
+            born_time: optional_i64_with_mode(fields, "bornTime", false)?.unwrap_or_default(),
+            init_mode: optional_i32_with_mode(fields, "initMode", false)?.unwrap_or_default(),
             expression_type: optional_string(fields, "expType"),
             expression: optional_string(fields, "exp"),
-            order: optional_java_boolean(fields, "order"),
+            order: Some(optional_java_boolean(fields, "order").unwrap_or(false)),
             attempt_id: optional_string(fields, "attemptId"),
         })
     }
@@ -3614,7 +3645,7 @@ mod tests {
             PopMessageRequestHeader,
             broker_name,
             |_| {},
-            |h: &mut PopMessageRequestHeader| h.consumer_group = "payload".into()
+            |h: &mut PopMessageRequestHeader| h.consumer_group = Some("payload".into())
         );
         check_rpc_request_header!(
             AckMessageRequestHeader,

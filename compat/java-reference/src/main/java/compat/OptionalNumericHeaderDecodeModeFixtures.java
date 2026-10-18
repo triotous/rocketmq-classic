@@ -28,11 +28,12 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ConsumerSendMsgBackRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ReplyMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetOffsetRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader;
 
-/** Pins per-field reflection conversion failures for nullable numeric header fields. */
+/** Pins per-field reflection conversion failures for nullable and primitive header fields. */
 public final class OptionalNumericHeaderDecodeModeFixtures {
     private OptionalNumericHeaderDecodeModeFixtures() { }
 
@@ -69,6 +70,17 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
             "bornHost", "127.0.0.1:1", "storeHost", "127.0.0.1:2",
             "storeTimestamp", "1712345678001", "reconsumeTimes", "not-an-int",
             "maxReconsumeTimes", "٧")));
+        cases.put("pop-defaults", decodeModes("pop", fields()));
+        cases.put("pop-invalid-primitive-fields", decodeModes("pop", fields(
+            "consumerGroup", "workers", "topic", "orders", "queueId", "not-an-int",
+            "maxMsgNums", "2147483648", "invisibleTime", "not-a-long",
+            "pollTime", "9223372036854775808", "initMode", "-2147483649",
+            "order", "not-a-boolean")));
+        cases.put("pop-valid-unicode-fields", decodeModes("pop", fields(
+            "consumerGroup", "workers", "topic", "orders", "queueId", "١",
+            "maxMsgNums", "١٦", "invisibleTime", "٣٠٠٠٠", "pollTime", "١٠٠٠",
+            "bornTime", "١٧١٢٣٤٥٦٧٨٩٠١", "initMode", "٠", "order", "true",
+            "ns", "tenant", "nsd", "not-a-boolean", "bname", "broker-a", "oway", "true")));
         fixture.put("cases", cases);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -115,6 +127,9 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
                     break;
                 case "send-v1":
                     headerClass = SendMessageRequestHeader.class;
+                    break;
+                case "pop":
+                    headerClass = PopMessageRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

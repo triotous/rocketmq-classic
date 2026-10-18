@@ -329,7 +329,7 @@ fn add_receipts(
         let _ = message.set_system_property(PROPERTY_POP_CK, raw);
     }
 
-    let topic = request.topic.clone();
+    let topic = request.topic.clone().unwrap_or_default();
     for message in messages.iter_mut() {
         message.set_broker_name(Some(broker_name.to_owned()));
         message.set_topic(topic.clone());
@@ -680,7 +680,7 @@ mod tests {
     #[test]
     fn pop_response_metadata_maps_receipts_by_retry_kind_and_queue() {
         let request = PopMessageRequestHeader {
-            topic: "orders".into(),
+            topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
         let header = PopMessageResponseHeader {
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     fn pop_response_without_checkpoint_metadata_uses_first_queue_offset() {
         let request = PopMessageRequestHeader {
-            topic: "orders".into(),
+            topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
         let header = PopMessageResponseHeader {
@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn malformed_mixed_queue_metadata_is_rejected_before_dispatch() {
         let request = PopMessageRequestHeader {
-            topic: "orders".into(),
+            topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
         let header = PopMessageResponseHeader {
