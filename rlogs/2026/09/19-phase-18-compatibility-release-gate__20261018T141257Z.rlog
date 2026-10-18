@@ -66,3 +66,27 @@
   preflight, P18-V04 current-revision Ubuntu/native Windows evidence, and
   Phase 19's 30 local Docker/Broker runners and required profiles remain open.
   MAN-01–04 remain owner checks; MAN-05 awaits local-matrix completion.
+
+## P18-V01 Connection DTO accessor/API slice — 2026-10-18T14:43:13Z
+
+- Branch: `phase/18-phase-18-compatibility-closure`. Code commit: `160f099a`
+  (`test(protocol): reconcile consumer connection DTO API`). Java oracle at
+  `/Users/bruce.tsai/Projects/3rd/rocketmq` remained read-only at pinned commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- Added Java reflection inventories for the two DTO constructors and all 19
+  declared public methods, plus invoked default/accessor/null/collection alias
+  cases. Rust Protocol differential checks the exact method inventories,
+  defaults, enum/scalar accessors, nullable tables, shared collection identity,
+  nested DTO identity, and mutation visibility.
+- `cargo test -p rocketmq-classic-protocol
+  consumer_connection_min_version_matches_invoked_java_api`: PASS. Offline
+  Maven `verify`: PASS (37 scenarios, fixture checks, 66 typed headers, 15
+  typed bodies). `cargo fmt --all -- --check` and `git diff --check`: PASS.
+  Fixture SHA-256:
+  `a2702341491aea02ece8494c65ac0dc5544e69947d42987414c171f2fb96cc31`.
+- This closes the two DTO API slices only. Full P18-V02 must be refreshed for
+  the current revision. Broad P18-V01 source/API/settings/input/error/flow and
+  reverse-export reconciliation, final P18-V03 package/provenance review,
+  current-revision P18-V04 Ubuntu/native Windows evidence, and Phase 19's 30
+  remaining Docker/Broker runners and profiles remain open. MAN-01–04 remain
+  owner-environment checks; MAN-05 awaits local-matrix completion.

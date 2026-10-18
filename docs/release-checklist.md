@@ -4706,3 +4706,23 @@ owner-specific checks belong in the manual handoff.
   P18-V04 evidence remain open. Phase 19 still needs 30 local Docker/Broker
   scenario runners and required profiles. MAN-01–04 remain owner-environment
   checks; MAN-05 awaits the completed local matrix.
+
+## P18-V01 `Connection` and `ConsumerConnection` DTO API — 2026-10-18 (`160f099a`)
+
+- The pinned Java 5.5.1 oracle fixture now inventories the public no-argument
+  constructors and all 8 declared methods on `Connection` and 11 declared
+  methods on `ConsumerConnection`. Differential coverage records their default
+  values, setter/getter values, nullable table behavior, and collection/value
+  identity and mutation visibility. Rust `SharedValue` accessors preserve the
+  mutable set/map and nested DTO aliases.
+- The focused Rust Protocol differential passed. Offline Maven `verify` passed
+  all 37 scenarios, fixture drift checks, 66 typed-header and 15 typed-body
+  cross-decodes. `cargo fmt --all -- --check` and `git diff --check` passed.
+  Fixture SHA-256: `a2702341491aea02ece8494c65ac0dc5544e69947d42987414c171f2fb96cc31`.
+- This closes only the two DTO API slices. Broad P18-V01 bidirectional
+  reconciliation remains open, as does the full current-revision P18-V02
+  rerun. Final P18-V03 package/provenance and version/registry preflight,
+  current-revision Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
+  local Docker/Broker scenario runners and required profiles remain open.
+  MAN-01–04 remain owner-environment checks; MAN-05 awaits local-matrix
+  completion.
