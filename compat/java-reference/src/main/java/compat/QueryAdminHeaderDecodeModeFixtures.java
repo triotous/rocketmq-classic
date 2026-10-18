@@ -19,13 +19,17 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -95,6 +99,15 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("topic-stats-info-malformed-booleans", decodeModes("topic-stats-info", fields(
             "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
         fixture.put("cases", cases);
+
+        Map<String, Object> apiInventories = new TreeMap<>();
+        apiInventories.put("QueryTopicsByConsumerRequestHeader",
+            apiInventory(QueryTopicsByConsumerRequestHeader.class));
+        apiInventories.put("QuerySubscriptionByConsumerRequestHeader",
+            apiInventory(QuerySubscriptionByConsumerRequestHeader.class));
+        apiInventories.put("QueryTopicConsumeByWhoRequestHeader",
+            apiInventory(QueryTopicConsumeByWhoRequestHeader.class));
+        fixture.put("apiInventories", apiInventories);
 
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -207,5 +220,40 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             fields.put(pairs[index], pairs[index + 1]);
         }
         return fields;
+    }
+
+    private static Map<String, Object> apiInventory(Class<?> type) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicConstructors", Arrays.stream(type.getConstructors())
+            .map(QueryAdminHeaderDecodeModeFixtures::constructorSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("publicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName).sorted().collect(Collectors.toList()));
+        result.put("declaredPublicMethods", Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(QueryAdminHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("callablePublicMethods", Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(QueryAdminHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "("
+            + Arrays.stream(constructor.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " " + method.getDeclaringClass().getName()
+            + "." + method.getName() + "("
+            + Arrays.stream(method.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
     }
 }

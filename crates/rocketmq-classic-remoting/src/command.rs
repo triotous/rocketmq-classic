@@ -954,6 +954,18 @@ mod tests {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
 
+        for header_name in [
+            "QueryTopicsByConsumerRequestHeader",
+            "QuerySubscriptionByConsumerRequestHeader",
+            "QueryTopicConsumeByWhoRequestHeader",
+        ] {
+            assert_eq!(
+                fixture["apiInventories"][header_name]["publicFields"],
+                serde_json::json!([]),
+                "{header_name} public fields"
+            );
+        }
+
         for (case_name, case) in fixture["cases"].as_object().unwrap() {
             let fields = case["fields"]
                 .as_object()
@@ -1242,11 +1254,11 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "group": header.group,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
+                                "group": header.get_group(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
                             }),
                             encoded,
                         )
@@ -1265,13 +1277,13 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "group": header.group,
-                                "topic": header.topic,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
-                                "lo": header.logical,
+                                "group": header.get_group(),
+                                "topic": header.get_topic(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
+                                "lo": header.get_lo(),
                             }),
                             encoded,
                         )
@@ -1290,12 +1302,12 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "topic": header.topic,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
-                                "lo": header.logical,
+                                "topic": header.get_topic(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
+                                "lo": header.get_lo(),
                             }),
                             encoded,
                         )

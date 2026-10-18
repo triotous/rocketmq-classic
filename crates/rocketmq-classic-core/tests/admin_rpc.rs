@@ -821,15 +821,14 @@ async fn query_subscription_by_consumer_sends_java_header_and_decodes_subscripti
     let (addr, peer) =
         scripted_peer(response::SUCCESS, None, Some(body.to_string().into_bytes())).await;
     let (api, client) = api().await;
-    let header = QuerySubscriptionByConsumerRequestHeader {
-        group: Some("workers".into()),
-        topic: Some("orders".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-        logical: Some(true),
-    };
+    let mut header = QuerySubscriptionByConsumerRequestHeader::default();
+    header.set_group(Some("workers".into()));
+    header.set_topic(Some("orders".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
 
     let subscription = api
         .query_subscription_by_consumer(&addr, &header, Instant::now() + Duration::from_secs(2))
@@ -864,17 +863,12 @@ async fn query_subscription_by_consumer_preserves_nullable_subscription_data() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = QuerySubscriptionByConsumerRequestHeader::default();
+    header.set_group(Some("workers".into()));
+    header.set_topic(Some("orders".into()));
 
     let result = api
-        .query_subscription_by_consumer(
-            &addr,
-            &QuerySubscriptionByConsumerRequestHeader {
-                group: Some("workers".into()),
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .query_subscription_by_consumer(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap();
 
@@ -895,17 +889,12 @@ async fn query_subscription_by_consumer_preserves_broker_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = QuerySubscriptionByConsumerRequestHeader::default();
+    header.set_group(Some("workers".into()));
+    header.set_topic(Some("orders".into()));
 
     let error = api
-        .query_subscription_by_consumer(
-            &addr,
-            &QuerySubscriptionByConsumerRequestHeader {
-                group: Some("workers".into()),
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .query_subscription_by_consumer(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
 
@@ -1163,14 +1152,13 @@ async fn query_topic_consume_by_who_sends_java_header_and_decodes_group_list() {
     )
     .await;
     let (api, client) = api().await;
-    let header = QueryTopicConsumeByWhoRequestHeader {
-        topic: Some("orders".into()),
-        namespace: Some("tenant".into()),
-        namespaced: Some(true),
-        broker_name: Some("broker-a".into()),
-        oneway: Some(false),
-        logical: Some(true),
-    };
+    let mut header = QueryTopicConsumeByWhoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_oneway(Some(false));
+    header.set_lo(Some(true));
 
     let groups = api
         .query_topic_consume_by_who(&addr, &header, Instant::now() + Duration::from_secs(2))
@@ -1197,16 +1185,11 @@ async fn query_topic_consume_by_who_preserves_nullable_group_list() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = QueryTopicConsumeByWhoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
 
     let result = api
-        .query_topic_consume_by_who(
-            &addr,
-            &QueryTopicConsumeByWhoRequestHeader {
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .query_topic_consume_by_who(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap();
 
@@ -1227,16 +1210,11 @@ async fn query_topic_consume_by_who_preserves_broker_error() {
     )
     .await;
     let (api, client) = api().await;
+    let mut header = QueryTopicConsumeByWhoRequestHeader::default();
+    header.set_topic(Some("orders".into()));
 
     let error = api
-        .query_topic_consume_by_who(
-            &addr,
-            &QueryTopicConsumeByWhoRequestHeader {
-                topic: Some("orders".into()),
-                ..Default::default()
-            },
-            Instant::now() + Duration::from_secs(2),
-        )
+        .query_topic_consume_by_who(&addr, &header, Instant::now() + Duration::from_secs(2))
         .await
         .unwrap_err();
 

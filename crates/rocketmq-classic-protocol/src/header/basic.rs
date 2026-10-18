@@ -676,13 +676,70 @@ impl CommandHeader for DeleteSubscriptionGroupRequestHeader {
 /// Pinned Java `QueryTopicsByConsumerRequestHeader` used by
 /// `QUERY_TOPICS_BY_CONSUMER`. Java's `checkFields()` is a no-op even though
 /// `group` carries a non-null annotation, so the request remains nullable here.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryTopicsByConsumerRequestHeader;
+/// let _ = QueryTopicsByConsumerRequestHeader::default().group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryTopicsByConsumerRequestHeader {
-    pub group: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) group: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl QueryTopicsByConsumerRequestHeader {
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
 }
 
 impl CommandHeader for QueryTopicsByConsumerRequestHeader {
@@ -708,15 +765,88 @@ impl CommandHeader for QueryTopicsByConsumerRequestHeader {
 /// Pinned Java `QuerySubscriptionByConsumerRequestHeader` used by
 /// `QUERY_SUBSCRIPTION_BY_CONSUMER`. Java's `checkFields()` is a no-op, so the
 /// annotated group and the TopicRequestHeader fields remain nullable.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QuerySubscriptionByConsumerRequestHeader;
+/// let _ = QuerySubscriptionByConsumerRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QuerySubscriptionByConsumerRequestHeader {
-    pub group: Option<String>,
-    pub topic: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
+}
+
+impl QuerySubscriptionByConsumerRequestHeader {
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
 }
 
 impl CommandHeader for QuerySubscriptionByConsumerRequestHeader {
@@ -746,14 +876,79 @@ impl CommandHeader for QuerySubscriptionByConsumerRequestHeader {
 /// Pinned Java `QueryTopicConsumeByWhoRequestHeader` used by
 /// `QUERY_TOPIC_CONSUME_BY_WHO`. Java's `checkFields()` is a no-op, so its topic
 /// and inherited `RpcRequestHeader`/`TopicRequestHeader` fields remain nullable.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryTopicConsumeByWhoRequestHeader;
+/// let _ = QueryTopicConsumeByWhoRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryTopicConsumeByWhoRequestHeader {
-    pub topic: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
+}
+
+impl QueryTopicConsumeByWhoRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
 }
 
 impl CommandHeader for QueryTopicConsumeByWhoRequestHeader {

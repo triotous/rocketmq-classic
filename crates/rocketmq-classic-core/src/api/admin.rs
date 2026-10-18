@@ -973,16 +973,13 @@ mod tests {
                 Some("workers")
             );
             let mut expected_fields = HeaderMap::new();
-            CommandHeader::encode_fields(
-                &QueryTopicsByConsumerRequestHeader {
-                    group: Some("workers".into()),
-                    namespace: Some("tenant".into()),
-                    namespaced: Some(true),
-                    broker_name: Some("broker-a".into()),
-                    oneway: Some(false),
-                },
-                &mut expected_fields,
-            );
+            let mut expected_header = QueryTopicsByConsumerRequestHeader::default();
+            expected_header.set_group(Some("workers".into()));
+            expected_header.set_namespace(Some("tenant".into()));
+            expected_header.set_namespaced(Some(true));
+            expected_header.set_broker_name(Some("broker-a".into()));
+            expected_header.set_oneway(Some(false));
+            CommandHeader::encode_fields(&expected_header, &mut expected_fields);
             assert_eq!(
                 request
                     .ext_fields
@@ -1012,16 +1009,16 @@ mod tests {
         let remoting = RemotingClient::new(TransportMode::Plain);
         remoting.start().unwrap();
         let api = MQClientApi::new(remoting.clone());
+        let mut header = QueryTopicsByConsumerRequestHeader::default();
+        header.set_group(Some("workers".into()));
+        header.set_namespace(Some("tenant".into()));
+        header.set_namespaced(Some(true));
+        header.set_broker_name(Some("broker-a".into()));
+        header.set_oneway(Some(false));
         let result = api
             .query_topics_by_consumer(
                 &address,
-                &QueryTopicsByConsumerRequestHeader {
-                    group: Some("workers".into()),
-                    namespace: Some("tenant".into()),
-                    namespaced: Some(true),
-                    broker_name: Some("broker-a".into()),
-                    oneway: Some(false),
-                },
+                &header,
                 tokio::time::Instant::now() + Duration::from_secs(2),
             )
             .await
@@ -1081,13 +1078,12 @@ mod tests {
         let remoting = RemotingClient::new(TransportMode::Plain);
         remoting.start().unwrap();
         let api = MQClientApi::new(remoting.clone());
+        let mut header = QueryTopicsByConsumerRequestHeader::default();
+        header.set_group(Some("workers".into()));
         let error = api
             .query_topics_by_consumer(
                 &address,
-                &QueryTopicsByConsumerRequestHeader {
-                    group: Some("workers".into()),
-                    ..QueryTopicsByConsumerRequestHeader::default()
-                },
+                &header,
                 tokio::time::Instant::now() + Duration::from_secs(2),
             )
             .await
