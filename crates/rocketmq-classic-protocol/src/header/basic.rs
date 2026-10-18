@@ -2413,6 +2413,27 @@ impl CommandHeader for PopMessageRequestHeader {
 }
 
 impl PopMessageRequestHeader {
+    /// Returns Java's `getQueueId()` value, which normalizes every negative
+    /// backing field to `-1`.
+    pub fn get_queue_id(&self) -> i32 {
+        if self.queue_id < 0 { -1 } else { self.queue_id }
+    }
+
+    /// Mirrors Java's nullable `getOrder()` result.
+    pub fn get_order(&self) -> Option<bool> {
+        self.order
+    }
+
+    /// Mirrors Java's `isOrder()` null-to-false conversion.
+    pub fn is_order(&self) -> bool {
+        self.order.unwrap_or(false)
+    }
+
+    /// Sets the nullable Java `order` value.
+    pub fn set_order(&mut self, order: Option<bool>) {
+        self.order = order;
+    }
+
     /// Mirrors Java's `isTimeoutTooMuch()` helper using the system wall clock.
     pub fn is_timeout_too_much(&self) -> bool {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -2426,6 +2447,25 @@ impl PopMessageRequestHeader {
 
     fn is_timeout_too_much_at(&self, now_millis: i64) -> bool {
         java_pop_timeout_too_much(now_millis, self.born_time, self.poll_time)
+    }
+
+    /// Returns the pinned Java header's `toString()` representation.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "PopMessageRequestHeader{{consumerGroup={}, topic={}, queueId={}, maxMsgNums={}, invisibleTime={}, pollTime={}, bornTime={}, initMode={}, expType={}, exp={}, order={}, attemptId={}}}",
+            java_nullable_string(self.consumer_group.as_deref()),
+            java_nullable_string(self.topic.as_deref()),
+            self.queue_id,
+            self.max_msg_nums,
+            self.invisible_time,
+            self.poll_time,
+            self.born_time,
+            self.init_mode,
+            java_nullable_string(self.expression_type.as_deref()),
+            java_nullable_string(self.expression.as_deref()),
+            java_nullable_bool(self.order),
+            java_nullable_string(self.attempt_id.as_deref()),
+        )
     }
 }
 
@@ -2705,6 +2745,21 @@ impl PopLiteMessageRequestHeader {
 
     fn is_timeout_too_much_at(&self, now_millis: i64) -> bool {
         java_pop_timeout_too_much(now_millis, self.born_time, self.poll_time)
+    }
+
+    /// Returns the pinned Java header's `toString()` representation.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "PopLiteMessageRequestHeader{{consumerGroup={}, topic={}, maxMsgNum={}, invisibleTime={}, pollTime={}, bornTime={}, attemptId={}, clientId={}}}",
+            java_nullable_string(self.consumer_group.as_deref()),
+            java_nullable_string(self.topic.as_deref()),
+            self.max_msg_num,
+            self.invisible_time,
+            self.poll_time,
+            self.born_time,
+            java_nullable_string(self.attempt_id.as_deref()),
+            java_nullable_string(self.client_id.as_deref()),
+        )
     }
 }
 

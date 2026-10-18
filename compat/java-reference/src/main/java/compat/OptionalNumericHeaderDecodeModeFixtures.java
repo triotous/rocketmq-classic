@@ -116,6 +116,41 @@ public final class OptionalNumericHeaderDecodeModeFixtures {
         popTimeoutCases.put("far-future", futurePop.isTimeoutTooMuch());
         fixture.put("popTimeoutCases", popTimeoutCases);
 
+        Map<String, Object> popHeaderApi = new TreeMap<>();
+        PopMessageRequestHeader defaultPop = new PopMessageRequestHeader();
+        PopLiteMessageRequestHeader defaultLitePop = new PopLiteMessageRequestHeader();
+        popHeaderApi.put("popMessageToStringDefault", defaultPop.toString());
+        popHeaderApi.put("popLiteToStringDefault", defaultLitePop.toString());
+        PopMessageRequestHeader popApi = new PopMessageRequestHeader();
+        popApi.setConsumerGroup("workers");
+        popApi.setTopic("订单");
+        popApi.setQueueId(-9);
+        popApi.setMaxMsgNums(3);
+        popApi.setInvisibleTime(30000L);
+        popApi.setPollTime(1000L);
+        popApi.setBornTime(1712345678901L);
+        popApi.setInitMode(1);
+        popApi.setExpType("TAG");
+        popApi.setExp("blue");
+        popApi.setOrder(null);
+        popHeaderApi.put("popMessageNegativeQueueIdGetter", popApi.getQueueId());
+        popHeaderApi.put("popMessageNullableOrderGetter", popApi.getOrder());
+        popHeaderApi.put("popMessageNullableOrderPredicate", popApi.isOrder());
+        popHeaderApi.put("popMessageToStringCustom", popApi.toString());
+        popApi.setOrder(Boolean.TRUE);
+        popHeaderApi.put("popMessageTrueOrderPredicate", popApi.isOrder());
+        PopLiteMessageRequestHeader liteApi = new PopLiteMessageRequestHeader();
+        liteApi.setConsumerGroup("workers");
+        liteApi.setTopic("订单");
+        liteApi.setMaxMsgNum(4);
+        liteApi.setInvisibleTime(30000L);
+        liteApi.setPollTime(1000L);
+        liteApi.setBornTime(1712345678901L);
+        liteApi.setAttemptId("attempt");
+        liteApi.setClientId("client");
+        popHeaderApi.put("popLiteToStringCustom", liteApi.toString());
+        fixture.put("popHeaderApi", popHeaderApi);
+
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {

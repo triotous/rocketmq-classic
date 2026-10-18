@@ -460,6 +460,61 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
         elapsed_pop.is_timeout_too_much(),
         pop_timeout_cases["far-future"].as_bool().unwrap()
     );
+
+    let pop_api = &fixture["popHeaderApi"];
+    assert_eq!(pop_api.as_object().unwrap().len(), 8);
+    assert_eq!(
+        PopMessageRequestHeader::default().java_to_string(),
+        pop_api["popMessageToStringDefault"]
+    );
+    assert_eq!(
+        PopLiteMessageRequestHeader::default().java_to_string(),
+        pop_api["popLiteToStringDefault"]
+    );
+    let mut pop_api_header = PopMessageRequestHeader {
+        consumer_group: Some("workers".into()),
+        topic: Some("订单".into()),
+        queue_id: -9,
+        max_msg_nums: 3,
+        invisible_time: 30_000,
+        poll_time: 1_000,
+        born_time: 1_712_345_678_901,
+        init_mode: 1,
+        expression_type: Some("TAG".into()),
+        expression: Some("blue".into()),
+        order: None,
+        ..PopMessageRequestHeader::default()
+    };
+    assert_eq!(pop_api_header.get_queue_id(), -1);
+    assert_eq!(pop_api_header.get_order(), None);
+    assert!(!pop_api_header.is_order());
+    assert_eq!(
+        pop_api_header.java_to_string(),
+        pop_api["popMessageToStringCustom"]
+    );
+    pop_api_header.set_order(Some(true));
+    assert_eq!(
+        pop_api_header.is_order(),
+        pop_api["popMessageTrueOrderPredicate"]
+    );
+    assert_eq!(pop_api["popMessageNegativeQueueIdGetter"], -1);
+    assert!(pop_api["popMessageNullableOrderGetter"].is_null());
+    assert_eq!(pop_api["popMessageNullableOrderPredicate"], false);
+    let lite_api_header = PopLiteMessageRequestHeader {
+        consumer_group: Some("workers".into()),
+        topic: Some("订单".into()),
+        max_msg_num: 4,
+        invisible_time: 30_000,
+        poll_time: 1_000,
+        born_time: 1_712_345_678_901,
+        attempt_id: Some("attempt".into()),
+        client_id: Some("client".into()),
+        ..PopLiteMessageRequestHeader::default()
+    };
+    assert_eq!(
+        lite_api_header.java_to_string(),
+        pop_api["popLiteToStringCustom"]
+    );
 }
 
 #[test]

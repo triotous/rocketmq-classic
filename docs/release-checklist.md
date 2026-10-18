@@ -4560,3 +4560,22 @@ owner-specific checks belong in the manual handoff.
   package/provenance and pre-publication checks, current-revision P18-V04
   Ubuntu/native Windows CI evidence, and Phase 19 local runners/profiles remain
   open. Owner-only checks stay in the separate handoff.
+
+## P18-V01 POP header public helper methods — 2026-10-18
+
+- [x] Pinned Java behavior is now fixture-backed for negative `queueId`
+  normalization, nullable `order` getter/predicate behavior, and both POP
+  request headers' custom `toString()` output. Rust exposes matching
+  `get_queue_id`, `get_order`, `is_order`, `set_order`, and Java-format string
+  helpers. The expanded optional-header fixture SHA-256 is
+  `5876a0b734633ff2488d5487df7104fb35ee350b970e1556b0e8c881346a3150`.
+- [x] Protocol all-feature tests and the focused Java-fixture differential
+  pass; strict all-target/all-feature Protocol Clippy, Maven `verify` (37
+  scenarios, 66 typed headers and 15 typed bodies), formatting, and diff checks
+  pass.
+- This closes only these POP public helper branches. Broad P18-V01 API,
+  settings, input/error/flow and reverse-export reconciliation; complete P18-V02
+  supplementary gates; final P18-V03 package/provenance and pre-publication
+  checks; current-revision P18-V04 Ubuntu/native Windows CI evidence; and Phase
+  19 local runners/profiles remain open. Owner-only checks stay in the separate
+  handoff.
