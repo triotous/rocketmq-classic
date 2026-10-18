@@ -1176,6 +1176,7 @@ public final class RuntimeLookupFixtures {
 
         org.apache.rocketmq.common.message.MessageQueueAssignment assignment = messageQueueAssignment(
             2, org.apache.rocketmq.common.message.MessageRequestMode.POP);
+        recordPublicApiInventory(item, "messageQueueAssignment", assignment.getClass());
         java.util.Set<org.apache.rocketmq.common.message.MessageQueueAssignment> assignments =
             new java.util.LinkedHashSet<>();
         assignments.add(assignment);
@@ -3156,10 +3157,14 @@ public final class RuntimeLookupFixtures {
     }
 
     private static void recordBodyApiInventory(Map<String, Object> item, Class<?> type) {
-        item.put("bodyPublicConstructors", publicConstructorSignatures(type));
-        item.put("bodyDeclaredPublicMethods", declaredPublicMethodSignatures(type));
-        item.put("bodyCallablePublicMethods", callablePublicMethodSignatures(type));
-        item.put("bodyPublicFields", Arrays.stream(type.getFields())
+        recordPublicApiInventory(item, "body", type);
+    }
+
+    private static void recordPublicApiInventory(Map<String, Object> item, String prefix, Class<?> type) {
+        item.put(prefix + "PublicConstructors", publicConstructorSignatures(type));
+        item.put(prefix + "DeclaredPublicMethods", declaredPublicMethodSignatures(type));
+        item.put(prefix + "CallablePublicMethods", callablePublicMethodSignatures(type));
+        item.put(prefix + "PublicFields", Arrays.stream(type.getFields())
             .filter(field -> Modifier.isPublic(field.getModifiers()))
             .map(Field::getName)
             .sorted()

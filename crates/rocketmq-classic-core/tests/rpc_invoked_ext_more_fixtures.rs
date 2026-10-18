@@ -176,8 +176,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                             .and_then(Option::as_ref)
                             .unwrap()
                             .snapshot();
-                        let queue = item.message_queue.as_ref().unwrap().snapshot();
-                        let attachments = item.attachments.as_ref().unwrap().snapshot();
+                        let queue = item.message_queue().unwrap().snapshot();
+                        let attachments = item.attachments().unwrap().snapshot();
                         format!(
                             "assignments={};topic={};broker={};queue={};mode=POP;source={}",
                             assignments.len(),

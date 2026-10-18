@@ -1342,18 +1342,24 @@ impl QueryAssignmentRequestBody {
     }
 }
 
+/// Java stores all three properties privately and exposes getters and setters.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::MessageQueueAssignment;
+/// let _ = MessageQueueAssignment::default().message_queue;
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageQueueAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message_queue: Option<SharedAssignmentMessageQueue>,
+    message_queue: Option<SharedAssignmentMessageQueue>,
     /// Java defaults this field to PULL but Fastjson may set it to null.
     #[serde(
         default = "default_assignment_mode",
         deserialize_with = "deserialize_assignment_mode",
         skip_serializing_if = "Option::is_none"
     )]
-    pub mode: Option<MessageRequestMode>,
+    mode: Option<MessageRequestMode>,
     /// Java retains null values on decode and omits them during default JSON encoding.
     #[serde(
         default,
@@ -1361,7 +1367,7 @@ pub struct MessageQueueAssignment {
         serialize_with = "serialize_assignment_attachments",
         skip_serializing_if = "Option::is_none"
     )]
-    pub attachments: Option<SharedAssignmentAttachments>,
+    attachments: Option<SharedAssignmentAttachments>,
 }
 
 #[derive(Deserialize)]
@@ -8925,6 +8931,32 @@ mod tests {
 
         let response_case = &fixture["queryAssignmentResponseApiCase"];
         assert_eq!(response_case["bodyPublicFields"], json!([]));
+        assert_eq!(
+            response_case["messageQueueAssignmentPublicFields"],
+            json!([])
+        );
+        assert_eq!(
+            response_case["messageQueueAssignmentPublicConstructors"],
+            json!(["org.apache.rocketmq.common.message.MessageQueueAssignment()"])
+        );
+        assert_eq!(
+            response_case["messageQueueAssignmentDeclaredPublicMethods"],
+            json!([
+                "boolean org.apache.rocketmq.common.message.MessageQueueAssignment.equals(java.lang.Object)",
+                "int org.apache.rocketmq.common.message.MessageQueueAssignment.hashCode()",
+                "java.lang.String org.apache.rocketmq.common.message.MessageQueueAssignment.toString()",
+                "java.util.Map org.apache.rocketmq.common.message.MessageQueueAssignment.getAttachments()",
+                "org.apache.rocketmq.common.message.MessageQueue org.apache.rocketmq.common.message.MessageQueueAssignment.getMessageQueue()",
+                "org.apache.rocketmq.common.message.MessageRequestMode org.apache.rocketmq.common.message.MessageQueueAssignment.getMode()",
+                "void org.apache.rocketmq.common.message.MessageQueueAssignment.setAttachments(java.util.Map)",
+                "void org.apache.rocketmq.common.message.MessageQueueAssignment.setMessageQueue(org.apache.rocketmq.common.message.MessageQueue)",
+                "void org.apache.rocketmq.common.message.MessageQueueAssignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode)"
+            ])
+        );
+        assert_eq!(
+            response_case["messageQueueAssignmentCallablePublicMethods"],
+            response_case["messageQueueAssignmentDeclaredPublicMethods"]
+        );
         assert_eq!(response_case["equalsDeclaringClass"], "java.lang.Object");
         assert_eq!(response_case["hashCodeDeclaringClass"], "java.lang.Object");
         assert_eq!(response_case["sameInstanceEquals"], true);
@@ -8983,11 +9015,12 @@ mod tests {
         );
         caller_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
-            assignments_mut.insert(Some(SharedValue::new(MessageQueueAssignment {
-                message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 3))),
-                mode: Some(MessageRequestMode::Pull),
-                attachments: None,
-            })));
+            let mut assignment = MessageQueueAssignment::default();
+            assignment.set_message_queue(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 3,
+            ))));
+            assignment.set_mode(Some(MessageRequestMode::Pull));
+            assignments_mut.insert(Some(SharedValue::new(assignment)));
         });
         assert_eq!(
             getter_alias.with(|assignments| assignments.iter().any(|assignment| assignment
@@ -8999,11 +9032,12 @@ mod tests {
         );
         getter_alias.with_mut(|assignments_mut| {
             assignments_mut.clear();
-            assignments_mut.insert(Some(SharedValue::new(MessageQueueAssignment {
-                message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker", 4))),
-                mode: Some(MessageRequestMode::Pop),
-                attachments: None,
-            })));
+            let mut assignment = MessageQueueAssignment::default();
+            assignment.set_message_queue(Some(SharedValue::new(MessageQueue::new(
+                "orders", "broker", 4,
+            ))));
+            assignment.set_mode(Some(MessageRequestMode::Pop));
+            assignments_mut.insert(Some(SharedValue::new(assignment)));
         });
         assert_eq!(
             caller_alias.with(|assignments| assignments.iter().any(|assignment| assignment
@@ -10897,14 +10931,14 @@ mod tests {
     #[test]
     #[allow(clippy::mutable_key_type)]
     fn assignment_request_mode_lite_and_batch_ack_match_java_json_shapes() {
-        let assignment = MessageQueueAssignment {
-            message_queue: Some(SharedValue::new(MessageQueue::new("orders", "broker-a", 1))),
-            mode: Some(MessageRequestMode::Pop),
-            attachments: Some(SharedValue::new(std::collections::BTreeMap::from([(
-                "zone".into(),
-                Some("z1".into()),
-            )]))),
-        };
+        let mut assignment = MessageQueueAssignment::default();
+        assignment.set_message_queue(Some(SharedValue::new(MessageQueue::new(
+            "orders", "broker-a", 1,
+        ))));
+        assignment.set_mode(Some(MessageRequestMode::Pop));
+        assignment.set_attachments(Some(SharedValue::new(std::collections::BTreeMap::from([
+            ("zone".into(), Some("z1".into())),
+        ]))));
         let value = serde_json::to_value(assignment).unwrap();
         assert_eq!(value["mode"], "POP");
         assert_eq!(value["messageQueue"]["brokerName"], "broker-a");
@@ -11018,7 +11052,7 @@ mod tests {
                     .unwrap()
                     .snapshot();
                 let mode = assignment
-                    .mode
+                    .mode()
                     .map(serde_json::to_value)
                     .transpose()
                     .unwrap()
@@ -11033,7 +11067,7 @@ mod tests {
             }
         }
         assert_eq!(
-            MessageQueueAssignment::default().mode,
+            MessageQueueAssignment::default().mode(),
             Some(MessageRequestMode::Pull)
         );
     }
@@ -11090,7 +11124,7 @@ mod tests {
                     .unwrap()
                     .snapshot();
                 assert_eq!(
-                    serde_json::to_value(&assignment.attachments).unwrap(),
+                    serde_json::to_value(assignment.attachments()).unwrap(),
                     case["attachments"],
                     "{}",
                     case["name"]
@@ -11483,15 +11517,15 @@ mod tests {
                             Some(item) => {
                                 let item = item.snapshot();
                                 serde_json::json!({
-                                    "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
-                                    "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
+                                    "attachments": item.attachments().map(|value| value.snapshot()),
+                                    "messageQueue": item.message_queue().map(|queue| queue.with(|queue| {
                                         serde_json::json!({
                                             "topic": queue.topic(),
                                             "brokerName": queue.broker_name(),
                                             "queueId": queue.queue_id(),
                                         })
                                     })),
-                                    "mode": item.mode,
+                                    "mode": item.mode(),
                                 })
                             },
                             None => serde_json::Value::Null,
@@ -11556,15 +11590,15 @@ mod tests {
                             Some(item) => {
                                 let item = item.snapshot();
                                 serde_json::json!({
-                                    "attachments": item.attachments.as_ref().map(SharedValue::snapshot),
-                                    "messageQueue": item.message_queue.as_ref().map(|queue| queue.with(|queue| {
+                                    "attachments": item.attachments().map(|value| value.snapshot()),
+                                    "messageQueue": item.message_queue().map(|queue| queue.with(|queue| {
                                         serde_json::json!({
                                             "topic": queue.topic(),
                                             "brokerName": queue.broker_name(),
                                             "queueId": queue.queue_id(),
                                         })
                                     })),
-                                    "mode": item.mode,
+                                    "mode": item.mode(),
                                 })
                             },
                             None => serde_json::Value::Null,
@@ -12582,7 +12616,7 @@ mod tests {
                 "{}",
                 case["name"]
             );
-            assert_eq!(assignment.mode(), assignment.mode, "{}", case["name"]);
+            assert_eq!(assignment.mode(), assignment.mode(), "{}", case["name"]);
             assert_eq!(
                 assignment.attachments().map(|attachments| attachments.snapshot()),
                 serde_json::from_value::<Option<

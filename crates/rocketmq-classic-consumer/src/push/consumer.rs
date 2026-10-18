@@ -215,11 +215,11 @@ fn partition_broker_assignments(
     };
     for assignment in assignments {
         let assignment = assignment?;
-        let Some(queue) = assignment.message_queue.as_ref().map(SharedValue::snapshot) else {
+        let Some(queue) = assignment.message_queue().map(|queue| queue.snapshot()) else {
             continue;
         };
         partition.assigned.insert(queue.clone());
-        if assignment.mode == Some(MessageRequestMode::Pop) {
+        if assignment.mode() == Some(MessageRequestMode::Pop) {
             partition.pop.insert(queue);
         } else {
             // Java treats a missing mode the same as PULL during rebalance.
@@ -9016,27 +9016,17 @@ mod tests {
         let pull_queue = MessageQueue::new("orders", "broker-a", 0);
         let pop_queue = MessageQueue::new("orders", "broker-a", 1);
         let default_pull_queue = MessageQueue::new("orders", "broker-a", 2);
+        let make_assignment = |queue: Option<MessageQueue>, mode: Option<MessageRequestMode>| {
+            let mut assignment = MessageQueueAssignment::default();
+            assignment.set_message_queue(queue.map(SharedValue::new));
+            assignment.set_mode(mode);
+            Some(assignment)
+        };
         let assignments = [
-            Some(MessageQueueAssignment {
-                message_queue: Some(SharedValue::new(pull_queue.clone())),
-                mode: Some(MessageRequestMode::Pull),
-                attachments: None,
-            }),
-            Some(MessageQueueAssignment {
-                message_queue: Some(SharedValue::new(pop_queue.clone())),
-                mode: Some(MessageRequestMode::Pop),
-                attachments: None,
-            }),
-            Some(MessageQueueAssignment {
-                message_queue: Some(SharedValue::new(default_pull_queue.clone())),
-                mode: None,
-                attachments: None,
-            }),
-            Some(MessageQueueAssignment {
-                message_queue: None,
-                mode: Some(MessageRequestMode::Pop),
-                attachments: None,
-            }),
+            make_assignment(Some(pull_queue.clone()), Some(MessageRequestMode::Pull)),
+            make_assignment(Some(pop_queue.clone()), Some(MessageRequestMode::Pop)),
+            make_assignment(Some(default_pull_queue.clone()), None),
+            make_assignment(None, Some(MessageRequestMode::Pop)),
         ];
 
         let partition = partition_broker_assignments(assignments).unwrap();

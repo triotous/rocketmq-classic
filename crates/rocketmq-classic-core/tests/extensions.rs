@@ -650,13 +650,13 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
         .collect::<Vec<_>>();
     assert_eq!(assignments.len(), 1);
     let assignment = assignments.first().unwrap().as_ref().unwrap().snapshot();
-    let queue = assignment.message_queue.as_ref().unwrap().snapshot();
+    let queue = assignment.message_queue().unwrap().snapshot();
     assert_eq!(
         (queue.topic(), queue.broker_name(), queue.queue_id()),
         (Some("orders"), Some("broker"), 2)
     );
     assert_eq!(
-        assignment.attachments.as_ref().unwrap().snapshot()["key"],
+        assignment.attachments().unwrap().snapshot()["key"],
         Some("value".into())
     );
     task.await.unwrap();
