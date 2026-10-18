@@ -53,7 +53,8 @@ null Set through its setter, and retains the same Set object through its
 getter. Invoked Java fixtures pin both decode hints, missing and malformed
 Boolean fields, the request frame, and the response DTO defaults, JSON and
 alias behavior. Rust tests cover the scripted successful RPC and DTO
-null/alias behavior. The per-method error response branch and the other 18
+null/alias behavior. A scripted Broker failure regression also verifies the
+method's response code, peer address, and remark mapping. The other 18
 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every method's request

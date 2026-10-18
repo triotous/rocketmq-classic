@@ -48,3 +48,15 @@ Environment: macOS 26.6.1 aarch64, Rust/Cargo 1.85.0, Maven 3.10.0, Java 27.
   package/provenance review remain open.
 - No Broker was contacted. Phase 19 live scenarios, profiles, pre-publication
   checks, and owner-specific manual handoff remain separate obligations.
+
+## Follow-up: Broker error path — 2026-10-18
+
+- Added a scripted `TOPIC_NOT_EXIST` response regression for
+  `query_topics_by_consumer`; it asserts request code, response code, peer
+  address, and remark. Code commit: `59c0d8fa`.
+- `cargo test -p rocketmq-classic-core --lib query_topics_by_consumer_preserves_broker_error --locked` passed (1 test).
+- Strict all-target/all-feature Core Clippy, `cargo fmt --all -- --check`, and
+  `git diff --check` passed.
+- The method's success and Broker-error paths now have scripted coverage. The
+  other 18 `MqClientAdmin` methods, broad P18-V01 audit, complete latest-revision
+  P18-V02 run, P18-V03 final review, and P18-V04 platform evidence remain open.

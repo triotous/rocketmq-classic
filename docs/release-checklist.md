@@ -3902,8 +3902,10 @@ owner-specific checks belong in the manual handoff.
   all-feature Clippy passes for those three crates; Maven `verify` passes all
   37 scenarios and Java/Rust cross-decodes 57 typed headers and 14 typed bodies.
   Formatting and diff checks pass.
-- The method's error response branch still needs a direct scripted regression;
-  the other 18 `MqClientAdmin` methods and broad P18-V01 reverse/API/settings
+- [x] Follow-up code commit `59c0d8fa` adds a scripted `TOPIC_NOT_EXIST`
+  response test for the error code, peer address, and remark mapping. The Core
+  test, strict all-target/all-feature Core Clippy, format, and diff checks pass.
+- The other 18 `MqClientAdmin` methods and broad P18-V01 reverse/API/settings
   reconciliation remain open. Refresh the full current-revision P18-V02
-  workspace gates after this change. Current-revision Ubuntu/Windows CI and
+  workspace gates after these changes. Current-revision Ubuntu/Windows CI and
   final P18-V03 package/provenance review also remain open.
