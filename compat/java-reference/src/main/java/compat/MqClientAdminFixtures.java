@@ -18,13 +18,16 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -36,7 +39,9 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.client.MqClientAdmin;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.client.impl.admin.MqClientAdminImpl;
@@ -854,6 +859,92 @@ public final class MqClientAdminFixtures {
 
     private static Map<String, Object> consumerConnectionApi() throws Exception {
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("connectionPublicConstructors", publicConstructors(Connection.class));
+        result.put("connectionPublicMethods", publicMethods(Connection.class));
+        result.put("consumerConnectionPublicConstructors", publicConstructors(ConsumerConnection.class));
+        result.put("consumerConnectionPublicMethods", publicMethods(ConsumerConnection.class));
+
+        Connection defaultValue = new Connection();
+        Map<String, Object> connectionDefaults = new LinkedHashMap<>();
+        connectionDefaults.put("clientIdNull", defaultValue.getClientId() == null);
+        connectionDefaults.put("clientAddrNull", defaultValue.getClientAddr() == null);
+        connectionDefaults.put("languageNull", defaultValue.getLanguage() == null);
+        connectionDefaults.put("version", defaultValue.getVersion());
+        result.put("connectionDefaults", connectionDefaults);
+
+        Connection assignedConnection = new Connection();
+        assignedConnection.setClientId("client-api");
+        assignedConnection.setClientAddr("192.0.2.20:10911");
+        assignedConnection.setLanguage(LanguageCode.RUST);
+        assignedConnection.setVersion(55);
+        Map<String, Object> connectionAccessors = new LinkedHashMap<>();
+        connectionAccessors.put("clientId", assignedConnection.getClientId());
+        connectionAccessors.put("clientAddr", assignedConnection.getClientAddr());
+        connectionAccessors.put("language", assignedConnection.getLanguage().name());
+        connectionAccessors.put("version", assignedConnection.getVersion());
+        result.put("connectionAccessors", connectionAccessors);
+
+        ConsumerConnection defaultConsumerConnection = new ConsumerConnection();
+        Map<String, Object> consumerConnectionDefaults = new LinkedHashMap<>();
+        consumerConnectionDefaults.put("connectionSetNonNull",
+            defaultConsumerConnection.getConnectionSet() != null);
+        consumerConnectionDefaults.put("connectionSetEmpty",
+            defaultConsumerConnection.getConnectionSet() != null
+                && defaultConsumerConnection.getConnectionSet().isEmpty());
+        consumerConnectionDefaults.put("subscriptionTableNonNull",
+            defaultConsumerConnection.getSubscriptionTable() != null);
+        consumerConnectionDefaults.put("subscriptionTableEmpty",
+            defaultConsumerConnection.getSubscriptionTable() != null
+                && defaultConsumerConnection.getSubscriptionTable().isEmpty());
+        consumerConnectionDefaults.put("consumeTypeNull", defaultConsumerConnection.getConsumeType() == null);
+        consumerConnectionDefaults.put("messageModelNull", defaultConsumerConnection.getMessageModel() == null);
+        consumerConnectionDefaults.put("consumeFromWhereNull",
+            defaultConsumerConnection.getConsumeFromWhere() == null);
+        result.put("consumerConnectionDefaults", consumerConnectionDefaults);
+
+        ConsumerConnection assignedConsumerConnection = new ConsumerConnection();
+        HashSet<Connection> assignedConnectionSet = new HashSet<>();
+        Connection firstAssignedConnection = new Connection();
+        assignedConnectionSet.add(firstAssignedConnection);
+        assignedConsumerConnection.setConnectionSet(assignedConnectionSet);
+        Set<Connection> returnedConnectionSet = assignedConsumerConnection.getConnectionSet();
+        result.put("connectionSetGetterReturnsAssignedSet",
+            returnedConnectionSet == assignedConnectionSet);
+        result.put("connectionSetGetterReturnsAssignedElement",
+            returnedConnectionSet.iterator().next() == firstAssignedConnection);
+        Connection secondAssignedConnection = new Connection();
+        returnedConnectionSet.add(secondAssignedConnection);
+        result.put("connectionSetGetterMutationVisibleToAssignedSet",
+            assignedConnectionSet.contains(secondAssignedConnection));
+
+        ConcurrentHashMap<String, SubscriptionData> assignedSubscriptionTable = new ConcurrentHashMap<>();
+        SubscriptionData firstSubscription = new SubscriptionData("orders", "tag-a");
+        assignedSubscriptionTable.put("orders", firstSubscription);
+        assignedConsumerConnection.setSubscriptionTable(assignedSubscriptionTable);
+        Map<String, SubscriptionData> returnedSubscriptionTable =
+            assignedConsumerConnection.getSubscriptionTable();
+        result.put("subscriptionTableGetterReturnsAssignedMap",
+            returnedSubscriptionTable == assignedSubscriptionTable);
+        result.put("subscriptionTableGetterReturnsAssignedValue",
+            returnedSubscriptionTable.get("orders") == firstSubscription);
+        returnedSubscriptionTable.put("billing", new SubscriptionData("billing", "tag-b"));
+        result.put("subscriptionTableGetterMutationVisibleToAssignedMap",
+            assignedSubscriptionTable.containsKey("billing"));
+
+        assignedConsumerConnection.setConsumeType(ConsumeType.CONSUME_PASSIVELY);
+        assignedConsumerConnection.setMessageModel(MessageModel.BROADCASTING);
+        assignedConsumerConnection.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        Map<String, Object> consumerConnectionAccessors = new LinkedHashMap<>();
+        consumerConnectionAccessors.put("consumeType", assignedConsumerConnection.getConsumeType().name());
+        consumerConnectionAccessors.put("messageModel", assignedConsumerConnection.getMessageModel().name());
+        consumerConnectionAccessors.put("consumeFromWhere",
+            assignedConsumerConnection.getConsumeFromWhere().name());
+        result.put("consumerConnectionAccessors", consumerConnectionAccessors);
+
+        assignedConsumerConnection.setSubscriptionTable(null);
+        result.put("subscriptionTableSetterPreservesNull",
+            assignedConsumerConnection.getSubscriptionTable() == null);
+
         Method method = ConsumerConnection.class.getMethod("computeMinVersion");
         result.put("computeMinVersionMethod", method.toGenericString());
         result.put("defaultEmpty", computeMinVersionOutcome(new ConsumerConnection()));
@@ -893,6 +984,22 @@ public final class MqClientAdminFixtures {
         nullElement.getConnectionSet().add(null);
         result.put("nullElement", computeMinVersionOutcome(nullElement));
         return result;
+    }
+
+    private static List<String> publicConstructors(Class<?> type) {
+        return Arrays.stream(type.getDeclaredConstructors())
+            .filter(constructor -> Modifier.isPublic(constructor.getModifiers()))
+            .map(Constructor::toGenericString)
+            .sorted()
+            .collect(Collectors.toList());
+    }
+
+    private static List<String> publicMethods(Class<?> type) {
+        return Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(Method::toGenericString)
+            .sorted()
+            .collect(Collectors.toList());
     }
 
     private static Map<String, Object> computeMinVersionOutcome(ConsumerConnection value) {

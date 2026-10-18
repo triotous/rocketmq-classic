@@ -7260,6 +7260,225 @@ mod tests {
         .unwrap();
         let api = &fixture["getConsumerConnectionList"]["success"]["consumerConnectionApi"];
         assert_eq!(
+            api["connectionPublicConstructors"],
+            json!(["public org.apache.rocketmq.remoting.protocol.body.Connection()"])
+        );
+        assert_eq!(
+            api["connectionPublicMethods"],
+            json!([
+                "public int org.apache.rocketmq.remoting.protocol.body.Connection.getVersion()",
+                "public java.lang.String org.apache.rocketmq.remoting.protocol.body.Connection.getClientAddr()",
+                "public java.lang.String org.apache.rocketmq.remoting.protocol.body.Connection.getClientId()",
+                "public org.apache.rocketmq.remoting.protocol.LanguageCode org.apache.rocketmq.remoting.protocol.body.Connection.getLanguage()",
+                "public void org.apache.rocketmq.remoting.protocol.body.Connection.setClientAddr(java.lang.String)",
+                "public void org.apache.rocketmq.remoting.protocol.body.Connection.setClientId(java.lang.String)",
+                "public void org.apache.rocketmq.remoting.protocol.body.Connection.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode)",
+                "public void org.apache.rocketmq.remoting.protocol.body.Connection.setVersion(int)"
+            ])
+        );
+        assert_eq!(
+            api["consumerConnectionPublicConstructors"],
+            json!(["public org.apache.rocketmq.remoting.protocol.body.ConsumerConnection()"])
+        );
+        assert_eq!(
+            api["consumerConnectionPublicMethods"],
+            json!([
+                "public int org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.computeMinVersion()",
+                "public java.util.HashSet<org.apache.rocketmq.remoting.protocol.body.Connection> org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.getConnectionSet()",
+                "public java.util.concurrent.ConcurrentMap<java.lang.String, org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData> org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.getSubscriptionTable()",
+                "public org.apache.rocketmq.common.consumer.ConsumeFromWhere org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.getConsumeFromWhere()",
+                "public org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.getConsumeType()",
+                "public org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.getMessageModel()",
+                "public void org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.setConnectionSet(java.util.HashSet<org.apache.rocketmq.remoting.protocol.body.Connection>)",
+                "public void org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.setConsumeFromWhere(org.apache.rocketmq.common.consumer.ConsumeFromWhere)",
+                "public void org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.setConsumeType(org.apache.rocketmq.remoting.protocol.heartbeat.ConsumeType)",
+                "public void org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.setMessageModel(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel)",
+                "public void org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.setSubscriptionTable(java.util.concurrent.ConcurrentHashMap<java.lang.String, org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData>)"
+            ])
+        );
+
+        let default_connection = Connection::default();
+        assert!(api["connectionDefaults"]["clientIdNull"].as_bool().unwrap());
+        assert!(
+            api["connectionDefaults"]["clientAddrNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(api["connectionDefaults"]["languageNull"].as_bool().unwrap());
+        assert_eq!(default_connection.get_client_id(), None);
+        assert_eq!(default_connection.get_client_addr(), None);
+        assert_eq!(default_connection.get_language(), None);
+        assert_eq!(
+            default_connection.get_version(),
+            api["connectionDefaults"]["version"].as_i64().unwrap() as i32
+        );
+
+        let mut assigned_connection = Connection::default();
+        assigned_connection.set_client_id(Some("client-api".to_owned()));
+        assigned_connection.set_client_addr(Some("192.0.2.20:10911".to_owned()));
+        assigned_connection.set_language(Some(LanguageCode::Rust));
+        assigned_connection.set_version(55);
+        assert_eq!(
+            assigned_connection.get_client_id(),
+            api["connectionAccessors"]["clientId"].as_str()
+        );
+        assert_eq!(
+            assigned_connection.get_client_addr(),
+            api["connectionAccessors"]["clientAddr"].as_str()
+        );
+        assert_eq!(assigned_connection.get_language(), Some(LanguageCode::Rust));
+        assert_eq!(api["connectionAccessors"]["language"], "RUST");
+        assert_eq!(
+            assigned_connection.get_version(),
+            api["connectionAccessors"]["version"].as_i64().unwrap() as i32
+        );
+
+        let default_consumer_connection = ConsumerConnection::default();
+        let default_set = default_consumer_connection.get_connection_set().unwrap();
+        let default_table = default_consumer_connection
+            .get_subscription_table()
+            .unwrap();
+        assert!(
+            api["consumerConnectionDefaults"]["connectionSetNonNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            api["consumerConnectionDefaults"]["connectionSetEmpty"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            api["consumerConnectionDefaults"]["subscriptionTableNonNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            api["consumerConnectionDefaults"]["subscriptionTableEmpty"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(default_set.snapshot().is_empty());
+        assert!(default_table.snapshot().is_empty());
+        assert!(default_consumer_connection.get_consume_type().is_none());
+        assert!(default_consumer_connection.get_message_model().is_none());
+        assert!(
+            default_consumer_connection
+                .get_consume_from_where()
+                .is_none()
+        );
+
+        let assigned_connection_value = SharedValue::new(Connection::default());
+        let assigned_connection_set =
+            SharedValue::new(vec![Some(assigned_connection_value.clone())]);
+        let mut assigned_consumer_connection = ConsumerConnection::default();
+        assigned_consumer_connection.set_connection_set(Some(assigned_connection_set.clone()));
+        let returned_connection_set = assigned_consumer_connection.get_connection_set().unwrap();
+        assert!(
+            api["connectionSetGetterReturnsAssignedSet"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            api["connectionSetGetterReturnsAssignedElement"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(returned_connection_set.ptr_eq(&assigned_connection_set));
+        assert!(returned_connection_set.with(|values| {
+            values[0]
+                .as_ref()
+                .is_some_and(|value| value.ptr_eq(&assigned_connection_value))
+        }));
+        returned_connection_set
+            .with_mut(|values| values.push(Some(SharedValue::new(Connection::default()))));
+        assert!(
+            api["connectionSetGetterMutationVisibleToAssignedSet"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(assigned_connection_set.with(Vec::len), 2);
+
+        let assigned_subscription = SharedValue::new(SubscriptionData::default());
+        let assigned_subscription_table = SharedValue::new(HashMap::from([(
+            "orders".to_owned(),
+            Some(assigned_subscription.clone()),
+        )]));
+        assigned_consumer_connection
+            .set_subscription_table(Some(assigned_subscription_table.clone()));
+        let returned_subscription_table = assigned_consumer_connection
+            .get_subscription_table()
+            .unwrap();
+        assert!(
+            api["subscriptionTableGetterReturnsAssignedMap"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            api["subscriptionTableGetterReturnsAssignedValue"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(returned_subscription_table.ptr_eq(&assigned_subscription_table));
+        assert!(returned_subscription_table.with(|values| {
+            values["orders"]
+                .as_ref()
+                .is_some_and(|value| value.ptr_eq(&assigned_subscription))
+        }));
+        returned_subscription_table.with_mut(|values| {
+            values.insert(
+                "billing".to_owned(),
+                Some(SharedValue::new(SubscriptionData::default())),
+            );
+        });
+        assert!(
+            api["subscriptionTableGetterMutationVisibleToAssignedMap"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(assigned_subscription_table.with(|values| values.contains_key("billing")));
+
+        assigned_consumer_connection.set_consume_type(Some(ConsumeType::ConsumePassively));
+        assigned_consumer_connection.set_message_model(Some(MessageModel::Broadcasting));
+        assigned_consumer_connection
+            .set_consume_from_where(Some(ConsumeFromWhere::ConsumeFromFirstOffset));
+        assert_eq!(
+            assigned_consumer_connection.get_consume_type(),
+            Some(ConsumeType::ConsumePassively)
+        );
+        assert_eq!(
+            api["consumerConnectionAccessors"]["consumeType"],
+            "CONSUME_PASSIVELY"
+        );
+        assert_eq!(
+            assigned_consumer_connection.get_message_model(),
+            Some(MessageModel::Broadcasting)
+        );
+        assert_eq!(
+            api["consumerConnectionAccessors"]["messageModel"],
+            "BROADCASTING"
+        );
+        assert_eq!(
+            assigned_consumer_connection.get_consume_from_where(),
+            Some(ConsumeFromWhere::ConsumeFromFirstOffset)
+        );
+        assert_eq!(
+            api["consumerConnectionAccessors"]["consumeFromWhere"],
+            "CONSUME_FROM_FIRST_OFFSET"
+        );
+        assigned_consumer_connection.set_subscription_table(None);
+        assert!(
+            api["subscriptionTableSetterPreservesNull"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            assigned_consumer_connection
+                .get_subscription_table()
+                .is_none()
+        );
+
+        assert_eq!(
             api["computeMinVersionMethod"],
             "public int org.apache.rocketmq.remoting.protocol.body.ConsumerConnection.computeMinVersion()"
         );
