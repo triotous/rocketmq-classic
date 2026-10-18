@@ -4813,3 +4813,39 @@ owner-specific checks belong in the manual handoff.
   latest revision. P18-V03 package/provenance and registry preflight,
   current-revision Ubuntu/native Windows P18-V04 evidence, and Phase 19's 30
   local Docker/Broker runners and required profiles also remain open.
+
+## P18-V02 current-worktree server-free gate — 2026-10-18 (`117ae342`)
+
+- [x] Default and all-feature `cargo test --workspace --locked` pass, including
+  workspace integration targets and doctests. Strict all-target/all-feature
+  workspace Clippy and `cargo check` pass.
+- [x] Maven `verify` passes all 37 scenarios, fixture checks, 66 typed-header
+  and 15 typed-body cross-decodes. Differential comparator self-test and
+  37-row manifest validation pass.
+- [x] Offline race/leak smoke passes 16 cases × 3. Fixed-seed fuzz smoke passes
+  120 frame seeds, 11 message seeds, 2,096 mutations, 164 frame decodes, and
+  120 message decodes. Release examples and all workspace benchmark targets
+  build.
+- [x] The offline benchmark runs on macOS ARM64 Apple M5 Max with Rust 1.85.0.
+  Observations per iteration: frame encode/decode 2,353.0 ns; Zstd message
+  decode 1,145.1 ns; Producer request construction 1,178.5 ns; 128-entry route
+  lookup 14.4 ns; loopback pending completion 65,594.1 ns. Allocation
+  observations are emitted by the benchmark harness; these measurements are
+  not thresholds.
+- [x] Workspace metadata and seven product package-content listings pass;
+  every listed product package includes `LICENSE` and `NOTICE`. All eight
+  workspace packages report version `0.1.0`. Four Core Unique ID tests pass
+  under both UTC and Asia/Taipei. Formatting and `git diff --check` pass.
+- The P18-V02 local server-free gate is complete on this revision. All 19
+  source-backed `MqClientAdmin` RPC slices are present; an earlier unchecked
+  19-method inventory note is superseded by the Phase 17 matrix. Broad P18-V01
+  API/settings/input/error/flow and reverse-export reconciliation remains
+  open. Final P18-V03 version/registry and provenance preflight and current-
+  revision Ubuntu/native Windows P18-V04 CI evidence also remain open. Phase
+  19 still needs 30 of 37 local Docker/Broker scenario runners, the required
+  profiles, and passing `run-local.sh --all` reconciliation. MAN-01–04 remain
+  owner-environment checks; MAN-05 awaits the local matrix classification.
+- The consumer test call-site adjustment is in code commit `117ae342`. Existing
+  Phase 19 runner/README changes remain unstaged and outside this Phase 18
+  gate. No plan, Java oracle, remote CI, Broker/Docker state, publication,
+  release tag, or push changed.
