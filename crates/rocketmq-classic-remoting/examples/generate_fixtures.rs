@@ -435,32 +435,21 @@ fn generate_p4_headers(output: &std::path::Path) {
             ..PullMessageRequestHeader::default()
         },
     );
-    write_typed(
-        output,
-        "typed-query-offset.bin",
-        14,
-        &QueryConsumerOffsetRequestHeader {
-            consumer_group: Some("workers".into()),
-            topic: Some("orders".into()),
-            queue_id: Some(1),
-            set_zero_if_not_found: None,
-            broker_name: None,
-            ..QueryConsumerOffsetRequestHeader::default()
-        },
-    );
-    write_typed(
-        output,
-        "typed-update-offset.bin",
-        15,
-        &UpdateConsumerOffsetRequestHeader {
-            consumer_group: Some("workers".into()),
-            topic: Some("orders".into()),
-            queue_id: Some(1),
-            commit_offset: Some(9),
-            broker_name: None,
-            ..UpdateConsumerOffsetRequestHeader::default()
-        },
-    );
+    write_typed(output, "typed-query-offset.bin", 14, &{
+        let mut header = QueryConsumerOffsetRequestHeader::default();
+        header.set_consumer_group(Some("workers".into()));
+        header.set_topic(Some("orders".into()));
+        header.set_queue_id(Some(1));
+        header
+    });
+    write_typed(output, "typed-update-offset.bin", 15, &{
+        let mut header = UpdateConsumerOffsetRequestHeader::default();
+        header.set_consumer_group(Some("workers".into()));
+        header.set_topic(Some("orders".into()));
+        header.set_queue_id(Some(1));
+        header.set_commit_offset(Some(9));
+        header
+    });
     write_typed(
         output,
         "typed-end-transaction.bin",

@@ -108,16 +108,120 @@ fn java_pop_timeout_too_much(now_millis: i64, born_time: i64, poll_time: i64) ->
 }
 
 #[derive(Debug, Clone, Default)]
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryConsumerOffsetRequestHeader;
+/// let _ = QueryConsumerOffsetRequestHeader::default().consumer_group;
+/// ```
 pub struct QueryConsumerOffsetRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub set_zero_if_not_found: Option<bool>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub logical: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) set_zero_if_not_found: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl QueryConsumerOffsetRequestHeader {
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, value: Option<String>) {
+        self.consumer_group = value;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_set_zero_if_not_found(&self) -> Option<bool> {
+        self.set_zero_if_not_found
+    }
+
+    pub fn set_set_zero_if_not_found(&mut self, value: Option<bool>) {
+        self.set_zero_if_not_found = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+}
+
+impl std::fmt::Display for QueryConsumerOffsetRequestHeader {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "QueryConsumerOffsetRequestHeader{{consumerGroup={}, topic={}, queueId={}, setZeroIfNotFound={}}}",
+            self.consumer_group.as_deref().unwrap_or("null"),
+            self.topic.as_deref().unwrap_or("null"),
+            self.queue_id
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+            self.set_zero_if_not_found
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+        )
+    }
 }
 
 impl CommandHeader for QueryConsumerOffsetRequestHeader {
@@ -166,15 +270,120 @@ impl CommandHeader for QueryConsumerOffsetRequestHeader {
 }
 
 #[derive(Debug, Clone, Default)]
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::UpdateConsumerOffsetRequestHeader;
+/// let _ = UpdateConsumerOffsetRequestHeader::default().consumer_group;
+/// ```
 pub struct UpdateConsumerOffsetRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub commit_offset: Option<i64>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) commit_offset: Option<i64>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl UpdateConsumerOffsetRequestHeader {
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, value: Option<String>) {
+        self.consumer_group = value;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_commit_offset(&self) -> Option<i64> {
+        self.commit_offset
+    }
+
+    pub fn set_commit_offset(&mut self, value: Option<i64>) {
+        self.commit_offset = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+}
+
+impl std::fmt::Display for UpdateConsumerOffsetRequestHeader {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "UpdateConsumerOffsetRequestHeader{{consumerGroup={}, topic={}, queueId={}, commitOffset={}}}",
+            self.consumer_group.as_deref().unwrap_or("null"),
+            self.topic.as_deref().unwrap_or("null"),
+            self.queue_id
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+            self.commit_offset
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+        )
+    }
 }
 
 impl CommandHeader for UpdateConsumerOffsetRequestHeader {
@@ -186,6 +395,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         put_optional(fields, "bname", self.broker_name.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
         put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "lo", self.logical);
         put_optional(fields, "oway", self.oneway);
     }
 
@@ -193,6 +403,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
             oneway: optional_java_boolean(fields, "oway"),
             consumer_group: Some(required_string(fields, "consumerGroup")?.to_owned()),
             topic: Some(required_string(fields, "topic")?.to_owned()),
@@ -209,6 +420,7 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
         Ok(Self {
             namespace: optional_string(fields, "ns"),
             namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
             oneway: optional_java_boolean(fields, "oway"),
             consumer_group: optional_string(fields, "consumerGroup"),
             topic: optional_string(fields, "topic"),
@@ -227,8 +439,23 @@ impl CommandHeader for UpdateConsumerOffsetRequestHeader {
 /// fn main() { requires_value_equality::<QueryConsumerOffsetResponseHeader>(); }
 /// ```
 #[derive(Debug, Clone, Default)]
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryConsumerOffsetResponseHeader;
+/// let _ = QueryConsumerOffsetResponseHeader::default().offset;
+/// ```
 pub struct QueryConsumerOffsetResponseHeader {
-    pub offset: Option<i64>,
+    pub(crate) offset: Option<i64>,
+}
+
+impl QueryConsumerOffsetResponseHeader {
+    pub fn get_offset(&self) -> Option<i64> {
+        self.offset
+    }
+
+    pub fn set_offset(&mut self, value: Option<i64>) {
+        self.offset = value;
+    }
 }
 
 impl CommandHeader for QueryConsumerOffsetResponseHeader {

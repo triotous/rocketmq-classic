@@ -102,14 +102,12 @@ async fn make_runtime(
 }
 
 fn query_header(queue: &MessageQueue) -> QueryConsumerOffsetRequestHeader {
-    QueryConsumerOffsetRequestHeader {
-        consumer_group: Some("group".into()),
-        topic: Some("orders".into()),
-        queue_id: Some(queue.queue_id()),
-        set_zero_if_not_found: None,
-        broker_name: Some("broker".into()),
-        ..QueryConsumerOffsetRequestHeader::default()
-    }
+    let mut header = QueryConsumerOffsetRequestHeader::default();
+    header.set_consumer_group(Some("group".into()));
+    header.set_topic(Some("orders".into()));
+    header.set_queue_id(Some(queue.queue_id()));
+    header.set_broker_name(Some("broker".into()));
+    header
 }
 
 #[tokio::test]

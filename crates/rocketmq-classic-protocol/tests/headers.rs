@@ -139,8 +139,8 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-offset-request",
     ))
     .unwrap();
-    assert_eq!(query.consumer_group.as_deref(), Some("workers"));
-    assert_eq!(query.queue_id, Some(1));
+    assert_eq!(query.get_consumer_group(), Some("workers"));
+    assert_eq!(query.get_queue_id(), Some(1));
 
     let query_time_span = QueryConsumeTimeSpanRequestHeader::decode_fields(&java_ext_fields(
         "header-query-consume-time-span-request",
@@ -153,7 +153,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-update-offset-request",
     ))
     .unwrap();
-    assert_eq!(update.commit_offset, Some(9));
+    assert_eq!(update.get_commit_offset(), Some(9));
 
     let pull =
         PullMessageRequestHeader::decode_fields(&java_ext_fields("header-pull-request")).unwrap();
@@ -167,7 +167,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-query-offset-response",
     ))
     .unwrap();
-    assert_eq!(offset_response.offset, Some(9));
+    assert_eq!(offset_response.get_offset(), Some(9));
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
     assert_eq!(send_response.msg_id.as_deref(), Some("msg-1"));
@@ -1229,6 +1229,137 @@ fn typed_header_update_preserves_unknown_fields_and_lite_requireds_fail() {
 }
 
 #[test]
+#[allow(deprecated)]
+fn query_consumer_offset_header_public_api_matches_java_fixture() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let fixture: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(format!(
+            "{root}/fixtures/remoting/offset-header-decode-modes.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        fixture["client"],
+        "org.apache.rocketmq:rocketmq-client:5.5.1"
+    );
+    let query_api = &fixture["queryRequestApi"];
+    let update_api = &fixture["updateRequestApi"];
+    let response_api = &fixture["queryResponseApi"];
+    for api in [query_api, update_api, response_api] {
+        assert_eq!(api["publicFields"], serde_json::json!([]));
+        assert_eq!(api["publicConstructors"].as_array().unwrap().len(), 1);
+    }
+    let query_methods = query_api["callablePublicMethods"].as_array().unwrap();
+    for method in [
+        "getConsumerGroup",
+        "setConsumerGroup",
+        "getTopic",
+        "setTopic",
+        "getQueueId",
+        "setQueueId",
+        "getSetZeroIfNotFound",
+        "setSetZeroIfNotFound",
+        "getBname",
+        "setBname",
+        "getBrokerName",
+        "setBrokerName",
+        "getNamespace",
+        "setNamespace",
+        "getNamespaced",
+        "setNamespaced",
+        "getLo",
+        "setLo",
+        "getOneway",
+        "setOneway",
+        "checkFields",
+        "toString",
+    ] {
+        assert!(
+            query_methods
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(&format!(".{method}("))),
+            "Java fixture does not declare {method}"
+        );
+    }
+    let update_methods = update_api["callablePublicMethods"].as_array().unwrap();
+    for method in ["getCommitOffset", "setCommitOffset", "getLo", "setLo"] {
+        assert!(
+            update_methods
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(&format!(".{method}("))),
+            "Java fixture does not declare {method}"
+        );
+    }
+    let response_methods = response_api["callablePublicMethods"].as_array().unwrap();
+    for method in ["getOffset", "setOffset", "checkFields"] {
+        assert!(
+            response_methods
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(&format!(".{method}("))),
+            "Java fixture does not declare {method}"
+        );
+    }
+
+    let mut header = QueryConsumerOffsetRequestHeader::default();
+    header.set_consumer_group(Some("workers".into()));
+    header.set_topic(Some("orders".into()));
+    header.set_queue_id(Some(2));
+    header.set_set_zero_if_not_found(Some(true));
+    header.set_broker_name(Some("broker-a".into()));
+    header.set_namespace(Some("tenant".into()));
+    header.set_namespaced(Some(true));
+    header.set_lo(Some(false));
+    header.set_oneway(Some(false));
+    assert_eq!(header.get_consumer_group(), Some("workers"));
+    assert_eq!(header.get_topic(), Some("orders"));
+    assert_eq!(header.get_queue_id(), Some(2));
+    assert_eq!(header.get_set_zero_if_not_found(), Some(true));
+    assert_eq!(header.get_broker_name(), Some("broker-a"));
+    assert_eq!(header.get_bname(), Some("broker-a"));
+    assert_eq!(header.get_namespace(), Some("tenant"));
+    assert_eq!(header.get_namespaced(), Some(true));
+    assert_eq!(header.get_lo(), Some(false));
+    assert_eq!(header.get_oneway(), Some(false));
+    assert_eq!(header.to_string(), fixture["queryRequestToString"]);
+
+    let mut update = UpdateConsumerOffsetRequestHeader::default();
+    update.set_consumer_group(Some("workers".into()));
+    update.set_topic(Some("orders".into()));
+    update.set_queue_id(Some(2));
+    update.set_commit_offset(Some(9));
+    update.set_broker_name(Some("broker-a".into()));
+    update.set_namespace(Some("tenant".into()));
+    update.set_namespaced(Some(true));
+    update.set_lo(Some(false));
+    update.set_oneway(Some(false));
+    assert_eq!(update.get_consumer_group(), Some("workers"));
+    assert_eq!(update.get_topic(), Some("orders"));
+    assert_eq!(update.get_queue_id(), Some(2));
+    assert_eq!(update.get_commit_offset(), Some(9));
+    assert_eq!(update.get_broker_name(), Some("broker-a"));
+    assert_eq!(update.get_bname(), Some("broker-a"));
+    assert_eq!(update.get_namespace(), Some("tenant"));
+    assert_eq!(update.get_namespaced(), Some(true));
+    assert_eq!(update.get_lo(), Some(false));
+    assert_eq!(update.get_oneway(), Some(false));
+    assert_eq!(update.to_string(), fixture["updateRequestToString"]);
+
+    let update_input = &fixture["cases"]["update-valid"]["fields"];
+    let update_input: HeaderMap = serde_json::from_value(update_input.clone()).unwrap();
+    let decoded_update =
+        UpdateConsumerOffsetRequestHeader::decode_fields_with_mode(&update_input, false).unwrap();
+    assert_eq!(decoded_update.get_lo(), Some(true));
+    let mut encoded_update = HeaderMap::new();
+    decoded_update.encode_fields(&mut encoded_update);
+    assert_eq!(encoded_update.get("lo").map(String::as_str), Some("true"));
+
+    let mut response = QueryConsumerOffsetResponseHeader::default();
+    response.set_offset(Some(9));
+    assert_eq!(response.get_offset(), Some(9));
+}
+
+#[test]
 fn header_required_and_nullable_fields_follow_java_contracts() {
     let empty = HeaderMap::new();
     let err = GetRouteInfoRequestHeader::decode_fields(&empty)
@@ -1301,7 +1432,7 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
     bad.insert("queueId".into(), "0".into());
     bad.insert("setZeroIfNotFound".into(), "yes".into());
     let decoded = QueryConsumerOffsetRequestHeader::decode_fields(&bad).unwrap();
-    assert_eq!(decoded.set_zero_if_not_found, Some(false));
+    assert_eq!(decoded.get_set_zero_if_not_found(), Some(false));
 
     let mut transaction = HeaderMap::from([
         ("producerGroup".into(), "g".into()),

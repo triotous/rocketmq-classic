@@ -19,11 +19,17 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
@@ -72,6 +78,21 @@ public final class OffsetHeaderDecodeModeFixtures {
         cases.put("response-valid", decodeModes("response", responseValid));
 
         fixture.put("cases", cases);
+        fixture.put("queryRequestApi", apiInventory(QueryConsumerOffsetRequestHeader.class));
+        fixture.put("updateRequestApi", apiInventory(UpdateConsumerOffsetRequestHeader.class));
+        fixture.put("queryResponseApi", apiInventory(QueryConsumerOffsetResponseHeader.class));
+        QueryConsumerOffsetRequestHeader queryRequest = new QueryConsumerOffsetRequestHeader();
+        queryRequest.setConsumerGroup("workers");
+        queryRequest.setTopic("orders");
+        queryRequest.setQueueId(2);
+        queryRequest.setSetZeroIfNotFound(true);
+        fixture.put("queryRequestToString", queryRequest.toString());
+        UpdateConsumerOffsetRequestHeader updateRequest = new UpdateConsumerOffsetRequestHeader();
+        updateRequest.setConsumerGroup("workers");
+        updateRequest.setTopic("orders");
+        updateRequest.setQueueId(2);
+        updateRequest.setCommitOffset(9L);
+        fixture.put("updateRequestToString", updateRequest.toString());
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
@@ -83,6 +104,39 @@ public final class OffsetHeaderDecodeModeFixtures {
             Files.writeString(file, json);
         }
         System.out.println("Consumer offset request/response decode fixtures verified");
+    }
+
+    private static Map<String, Object> apiInventory(Class<?> type) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicConstructors", Arrays.stream(type.getConstructors())
+            .map(OffsetHeaderDecodeModeFixtures::constructorSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("publicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName).sorted().collect(Collectors.toList()));
+        result.put("declaredPublicMethods", Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(OffsetHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("callablePublicMethods", Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(OffsetHeaderDecodeModeFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "("
+            + String.join(",", Arrays.stream(constructor.getParameterTypes())
+                .map(Class::getTypeName).collect(Collectors.toList())) + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " "
+            + method.getDeclaringClass().getName() + "." + method.getName() + "("
+            + String.join(",", Arrays.stream(method.getParameterTypes())
+                .map(Class::getTypeName).collect(Collectors.toList())) + ")";
     }
 
     private static Map<String, Object> decodeModes(String headerType, Map<String, String> fields) {
@@ -152,6 +206,7 @@ public final class OffsetHeaderDecodeModeFixtures {
         fields.put("bname", "broker-a");
         fields.put("ns", "tenant");
         fields.put("nsd", "true");
+        fields.put("lo", "true");
         fields.put("oway", "false");
         return fields;
     }

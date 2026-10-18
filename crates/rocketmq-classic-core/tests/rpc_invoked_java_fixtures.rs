@@ -210,14 +210,11 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                 }
             }
             name if name.starts_with("update-") => {
-                let header = UpdateConsumerOffsetRequestHeader {
-                    consumer_group: Some("consumer".into()),
-                    topic: Some("oracle-topic".into()),
-                    queue_id: Some(2),
-                    commit_offset: Some(42),
-                    broker_name: None,
-                    ..UpdateConsumerOffsetRequestHeader::default()
-                };
+                let mut header = UpdateConsumerOffsetRequestHeader::default();
+                header.set_consumer_group(Some("consumer".into()));
+                header.set_topic(Some("oracle-topic".into()));
+                header.set_queue_id(Some(2));
+                header.set_commit_offset(Some(42));
                 match api
                     .update_consumer_offset(&addr, &header, name == "update-oneway", deadline)
                     .await
@@ -230,12 +227,10 @@ async fn java_invoked_cases_match_rust_requests_and_outcomes() {
                 }
             }
             name if name.starts_with("offset-") => {
-                let header = QueryConsumerOffsetRequestHeader {
-                    consumer_group: Some("consumer".into()),
-                    topic: Some("oracle-topic".into()),
-                    queue_id: Some(2),
-                    ..Default::default()
-                };
+                let mut header = QueryConsumerOffsetRequestHeader::default();
+                header.set_consumer_group(Some("consumer".into()));
+                header.set_topic(Some("oracle-topic".into()));
+                header.set_queue_id(Some(2));
                 match api.query_consumer_offset(&addr, &header, deadline).await {
                     Ok(Some(offset)) => format!("offset={offset}"),
                     Ok(None) => "OffsetNotFoundException;code=22".into(),

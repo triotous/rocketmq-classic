@@ -193,8 +193,10 @@ async fn offset_lookup_and_update_modes() {
     for code in [response::SUCCESS, response::QUERY_NOT_FOUND, 9123] {
         let (api, client, addr) = scripted(
             code,
-            Some(fields(&QueryConsumerOffsetResponseHeader {
-                offset: Some(7),
+            Some(fields(&{
+                let mut header = QueryConsumerOffsetResponseHeader::default();
+                header.set_offset(Some(7));
+                header
             })),
             None,
             request::QUERY_CONSUMER_OFFSET,

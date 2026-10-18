@@ -97,14 +97,11 @@ impl RemoteBrokerOffsetStore {
             .topic()
             .ok_or_else(|| OffsetStoreError::Runtime("message queue has no topic".into()))?;
         let address = self.address_or_error(queue, true).await?;
-        let header = QueryConsumerOffsetRequestHeader {
-            consumer_group: Some(self.group_name.clone()),
-            topic: Some(topic.to_owned()),
-            queue_id: Some(queue.queue_id()),
-            set_zero_if_not_found: None,
-            broker_name: queue.broker_name().map(str::to_owned),
-            ..QueryConsumerOffsetRequestHeader::default()
-        };
+        let mut header = QueryConsumerOffsetRequestHeader::default();
+        header.set_consumer_group(Some(self.group_name.clone()));
+        header.set_topic(Some(topic.to_owned()));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_broker_name(queue.broker_name().map(str::to_owned));
         let offset = self
             .runtime
             .api()
@@ -128,14 +125,12 @@ impl RemoteBrokerOffsetStore {
             .topic()
             .ok_or_else(|| OffsetStoreError::Runtime("message queue has no topic".into()))?;
         let address = self.address_or_error(queue, false).await?;
-        let header = UpdateConsumerOffsetRequestHeader {
-            consumer_group: Some(self.group_name.clone()),
-            topic: Some(topic.to_owned()),
-            queue_id: Some(queue.queue_id()),
-            commit_offset: Some(offset),
-            broker_name: queue.broker_name().map(str::to_owned),
-            ..UpdateConsumerOffsetRequestHeader::default()
-        };
+        let mut header = UpdateConsumerOffsetRequestHeader::default();
+        header.set_consumer_group(Some(self.group_name.clone()));
+        header.set_topic(Some(topic.to_owned()));
+        header.set_queue_id(Some(queue.queue_id()));
+        header.set_commit_offset(Some(offset));
+        header.set_broker_name(queue.broker_name().map(str::to_owned));
         self.runtime
             .api()
             .update_consumer_offset(

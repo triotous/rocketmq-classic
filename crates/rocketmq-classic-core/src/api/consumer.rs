@@ -304,7 +304,7 @@ impl MQClientApi {
         let reply = classify(reply, code, addr)?;
         let fields: QueryConsumerOffsetResponseHeader = decode_header(&reply, code, addr)?;
         Ok(Some(required_response_header_field(
-            fields.offset,
+            fields.get_offset(),
             "offset",
             code,
             addr,
