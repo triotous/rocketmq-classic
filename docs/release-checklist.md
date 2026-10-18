@@ -4308,3 +4308,31 @@ owner-specific checks belong in the manual handoff.
   Docker scenarios/profiles and runner reconciliation, and pre-publication
   version/registry checks remain open. Owner-only validation remains the
   separate manual handoff.
+
+## P18-V01 `getConsumeStats` admin RPC — 2026-10-18 (`7375c283`)
+
+- [x] Added `MQClientApi::mq_client_admin().get_consume_stats` for Java 5.5.1
+  request code 208. `ConsumeStats` and `OffsetWrapper` preserve Java defaults,
+  nullable MessageQueue-keyed offset tables, shared map/entry mutation, public
+  accessors, and both wrapping signed-long diff calculations.
+- [x] The invoked Java fixture records the interface signature, request fields,
+  Fastjson response body/result, DTO public methods/defaults/alias behavior,
+  computed totals, null-body result, and Broker error. Scripted Core tests
+  compare request/result data and cover null bodies, Broker errors, and
+  malformed successful bodies. Fixture SHA-256:
+  `707e5c298cab50f1f985bbe41d5da2de70db34670ec67742fbb8fc65b84da9c7`.
+- [x] Protocol all-feature tests passed (134 unit tests, all integration
+  targets, 51 doctests); Core `admin_rpc` passed all 48 tests. Strict
+  all-target/all-feature Clippy passed for Protocol, Remoting, and Core.
+  Pinned Maven `verify` passed all 37 scenarios, 66 typed-header cross-decodes,
+  and 15 typed-body cross-decodes. `cargo fmt --all -- --check` and
+  `git diff --check` passed. Rust body fixture SHA-256:
+  `60927f5f6dc23903346f62856021ca84bbf0bc37ae90c17978a2b064dff705e9`.
+- The source-backed `MqClientAdmin` count is now 17/19. The remaining methods
+  are `updateOrCreateSubscriptionGroup` and `getConsumerRunningInfo`; broad
+  P18-V01 reconciliation remains open. Refresh full-workspace P18-V02 after
+  remaining implementation work. Current-revision Ubuntu/native Windows
+  P18-V04 evidence, final P18-V03 package/provenance review, Phase 19 local
+  Docker scenarios/profiles and runner reconciliation, and pre-publication
+  version/registry checks also remain open. Owner-only validation stays in
+  the separate manual handoff.

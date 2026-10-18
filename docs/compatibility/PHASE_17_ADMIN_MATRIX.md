@@ -30,7 +30,8 @@ and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
 method-by-method mapping has been verified. Sixteen methods now have
-source-backed typed RPC slices; three still need reconciliation. Public status
+source-backed typed RPC slices; two still need reconciliation:
+`updateOrCreateSubscriptionGroup` and `getConsumerRunningInfo`. Public status
 and proxy call sites do not establish an exclusion from the client parity
 contract.
 
@@ -94,6 +95,19 @@ returned data, and rejects malformed success bodies. Both the connection-list
 and consume-stats request headers now have Java→Rust and Rust→Java typed-frame
 fixtures; the consume-stats helper methods are covered against the Java header
 fixture. Fixture SHA-256 is recorded in the Phase 18 release checklist.
+
+Seventeenth reconciled method slice (code commit `7375c283`): Rust exposes
+`MQClientApi::mq_client_admin().get_consume_stats`, matching Java's asynchronous
+request code 208 and `GetConsumeStatsRequestHeader`. Its `ConsumeStats` and
+`OffsetWrapper` models preserve zero defaults, nullable `offsetTable`, shared
+map/entry aliasing, the Java public accessor/method surface, and the signed-long
+wrapping results of both total-diff calculations. The invoked Java fixture
+records the method signature, typed request fields, Fastjson MessageQueue-keyed
+body, DTO methods/defaults/alias behavior, computed totals, null-body result,
+and Broker error. Core scripted tests compare request/result data and cover
+null bodies, Broker errors, and malformed successful bodies. Protocol tests
+verify byte-for-byte body round trips and DTO defaults/aliases. The Java body
+cross-decode inventory now contains 15 Rust typed bodies.
 
 First reconciled method slice (code commit `07865bde`): Java
 `queryTopicsByConsumer(address, requestHeader, timeoutMillis)` sends request
