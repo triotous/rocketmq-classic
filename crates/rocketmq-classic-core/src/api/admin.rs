@@ -4,17 +4,17 @@ use rocketmq_classic_common::message::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        GroupList, QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries,
-        TopicList, TopicStatsTable,
+        ConsumeMessageDirectlyResult, GroupList, QuerySubscriptionResponseBody, ResetOffsetBody,
+        SharedQueueOffsetEntries, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
-        CommandHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
-        DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader,
-        QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-        QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-        ResetOffsetRequestHeader, ViewMessageRequestHeader,
+        CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
+        DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
+        DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
+        GetTopicStatsInfoRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -586,6 +586,21 @@ impl MQClientApi {
                 reason: error.to_string(),
             })
     }
+
+    /// Invokes Java `MqClientAdmin.consumeMessageDirectly` on one Broker.
+    pub async fn consume_message_directly(
+        &self,
+        addr: &str,
+        header: &ConsumeMessageDirectlyResultRequestHeader,
+        deadline: Instant,
+    ) -> Result<ConsumeMessageDirectlyResult, RpcError> {
+        let code = request::CONSUME_MESSAGE_DIRECTLY;
+        let reply = self
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        decode_body(&reply, code, addr)
+    }
 }
 
 impl MqClientAdmin {
@@ -663,6 +678,18 @@ impl MqClientAdmin {
         deadline: Instant,
     ) -> Result<MessageExt, RpcError> {
         self.api.view_message(addr, header, deadline).await
+    }
+
+    /// Invokes one Broker's direct-consume admin RPC.
+    pub async fn consume_message_directly(
+        &self,
+        addr: &str,
+        header: &ConsumeMessageDirectlyResultRequestHeader,
+        deadline: Instant,
+    ) -> Result<ConsumeMessageDirectlyResult, RpcError> {
+        self.api
+            .consume_message_directly(addr, header, deadline)
+            .await
     }
 }
 

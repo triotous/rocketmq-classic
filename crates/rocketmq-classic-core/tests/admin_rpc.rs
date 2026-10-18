@@ -10,7 +10,8 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
-        BoundaryType, CommandHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
+        CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
         GetMinOffsetRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
@@ -1495,7 +1496,6 @@ async fn mq_client_admin_view_message_matches_invoked_java_fixture() {
     let header = ViewMessageRequestHeader {
         topic: Some("orders".into()),
         offset: Some(4),
-        ..Default::default()
     };
     let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(response_body)).await;
     let (view_api, client) = api().await;
@@ -1545,6 +1545,98 @@ async fn mq_client_admin_view_message_matches_invoked_java_fixture() {
         error,
         RpcError::Response { code: 17, remark: Some(remark), .. }
             if remark == "view topic not found"
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_consume_message_directly_matches_invoked_java_fixture() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let consume = &fixture["consumeMessageDirectly"];
+    let success = &consume["success"];
+    let header = ConsumeMessageDirectlyResultRequestHeader {
+        consumer_group: "workers".into(),
+        client_id: Some("client-a".into()),
+        msg_id: Some("message-1".into()),
+        broker_name: Some("broker-a".into()),
+        topic: Some("orders".into()),
+        topic_sys_flag: Some(3),
+        group_sys_flag: Some(5),
+        namespace: Some("tenant".into()),
+        namespaced: Some(true),
+        rpc_broker_name: Some("rpc-broker-a".into()),
+        oneway: Some(false),
+    };
+    let body = success["responseBody"]
+        .as_str()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(body)).await;
+    let (admin_api, client) = api().await;
+    let result = admin_api
+        .mq_client_admin()
+        .consume_message_directly(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::CONSUME_MESSAGE_DIRECTLY);
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        success["requestExtFields"]
+    );
+    assert_eq!(serde_json::to_value(result).unwrap(), success["result"]);
+    client.shutdown().await;
+
+    let error_case = &consume["brokerError"];
+    let (addr, peer) = scripted_peer_with_remark(
+        error_case["responseCode"].as_i64().unwrap() as i32,
+        Some(error_case["responseRemark"].as_str().unwrap().into()),
+        None,
+        None,
+    )
+    .await;
+    let (error_api, client) = api().await;
+    let error = error_api
+        .mq_client_admin()
+        .consume_message_directly(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::CONSUME_MESSAGE_DIRECTLY);
+    assert!(matches!(
+        error,
+        RpcError::Response { code: 1, remark: Some(remark), .. }
+            if remark == "direct consume failed"
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn consume_message_directly_rejects_malformed_success_body() {
+    let header = ConsumeMessageDirectlyResultRequestHeader {
+        consumer_group: "workers".into(),
+        ..Default::default()
+    };
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, Some(b"{".to_vec())).await;
+    let (api, client) = api().await;
+    let error = api
+        .mq_client_admin()
+        .consume_message_directly(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap_err();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::CONSUME_MESSAGE_DIRECTLY);
+    assert!(matches!(
+        error,
+        RpcError::MalformedResponse {
+            request_code: request::CONSUME_MESSAGE_DIRECTLY,
+            ..
+        }
     ));
     client.shutdown().await;
 }

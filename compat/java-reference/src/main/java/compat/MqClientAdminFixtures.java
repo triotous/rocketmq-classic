@@ -49,7 +49,10 @@ import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.body.QueryConsumeTimeSpanBody;
 import org.apache.rocketmq.remoting.protocol.body.QueueTimeSpan;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
+import org.apache.rocketmq.remoting.protocol.body.CMResult;
+import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
 import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ConsumeMessageDirectlyResultRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -199,7 +202,85 @@ public final class MqClientAdminFixtures {
         fixture.put("deleteKvConfig", deleteKvConfig());
         fixture.put("deleteSubscriptionGroup", deleteSubscriptionGroup());
         fixture.put("invokeBrokerToResetOffset", invokeBrokerToResetOffset());
+        fixture.put("consumeMessageDirectly", consumeMessageDirectly());
         return fixture;
+    }
+
+    private static Map<String, Object> consumeMessageDirectly() throws Exception {
+        Method method = MqClientAdmin.class.getMethod("consumeMessageDirectly", String.class,
+            ConsumeMessageDirectlyResultRequestHeader.class, long.class);
+        ConsumeMessageDirectlyResultRequestHeader header = new ConsumeMessageDirectlyResultRequestHeader();
+        header.setConsumerGroup("workers");
+        header.setClientId("client-a");
+        header.setMsgId("message-1");
+        header.setBrokerName("broker-a");
+        header.setTopic("orders");
+        header.setTopicSysFlag(3);
+        header.setGroupSysFlag(5);
+        header.setNamespace("tenant");
+        header.setNamespaced(true);
+        header.setBname("rpc-broker-a");
+        header.setOneway(false);
+
+        ConsumeMessageDirectlyResult expected = new ConsumeMessageDirectlyResult();
+        expected.setOrder(true);
+        expected.setAutoCommit(false);
+        expected.setConsumeResult(CMResult.CR_SUCCESS);
+        expected.setRemark("consumed directly");
+        expected.setSpentTimeMills(37L);
+        byte[] bodyBytes = RemotingSerializable.encode(expected);
+
+        Capture successCapture = new Capture();
+        successCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        successCapture.response.setBody(bodyBytes);
+        ConsumeMessageDirectlyResult value = new MqClientAdminImpl(successCapture.proxy())
+            .consumeMessageDirectly(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+        Map<String, Object> resultSnapshot = new LinkedHashMap<>();
+        resultSnapshot.put("order", value.isOrder());
+        resultSnapshot.put("autoCommit", value.isAutoCommit());
+        resultSnapshot.put("consumeResult", value.getConsumeResult());
+        resultSnapshot.put("remark", value.getRemark());
+        resultSnapshot.put("spentTimeMills", value.getSpentTimeMills());
+        Map<String, Object> success = new LinkedHashMap<>();
+        success.put("address", successCapture.address);
+        success.put("timeoutMillis", successCapture.timeoutMillis);
+        success.put("requestCode", successCapture.request.getCode());
+        success.put("requestExtFields", new TreeMap<>(successCapture.request.getExtFields()));
+        success.put("responseCode", successCapture.response.getCode());
+        success.put("responseBody", new String(bodyBytes, StandardCharsets.UTF_8));
+        success.put("result", resultSnapshot);
+
+        Capture errorCapture = new Capture();
+        errorCapture.response = RemotingCommand.createResponseCommand(
+            ResponseCode.SYSTEM_ERROR, "direct consume failed");
+        Map<String, Object> errorOutcome = new LinkedHashMap<>();
+        try {
+            new MqClientAdminImpl(errorCapture.proxy())
+                .consumeMessageDirectly(BROKER_ADDRESS, header, TIMEOUT_MILLIS).get();
+            throw new IllegalStateException("expected MqClientAdmin direct consume error");
+        } catch (ExecutionException exception) {
+            if (!(exception.getCause() instanceof MQClientException)) {
+                throw exception;
+            }
+            MQClientException clientException = (MQClientException) exception.getCause();
+            errorOutcome.put("exceptionClass", clientException.getClass().getName());
+            errorOutcome.put("responseCode", clientException.getResponseCode());
+            errorOutcome.put("message", clientException.getMessage());
+        }
+        Map<String, Object> brokerError = new LinkedHashMap<>();
+        brokerError.put("address", errorCapture.address);
+        brokerError.put("timeoutMillis", errorCapture.timeoutMillis);
+        brokerError.put("requestCode", errorCapture.request.getCode());
+        brokerError.put("requestExtFields", new TreeMap<>(errorCapture.request.getExtFields()));
+        brokerError.put("responseCode", errorCapture.response.getCode());
+        brokerError.put("responseRemark", errorCapture.response.getRemark());
+        brokerError.put("outcome", errorOutcome);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("method", method.toGenericString());
+        result.put("success", success);
+        result.put("brokerError", brokerError);
+        return result;
     }
 
     private static Map<String, Object> queryMessage() throws Exception {
