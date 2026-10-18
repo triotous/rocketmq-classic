@@ -29,8 +29,10 @@ updates and deletion, offset reset, cluster/consumer inspection, statistics,
 and direct-consume operations. The existing matrix covers `MQAdmin` and the
 Producer/Push/Pull facades but does not crosswalk this separate interface.
 Rust has related operations in `MQClientApi` and the facades, but no complete
-method-by-method mapping has been verified. Its public status and proxy call
-sites do not establish an exclusion from the client parity contract.
+method-by-method mapping has been verified. Two methods now have source-backed
+typed RPC slices; the other 17 still need reconciliation. Their public status
+and proxy call sites do not establish an exclusion from the client parity
+contract.
 
 The Java method inventory is `queryMessage`, `getTopicStatsInfo`,
 `queryConsumeTimeSpan`, `updateOrCreateTopic`,
@@ -54,8 +56,23 @@ getter. Invoked Java fixtures pin both decode hints, missing and malformed
 Boolean fields, the request frame, and the response DTO defaults, JSON and
 alias behavior. Rust tests cover the scripted successful RPC and DTO
 null/alias behavior. A scripted Broker failure regression also verifies the
-method's response code, peer address, and remark mapping. The other 18
-interface methods remain to reconcile.
+method's response code, peer address, and remark mapping.
+
+Second reconciled method slice (code commit `2ac9351b`): Java
+`querySubscriptionByConsumer(address, requestHeader, timeoutMillis)` sends
+request code 345 with `QuerySubscriptionByConsumerRequestHeader` and returns
+the nullable `SubscriptionData` from `QuerySubscriptionResponseBody` only on
+`SUCCESS`. Rust exposes `MQClientApi::query_subscription_by_consumer`, the
+typed header, and response body. The header preserves nullable `group`,
+`topic`, and inherited `ns`, `nsd`, `bname`, `oway`, and `lo` fields; Rust's
+decode-mode fixture covers valid, missing, and malformed Boolean fields under
+both Java hints. The body fixture covers default/null JSON, all getters and
+setters, and the shared nested object returned by the getter. Scripted Rust
+RPC tests cover request fields, successful subscription decoding, nullable
+subscription data, and Broker error mapping. Typed Java/Rust header
+cross-decode and Rust header-inventory/validation rows are included.
+
+The other 17 interface methods remain to reconcile.
 
 Status: **OPEN P18-V01 local parity work**. Reconcile every method's request
 header/body, response type, error path and call behavior against Rust; add the

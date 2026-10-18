@@ -3909,3 +3909,26 @@ owner-specific checks belong in the manual handoff.
   reconciliation remain open. Refresh the full current-revision P18-V02
   workspace gates after these changes. Current-revision Ubuntu/Windows CI and
   final P18-V03 package/provenance review also remain open.
+
+## P18-V01 `querySubscriptionByConsumer` slice — 2026-10-18 (`2ac9351b`)
+
+- [x] Added `MQClientApi::query_subscription_by_consumer`, the typed request
+  header, and `QuerySubscriptionResponseBody`. The body retains Java's nullable
+  `SubscriptionData`, null-omitting JSON, and shared getter alias. Invoked Java
+  fixtures cover the response DTO and both query-header decode hints, including
+  missing and malformed Boolean fields. The Rust header inventory and
+  validation matrix include both `queryTopicsByConsumer` and
+  `querySubscriptionByConsumer`.
+- [x] Protocol all-feature tests pass (130 unit tests, header inventory and
+  validation, 46 doctests); Remoting all-feature tests pass (137 unit tests,
+  107 transport tests, 18 doctests); Core admin RPC tests pass (22 cases).
+  Strict all-target/all-feature Clippy passes for Protocol, Remoting, and Core.
+  Maven `verify` passes 37 scenarios, fixture drift checks, and Java/Rust
+  cross-decodes for 58 typed headers and 14 typed bodies. Formatting and diff
+  checks pass.
+- The other 17 `MqClientAdmin` methods and broad P18-V01 reconciliation remain
+  open. Refresh the full-workspace P18-V02 gate after remaining implementation
+  work. Current-revision Ubuntu/native Windows P18-V04 evidence, final P18-V03
+  package/provenance review, Phase 19 local Docker/Broker scenarios and
+  required profiles, and pre-publication checks also remain open. Owner-only
+  production checks stay in the separate manual handoff.
