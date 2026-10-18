@@ -4977,3 +4977,22 @@ owner-specific checks belong in the manual handoff.
   stack-runtime evidence remain open. Phase 19 still needs 30 of 37 local
   Docker/Broker scenario runners and required profiles; this is Phase 19
   automation work.
+
+## P18-V01 `MessageQueueAssignment` field visibility — 2026-10-18 (`40ccbae8`)
+
+- [x] Pinned Java 5.5.1 reflection confirms `MessageQueueAssignment` exposes
+  no public fields, a no-argument constructor, and getters/setters for its
+  three properties. Rust fields are private; existing shared alias, null,
+  default, and JSON behavior now uses the matching accessors. The invoked Java
+  runtime fixture records the public API inventory. Fixture SHA-256:
+  `b264398de11245733fc53f99db5573b7e8a28bf58fb2e32d5b383993bcfa60f3`.
+- [x] All-feature tests passed for Protocol, Consumer, and Core, including
+  71 Protocol doctests; strict all-target/all-feature Clippy passed for those
+  three crates. Pinned offline Maven `verify` passed all 37 scenarios, fixture
+  checks, 66 typed-header and 15 typed-body cross-decodes. Formatting and diff
+  checks passed. Code/fixture commit: `40ccbae8`.
+- This closes only the `MessageQueueAssignment` field-visibility slice. Broad
+  P18-V01 source/API/settings/input/error/flow and Rust reverse-export
+  reconciliation remains open. The complete current-revision P18-V02 gate,
+  current Ubuntu/native Windows P18-V04 evidence, and remaining Phase 18
+  acceptance work are still pending.
