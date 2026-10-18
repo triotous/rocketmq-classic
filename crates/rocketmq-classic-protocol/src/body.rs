@@ -1764,6 +1764,13 @@ fn java_format_timestamp_millis(timestamp_millis: i64) -> String {
     )
 }
 
+fn java_time_millis_to_human_string(timestamp_millis: i64) -> String {
+    java_format_timestamp_millis(timestamp_millis)
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .collect()
+}
+
 fn java_local_offset_seconds(
     timestamp_millis: i128,
     year: i128,
@@ -5251,6 +5258,29 @@ impl ConsumerProcessQueueInfo {
     }
 }
 
+impl std::fmt::Display for ConsumerProcessQueueInfo {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "ProcessQueueInfo [commitOffset={}, cachedMsgMinOffset={}, cachedMsgMaxOffset={}, cachedMsgCount={}, cachedMsgSizeInMiB={}, transactionMsgMinOffset={}, transactionMsgMaxOffset={}, transactionMsgCount={}, locked={}, tryUnlockTimes={}, lastLockTimestamp={}, droped={}, lastPullTimestamp={}, lastConsumeTimestamp={}]",
+            self.commit_offset,
+            self.cached_msg_min_offset,
+            self.cached_msg_max_offset,
+            self.cached_msg_count,
+            self.cached_msg_size_in_mi_b,
+            self.transaction_msg_min_offset,
+            self.transaction_msg_max_offset,
+            self.transaction_msg_count,
+            self.locked,
+            self.try_unlock_times,
+            java_time_millis_to_human_string(self.last_lock_timestamp),
+            self.droped,
+            java_time_millis_to_human_string(self.last_pull_timestamp),
+            java_time_millis_to_human_string(self.last_consume_timestamp),
+        )
+    }
+}
+
 /// Java `PopProcessQueueInfo` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -5294,6 +5324,16 @@ impl ConsumerPopProcessQueueInfo {
 
     pub fn set_last_pop_timestamp(&mut self, value: i64) {
         self.last_pop_timestamp = value;
+    }
+}
+
+impl std::fmt::Display for ConsumerPopProcessQueueInfo {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "PopProcessQueueInfo [waitAckCount:{}, droped:{}, lastPopTimestamp:{}]",
+            self.wait_ack_count, self.droped, self.last_pop_timestamp
+        )
     }
 }
 

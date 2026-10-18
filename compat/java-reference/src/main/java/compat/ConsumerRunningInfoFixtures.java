@@ -125,6 +125,10 @@ public final class ConsumerRunningInfoFixtures {
         fixture.put("propertyKeys", propertyKeys);
         fixture.put("identitySemantics", identitySemantics());
         fixture.put("apiInventories", apiInventories());
+        Map<String, String> toStrings = new LinkedHashMap<>();
+        toStrings.put("ProcessQueueInfo", processQueueInfo.toString());
+        toStrings.put("PopProcessQueueInfo", popProcessQueueInfo.toString());
+        fixture.put("toStrings", toStrings);
         fixture.put("body", new String(info.encode(), StandardCharsets.UTF_8));
         return fixture;
     }

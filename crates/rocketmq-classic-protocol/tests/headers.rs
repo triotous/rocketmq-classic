@@ -992,10 +992,18 @@ fn consumer_running_info_body_matches_pinned_java_5_5_1_json() {
     process_queue.set_droped(false);
     process_queue.set_last_pull_timestamp(1_700_000_000_003);
     process_queue.set_last_consume_timestamp(1_700_000_000_004);
+    assert_eq!(
+        process_queue.to_string(),
+        fixture["toStrings"]["ProcessQueueInfo"]
+    );
     let mut pop_process_queue = ConsumerPopProcessQueueInfo::default();
     pop_process_queue.set_wait_ack_count(2);
     pop_process_queue.set_droped(false);
     pop_process_queue.set_last_pop_timestamp(1_700_000_000_005);
+    assert_eq!(
+        pop_process_queue.to_string(),
+        fixture["toStrings"]["PopProcessQueueInfo"]
+    );
     let mut status = ConsumerConsumeStatus::default();
     status.set_pull_rt(0.5);
     status.set_pull_tps(2.5);
