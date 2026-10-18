@@ -4631,3 +4631,34 @@ owner-specific checks belong in the manual handoff.
   `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
 - This closes the declared `Message` API slice. `MessageExt` inherited API and
   workspace-wide P18-V01 reconciliation remain open.
+
+## P18-V01 `MessageExt` and `MessageClientExt` surface crosswalk — 2026-10-18
+
+- The pinned Java 5.5.1 fixtures enumerate both `MessageExt` constructors and
+  all 44 declared methods, plus the `MessageClientExt` no-argument constructor
+  and four declared methods. The compatibility map now reconciles scalar and
+  inherited accessors, socket/address and byte-buffer overloads, system flags,
+  client message-ID selection, formatting, and identity behavior.
+- On code revision `f5a924fa`, four `message_ext_*` differential tests and
+  `message_client_ext_api_matches_java_551_fixture` passed. The current-revision
+  offline Maven `verify` passed with 37 scenarios, 11 Java message decode
+  fixtures, fixture drift checks, and Java/Rust cross-decodes. Fixture SHA-256:
+  `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`.
+- This closes the `MessageExt`/`MessageClientExt` declared and inherited API
+  slice. Broad P18-V01 bidirectional reconciliation remains open.
+
+## P18-V01 `MessageExt` host-byte failure ordering — 2026-10-18
+
+- [x] Pinned Java 5.5.1 confirms absent born/store hosts fail with
+  `NullPointerException`. Caller buffers sized 7 bytes for IPv4 and 19 bytes
+  for IPv6 overflow while writing the port after the address, retaining the
+  first 4/16 bytes and advancing to that position. The fixture also covers
+  constructor preservation of null hosts.
+- [x] Rust returns typed missing-address/short-buffer errors and preserves the
+  address prefix on short-buffer failure. The focused differential and Common
+  all-feature suite pass; strict all-target/all-feature Common Clippy, format,
+  `git diff --check`, and offline Maven `verify` pass. Fixture SHA-256:
+  `6b1a19fef78c1f88f52d7e0851905a6c4a1d6adb98de90fe2028642880a513b3`.
+- This closes only this host-byte error-ordering slice. Broad P18-V01 remains
+  open; the current-revision full-workspace P18-V02 rerun is still required
+  after this source change.

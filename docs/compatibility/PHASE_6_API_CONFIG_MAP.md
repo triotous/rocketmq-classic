@@ -1263,9 +1263,9 @@ The pinned fixture invokes all constants, validation/classification methods, mut
 | `Message.toString()` / `MessageExt.toString()` | Rust `Display` implementations provide the corresponding `.to_string()` behavior; internal `java_to_string` formatting helpers are not exposed as separate public methods |
 | `InetSocketAddress.toString()` text used by `MessageExt` host fields | `MessageHostAddress` implements `Display`/`ToString`; its internal formatter is not a separate public API |
 
-Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. The full declared `Message` constructor and method crosswalk is recorded below; `MessageExt` inherited methods and the workspace-wide reverse-export/source-flow audit remain part of P18-V01.
+Compile-fail rustdoc examples guard the three removed helper exports. `message_public_api_matches_java_551_fixture`, `message_ext_system_flag_helpers_match_java_551`, and `message_ext_socket_address_api_matches_java_551` continue to verify the public formatting and host-address behavior. The `Message`, `MessageExt`, and `MessageClientExt` declared and inherited API crosswalks are recorded below; the workspace-wide reverse-export/source-flow audit remains part of P18-V01.
 
-`messageExtPublicApi` now reflects all 44 declared public `MessageExt` methods, and `messageClientExtApi` reflects all four declared public `MessageClientExt` methods. Rust tests pin both sorted Java signature lists alongside the constructor, scalar, host, and client-ID behavior checks. Host byte-buffer overloads map to `MessageHostAddress`'s network-byte adapters; the broader Rust/Common API reconciliation remains open.
+`messageExtPublicApi` reflects all 44 declared public `MessageExt` methods, and `messageClientExtApi` reflects all four declared public `MessageClientExt` methods. Rust tests pin both sorted Java signature lists alongside constructor, scalar, host, and client-ID behavior. The complete crosswalk is recorded below; the workspace-wide Rust/Common API reconciliation remains open.
 
 ## Common public API: Message equality semantics
 
@@ -1353,8 +1353,61 @@ fixtures, fixture drift checks, and Java/Rust cross-decodes. The fixture SHA-256
 is `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`; the
 pinned `Message.java` SHA-256 is
 `c58de775771666448168eb959a1d6ebb98959bb42855a4fadaabb5f8f1d158d7`.
-This closes the declared `Message` API slice; it does not close `MessageExt`
-inherited method reconciliation or the broad P18-V01 bidirectional audit.
+This closes the declared `Message` API slice; `MessageExt` inherited method
+reconciliation is recorded in the next section. The broad P18-V01 bidirectional
+audit remains open.
+
+## Common public API: MessageExt and MessageClientExt declared and inherited methods
+
+The pinned Java 5.5.1 `MessageExt` declares two public constructors and 44
+public methods. `MessageClientExt` declares one public no-argument constructor
+and four public methods. The Rust wrappers expose the inherited `Message` and
+`MessageExt` methods through `Deref`/`DerefMut`; their base-class crosswalk is
+above.
+
+| Java 5.5.1 declaration | Rust counterpart / behavior |
+| --- | --- |
+| `MessageExt()`; `(int, long, SocketAddress, long, SocketAddress, String)` | `MessageExt::new`/`Default` and `MessageExt::with_socket_addresses`. Nullable/resolved/unresolved address and scalar defaults/constructor values are fixture-covered. |
+| `get/setBrokerName`, `get/setQueueId`, `get/setBornTimestamp`, `get/setStoreTimestamp`, `get/setMsgId`, `get/setSysFlag`, `get/setBodyCRC`, `get/setQueueOffset`, `get/setCommitLogOffset`, `get/setStoreSize`, `get/setReconsumeTimes`, `get/setPreparedTransactionOffset` | Matching snake-case getters/setters on `MessageExt`; Java null strings map to `Option<String>`, and signed scalar values retain Java's full `int`/`long` range. |
+| `get/setBornHost`, `get/setStoreHost`, `getBornHostString`, `getBornHostNameString` | `born_host`/`set_born_host`, `store_host`/`set_store_host`, `born_host_string`, and `born_host_name_string` use `MessageHostAddress` to retain resolved and unresolved Java socket-address states and Java-formatted host text. |
+| `getBornHostBytes()` / `(ByteBuffer)`; `getStoreHostBytes()` / `(ByteBuffer)`; static `socketAddress2ByteBuffer(SocketAddress)` / `(SocketAddress, ByteBuffer)` | `MessageHostAddress::network_bytes`, `MessageHostAddress::write_network_bytes`, `MessageExt::born_host_bytes`/`write_born_host_bytes`, and `store_host_bytes`/`write_store_host_bytes` map returned bytes and caller-buffer overloads. Resolved IPv4/IPv6 output, null/unresolved-host failures, and short-buffer prefix writes before port overflow are fixture-tested. |
+| `parseTopicFilterType(int)`; `get/setTopicSysFlag`; `get/setGroupSysFlag` | `parse_topic_filter_type`, `topic_sys_flag`/`set_topic_sys_flag`, and `group_sys_flag`/`set_group_sys_flag`; absent/empty/null values, malformed and Unicode decimal inputs, and single/multi-tag flags are compared. |
+| `setBornHostV6Flag`; `setStoreHostAddressV6Flag`; `toString` | `set_born_host_v6_flag`, `set_store_host_address_v6_flag`, and `Display` preserve the Java flag bits and observed message text. Identity-based equality/hash behavior is recorded in [Message equality semantics](#common-public-api-message-equality-semantics). |
+| `MessageClientExt()`; `getMsgId` / `setMsgId`; `getOffsetMsgId` / `setOffsetMsgId` | `MessageClientExt::new`/`Default`, `message_id`/`set_message_id`, and `offset_message_id`/`set_offset_message_id`. Message ID fallback to offset ID, preference for the unique-message property, ignored setters under those conditions, and inherited Message/MessageExt accessors are fixture-tested. |
+
+`messageExtPublicApi` and `messageClientExtApi` pin all constructor and
+declared-method signatures. Rust differentials cover scalar defaults and
+boundaries, socket constructor/getter/setter and byte-buffer overloads,
+system-flag validation, client message-ID selection, inherited base methods,
+and identity behavior. On code revision `f5a924fa`, the four
+`message_ext_*` tests and `message_client_ext_api_matches_java_551_fixture`
+passed; the current-revision offline Maven `verify` passed with 37 scenarios,
+11 Java message decode fixtures, fixture drift checks, and Java/Rust
+cross-decodes. `fixtures/messages/records.json` SHA-256 is
+`0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`;
+pinned `MessageExt.java` SHA-256 is
+`19a256b417a68daac6b1da6fe3b48a9bfa1fef7a9c09a6c8a29fdfb56ae34382`, and
+`MessageClientExt.java` SHA-256 is
+`fff21b69a3ed518781706cd4e87294c9407cc04f5f33e996d446ba06984a251d`.
+This closes the `MessageExt`/`MessageClientExt` declared and inherited API
+slice; broad P18-V01 bidirectional source, settings, input/error/flow, and
+reverse-export reconciliation remains open.
+
+### Host-byte buffer failure ordering follow-up
+
+Pinned Java `MessageExt.getBornHostBytes()` and `getStoreHostBytes()` throw a
+`NullPointerException` when their host is absent. Their `ByteBuffer` overloads
+first write the full 4-byte IPv4 or 16-byte IPv6 address, then write the
+4-byte port; a buffer with 7 IPv4 bytes or 19 IPv6 bytes therefore overflows
+after advancing to position 4 or 16 and retains that address prefix. Rust
+returns `MissingAddress` for an absent host and `BufferTooSmall` for these
+short slices while preserving the same address prefix. The invoked fixture
+also records construction with null born/store hosts. The Rust differential,
+Common all-feature suite, strict Common Clippy, formatting, and offline Maven
+`verify` pass. Fixture SHA-256:
+`6b1a19fef78c1f88f52d7e0851905a6c4a1d6adb98de90fe2028642880a513b3`.
+This closes only the host-byte failure-ordering slice; broad P18-V01 remains
+open.
 
 ## Common public API: MessageAccessor
 
