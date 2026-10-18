@@ -5049,3 +5049,25 @@ owner-specific checks belong in the manual handoff.
   checks passed. Code commit: `4953cde5`.
 - This closes only the two nested DTO text methods. Full P18-V01 and the final
   workspace P18-V02 gate remain open.
+
+## P18-V01 consumer-offset header visibility and API — 2026-10-18 (`b71406fa`)
+
+- [x] Pinned Java 5.5.1 inventories confirm that
+  `QueryConsumerOffsetRequestHeader`, `UpdateConsumerOffsetRequestHeader`, and
+  `QueryConsumerOffsetResponseHeader` expose no public fields. Rust fields are
+  crate-private, Java-equivalent accessors are available, and the two request
+  headers match Java `toString()`. Update requests also encode/decode inherited
+  `lo`. Fixture SHA-256:
+  `2a62dd6f4171bd043a21c9f9fbf3f79299a07723d165540a1589d5d7312abab1`.
+- [x] Workspace all-target/all-feature `cargo check`, focused Protocol/Core/
+  Consumer offset and RPC tests, strict Clippy for those three crates, offline
+  Maven `verify` (37 scenarios, fixture drift and 66 typed-header/15 typed-
+  body cross-decodes), formatting, and diff checks pass. Code commit:
+  `b71406fa`.
+- This closes only the three consumer-offset header rows. Broad P18-V01
+  bidirectional source/API/settings/input/error/flow and reverse-export
+  reconciliation, the final current-revision P18-V02 gate, current GitHub
+  Ubuntu and native Windows P18-V04 evidence, and Phase 19's 30 missing local
+  Broker/Docker scenario runners/profiles remain open. P18-V03 tag-signature
+  verification is unavailable without GPG; release version/registry preflight
+  is deferred until after Phase 19.
