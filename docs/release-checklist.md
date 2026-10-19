@@ -5229,3 +5229,29 @@ owner-specific checks belong in the manual handoff.
 - This closes only the `ClientGroup` mutability discrepancy. Broad P18-V01
   bidirectional API/settings/flow and reverse-export reconciliation remains
   open.
+
+## P18-V02/V03 current-worktree server-free gate — 2026-10-19 (`aaff724e`)
+
+- [x] On code revision `aaff724edb116c87e73c2040b73c56841d18ab31`, the locked
+  default and all-feature workspace tests, `cargo fmt --all -- --check`, strict
+  all-target/all-feature Clippy, the Asia/Taipei unique-ID fixture, differential
+  comparator self-test and 37-scenario manifest validation passed.
+- [x] The fixed-seed fuzz smoke passed with 121 frame seeds, 11 message seeds,
+  2,112 bounded mutations, 170 frame decodes and 109 message decodes. Offline
+  deterministic race/leak smoke passed all 16 cases three times each.
+- [x] Offline Maven `verify` passed all 37 scenarios and fixture checks,
+  including 67 exact typed-header and 15 typed-body cross-decodes. The facade
+  examples built in release mode; the offline benchmark compiled and ran. Its
+  current-revision observations are in
+  [PHASE_18_OFFLINE_BENCHMARK_BASELINE.md](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [x] Workspace metadata/dependency-direction checks and package listings for
+  all seven product crates passed; each listing includes `LICENSE`, `NOTICE`,
+  and `src/lib.rs`. The Java tag still resolves to pinned source commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`, and the harness pins client
+  `5.5.1`. No registry resolution, publication or release claim is made.
+- This closes the local server-free P18-V02 gate and current-tree package
+  preparation slice. Broad P18-V01 bidirectional source/API/settings/input/
+  error/flow and reverse-export reconciliation remains open. Current-revision
+  GitHub Ubuntu and native Windows P18-V04 evidence is not available from this
+  local run; no CI was triggered. Phase 19 live Broker/Docker validation was
+  not run. See the execution log for command and environment details.

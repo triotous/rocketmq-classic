@@ -129,3 +129,24 @@ above and must not be compared with them as a performance change.
 These measurements satisfy the current-revision offline benchmark run; they
 are observations, not acceptance thresholds. Allocation totals are aggregate
 allocator calls and requested bytes divided by sampled operations.
+
+## Phase 18 compatibility-closure revision
+
+Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
+2026-10-19 at code revision `aaff724edb116c87e73c2040b73c56841d18ab31`.
+Environment and fixed inputs match the native macOS samples above. This is a
+machine-specific observation, not a performance threshold or cross-machine
+comparison.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 2,437.1 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,183.8 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,222.2 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 16.1 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 67,389.6 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Timing and allocation observations are recorded without an acceptance
+threshold. Allocation totals are aggregate allocator calls and requested bytes
+divided by sampled operations; loopback timing includes local TCP and Tokio
+scheduling.
