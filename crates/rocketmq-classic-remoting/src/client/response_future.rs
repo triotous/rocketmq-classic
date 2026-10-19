@@ -18,6 +18,14 @@ use super::{InvokeCallback, connection};
 /// The handle keeps channel identity after close events while allowing live operations when the
 /// connection is still active. `write_and_flush` encodes a RocketMQ command before enqueueing it
 /// on the connection's owned writer task.
+///
+/// Connection generation is internal transport bookkeeping and is not part of this public API:
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::ChannelHandle;
+/// let channel: ChannelHandle = loop {};
+/// let _generation = channel.generation();
+/// ```
 #[derive(Clone)]
 pub struct ChannelHandle {
     state: Arc<ChannelHandleState>,
@@ -25,7 +33,6 @@ pub struct ChannelHandle {
 
 struct ChannelHandleState {
     remote_addr: String,
-    generation: u64,
     connection: Mutex<Option<Weak<connection::Connection>>>,
     closed_events: tokio::sync::watch::Sender<bool>,
     closed: Arc<AtomicBool>,
@@ -34,12 +41,11 @@ struct ChannelHandleState {
 }
 
 impl ChannelHandle {
-    pub(super) fn pending(remote_addr: &str, generation: u64) -> Self {
+    pub(super) fn pending(remote_addr: &str) -> Self {
         let (closed_events, _) = tokio::sync::watch::channel(false);
         Self {
             state: Arc::new(ChannelHandleState {
                 remote_addr: super::redact_peer_address(remote_addr),
-                generation,
                 connection: Mutex::new(None),
                 closed_events,
                 closed: Arc::new(AtomicBool::new(false)),
@@ -86,11 +92,6 @@ impl ChannelHandle {
     /// Returns the peer address recorded for this channel, with URI credentials redacted.
     pub fn remote_addr(&self) -> &str {
         &self.state.remote_addr
-    }
-
-    /// Returns the connection generation associated with this channel.
-    pub fn generation(&self) -> u64 {
-        self.state.generation
     }
 
     /// Reports whether the channel object remains open, including while connection is pending.
@@ -161,7 +162,6 @@ impl fmt::Debug for ChannelHandle {
         formatter
             .debug_struct("ChannelHandle")
             .field("remote_addr", &self.remote_addr())
-            .field("generation", &self.generation())
             .field("open", &self.is_open())
             .field("active", &self.is_active())
             .finish()
@@ -673,7 +673,7 @@ mod tests {
             opaque: 42,
             ..Default::default()
         };
-        let channel = ChannelHandle::pending("broker:10911", 9);
+        let channel = ChannelHandle::pending("broker:10911");
         let future = ResponseFuture::new(
             Some(channel.clone()),
             42,
@@ -975,7 +975,7 @@ mod tests {
     fn direct_callback_failure_matches_java_send_timeout_and_generic_categories() {
         let send_error = Arc::new(Mutex::new(None));
         let send_future = ResponseFuture::new(
-            Some(ChannelHandle::pending("broker:10911", 1)),
+            Some(ChannelHandle::pending("broker:10911")),
             0,
             Some(RemotingCommand::default()),
             1000,
@@ -993,7 +993,7 @@ mod tests {
 
         let timeout_error = Arc::new(Mutex::new(None));
         let timeout_future = ResponseFuture::new(
-            Some(ChannelHandle::pending("broker:10911", 2)),
+            Some(ChannelHandle::pending("broker:10911")),
             0,
             Some(RemotingCommand::default()),
             -1,
@@ -1068,7 +1068,7 @@ mod tests {
             let events = Arc::new(Mutex::new(Vec::new()));
             let error = Arc::new(Mutex::new(None));
             let future = ResponseFuture::new(
-                Some(ChannelHandle::pending("broker:10911", opaque as u64)),
+                Some(ChannelHandle::pending("broker:10911")),
                 opaque,
                 Some(RemotingCommand {
                     code: 42,
@@ -1120,7 +1120,7 @@ mod tests {
 
         let events = Arc::new(Mutex::new(Vec::new()));
         let null_request = ResponseFuture::new(
-            Some(ChannelHandle::pending("broker:10911", 54)),
+            Some(ChannelHandle::pending("broker:10911")),
             54,
             None,
             i64::MAX,
@@ -1136,15 +1136,14 @@ mod tests {
     }
 
     #[test]
-    fn channel_handle_exposes_address_generation_state_and_close() {
-        let channel = ChannelHandle::pending("tls://user:secret@broker:10911", 7);
+    fn channel_handle_exposes_java_channel_identity_address_state_and_close() {
+        let channel = ChannelHandle::pending("tls://user:secret@broker:10911");
         assert_eq!(channel, channel.clone());
         assert_ne!(
             channel,
-            ChannelHandle::pending("tls://user:secret@broker:10911", 7)
+            ChannelHandle::pending("tls://user:secret@broker:10911")
         );
         assert_eq!(channel.remote_addr(), "tls://[REDACTED]@broker:10911");
-        assert_eq!(channel.generation(), 7);
         assert!(channel.is_open());
         assert!(!channel.is_active());
         assert!(!channel.is_writable());

@@ -728,12 +728,19 @@ impl CallbackExecutor for ClientCallbackExecutor {
     }
 }
 
-/// Owned channel lifecycle information, including the connection generation.
+/// Owned channel lifecycle information passed through Java-shaped remoting callbacks.
+///
+/// Connection generation is private transport bookkeeping and is not exposed as an event field:
+///
+/// ```compile_fail
+/// use rocketmq_classic_remoting::client::ChannelEvent;
+/// let event: ChannelEvent = loop {};
+/// let _generation = event.generation;
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChannelEvent {
     pub remote_addr: String,
     pub event_type: NettyEventType,
-    pub generation: u64,
     pub channel: ChannelHandle,
 }
 
@@ -742,7 +749,7 @@ pub trait ChannelEventListener: Send + Sync + 'static {
     /// queue, so a slow observer cannot block transport or a Tokio runtime worker. Queue overflow
     /// drops the event. A synchronous callback already running cannot be forcibly cancelled by
     /// shutdown; it must return for its blocking thread to be reclaimed.
-    /// Receives the event with its Rust channel handle and generation metadata.
+    /// Receives the event with its Rust channel handle.
     fn on_channel_event(&self, event: &ChannelEvent) {
         match event.event_type {
             NettyEventType::Connect => self.on_connect(&event.remote_addr, &event.channel),
@@ -2345,7 +2352,6 @@ impl ClientInner {
             let _ = self.channel_event_sender.try_send(ChannelEvent {
                 remote_addr: channel.remote_addr().to_owned(),
                 event_type,
-                generation: channel.generation(),
                 channel,
             });
         }
@@ -3170,8 +3176,7 @@ mod tests {
             .send(ChannelEvent {
                 remote_addr: "broker".into(),
                 event_type: NettyEventType::Active,
-                generation: 1,
-                channel: ChannelHandle::pending("broker", 1),
+                channel: ChannelHandle::pending("broker"),
             })
             .await
             .unwrap();
@@ -3179,8 +3184,7 @@ mod tests {
             .send(ChannelEvent {
                 remote_addr: "broker".into(),
                 event_type: NettyEventType::Active,
-                generation: 1,
-                channel: ChannelHandle::pending("broker", 1),
+                channel: ChannelHandle::pending("broker"),
             })
             .await
             .unwrap();
@@ -4131,7 +4135,7 @@ mod tests {
                 .send(processor::InboundRequest {
                     generation: 0,
                     remote_addr: "test:0".into(),
-                    channel: ChannelHandle::pending("test:0", 0),
+                    channel: ChannelHandle::pending("test:0"),
                     command: test_command(),
                 })
                 .unwrap();
@@ -4176,7 +4180,7 @@ mod tests {
             .send(processor::InboundRequest {
                 generation: 0,
                 remote_addr: "test:0".into(),
-                channel: ChannelHandle::pending("test:0", 0),
+                channel: ChannelHandle::pending("test:0"),
                 command: test_command(),
             })
             .unwrap();

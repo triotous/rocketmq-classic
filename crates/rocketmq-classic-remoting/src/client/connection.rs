@@ -105,7 +105,7 @@ impl Connection {
                 )
             })
             .unwrap_or_default();
-        let channel = ChannelHandle::pending(&address, generation);
+        let channel = ChannelHandle::pending(&address);
         Self::spawn_with_channel_settings(
             stream,
             generation,

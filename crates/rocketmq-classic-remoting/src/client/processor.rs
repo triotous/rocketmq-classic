@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn request_context_adapts_existing_remote_address_processors() {
-        let context = RequestContext::new(ChannelHandle::pending("127.0.0.1:10911", 7));
+        let context = RequestContext::new(ChannelHandle::pending("127.0.0.1:10911"));
         let response = LegacyProcessor
             .process_with_request_context(&context, RemotingCommand::default())
             .unwrap()
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn request_context_exposes_channel_state_and_closes_its_channel() {
-        let channel = ChannelHandle::pending("127.0.0.1:10911", 7);
+        let channel = ChannelHandle::pending("127.0.0.1:10911");
         let context = RequestContext::new(channel.clone());
 
         assert_eq!(context.channel(), &channel);

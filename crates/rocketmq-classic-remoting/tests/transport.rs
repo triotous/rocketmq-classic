@@ -390,7 +390,6 @@ struct CallbackSnapshot {
     send_request_ok: bool,
     timed_out: bool,
     channel_address: Option<String>,
-    channel_generation: Option<u64>,
 }
 
 struct EventCallback(Arc<std::sync::Mutex<Vec<&'static str>>>);
@@ -418,7 +417,6 @@ impl InvokeCallback for ContextCallback {
             channel_address: future
                 .channel()
                 .map(|channel| channel.remote_addr().to_owned()),
-            channel_generation: future.channel().map(|channel| channel.generation()),
         });
     }
 
@@ -627,7 +625,7 @@ async fn p3_async_callback_contains_response_future_metadata_and_timeout_grace()
         context.channel_address.as_deref(),
         Some(address.to_string().as_str())
     );
-    assert!(context.channel_generation.unwrap() > 0);
+    assert!(context.channel_address.is_some());
     tokio::time::timeout(Duration::from_secs(2), async {
         while events.lock().unwrap().len() < 2 {
             tokio::task::yield_now().await;
@@ -693,7 +691,7 @@ async fn p3_expired_async_callback_retains_request_and_timeout_metadata() {
         context.channel_address.as_deref(),
         Some(address.to_string().as_str())
     );
-    assert!(context.channel_generation.unwrap() > 0);
+    assert!(context.channel_address.is_some());
     wait_for_callback_events(&events, &["complete", "fail"]).await;
     client.shutdown().await;
     peer.await.unwrap();
@@ -2887,7 +2885,7 @@ async fn p16_slow_sync_channel_observer_does_not_block_transport_runtime() {
 }
 
 #[tokio::test]
-async fn p16_channel_events_carry_connection_generation_and_redacted_peer() {
+async fn p18_channel_events_preserve_channel_identity_and_redact_peer() {
     struct Listener(Arc<std::sync::Mutex<Vec<ChannelEvent>>>);
     impl ChannelEventListener for Listener {
         fn on_channel_event(&self, event: &ChannelEvent) {
@@ -2951,12 +2949,8 @@ async fn p16_channel_events_carry_connection_generation_and_redacted_peer() {
             .iter()
             .find(|event| event.event_type == NettyEventType::Active)
             .unwrap();
-        assert!(connect.generation > 0);
-        assert_eq!(connect.generation, active.generation);
         assert_eq!(connect.remote_addr, address.to_string());
         assert_eq!(active.remote_addr, address.to_string());
-        assert_eq!(connect.channel.generation(), connect.generation);
-        assert_eq!(active.channel.generation(), active.generation);
         assert_eq!(connect.channel, active.channel);
         assert_eq!(active.channel.remote_addr(), address.to_string());
     }
@@ -3041,7 +3035,6 @@ async fn p18_channel_event_callbacks_retain_channel_identity() {
             .expect("active callback was not delivered")
             .1;
         assert_eq!(connect, active);
-        assert_eq!(connect.generation(), active.generation());
         assert_eq!(connect.remote_addr(), address.to_string());
     }
     client.shutdown().await;
@@ -6157,7 +6150,6 @@ async fn p18_request_context_preserves_channel_identity_through_pipeline_and_pro
         assert_eq!(observed.len(), 3);
         assert!(observed.windows(2).all(|pair| pair[0] == pair[1]));
         assert_eq!(observed[0].remote_addr(), address.to_string());
-        assert_eq!(observed[0].generation(), observed[2].generation());
     }
     client.shutdown().await;
 }

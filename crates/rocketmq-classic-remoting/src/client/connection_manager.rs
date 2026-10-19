@@ -186,7 +186,7 @@ impl ClientInner {
             Some(selection) => selection.connect_proxy()?,
             None => None,
         };
-        let channel = ChannelHandle::pending(&key, generation);
+        let channel = ChannelHandle::pending(&key);
         self.notify_channel(super::NettyEventType::Connect, channel.clone());
         let (max_idle_time, disable_worker_group) = self.channel_pipeline_settings();
         let mut dial = Box::pin(connection::connect(
