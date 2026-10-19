@@ -171,7 +171,20 @@ fn tls_property_file_settings_are_process_wide_across_config_sources() {
     fs::create_dir_all(&directory).unwrap();
     let first_file = directory.join("first.properties");
     let second_file = directory.join("second.properties");
-    fs::write(&first_file, "tls.test.mode.enable=false\ntls.enable=true\n").unwrap();
+    let ca_key = KeyPair::generate().unwrap();
+    let mut ca_params = CertificateParams::new(Vec::new()).unwrap();
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let ca = ca_params.self_signed(&ca_key).unwrap();
+    let ca_file = directory.join("trust-ca.pem");
+    fs::write(&ca_file, ca.pem()).unwrap();
+    fs::write(
+        &first_file,
+        format!(
+            "tls.test.mode.enable=false\ntls.enable=true\ntls.client.trustCertPath={}\n",
+            ca_file.display()
+        ),
+    )
+    .unwrap();
 
     let initial_system_properties = HashMap::from([
         ("tls.enable".to_owned(), "false".to_owned()),

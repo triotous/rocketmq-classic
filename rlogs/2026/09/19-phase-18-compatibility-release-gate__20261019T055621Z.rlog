@@ -1,0 +1,7 @@
+# Phase 18 compatibility release gate — execution 2026-10-19T05:56:21Z
+
+- Resumed on `phase/18-phase-18-compatibility-closure` at `b32a7913`; the pre-existing Phase 19 files remain untouched and unstaged. The Phase 18 plan is unchanged.
+- Read the complete Phase 18 plan and Rust coding/testing guidance. P18-V01 remains a substantive open audit; P18-V02 current-revision workspace verification is incomplete; P18-V03/V04 also require current evidence.
+- Reproduced handoff diagnosis from source: the TLS property snapshot test constructs a verifying TLS client without its own trust anchor, making its property-only assertion depend on host trust roots. Added a self-signed test CA to the test's first properties file; no production TLS behavior changed.
+- Next: run the focused remoting security test, then the requested workspace, oracle, race/fuzz, package, benchmark, and cross-target gates. Continue the P18-V01 source/API/configuration reconciliation and record evidence here append-only.
+- Focused verification: `cargo test --locked -p rocketmq-classic-remoting --test security tls_property_file_settings_are_process_wide_across_config_sources -- --exact` passed (1 test).
