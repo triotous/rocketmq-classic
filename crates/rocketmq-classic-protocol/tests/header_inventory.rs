@@ -63,6 +63,7 @@ macro_rules! inventory {
             CheckTransactionStateResponseHeader => ("header-check-transaction-response", "typed-check-transaction-response.bin"),
             NotificationRequestHeader => ("header-notification-request", "typed-notification.bin"),
             NotificationResponseHeader => ("header-notification-response", "typed-notification-response.bin"),
+            GetLiteTopicInfoRequestHeader => ("header-lite-topic-info-request", "typed-lite-topic-info-request.bin"),
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
             GetConsumerStatusRequestHeader => ("header-consumer-status-request", "typed-consumer-status-request.bin"),
             GetConsumerConnectionListRequestHeader => ("header-consumer-connection-list-request", "typed-consumer-connection-list-request.bin"),

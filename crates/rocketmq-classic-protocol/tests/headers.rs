@@ -20,16 +20,16 @@ use rocketmq_classic_protocol::{
         FastCodesHeader, GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
-        GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
-        GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
-        GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
-        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
-        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetEarliestMsgStoretimeResponseHeader, GetLiteTopicInfoRequestHeader,
+        GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
+        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
+        HeaderMap, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
+        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
@@ -349,6 +349,50 @@ fn java_request_and_response_header_fixtures_decode() {
             _ => unreachable!("test field list is exhaustive"),
         }
     }
+}
+
+#[test]
+fn lite_topic_info_request_header_matches_java_public_api_and_nullable_fields() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/rpc-invoked-ext-more/lite-topic-info-success.json"
+    ))
+    .unwrap();
+    let api = &fixture["liteTopicInfoApi"];
+    assert_eq!(api["requestHeaderPublicFields"], serde_json::json!([]));
+    assert_eq!(
+        api["requestHeaderConstructors"],
+        serde_json::json!([
+            "public org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader()"
+        ])
+    );
+    assert_eq!(
+        api["requestHeaderPublicMethods"],
+        serde_json::json!([
+            "public java.lang.String org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader.getLiteTopic()",
+            "public java.lang.String org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader.getParentTopic()",
+            "public void org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader.checkFields() throws org.apache.rocketmq.remoting.exception.RemotingCommandException",
+            "public void org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader.setLiteTopic(java.lang.String)",
+            "public void org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader.setParentTopic(java.lang.String)"
+        ])
+    );
+
+    let mut header = GetLiteTopicInfoRequestHeader::default();
+    assert_eq!(header.get_parent_topic(), None);
+    assert_eq!(header.get_lite_topic(), None);
+    header.check_fields().unwrap();
+    let mut fields = HeaderMap::new();
+    header.encode_fields(&mut fields);
+    assert!(fields.is_empty());
+
+    header.set_parent_topic(Some("lite-parent".into()));
+    header.set_lite_topic(Some("%LMQ%lite-parent%orders".into()));
+    header.check_fields().unwrap();
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, java_ext_fields("header-lite-topic-info-request"));
+    let decoded = GetLiteTopicInfoRequestHeader::decode_fields(&encoded).unwrap();
+    assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
+    assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
 }
 
 #[test]
@@ -2276,6 +2320,15 @@ fn header_validation_matrix() {
             "",
             "",
             "",
+            ""
+        ),
+        row!(
+            GetLiteTopicInfoRequestHeader,
+            "lite-topic-info-request",
+            "",
+            "",
+            "",
+            "parentTopic liteTopic",
             ""
         ),
         row!(

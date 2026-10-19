@@ -18,6 +18,7 @@ import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.SerializeType;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
@@ -580,6 +581,10 @@ public final class Main {
         topicStatsInfo.setOneway(false);
         topicStatsInfo.setLo(true);
         writeTypedHeaderFixture(output, "topic-stats-info-request", 202, topicStatsInfo);
+        GetLiteTopicInfoRequestHeader liteTopicInfo = new GetLiteTopicInfoRequestHeader();
+        liteTopicInfo.setParentTopic("lite-parent");
+        liteTopicInfo.setLiteTopic("%LMQ%lite-parent%orders");
+        writeTypedHeaderFixture(output, "lite-topic-info-request", 200076, liteTopicInfo);
         DeleteTopicRequestHeader deleteTopic = new DeleteTopicRequestHeader();
         deleteTopic.setTopic("orders");
         deleteTopic.setNamespace("tenant");
@@ -1026,6 +1031,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-query-subscription-by-consumer-request.bin", 345);
             assertAllExtFields(byName, "typed-query-topic-consume-by-who-request.bin", 300);
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
+            assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
             assertAllExtFields(byName, "typed-delete-kv-config-request.bin", 102);
@@ -1094,6 +1100,8 @@ public final class Main {
             assertExtField(byName, "typed-query-subscription-by-consumer-request.bin", 345, "group", "workers");
             assertExtField(byName, "typed-query-topic-consume-by-who-request.bin", 300, "topic", "orders");
             assertExtField(byName, "typed-topic-stats-info-request.bin", 202, "topic", "orders");
+            assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "parentTopic", "lite-parent");
+            assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "liteTopic", "%LMQ%lite-parent%orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "topic", "orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "lo", "true");
             assertExtField(byName, "typed-delete-topic-from-namesrv-request.bin", 216,
@@ -1181,6 +1189,7 @@ public final class Main {
             case "typed-query-subscription-by-consumer-request.bin": fixtureStem = "header-query-subscription-by-consumer-request"; break;
             case "typed-query-topic-consume-by-who-request.bin": fixtureStem = "header-query-topic-consume-by-who-request"; break;
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
+            case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
             case "typed-delete-kv-config-request.bin": fixtureStem = "header-delete-kv-config-request"; break;
