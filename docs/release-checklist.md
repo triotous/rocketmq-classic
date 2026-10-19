@@ -5225,7 +5225,7 @@ owner-specific checks belong in the manual handoff.
   passed 145 unit tests and all 39 integration tests. The `ClientGroup`-filtered
   rustdoc run passed both new compile-fail guards. Workspace Rustdoc JSON
   generation succeeded and reports 243 remaining public fields after this
-  correction. Code commit: pending.
+  correction. Code commit: `f44b942a`.
 - This closes only the `ClientGroup` mutability discrepancy. Broad P18-V01
   bidirectional API/settings/flow and reverse-export reconciliation remains
   open.
