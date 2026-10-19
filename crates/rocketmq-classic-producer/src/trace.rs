@@ -11,10 +11,7 @@ use rocketmq_classic_common::message::{Message, constants::KEY_SEPARATOR};
 use rocketmq_classic_core::{
     config::{AccessChannel, ClientConfig},
     runtime::ClientRuntimeManager,
-    trace::{
-        MessageType, TRACE_MAX_BATCH_SIZE, TRACE_MAX_MESSAGE_SIZE, TRACE_QUEUE_CAPACITY, TraceBean,
-        TraceContext, TraceType,
-    },
+    trace::{MessageType, TraceBean, TraceContext, TraceType},
 };
 use rocketmq_classic_protocol::{
     codes::{request, response},
@@ -26,6 +23,10 @@ use tokio::{
     task::JoinHandle,
     time::{Instant, interval_at},
 };
+
+const TRACE_QUEUE_CAPACITY: usize = 2_048;
+const TRACE_MAX_BATCH_SIZE: usize = 20;
+const TRACE_MAX_MESSAGE_SIZE: usize = 128_000;
 
 #[cfg(test)]
 use crate::SendMessageType;

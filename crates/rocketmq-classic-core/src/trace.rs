@@ -1,4 +1,15 @@
 //! Java 5.5.1 message-trace record model and wire encoder.
+//!
+//! Trace delimiters correspond to the public `TraceConstants` fields. Buffer
+//! capacity and chunk limits remain implementation details, as in Java.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::trace::{
+//!     TRACE_MAX_BATCH_SIZE,
+//!     TRACE_MAX_MESSAGE_SIZE,
+//!     TRACE_QUEUE_CAPACITY,
+//! };
+//! ```
 
 use std::{
     cmp::Ordering,
@@ -14,9 +25,6 @@ use rocketmq_classic_protocol::codes::JavaEnumLookupError;
 
 pub const TRACE_FIELD_SEPARATOR: char = '\u{1}';
 pub const TRACE_RECORD_SEPARATOR: char = '\u{2}';
-pub const TRACE_QUEUE_CAPACITY: usize = 2_048;
-pub const TRACE_MAX_BATCH_SIZE: usize = 20;
-pub const TRACE_MAX_MESSAGE_SIZE: usize = 128_000;
 
 static TRACE_CONTEXT_IDS: OnceLock<UniqueIdGenerator> = OnceLock::new();
 

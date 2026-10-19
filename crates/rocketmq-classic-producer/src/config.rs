@@ -13,23 +13,23 @@ use crate::ProducerError;
 use crate::retry_response_codes::RetryResponseCodes;
 
 pub const DEFAULT_PRODUCER_GROUP: &str = "DEFAULT_PRODUCER";
-pub const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
-pub const DEFAULT_SEND_TIMEOUT_MILLIS: i32 = 3_000;
-pub const DEFAULT_COMPRESS_THRESHOLD: i32 = 4_096;
-pub const DEFAULT_SYNC_RETRIES: i32 = 2;
-pub const DEFAULT_ASYNC_RETRIES: i32 = 2;
-pub const DEFAULT_MAX_MESSAGE_SIZE: i32 = 4 * 1024 * 1024;
-pub const DEFAULT_TOPIC_QUEUE_COUNT: i32 = 4;
-pub const DEFAULT_BACKPRESSURE_ASYNC_SEND_NUM: i32 = 1_024;
-pub const DEFAULT_BACKPRESSURE_ASYNC_SEND_SIZE: i32 = 100 * 1024 * 1024;
-pub const DEFAULT_BATCH_MAX_DELAY_MILLIS: i32 = 10;
-pub const DEFAULT_BATCH_MAX_BYTES: i64 = 32 * 1024;
-pub const DEFAULT_TOTAL_BATCH_MAX_BYTES: i64 = 32 * 1024 * 1024;
-pub const DEFAULT_LATENCY_MAX_MILLIS: [i64; 7] = [50, 100, 550, 1_800, 3_000, 5_000, 15_000];
-pub const DEFAULT_NOT_AVAILABLE_DURATION_MILLIS: [i64; 7] =
+pub(crate) const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
+pub(crate) const DEFAULT_SEND_TIMEOUT_MILLIS: i32 = 3_000;
+pub(crate) const DEFAULT_COMPRESS_THRESHOLD: i32 = 4_096;
+pub(crate) const DEFAULT_SYNC_RETRIES: i32 = 2;
+pub(crate) const DEFAULT_ASYNC_RETRIES: i32 = 2;
+pub(crate) const DEFAULT_MAX_MESSAGE_SIZE: i32 = 4 * 1024 * 1024;
+pub(crate) const DEFAULT_TOPIC_QUEUE_COUNT: i32 = 4;
+pub(crate) const DEFAULT_BACKPRESSURE_ASYNC_SEND_NUM: i32 = 1_024;
+pub(crate) const DEFAULT_BACKPRESSURE_ASYNC_SEND_SIZE: i32 = 100 * 1024 * 1024;
+pub(crate) const DEFAULT_BATCH_MAX_DELAY_MILLIS: i32 = 10;
+pub(crate) const DEFAULT_BATCH_MAX_BYTES: i64 = 32 * 1024;
+pub(crate) const DEFAULT_TOTAL_BATCH_MAX_BYTES: i64 = 32 * 1024 * 1024;
+pub(crate) const DEFAULT_LATENCY_MAX_MILLIS: [i64; 7] = [50, 100, 550, 1_800, 3_000, 5_000, 15_000];
+pub(crate) const DEFAULT_NOT_AVAILABLE_DURATION_MILLIS: [i64; 7] =
     [0, 0, 2_000, 5_000, 6_000, 10_000, 30_000];
-pub const MESSAGE_COMPRESS_TYPE_PROPERTY: &str = "rocketmq.message.compressType";
-pub const MESSAGE_COMPRESS_LEVEL_PROPERTY: &str = "rocketmq.message.compressLevel";
+pub(crate) const MESSAGE_COMPRESS_TYPE_PROPERTY: &str = "rocketmq.message.compressType";
+pub(crate) const MESSAGE_COMPRESS_LEVEL_PROPERTY: &str = "rocketmq.message.compressLevel";
 
 struct SharedAtomicBool(Arc<AtomicBool>);
 
@@ -123,6 +123,30 @@ impl Default for AccumulatorSettings {
 
 /// Producer settings from Java 5.5.1. Client-level transport settings stay
 /// in the embedded `ClientConfig`.
+///
+/// Java exposes the default producer group through `MixAll`; the remaining
+/// defaults stay implementation details and are not public settings.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::config::{
+///     DEFAULT_ASYNC_RETRIES,
+///     DEFAULT_BACKPRESSURE_ASYNC_SEND_NUM,
+///     DEFAULT_BACKPRESSURE_ASYNC_SEND_SIZE,
+///     DEFAULT_BATCH_MAX_BYTES,
+///     DEFAULT_BATCH_MAX_DELAY_MILLIS,
+///     DEFAULT_COMPRESS_THRESHOLD,
+///     DEFAULT_CREATE_TOPIC_KEY,
+///     DEFAULT_LATENCY_MAX_MILLIS,
+///     DEFAULT_MAX_MESSAGE_SIZE,
+///     DEFAULT_NOT_AVAILABLE_DURATION_MILLIS,
+///     DEFAULT_SEND_TIMEOUT_MILLIS,
+///     DEFAULT_SYNC_RETRIES,
+///     DEFAULT_TOPIC_QUEUE_COUNT,
+///     DEFAULT_TOTAL_BATCH_MAX_BYTES,
+///     MESSAGE_COMPRESS_LEVEL_PROPERTY,
+///     MESSAGE_COMPRESS_TYPE_PROPERTY,
+/// };
+/// ```
 pub struct ProducerConfig {
     pub(crate) client: ClientConfig,
     tls_config: Option<TlsConfig>,
