@@ -125,15 +125,16 @@ async fn java_invoked_consumer_requests_and_outcomes_match() {
                 other => panic!("unexpected consumer list result: {other:?}"),
             }
         } else {
-            let header = ConsumerSendMsgBackRequestHeader {
-                group: "consumer".into(),
-                broker_name: Some("broker".into()),
-                origin_topic: "oracle-topic".into(),
-                offset: 19,
-                delay_level: 3,
-                origin_msg_id: Some("retry-id".into()),
-                max_reconsume_times: Some(5),
-                ..Default::default()
+            let header = {
+                let mut __phase18_header_0 = ConsumerSendMsgBackRequestHeader::default();
+                __phase18_header_0.set_group("consumer".into());
+                __phase18_header_0.set_broker_name(Some("broker".into()));
+                __phase18_header_0.set_origin_topic("oracle-topic".into());
+                __phase18_header_0.set_offset(19);
+                __phase18_header_0.set_delay_level(3);
+                __phase18_header_0.set_origin_msg_id(Some("retry-id".into()));
+                __phase18_header_0.set_max_reconsume_times(Some(5));
+                __phase18_header_0
             };
             match api
                 .consumer_send_message_back(&addr, &header, deadline)

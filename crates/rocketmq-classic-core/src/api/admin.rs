@@ -392,15 +392,16 @@ impl MQClientApi {
         } else {
             &query.topic
         };
-        let header = QueryMessageRequestHeader {
-            topic: Some(request_topic.to_owned()),
-            key: Some(query.key.clone()),
-            max_num: Some(query.max_num),
-            begin_timestamp: Some(query.begin_timestamp),
-            end_timestamp: Some(query.end_timestamp),
-            index_type: query.index_type.clone(),
-            last_key: query.last_key.clone(),
-            ..QueryMessageRequestHeader::default()
+        let header = {
+            let mut __phase18_header_0 = QueryMessageRequestHeader::default();
+            __phase18_header_0.set_topic(Some(request_topic.to_owned()));
+            __phase18_header_0.set_key(Some(query.key.clone()));
+            __phase18_header_0.set_max_num(Some(query.max_num));
+            __phase18_header_0.set_begin_timestamp(Some(query.begin_timestamp));
+            __phase18_header_0.set_end_timestamp(Some(query.end_timestamp));
+            __phase18_header_0.set_index_type(query.index_type.clone());
+            __phase18_header_0.set_last_key(query.last_key.clone());
+            __phase18_header_0
         };
         let mut tasks = JoinSet::new();
         for address in addresses {
@@ -795,10 +796,10 @@ impl MqClientAdmin {
             client_decode_message(message);
         }
 
-        let Some(topic) = header.topic.as_deref() else {
+        let Some(topic) = header.get_topic() else {
             return Ok(Vec::new());
         };
-        let Some(key) = header.key.as_deref() else {
+        let Some(key) = header.get_key() else {
             return Ok(Vec::new());
         };
         messages.retain(|message| {

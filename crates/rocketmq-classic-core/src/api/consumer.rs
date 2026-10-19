@@ -100,7 +100,7 @@ pub struct PullResultExt {
 
 fn pull_request_code(header: &PullMessageRequestHeader) -> Result<i32, ProtocolError> {
     let sys_flag = header
-        .sys_flag
+        .get_sys_flag()
         .ok_or(ProtocolError::MissingField("sysFlag"))?;
     Ok(if has_lite_pull_flag(sys_flag) {
         request::LITE_PULL_MESSAGE

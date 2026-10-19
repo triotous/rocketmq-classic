@@ -137,10 +137,9 @@ fn recall_trace_context(
     let request_fields = request_command.ext_fields.as_ref()?;
     let request_header = RecallMessageRequestHeader::decode_fields(request_fields).ok()?;
     let recall_handle =
-        crate::RecallMessageHandle::decode_handle(&request_header.recall_handle).ok()?;
+        crate::RecallMessageHandle::decode_handle(request_header.get_recall_handle()).ok()?;
     let group_name = request_header
-        .producer_group
-        .as_deref()
+        .get_producer_group()
         .map(|group| without_namespace(client_config, group));
     Some(TraceContext {
         trace_type: Some(TraceType::Recall),
@@ -154,7 +153,7 @@ fn recall_trace_context(
         context_code: 0,
         access_channel: None,
         trace_beans: Some(vec![TraceBean {
-            topic: Some(without_namespace(client_config, &request_header.topic)),
+            topic: Some(without_namespace(client_config, request_header.get_topic())),
             message_id: Some(recall_handle.message_id().to_owned()),
             offset_message_id: None,
             tags: None,
@@ -1051,11 +1050,12 @@ mod tests {
         client_config.set_namespace(Some("tenant".into()));
         let recall_handle =
             crate::RecallMessageHandle::build_handle("orders", "broker-a", "123", "message-1");
-        let header = RecallMessageRequestHeader {
-            producer_group: Some("tenant%producer-group".into()),
-            topic: "tenant%orders".into(),
-            recall_handle,
-            ..RecallMessageRequestHeader::default()
+        let header = {
+            let mut __phase18_header_0 = RecallMessageRequestHeader::default();
+            __phase18_header_0.set_producer_group(Some("tenant%producer-group".into()));
+            __phase18_header_0.set_topic("tenant%orders".into());
+            __phase18_header_0.set_recall_handle(recall_handle);
+            __phase18_header_0
         };
         let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
         header.encode_fields(&mut fields);

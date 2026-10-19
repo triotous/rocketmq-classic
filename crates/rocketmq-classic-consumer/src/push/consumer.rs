@@ -1287,9 +1287,11 @@ impl PushConsumer {
                 .map(|address| (address, decoded.offset()))
         });
         if let Some((address, offset)) = decoded {
-            let header = ViewMessageRequestHeader {
-                topic: Some(namespaced_topic),
-                offset: Some(offset),
+            let header = {
+                let mut __phase18_header_0 = ViewMessageRequestHeader::default();
+                __phase18_header_0.set_topic(Some(namespaced_topic));
+                __phase18_header_0.set_offset(Some(offset));
+                __phase18_header_0
             };
             let timeout_millis =
                 i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64;
@@ -2407,21 +2409,23 @@ impl PushConsumer {
             broker.address
         };
         let mut client_config = self.config.client_config().clone();
-        let header = PullMessageRequestHeader {
-            consumer_group: Some(request.consumer_group().to_owned()),
-            topic: Some(topic.to_owned()),
-            queue_id: Some(queue.queue_id()),
-            queue_offset: Some(request.next_offset()),
-            max_msg_nums: Some(self.config.pull_batch_size()),
-            sys_flag: Some(sys_flag),
-            commit_offset: Some(commit_offset),
-            suspend_timeout_millis: Some(BROKER_SUSPEND_MAX_TIME_MILLIS),
-            subscription: sub_expression,
-            sub_version: Some(subscription.get_sub_version()),
-            expression_type: subscription.get_expression_type().map(str::to_owned),
-            max_msg_bytes: Some(self.config.pull_batch_size_in_bytes()),
-            broker_name: Some(broker_name.to_owned()),
-            ..PullMessageRequestHeader::default()
+        let header = {
+            let mut __phase18_header_1 = PullMessageRequestHeader::default();
+            __phase18_header_1.set_consumer_group(Some(request.consumer_group().to_owned()));
+            __phase18_header_1.set_topic(Some(topic.to_owned()));
+            __phase18_header_1.set_queue_id(Some(queue.queue_id()));
+            __phase18_header_1.set_queue_offset(Some(request.next_offset()));
+            __phase18_header_1.set_max_msg_nums(Some(self.config.pull_batch_size()));
+            __phase18_header_1.set_sys_flag(Some(sys_flag));
+            __phase18_header_1.set_commit_offset(Some(commit_offset));
+            __phase18_header_1.set_suspend_timeout_millis(Some(BROKER_SUSPEND_MAX_TIME_MILLIS));
+            __phase18_header_1.set_subscription(sub_expression);
+            __phase18_header_1.set_sub_version(Some(subscription.get_sub_version()));
+            __phase18_header_1
+                .set_expression_type(subscription.get_expression_type().map(str::to_owned));
+            __phase18_header_1.set_max_msg_bytes(Some(self.config.pull_batch_size_in_bytes()));
+            __phase18_header_1.set_broker_name(Some(broker_name.to_owned()));
+            __phase18_header_1
         };
         let pull_started = Instant::now();
         let pull_result = context
@@ -3388,16 +3392,17 @@ impl PushConsumer {
             None => message.broker_name().or(queue.broker_name()),
         }
         .map(str::to_owned);
-        let header = ConsumerSendMsgBackRequestHeader {
-            group: consumer_group.clone(),
-            broker_name: broker_name.clone(),
-            origin_topic: origin_topic.clone(),
-            offset: message.commit_log_offset(),
-            delay_level,
-            origin_msg_id: message.message_id().map(str::to_owned),
-            max_reconsume_times: Some(max_reconsume_times),
-            unit_mode: self.config.unit_mode(),
-            ..ConsumerSendMsgBackRequestHeader::default()
+        let header = {
+            let mut __phase18_header_2 = ConsumerSendMsgBackRequestHeader::default();
+            __phase18_header_2.set_group(consumer_group.clone());
+            __phase18_header_2.set_broker_name(broker_name.clone());
+            __phase18_header_2.set_origin_topic(origin_topic.clone());
+            __phase18_header_2.set_offset(message.commit_log_offset());
+            __phase18_header_2.set_delay_level(delay_level);
+            __phase18_header_2.set_origin_msg_id(message.message_id().map(str::to_owned));
+            __phase18_header_2.set_max_reconsume_times(Some(max_reconsume_times));
+            __phase18_header_2.set_unit_mode(self.config.unit_mode());
+            __phase18_header_2
         };
         let store_host = message
             .store_host()
@@ -3641,21 +3646,22 @@ impl PushConsumer {
             .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .cloned()
             .ok_or_else(|| "retry message has no unique id".to_owned())?;
-        let header = SendMessageRequestHeaderV1 {
-            producer_group: Some(INNER_PRODUCER_GROUP.into()),
-            topic: topic.to_owned(),
-            default_topic: DEFAULT_CREATE_TOPIC_KEY.into(),
-            default_topic_queue_nums: DEFAULT_TOPIC_QUEUE_COUNT,
-            queue_id: queue.queue_id(),
-            sys_flag,
-            born_timestamp: epoch_millis(),
-            flag: retry.flag(),
-            properties: Some(encoded_properties),
-            reconsume_times,
-            unit_mode: Some(self.config.unit_mode()),
-            max_reconsume_times,
-            batch: Some(false),
-            ..SendMessageRequestHeaderV1::default()
+        let header = {
+            let mut __phase18_header_3 = SendMessageRequestHeaderV1::default();
+            __phase18_header_3.set_producer_group(Some(INNER_PRODUCER_GROUP.into()));
+            __phase18_header_3.set_topic(topic.to_owned());
+            __phase18_header_3.set_default_topic(DEFAULT_CREATE_TOPIC_KEY.into());
+            __phase18_header_3.set_default_topic_queue_nums(DEFAULT_TOPIC_QUEUE_COUNT);
+            __phase18_header_3.set_queue_id(queue.queue_id());
+            __phase18_header_3.set_sys_flag(sys_flag);
+            __phase18_header_3.set_born_timestamp(epoch_millis());
+            __phase18_header_3.set_flag(retry.flag());
+            __phase18_header_3.set_properties(Some(encoded_properties));
+            __phase18_header_3.set_reconsume_times(reconsume_times);
+            __phase18_header_3.set_unit_mode(Some(self.config.unit_mode()));
+            __phase18_header_3.set_batch(Some(false));
+            __phase18_header_3.set_max_reconsume_times(max_reconsume_times);
+            __phase18_header_3
         };
         runtime
             .api()
@@ -4203,20 +4209,21 @@ impl PushConsumer {
                 }
             };
             let poll_time = BROKER_SUSPEND_MAX_TIME_MILLIS;
-            let request = PopMessageRequestHeader {
-                consumer_group: Some(consumer_group.clone()),
-                topic: Some(topic.clone()),
-                queue_id: queue.queue_id(),
-                max_msg_nums: self.config.pop_batch_nums(),
-                invisible_time: self.config.pop_invisible_time_millis(),
-                poll_time,
-                born_time: epoch_millis(),
-                init_mode: self.consume_init_mode(),
-                expression_type: subscription.get_expression_type().map(str::to_owned),
-                expression: subscription.get_sub_string().map(str::to_owned),
-                order: Some(false),
-                attempt_id: None,
-                ..PopMessageRequestHeader::default()
+            let request = {
+                let mut __phase18_header_4 = PopMessageRequestHeader::default();
+                __phase18_header_4.set_consumer_group(Some(consumer_group.clone()));
+                __phase18_header_4.set_topic(Some(topic.clone()));
+                __phase18_header_4.set_queue_id(queue.queue_id());
+                __phase18_header_4.set_max_msg_nums(self.config.pop_batch_nums());
+                __phase18_header_4.set_invisible_time(self.config.pop_invisible_time_millis());
+                __phase18_header_4.set_born_time(epoch_millis());
+                __phase18_header_4.set_init_mode(self.consume_init_mode());
+                __phase18_header_4
+                    .set_exp_type(subscription.get_expression_type().map(str::to_owned));
+                __phase18_header_4.set_exp(subscription.get_sub_string().map(str::to_owned));
+                __phase18_header_4.set_order(Some(false));
+                __phase18_header_4.set_attempt_id(None);
+                __phase18_header_4
             };
             let deadline = Instant::now()
                 + Duration::from_millis(poll_time.saturating_add(10_000).max(0) as u64);
@@ -11264,13 +11271,16 @@ mod tests {
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
-            assert_eq!(scripted.broker_headers[0].origin_topic, "orders");
-            assert_eq!(scripted.broker_headers[0].offset, 111);
+            assert_eq!(scripted.broker_headers[0].get_origin_topic(), "orders");
+            assert_eq!(scripted.broker_headers[0].get_offset(), 111);
             assert_eq!(
-                scripted.broker_headers[0].origin_msg_id.as_deref(),
+                scripted.broker_headers[0].get_origin_msg_id(),
                 Some("broker-msg-11")
             );
-            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(16));
+            assert_eq!(
+                scripted.broker_headers[0].get_max_reconsume_times(),
+                Some(16)
+            );
             assert!(scripted.retry_messages.is_empty());
         }
         assert_eq!(
@@ -11441,7 +11451,7 @@ mod tests {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
             assert_eq!(
-                Some(scripted.broker_headers[0].group.as_str()),
+                Some(scripted.broker_headers[0].get_group()),
                 fixture["brokerSendBackConsumerGroups"][0].as_str()
             );
             assert_eq!(scripted.retry_messages.len(), 1);
@@ -11507,17 +11517,17 @@ mod tests {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 3);
             assert_eq!(
-                scripted.broker_headers[0].broker_name.as_deref(),
+                scripted.broker_headers[0].get_broker_name(),
                 Some("broker-a")
             );
-            assert_eq!(scripted.broker_headers[0].delay_level, 2);
+            assert_eq!(scripted.broker_headers[0].get_delay_level(), 2);
             assert_eq!(
-                scripted.broker_headers[1].broker_name.as_deref(),
+                scripted.broker_headers[1].get_broker_name(),
                 Some("broker-override")
             );
-            assert_eq!(scripted.broker_headers[1].delay_level, 3);
-            assert_eq!(scripted.broker_headers[2].broker_name, None);
-            assert_eq!(scripted.broker_headers[2].delay_level, 4);
+            assert_eq!(scripted.broker_headers[1].get_delay_level(), 3);
+            assert_eq!(scripted.broker_headers[2].get_broker_name(), None);
+            assert_eq!(scripted.broker_headers[2].get_delay_level(), 4);
             assert_eq!(
                 scripted.broker_targets[2],
                 (None, Some("127.0.0.1:10911".to_owned()))
@@ -11868,8 +11878,11 @@ mod tests {
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
-            assert_eq!(scripted.broker_headers[0].offset, 170);
-            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(2));
+            assert_eq!(scripted.broker_headers[0].get_offset(), 170);
+            assert_eq!(
+                scripted.broker_headers[0].get_max_reconsume_times(),
+                Some(2)
+            );
         }
         assert_eq!(
             offset_store.updates.lock().unwrap().as_slice(),
@@ -11984,12 +11997,15 @@ mod tests {
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
             assert_eq!(scripted.broker_headers.len(), 1);
-            assert_eq!(scripted.broker_headers[0].offset, 190);
+            assert_eq!(scripted.broker_headers[0].get_offset(), 190);
             assert_eq!(
-                scripted.broker_headers[0].origin_msg_id.as_deref(),
+                scripted.broker_headers[0].get_origin_msg_id(),
                 Some("broker-msg-90")
             );
-            assert_eq!(scripted.broker_headers[0].max_reconsume_times, Some(16));
+            assert_eq!(
+                scripted.broker_headers[0].get_max_reconsume_times(),
+                Some(16)
+            );
         }
         assert_eq!(
             offset_store.updates.lock().unwrap().as_slice(),

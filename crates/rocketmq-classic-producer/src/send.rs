@@ -1633,21 +1633,22 @@ impl Producer {
         if Instant::now() >= attempt.deadline {
             return Err(ProducerError::Timeout);
         }
-        let header = SendMessageRequestHeaderV1 {
-            producer_group: self.producer_group(),
-            topic: attempt.prepared.topic.clone(),
-            default_topic: self.config.create_topic_key(),
-            default_topic_queue_nums: self.config.default_topic_queue_nums(),
-            queue_id: attempt.queue.queue_id(),
-            sys_flag: attempt.prepared.sys_flag,
-            born_timestamp: attempt.prepared.born_timestamp,
-            flag: attempt.prepared.flag,
-            properties: attempt.prepared.properties.clone(),
-            reconsume_times: attempt.prepared.reconsume_times,
-            unit_mode: Some(self.config.client_config().unit_mode()),
-            max_reconsume_times: attempt.prepared.max_reconsume_times,
-            batch: Some(attempt.prepared.batch),
-            ..SendMessageRequestHeaderV1::default()
+        let header = {
+            let mut __phase18_header_0 = SendMessageRequestHeaderV1::default();
+            __phase18_header_0.set_producer_group(self.producer_group());
+            __phase18_header_0.set_topic(attempt.prepared.topic.clone());
+            __phase18_header_0.set_default_topic(self.config.create_topic_key());
+            __phase18_header_0.set_default_topic_queue_nums(self.config.default_topic_queue_nums());
+            __phase18_header_0.set_queue_id(attempt.queue.queue_id());
+            __phase18_header_0.set_sys_flag(attempt.prepared.sys_flag);
+            __phase18_header_0.set_born_timestamp(attempt.prepared.born_timestamp);
+            __phase18_header_0.set_flag(attempt.prepared.flag);
+            __phase18_header_0.set_properties(attempt.prepared.properties.clone());
+            __phase18_header_0.set_reconsume_times(attempt.prepared.reconsume_times);
+            __phase18_header_0.set_unit_mode(Some(self.config.client_config().unit_mode()));
+            __phase18_header_0.set_max_reconsume_times(attempt.prepared.max_reconsume_times);
+            __phase18_header_0.set_batch(Some(attempt.prepared.batch));
+            __phase18_header_0
         };
         #[cfg(test)]
         {
@@ -1658,10 +1659,10 @@ impl Producer {
             scripted.attempts.push(ScriptedSendAttempt {
                 broker: attempt.broker.to_owned(),
                 address: attempt.address.to_owned(),
-                producer_group: header.producer_group.clone(),
+                producer_group: header.get_producer_group().map(str::to_owned),
                 queue: attempt.queue.clone(),
-                default_topic: header.default_topic.clone(),
-                default_topic_queue_nums: header.default_topic_queue_nums,
+                default_topic: header.get_default_topic().to_owned(),
+                default_topic_queue_nums: header.get_default_topic_queue_nums(),
                 body: attempt.prepared.body.clone(),
                 topic: attempt.prepared.topic.clone(),
                 properties: attempt.prepared.properties.clone(),

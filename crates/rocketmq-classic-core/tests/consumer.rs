@@ -76,9 +76,10 @@ fn fields<H: CommandHeader>(header: &H) -> HeaderMap {
 
 #[tokio::test]
 async fn pull_statuses_and_malformed_success() {
-    let header = PullMessageRequestHeader {
-        sys_flag: Some(0),
-        ..Default::default()
+    let header = {
+        let mut __phase18_header_0 = PullMessageRequestHeader::default();
+        __phase18_header_0.set_sys_flag(Some(0));
+        __phase18_header_0
     };
     let mut response = PullMessageResponseHeader::default();
     response.set_next_begin_offset(Some(12));
@@ -441,9 +442,10 @@ async fn every_consumer_rpc_rejects_unexpected_status_before_decoding() {
         rejected(
             api.pull_message(
                 &addr,
-                &PullMessageRequestHeader {
-                    sys_flag: Some(0),
-                    ..Default::default()
+                &{
+                    let mut __phase18_header_1 = PullMessageRequestHeader::default();
+                    __phase18_header_1.set_sys_flag(Some(0));
+                    __phase18_header_1
                 },
                 deadline(),
             )

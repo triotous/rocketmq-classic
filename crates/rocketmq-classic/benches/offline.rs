@@ -128,21 +128,22 @@ fn main() {
                 .unwrap();
             let entries = message.nullable_property_entries().collect::<Vec<_>>();
             let properties = encode_nullable_property_entries(Some(&entries));
-            let header = SendMessageRequestHeaderV1 {
-                producer_group: Some("bench-producer".into()),
-                topic: message.topic().into(),
-                default_topic: "TBW102".into(),
-                default_topic_queue_nums: 4,
-                queue_id: -1,
-                sys_flag: 0,
-                born_timestamp: 1_700_000_000_000,
-                flag: 0,
-                properties: Some(properties),
-                reconsume_times: Some(0),
-                unit_mode: Some(false),
-                max_reconsume_times: None,
-                batch: Some(false),
-                ..SendMessageRequestHeaderV1::default()
+            let header = {
+                let mut __phase18_header_0 = SendMessageRequestHeaderV1::default();
+                __phase18_header_0.set_producer_group(Some("bench-producer".into()));
+                __phase18_header_0.set_topic(message.topic().into());
+                __phase18_header_0.set_default_topic("TBW102".into());
+                __phase18_header_0.set_default_topic_queue_nums(4);
+                __phase18_header_0.set_queue_id(-1);
+                __phase18_header_0.set_sys_flag(0);
+                __phase18_header_0.set_born_timestamp(1_700_000_000_000);
+                __phase18_header_0.set_flag(0);
+                __phase18_header_0.set_properties(Some(properties));
+                __phase18_header_0.set_reconsume_times(Some(0));
+                __phase18_header_0.set_unit_mode(Some(false));
+                __phase18_header_0.set_max_reconsume_times(None);
+                __phase18_header_0.set_batch(Some(false));
+                __phase18_header_0
             };
             let mut fields = HeaderMap::new();
             header.encode_fields(&mut fields);

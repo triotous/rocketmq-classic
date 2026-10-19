@@ -131,9 +131,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message(
             addr,
-            &PullMessageRequestHeader {
-                sys_flag: Some(0),
-                ..Default::default()
+            &{
+                let mut __phase18_header_0 = PullMessageRequestHeader::default();
+                __phase18_header_0.set_sys_flag(Some(0));
+                __phase18_header_0
             },
             deadline
         )
@@ -144,9 +145,10 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message_future(
             addr,
-            &PullMessageRequestHeader {
-                sys_flag: Some(0),
-                ..Default::default()
+            &{
+                let mut __phase18_header_1 = PullMessageRequestHeader::default();
+                __phase18_header_1.set_sys_flag(Some(0));
+                __phase18_header_1
             },
             deadline
         )
@@ -157,13 +159,14 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message(
             addr,
-            &PullMessageRequestHeader {
-                sys_flag: Some(
+            &{
+                let mut __phase18_header_2 = PullMessageRequestHeader::default();
+                __phase18_header_2.set_sys_flag(Some(
                     rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
                         false, false, false, false, true,
                     ),
-                ),
-                ..Default::default()
+                ));
+                __phase18_header_2
             },
             deadline
         )
@@ -174,13 +177,14 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.pull_message_future(
             addr,
-            &PullMessageRequestHeader {
-                sys_flag: Some(
+            &{
+                let mut __phase18_header_3 = PullMessageRequestHeader::default();
+                __phase18_header_3.set_sys_flag(Some(
                     rocketmq_classic_common::sysflag::pull::build_pull_sys_flag_with_lite(
                         false, false, false, false, true,
                     ),
-                ),
-                ..Default::default()
+                ));
+                __phase18_header_3
             },
             deadline
         )
@@ -375,12 +379,13 @@ async fn broker_methods_use_one_attempt_and_honor_deadline() {
         false,
         |api, addr, deadline| api.recall_message(
             addr,
-            &RecallMessageRequestHeader {
-                producer_group: Some("recall-group".into()),
-                topic: "recall-topic".into(),
-                recall_handle: "v1-handle".into(),
-                broker_name: Some("broker-a".into()),
-                ..RecallMessageRequestHeader::default()
+            &{
+                let mut __phase18_header_4 = RecallMessageRequestHeader::default();
+                __phase18_header_4.set_producer_group(Some("recall-group".into()));
+                __phase18_header_4.set_topic("recall-topic".into());
+                __phase18_header_4.set_recall_handle("v1-handle".into());
+                __phase18_header_4.set_broker_name(Some("broker-a".into()));
+                __phase18_header_4
             },
             deadline
         )
@@ -423,12 +428,13 @@ async fn recall_message_matches_java_request_header_and_decodes_broker_msg_id() 
     let client = RemotingClient::new(TransportMode::Plain);
     client.start().unwrap();
     let api = MQClientApi::new(client.clone());
-    let header = RecallMessageRequestHeader {
-        producer_group: Some("recall-group".into()),
-        topic: "recall-topic".into(),
-        recall_handle: "v1-handle".into(),
-        broker_name: Some("broker-a".into()),
-        ..RecallMessageRequestHeader::default()
+    let header = {
+        let mut __phase18_header_5 = RecallMessageRequestHeader::default();
+        __phase18_header_5.set_producer_group(Some("recall-group".into()));
+        __phase18_header_5.set_topic("recall-topic".into());
+        __phase18_header_5.set_recall_handle("v1-handle".into());
+        __phase18_header_5.set_broker_name(Some("broker-a".into()));
+        __phase18_header_5
     };
 
     assert_eq!(
@@ -466,10 +472,11 @@ async fn recall_message_preserves_broker_errors_and_nullable_success_header() {
     let result = api
         .recall_message(
             &addr,
-            &RecallMessageRequestHeader {
-                topic: "recall-topic".into(),
-                recall_handle: "v1-handle".into(),
-                ..RecallMessageRequestHeader::default()
+            &{
+                let mut __phase18_header_6 = RecallMessageRequestHeader::default();
+                __phase18_header_6.set_topic("recall-topic".into());
+                __phase18_header_6.set_recall_handle("v1-handle".into());
+                __phase18_header_6
             },
             Instant::now() + Duration::from_secs(1),
         )
@@ -488,10 +495,11 @@ async fn recall_message_preserves_broker_errors_and_nullable_success_header() {
     let result = api
         .recall_message(
             &addr,
-            &RecallMessageRequestHeader {
-                topic: "recall-topic".into(),
-                recall_handle: "v1-handle".into(),
-                ..RecallMessageRequestHeader::default()
+            &{
+                let mut __phase18_header_7 = RecallMessageRequestHeader::default();
+                __phase18_header_7.set_topic("recall-topic".into());
+                __phase18_header_7.set_recall_handle("v1-handle".into());
+                __phase18_header_7
             },
             Instant::now() + Duration::from_secs(1),
         )
@@ -507,10 +515,11 @@ async fn recall_message_preserves_broker_errors_and_nullable_success_header() {
     let result = api
         .recall_message(
             &addr,
-            &RecallMessageRequestHeader {
-                topic: "recall-topic".into(),
-                recall_handle: "v1-handle".into(),
-                ..RecallMessageRequestHeader::default()
+            &{
+                let mut __phase18_header_8 = RecallMessageRequestHeader::default();
+                __phase18_header_8.set_topic("recall-topic".into());
+                __phase18_header_8.set_recall_handle("v1-handle".into());
+                __phase18_header_8
             },
             Instant::now() + Duration::from_secs(1),
         )

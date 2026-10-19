@@ -327,7 +327,7 @@ fn add_receipts(
         let _ = message.set_system_property(PROPERTY_POP_CK, raw);
     }
 
-    let topic = request.topic.clone().unwrap_or_default();
+    let topic = request.get_topic().unwrap_or_default().to_owned();
     for message in messages.iter_mut() {
         message.set_broker_name(Some(broker_name.to_owned()));
         message.set_topic(topic.clone());
@@ -524,14 +524,15 @@ impl PopReceipt {
     }
 
     pub fn ack_header(&self, topic: &str, consumer_group: &str) -> AckMessageRequestHeader {
-        AckMessageRequestHeader {
-            consumer_group: consumer_group.to_owned(),
-            topic: self.real_topic(topic, consumer_group),
-            queue_id: self.queue_id,
-            extra_info: self.raw.clone(),
-            offset: self.queue_offset,
-            lite_topic: None,
-            ..AckMessageRequestHeader::default()
+        {
+            let mut __phase18_header_0 = AckMessageRequestHeader::default();
+            __phase18_header_0.set_consumer_group(consumer_group.to_owned());
+            __phase18_header_0.set_topic(self.real_topic(topic, consumer_group));
+            __phase18_header_0.set_queue_id(self.queue_id);
+            __phase18_header_0.set_extra_info(self.raw.clone());
+            __phase18_header_0.set_offset(self.queue_offset);
+            __phase18_header_0.set_lite_topic(None);
+            __phase18_header_0
         }
     }
 
@@ -541,16 +542,17 @@ impl PopReceipt {
         consumer_group: &str,
         invisible_time: i64,
     ) -> ChangeInvisibleTimeRequestHeader {
-        ChangeInvisibleTimeRequestHeader {
-            consumer_group: Some(consumer_group.to_owned()),
-            topic: Some(self.real_topic(topic, consumer_group)),
-            queue_id: Some(self.queue_id),
-            extra_info: Some(self.raw.clone()),
-            offset: Some(self.queue_offset),
-            invisible_time: Some(invisible_time),
-            lite_topic: None,
-            suspend: false,
-            ..ChangeInvisibleTimeRequestHeader::default()
+        {
+            let mut __phase18_header_1 = ChangeInvisibleTimeRequestHeader::default();
+            __phase18_header_1.set_consumer_group(Some(consumer_group.to_owned()));
+            __phase18_header_1.set_topic(Some(self.real_topic(topic, consumer_group)));
+            __phase18_header_1.set_queue_id(Some(self.queue_id));
+            __phase18_header_1.set_extra_info(Some(self.raw.clone()));
+            __phase18_header_1.set_offset(Some(self.queue_offset));
+            __phase18_header_1.set_invisible_time(Some(invisible_time));
+            __phase18_header_1.set_lite_topic(None);
+            __phase18_header_1.set_suspend(false);
+            __phase18_header_1
         }
     }
 }
@@ -656,16 +658,16 @@ mod tests {
     fn ack_and_invisibility_headers_use_real_topic_and_preserve_receipt() {
         let receipt = PopReceipt::parse("17 123 456 2 2 broker-a 4 19 extra-field").unwrap();
         let ack = receipt.ack_header("orders", "workers");
-        assert_eq!(ack.topic, "%RETRY%workers+orders");
-        assert_eq!(ack.offset, 19);
-        assert_eq!(ack.extra_info, receipt.raw());
+        assert_eq!(ack.get_topic(), "%RETRY%workers+orders");
+        assert_eq!(ack.get_offset(), 19);
+        assert_eq!(ack.get_extra_info(), receipt.raw());
         let change = receipt.change_invisible_header("orders", "workers", 9_000);
-        assert_eq!(change.consumer_group.as_deref(), Some("workers"));
-        assert_eq!(change.topic.as_deref(), Some(ack.topic.as_str()));
-        assert_eq!(change.queue_id, Some(4));
-        assert_eq!(change.offset, Some(19));
-        assert_eq!(change.invisible_time, Some(9_000));
-        assert_eq!(change.extra_info.as_deref(), Some(receipt.raw()));
+        assert_eq!(change.get_consumer_group(), Some("workers"));
+        assert_eq!(change.get_topic(), Some(ack.get_topic()));
+        assert_eq!(change.get_queue_id(), Some(4));
+        assert_eq!(change.get_offset(), Some(19));
+        assert_eq!(change.get_invisible_time(), Some(9_000));
+        assert_eq!(change.get_extra_info(), Some(receipt.raw()));
     }
 
     #[test]
@@ -678,9 +680,10 @@ mod tests {
 
     #[test]
     fn pop_response_metadata_maps_receipts_by_retry_kind_and_queue() {
-        let request = PopMessageRequestHeader {
-            topic: Some("orders".into()),
-            ..PopMessageRequestHeader::default()
+        let request = {
+            let mut __phase18_header_2 = PopMessageRequestHeader::default();
+            __phase18_header_2.set_topic(Some("orders".into()));
+            __phase18_header_2
         };
         let mut header = PopMessageResponseHeader::default();
         header.set_pop_time(123);
@@ -721,9 +724,10 @@ mod tests {
 
     #[test]
     fn pop_response_without_checkpoint_metadata_uses_first_queue_offset() {
-        let request = PopMessageRequestHeader {
-            topic: Some("orders".into()),
-            ..PopMessageRequestHeader::default()
+        let request = {
+            let mut __phase18_header_3 = PopMessageRequestHeader::default();
+            __phase18_header_3.set_topic(Some("orders".into()));
+            __phase18_header_3
         };
         let mut header = PopMessageResponseHeader::default();
         header.set_pop_time(123);
@@ -745,9 +749,10 @@ mod tests {
 
     #[test]
     fn malformed_mixed_queue_metadata_is_rejected_before_dispatch() {
-        let request = PopMessageRequestHeader {
-            topic: Some("orders".into()),
-            ..PopMessageRequestHeader::default()
+        let request = {
+            let mut __phase18_header_4 = PopMessageRequestHeader::default();
+            __phase18_header_4.set_topic(Some("orders".into()));
+            __phase18_header_4
         };
         let mut header = PopMessageResponseHeader::default();
         header.set_pop_time(123);

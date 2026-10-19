@@ -1,4 +1,4 @@
-use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::message::{MessageQueue, TopicFilterType};
 use rocketmq_classic_protocol::{SharedValue, heartbeat::SubscriptionData};
 use rocketmq_classic_protocol::{
     body::{
@@ -17,7 +17,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
-        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
+        FastCodesHeader, GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetMaxOffsetRequestHeader,
@@ -39,6 +39,9 @@ use rocketmq_classic_protocol::{
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
+
+mod support;
+use support::{java_camel_to_snake, rust_header_method_exists};
 
 fn json_header_map(name: &str) -> HeaderMap {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -73,38 +76,36 @@ fn java_body(stem: &str) -> Vec<u8> {
 fn java_request_and_response_header_fixtures_decode() {
     let route =
         GetRouteInfoRequestHeader::decode_fields(&java_ext_fields("header-route-request")).unwrap();
-    assert_eq!(route.topic, "orders");
+    assert_eq!(route.get_topic(), "orders");
 
     let create_topic =
         CreateTopicRequestHeader::decode_fields(&java_ext_fields("header-create-topic-request"))
             .unwrap();
-    assert_eq!(create_topic.topic.as_deref(), Some("orders"));
-    assert_eq!(create_topic.default_topic.as_deref(), Some("TBW102"));
-    assert_eq!(create_topic.read_queue_nums, Some(4));
-    assert_eq!(create_topic.write_queue_nums, Some(4));
-    assert_eq!(create_topic.perm, Some(6));
-    assert_eq!(
-        create_topic.topic_filter_type.as_deref(),
-        Some("SINGLE_TAG")
-    );
-    assert_eq!(create_topic.topic_sys_flag, Some(3));
-    assert_eq!(
-        create_topic.attributes.as_deref(),
-        Some("message.type=normal")
-    );
-    assert_eq!(create_topic.order, Some(false));
-    assert_eq!(create_topic.force, Some(false));
+    assert_eq!(create_topic.get_topic(), Some("orders"));
+    assert_eq!(create_topic.get_default_topic(), Some("TBW102"));
+    assert_eq!(create_topic.get_read_queue_nums(), Some(4));
+    assert_eq!(create_topic.get_write_queue_nums(), Some(4));
+    assert_eq!(create_topic.get_perm(), Some(6));
+    assert_eq!(create_topic.get_topic_filter_type(), Some("SINGLE_TAG"));
+    assert!(matches!(
+        create_topic.get_topic_filter_type_enum(),
+        Ok(TopicFilterType::SingleTag)
+    ));
+    assert_eq!(create_topic.get_topic_sys_flag(), Some(3));
+    assert_eq!(create_topic.get_attributes(), Some("message.type=normal"));
+    assert_eq!(create_topic.get_order(), Some(false));
+    assert_eq!(create_topic.get_force(), Some(false));
 
     let query_message =
         QueryMessageRequestHeader::decode_fields(&java_ext_fields("header-query-message-request"))
             .unwrap();
-    assert_eq!(query_message.topic.as_deref(), Some("orders"));
-    assert_eq!(query_message.key.as_deref(), Some("order-42"));
-    assert_eq!(query_message.max_num, Some(32));
-    assert_eq!(query_message.begin_timestamp, Some(1_712_345_678_000));
-    assert_eq!(query_message.end_timestamp, Some(1_712_345_679_000));
-    assert_eq!(query_message.index_type.as_deref(), Some("UNIQUE_KEY"));
-    assert_eq!(query_message.last_key.as_deref(), Some("last-index-key"));
+    assert_eq!(query_message.get_topic(), Some("orders"));
+    assert_eq!(query_message.get_key(), Some("order-42"));
+    assert_eq!(query_message.get_max_num(), Some(32));
+    assert_eq!(query_message.get_begin_timestamp(), Some(1_712_345_678_000));
+    assert_eq!(query_message.get_end_timestamp(), Some(1_712_345_679_000));
+    assert_eq!(query_message.get_index_type(), Some("UNIQUE_KEY"));
+    assert_eq!(query_message.get_last_key(), Some("last-index-key"));
 
     let query_message_response = QueryMessageResponseHeader::decode_fields(&java_ext_fields(
         "header-query-message-response",
@@ -122,8 +123,8 @@ fn java_request_and_response_header_fixtures_decode() {
     let view_message =
         ViewMessageRequestHeader::decode_fields(&java_ext_fields("header-view-message-request"))
             .unwrap();
-    assert_eq!(view_message.topic.as_deref(), Some("orders"));
-    assert_eq!(view_message.offset, Some(9876));
+    assert_eq!(view_message.get_topic(), Some("orders"));
+    assert_eq!(view_message.get_offset(), Some(9876));
 
     let lite_pop =
         PopLiteMessageResponseHeader::decode_fields(&java_ext_fields("header-pop-lite-response"))
@@ -157,8 +158,8 @@ fn java_request_and_response_header_fixtures_decode() {
 
     let pull =
         PullMessageRequestHeader::decode_fields(&java_ext_fields("header-pull-request")).unwrap();
-    assert_eq!(pull.queue_offset, Some(9));
-    assert_eq!(pull.sub_version, Some(1_712_345_678_901));
+    assert_eq!(pull.get_queue_offset(), Some(9));
+    assert_eq!(pull.get_sub_version(), Some(1_712_345_678_901));
 
     let pull_response =
         PullMessageResponseHeader::decode_fields(&java_ext_fields("header-pull-response")).unwrap();
@@ -175,14 +176,17 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-recall-message-request",
     ))
     .unwrap();
-    assert_eq!(recall.producer_group.as_deref(), Some("producers"));
-    assert_eq!(recall.topic, "orders");
-    assert_eq!(recall.recall_handle, "message-id%orders%1712345678901");
-    assert_eq!(recall.namespace.as_deref(), Some("tenant"));
-    assert_eq!(recall.namespaced, Some(true));
-    assert_eq!(recall.broker_name.as_deref(), Some("broker-a"));
-    assert_eq!(recall.oneway, Some(false));
-    assert_eq!(recall.logical, Some(true));
+    assert_eq!(recall.get_producer_group(), Some("producers"));
+    assert_eq!(recall.get_topic(), "orders");
+    assert_eq!(
+        recall.get_recall_handle(),
+        "message-id%orders%1712345678901"
+    );
+    assert_eq!(recall.get_namespace(), Some("tenant"));
+    assert_eq!(recall.get_namespaced(), Some(true));
+    assert_eq!(recall.get_broker_name(), Some("broker-a"));
+    assert_eq!(recall.get_oneway(), Some(false));
+    assert_eq!(recall.get_lo(), Some(true));
     let recall_response = RecallMessageResponseHeader::decode_fields(&java_ext_fields(
         "header-recall-message-response",
     ))
@@ -191,35 +195,35 @@ fn java_request_and_response_header_fixtures_decode() {
     let unregister =
         UnregisterClientRequestHeader::decode_fields(&java_ext_fields("header-unregister-request"))
             .unwrap();
-    assert_eq!(unregister.client_id, "client-1");
-    assert_eq!(unregister.producer_group.as_deref(), Some("producers"));
+    assert_eq!(unregister.get_client_id(), "client-1");
+    assert_eq!(unregister.get_producer_group(), Some("producers"));
     let send_back = ConsumerSendMsgBackRequestHeader::decode_fields(&java_ext_fields(
         "header-send-back-request",
     ))
     .unwrap();
-    assert_eq!(send_back.group, "workers");
-    assert_eq!(send_back.offset, 9);
+    assert_eq!(send_back.get_group(), "workers");
+    assert_eq!(send_back.get_offset(), 9);
 
     let pop =
         PopMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-request")).unwrap();
-    assert_eq!(pop.max_msg_nums, 16);
-    assert_eq!(pop.invisible_time, 30_000);
+    assert_eq!(pop.get_max_msg_nums(), 16);
+    assert_eq!(pop.get_invisible_time(), 30_000);
     let ack =
         AckMessageRequestHeader::decode_fields(&java_ext_fields("header-ack-request")).unwrap();
-    assert_eq!(ack.offset, 9);
+    assert_eq!(ack.get_offset(), 9);
     let change = ChangeInvisibleTimeRequestHeader::decode_fields(&java_ext_fields(
         "header-change-invisible-request",
     ))
     .unwrap();
-    assert_eq!(change.invisible_time, Some(60_000));
+    assert_eq!(change.get_invisible_time(), Some(60_000));
     let notification =
         NotificationRequestHeader::decode_fields(&java_ext_fields("header-notification-request"))
             .unwrap();
-    assert_eq!(notification.born_time, 1_712_345_678_901);
+    assert_eq!(notification.get_born_time(), 1_712_345_678_901);
     let polling =
         PollingInfoRequestHeader::decode_fields(&java_ext_fields("header-polling-request"))
             .unwrap();
-    assert_eq!(polling.queue_id, 1);
+    assert_eq!(polling.get_queue_id(), 1);
     let polling_response =
         PollingInfoResponseHeader::decode_fields(&java_ext_fields("header-polling-response"))
             .unwrap();
@@ -228,12 +232,12 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-end-transaction-request",
     ))
     .unwrap();
-    assert_eq!(end.transaction_id.as_deref(), Some("tx-1"));
+    assert_eq!(end.get_transaction_id(), Some("tx-1"));
     let check = CheckTransactionStateRequestHeader::decode_fields(&java_ext_fields(
         "header-check-transaction-request",
     ))
     .unwrap();
-    assert_eq!(check.offset_msg_id.as_deref(), Some("offset-1"));
+    assert_eq!(check.get_offset_msg_id(), Some("offset-1"));
     let check_response = CheckTransactionStateResponseHeader::decode_fields(&java_ext_fields(
         "header-check-transaction-response",
     ))
@@ -241,7 +245,7 @@ fn java_request_and_response_header_fixtures_decode() {
     assert_eq!(check_response.get_commit_or_rollback(), Some(8));
     let reply =
         ReplyMessageRequestHeader::decode_fields(&java_ext_fields("header-reply-request")).unwrap();
-    assert_eq!(reply.born_host, "127.0.0.1:1001");
+    assert_eq!(reply.get_born_host(), "127.0.0.1:1001");
     let notification_response =
         NotificationResponseHeader::decode_fields(&java_ext_fields("header-notification-response"))
             .unwrap();
@@ -249,21 +253,22 @@ fn java_request_and_response_header_fixtures_decode() {
     let reset =
         ResetOffsetRequestHeader::decode_fields(&java_ext_fields("header-reset-offset-request"))
             .unwrap();
-    assert_eq!(reset.offset, Some(9));
+    assert_eq!(reset.get_offset(), Some(9));
     let status = GetConsumerStatusRequestHeader::decode_fields(&java_ext_fields(
         "header-consumer-status-request",
     ))
     .unwrap();
-    assert_eq!(status.client_addr, None);
+    assert_eq!(status.get_client_addr(), None);
     let direct = ConsumeMessageDirectlyResultRequestHeader::decode_fields(&java_ext_fields(
         "header-consume-directly-request",
     ))
     .unwrap();
-    assert_eq!(direct.msg_id, None);
+    assert_eq!(direct.get_msg_id(), None);
+    assert_eq!(direct.get_lo(), Some(true));
     let lite =
         PopLiteMessageRequestHeader::decode_fields(&java_ext_fields("header-pop-lite-request"))
             .unwrap();
-    assert_eq!(lite.client_id.as_deref(), Some("client"));
+    assert_eq!(lite.get_client_id(), Some("client"));
     assert!(UnregisterClientResponseHeader::decode_fields(&HeaderMap::new()).is_ok());
     assert!(
         UnregisterClientResponseHeader::decode_fields(&java_ext_fields(
@@ -274,12 +279,12 @@ fn java_request_and_response_header_fixtures_decode() {
     let lock =
         LockBatchMqRequestHeader::decode_fields(&java_ext_fields("header-lock-batch-request"))
             .unwrap();
-    assert_eq!(lock.namespace.as_deref(), Some("tenant"));
-    assert_eq!(lock.broker_name.as_deref(), Some("broker-a"));
+    assert_eq!(lock.get_namespace(), Some("tenant"));
+    assert_eq!(lock.get_broker_name(), Some("broker-a"));
     let unlock =
         UnlockBatchMqRequestHeader::decode_fields(&java_ext_fields("header-unlock-batch-request"))
             .unwrap();
-    assert_eq!(unlock.namespace.as_deref(), Some("tenant"));
+    assert_eq!(unlock.get_namespace(), Some("tenant"));
     assert!(
         EndTransactionResponseHeader::decode_fields(&java_ext_fields(
             "header-end-transaction-response"
@@ -295,12 +300,12 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-notify-unsubscribe-lite-request",
     ))
     .unwrap();
-    assert_eq!(unsubscribe.lite_topic, "lite-orders");
+    assert_eq!(unsubscribe.get_lite_topic(), "lite-orders");
 
     let send_batch =
         SendMessageRequestHeaderV2::decode_fields(&java_ext_fields("header-send-batch-v2"))
             .unwrap();
-    assert_eq!(send_batch.m, Some(false));
+    assert_eq!(send_batch.is_m(), Some(false));
     let assignment: QueryAssignmentRequestBody =
         serde_json::from_slice(&java_body("body-query-assignment")).unwrap();
     assert_eq!(
@@ -324,7 +329,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-consumer-list-request",
     ))
     .unwrap();
-    assert_eq!(consumers.consumer_group, "workers");
+    assert_eq!(consumers.get_consumer_group(), "workers");
 
     let mut pop_fields = java_ext_fields("header-pop-lite-response");
     assert_eq!(
@@ -347,12 +352,103 @@ fn java_request_and_response_header_fixtures_decode() {
 }
 
 #[test]
+fn create_topic_filter_type_enum_getter_preserves_java_value_of_failures() {
+    let mut header = CreateTopicRequestHeader::default();
+    assert!(header.get_topic_filter_type_enum().is_err());
+    header.set_topic_filter_type(Some("MULTI_TAG".into()));
+    assert!(matches!(
+        header.get_topic_filter_type_enum(),
+        Ok(TopicFilterType::MultiTag)
+    ));
+    header.set_topic_filter_type(Some("NOT_A_FILTER".into()));
+    assert!(header.get_topic_filter_type_enum().is_err());
+}
+
+#[test]
 fn response_header_accessors_match_java_inventory_and_null_defaults() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
         "../../../fixtures/protocol/header-response-identity.json"
     ))
     .unwrap();
     let inventories = &fixture["apiInventories"];
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+
+    for (class, inventory) in inventories.as_object().unwrap() {
+        assert_eq!(
+            inventory["publicFields"],
+            serde_json::json!([]),
+            "Java {class} must not expose public fields"
+        );
+        let declaration = format!("pub struct {class}");
+        let struct_tail = source
+            .split_once(&declaration)
+            .unwrap_or_else(|| panic!("missing Rust response header {class}"))
+            .1;
+        let struct_body = if struct_tail.starts_with(" {") {
+            struct_tail.split_once("\n}\n").unwrap().0
+        } else {
+            ""
+        };
+        assert!(
+            struct_body
+                .lines()
+                .all(|line| !line.trim_start().starts_with("pub ")),
+            "Rust {class} must not expose public fields"
+        );
+
+        for signature in inventory["callablePublicMethods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+        {
+            let (prefix, parameters) = signature.split_once('(').unwrap();
+            let name = prefix
+                .split_whitespace()
+                .last()
+                .unwrap()
+                .rsplit('.')
+                .next()
+                .unwrap();
+            let rust_method: Option<String> = match name {
+                "encode" => Some("encode_fields".into()),
+                "decode" => Some("decode_fields".into()),
+                "checkFields" => Some("check_fields".into()),
+                _ if matches!(
+                    name,
+                    "getAndCheckNotNull" | "writeIfNotNull" | "writeInt" | "writeLong"
+                ) =>
+                {
+                    Some(java_camel_to_snake(name))
+                }
+                _ if name.starts_with("get") || name.starts_with("is") => {
+                    let parameter_count = if parameters.starts_with(')') {
+                        0
+                    } else {
+                        parameters.matches(',').count() + 1
+                    };
+                    (parameter_count == 0).then(|| java_camel_to_snake(name))
+                }
+                _ if name.starts_with("set") => {
+                    let parameter_count = if parameters.starts_with(')') {
+                        0
+                    } else {
+                        parameters.matches(',').count() + 1
+                    };
+                    (parameter_count == 1).then(|| java_camel_to_snake(name))
+                }
+                _ => None,
+            };
+            if let Some(rust_method) = rust_method {
+                assert!(
+                    rust_header_method_exists(source, trait_source, class, &rust_method),
+                    "Java {class}::{name} has no Rust {class}::{rust_method}"
+                );
+            }
+        }
+    }
+
     for (class, methods) in [
         (
             "PullMessageResponseHeader",
@@ -456,6 +552,30 @@ fn response_header_accessors_match_java_inventory_and_null_defaults() {
 }
 
 #[test]
+fn fast_codes_header_numeric_helpers_write_java_decimal_fields() {
+    let header = PullMessageResponseHeader::default();
+    let mut fields = HeaderMap::new();
+    header.write_long(&mut fields, "minimum", i64::MIN);
+    header.write_int(&mut fields, "maximum", i32::MAX);
+    header.write_if_not_null(&mut fields, "nullable", Some(i64::MAX));
+    header.write_if_not_null::<i32>(&mut fields, "omitted", None);
+
+    assert_eq!(
+        fields,
+        HeaderMap::from([
+            ("minimum".to_owned(), i64::MIN.to_string()),
+            ("maximum".to_owned(), i32::MAX.to_string()),
+            ("nullable".to_owned(), i64::MAX.to_string()),
+        ])
+    );
+    assert_eq!(
+        header.get_and_check_not_null(&fields, "minimum"),
+        Some(i64::MIN.to_string().as_str())
+    );
+    assert_eq!(header.get_and_check_not_null(&fields, "missing"), None);
+}
+
+#[test]
 fn optional_numeric_header_reflection_failures_match_java_551() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
     let fixture: serde_json::Value = serde_json::from_str(
@@ -526,9 +646,9 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
         serde_json::from_value(cases["pop-defaults"]["reflection"]["encodedFields"].clone())
             .unwrap();
     assert_eq!(default_fields, expected_default);
-    assert_eq!(default_header.consumer_group, None);
-    assert_eq!(default_header.topic, None);
-    assert_eq!(default_header.order, Some(false));
+    assert_eq!(default_header.get_consumer_group(), None);
+    assert_eq!(default_header.get_topic(), None);
+    assert_eq!(default_header.get_order(), Some(false));
 
     let default_lite_header = PopLiteMessageRequestHeader::default();
     let mut default_lite_fields = HeaderMap::new();
@@ -537,9 +657,9 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
         serde_json::from_value(cases["pop-lite-defaults"]["reflection"]["encodedFields"].clone())
             .unwrap();
     assert_eq!(default_lite_fields, expected_lite_default);
-    assert_eq!(default_lite_header.client_id, None);
-    assert_eq!(default_lite_header.consumer_group, None);
-    assert_eq!(default_lite_header.topic, None);
+    assert_eq!(default_lite_header.get_client_id(), None);
+    assert_eq!(default_lite_header.get_consumer_group(), None);
+    assert_eq!(default_lite_header.get_topic(), None);
 
     let default_pop_response = PopMessageResponseHeader::default();
     let mut default_pop_response_fields = HeaderMap::new();
@@ -561,17 +681,15 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
 
     let timeout_cases = fixture["popLiteTimeoutCases"].as_object().unwrap();
     assert_eq!(timeout_cases.len(), 2);
-    let mut elapsed = PopLiteMessageRequestHeader {
-        born_time: 1,
-        poll_time: 1,
-        ..PopLiteMessageRequestHeader::default()
-    };
+    let mut elapsed = PopLiteMessageRequestHeader::default();
+    elapsed.set_born_time(1);
+    elapsed.set_poll_time(1);
     assert_eq!(
         elapsed.is_timeout_too_much(),
         timeout_cases["elapsed"].as_bool().unwrap()
     );
-    elapsed.born_time = i64::MAX;
-    elapsed.poll_time = 0;
+    elapsed.set_born_time(i64::MAX);
+    elapsed.set_poll_time(0);
     assert_eq!(
         elapsed.is_timeout_too_much(),
         timeout_cases["far-future"].as_bool().unwrap()
@@ -579,17 +697,15 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
 
     let pop_timeout_cases = fixture["popTimeoutCases"].as_object().unwrap();
     assert_eq!(pop_timeout_cases.len(), 2);
-    let mut elapsed_pop = PopMessageRequestHeader {
-        born_time: 1,
-        poll_time: 1,
-        ..PopMessageRequestHeader::default()
-    };
+    let mut elapsed_pop = PopMessageRequestHeader::default();
+    elapsed_pop.set_born_time(1);
+    elapsed_pop.set_poll_time(1);
     assert_eq!(
         elapsed_pop.is_timeout_too_much(),
         pop_timeout_cases["elapsed"].as_bool().unwrap()
     );
-    elapsed_pop.born_time = i64::MAX;
-    elapsed_pop.poll_time = 0;
+    elapsed_pop.set_born_time(i64::MAX);
+    elapsed_pop.set_poll_time(0);
     assert_eq!(
         elapsed_pop.is_timeout_too_much(),
         pop_timeout_cases["far-future"].as_bool().unwrap()
@@ -605,20 +721,18 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
         PopLiteMessageRequestHeader::default().java_to_string(),
         pop_api["popLiteToStringDefault"]
     );
-    let mut pop_api_header = PopMessageRequestHeader {
-        consumer_group: Some("workers".into()),
-        topic: Some("订单".into()),
-        queue_id: -9,
-        max_msg_nums: 3,
-        invisible_time: 30_000,
-        poll_time: 1_000,
-        born_time: 1_712_345_678_901,
-        init_mode: 1,
-        expression_type: Some("TAG".into()),
-        expression: Some("blue".into()),
-        order: None,
-        ..PopMessageRequestHeader::default()
-    };
+    let mut pop_api_header = PopMessageRequestHeader::default();
+    pop_api_header.set_consumer_group(Some("workers".into()));
+    pop_api_header.set_topic(Some("订单".into()));
+    pop_api_header.set_queue_id(-9);
+    pop_api_header.set_max_msg_nums(3);
+    pop_api_header.set_invisible_time(30_000);
+    pop_api_header.set_poll_time(1_000);
+    pop_api_header.set_born_time(1_712_345_678_901);
+    pop_api_header.set_init_mode(1);
+    pop_api_header.set_exp_type(Some("TAG".into()));
+    pop_api_header.set_exp(Some("blue".into()));
+    pop_api_header.set_order(None);
     assert_eq!(pop_api_header.get_queue_id(), -1);
     assert_eq!(pop_api_header.get_order(), None);
     assert!(!pop_api_header.is_order());
@@ -634,17 +748,15 @@ fn optional_numeric_header_reflection_failures_match_java_551() {
     assert_eq!(pop_api["popMessageNegativeQueueIdGetter"], -1);
     assert!(pop_api["popMessageNullableOrderGetter"].is_null());
     assert_eq!(pop_api["popMessageNullableOrderPredicate"], false);
-    let lite_api_header = PopLiteMessageRequestHeader {
-        consumer_group: Some("workers".into()),
-        topic: Some("订单".into()),
-        max_msg_num: 4,
-        invisible_time: 30_000,
-        poll_time: 1_000,
-        born_time: 1_712_345_678_901,
-        attempt_id: Some("attempt".into()),
-        client_id: Some("client".into()),
-        ..PopLiteMessageRequestHeader::default()
-    };
+    let mut lite_api_header = PopLiteMessageRequestHeader::default();
+    lite_api_header.set_consumer_group(Some("workers".into()));
+    lite_api_header.set_topic(Some("订单".into()));
+    lite_api_header.set_max_msg_num(4);
+    lite_api_header.set_invisible_time(30_000);
+    lite_api_header.set_poll_time(1_000);
+    lite_api_header.set_born_time(1_712_345_678_901);
+    lite_api_header.set_attempt_id(Some("attempt".into()));
+    lite_api_header.set_client_id(Some("client".into()));
     assert_eq!(
         lite_api_header.java_to_string(),
         pop_api["popLiteToStringCustom"]
@@ -688,14 +800,14 @@ fn change_invisible_time_header_decode_modes_match_java_551() {
             assert_eq!(encoded, expected, "{case_name} {mode_name}");
             assert_eq!(
                 serde_json::json!({
-                    "consumerGroup": header.consumer_group,
-                    "topic": header.topic,
-                    "queueId": header.queue_id,
-                    "extraInfo": header.extra_info,
-                    "offset": header.offset,
-                    "invisibleTime": header.invisible_time,
-                    "liteTopic": header.lite_topic,
-                    "suspend": header.suspend,
+                    "consumerGroup": header.get_consumer_group(),
+                    "topic": header.get_topic(),
+                    "queueId": header.get_queue_id(),
+                    "extraInfo": header.get_extra_info(),
+                    "offset": header.get_offset(),
+                    "invisibleTime": header.get_invisible_time(),
+                    "liteTopic": header.get_lite_topic(),
+                    "suspend": header.is_suspend(),
                 }),
                 expected_mode["values"],
                 "{case_name} {mode_name} values"
@@ -716,28 +828,21 @@ fn encode_decoded_header<T: CommandHeader>(
 
 #[test]
 fn transaction_and_reply_headers_round_trip_typed_fields() {
-    let end = EndTransactionRequestHeader {
-        topic: Some("orders".into()),
-        producer_group: Some("producers".into()),
-        transaction_state_table_offset: Some(3),
-        commit_log_offset: Some(9),
-        commit_or_rollback: Some(8),
-        from_transaction_check: Some(false),
-        msg_id: Some("msg-1".into()),
-        transaction_id: Some("tx-1".into()),
-        namespace: None,
-        namespaced: None,
-        broker_name: None,
-        oneway: None,
-    };
+    let mut end = EndTransactionRequestHeader::default();
+    end.set_topic(Some("orders".into()));
+    end.set_producer_group(Some("producers".into()));
+    end.set_tran_state_table_offset(Some(3));
+    end.set_commit_log_offset(Some(9));
+    end.set_commit_or_rollback(Some(8));
+    end.set_from_transaction_check(Some(false));
+    end.set_msg_id(Some("msg-1".into()));
+    end.set_transaction_id(Some("tx-1".into()));
     let mut fields = HeaderMap::new();
     end.encode_fields(&mut fields);
     assert_eq!(EndTransactionRequestHeader::decode_fields(&fields), Ok(end));
 
-    let null_group_end = EndTransactionRequestHeader {
-        commit_or_rollback: Some(8),
-        ..EndTransactionRequestHeader::default()
-    };
+    let mut null_group_end = EndTransactionRequestHeader::default();
+    null_group_end.set_commit_or_rollback(Some(8));
     fields.clear();
     null_group_end.encode_fields(&mut fields);
     assert!(!fields.contains_key("producerGroup"));
@@ -746,18 +851,13 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
         Ok(null_group_end)
     );
 
-    let check = CheckTransactionStateRequestHeader {
-        topic: Some("orders".into()),
-        transaction_state_table_offset: 3,
-        commit_log_offset: 9,
-        msg_id: Some("msg-1".into()),
-        transaction_id: Some("tx-1".into()),
-        offset_msg_id: Some("offset-id".into()),
-        namespace: None,
-        namespaced: None,
-        broker_name: None,
-        oneway: None,
-    };
+    let mut check = CheckTransactionStateRequestHeader::default();
+    check.set_topic(Some("orders".into()));
+    check.set_tran_state_table_offset(3);
+    check.set_commit_log_offset(9);
+    check.set_msg_id(Some("msg-1".into()));
+    check.set_transaction_id(Some("tx-1".into()));
+    check.set_offset_msg_id(Some("offset-id".into()));
     fields.clear();
     check.encode_fields(&mut fields);
     assert_eq!(
@@ -777,23 +877,21 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
     decoded_response.encode_fields(&mut decoded_response_fields);
     assert_eq!(decoded_response_fields, fields);
 
-    let reply = ReplyMessageRequestHeader {
-        producer_group: "producers".into(),
-        topic: "orders".into(),
-        default_topic: "TBW102".into(),
-        default_topic_queue_nums: 4,
-        queue_id: 2,
-        sys_flag: 1,
-        born_timestamp: 5,
-        flag: 7,
-        properties: None,
-        reconsume_times: None,
-        unit_mode: false,
-        born_host: "127.0.0.1:1".into(),
-        store_host: "127.0.0.1:2".into(),
-        store_timestamp: 6,
-        ..ReplyMessageRequestHeader::default()
-    };
+    let mut reply = ReplyMessageRequestHeader::default();
+    reply.set_producer_group("producers".into());
+    reply.set_topic("orders".into());
+    reply.set_default_topic("TBW102".into());
+    reply.set_default_topic_queue_nums(4);
+    reply.set_queue_id(2);
+    reply.set_sys_flag(1);
+    reply.set_born_timestamp(5);
+    reply.set_flag(7);
+    reply.set_properties(None);
+    reply.set_reconsume_times(None);
+    reply.set_unit_mode(false);
+    reply.set_born_host("127.0.0.1:1".into());
+    reply.set_store_host("127.0.0.1:2".into());
+    reply.set_store_timestamp(6);
     fields.clear();
     reply.encode_fields(&mut fields);
     assert_eq!(ReplyMessageRequestHeader::decode_fields(&fields), Ok(reply));
@@ -823,7 +921,7 @@ fn transaction_headers_match_pinned_java_fields_including_rpc_parent() {
         let mut actual = HeaderMap::new();
         header.encode_fields(&mut actual);
         assert_eq!(actual, expected);
-        assert_eq!(header.broker_name.as_deref(), Some("broker-a"));
+        assert_eq!(header.get_broker_name(), Some("broker-a"));
     }
 
     let expected_check = fields(&transaction_flow["brokerCheckRequest"]);
@@ -831,10 +929,10 @@ fn transaction_headers_match_pinned_java_fields_including_rpc_parent() {
     let mut actual_check = HeaderMap::new();
     check.encode_fields(&mut actual_check);
     assert_eq!(actual_check, expected_check);
-    assert_eq!(check.namespace.as_deref(), Some("fixture-namespace"));
-    assert_eq!(check.namespaced, Some(true));
-    assert_eq!(check.broker_name.as_deref(), Some("broker-a"));
-    assert_eq!(check.oneway, Some(false));
+    assert_eq!(check.get_namespace(), Some("fixture-namespace"));
+    assert_eq!(check.get_namespaced(), Some(true));
+    assert_eq!(check.get_broker_name(), Some("broker-a"));
+    assert_eq!(check.get_oneway(), Some(false));
 
     let mut default_end = HeaderMap::new();
     EndTransactionRequestHeader::default().encode_fields(&mut default_end);
@@ -1291,15 +1389,15 @@ fn java_v1_send_conversion_matches_v2_fixture() {
     let v1 = SendMessageRequestHeaderV1::decode_fields(&java_ext_fields("header-send-v1")).unwrap();
     let v2 = SendMessageRequestHeaderV2::decode_fields(&java_ext_fields("header-send-v2")).unwrap();
     assert_eq!(v2, SendMessageRequestHeaderV2::from_v1(&v1));
-    assert_eq!(v2.k, Some(false));
-    assert_eq!(v2.m, Some(false));
+    assert_eq!(v2.is_k(), Some(false));
+    assert_eq!(v2.is_m(), Some(false));
 }
 
 #[test]
 fn java_frames_match_typed_header_semantics() {
     let route =
         GetRouteInfoRequestHeader::decode_fields(&json_header_map("header-route-request")).unwrap();
-    assert_eq!(route.topic, "orders");
+    assert_eq!(route.get_topic(), "orders");
     let v1 = SendMessageRequestHeaderV1::decode_fields(&json_header_map("header-send-v1")).unwrap();
     let v2 = SendMessageRequestHeaderV2::decode_fields(&json_header_map("header-send-v2")).unwrap();
     assert_eq!(v2, SendMessageRequestHeaderV2::from_v1(&v1));
@@ -1313,7 +1411,7 @@ fn typed_header_update_preserves_unknown_fields_and_lite_requireds_fail() {
     let mut raw = java_ext_fields("header-notify-unsubscribe-lite-request");
     raw.insert("futureField".into(), "opaque-value".into());
     let mut typed = NotifyUnsubscribeLiteRequestHeader::decode_fields(&raw).unwrap();
-    typed.lite_topic = "lite-orders-v2".into();
+    typed.set_lite_topic("lite-orders-v2".into());
     typed.encode_fields(&mut raw);
     assert_eq!(
         raw.get("futureField").map(String::as_str),
@@ -1486,9 +1584,9 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
         .to_string();
     assert!(err.contains("commitOffset"));
     let empty_send_v2 = SendMessageRequestHeaderV2::decode_fields(&empty).unwrap();
-    assert_eq!(empty_send_v2.a, None);
-    assert_eq!(empty_send_v2.b, None);
-    assert_eq!(empty_send_v2.d, None);
+    assert_eq!(empty_send_v2.get_a(), None);
+    assert_eq!(empty_send_v2.get_b(), None);
+    assert_eq!(empty_send_v2.get_d(), None);
     let empty_send_response = SendMessageResponseHeader::decode_fields(&empty).unwrap();
     assert_eq!(empty_send_response.get_msg_id(), None);
     assert_eq!(empty_send_response.get_queue_id(), None);
@@ -1503,11 +1601,11 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
         .to_string();
     assert!(err.contains("offset"));
     let query_message = QueryMessageRequestHeader::decode_fields(&empty).unwrap();
-    assert_eq!(query_message.topic, None);
-    assert_eq!(query_message.key, None);
-    assert_eq!(query_message.max_num, None);
-    assert_eq!(query_message.begin_timestamp, None);
-    assert_eq!(query_message.end_timestamp, None);
+    assert_eq!(query_message.get_topic(), None);
+    assert_eq!(query_message.get_key(), None);
+    assert_eq!(query_message.get_max_num(), None);
+    assert_eq!(query_message.get_begin_timestamp(), None);
+    assert_eq!(query_message.get_end_timestamp(), None);
     let query_message_response = QueryMessageResponseHeader::decode_fields(&empty).unwrap();
     assert_eq!(
         query_message_response.get_index_last_update_timestamp(),
@@ -1518,8 +1616,8 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
         None
     );
     let view_message = ViewMessageRequestHeader::decode_fields(&empty).unwrap();
-    assert_eq!(view_message.topic, None);
-    assert_eq!(view_message.offset, None);
+    assert_eq!(view_message.get_topic(), None);
+    assert_eq!(view_message.get_offset(), None);
     let err = CreateTopicRequestHeader::decode_fields(&empty)
         .unwrap_err()
         .to_string();
@@ -1561,7 +1659,7 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
     assert_eq!(
         EndTransactionRequestHeader::decode_fields(&transaction)
             .unwrap()
-            .from_transaction_check,
+            .get_from_transaction_check(),
         Some(false)
     );
 
@@ -1578,14 +1676,14 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
     assert_eq!(
         SendMessageRequestHeaderV1::decode_fields(&v1_fields)
             .unwrap()
-            .unit_mode,
+            .is_unit_mode(),
         None
     );
     v1_fields.insert("unitMode".into(), "false".into());
     assert_eq!(
         SendMessageRequestHeaderV1::decode_fields(&v1_fields)
             .unwrap()
-            .unit_mode,
+            .is_unit_mode(),
         Some(false)
     );
 }
@@ -1772,7 +1870,7 @@ fn header_validation_matrix() {
             "",
             "queueId maxMsgNums sysFlag maxMsgBytes requestSource",
             "queueOffset commitOffset suspendTimeoutMillis subVersion",
-            "consumerGroup topic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion bname ns nsd lo oway",
+            "consumerGroup topic liteTopic subscription expressionType maxMsgBytes requestSource proxyFrowardClientId queueId queueOffset maxMsgNums sysFlag commitOffset suspendTimeoutMillis subVersion bname ns nsd lo oway",
             "nsd lo oway"
         ),
         row!(
@@ -2195,8 +2293,8 @@ fn header_validation_matrix() {
             "consumerGroup",
             "topicSysFlag groupSysFlag",
             "",
-            "clientId msgId brokerName topic topicSysFlag groupSysFlag ns nsd bname oway",
-            "nsd oway"
+            "clientId msgId brokerName topic topicSysFlag groupSysFlag ns nsd bname oway lo",
+            "nsd oway lo"
         ),
     ];
     let send_v2 = cases

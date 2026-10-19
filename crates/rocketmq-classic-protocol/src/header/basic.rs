@@ -1,5 +1,7 @@
 use std::hash::{Hash, Hasher};
 
+use rocketmq_classic_common::message::TopicFilterType;
+
 use super::{
     CommandHeader, HeaderMap, ProtocolError, java_boolean, optional_i32, optional_i32_with_mode,
     optional_i64, optional_i64_with_mode, optional_java_boolean, optional_string, parse_java_i32,
@@ -97,6 +99,65 @@ macro_rules! impl_topic_request_header_accessors {
                 }
             }
         )+
+    };
+}
+
+macro_rules! impl_header_field_accessors {
+    ($header:ty, optional_string, $field:ident, [$($getter:ident),* $(,)?], [$($setter:ident),* $(,)?]) => {
+        impl $header {
+            $(
+                pub fn $getter(&self) -> Option<&str> {
+                    self.$field.as_deref()
+                }
+            )*
+            $(
+                pub fn $setter(&mut self, value: Option<String>) {
+                    self.$field = value;
+                }
+            )*
+        }
+    };
+    ($header:ty, string, $field:ident, [$($getter:ident),* $(,)?], [$($setter:ident),* $(,)?]) => {
+        impl $header {
+            $(
+                pub fn $getter(&self) -> &str {
+                    &self.$field
+                }
+            )*
+            $(
+                pub fn $setter(&mut self, value: String) {
+                    self.$field = value;
+                }
+            )*
+        }
+    };
+    ($header:ty, optional_copy($value:ty), $field:ident, [$($getter:ident),* $(,)?], [$($setter:ident),* $(,)?]) => {
+        impl $header {
+            $(
+                pub fn $getter(&self) -> Option<$value> {
+                    self.$field
+                }
+            )*
+            $(
+                pub fn $setter(&mut self, value: Option<$value>) {
+                    self.$field = value;
+                }
+            )*
+        }
+    };
+    ($header:ty, copy($value:ty), $field:ident, [$($getter:ident),* $(,)?], [$($setter:ident),* $(,)?]) => {
+        impl $header {
+            $(
+                pub fn $getter(&self) -> $value {
+                    self.$field
+                }
+            )*
+            $(
+                pub fn $setter(&mut self, value: $value) {
+                    self.$field = value;
+                }
+            )*
+        }
     };
 }
 
@@ -2011,33 +2072,41 @@ impl CommandHeader for GetEarliestMsgStoretimeResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PullMessageRequestHeader;
+/// let _ = PullMessageRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PullMessageRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub queue_offset: Option<i64>,
-    pub max_msg_nums: Option<i32>,
-    pub sys_flag: Option<i32>,
-    pub commit_offset: Option<i64>,
-    pub suspend_timeout_millis: Option<i64>,
-    pub subscription: Option<String>,
-    pub sub_version: Option<i64>,
-    pub expression_type: Option<String>,
-    pub max_msg_bytes: Option<i32>,
-    pub request_source: Option<i32>,
-    pub proxy_forward_client_id: Option<String>,
-    pub broker_name: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub logical: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) lite_topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) queue_offset: Option<i64>,
+    pub(crate) max_msg_nums: Option<i32>,
+    pub(crate) sys_flag: Option<i32>,
+    pub(crate) commit_offset: Option<i64>,
+    pub(crate) suspend_timeout_millis: Option<i64>,
+    pub(crate) subscription: Option<String>,
+    pub(crate) sub_version: Option<i64>,
+    pub(crate) expression_type: Option<String>,
+    pub(crate) max_msg_bytes: Option<i32>,
+    pub(crate) request_source: Option<i32>,
+    pub(crate) proxy_forward_client_id: Option<String>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for PullMessageRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
         put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "liteTopic", self.lite_topic.as_deref());
         put_optional(fields, "queueId", self.queue_id);
         put_optional(fields, "queueOffset", self.queue_offset);
         put_optional(fields, "maxMsgNums", self.max_msg_nums);
@@ -2076,6 +2145,7 @@ impl CommandHeader for PullMessageRequestHeader {
             oneway: optional_java_boolean(fields, "oway"),
             consumer_group: optional_string(fields, "consumerGroup"),
             topic: optional_string(fields, "topic"),
+            lite_topic: optional_string(fields, "liteTopic"),
             queue_id: optional_i32_with_mode(fields, "queueId", use_fast_encode)?,
             queue_offset: optional_i64_with_mode(fields, "queueOffset", use_fast_encode)?,
             max_msg_nums: optional_i32_with_mode(fields, "maxMsgNums", use_fast_encode)?,
@@ -2226,15 +2296,21 @@ impl CommandHeader for PullMessageResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::UnregisterClientRequestHeader;
+/// let _ = UnregisterClientRequestHeader::default().client_id;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct UnregisterClientRequestHeader {
-    pub client_id: String,
-    pub producer_group: Option<String>,
-    pub consumer_group: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) client_id: String,
+    pub(crate) producer_group: Option<String>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for UnregisterClientRequestHeader {
@@ -2261,14 +2337,20 @@ impl CommandHeader for UnregisterClientRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetRouteInfoRequestHeader;
+/// let _ = GetRouteInfoRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetRouteInfoRequestHeader {
-    pub topic: String,
-    pub accept_standard_json_only: Option<bool>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: String,
+    pub(crate) accept_standard_json_only: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for GetRouteInfoRequestHeader {
@@ -2298,23 +2380,29 @@ impl CommandHeader for GetRouteInfoRequestHeader {
 }
 
 /// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::CreateTopicRequestHeader;
+/// let _ = CreateTopicRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone)]
 pub struct CreateTopicRequestHeader {
-    pub topic: Option<String>,
-    pub default_topic: Option<String>,
-    pub read_queue_nums: Option<i32>,
-    pub write_queue_nums: Option<i32>,
-    pub perm: Option<i32>,
-    pub topic_filter_type: Option<String>,
-    pub topic_sys_flag: Option<i32>,
-    pub order: Option<bool>,
-    pub attributes: Option<String>,
-    pub force: Option<bool>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) default_topic: Option<String>,
+    pub(crate) read_queue_nums: Option<i32>,
+    pub(crate) write_queue_nums: Option<i32>,
+    pub(crate) perm: Option<i32>,
+    pub(crate) topic_filter_type: Option<String>,
+    pub(crate) topic_sys_flag: Option<i32>,
+    pub(crate) order: Option<bool>,
+    pub(crate) attributes: Option<String>,
+    pub(crate) force: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
 
 impl Default for CreateTopicRequestHeader {
@@ -2335,6 +2423,20 @@ impl Default for CreateTopicRequestHeader {
             broker_name: None,
             oneway: None,
             logical: None,
+        }
+    }
+}
+
+impl CreateTopicRequestHeader {
+    /// Resolves Java's `getTopicFilterTypeEnum()` and its `valueOf` failure.
+    pub fn get_topic_filter_type_enum(&self) -> Result<TopicFilterType, ProtocolError> {
+        match self.topic_filter_type.as_deref() {
+            Some("SINGLE_TAG") => Ok(TopicFilterType::SingleTag),
+            Some("MULTI_TAG") => Ok(TopicFilterType::MultiTag),
+            value => Err(ProtocolError::InvalidField {
+                field: "topicFilterType",
+                reason: format!("unknown Java TopicFilterType {}", value.unwrap_or("null")),
+            }),
         }
     }
 }
@@ -2402,40 +2504,33 @@ impl CommandHeader for CreateTopicRequestHeader {
     }
 
     fn check_fields(&self) -> Result<(), ProtocolError> {
-        if matches!(
-            self.topic_filter_type.as_deref(),
-            Some("SINGLE_TAG" | "MULTI_TAG")
-        ) {
-            Ok(())
-        } else {
-            Err(ProtocolError::InvalidField {
-                field: "topicFilterType",
-                reason: format!(
-                    "unknown Java TopicFilterType {}",
-                    self.topic_filter_type.as_deref().unwrap_or("null")
-                ),
-            })
-        }
+        self.get_topic_filter_type_enum().map(|_| ())
     }
 }
 
 /// Pinned Java `QueryMessageRequestHeader` used by `QUERY_MESSAGE`.
 /// Pinned Java `QueryMessageRequestHeader` keeps its String, Integer, and Long
 /// values nullable; its `checkFields()` method does not require them.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::QueryMessageRequestHeader;
+/// let _ = QueryMessageRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct QueryMessageRequestHeader {
-    pub topic: Option<String>,
-    pub key: Option<String>,
-    pub max_num: Option<i32>,
-    pub begin_timestamp: Option<i64>,
-    pub end_timestamp: Option<i64>,
-    pub index_type: Option<String>,
-    pub last_key: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) key: Option<String>,
+    pub(crate) max_num: Option<i32>,
+    pub(crate) begin_timestamp: Option<i64>,
+    pub(crate) end_timestamp: Option<i64>,
+    pub(crate) index_type: Option<String>,
+    pub(crate) last_key: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
 
 impl CommandHeader for QueryMessageRequestHeader {
@@ -2561,10 +2656,16 @@ impl CommandHeader for QueryMessageResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<ViewMessageRequestHeader>(); }
 /// ```
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ViewMessageRequestHeader;
+/// let _ = ViewMessageRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ViewMessageRequestHeader {
-    pub topic: Option<String>,
-    pub offset: Option<i64>,
+    pub(crate) topic: Option<String>,
+    pub(crate) offset: Option<i64>,
 }
 
 impl CommandHeader for ViewMessageRequestHeader {
@@ -2588,21 +2689,33 @@ impl CommandHeader for ViewMessageRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetConsumerListByGroupRequestHeader;
+/// let _ = GetConsumerListByGroupRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetConsumerListByGroupRequestHeader {
-    pub consumer_group: String,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::LockBatchMqRequestHeader;
+/// let _ = LockBatchMqRequestHeader::default().namespace;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct LockBatchMqRequestHeader {
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for LockBatchMqRequestHeader {
@@ -2623,12 +2736,18 @@ impl CommandHeader for LockBatchMqRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::UnlockBatchMqRequestHeader;
+/// let _ = UnlockBatchMqRequestHeader::default().namespace;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct UnlockBatchMqRequestHeader {
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for UnlockBatchMqRequestHeader {
@@ -2669,19 +2788,25 @@ impl CommandHeader for GetConsumerListByGroupRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ConsumerSendMsgBackRequestHeader;
+/// let _ = ConsumerSendMsgBackRequestHeader::default().group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ConsumerSendMsgBackRequestHeader {
-    pub group: String,
-    pub broker_name: Option<String>,
-    pub origin_topic: String,
-    pub offset: i64,
-    pub delay_level: i32,
-    pub origin_msg_id: Option<String>,
-    pub max_reconsume_times: Option<i32>,
-    pub unit_mode: bool,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) group: String,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) origin_topic: String,
+    pub(crate) offset: i64,
+    pub(crate) delay_level: i32,
+    pub(crate) origin_msg_id: Option<String>,
+    pub(crate) max_reconsume_times: Option<i32>,
+    pub(crate) unit_mode: bool,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for ConsumerSendMsgBackRequestHeader {
@@ -2741,16 +2866,22 @@ impl CommandHeader for ConsumerSendMsgBackRequestHeader {
 
 /// Java 5.5.1 `RecallMessageRequestHeader`, including nullable fields inherited
 /// from `RpcRequestHeader` and `TopicRequestHeader`.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::RecallMessageRequestHeader;
+/// let _ = RecallMessageRequestHeader::default().producer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RecallMessageRequestHeader {
-    pub producer_group: Option<String>,
-    pub topic: String,
-    pub recall_handle: String,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
-    pub logical: Option<bool>,
+    pub(crate) producer_group: Option<String>,
+    pub(crate) topic: String,
+    pub(crate) recall_handle: String,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
 
 impl CommandHeader for RecallMessageRequestHeader {
@@ -2908,20 +3039,26 @@ impl CommandHeader for UnregisterClientResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::EndTransactionRequestHeader;
+/// let _ = EndTransactionRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone)]
 pub struct EndTransactionRequestHeader {
-    pub topic: Option<String>,
-    pub producer_group: Option<String>,
-    pub transaction_state_table_offset: Option<i64>,
-    pub commit_log_offset: Option<i64>,
-    pub commit_or_rollback: Option<i32>,
-    pub from_transaction_check: Option<bool>,
-    pub msg_id: Option<String>,
-    pub transaction_id: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) producer_group: Option<String>,
+    pub(crate) transaction_state_table_offset: Option<i64>,
+    pub(crate) commit_log_offset: Option<i64>,
+    pub(crate) commit_or_rollback: Option<i32>,
+    pub(crate) from_transaction_check: Option<bool>,
+    pub(crate) msg_id: Option<String>,
+    pub(crate) transaction_id: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl Default for EndTransactionRequestHeader {
@@ -3028,18 +3165,24 @@ impl CommandHeader for EndTransactionResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::CheckTransactionStateRequestHeader;
+/// let _ = CheckTransactionStateRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct CheckTransactionStateRequestHeader {
-    pub topic: Option<String>,
-    pub transaction_state_table_offset: i64,
-    pub commit_log_offset: i64,
-    pub msg_id: Option<String>,
-    pub transaction_id: Option<String>,
-    pub offset_msg_id: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: Option<String>,
+    pub(crate) transaction_state_table_offset: i64,
+    pub(crate) commit_log_offset: i64,
+    pub(crate) msg_id: Option<String>,
+    pub(crate) transaction_id: Option<String>,
+    pub(crate) offset_msg_id: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for CheckTransactionStateRequestHeader {
@@ -3162,45 +3305,57 @@ impl CommandHeader for CheckTransactionStateResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ReplyMessageRequestHeader;
+/// let _ = ReplyMessageRequestHeader::default().producer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ReplyMessageRequestHeader {
-    pub producer_group: String,
-    pub topic: String,
-    pub default_topic: String,
-    pub default_topic_queue_nums: i32,
-    pub queue_id: i32,
-    pub sys_flag: i32,
-    pub born_timestamp: i64,
-    pub flag: i32,
-    pub properties: Option<String>,
-    pub reconsume_times: Option<i32>,
-    pub unit_mode: bool,
-    pub born_host: String,
-    pub store_host: String,
-    pub store_timestamp: i64,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) producer_group: String,
+    pub(crate) topic: String,
+    pub(crate) default_topic: String,
+    pub(crate) default_topic_queue_nums: i32,
+    pub(crate) queue_id: i32,
+    pub(crate) sys_flag: i32,
+    pub(crate) born_timestamp: i64,
+    pub(crate) flag: i32,
+    pub(crate) properties: Option<String>,
+    pub(crate) reconsume_times: Option<i32>,
+    pub(crate) unit_mode: bool,
+    pub(crate) born_host: String,
+    pub(crate) store_host: String,
+    pub(crate) store_timestamp: i64,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::NotificationRequestHeader;
+/// let _ = NotificationRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct NotificationRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub poll_time: i64,
-    pub born_time: i64,
-    pub order: Option<bool>,
-    pub attempt_id: Option<String>,
-    pub lite_consumer: bool,
-    pub client_id: Option<String>,
-    pub expression_type: Option<String>,
-    pub expression: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) topic: String,
+    pub(crate) queue_id: i32,
+    pub(crate) poll_time: i64,
+    pub(crate) born_time: i64,
+    pub(crate) order: Option<bool>,
+    pub(crate) attempt_id: Option<String>,
+    pub(crate) lite_consumer: bool,
+    pub(crate) client_id: Option<String>,
+    pub(crate) expression_type: Option<String>,
+    pub(crate) expression: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for NotificationRequestHeader {
@@ -3293,18 +3448,24 @@ impl CommandHeader for NotificationResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ResetOffsetRequestHeader;
+/// let _ = ResetOffsetRequestHeader::default().group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ResetOffsetRequestHeader {
-    pub group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub offset: Option<i64>,
-    pub timestamp: i64,
-    pub force: bool,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) group: String,
+    pub(crate) topic: String,
+    pub(crate) queue_id: i32,
+    pub(crate) offset: Option<i64>,
+    pub(crate) timestamp: i64,
+    pub(crate) force: bool,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for ResetOffsetRequestHeader {
@@ -3355,15 +3516,21 @@ impl CommandHeader for ResetOffsetRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetConsumerStatusRequestHeader;
+/// let _ = GetConsumerStatusRequestHeader::default().topic;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetConsumerStatusRequestHeader {
-    pub topic: String,
-    pub group: String,
-    pub client_addr: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) topic: String,
+    pub(crate) group: String,
+    pub(crate) client_addr: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for GetConsumerStatusRequestHeader {
@@ -3392,13 +3559,19 @@ impl CommandHeader for GetConsumerStatusRequestHeader {
 
 /// Pinned Java `GetConsumerConnectionListRequestHeader`. Java's
 /// `checkFields()` is a no-op, so the annotated group remains nullable.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetConsumerConnectionListRequestHeader;
+/// let _ = GetConsumerConnectionListRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetConsumerConnectionListRequestHeader {
-    pub consumer_group: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for GetConsumerConnectionListRequestHeader {
@@ -3423,15 +3596,21 @@ impl CommandHeader for GetConsumerConnectionListRequestHeader {
 
 /// Pinned Java `GetConsumeStatsRequestHeader`, including its no-op validation
 /// and the inherited nullable `TopicRequestHeader`/`RpcRequestHeader` fields.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetConsumeStatsRequestHeader;
+/// let _ = GetConsumeStatsRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetConsumeStatsRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub topic_list: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) topic_list: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl GetConsumeStatsRequestHeader {
@@ -3491,15 +3670,21 @@ impl CommandHeader for GetConsumeStatsRequestHeader {
 
 /// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
 /// `RpcRequestHeader` namespace and broker-routing fields.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetConsumerRunningInfoRequestHeader;
+/// let _ = GetConsumerRunningInfoRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GetConsumerRunningInfoRequestHeader {
-    pub consumer_group: String,
-    pub client_id: String,
-    pub jstack_enable: bool,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) client_id: String,
+    pub(crate) jstack_enable: bool,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for GetConsumerRunningInfoRequestHeader {
@@ -3526,41 +3711,54 @@ impl CommandHeader for GetConsumerRunningInfoRequestHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ConsumeMessageDirectlyResultRequestHeader;
+/// let _ = ConsumeMessageDirectlyResultRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ConsumeMessageDirectlyResultRequestHeader {
-    pub consumer_group: String,
-    pub client_id: Option<String>,
-    pub msg_id: Option<String>,
-    pub broker_name: Option<String>,
-    pub topic: Option<String>,
-    pub topic_sys_flag: Option<i32>,
-    pub group_sys_flag: Option<i32>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) client_id: Option<String>,
+    pub(crate) msg_id: Option<String>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) topic_sys_flag: Option<i32>,
+    pub(crate) group_sys_flag: Option<i32>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
     /// The inherited `RpcRequestHeader.bname`; distinct from this class's
     /// `brokerName` payload field.
-    pub rpc_broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) rpc_broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) logical: Option<bool>,
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopMessageRequestHeader;
+/// let _ = PopMessageRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone)]
 pub struct PopMessageRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub queue_id: i32,
-    pub max_msg_nums: i32,
-    pub invisible_time: i64,
-    pub poll_time: i64,
-    pub born_time: i64,
-    pub init_mode: i32,
-    pub expression_type: Option<String>,
-    pub expression: Option<String>,
-    pub order: Option<bool>,
-    pub attempt_id: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: i32,
+    pub(crate) max_msg_nums: i32,
+    pub(crate) invisible_time: i64,
+    pub(crate) poll_time: i64,
+    pub(crate) born_time: i64,
+    pub(crate) init_mode: i32,
+    pub(crate) expression_type: Option<String>,
+    pub(crate) expression: Option<String>,
+    pub(crate) order: Option<bool>,
+    pub(crate) attempt_id: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl Default for PopMessageRequestHeader {
@@ -3637,6 +3835,11 @@ impl CommandHeader for PopMessageRequestHeader {
 }
 
 impl PopMessageRequestHeader {
+    /// Sets the backing queue ID exposed through Java's public setter.
+    pub fn set_queue_id(&mut self, queue_id: i32) {
+        self.queue_id = queue_id;
+    }
+
     /// Returns Java's `getQueueId()` value, which normalizes every negative
     /// backing field to `-1`.
     pub fn get_queue_id(&self) -> i32 {
@@ -3910,18 +4113,24 @@ impl CommandHeader for PopLiteMessageResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::AckMessageRequestHeader;
+/// let _ = AckMessageRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct AckMessageRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub extra_info: String,
-    pub offset: i64,
-    pub lite_topic: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) topic: String,
+    pub(crate) queue_id: i32,
+    pub(crate) extra_info: String,
+    pub(crate) offset: i64,
+    pub(crate) lite_topic: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for AckMessageRequestHeader {
@@ -3956,31 +4165,43 @@ impl CommandHeader for AckMessageRequestHeader {
 
 /// Java's `ChangeInvisibleTimeRequestHeader` uses nullable strings and boxed
 /// numeric fields; invalid reflection conversions leave those fields unset.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ChangeInvisibleTimeRequestHeader;
+/// let _ = ChangeInvisibleTimeRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ChangeInvisibleTimeRequestHeader {
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub queue_id: Option<i32>,
-    pub extra_info: Option<String>,
-    pub offset: Option<i64>,
-    pub invisible_time: Option<i64>,
-    pub lite_topic: Option<String>,
-    pub suspend: bool,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) extra_info: Option<String>,
+    pub(crate) offset: Option<i64>,
+    pub(crate) invisible_time: Option<i64>,
+    pub(crate) lite_topic: Option<String>,
+    pub(crate) suspend: bool,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PollingInfoRequestHeader;
+/// let _ = PollingInfoRequestHeader::default().consumer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PollingInfoRequestHeader {
-    pub consumer_group: String,
-    pub topic: String,
-    pub queue_id: i32,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) consumer_group: String,
+    pub(crate) topic: String,
+    pub(crate) queue_id: i32,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for PollingInfoRequestHeader {
@@ -4048,20 +4269,26 @@ impl CommandHeader for PollingInfoResponseHeader {
 
 /// Java 5.5.1's `PopLiteMessageRequestHeader` uses reflection decoding and
 /// inherits equality/hash behavior from `RpcRequestHeader`.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopLiteMessageRequestHeader;
+/// let _ = PopLiteMessageRequestHeader::default().client_id;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PopLiteMessageRequestHeader {
-    pub client_id: Option<String>,
-    pub consumer_group: Option<String>,
-    pub topic: Option<String>,
-    pub max_msg_num: i32,
-    pub invisible_time: i64,
-    pub poll_time: i64,
-    pub born_time: i64,
-    pub attempt_id: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) client_id: Option<String>,
+    pub(crate) consumer_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) max_msg_num: i32,
+    pub(crate) invisible_time: i64,
+    pub(crate) poll_time: i64,
+    pub(crate) born_time: i64,
+    pub(crate) attempt_id: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for PopLiteMessageRequestHeader {
@@ -4151,12 +4378,18 @@ impl CommandHeader for LiteSubscriptionCtlRequestHeader {
 /// Java 5.5.1's client heartbeat RPC header. The Java class declares no
 /// payload fields and inherits its namespace and routing fields from
 /// `RpcRequestHeader`.
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::HeartbeatRequestHeader;
+/// let _ = HeartbeatRequestHeader::default().namespace;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct HeartbeatRequestHeader {
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl HeartbeatRequestHeader {
@@ -4275,11 +4508,23 @@ fn java_string_hash_code(value: &str) -> i32 {
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::NotifyUnsubscribeLiteRequestHeader;
+/// let _ = NotifyUnsubscribeLiteRequestHeader::default().lite_topic;
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::NotifyUnsubscribeLiteRequestHeader;
+/// fn requires_value_equality<T: PartialEq + Eq>() {}
+/// fn main() { requires_value_equality::<NotifyUnsubscribeLiteRequestHeader>(); }
+/// ```
+#[derive(Debug, Clone, Default)]
 pub struct NotifyUnsubscribeLiteRequestHeader {
-    pub lite_topic: String,
-    pub consumer_group: String,
-    pub client_id: String,
+    pub(crate) lite_topic: String,
+    pub(crate) consumer_group: String,
+    pub(crate) client_id: String,
 }
 
 impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
@@ -4427,6 +4672,7 @@ impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
         put_optional(fields, "nsd", self.namespaced);
         put_optional(fields, "bname", self.rpc_broker_name.as_deref());
         put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -4435,6 +4681,7 @@ impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
             namespaced: optional_java_boolean(fields, "nsd"),
             rpc_broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             client_id: optional_string(fields, "clientId"),
             msg_id: optional_string(fields, "msgId"),
@@ -4454,6 +4701,7 @@ impl CommandHeader for ConsumeMessageDirectlyResultRequestHeader {
             namespaced: optional_java_boolean(fields, "nsd"),
             rpc_broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             client_id: optional_string(fields, "clientId"),
             msg_id: optional_string(fields, "msgId"),
@@ -4571,27 +4819,33 @@ impl CommandHeader for SendMessageResponseHeader {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SendMessageRequestHeaderV2;
+/// let _ = SendMessageRequestHeaderV2::default().a;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SendMessageRequestHeaderV2 {
-    pub a: Option<String>,
-    pub b: Option<String>,
-    pub c: Option<String>,
-    pub d: Option<i32>,
-    pub e: Option<i32>,
-    pub f: Option<i32>,
-    pub g: Option<i64>,
-    pub h: Option<i32>,
-    pub i: Option<String>,
-    pub j: Option<i32>,
-    pub k: Option<bool>,
-    pub l: Option<i32>,
-    pub m: Option<bool>,
-    pub n: Option<String>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub logical: Option<bool>,
-    pub broker_name: Option<String>,
-    pub oneway: Option<bool>,
+    pub(crate) a: Option<String>,
+    pub(crate) b: Option<String>,
+    pub(crate) c: Option<String>,
+    pub(crate) d: Option<i32>,
+    pub(crate) e: Option<i32>,
+    pub(crate) f: Option<i32>,
+    pub(crate) g: Option<i64>,
+    pub(crate) h: Option<i32>,
+    pub(crate) i: Option<String>,
+    pub(crate) j: Option<i32>,
+    pub(crate) k: Option<bool>,
+    pub(crate) l: Option<i32>,
+    pub(crate) m: Option<bool>,
+    pub(crate) n: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV2 {
@@ -4681,26 +4935,32 @@ impl SendMessageRequestHeaderV2 {
     }
 }
 
+/// Java 5.5.1 exposes this value through its accessor API, not as a public field.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SendMessageRequestHeaderV1;
+/// let _ = SendMessageRequestHeaderV1::default().producer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SendMessageRequestHeaderV1 {
-    pub producer_group: Option<String>,
-    pub topic: String,
-    pub default_topic: String,
-    pub default_topic_queue_nums: i32,
-    pub queue_id: i32,
-    pub sys_flag: i32,
-    pub born_timestamp: i64,
-    pub flag: i32,
-    pub properties: Option<String>,
-    pub reconsume_times: Option<i32>,
-    pub unit_mode: Option<bool>,
-    pub max_reconsume_times: Option<i32>,
-    pub batch: Option<bool>,
-    pub namespace: Option<String>,
-    pub namespaced: Option<bool>,
-    pub broker_name: Option<String>,
-    pub logical: Option<bool>,
-    pub oneway: Option<bool>,
+    pub(crate) producer_group: Option<String>,
+    pub(crate) topic: String,
+    pub(crate) default_topic: String,
+    pub(crate) default_topic_queue_nums: i32,
+    pub(crate) queue_id: i32,
+    pub(crate) sys_flag: i32,
+    pub(crate) born_timestamp: i64,
+    pub(crate) flag: i32,
+    pub(crate) properties: Option<String>,
+    pub(crate) reconsume_times: Option<i32>,
+    pub(crate) unit_mode: Option<bool>,
+    pub(crate) max_reconsume_times: Option<i32>,
+    pub(crate) batch: Option<bool>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) logical: Option<bool>,
+    pub(crate) oneway: Option<bool>,
 }
 
 impl CommandHeader for SendMessageRequestHeaderV1 {
@@ -4777,6 +5037,1316 @@ impl CommandHeader for SendMessageRequestHeaderV1 {
         })
     }
 }
+
+// Java 5.5.1 typed-header public field accessors.
+impl_topic_request_header_accessors!(
+    PullMessageRequestHeader,
+    CreateTopicRequestHeader,
+    QueryMessageRequestHeader,
+    RecallMessageRequestHeader,
+    SendMessageRequestHeaderV2,
+    SendMessageRequestHeaderV1
+);
+impl_rpc_request_header_accessors!(
+    UnregisterClientRequestHeader,
+    GetRouteInfoRequestHeader,
+    GetConsumerListByGroupRequestHeader,
+    LockBatchMqRequestHeader,
+    UnlockBatchMqRequestHeader,
+    ConsumerSendMsgBackRequestHeader,
+    EndTransactionRequestHeader,
+    CheckTransactionStateRequestHeader,
+    ReplyMessageRequestHeader,
+    NotificationRequestHeader,
+    ResetOffsetRequestHeader,
+    GetConsumerStatusRequestHeader,
+    GetConsumerConnectionListRequestHeader,
+    GetConsumeStatsRequestHeader,
+    GetConsumerRunningInfoRequestHeader,
+    PopMessageRequestHeader,
+    AckMessageRequestHeader,
+    ChangeInvisibleTimeRequestHeader,
+    PollingInfoRequestHeader,
+    PopLiteMessageRequestHeader
+);
+impl ConsumeMessageDirectlyResultRequestHeader {
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.rpc_broker_name.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.rpc_broker_name = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+}
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    lite_topic,
+    [get_lite_topic],
+    [set_lite_topic]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i64),
+    queue_offset,
+    [get_queue_offset],
+    [set_queue_offset]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i32),
+    max_msg_nums,
+    [get_max_msg_nums],
+    [set_max_msg_nums]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i32),
+    sys_flag,
+    [get_sys_flag],
+    [set_sys_flag]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i64),
+    commit_offset,
+    [get_commit_offset],
+    [set_commit_offset]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i64),
+    suspend_timeout_millis,
+    [get_suspend_timeout_millis],
+    [set_suspend_timeout_millis]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    subscription,
+    [get_subscription],
+    [set_subscription]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i64),
+    sub_version,
+    [get_sub_version],
+    [set_sub_version]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    expression_type,
+    [get_expression_type],
+    [set_expression_type]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i32),
+    max_msg_bytes,
+    [get_max_msg_bytes],
+    [set_max_msg_bytes]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_copy(i32),
+    request_source,
+    [get_request_source],
+    [set_request_source]
+);
+impl_header_field_accessors!(
+    PullMessageRequestHeader,
+    optional_string,
+    proxy_forward_client_id,
+    [get_proxy_froward_client_id],
+    [set_proxy_froward_client_id]
+);
+impl_header_field_accessors!(
+    UnregisterClientRequestHeader,
+    string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    UnregisterClientRequestHeader,
+    optional_string,
+    producer_group,
+    [get_producer_group],
+    [set_producer_group]
+);
+impl_header_field_accessors!(
+    UnregisterClientRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    GetRouteInfoRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    GetRouteInfoRequestHeader,
+    optional_copy(bool),
+    accept_standard_json_only,
+    [get_accept_standard_json_only],
+    [set_accept_standard_json_only]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_string,
+    default_topic,
+    [get_default_topic],
+    [set_default_topic]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(i32),
+    read_queue_nums,
+    [get_read_queue_nums],
+    [set_read_queue_nums]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(i32),
+    write_queue_nums,
+    [get_write_queue_nums],
+    [set_write_queue_nums]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(i32),
+    perm,
+    [get_perm],
+    [set_perm]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_string,
+    topic_filter_type,
+    [get_topic_filter_type],
+    [set_topic_filter_type]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(i32),
+    topic_sys_flag,
+    [get_topic_sys_flag],
+    [set_topic_sys_flag]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(bool),
+    order,
+    [get_order],
+    [set_order]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_string,
+    attributes,
+    [get_attributes],
+    [set_attributes]
+);
+impl_header_field_accessors!(
+    CreateTopicRequestHeader,
+    optional_copy(bool),
+    force,
+    [get_force],
+    [set_force]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_string,
+    key,
+    [get_key],
+    [set_key]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_copy(i32),
+    max_num,
+    [get_max_num],
+    [set_max_num]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_copy(i64),
+    begin_timestamp,
+    [get_begin_timestamp],
+    [set_begin_timestamp]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_copy(i64),
+    end_timestamp,
+    [get_end_timestamp],
+    [set_end_timestamp]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_string,
+    index_type,
+    [get_index_type],
+    [set_index_type]
+);
+impl_header_field_accessors!(
+    QueryMessageRequestHeader,
+    optional_string,
+    last_key,
+    [get_last_key],
+    [set_last_key]
+);
+impl_header_field_accessors!(
+    ViewMessageRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    ViewMessageRequestHeader,
+    optional_copy(i64),
+    offset,
+    [get_offset],
+    [set_offset]
+);
+impl_header_field_accessors!(
+    GetConsumerListByGroupRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    string,
+    group,
+    [get_group],
+    [set_group]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    string,
+    origin_topic,
+    [get_origin_topic],
+    [set_origin_topic]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    copy(i64),
+    offset,
+    [get_offset],
+    [set_offset]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    copy(i32),
+    delay_level,
+    [get_delay_level],
+    [set_delay_level]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    optional_string,
+    origin_msg_id,
+    [get_origin_msg_id],
+    [set_origin_msg_id]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    optional_copy(i32),
+    max_reconsume_times,
+    [get_max_reconsume_times],
+    [set_max_reconsume_times]
+);
+impl_header_field_accessors!(
+    ConsumerSendMsgBackRequestHeader,
+    copy(bool),
+    unit_mode,
+    [is_unit_mode],
+    [set_unit_mode]
+);
+impl_header_field_accessors!(
+    RecallMessageRequestHeader,
+    optional_string,
+    producer_group,
+    [get_producer_group],
+    [set_producer_group]
+);
+impl_header_field_accessors!(
+    RecallMessageRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    RecallMessageRequestHeader,
+    string,
+    recall_handle,
+    [get_recall_handle],
+    [set_recall_handle]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_string,
+    producer_group,
+    [get_producer_group],
+    [set_producer_group]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_copy(i64),
+    transaction_state_table_offset,
+    [get_tran_state_table_offset],
+    [set_tran_state_table_offset]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_copy(i64),
+    commit_log_offset,
+    [get_commit_log_offset],
+    [set_commit_log_offset]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_copy(i32),
+    commit_or_rollback,
+    [get_commit_or_rollback],
+    [set_commit_or_rollback]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_copy(bool),
+    from_transaction_check,
+    [get_from_transaction_check],
+    [set_from_transaction_check]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_string,
+    msg_id,
+    [get_msg_id],
+    [set_msg_id]
+);
+impl_header_field_accessors!(
+    EndTransactionRequestHeader,
+    optional_string,
+    transaction_id,
+    [get_transaction_id],
+    [set_transaction_id]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    copy(i64),
+    transaction_state_table_offset,
+    [get_tran_state_table_offset],
+    [set_tran_state_table_offset]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    copy(i64),
+    commit_log_offset,
+    [get_commit_log_offset],
+    [set_commit_log_offset]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    optional_string,
+    msg_id,
+    [get_msg_id],
+    [set_msg_id]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    optional_string,
+    transaction_id,
+    [get_transaction_id],
+    [set_transaction_id]
+);
+impl_header_field_accessors!(
+    CheckTransactionStateRequestHeader,
+    optional_string,
+    offset_msg_id,
+    [get_offset_msg_id],
+    [set_offset_msg_id]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    string,
+    producer_group,
+    [get_producer_group],
+    [set_producer_group]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    string,
+    default_topic,
+    [get_default_topic],
+    [set_default_topic]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i32),
+    default_topic_queue_nums,
+    [get_default_topic_queue_nums],
+    [set_default_topic_queue_nums]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i32),
+    sys_flag,
+    [get_sys_flag],
+    [set_sys_flag]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i64),
+    born_timestamp,
+    [get_born_timestamp],
+    [set_born_timestamp]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i32),
+    flag,
+    [get_flag],
+    [set_flag]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    optional_string,
+    properties,
+    [get_properties],
+    [set_properties]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    optional_copy(i32),
+    reconsume_times,
+    [get_reconsume_times],
+    [set_reconsume_times]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(bool),
+    unit_mode,
+    [is_unit_mode],
+    [set_unit_mode]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    string,
+    born_host,
+    [get_born_host],
+    [set_born_host]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    string,
+    store_host,
+    [get_store_host],
+    [set_store_host]
+);
+impl_header_field_accessors!(
+    ReplyMessageRequestHeader,
+    copy(i64),
+    store_timestamp,
+    [get_store_timestamp],
+    [set_store_timestamp]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    copy(i64),
+    poll_time,
+    [get_poll_time],
+    [set_poll_time]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    copy(i64),
+    born_time,
+    [get_born_time],
+    [set_born_time]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    optional_copy(bool),
+    order,
+    [get_order],
+    [set_order]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    optional_string,
+    attempt_id,
+    [get_attempt_id],
+    [set_attempt_id]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    copy(bool),
+    lite_consumer,
+    [is_lite_consumer],
+    [set_lite_consumer]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    optional_string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    optional_string,
+    expression_type,
+    [get_exp_type],
+    [set_exp_type]
+);
+impl_header_field_accessors!(
+    NotificationRequestHeader,
+    optional_string,
+    expression,
+    [get_exp],
+    [set_exp]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    string,
+    group,
+    [get_group],
+    [set_group]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    optional_copy(i64),
+    offset,
+    [get_offset],
+    [set_offset]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    copy(i64),
+    timestamp,
+    [get_timestamp],
+    [set_timestamp]
+);
+impl_header_field_accessors!(
+    ResetOffsetRequestHeader,
+    copy(bool),
+    force,
+    [is_force],
+    [set_force]
+);
+impl_header_field_accessors!(
+    GetConsumerStatusRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    GetConsumerStatusRequestHeader,
+    string,
+    group,
+    [get_group],
+    [set_group]
+);
+impl_header_field_accessors!(
+    GetConsumerStatusRequestHeader,
+    optional_string,
+    client_addr,
+    [get_client_addr],
+    [set_client_addr]
+);
+impl_header_field_accessors!(
+    GetConsumerConnectionListRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    GetConsumeStatsRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    GetConsumeStatsRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    GetConsumeStatsRequestHeader,
+    optional_string,
+    topic_list,
+    [get_topic_list],
+    [set_topic_list]
+);
+impl_header_field_accessors!(
+    GetConsumerRunningInfoRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    GetConsumerRunningInfoRequestHeader,
+    string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    GetConsumerRunningInfoRequestHeader,
+    copy(bool),
+    jstack_enable,
+    [is_jstack_enable],
+    [set_jstack_enable]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_string,
+    msg_id,
+    [get_msg_id],
+    [set_msg_id]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_string,
+    broker_name,
+    [get_broker_name],
+    [set_broker_name]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_copy(i32),
+    topic_sys_flag,
+    [get_topic_sys_flag],
+    [set_topic_sys_flag]
+);
+impl_header_field_accessors!(
+    ConsumeMessageDirectlyResultRequestHeader,
+    optional_copy(i32),
+    group_sys_flag,
+    [get_group_sys_flag],
+    [set_group_sys_flag]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    copy(i32),
+    max_msg_nums,
+    [get_max_msg_nums],
+    [set_max_msg_nums]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    copy(i64),
+    invisible_time,
+    [get_invisible_time],
+    [set_invisible_time]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    copy(i64),
+    poll_time,
+    [get_poll_time],
+    [set_poll_time]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    copy(i64),
+    born_time,
+    [get_born_time],
+    [set_born_time]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    copy(i32),
+    init_mode,
+    [get_init_mode],
+    [set_init_mode]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    optional_string,
+    expression_type,
+    [get_exp_type],
+    [set_exp_type]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    optional_string,
+    expression,
+    [get_exp],
+    [set_exp]
+);
+impl_header_field_accessors!(
+    PopMessageRequestHeader,
+    optional_string,
+    attempt_id,
+    [get_attempt_id],
+    [set_attempt_id]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    string,
+    extra_info,
+    [get_extra_info],
+    [set_extra_info]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    copy(i64),
+    offset,
+    [get_offset],
+    [set_offset]
+);
+impl_header_field_accessors!(
+    AckMessageRequestHeader,
+    optional_string,
+    lite_topic,
+    [get_lite_topic],
+    [set_lite_topic]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_string,
+    extra_info,
+    [get_extra_info],
+    [set_extra_info]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_copy(i64),
+    offset,
+    [get_offset],
+    [set_offset]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_copy(i64),
+    invisible_time,
+    [get_invisible_time],
+    [set_invisible_time]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    optional_string,
+    lite_topic,
+    [get_lite_topic],
+    [set_lite_topic]
+);
+impl_header_field_accessors!(
+    ChangeInvisibleTimeRequestHeader,
+    copy(bool),
+    suspend,
+    [is_suspend],
+    [set_suspend]
+);
+impl_header_field_accessors!(
+    PollingInfoRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    PollingInfoRequestHeader,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    PollingInfoRequestHeader,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    optional_string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    optional_string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    optional_string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    copy(i32),
+    max_msg_num,
+    [get_max_msg_num],
+    [set_max_msg_num]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    copy(i64),
+    invisible_time,
+    [get_invisible_time],
+    [set_invisible_time]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    copy(i64),
+    poll_time,
+    [get_poll_time],
+    [set_poll_time]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    copy(i64),
+    born_time,
+    [get_born_time],
+    [set_born_time]
+);
+impl_header_field_accessors!(
+    PopLiteMessageRequestHeader,
+    optional_string,
+    attempt_id,
+    [get_attempt_id],
+    [set_attempt_id]
+);
+impl_header_field_accessors!(
+    NotifyUnsubscribeLiteRequestHeader,
+    string,
+    lite_topic,
+    [get_lite_topic],
+    [set_lite_topic]
+);
+impl_header_field_accessors!(
+    NotifyUnsubscribeLiteRequestHeader,
+    string,
+    consumer_group,
+    [get_consumer_group],
+    [set_consumer_group]
+);
+impl_header_field_accessors!(
+    NotifyUnsubscribeLiteRequestHeader,
+    string,
+    client_id,
+    [get_client_id],
+    [set_client_id]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_string,
+    a,
+    [get_a],
+    [set_a]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_string,
+    b,
+    [get_b],
+    [set_b]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_string,
+    c,
+    [get_c],
+    [set_c]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    d,
+    [get_d],
+    [set_d]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    e,
+    [get_e],
+    [set_e]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    f,
+    [get_f],
+    [set_f]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i64),
+    g,
+    [get_g],
+    [set_g]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    h,
+    [get_h],
+    [set_h]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_string,
+    i,
+    [get_i],
+    [set_i]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    j,
+    [get_j],
+    [set_j]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(bool),
+    k,
+    [is_k],
+    [set_k]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(i32),
+    l,
+    [get_l],
+    [set_l]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV2,
+    optional_copy(bool),
+    m,
+    [is_m],
+    [set_m]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_string,
+    producer_group,
+    [get_producer_group],
+    [set_producer_group]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    string,
+    topic,
+    [get_topic],
+    [set_topic]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    string,
+    default_topic,
+    [get_default_topic],
+    [set_default_topic]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    copy(i32),
+    default_topic_queue_nums,
+    [get_default_topic_queue_nums],
+    [set_default_topic_queue_nums]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    copy(i32),
+    queue_id,
+    [get_queue_id],
+    [set_queue_id]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    copy(i32),
+    sys_flag,
+    [get_sys_flag],
+    [set_sys_flag]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    copy(i64),
+    born_timestamp,
+    [get_born_timestamp],
+    [set_born_timestamp]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    copy(i32),
+    flag,
+    [get_flag],
+    [set_flag]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_string,
+    properties,
+    [get_properties],
+    [set_properties]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_copy(i32),
+    reconsume_times,
+    [get_reconsume_times],
+    [set_reconsume_times]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_copy(bool),
+    unit_mode,
+    [is_unit_mode],
+    [set_unit_mode]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_copy(i32),
+    max_reconsume_times,
+    [get_max_reconsume_times],
+    [set_max_reconsume_times]
+);
+impl_header_field_accessors!(
+    SendMessageRequestHeaderV1,
+    optional_copy(bool),
+    batch,
+    [is_batch],
+    [set_batch]
+);
+
+impl super::FastCodesHeader for PullMessageRequestHeader {}
+impl super::FastCodesHeader for PullMessageResponseHeader {}
+impl super::FastCodesHeader for SendMessageRequestHeaderV2 {}
+impl super::FastCodesHeader for SendMessageResponseHeader {}
 
 #[cfg(test)]
 mod tests {
@@ -5395,7 +6965,7 @@ mod tests {
     }
 
     #[test]
-    fn pull_request_header_does_not_export_java_absent_lite_topic_field() {
+    fn pull_request_header_round_trips_java_lite_topic_field() {
         let mut fields = HeaderMap::new();
         fields.insert("consumerGroup".into(), "workers".into());
         fields.insert("topic".into(), "orders".into());
@@ -5406,12 +6976,13 @@ mod tests {
         fields.insert("commitOffset".into(), "8".into());
         fields.insert("suspendTimeoutMillis".into(), "15000".into());
         fields.insert("subVersion".into(), "1".into());
-        fields.insert("liteTopic".into(), "not-a-pull-header-field".into());
+        fields.insert("liteTopic".into(), "lite-orders".into());
 
         let decoded = PullMessageRequestHeader::decode_fields(&fields).unwrap();
+        assert_eq!(decoded.get_lite_topic(), Some("lite-orders"));
         let mut encoded = HeaderMap::new();
         decoded.encode_fields(&mut encoded);
-        assert!(!encoded.contains_key("liteTopic"));
+        assert_eq!(encoded.get("liteTopic"), Some(&"lite-orders".to_owned()));
     }
 
     #[test]

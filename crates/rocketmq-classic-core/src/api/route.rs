@@ -41,10 +41,11 @@ impl MQClientApi {
     ) -> Result<Option<TopicRouteData>, RpcError> {
         let mut fields = HeaderMap::new();
         if let Some(topic) = topic {
-            GetRouteInfoRequestHeader {
-                topic: topic.to_owned(),
-                accept_standard_json_only: None,
-                ..GetRouteInfoRequestHeader::default()
+            {
+                let mut __phase18_header_0 = GetRouteInfoRequestHeader::default();
+                __phase18_header_0.set_topic(topic.to_owned());
+                __phase18_header_0.set_accept_standard_json_only(None);
+                __phase18_header_0
             }
             .encode_fields(&mut fields);
         }

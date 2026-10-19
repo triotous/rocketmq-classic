@@ -1219,11 +1219,15 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<(), RuntimeError> {
-        let header = rocketmq_classic_protocol::header::UnregisterClientRequestHeader {
-            client_id: self.client_id.clone(),
-            producer_group: (kind == GroupKind::Producer).then(|| group.to_owned()),
-            consumer_group: (kind == GroupKind::Consumer).then(|| group.to_owned()),
-            ..rocketmq_classic_protocol::header::UnregisterClientRequestHeader::default()
+        let header = {
+            let mut __phase18_header_0 =
+                rocketmq_classic_protocol::header::UnregisterClientRequestHeader::default();
+            __phase18_header_0.set_client_id(self.client_id.clone());
+            __phase18_header_0
+                .set_producer_group((kind == GroupKind::Producer).then(|| group.to_owned()));
+            __phase18_header_0
+                .set_consumer_group((kind == GroupKind::Consumer).then(|| group.to_owned()));
+            __phase18_header_0
         };
         let snapshot = self.routes.snapshot()?;
         for brokers in snapshot.broker_addresses.values() {

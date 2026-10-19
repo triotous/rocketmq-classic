@@ -288,14 +288,14 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             .ok_or_else(|| "reply request has no ext fields".to_owned())?;
         let header =
             ReplyMessageRequestHeader::decode_fields(fields).map_err(|error| error.to_string())?;
-        let born_host = MessageHostAddress::parse_java_socket_address(&header.born_host)
+        let born_host = MessageHostAddress::parse_java_socket_address(header.get_born_host())
             .map_err(|error| error.to_string())?;
-        let store_host = MessageHostAddress::parse_java_socket_address(&header.store_host)
+        let store_host = MessageHostAddress::parse_java_socket_address(header.get_store_host())
             .map_err(|error| error.to_string())?;
         let mut body = command.body.clone().unwrap_or_default();
-        if header.sys_flag & rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG != 0 {
+        if header.get_sys_flag() & rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG != 0 {
             let compression_type =
-                rocketmq_classic_common::sysflag::message::compression_type(header.sys_flag)
+                rocketmq_classic_common::sysflag::message::compression_type(header.get_sys_flag())
                     .map_err(|error| error.to_string())?;
             if let Ok(uncompressed) =
                 rocketmq_classic_common::compression::decompress(compression_type, &body)
@@ -304,12 +304,12 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             }
         }
 
-        let properties = decode_properties(header.properties.as_deref().unwrap_or_default());
+        let properties = decode_properties(header.get_properties().unwrap_or_default());
         let correlation_id = properties.get(PROPERTY_CORRELATION_ID).cloned();
         let mut reply = MessageExt::new();
-        reply.set_topic(header.topic);
+        reply.set_topic(header.get_topic());
         reply.set_body(body);
-        reply.set_flag(header.flag);
+        reply.set_flag(header.get_flag());
         for (key, value) in properties {
             let _ = reply.set_system_property(key, value);
         }
@@ -318,13 +318,13 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             epoch_millis_now().to_string(),
         );
 
-        reply.set_queue_id(header.queue_id);
-        reply.set_sys_flag(header.sys_flag);
-        reply.set_born_timestamp(header.born_timestamp);
+        reply.set_queue_id(header.get_queue_id());
+        reply.set_sys_flag(header.get_sys_flag());
+        reply.set_born_timestamp(header.get_born_timestamp());
         reply.set_born_host(Some(born_host));
-        reply.set_store_timestamp(header.store_timestamp);
+        reply.set_store_timestamp(header.get_store_timestamp());
         reply.set_store_host(Some(store_host));
-        reply.set_reconsume_times(header.reconsume_times.unwrap_or_default());
+        reply.set_reconsume_times(header.get_reconsume_times().unwrap_or_default());
         Ok::<_, String>((reply, correlation_id))
     })();
 
@@ -1150,19 +1150,20 @@ mod tests {
             ),
             (PROPERTY_MESSAGE_TYPE.to_owned(), "reply".to_owned()),
         ]);
-        let header = ReplyMessageRequestHeader {
-            producer_group: "response-producer".into(),
-            topic: "cluster-a_REPLY_TOPIC".into(),
-            default_topic: "TBW102".into(),
-            default_topic_queue_nums: 4,
-            queue_id: 1,
-            born_timestamp: 1_700_000_000_123,
-            flag: 0,
-            properties: Some(encode_properties(&properties)),
-            born_host: "127.0.0.1:10911".into(),
-            store_host: "127.0.0.1:10911".into(),
-            store_timestamp: 1_700_000_001_234,
-            ..Default::default()
+        let header = {
+            let mut __phase18_header_0 = ReplyMessageRequestHeader::default();
+            __phase18_header_0.set_producer_group("response-producer".into());
+            __phase18_header_0.set_topic("cluster-a_REPLY_TOPIC".into());
+            __phase18_header_0.set_default_topic("TBW102".into());
+            __phase18_header_0.set_default_topic_queue_nums(4);
+            __phase18_header_0.set_queue_id(1);
+            __phase18_header_0.set_born_timestamp(1_700_000_000_123);
+            __phase18_header_0.set_flag(0);
+            __phase18_header_0.set_properties(Some(encode_properties(&properties)));
+            __phase18_header_0.set_born_host("127.0.0.1:10911".into());
+            __phase18_header_0.set_store_host("127.0.0.1:10911".into());
+            __phase18_header_0.set_store_timestamp(1_700_000_001_234);
+            __phase18_header_0
         };
         let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
         header.encode_fields(&mut fields);
@@ -1213,19 +1214,20 @@ mod tests {
             ),
             (PROPERTY_MESSAGE_TYPE.to_owned(), "reply".to_owned()),
         ]);
-        let header = ReplyMessageRequestHeader {
-            producer_group: "response-producer".into(),
-            topic: "cluster-a_REPLY_TOPIC".into(),
-            default_topic: "TBW102".into(),
-            default_topic_queue_nums: 4,
-            queue_id: 1,
-            born_timestamp: 1_700_000_000_123,
-            flag: 0,
-            properties: Some(encode_properties(&properties)),
-            born_host: born_host.to_owned(),
-            store_host: store_host.to_owned(),
-            store_timestamp: 1_700_000_001_234,
-            ..Default::default()
+        let header = {
+            let mut __phase18_header_1 = ReplyMessageRequestHeader::default();
+            __phase18_header_1.set_producer_group("response-producer".into());
+            __phase18_header_1.set_topic("cluster-a_REPLY_TOPIC".into());
+            __phase18_header_1.set_default_topic("TBW102".into());
+            __phase18_header_1.set_default_topic_queue_nums(4);
+            __phase18_header_1.set_queue_id(1);
+            __phase18_header_1.set_born_timestamp(1_700_000_000_123);
+            __phase18_header_1.set_flag(0);
+            __phase18_header_1.set_properties(Some(encode_properties(&properties)));
+            __phase18_header_1.set_born_host(born_host.to_owned());
+            __phase18_header_1.set_store_host(store_host.to_owned());
+            __phase18_header_1.set_store_timestamp(1_700_000_001_234);
+            __phase18_header_1
         };
         let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
         header.encode_fields(&mut fields);

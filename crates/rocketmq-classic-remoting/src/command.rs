@@ -220,12 +220,12 @@ impl std::fmt::Debug for CustomHeaderValue {
 /// let header = SharedCommandHeader::new(GetRouteInfoRequestHeader::default());
 /// let mut command = RemotingCommand::create_request_command(1).unwrap();
 /// command.write_custom_header(Some(header.clone()));
-/// header.with_mut(|value| value.topic = "orders".into());
+/// header.with_mut(|value| value.set_topic("orders".into()));
 /// assert_eq!(
 ///     command
 ///         .read_custom_header::<SharedCommandHeader<GetRouteInfoRequestHeader>>()
 ///         .unwrap()
-///         .with(|value| value.topic.clone()),
+///         .with(|value| value.get_topic().to_owned()),
 ///     "orders"
 /// );
 /// ```
@@ -1234,18 +1234,18 @@ mod tests {
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
                             serde_json::json!({
-                                "topic": header.topic,
-                                "key": header.key,
-                                "maxNum": header.max_num,
-                                "beginTimestamp": header.begin_timestamp,
-                                "endTimestamp": header.end_timestamp,
-                                "indexType": header.index_type,
-                                "lastKey": header.last_key,
-                                "ns": header.namespace,
-                                "nsd": header.namespaced,
-                                "bname": header.broker_name,
-                                "oway": header.oneway,
-                                "lo": header.logical,
+                                "topic": header.get_topic(),
+                                "key": header.get_key(),
+                                "maxNum": header.get_max_num(),
+                                "beginTimestamp": header.get_begin_timestamp(),
+                                "endTimestamp": header.get_end_timestamp(),
+                                "indexType": header.get_index_type(),
+                                "lastKey": header.get_last_key(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "bname": header.get_broker_name(),
+                                "oway": header.get_oneway(),
+                                "lo": header.get_lo(),
                             }),
                             encoded,
                         )
@@ -1330,7 +1330,7 @@ mod tests {
                         let mut encoded = HeaderMap::new();
                         CommandHeader::encode_fields(&header, &mut encoded);
                         (
-                            serde_json::json!({"topic": header.topic, "offset": header.offset}),
+                            serde_json::json!({"topic": header.get_topic(), "offset": header.get_offset()}),
                             encoded,
                         )
                     }
@@ -2089,28 +2089,48 @@ mod tests {
                         panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
                     });
                     let expected_header = &expected["header"];
-                    assert_eq!(decoded.a.as_deref(), expected_header["a"].as_str());
-                    assert_eq!(decoded.b.as_deref(), expected_header["b"].as_str());
-                    assert_eq!(decoded.c.as_deref(), expected_header["c"].as_str());
-                    assert_eq!(decoded.d.map(i64::from), expected_header["d"].as_i64());
-                    assert_eq!(decoded.e.map(i64::from), expected_header["e"].as_i64());
-                    assert_eq!(decoded.f.map(i64::from), expected_header["f"].as_i64());
-                    assert_eq!(decoded.g, expected_header["g"].as_i64());
-                    assert_eq!(decoded.h.map(i64::from), expected_header["h"].as_i64());
-                    assert_eq!(decoded.i.as_deref(), expected_header["i"].as_str());
-                    assert_eq!(decoded.j.map(i64::from), expected_header["j"].as_i64());
-                    assert_eq!(decoded.k, expected_header["k"].as_bool());
-                    assert_eq!(decoded.l.map(i64::from), expected_header["l"].as_i64());
-                    assert_eq!(decoded.m, expected_header["m"].as_bool());
-                    assert_eq!(decoded.n.as_deref(), expected_header["n"].as_str());
-                    assert_eq!(decoded.namespace.as_deref(), expected_header["ns"].as_str());
-                    assert_eq!(decoded.namespaced, expected_header["nsd"].as_bool());
+                    assert_eq!(decoded.get_a(), expected_header["a"].as_str());
+                    assert_eq!(decoded.get_b(), expected_header["b"].as_str());
+                    assert_eq!(decoded.get_c(), expected_header["c"].as_str());
                     assert_eq!(
-                        decoded.broker_name.as_deref(),
-                        expected_header["bname"].as_str()
+                        decoded.get_d().map(i64::from),
+                        expected_header["d"].as_i64()
                     );
-                    assert_eq!(decoded.oneway, expected_header["oway"].as_bool());
-                    assert_eq!(decoded.logical, expected_header["lo"].as_bool());
+                    assert_eq!(
+                        decoded.get_e().map(i64::from),
+                        expected_header["e"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.get_f().map(i64::from),
+                        expected_header["f"].as_i64()
+                    );
+                    assert_eq!(decoded.get_g(), expected_header["g"].as_i64());
+                    assert_eq!(
+                        decoded.get_h().map(i64::from),
+                        expected_header["h"].as_i64()
+                    );
+                    assert_eq!(decoded.get_i(), expected_header["i"].as_str());
+                    assert_eq!(
+                        decoded.get_j().map(i64::from),
+                        expected_header["j"].as_i64()
+                    );
+                    assert_eq!(decoded.is_k(), expected_header["k"].as_bool());
+                    assert_eq!(
+                        decoded.get_l().map(i64::from),
+                        expected_header["l"].as_i64()
+                    );
+                    assert_eq!(decoded.is_m(), expected_header["m"].as_bool());
+                    let mut encoded = HeaderMap::new();
+                    CommandHeader::encode_fields(&decoded, &mut encoded);
+                    assert_eq!(
+                        encoded.get("n").map(String::as_str),
+                        expected_header["n"].as_str()
+                    );
+                    assert_eq!(decoded.get_namespace(), expected_header["ns"].as_str());
+                    assert_eq!(decoded.get_namespaced(), expected_header["nsd"].as_bool());
+                    assert_eq!(decoded.get_broker_name(), expected_header["bname"].as_str());
+                    assert_eq!(decoded.get_oneway(), expected_header["oway"].as_bool());
+                    assert_eq!(decoded.get_lo(), expected_header["lo"].as_bool());
                 } else {
                     assert!(
                         decoded.is_err(),
@@ -2132,39 +2152,41 @@ mod tests {
             "../../../fixtures/remoting/send-message-request-v2-decode-modes.json"
         ))
         .unwrap();
-        let v1 = SendMessageRequestHeaderV1 {
-            producer_group: Some("producer".into()),
-            topic: "orders".into(),
-            default_topic: "TBW102".into(),
-            default_topic_queue_nums: 4,
-            queue_id: 2,
-            sys_flag: 1,
-            born_timestamp: 1_712_345_678_901,
-            flag: 7,
-            properties: Some("TAGS\u{1}blue".into()),
-            reconsume_times: Some(0),
-            unit_mode: Some(false),
-            max_reconsume_times: Some(16),
-            batch: Some(false),
-            broker_name: Some("short-broker".into()),
-            namespace: Some("tenant".into()),
-            namespaced: Some(true),
-            logical: Some(true),
-            oneway: Some(false),
+        let v1 = {
+            let mut __phase18_header_0 = SendMessageRequestHeaderV1::default();
+            __phase18_header_0.set_producer_group(Some("producer".into()));
+            __phase18_header_0.set_topic("orders".into());
+            __phase18_header_0.set_default_topic("TBW102".into());
+            __phase18_header_0.set_default_topic_queue_nums(4);
+            __phase18_header_0.set_queue_id(2);
+            __phase18_header_0.set_sys_flag(1);
+            __phase18_header_0.set_born_timestamp(1_712_345_678_901);
+            __phase18_header_0.set_flag(7);
+            __phase18_header_0.set_properties(Some("TAGS\u{1}blue".into()));
+            __phase18_header_0.set_reconsume_times(Some(0));
+            __phase18_header_0.set_unit_mode(Some(false));
+            __phase18_header_0.set_max_reconsume_times(Some(16));
+            __phase18_header_0.set_batch(Some(false));
+            __phase18_header_0.set_broker_name(Some("short-broker".into()));
+            __phase18_header_0.set_namespace(Some("tenant".into()));
+            __phase18_header_0.set_namespaced(Some(true));
+            __phase18_header_0.set_lo(Some(true));
+            __phase18_header_0.set_oneway(Some(false));
+            __phase18_header_0
         };
         let header = SendMessageRequestHeaderV2::from_v1(&v1);
         let mut fields = HeaderMap::new();
         rocketmq_classic_protocol::header::CommandHeader::encode_fields(&header, &mut fields);
         assert_eq!(
-            serde_json::to_value(fields).unwrap(),
+            serde_json::to_value(&fields).unwrap(),
             fixture["conversion"]["encodedFields"]
         );
-        assert_eq!(header.n.as_deref(), Some("short-broker"));
-        assert_eq!(header.broker_name, None);
-        assert_eq!(header.namespace, None);
-        assert_eq!(header.namespaced, None);
-        assert_eq!(header.logical, None);
-        assert_eq!(header.oneway, None);
+        assert_eq!(fields.get("n").map(String::as_str), Some("short-broker"));
+        assert_eq!(header.get_broker_name(), None);
+        assert_eq!(header.get_namespace(), None);
+        assert_eq!(header.get_namespaced(), None);
+        assert_eq!(header.get_lo(), None);
+        assert_eq!(header.get_oneway(), None);
     }
 
     #[test]
@@ -2762,12 +2784,12 @@ mod tests {
                 RemotingCommand::build_error_response(73, None).unwrap(),
                 RemotingCommand::create_request_command_with_header(
                     74,
-                    Some(
-                        rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
-                            topic: "orders".into(),
-                            ..Default::default()
-                        },
-                    ),
+                    Some({
+                        let mut __phase18_header_1 =
+                            rocketmq_classic_protocol::header::GetRouteInfoRequestHeader::default();
+                        __phase18_header_1.set_topic("orders".into());
+                        __phase18_header_1
+                    }),
                 )
                 .unwrap(),
                 {
@@ -2912,13 +2934,16 @@ mod tests {
         assert_eq!(cases["extFieldsBeforeMake"]["oracle"], "5.5.1");
         assert!(cases["extFieldsBeforeMake"]["topic"].is_null());
 
-        let header = rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
-            topic: "custom-topic".into(),
-            accept_standard_json_only: Some(true),
-            namespace: Some("custom-ns".into()),
-            namespaced: Some(false),
-            broker_name: Some("broker-a".into()),
-            oneway: Some(true),
+        let header = {
+            let mut __phase18_header_2 =
+                rocketmq_classic_protocol::header::GetRouteInfoRequestHeader::default();
+            __phase18_header_2.set_topic("custom-topic".into());
+            __phase18_header_2.set_accept_standard_json_only(Some(true));
+            __phase18_header_2.set_namespace(Some("custom-ns".into()));
+            __phase18_header_2.set_namespaced(Some(false));
+            __phase18_header_2.set_broker_name(Some("broker-a".into()));
+            __phase18_header_2.set_oneway(Some(true));
+            __phase18_header_2
         };
         let mut command = RemotingCommand {
             ext_fields: Some(HeaderMap::from([("oracle".into(), "5.5.1".into())]).into()),
@@ -2956,7 +2981,7 @@ mod tests {
                 .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
                 )
                 .unwrap()
-                .topic,
+                .get_topic(),
             "custom-topic"
         );
 
@@ -2970,10 +2995,12 @@ mod tests {
             .read_custom_header_mut::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
             )
             .unwrap()
-            .topic = cases["attachedHeaderTopicAfterMutation"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+            .set_topic(
+                cases["attachedHeaderTopicAfterMutation"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            );
         let after_mutation = crate::codec::json_header::encode(&command).unwrap();
         let after_mutation: serde_json::Value = serde_json::from_slice(&after_mutation).unwrap();
         assert_eq!(
@@ -2996,7 +3023,7 @@ mod tests {
                 .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
                 )
                 .unwrap()
-                .topic,
+                .get_topic(),
             cases["attachedHeaderTopicAfterMutation"]
         );
 
@@ -3019,7 +3046,7 @@ mod tests {
                 .read_custom_header::<rocketmq_classic_protocol::header::GetRouteInfoRequestHeader>(
                 )
                 .unwrap()
-                .topic,
+                .get_topic(),
             cases["cachedHeader"]["topic"]
         );
 
@@ -3059,23 +3086,29 @@ mod tests {
             .unwrap();
         for decoded in [decoded, direct] {
             assert_eq!(
-                decoded.topic,
+                decoded.get_topic(),
                 cases["directHeader"]["topic"].as_str().unwrap()
             );
             assert_eq!(
-                decoded.accept_standard_json_only,
+                decoded.get_accept_standard_json_only(),
                 cases["directHeader"]["acceptStandardJsonOnly"].as_bool()
             );
             assert_eq!(
-                decoded.namespace.as_deref(),
+                decoded.get_namespace(),
                 cases["directHeader"]["ns"].as_str()
             );
-            assert_eq!(decoded.namespaced, cases["directHeader"]["nsd"].as_bool());
             assert_eq!(
-                decoded.broker_name.as_deref(),
+                decoded.get_namespaced(),
+                cases["directHeader"]["nsd"].as_bool()
+            );
+            assert_eq!(
+                decoded.get_broker_name(),
                 cases["directHeader"]["bname"].as_str()
             );
-            assert_eq!(decoded.oneway, cases["directHeader"]["oway"].as_bool());
+            assert_eq!(
+                decoded.get_oneway(),
+                cases["directHeader"]["oway"].as_bool()
+            );
         }
 
         let mut add_field = RemotingCommand::default();
@@ -3420,21 +3453,21 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json"))
                 .unwrap();
         let cases = &fixture["remotingEnumMethodCases"]["commandCustomHeaders"];
-        let header = SharedCommandHeader::new(
-            rocketmq_classic_protocol::header::GetRouteInfoRequestHeader {
-                topic: "custom-topic".into(),
-                ..Default::default()
-            },
-        );
+        let mut initial_header =
+            rocketmq_classic_protocol::header::GetRouteInfoRequestHeader::default();
+        initial_header.set_topic("custom-topic".into());
+        let header = SharedCommandHeader::new(initial_header);
         let caller_header = header.clone();
         let mut command =
             RemotingCommand::create_request_command_with_header(78, Some(header)).unwrap();
 
         caller_header.with_mut(|header| {
-            header.topic = cases["attachedHeaderTopicAfterMutation"]
-                .as_str()
-                .unwrap()
-                .to_owned();
+            header.set_topic(
+                cases["attachedHeaderTopicAfterMutation"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            );
         });
         assert_eq!(cases["readReturnsSameInstance"], true);
         assert_eq!(cases["attachedMutationVisibleToCaller"], true);
@@ -3444,7 +3477,7 @@ mod tests {
                     rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
                 >>()
                 .unwrap()
-                .with(|header| header.topic.clone()),
+                .with(|header| header.get_topic().to_owned()),
             cases["attachedHeaderTopicAfterMutation"]
         );
 
@@ -3462,10 +3495,10 @@ mod tests {
                 rocketmq_classic_protocol::header::GetRouteInfoRequestHeader,
             >>()
             .unwrap()
-            .with_mut(|header| header.topic = "mutated-through-command".into());
+            .with_mut(|header| header.set_topic("mutated-through-command".into()));
         assert_eq!(cases["commandMutationVisibleToCaller"], true);
         assert_eq!(
-            caller_header.with(|header| header.topic.clone()),
+            caller_header.with(|header| header.get_topic().to_owned()),
             "mutated-through-command"
         );
 

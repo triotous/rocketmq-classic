@@ -93,9 +93,10 @@ async fn peer(
 }
 
 fn header() -> SendMessageRequestHeaderV1 {
-    SendMessageRequestHeaderV1 {
-        topic: "orders".into(),
-        ..Default::default()
+    {
+        let mut __phase18_header_0 = SendMessageRequestHeaderV1::default();
+        __phase18_header_0.set_topic("orders".into());
+        __phase18_header_0
     }
 }
 

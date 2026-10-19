@@ -68,6 +68,34 @@ pub trait CommandHeader: Sized {
     }
 }
 
+/// Java `FastCodesHeader` behavior for headers that support the fast field
+/// codec. Rust exposes the helpers over its typed header map instead of a
+/// Netty `ByteBuf`.
+pub trait FastCodesHeader: CommandHeader {
+    /// Returns a present field and preserves Java's nullable missing-field
+    /// result. Java logs the missing value; Rust leaves logging to the caller.
+    fn get_and_check_not_null<'a>(&self, fields: &'a HeaderMap, field: &str) -> Option<&'a str> {
+        fields.get(field).map(String::as_str)
+    }
+
+    /// Writes the field when the Java `Object` value is non-null.
+    fn write_if_not_null<T: ToString>(&self, fields: &mut HeaderMap, key: &str, value: Option<T>) {
+        if let Some(value) = value {
+            fields.insert(key.to_owned(), value.to_string());
+        }
+    }
+
+    /// Writes a Java `long` field using its signed decimal representation.
+    fn write_long(&self, fields: &mut HeaderMap, key: &str, value: i64) {
+        fields.insert(key.to_owned(), value.to_string());
+    }
+
+    /// Writes a Java `int` field using its signed decimal representation.
+    fn write_int(&self, fields: &mut HeaderMap, key: &str, value: i32) {
+        fields.insert(key.to_owned(), value.to_string());
+    }
+}
+
 /// Parses the signed decimal form accepted by Java's `Long.parseLong`,
 /// including decimal digits from BMP Unicode scripts.
 pub(crate) fn parse_java_i64(value: &str) -> Option<i64> {
@@ -214,6 +242,19 @@ mod tests {
         let decoded = super::basic::GetRouteInfoRequestHeader::decode_fields(&raw).unwrap();
         assert_eq!(decoded.topic, header.topic);
         assert_eq!(raw.get("opaque").map(String::as_str), Some("preserved"));
+    }
+
+    #[test]
+    fn fast_codes_helpers_match_java_nullable_field_writes() {
+        let header = super::basic::PullMessageRequestHeader::default();
+        let mut fields = HeaderMap::new();
+        header.write_if_not_null(&mut fields, "queueId", Some(7));
+        header.write_if_not_null(&mut fields, "missing", None::<&str>);
+
+        assert_eq!(fields.get("queueId").map(String::as_str), Some("7"));
+        assert!(!fields.contains_key("missing"));
+        assert_eq!(header.get_and_check_not_null(&fields, "queueId"), Some("7"));
+        assert_eq!(header.get_and_check_not_null(&fields, "missing"), None);
     }
 
     #[test]

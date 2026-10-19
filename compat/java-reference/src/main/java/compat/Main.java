@@ -516,6 +516,7 @@ public final class Main {
         PullMessageRequestHeader pull = new PullMessageRequestHeader();
         pull.setConsumerGroup("workers");
         pull.setTopic("orders");
+        pull.setLiteTopic("lite-orders");
         pull.setQueueId(1);
         pull.setQueueOffset(9L);
         pull.setMaxMsgNums(32);
@@ -840,6 +841,7 @@ public final class Main {
         writeTypedHeaderFixture(output, "heartbeat-request", 34, heartbeat);
         ConsumeMessageDirectlyResultRequestHeader direct = new ConsumeMessageDirectlyResultRequestHeader();
         direct.setConsumerGroup("workers");
+        direct.setLo(true);
         writeTypedHeaderFixture(output, "consume-directly-request", 309, direct);
         writeTypedHeaderFixture(output, "lite-subscription-request", 200071, new LiteSubscriptionCtlRequestHeader());
         NotifyUnsubscribeLiteRequestHeader unsubscribe = new NotifyUnsubscribeLiteRequestHeader();
@@ -1124,15 +1126,22 @@ public final class Main {
             assertExtField(byName, "typed-change-invisible-response.bin", 0, "reviveQid", "2");
             for (String id : new String[] {"reply-v2", "reply-push"}) {
                 byte[] rustBody = frameBody(Files.readAllBytes(directory.resolve("typed-" + id + ".bin")));
-                Path javaPath = Path.of("../../fixtures/remoting/header-" +
+                Path javaPath = fixturePath("remoting", "header-" +
                     (id.equals("reply-v2") ? "reply-v2-request" : "reply-push-request") + ".bin");
-                if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", javaPath.getFileName().toString());
                 byte[] javaBody = frameBody(Files.readAllBytes(javaPath));
                 require(Arrays.equals(javaBody, rustBody) && Arrays.equals(javaBody,
                     new byte[] {0, (byte) 255, (byte) 128, 42, 10}), "binary reply body: " + id);
             }
         }
         System.out.println("Java decoded " + count + " Rust-generated fixture(s)");
+    }
+
+    private static Path fixturePath(String... segments) {
+        Path fromRepositoryRoot = Path.of("fixtures", segments);
+        if (Files.exists(fromRepositoryRoot)) return fromRepositoryRoot;
+        Path fromJavaReference = Path.of("../../fixtures", segments);
+        if (Files.exists(fromJavaReference)) return fromJavaReference;
+        return fromRepositoryRoot;
     }
 
     private static void assertExtField(Map<String, Map<String, Object>> decoded, String name,
@@ -1220,12 +1229,12 @@ public final class Main {
             case "typed-consume-directly-request.bin": fixtureStem = "header-consume-directly-request"; break;
             default: throw new IllegalArgumentException("no Java oracle fixture for " + name);
         }
-        Path metadataPath = Path.of("../../fixtures/remoting", fixtureStem + ".json");
-        if (!Files.exists(metadataPath)) metadataPath = Path.of("fixtures/remoting", fixtureStem + ".json");
+        Path metadataPath = fixturePath("remoting", fixtureStem + ".json");
         Map<String, Object> metadata = com.alibaba.fastjson2.JSON.parseObject(Files.readString(metadataPath));
         Map<String, Object> canonical = (Map<String, Object>) ((Map<String, Object>) metadata.get("normalized_fields")).get("ext_fields");
         Map<String, Object> actual = (Map<String, Object>) rustCommand.get("ext_fields");
         require(canonical.equals(actual), "Rust typed ext fields match Java 5.5.1 fixture: " + name
+            + " fixture=" + metadataPath.toAbsolutePath() + " user.dir=" + System.getProperty("user.dir")
             + " expected=" + canonical + " actual=" + actual);
     }
 
@@ -1240,8 +1249,7 @@ public final class Main {
         for (String name : decoded.keySet()) {
             String stem = name.replace(".bin", "");
             byte[] rustFrame = Files.readAllBytes(directory.resolve(name));
-            Path javaPath = Path.of("../../fixtures/remoting", stem + ".bin");
-            if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", stem + ".bin");
+            Path javaPath = fixturePath("remoting", stem + ".bin");
             byte[] javaFrame = Files.readAllBytes(javaPath);
             Object rustBody = com.alibaba.fastjson2.JSON.parse(frameBody(rustFrame));
             Object javaBody = com.alibaba.fastjson2.JSON.parse(frameBody(javaFrame));
@@ -1294,8 +1302,7 @@ public final class Main {
 
     private static void verifyRustBodyAgainstJava(Path rustDirectory, String name) throws Exception {
         byte[] rustFrame = Files.readAllBytes(rustDirectory.resolve(name));
-        Path javaPath = Path.of("../../fixtures/remoting", name);
-        if (!Files.exists(javaPath)) javaPath = Path.of("fixtures/remoting", name);
+        Path javaPath = fixturePath("remoting", name);
         Object rustBody = com.alibaba.fastjson2.JSON.parse(frameBody(rustFrame));
         Object javaBody = com.alibaba.fastjson2.JSON.parse(frameBody(Files.readAllBytes(javaPath)));
         require(javaBody.equals(rustBody), "Rust typed body matches Java 5.5.1 body: " + name
@@ -1303,8 +1310,7 @@ public final class Main {
     }
 
     private static void verifyJavaBodyAtPath(String stem) throws Exception {
-        Path path = Path.of("../../fixtures/remoting", stem + ".bin");
-        if (!Files.exists(path)) path = Path.of("fixtures/remoting", stem + ".bin");
+        Path path = fixturePath("remoting", stem + ".bin");
         byte[] frame = Files.readAllBytes(path);
         Object body = com.alibaba.fastjson2.JSON.parse(frameBody(frame));
         if (stem.startsWith("body-consumer-list-")) {

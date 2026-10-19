@@ -119,15 +119,16 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                 let status = if fixture["family"] == "pop" {
                     api.pop_message(
                         &addr,
-                        &PopMessageRequestHeader {
-                            consumer_group: Some("consumer".into()),
-                            topic: Some("oracle-topic".into()),
-                            queue_id: 2,
-                            max_msg_nums: 1,
-                            invisible_time: 456,
-                            born_time: 123,
-                            order: Some(false),
-                            ..Default::default()
+                        &{
+                            let mut __phase18_header_0 = PopMessageRequestHeader::default();
+                            __phase18_header_0.set_consumer_group(Some("consumer".into()));
+                            __phase18_header_0.set_topic(Some("oracle-topic".into()));
+                            __phase18_header_0.set_queue_id(2);
+                            __phase18_header_0.set_max_msg_nums(1);
+                            __phase18_header_0.set_invisible_time(456);
+                            __phase18_header_0.set_born_time(123);
+                            __phase18_header_0.set_order(Some(false));
+                            __phase18_header_0
                         },
                         deadline,
                     )
@@ -151,14 +152,15 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                 } else {
                     api.pop_lite_message(
                         &addr,
-                        &PopLiteMessageRequestHeader {
-                            client_id: Some("client".into()),
-                            consumer_group: Some("consumer".into()),
-                            topic: Some("oracle-topic".into()),
-                            max_msg_num: 1,
-                            invisible_time: 456,
-                            born_time: 123,
-                            ..Default::default()
+                        &{
+                            let mut __phase18_header_1 = PopLiteMessageRequestHeader::default();
+                            __phase18_header_1.set_client_id(Some("client".into()));
+                            __phase18_header_1.set_consumer_group(Some("consumer".into()));
+                            __phase18_header_1.set_topic(Some("oracle-topic".into()));
+                            __phase18_header_1.set_max_msg_num(1);
+                            __phase18_header_1.set_invisible_time(456);
+                            __phase18_header_1.set_born_time(123);
+                            __phase18_header_1
                         },
                         deadline,
                     )
@@ -197,13 +199,14 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
             "ack" | "ack-lite" => ack_outcome(
                 api.ack_message(
                     &addr,
-                    &AckMessageRequestHeader {
-                        consumer_group: "consumer".into(),
-                        topic: "oracle-topic".into(),
-                        queue_id: 2,
-                        offset: 17,
-                        extra_info: "checkpoint".into(),
-                        ..Default::default()
+                    &{
+                        let mut __phase18_header_2 = AckMessageRequestHeader::default();
+                        __phase18_header_2.set_consumer_group("consumer".into());
+                        __phase18_header_2.set_topic("oracle-topic".into());
+                        __phase18_header_2.set_queue_id(2);
+                        __phase18_header_2.set_offset(17);
+                        __phase18_header_2.set_extra_info("checkpoint".into());
+                        __phase18_header_2
                     },
                     deadline,
                 )
@@ -220,14 +223,16 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                     .change_invisible_time(
                         &addr,
                         "broker",
-                        &ChangeInvisibleTimeRequestHeader {
-                            consumer_group: Some("consumer".into()),
-                            topic: Some("oracle-topic".into()),
-                            queue_id: Some(2),
-                            offset: Some(17),
-                            extra_info: Some("checkpoint".into()),
-                            invisible_time: Some(456),
-                            ..Default::default()
+                        &{
+                            let mut __phase18_header_3 =
+                                ChangeInvisibleTimeRequestHeader::default();
+                            __phase18_header_3.set_consumer_group(Some("consumer".into()));
+                            __phase18_header_3.set_topic(Some("oracle-topic".into()));
+                            __phase18_header_3.set_queue_id(Some(2));
+                            __phase18_header_3.set_offset(Some(17));
+                            __phase18_header_3.set_extra_info(Some("checkpoint".into()));
+                            __phase18_header_3.set_invisible_time(Some(456));
+                            __phase18_header_3
                         },
                         deadline,
                     )

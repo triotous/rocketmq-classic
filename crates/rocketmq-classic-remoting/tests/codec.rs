@@ -147,7 +147,7 @@ fn p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts() {
     let proof = frame::decode_next(&mut proof_input).unwrap().unwrap();
     let raw_fields = proof.ext_fields.as_ref().unwrap();
     let typed = GetRouteInfoRequestHeader::decode_fields(raw_fields).unwrap();
-    assert_eq!(typed.topic, "fixture-topic");
+    assert_eq!(typed.get_topic(), "fixture-topic");
     assert_eq!(raw_fields.get("oracle").map(String::as_str), Some("5.5.1"));
     for name in ["header-fast-001.bin", "header-ordinary-001.bin"] {
         let bytes = fs::read(fixture_dir().join(name)).unwrap();

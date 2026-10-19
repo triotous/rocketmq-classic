@@ -46,9 +46,11 @@ impl Producer {
                 .map(|address| (address, decoded.offset()))
         });
         if let Some((address, offset)) = decoded {
-            let header = ViewMessageRequestHeader {
-                topic: Some(topic.to_owned()),
-                offset: Some(offset),
+            let header = {
+                let mut __phase18_header_0 = ViewMessageRequestHeader::default();
+                __phase18_header_0.set_topic(Some(topic.to_owned()));
+                __phase18_header_0.set_offset(Some(offset));
+                __phase18_header_0
             };
             let timeout = std::time::Duration::from_millis(
                 i64::from(self.config.client_config().mq_client_api_timeout()).max(0) as u64,
@@ -295,20 +297,19 @@ impl Producer {
                 )
         });
 
-        let header = CreateTopicRequestHeader {
-            topic: Some(topic),
-            default_topic: Some(route_topic),
-            read_queue_nums: Some(queue_num),
-            write_queue_nums: Some(queue_num),
-            perm: Some(6),
-            topic_filter_type: Some("SINGLE_TAG".into()),
-            topic_sys_flag: Some(topic_sys_flag),
-            order: Some(false),
-            // DefaultMQProducer's public overloads accept the Java Map
-            // argument but pass null to MQAdminImpl in 5.5.1.
-            attributes: Some(String::new()),
-            force: Some(false),
-            ..Default::default()
+        let header = {
+            let mut __phase18_header_1 = CreateTopicRequestHeader::default();
+            __phase18_header_1.set_topic(Some(topic));
+            __phase18_header_1.set_default_topic(Some(route_topic));
+            __phase18_header_1.set_read_queue_nums(Some(queue_num));
+            __phase18_header_1.set_write_queue_nums(Some(queue_num));
+            __phase18_header_1.set_perm(Some(6));
+            __phase18_header_1.set_topic_filter_type(Some("SINGLE_TAG".into()));
+            __phase18_header_1.set_topic_sys_flag(Some(topic_sys_flag));
+            __phase18_header_1.set_order(Some(false));
+            __phase18_header_1.set_attributes(Some(String::new()));
+            __phase18_header_1.set_force(Some(false));
+            __phase18_header_1
         };
         let vip_enabled = runtime
             .config()

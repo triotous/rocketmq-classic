@@ -107,18 +107,19 @@ pub(crate) async fn create_topic(
             )
     });
 
-    let header = CreateTopicRequestHeader {
-        topic: Some(topic.to_owned()),
-        default_topic: Some(key.to_owned()),
-        read_queue_nums: Some(queue_num),
-        write_queue_nums: Some(queue_num),
-        perm: Some(6),
-        topic_filter_type: Some("SINGLE_TAG".into()),
-        topic_sys_flag: Some(topic_sys_flag),
-        order: Some(false),
-        attributes: Some(String::new()),
-        force: Some(false),
-        ..Default::default()
+    let header = {
+        let mut __phase18_header_0 = CreateTopicRequestHeader::default();
+        __phase18_header_0.set_topic(Some(topic.to_owned()));
+        __phase18_header_0.set_default_topic(Some(key.to_owned()));
+        __phase18_header_0.set_read_queue_nums(Some(queue_num));
+        __phase18_header_0.set_write_queue_nums(Some(queue_num));
+        __phase18_header_0.set_perm(Some(6));
+        __phase18_header_0.set_topic_filter_type(Some("SINGLE_TAG".into()));
+        __phase18_header_0.set_topic_sys_flag(Some(topic_sys_flag));
+        __phase18_header_0.set_order(Some(false));
+        __phase18_header_0.set_attributes(Some(String::new()));
+        __phase18_header_0.set_force(Some(false));
+        __phase18_header_0
     };
     let vip_enabled = runtime
         .config()
@@ -259,9 +260,9 @@ impl RequestProcessor for ConsumerRunningInfoProcessor {
         let header = GetConsumerRunningInfoRequestHeader::decode_fields(fields)
             .map_err(|error| error.to_string())?;
         let Some(runtime) = self.runtime.upgrade() else {
-            return Ok(Some(group_not_found_error(&header.consumer_group)));
+            return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
-        let jstack_enabled = header.jstack_enable;
+        let jstack_enabled = header.is_jstack_enable();
         let body = match &self.consumer {
             RunningInfoConsumer::Push {
                 consumer,
@@ -276,7 +277,7 @@ impl RequestProcessor for ConsumerRunningInfoProcessor {
             }),
         };
         let Some(body) = body else {
-            return Ok(Some(group_not_found_error(&header.consumer_group)));
+            return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
         let body = body.encode_java_json().map_err(|error| error.to_string())?;
         Ok(Some(RemotingCommand {
@@ -527,9 +528,9 @@ impl RequestProcessor for DirectConsumeProcessor {
             decode_one(body, DecodeOptions::default()).map_err(|error| error.to_string())?;
         let (Some(consumer), Some(runtime)) = (self.consumer.upgrade(), self.runtime.upgrade())
         else {
-            return Ok(Some(group_not_found_error(&header.consumer_group)));
+            return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
-        let broker_name = header.broker_name;
+        let broker_name = header.get_broker_name().map(str::to_owned);
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         runtime
             .execute_task(async move {
@@ -541,7 +542,7 @@ impl RequestProcessor for DirectConsumeProcessor {
             })
             .map_err(|error| error.to_string())?;
         let Some(result) = receiver.recv().map_err(|error| error.to_string())? else {
-            return Ok(Some(group_not_found_error(&header.consumer_group)));
+            return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
         let body = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
         Ok(Some(RemotingCommand {
@@ -590,10 +591,10 @@ impl RequestProcessor for ResetOffsetProcessor {
         runtime
             .execute_task(async move {
                 if let Err(error) = consumer
-                    .reset_consumer_offsets(&header.topic, offsets)
+                    .reset_consumer_offsets(header.get_topic(), offsets)
                     .await
                 {
-                    tracing::warn!(group = %header.group, topic = %header.topic, error = %error, "consumer offset reset did not complete");
+                    tracing::warn!(group = %header.get_group(), topic = %header.get_topic(), error = %error, "consumer offset reset did not complete");
                 }
             })
             .map_err(|error| error.to_string())?;
@@ -621,7 +622,7 @@ impl RequestProcessor for ConsumerStatusProcessor {
             .upgrade()
             .map(|offset_store| {
                 offset_store
-                    .clone_offset_table(Some(&header.topic))
+                    .clone_offset_table(Some(header.get_topic()))
                     .into_iter()
                     .map(|(queue, offset)| (queue, Some(offset)))
                     .collect::<Vec<_>>()
@@ -728,11 +729,12 @@ mod tests {
         let store: Arc<dyn OffsetStore> = store;
         let processor = ConsumerStatusProcessor::new(Arc::downgrade(&store));
         let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
-        GetConsumerStatusRequestHeader {
-            topic: "tenant%orders".into(),
-            group: "tenant%workers".into(),
-            client_addr: None,
-            ..GetConsumerStatusRequestHeader::default()
+        {
+            let mut __phase18_header_1 = GetConsumerStatusRequestHeader::default();
+            __phase18_header_1.set_topic("tenant%orders".into());
+            __phase18_header_1.set_group("tenant%workers".into());
+            __phase18_header_1.set_client_addr(None);
+            __phase18_header_1
         }
         .encode_fields(&mut fields);
 

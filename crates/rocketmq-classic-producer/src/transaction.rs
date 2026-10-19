@@ -355,23 +355,24 @@ impl TransactionProducer {
                 .publish_address(&send_result.broker_name)
                 .map(str::to_owned))
             .ok_or_else(|| ProducerError::NoRoute(message.topic().to_owned()))?;
-        let header = EndTransactionRequestHeader {
-            topic: Some(message.topic().to_owned()),
-            producer_group: self.producer.producer_group(),
-            transaction_state_table_offset: Some(send_result.queue_offset),
-            commit_log_offset: Some(commit_log_offset),
-            commit_or_rollback: Some(transaction_flag(state)),
-            from_transaction_check: Some(false),
-            msg_id: Some(send_result.msg_id.clone()),
-            transaction_id: send_result.transaction_id.clone(),
-            broker_name: Some(send_result.broker_name.clone()),
-            ..Default::default()
+        let header = {
+            let mut __phase18_header_0 = EndTransactionRequestHeader::default();
+            __phase18_header_0.set_topic(Some(message.topic().to_owned()));
+            __phase18_header_0.set_producer_group(self.producer.producer_group());
+            __phase18_header_0.set_tran_state_table_offset(Some(send_result.queue_offset));
+            __phase18_header_0.set_commit_log_offset(Some(commit_log_offset));
+            __phase18_header_0.set_commit_or_rollback(Some(transaction_flag(state)));
+            __phase18_header_0.set_from_transaction_check(Some(false));
+            __phase18_header_0.set_msg_id(Some(send_result.msg_id.clone()));
+            __phase18_header_0.set_transaction_id(send_result.transaction_id.clone());
+            __phase18_header_0.set_broker_name(Some(send_result.broker_name.clone()));
+            __phase18_header_0
         };
         let remark =
             callback_error.map(|error| format!("executeLocalTransactionBranch exception: {error}"));
         self.producer.do_execute_end_transaction_hook(
             message,
-            header.msg_id.as_deref().unwrap_or_default(),
+            header.get_msg_id().unwrap_or_default(),
             &broker_addr,
             state,
             false,
@@ -778,23 +779,26 @@ impl TransactionRuntime {
             .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
             .cloned()
             .unwrap_or_else(|| message.message_id().unwrap_or_default().to_owned());
-        let header = EndTransactionRequestHeader {
-            topic: check_header.topic.clone(),
-            producer_group: producer.producer_group(),
-            transaction_state_table_offset: Some(check_header.transaction_state_table_offset),
-            commit_log_offset: Some(check_header.commit_log_offset),
-            commit_or_rollback: Some(transaction_flag(state)),
-            from_transaction_check: Some(true),
-            msg_id: Some(unique_key),
-            transaction_id: check_header.transaction_id.clone(),
-            broker_name: check_header.broker_name.clone(),
-            ..Default::default()
+        let header = {
+            let mut __phase18_header_1 = EndTransactionRequestHeader::default();
+            __phase18_header_1.set_topic(check_header.get_topic().map(str::to_owned));
+            __phase18_header_1.set_producer_group(producer.producer_group());
+            __phase18_header_1
+                .set_tran_state_table_offset(Some(check_header.get_tran_state_table_offset()));
+            __phase18_header_1.set_commit_log_offset(Some(check_header.get_commit_log_offset()));
+            __phase18_header_1.set_commit_or_rollback(Some(transaction_flag(state)));
+            __phase18_header_1.set_from_transaction_check(Some(true));
+            __phase18_header_1.set_msg_id(Some(unique_key));
+            __phase18_header_1
+                .set_transaction_id(check_header.get_transaction_id().map(str::to_owned));
+            __phase18_header_1.set_broker_name(check_header.get_broker_name().map(str::to_owned));
+            __phase18_header_1
         };
         let remark =
             callback_error.map(|error| format!("checkLocalTransactionState Exception: {error}"));
         producer.do_execute_end_transaction_hook(
             &mut message,
-            header.msg_id.as_deref().unwrap_or_default(),
+            header.get_msg_id().unwrap_or_default(),
             remote,
             state,
             true,
@@ -1615,10 +1619,10 @@ mod tests {
             );
             let (_, header, remark) = end_transactions(&producer).pop().unwrap();
             assert_eq!(
-                header.commit_or_rollback,
+                header.get_commit_or_rollback(),
                 Some(message_sys_flag::TRANSACTION_NOT_TYPE)
             );
-            assert_eq!(header.msg_id.as_deref(), Some(MESSAGE_ID));
+            assert_eq!(header.get_msg_id(), Some(MESSAGE_ID));
             assert!(
                 remark
                     .unwrap()
@@ -1690,7 +1694,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(
-                end_transactions(&producer)[0].1.commit_log_offset,
+                end_transactions(&producer)[0].1.get_commit_log_offset(),
                 Some(expected_offset)
             );
             producer.shutdown().await.unwrap();
@@ -1743,7 +1747,7 @@ mod tests {
         expected.insert("msgId".into(), "id".into());
         for (_, header, _) in end_transactions(&producer) {
             assert_eq!(
-                header.commit_or_rollback,
+                header.get_commit_or_rollback(),
                 Some(message_sys_flag::TRANSACTION_ROLLBACK_TYPE)
             );
             let mut actual = HeaderMap::new();
@@ -1796,7 +1800,7 @@ mod tests {
             wait_for_end_transactions(&producer, 1).await;
             let (_, header, remark) = end_transactions(&producer).pop().unwrap();
             assert_eq!(
-                header.commit_or_rollback,
+                header.get_commit_or_rollback(),
                 Some(message_sys_flag::TRANSACTION_NOT_TYPE)
             );
             let mut expected = fixture_fields(
@@ -2084,7 +2088,7 @@ mod tests {
             .unwrap();
         wait_for_end_transactions(&producer, 1).await;
         assert_eq!(
-            end_transactions(&producer)[0].1.commit_or_rollback,
+            end_transactions(&producer)[0].1.get_commit_or_rollback(),
             Some(message_sys_flag::TRANSACTION_NOT_TYPE)
         );
         producer.shutdown().await.unwrap();
@@ -2208,7 +2212,7 @@ mod tests {
 
         let (_, header, remark) = end_transactions(&producer).pop().unwrap();
         assert_eq!(
-            header.commit_or_rollback,
+            header.get_commit_or_rollback(),
             Some(message_sys_flag::TRANSACTION_NOT_TYPE)
         );
         assert!(

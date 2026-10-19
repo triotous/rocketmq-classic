@@ -281,7 +281,7 @@ impl MQClientApi {
             status,
             msg_id: uniq_msg_id.to_owned(),
             offset_msg_id: result.get_msg_id().map(str::to_owned),
-            topic: header.topic.clone(),
+            topic: header.get_topic().to_owned(),
             broker_name: broker_name.to_owned(),
             queue_id,
             queue_offset,

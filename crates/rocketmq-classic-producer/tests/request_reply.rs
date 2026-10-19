@@ -69,7 +69,7 @@ fn reply_header_matches_java_serialized_ext_fields() {
     for (key, value) in expected {
         assert_eq!(actual.get(&key), Some(&value), "header field {key}");
     }
-    let properties = decode_properties(header.properties.as_deref().unwrap_or_default());
+    let properties = decode_properties(header.get_properties().unwrap_or_default());
     assert_eq!(
         properties[PROPERTY_CORRELATION_ID],
         "correlation-fixture-01"

@@ -18,14 +18,18 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.rpc.RpcRequestHeader;
 
 /** Invoked Java 5.5.1 oracle for custom RpcRequestHeader equality. */
@@ -100,12 +104,50 @@ public final class RequestHeaderIdentityFixtures {
         result.put("sourceCommit", SOURCE_COMMIT);
         result.put("serverContacted", false);
         Map<String, Object> cases = new TreeMap<>();
+        Map<String, Object> apiInventories = new TreeMap<>();
         for (Map.Entry<String, String> entry : RUST_TO_JAVA_CLASSES.entrySet()) {
             Class<?> type = Class.forName(entry.getValue());
             cases.put(entry.getKey(), identityCase(type));
+            apiInventories.put(entry.getKey(), apiInventory(type));
         }
         result.put("identityCases", cases);
+        result.put("apiInventories", apiInventories);
         return result;
+    }
+
+    private static Map<String, Object> apiInventory(Class<?> type) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("publicConstructors", Arrays.stream(type.getConstructors())
+            .map(RequestHeaderIdentityFixtures::constructorSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("publicFields", Arrays.stream(type.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(Field::getName).sorted().collect(Collectors.toList()));
+        result.put("declaredPublicMethods", Arrays.stream(type.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(RequestHeaderIdentityFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        result.put("callablePublicMethods", Arrays.stream(type.getMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getDeclaringClass() != Object.class)
+            .map(RequestHeaderIdentityFixtures::methodSignature).sorted()
+            .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static String constructorSignature(Constructor<?> constructor) {
+        return constructor.getDeclaringClass().getName() + "("
+            + Arrays.stream(constructor.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
+    }
+
+    private static String methodSignature(Method method) {
+        return method.getReturnType().getTypeName() + " " + method.getDeclaringClass().getName()
+            + "." + method.getName() + "("
+            + Arrays.stream(method.getParameterTypes()).map(Class::getTypeName)
+                .collect(Collectors.joining(", "))
+            + ")";
     }
 
     private static Map<String, Object> identityCase(Class<?> type) throws Exception {

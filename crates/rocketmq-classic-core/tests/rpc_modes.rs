@@ -131,9 +131,10 @@ async fn pull_sync_future_ack_and_route_select_their_java_wait_modes() {
             "pull-sync" => api
                 .pull_message(
                     &addr,
-                    &PullMessageRequestHeader {
-                        sys_flag: Some(0),
-                        ..Default::default()
+                    &{
+                        let mut __phase18_header_0 = PullMessageRequestHeader::default();
+                        __phase18_header_0.set_sys_flag(Some(0));
+                        __phase18_header_0
                     },
                     deadline,
                 )
@@ -142,9 +143,10 @@ async fn pull_sync_future_ack_and_route_select_their_java_wait_modes() {
             "pull-future" => api
                 .pull_message_future(
                     &addr,
-                    &PullMessageRequestHeader {
-                        sys_flag: Some(0),
-                        ..Default::default()
+                    &{
+                        let mut __phase18_header_1 = PullMessageRequestHeader::default();
+                        __phase18_header_1.set_sys_flag(Some(0));
+                        __phase18_header_1
                     },
                     deadline,
                 )

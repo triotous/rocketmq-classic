@@ -3,6 +3,9 @@ use std::collections::BTreeSet;
 
 use rocketmq_classic_protocol::header::*;
 
+mod support;
+use support::{java_camel_to_snake, rust_header_method_exists};
+
 fn java_fields(stem: &str) -> HeaderMap {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
     let path = format!("{root}/fixtures/remoting/{stem}.json");
@@ -165,19 +168,108 @@ fn heartbeat_request_header_inherits_java_rpc_surface() {
 }
 
 #[test]
+fn request_header_api_inventories_match_java_fields_and_accessors() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/protocol/request-header-identity.json"
+    ))
+    .unwrap();
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    let inventories = fixture["apiInventories"].as_object().unwrap();
+    let identities = fixture["identityCases"].as_object().unwrap();
+    assert_eq!(inventories.len(), identities.len());
+
+    for (rust_type, inventory) in inventories {
+        assert_eq!(
+            inventory["publicFields"],
+            serde_json::json!([]),
+            "Java {rust_type} must not expose public fields"
+        );
+        let declaration = format!("pub struct {rust_type} {{");
+        let struct_body = source
+            .split_once(&declaration)
+            .unwrap_or_else(|| panic!("missing Rust request header {rust_type}"))
+            .1
+            .split_once("\n}\n")
+            .unwrap()
+            .0;
+        assert!(
+            struct_body
+                .lines()
+                .all(|line| !line.trim_start().starts_with("pub ")),
+            "Rust {rust_type} must not expose public fields"
+        );
+
+        let methods = inventory["callablePublicMethods"].as_array().unwrap();
+        for signature in methods.iter().filter_map(serde_json::Value::as_str) {
+            let (prefix, parameters) = signature.split_once('(').unwrap();
+            let name = prefix
+                .split_whitespace()
+                .last()
+                .unwrap()
+                .rsplit('.')
+                .next()
+                .unwrap();
+            if matches!(name, "encode" | "decode") {
+                let rust_method = if name == "encode" {
+                    "encode_fields"
+                } else {
+                    "decode_fields"
+                };
+                assert!(
+                    trait_source.contains(&format!("fn {rust_method}(")),
+                    "Java {rust_type}::{name} has no Rust CommandHeader::{rust_method}"
+                );
+                continue;
+            }
+            if matches!(
+                name,
+                "getAndCheckNotNull" | "writeIfNotNull" | "writeInt" | "writeLong"
+            ) {
+                let rust_method = java_camel_to_snake(name);
+                assert!(
+                    rust_header_method_exists(source, trait_source, rust_type, &rust_method),
+                    "Java {rust_type}::{name} has no Rust FastCodesHeader::{rust_method}"
+                );
+                continue;
+            }
+            if !(name.starts_with("get") || name.starts_with("set") || name.starts_with("is")) {
+                continue;
+            }
+            let parameter_count = if parameters.starts_with(')') {
+                0
+            } else {
+                parameters.matches(',').count() + 1
+            };
+            if (name.starts_with("get") || name.starts_with("is")) && parameter_count != 0 {
+                continue;
+            }
+            if name.starts_with("set") && parameter_count != 1 {
+                continue;
+            }
+            let rust_method = java_camel_to_snake(name);
+            assert!(
+                rust_header_method_exists(source, trait_source, rust_type, &rust_method),
+                "Java {rust_type}::{name} has no Rust {rust_type}::{rust_method}"
+            );
+        }
+    }
+}
+
+#[test]
 fn consume_stats_topic_list_helpers_match_java_header_behavior() {
     let mut header =
         GetConsumeStatsRequestHeader::decode_fields(&java_fields("header-consume-stats-request"))
             .unwrap();
     assert_eq!(header.fetch_topic_list(), ["orders", "payments"]);
 
-    let current = header.topic_list.clone();
+    let current = header.get_topic_list().map(str::to_owned);
     header.update_topic_list(None);
     header.update_topic_list(Some(&[]));
-    assert_eq!(header.topic_list, current);
+    assert_eq!(header.get_topic_list(), current.as_deref());
 
     let topics = [Some("orders".to_owned()), None, Some("payments".to_owned())];
     header.update_topic_list(Some(&topics));
-    assert_eq!(header.topic_list.as_deref(), Some("orders;null;payments;"));
+    assert_eq!(header.get_topic_list(), Some("orders;null;payments;"));
     assert_eq!(header.fetch_topic_list(), ["orders", "null", "payments"]);
 }

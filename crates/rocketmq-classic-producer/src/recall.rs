@@ -120,12 +120,13 @@ impl Producer {
                 .ok_or(ProducerError::RecallBrokerAddressNotFound)?
         };
 
-        let header = RecallMessageRequestHeader {
-            producer_group: self.producer_group(),
-            topic,
-            recall_handle: recall_handle.to_owned(),
-            broker_name: Some(decoded_handle.broker_name().to_owned()),
-            ..RecallMessageRequestHeader::default()
+        let header = {
+            let mut __phase18_header_0 = RecallMessageRequestHeader::default();
+            __phase18_header_0.set_producer_group(self.producer_group());
+            __phase18_header_0.set_topic(topic);
+            __phase18_header_0.set_recall_handle(recall_handle.to_owned());
+            __phase18_header_0.set_broker_name(Some(decoded_handle.broker_name().to_owned()));
+            __phase18_header_0
         };
         Ok(runtime
             .api()
