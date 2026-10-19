@@ -360,7 +360,7 @@ async fn invoked_extension_future_and_oneway_methods_match_java_551() {
             let request = request_command(&fixture["request"]);
             api.invoke_oneway(&addr, request, deadline)
                 .await
-                .map_or_else(|error| outcome_error(error), |_| "ok".to_owned())
+                .map_or_else(outcome_error, |_| "ok".to_owned())
         };
 
         assert_eq!(outcome, fixture["outcome"].as_str().unwrap(), "{name}");
