@@ -5196,3 +5196,19 @@ owner-specific checks belong in the manual handoff.
   P18-V01 source/API/settings/input/error/flow and Rust reverse-export
   reconciliation, current-revision Ubuntu/native Windows evidence, and Phase
   19 live Broker validation remain separate gates.
+
+## P18-V01 Lite topic-info header inventory follow-up — 2026-10-19
+
+- [x] The Rust `GetLiteTopicInfoRequestHeader` and Core RPC were implemented,
+  but the Rust-to-Java typed-header fixture inventory did not include the
+  public Java header. Added its Java API/nullable-field fixture assertions,
+  typed-frame generation, reverse decode, and validation-matrix row. Code
+  commits: `d578db50`, `d4d7588e`.
+- [x] Maven `verify` passes all 37 differential scenarios, fixture checks, 67
+  exact typed-header frames, and 15 typed-body frames. Protocol header
+  inventory (5 tests), header/API/validation tests (19 tests), rustfmt, and
+  `git diff --check` pass. Frame SHA-256:
+  `92e15800cdfb810908a8a016582189b5523bdc2d7dbbfc8ff69523f2a7184884`.
+- This closes one previously unrecorded header fixture. Full P18-V01
+  source/API/settings/input/error/flow and reverse-export reconciliation plus
+  final workspace validation remain open.

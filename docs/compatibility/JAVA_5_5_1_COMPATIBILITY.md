@@ -1,5 +1,14 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 Lite topic-info request-header fixture closure (`d578db50`): the
+`GetLiteTopicInfoRequestHeader` API, nullable default fields, no-op
+`checkFields`, typed Java frame, and Rust reverse frame are now covered in the
+header inventory and validation matrix. The Maven gate requires exactly 67
+typed-header frames and passes with 15 typed-body frames. Rust frame SHA-256:
+`92e15800cdfb810908a8a016582189b5523bdc2d7dbbfc8ff69523f2a7184884`. This
+closes only the Lite topic-info header fixture slice; broad P18-V01
+reconciliation remains open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

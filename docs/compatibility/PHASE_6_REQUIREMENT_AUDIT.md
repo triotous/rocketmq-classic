@@ -1081,3 +1081,16 @@ method slice in code commit `f05833a7`. Later DTO API work includes the
 There is no remaining missing direct RPC method in this 19-method inventory.
 The broader P18-V01 audit remains open for exhaustive public DTO/API,
 settings, input/error/flow, and Rust reverse-export reconciliation.
+
+- P18-V01 Lite topic-info request-header fixture closure (`d578db50`, pinned
+  Java 5.5.1): `GetLiteTopicInfoRequestHeader` already had a Core RPC mapping
+  and Rust header type, but the typed-header reverse inventory omitted it.
+  Added the invoked Java frame, Java API/nullability assertions, Rust header
+  inventory entry, validation-matrix row, and reverse-frame generator entry.
+  The Java cross-decode gate now requires exactly 67 typed-header fixtures,
+  so a future inventory omission cannot pass the former minimum-count check.
+  Maven verify passes all 37 scenarios, 67 typed-header frames, and 15 typed
+  body frames; Protocol header inventory and header tests pass. Frame fixture
+  SHA-256: `92e15800cdfb810908a8a016582189b5523bdc2d7dbbfc8ff69523f2a7184884`.
+  This closes only this header evidence gap; the broad bidirectional P18-V01
+  audit remains open.
