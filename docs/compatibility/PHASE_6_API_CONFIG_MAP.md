@@ -1495,6 +1495,16 @@ The pinned Java 5.5.1 `MessageAccessor` declares 20 public static methods. Rust 
 
 ## Protocol public API: inherited RemotingSerializable methods
 
+### P18-V01 message magic constant reverse-export correction
+
+The pinned Java 5.5.1 `MessageDecoder` exposes the V1 value as
+`MESSAGE_MAGIC_CODE`; it does not declare `MESSAGE_MAGIC_CODE_V1`. Rust keeps
+the V1 label private to decoding and exposes the Java-named constant only. The
+`MessageDecoder` API fixture continues to compare the public value and V2
+value, while a compile-fail rustdoc guard rejects the Rust-only export. This
+closes the surfaced constant mismatch only; the aggregate P18-V01 audit
+continues across the remaining public items and behavior maps.
+
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |
 | --- | --- |
 | Inherited compact/pretty `toJson`, instance `encode`, static `encode`/`toJson`, `decode`, `decodeList`, and `fromJson` | Java-compatible adapters cover `CheckClientRequestBody`, `LiteSubscriptionCtlRequestBody`, `QueryAssignmentRequestBody`, `QueryAssignmentResponseBody`, `QueryConsumeTimeSpanBody`, `SetMessageRequestModeRequestBody`, `MessageRequestModeSerializeWrapper`, `LockBatchRequestBody`, `UnlockBatchRequestBody`, `LockBatchResponseBody`, `GetConsumerListByGroupResponseBody`, `ConsumeMessageDirectlyResult`, `GetConsumerStatusBody`, and `ResetOffsetBody`, including nullable utility results and null list elements. `GetConsumerStatusBody` and `ResetOffsetBody` route through their MessageQueue-key codecs for compact, pretty, encode, decode, and list decode. |

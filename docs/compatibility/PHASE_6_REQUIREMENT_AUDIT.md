@@ -1094,3 +1094,12 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   SHA-256: `92e15800cdfb810908a8a016582189b5523bdc2d7dbbfc8ff69523f2a7184884`.
   This closes only this header evidence gap; the broad bidirectional P18-V01
   audit remains open.
+
+- P18-V01 Common reverse-export correction (2026-10-19, pinned Java client
+  source `efa1be59d6fc747ad220f036c86030f05f0419f9`): Java
+  `MessageDecoder` declares `MESSAGE_MAGIC_CODE` and `MESSAGE_MAGIC_CODE_V2`,
+  but no `MESSAGE_MAGIC_CODE_V1`. Rust now keeps the V1 discriminator private
+  and exposes the Java-named alias only. The direct Java API fixture still
+  checks both public magic constants; a compile-fail doctest guards the
+  removed export. This closes this constant mismatch only; the aggregate
+  P18-V01 reverse-export reconciliation remains in progress.
