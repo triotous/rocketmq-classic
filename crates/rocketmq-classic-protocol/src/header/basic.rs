@@ -2106,16 +2106,87 @@ impl CommandHeader for PullMessageRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<PullMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PullMessageResponseHeader;
+/// let _ = PullMessageResponseHeader::default().next_begin_offset;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PullMessageResponseHeader {
-    pub suggest_which_broker_id: Option<i64>,
-    pub next_begin_offset: Option<i64>,
-    pub min_offset: Option<i64>,
-    pub max_offset: Option<i64>,
-    pub offset_delta: Option<i64>,
-    pub topic_sys_flag: Option<i32>,
-    pub group_sys_flag: Option<i32>,
-    pub forbidden_type: Option<i32>,
+    pub(crate) suggest_which_broker_id: Option<i64>,
+    pub(crate) next_begin_offset: Option<i64>,
+    pub(crate) min_offset: Option<i64>,
+    pub(crate) max_offset: Option<i64>,
+    pub(crate) offset_delta: Option<i64>,
+    pub(crate) topic_sys_flag: Option<i32>,
+    pub(crate) group_sys_flag: Option<i32>,
+    pub(crate) forbidden_type: Option<i32>,
+}
+
+impl PullMessageResponseHeader {
+    pub fn get_suggest_which_broker_id(&self) -> Option<i64> {
+        self.suggest_which_broker_id
+    }
+
+    pub fn set_suggest_which_broker_id(&mut self, value: Option<i64>) {
+        self.suggest_which_broker_id = value;
+    }
+
+    pub fn get_next_begin_offset(&self) -> Option<i64> {
+        self.next_begin_offset
+    }
+
+    pub fn set_next_begin_offset(&mut self, value: Option<i64>) {
+        self.next_begin_offset = value;
+    }
+
+    pub fn get_min_offset(&self) -> Option<i64> {
+        self.min_offset
+    }
+
+    pub fn set_min_offset(&mut self, value: Option<i64>) {
+        self.min_offset = value;
+    }
+
+    pub fn get_max_offset(&self) -> Option<i64> {
+        self.max_offset
+    }
+
+    pub fn set_max_offset(&mut self, value: Option<i64>) {
+        self.max_offset = value;
+    }
+
+    pub fn get_offset_delta(&self) -> Option<i64> {
+        self.offset_delta
+    }
+
+    pub fn set_offset_delta(&mut self, value: Option<i64>) {
+        self.offset_delta = value;
+    }
+
+    pub fn get_topic_sys_flag(&self) -> Option<i32> {
+        self.topic_sys_flag
+    }
+
+    pub fn set_topic_sys_flag(&mut self, value: Option<i32>) {
+        self.topic_sys_flag = value;
+    }
+
+    pub fn get_group_sys_flag(&self) -> Option<i32> {
+        self.group_sys_flag
+    }
+
+    pub fn set_group_sys_flag(&mut self, value: Option<i32>) {
+        self.group_sys_flag = value;
+    }
+
+    pub fn get_forbidden_type(&self) -> Option<i32> {
+        self.forbidden_type
+    }
+
+    pub fn set_forbidden_type(&mut self, value: Option<i32>) {
+        self.forbidden_type = value;
+    }
 }
 
 impl CommandHeader for PullMessageResponseHeader {
@@ -2754,14 +2825,69 @@ impl CommandHeader for RecallMessageResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<SendMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::SendMessageResponseHeader;
+/// let _ = SendMessageResponseHeader::default().msg_id;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct SendMessageResponseHeader {
-    pub msg_id: Option<String>,
-    pub queue_id: Option<i32>,
-    pub queue_offset: Option<i64>,
-    pub transaction_id: Option<String>,
-    pub batch_uniq_id: Option<String>,
-    pub recall_handle: Option<String>,
+    pub(crate) msg_id: Option<String>,
+    pub(crate) queue_id: Option<i32>,
+    pub(crate) queue_offset: Option<i64>,
+    pub(crate) transaction_id: Option<String>,
+    pub(crate) batch_uniq_id: Option<String>,
+    pub(crate) recall_handle: Option<String>,
+}
+
+impl SendMessageResponseHeader {
+    pub fn get_msg_id(&self) -> Option<&str> {
+        self.msg_id.as_deref()
+    }
+
+    pub fn set_msg_id(&mut self, value: Option<String>) {
+        self.msg_id = value;
+    }
+
+    pub fn get_queue_id(&self) -> Option<i32> {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: Option<i32>) {
+        self.queue_id = value;
+    }
+
+    pub fn get_queue_offset(&self) -> Option<i64> {
+        self.queue_offset
+    }
+
+    pub fn set_queue_offset(&mut self, value: Option<i64>) {
+        self.queue_offset = value;
+    }
+
+    pub fn get_transaction_id(&self) -> Option<&str> {
+        self.transaction_id.as_deref()
+    }
+
+    pub fn set_transaction_id(&mut self, value: Option<String>) {
+        self.transaction_id = value;
+    }
+
+    pub fn get_batch_uniq_id(&self) -> Option<&str> {
+        self.batch_uniq_id.as_deref()
+    }
+
+    pub fn set_batch_uniq_id(&mut self, value: Option<String>) {
+        self.batch_uniq_id = value;
+    }
+
+    pub fn get_recall_handle(&self) -> Option<&str> {
+        self.recall_handle.as_deref()
+    }
+
+    pub fn set_recall_handle(&mut self, value: Option<String>) {
+        self.recall_handle = value;
+    }
 }
 
 /// Pinned Java `UnregisterClientResponseHeader` inherits identity-based `Object.equals` and `hashCode`.
@@ -2956,39 +3082,76 @@ impl CommandHeader for CheckTransactionStateRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<CheckTransactionStateResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::CheckTransactionStateResponseHeader;
+/// let _ = CheckTransactionStateResponseHeader::default().producer_group;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct CheckTransactionStateResponseHeader {
-    pub producer_group: String,
-    pub transaction_state_table_offset: i64,
-    pub commit_log_offset: i64,
-    pub commit_or_rollback: i32,
+    pub(crate) producer_group: Option<String>,
+    pub(crate) transaction_state_table_offset: Option<i64>,
+    pub(crate) commit_log_offset: Option<i64>,
+    pub(crate) commit_or_rollback: Option<i32>,
+}
+
+impl CheckTransactionStateResponseHeader {
+    pub fn get_producer_group(&self) -> Option<&str> {
+        self.producer_group.as_deref()
+    }
+
+    pub fn set_producer_group(&mut self, value: Option<String>) {
+        self.producer_group = value;
+    }
+
+    pub fn get_tran_state_table_offset(&self) -> Option<i64> {
+        self.transaction_state_table_offset
+    }
+
+    pub fn set_tran_state_table_offset(&mut self, value: Option<i64>) {
+        self.transaction_state_table_offset = value;
+    }
+
+    pub fn get_commit_log_offset(&self) -> Option<i64> {
+        self.commit_log_offset
+    }
+
+    pub fn set_commit_log_offset(&mut self, value: Option<i64>) {
+        self.commit_log_offset = value;
+    }
+
+    pub fn get_commit_or_rollback(&self) -> Option<i32> {
+        self.commit_or_rollback
+    }
+
+    pub fn set_commit_or_rollback(&mut self, value: Option<i32>) {
+        self.commit_or_rollback = value;
+    }
 }
 
 impl CommandHeader for CheckTransactionStateResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("producerGroup".into(), self.producer_group.clone());
-        fields.insert(
-            "tranStateTableOffset".into(),
-            self.transaction_state_table_offset.to_string(),
+        put_optional(fields, "producerGroup", self.producer_group.as_deref());
+        put_optional(
+            fields,
+            "tranStateTableOffset",
+            self.transaction_state_table_offset,
         );
-        fields.insert("commitLogOffset".into(), self.commit_log_offset.to_string());
-        fields.insert(
-            "commitOrRollback".into(),
-            self.commit_or_rollback.to_string(),
-        );
+        put_optional(fields, "commitLogOffset", self.commit_log_offset);
+        put_optional(fields, "commitOrRollback", self.commit_or_rollback);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            producer_group: required_string(fields, "producerGroup")?.to_owned(),
-            transaction_state_table_offset: required_i64(fields, "tranStateTableOffset")?,
-            commit_log_offset: required_i64(fields, "commitLogOffset")?,
-            commit_or_rollback: required_i32(fields, "commitOrRollback")?,
+            producer_group: Some(required_string(fields, "producerGroup")?.to_owned()),
+            transaction_state_table_offset: Some(required_i64(fields, "tranStateTableOffset")?),
+            commit_log_offset: Some(required_i64(fields, "commitLogOffset")?),
+            commit_or_rollback: Some(required_i32(fields, "commitOrRollback")?),
         })
     }
 
     fn check_fields(&self) -> Result<(), ProtocolError> {
-        if matches!(self.commit_or_rollback, 8 | 12) {
+        if matches!(self.commit_or_rollback, Some(8 | 12)) {
             Ok(())
         } else {
             Err(ProtocolError::InvalidField {
@@ -3087,10 +3250,33 @@ impl CommandHeader for NotificationRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<NotificationResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::NotificationResponseHeader;
+/// let _ = NotificationResponseHeader::default().has_msg;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct NotificationResponseHeader {
-    pub has_msg: bool,
-    pub polling_full: bool,
+    pub(crate) has_msg: bool,
+    pub(crate) polling_full: bool,
+}
+
+impl NotificationResponseHeader {
+    pub fn is_has_msg(&self) -> bool {
+        self.has_msg
+    }
+
+    pub fn set_has_msg(&mut self, value: bool) {
+        self.has_msg = value;
+    }
+
+    pub fn is_polling_full(&self) -> bool {
+        self.polling_full
+    }
+
+    pub fn set_polling_full(&mut self, value: bool) {
+        self.polling_full = value;
+    }
 }
 
 impl CommandHeader for NotificationResponseHeader {
@@ -3514,15 +3700,78 @@ impl PopMessageRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<PopMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopMessageResponseHeader;
+/// let _ = PopMessageResponseHeader::default().pop_time;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PopMessageResponseHeader {
-    pub pop_time: i64,
-    pub invisible_time: i64,
-    pub revive_queue_id: i32,
-    pub rest_num: i64,
-    pub start_offset_info: Option<String>,
-    pub msg_offset_info: Option<String>,
-    pub order_count_info: Option<String>,
+    pub(crate) pop_time: i64,
+    pub(crate) invisible_time: i64,
+    pub(crate) revive_queue_id: i32,
+    pub(crate) rest_num: i64,
+    pub(crate) start_offset_info: Option<String>,
+    pub(crate) msg_offset_info: Option<String>,
+    pub(crate) order_count_info: Option<String>,
+}
+
+impl PopMessageResponseHeader {
+    pub fn get_pop_time(&self) -> i64 {
+        self.pop_time
+    }
+
+    pub fn set_pop_time(&mut self, value: i64) {
+        self.pop_time = value;
+    }
+
+    pub fn get_invisible_time(&self) -> i64 {
+        self.invisible_time
+    }
+
+    pub fn set_invisible_time(&mut self, value: i64) {
+        self.invisible_time = value;
+    }
+
+    pub fn get_revive_qid(&self) -> i32 {
+        self.revive_queue_id
+    }
+
+    pub fn set_revive_qid(&mut self, value: i32) {
+        self.revive_queue_id = value;
+    }
+
+    pub fn get_rest_num(&self) -> i64 {
+        self.rest_num
+    }
+
+    pub fn set_rest_num(&mut self, value: i64) {
+        self.rest_num = value;
+    }
+
+    pub fn get_start_offset_info(&self) -> Option<&str> {
+        self.start_offset_info.as_deref()
+    }
+
+    pub fn set_start_offset_info(&mut self, value: Option<String>) {
+        self.start_offset_info = value;
+    }
+
+    pub fn get_msg_offset_info(&self) -> Option<&str> {
+        self.msg_offset_info.as_deref()
+    }
+
+    pub fn set_msg_offset_info(&mut self, value: Option<String>) {
+        self.msg_offset_info = value;
+    }
+
+    pub fn get_order_count_info(&self) -> Option<&str> {
+        self.order_count_info.as_deref()
+    }
+
+    pub fn set_order_count_info(&mut self, value: Option<String>) {
+        self.order_count_info = value;
+    }
 }
 
 impl CommandHeader for PopMessageResponseHeader {
@@ -3565,14 +3814,69 @@ impl CommandHeader for PopMessageResponseHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<PopLiteMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PopLiteMessageResponseHeader;
+/// let _ = PopLiteMessageResponseHeader::default().pop_time;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PopLiteMessageResponseHeader {
-    pub pop_time: i64,
-    pub invisible_time: i64,
-    pub revive_queue_id: i32,
-    pub start_offset_info: Option<String>,
-    pub msg_offset_info: Option<String>,
-    pub order_count_info: Option<String>,
+    pub(crate) pop_time: i64,
+    pub(crate) invisible_time: i64,
+    pub(crate) revive_queue_id: i32,
+    pub(crate) start_offset_info: Option<String>,
+    pub(crate) msg_offset_info: Option<String>,
+    pub(crate) order_count_info: Option<String>,
+}
+
+impl PopLiteMessageResponseHeader {
+    pub fn get_pop_time(&self) -> i64 {
+        self.pop_time
+    }
+
+    pub fn set_pop_time(&mut self, value: i64) {
+        self.pop_time = value;
+    }
+
+    pub fn get_invisible_time(&self) -> i64 {
+        self.invisible_time
+    }
+
+    pub fn set_invisible_time(&mut self, value: i64) {
+        self.invisible_time = value;
+    }
+
+    pub fn get_revive_qid(&self) -> i32 {
+        self.revive_queue_id
+    }
+
+    pub fn set_revive_qid(&mut self, value: i32) {
+        self.revive_queue_id = value;
+    }
+
+    pub fn get_start_offset_info(&self) -> Option<&str> {
+        self.start_offset_info.as_deref()
+    }
+
+    pub fn set_start_offset_info(&mut self, value: Option<String>) {
+        self.start_offset_info = value;
+    }
+
+    pub fn get_msg_offset_info(&self) -> Option<&str> {
+        self.msg_offset_info.as_deref()
+    }
+
+    pub fn set_msg_offset_info(&mut self, value: Option<String>) {
+        self.msg_offset_info = value;
+    }
+
+    pub fn get_order_count_info(&self) -> Option<&str> {
+        self.order_count_info.as_deref()
+    }
+
+    pub fn set_order_count_info(&mut self, value: Option<String>) {
+        self.order_count_info = value;
+    }
 }
 
 impl CommandHeader for PopLiteMessageResponseHeader {
@@ -3710,9 +4014,24 @@ impl CommandHeader for PollingInfoRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<PollingInfoResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::PollingInfoResponseHeader;
+/// let _ = PollingInfoResponseHeader::default().polling_num;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct PollingInfoResponseHeader {
-    pub polling_num: i32,
+    pub(crate) polling_num: i32,
+}
+
+impl PollingInfoResponseHeader {
+    pub fn get_polling_num(&self) -> i32 {
+        self.polling_num
+    }
+
+    pub fn set_polling_num(&mut self, value: i32) {
+        self.polling_num = value;
+    }
 }
 
 impl CommandHeader for PollingInfoResponseHeader {
@@ -4032,11 +4351,42 @@ impl CommandHeader for ChangeInvisibleTimeRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<ChangeInvisibleTimeResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ChangeInvisibleTimeResponseHeader;
+/// let _ = ChangeInvisibleTimeResponseHeader::default().revive_qid;
+/// ```
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ChangeInvisibleTimeResponseHeader {
-    pub pop_time: i64,
-    pub invisible_time: i64,
-    pub revive_qid: i32,
+    pub(crate) pop_time: i64,
+    pub(crate) invisible_time: i64,
+    pub(crate) revive_qid: i32,
+}
+
+impl ChangeInvisibleTimeResponseHeader {
+    pub fn get_pop_time(&self) -> i64 {
+        self.pop_time
+    }
+
+    pub fn set_pop_time(&mut self, value: i64) {
+        self.pop_time = value;
+    }
+
+    pub fn get_invisible_time(&self) -> i64 {
+        self.invisible_time
+    }
+
+    pub fn set_invisible_time(&mut self, value: i64) {
+        self.invisible_time = value;
+    }
+
+    pub fn get_revive_qid(&self) -> i32 {
+        self.revive_qid
+    }
+
+    pub fn set_revive_qid(&mut self, value: i32) {
+        self.revive_qid = value;
+    }
 }
 
 impl CommandHeader for ChangeInvisibleTimeResponseHeader {

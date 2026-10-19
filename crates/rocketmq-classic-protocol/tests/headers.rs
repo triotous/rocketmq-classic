@@ -128,12 +128,12 @@ fn java_request_and_response_header_fixtures_decode() {
     let lite_pop =
         PopLiteMessageResponseHeader::decode_fields(&java_ext_fields("header-pop-lite-response"))
             .unwrap();
-    assert_eq!(lite_pop.pop_time, 10);
-    assert_eq!(lite_pop.invisible_time, 20);
-    assert_eq!(lite_pop.revive_queue_id, 1);
-    assert_eq!(lite_pop.start_offset_info.as_deref(), Some("orders@0:100"));
-    assert_eq!(lite_pop.msg_offset_info.as_deref(), Some("orders@0:101"));
-    assert_eq!(lite_pop.order_count_info.as_deref(), Some("0"));
+    assert_eq!(lite_pop.get_pop_time(), 10);
+    assert_eq!(lite_pop.get_invisible_time(), 20);
+    assert_eq!(lite_pop.get_revive_qid(), 1);
+    assert_eq!(lite_pop.get_start_offset_info(), Some("orders@0:100"));
+    assert_eq!(lite_pop.get_msg_offset_info(), Some("orders@0:101"));
+    assert_eq!(lite_pop.get_order_count_info(), Some("0"));
 
     let query = QueryConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-query-offset-request",
@@ -162,7 +162,7 @@ fn java_request_and_response_header_fixtures_decode() {
 
     let pull_response =
         PullMessageResponseHeader::decode_fields(&java_ext_fields("header-pull-response")).unwrap();
-    assert_eq!(pull_response.next_begin_offset, Some(10));
+    assert_eq!(pull_response.get_next_begin_offset(), Some(10));
     let offset_response = QueryConsumerOffsetResponseHeader::decode_fields(&java_ext_fields(
         "header-query-offset-response",
     ))
@@ -170,7 +170,7 @@ fn java_request_and_response_header_fixtures_decode() {
     assert_eq!(offset_response.get_offset(), Some(9));
     let send_response =
         SendMessageResponseHeader::decode_fields(&java_ext_fields("header-send-response")).unwrap();
-    assert_eq!(send_response.msg_id.as_deref(), Some("msg-1"));
+    assert_eq!(send_response.get_msg_id(), Some("msg-1"));
     let recall = RecallMessageRequestHeader::decode_fields(&java_ext_fields(
         "header-recall-message-request",
     ))
@@ -223,7 +223,7 @@ fn java_request_and_response_header_fixtures_decode() {
     let polling_response =
         PollingInfoResponseHeader::decode_fields(&java_ext_fields("header-polling-response"))
             .unwrap();
-    assert_eq!(polling_response.polling_num, 2);
+    assert_eq!(polling_response.get_polling_num(), 2);
     let end = EndTransactionRequestHeader::decode_fields(&java_ext_fields(
         "header-end-transaction-request",
     ))
@@ -238,14 +238,14 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-check-transaction-response",
     ))
     .unwrap();
-    assert_eq!(check_response.commit_or_rollback, 8);
+    assert_eq!(check_response.get_commit_or_rollback(), Some(8));
     let reply =
         ReplyMessageRequestHeader::decode_fields(&java_ext_fields("header-reply-request")).unwrap();
     assert_eq!(reply.born_host, "127.0.0.1:1001");
     let notification_response =
         NotificationResponseHeader::decode_fields(&java_ext_fields("header-notification-response"))
             .unwrap();
-    assert!(notification_response.has_msg);
+    assert!(notification_response.is_has_msg());
     let reset =
         ResetOffsetRequestHeader::decode_fields(&java_ext_fields("header-reset-offset-request"))
             .unwrap();
@@ -308,13 +308,11 @@ fn java_request_and_response_header_fixtures_decode() {
         Some(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering)
     );
 
-    let pop_response = PopMessageResponseHeader {
-        pop_time: 1,
-        invisible_time: 2,
-        revive_queue_id: 3,
-        rest_num: 4,
-        ..PopMessageResponseHeader::default()
-    };
+    let mut pop_response = PopMessageResponseHeader::default();
+    pop_response.set_pop_time(1);
+    pop_response.set_invisible_time(2);
+    pop_response.set_revive_qid(3);
+    pop_response.set_rest_num(4);
     let mut fields = HeaderMap::new();
     pop_response.encode_fields(&mut fields);
     let decoded_pop_response = PopMessageResponseHeader::decode_fields(&fields).unwrap();
@@ -332,7 +330,7 @@ fn java_request_and_response_header_fixtures_decode() {
     assert_eq!(
         PopLiteMessageResponseHeader::decode_fields(&pop_fields)
             .unwrap()
-            .pop_time,
+            .get_pop_time(),
         10
     );
     for missing in ["popTime", "invisibleTime", "reviveQid"] {
@@ -340,12 +338,121 @@ fn java_request_and_response_header_fixtures_decode() {
         pop_fields.remove(missing);
         let decoded = PopLiteMessageResponseHeader::decode_fields(&pop_fields).unwrap();
         match missing {
-            "popTime" => assert_eq!(decoded.pop_time, 0),
-            "invisibleTime" => assert_eq!(decoded.invisible_time, 0),
-            "reviveQid" => assert_eq!(decoded.revive_queue_id, 0),
+            "popTime" => assert_eq!(decoded.get_pop_time(), 0),
+            "invisibleTime" => assert_eq!(decoded.get_invisible_time(), 0),
+            "reviveQid" => assert_eq!(decoded.get_revive_qid(), 0),
             _ => unreachable!("test field list is exhaustive"),
         }
     }
+}
+
+#[test]
+fn response_header_accessors_match_java_inventory_and_null_defaults() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/protocol/header-response-identity.json"
+    ))
+    .unwrap();
+    let inventories = &fixture["apiInventories"];
+    for (class, methods) in [
+        (
+            "PullMessageResponseHeader",
+            ["getNextBeginOffset()", "setNextBeginOffset(java.lang.Long)"].as_slice(),
+        ),
+        (
+            "SendMessageResponseHeader",
+            ["getMsgId()", "setMsgId(java.lang.String)"].as_slice(),
+        ),
+        (
+            "CheckTransactionStateResponseHeader",
+            [
+                "getProducerGroup()",
+                "setProducerGroup(java.lang.String)",
+                "getTranStateTableOffset()",
+            ]
+            .as_slice(),
+        ),
+        (
+            "NotificationResponseHeader",
+            ["isHasMsg()", "setHasMsg(boolean)"].as_slice(),
+        ),
+        (
+            "PopMessageResponseHeader",
+            ["getPopTime()", "setPopTime(long)", "getReviveQid()"].as_slice(),
+        ),
+        (
+            "PopLiteMessageResponseHeader",
+            ["getPopTime()", "setPopTime(long)", "getReviveQid()"].as_slice(),
+        ),
+        (
+            "PollingInfoResponseHeader",
+            ["getPollingNum()", "setPollingNum(int)"].as_slice(),
+        ),
+    ] {
+        let java_methods = inventories[class]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in methods {
+            assert!(
+                java_methods.iter().any(|signature| {
+                    signature.as_str().unwrap().ends_with(&format!(".{method}"))
+                }),
+                "missing Java method {class}.{method}"
+            );
+        }
+        assert_eq!(inventories[class]["publicFields"], serde_json::json!([]));
+    }
+
+    let mut pull = PullMessageResponseHeader::default();
+    assert_eq!(pull.get_next_begin_offset(), None);
+    pull.set_next_begin_offset(Some(10));
+    assert_eq!(pull.get_next_begin_offset(), Some(10));
+
+    let mut send = SendMessageResponseHeader::default();
+    assert_eq!(send.get_msg_id(), None);
+    send.set_msg_id(Some("message-id".into()));
+    assert_eq!(send.get_msg_id(), Some("message-id"));
+    send.set_msg_id(None);
+    assert_eq!(send.get_msg_id(), None);
+
+    let mut transaction = CheckTransactionStateResponseHeader::default();
+    assert_eq!(transaction.get_producer_group(), None);
+    assert_eq!(transaction.get_tran_state_table_offset(), None);
+    assert_eq!(transaction.get_commit_log_offset(), None);
+    assert_eq!(transaction.get_commit_or_rollback(), None);
+    transaction.set_producer_group(Some("producers".into()));
+    transaction.set_tran_state_table_offset(Some(3));
+    transaction.set_commit_log_offset(Some(9));
+    transaction.set_commit_or_rollback(Some(8));
+    assert_eq!(transaction.get_producer_group(), Some("producers"));
+    assert_eq!(transaction.get_tran_state_table_offset(), Some(3));
+    assert_eq!(transaction.get_commit_log_offset(), Some(9));
+    assert_eq!(transaction.get_commit_or_rollback(), Some(8));
+
+    let mut notification = NotificationResponseHeader::default();
+    assert!(!notification.is_has_msg());
+    assert!(!notification.is_polling_full());
+    notification.set_has_msg(true);
+    notification.set_polling_full(true);
+    assert!(notification.is_has_msg());
+    assert!(notification.is_polling_full());
+
+    let mut pop = PopMessageResponseHeader::default();
+    assert_eq!(pop.get_pop_time(), 0);
+    assert_eq!(pop.get_start_offset_info(), None);
+    pop.set_pop_time(12);
+    pop.set_start_offset_info(Some("queue-offsets".into()));
+    assert_eq!(pop.get_pop_time(), 12);
+    assert_eq!(pop.get_start_offset_info(), Some("queue-offsets"));
+
+    let mut pop_lite = PopLiteMessageResponseHeader::default();
+    assert_eq!(pop_lite.get_order_count_info(), None);
+    pop_lite.set_order_count_info(Some("0".into()));
+    assert_eq!(pop_lite.get_order_count_info(), Some("0"));
+
+    let mut polling = PollingInfoResponseHeader::default();
+    assert_eq!(polling.get_polling_num(), 0);
+    polling.set_polling_num(2);
+    assert_eq!(polling.get_polling_num(), 2);
 }
 
 #[test]
@@ -658,12 +765,11 @@ fn transaction_and_reply_headers_round_trip_typed_fields() {
         Ok(check)
     );
 
-    let response = CheckTransactionStateResponseHeader {
-        producer_group: "producers".into(),
-        transaction_state_table_offset: 3,
-        commit_log_offset: 9,
-        commit_or_rollback: 8,
-    };
+    let mut response = CheckTransactionStateResponseHeader::default();
+    response.set_producer_group(Some("producers".into()));
+    response.set_tran_state_table_offset(Some(3));
+    response.set_commit_log_offset(Some(9));
+    response.set_commit_or_rollback(Some(8));
     fields.clear();
     response.encode_fields(&mut fields);
     let decoded_response = CheckTransactionStateResponseHeader::decode_fields(&fields).unwrap();
@@ -1199,7 +1305,7 @@ fn java_frames_match_typed_header_semantics() {
     assert_eq!(v2, SendMessageRequestHeaderV2::from_v1(&v1));
     let response =
         SendMessageResponseHeader::decode_fields(&json_header_map("header-send-response")).unwrap();
-    assert_eq!(response.queue_offset, Some(99));
+    assert_eq!(response.get_queue_offset(), Some(99));
 }
 
 #[test]
@@ -1384,14 +1490,14 @@ fn header_required_and_nullable_fields_follow_java_contracts() {
     assert_eq!(empty_send_v2.b, None);
     assert_eq!(empty_send_v2.d, None);
     let empty_send_response = SendMessageResponseHeader::decode_fields(&empty).unwrap();
-    assert_eq!(empty_send_response.msg_id, None);
-    assert_eq!(empty_send_response.queue_id, None);
-    assert_eq!(empty_send_response.queue_offset, None);
+    assert_eq!(empty_send_response.get_msg_id(), None);
+    assert_eq!(empty_send_response.get_queue_id(), None);
+    assert_eq!(empty_send_response.get_queue_offset(), None);
     let empty_pull_response = PullMessageResponseHeader::decode_fields(&empty).unwrap();
-    assert_eq!(empty_pull_response.suggest_which_broker_id, None);
-    assert_eq!(empty_pull_response.next_begin_offset, None);
-    assert_eq!(empty_pull_response.min_offset, None);
-    assert_eq!(empty_pull_response.max_offset, None);
+    assert_eq!(empty_pull_response.get_suggest_which_broker_id(), None);
+    assert_eq!(empty_pull_response.get_next_begin_offset(), None);
+    assert_eq!(empty_pull_response.get_min_offset(), None);
+    assert_eq!(empty_pull_response.get_max_offset(), None);
     let err = QueryConsumerOffsetResponseHeader::decode_fields(&empty)
         .unwrap_err()
         .to_string();

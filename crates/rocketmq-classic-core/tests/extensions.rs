@@ -690,10 +690,10 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
                 let header = result.header.unwrap();
                 assert_eq!(
                     (
-                        header.pop_time,
-                        header.invisible_time,
-                        header.revive_queue_id,
-                        header.rest_num
+                        header.get_pop_time(),
+                        header.get_invisible_time(),
+                        header.get_revive_qid(),
+                        header.get_rest_num()
                     ),
                     (1, 2, 0, 3)
                 );
@@ -707,9 +707,9 @@ async fn populated_assignment_and_pop_replies_preserve_domain_data() {
                 let header = result.header.unwrap();
                 assert_eq!(
                     (
-                        header.pop_time,
-                        header.invisible_time,
-                        header.revive_queue_id
+                        header.get_pop_time(),
+                        header.get_invisible_time(),
+                        header.get_revive_qid()
                     ),
                     (1, 2, 0)
                 );

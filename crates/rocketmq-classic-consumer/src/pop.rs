@@ -197,13 +197,13 @@ pub(crate) fn process_pop_reply(
     let status = reply.status.clone();
     let mut result = PopResult::new(status.clone(), None);
     let header = reply.header.ok_or(PopProcessError::MissingResponseData)?;
-    result.set_rest_num(header.rest_num);
+    result.set_rest_num(header.get_rest_num());
     if status != PopStatus::Found {
         return Ok(result);
     }
 
-    result.set_pop_time(header.pop_time);
-    result.set_invisible_time(header.invisible_time);
+    result.set_pop_time(header.get_pop_time());
+    result.set_invisible_time(header.get_invisible_time());
     let raw = reply
         .raw_messages
         .take()
@@ -221,14 +221,12 @@ fn add_receipts(
     broker_name: &str,
 ) -> Result<(), PopProcessError> {
     let start_offsets = header
-        .start_offset_info
-        .as_deref()
+        .get_start_offset_info()
         .filter(|value| !value.is_empty())
         .map(parse_start_offset_info)
         .transpose()?;
     let message_offsets = header
-        .msg_offset_info
-        .as_deref()
+        .get_msg_offset_info()
         .filter(|value| !value.is_empty())
         .map(parse_message_offset_info)
         .transpose()?;
@@ -300,9 +298,9 @@ fn add_receipts(
             format!(
                 "{} {} {} {} {} {} {} {}",
                 start_offset,
-                header.pop_time,
-                header.invisible_time,
-                header.revive_queue_id,
+                header.get_pop_time(),
+                header.get_invisible_time(),
+                header.get_revive_qid(),
                 retry,
                 broker_name,
                 message.queue_id(),
@@ -317,9 +315,9 @@ fn add_receipts(
             format!(
                 "{} {} {} {} {} {} {} {}",
                 checkpoint,
-                header.pop_time,
-                header.invisible_time,
-                header.revive_queue_id,
+                header.get_pop_time(),
+                header.get_invisible_time(),
+                header.get_revive_qid(),
                 retry,
                 broker_name,
                 message.queue_id(),
@@ -334,8 +332,8 @@ fn add_receipts(
         message.set_broker_name(Some(broker_name.to_owned()));
         message.set_topic(topic.clone());
         if !message.properties().contains_key(PROPERTY_FIRST_POP_TIME) {
-            let _ =
-                message.set_system_property(PROPERTY_FIRST_POP_TIME, header.pop_time.to_string());
+            let _ = message
+                .set_system_property(PROPERTY_FIRST_POP_TIME, header.get_pop_time().to_string());
         }
     }
     Ok(())
@@ -684,15 +682,13 @@ mod tests {
             topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
-        let header = PopMessageResponseHeader {
-            pop_time: 123,
-            invisible_time: 456,
-            revive_queue_id: 2,
-            rest_num: 8,
-            start_offset_info: Some("0 1 10;0 2 20".into()),
-            msg_offset_info: Some("0 1 100,101;0 2 200".into()),
-            order_count_info: None,
-        };
+        let mut header = PopMessageResponseHeader::default();
+        header.set_pop_time(123);
+        header.set_invisible_time(456);
+        header.set_revive_qid(2);
+        header.set_rest_num(8);
+        header.set_start_offset_info(Some("0 1 10;0 2 20".into()));
+        header.set_msg_offset_info(Some("0 1 100,101;0 2 200".into()));
         let mut messages = vec![
             message("orders", 1, 5),
             message("orders", 1, 6),
@@ -729,15 +725,13 @@ mod tests {
             topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
-        let header = PopMessageResponseHeader {
-            pop_time: 123,
-            invisible_time: 456,
-            revive_queue_id: 2,
-            rest_num: 0,
-            start_offset_info: Some(String::new()),
-            msg_offset_info: Some(String::new()),
-            order_count_info: None,
-        };
+        let mut header = PopMessageResponseHeader::default();
+        header.set_pop_time(123);
+        header.set_invisible_time(456);
+        header.set_revive_qid(2);
+        header.set_rest_num(0);
+        header.set_start_offset_info(Some(String::new()));
+        header.set_msg_offset_info(Some(String::new()));
         let mut messages = vec![message("orders", 1, 5), message("orders", 1, 6)];
         add_receipts(&mut messages, &header, &request, "broker-a").unwrap();
         let first =
@@ -755,15 +749,13 @@ mod tests {
             topic: Some("orders".into()),
             ..PopMessageRequestHeader::default()
         };
-        let header = PopMessageResponseHeader {
-            pop_time: 123,
-            invisible_time: 456,
-            revive_queue_id: 2,
-            rest_num: 0,
-            start_offset_info: Some("0 1 10".into()),
-            msg_offset_info: Some("0 2 100".into()),
-            order_count_info: None,
-        };
+        let mut header = PopMessageResponseHeader::default();
+        header.set_pop_time(123);
+        header.set_invisible_time(456);
+        header.set_revive_qid(2);
+        header.set_rest_num(0);
+        header.set_start_offset_info(Some("0 1 10".into()));
+        header.set_msg_offset_info(Some("0 2 100".into()));
         let mut messages = vec![message("orders", 1, 5)];
         assert!(matches!(
             add_receipts(&mut messages, &header, &request, "broker-a"),

@@ -356,18 +356,17 @@ impl MQClientApi {
                 reason: "missing pop message body".into(),
             });
         }
-        let parsed = Some(PopMessageResponseHeader {
-            pop_time: primitive(&reply, "popTime"),
-            invisible_time: primitive(&reply, "invisibleTime"),
-            revive_queue_id: primitive(&reply, "reviveQid"),
-            rest_num: primitive(&reply, "restNum"),
-            start_offset_info: optional_field(&reply, "startOffsetInfo"),
-            msg_offset_info: optional_field(&reply, "msgOffsetInfo"),
-            order_count_info: optional_field(&reply, "orderCountInfo"),
-        });
+        let mut parsed = PopMessageResponseHeader::default();
+        parsed.set_pop_time(primitive(&reply, "popTime"));
+        parsed.set_invisible_time(primitive(&reply, "invisibleTime"));
+        parsed.set_revive_qid(primitive(&reply, "reviveQid"));
+        parsed.set_rest_num(primitive(&reply, "restNum"));
+        parsed.set_start_offset_info(optional_field(&reply, "startOffsetInfo"));
+        parsed.set_msg_offset_info(optional_field(&reply, "msgOffsetInfo"));
+        parsed.set_order_count_info(optional_field(&reply, "orderCountInfo"));
         Ok(PopReply {
             status,
-            header: parsed,
+            header: Some(parsed),
             raw_messages: reply.body,
         })
     }
@@ -389,17 +388,16 @@ impl MQClientApi {
                 reason: "missing pop lite message body".into(),
             });
         }
-        let parsed = Some(PopLiteMessageResponseHeader {
-            pop_time: primitive(&reply, "popTime"),
-            invisible_time: primitive(&reply, "invisibleTime"),
-            revive_queue_id: primitive(&reply, "reviveQid"),
-            start_offset_info: optional_field(&reply, "startOffsetInfo"),
-            msg_offset_info: optional_field(&reply, "msgOffsetInfo"),
-            order_count_info: optional_field(&reply, "orderCountInfo"),
-        });
+        let mut parsed = PopLiteMessageResponseHeader::default();
+        parsed.set_pop_time(primitive(&reply, "popTime"));
+        parsed.set_invisible_time(primitive(&reply, "invisibleTime"));
+        parsed.set_revive_qid(primitive(&reply, "reviveQid"));
+        parsed.set_start_offset_info(optional_field(&reply, "startOffsetInfo"));
+        parsed.set_msg_offset_info(optional_field(&reply, "msgOffsetInfo"));
+        parsed.set_order_count_info(optional_field(&reply, "orderCountInfo"));
         Ok(PopReply {
             status,
-            header: parsed,
+            header: Some(parsed),
             raw_messages: reply.body,
         })
     }
@@ -460,9 +458,9 @@ impl MQClientApi {
             .await?;
         let response_header = reply
             .decode_command_custom_header_directly::<ChangeInvisibleTimeResponseHeader>(true)?;
-        let pop_time = response_header.pop_time;
-        let invisible_time = response_header.invisible_time;
-        let revive_qid = response_header.revive_qid;
+        let pop_time = response_header.get_pop_time();
+        let invisible_time = response_header.get_invisible_time();
+        let revive_qid = response_header.get_revive_qid();
         if reply.code != response::SUCCESS {
             return Ok(ChangeInvisibleTimeResult {
                 status: AckStatus::NoExist,

@@ -486,16 +486,16 @@ fn generate_p4_headers(output: &std::path::Path) {
             oneway: None,
         },
     );
+    let mut check_transaction_response = CheckTransactionStateResponseHeader::default();
+    check_transaction_response.set_producer_group(Some("producers".into()));
+    check_transaction_response.set_tran_state_table_offset(Some(3));
+    check_transaction_response.set_commit_log_offset(Some(9));
+    check_transaction_response.set_commit_or_rollback(Some(8));
     write_typed(
         output,
         "typed-check-transaction-response.bin",
         0,
-        &CheckTransactionStateResponseHeader {
-            producer_group: "producers".into(),
-            transaction_state_table_offset: 3,
-            commit_log_offset: 9,
-            commit_or_rollback: 8,
-        },
+        &check_transaction_response,
     );
     write_typed(
         output,
@@ -565,29 +565,17 @@ fn generate_p4_headers(output: &std::path::Path) {
         },
         binary_reply,
     );
-    write_typed(
-        output,
-        "typed-pull-response.bin",
-        0,
-        &PullMessageResponseHeader {
-            suggest_which_broker_id: Some(0),
-            next_begin_offset: Some(10),
-            min_offset: Some(0),
-            max_offset: Some(100),
-            ..PullMessageResponseHeader::default()
-        },
-    );
-    write_typed(
-        output,
-        "typed-send-response.bin",
-        0,
-        &SendMessageResponseHeader {
-            msg_id: Some("msg-1".into()),
-            queue_id: Some(2),
-            queue_offset: Some(99),
-            ..SendMessageResponseHeader::default()
-        },
-    );
+    let mut pull_response = PullMessageResponseHeader::default();
+    pull_response.set_suggest_which_broker_id(Some(0));
+    pull_response.set_next_begin_offset(Some(10));
+    pull_response.set_min_offset(Some(0));
+    pull_response.set_max_offset(Some(100));
+    write_typed(output, "typed-pull-response.bin", 0, &pull_response);
+    let mut send_response = SendMessageResponseHeader::default();
+    send_response.set_msg_id(Some("msg-1".into()));
+    send_response.set_queue_id(Some(2));
+    send_response.set_queue_offset(Some(99));
+    write_typed(output, "typed-send-response.bin", 0, &send_response);
     write_typed(
         output,
         "typed-notification.bin",
@@ -602,14 +590,13 @@ fn generate_p4_headers(output: &std::path::Path) {
             ..NotificationRequestHeader::default()
         },
     );
+    let mut notification_response = NotificationResponseHeader::default();
+    notification_response.set_has_msg(true);
     write_typed(
         output,
         "typed-notification-response.bin",
         0,
-        &NotificationResponseHeader {
-            has_msg: true,
-            polling_full: false,
-        },
+        &notification_response,
     );
     write_typed(
         output,
@@ -642,33 +629,23 @@ fn generate_p4_headers(output: &std::path::Path) {
             ..PopMessageRequestHeader::default()
         },
     );
-    write_typed(
-        output,
-        "typed-pop-lite-response.bin",
-        0,
-        &PopLiteMessageResponseHeader {
-            pop_time: 10,
-            invisible_time: 20,
-            revive_queue_id: 1,
-            start_offset_info: Some("orders@0:100".into()),
-            msg_offset_info: Some("orders@0:101".into()),
-            order_count_info: Some("0".into()),
-        },
-    );
-    write_typed(
-        output,
-        "typed-pop-response.bin",
-        0,
-        &PopMessageResponseHeader {
-            pop_time: 10,
-            invisible_time: 20,
-            revive_queue_id: 1,
-            rest_num: 3,
-            start_offset_info: Some("orders@0:100".into()),
-            msg_offset_info: Some("orders@0:101".into()),
-            order_count_info: Some("0".into()),
-        },
-    );
+    let mut pop_lite_response = PopLiteMessageResponseHeader::default();
+    pop_lite_response.set_pop_time(10);
+    pop_lite_response.set_invisible_time(20);
+    pop_lite_response.set_revive_qid(1);
+    pop_lite_response.set_start_offset_info(Some("orders@0:100".into()));
+    pop_lite_response.set_msg_offset_info(Some("orders@0:101".into()));
+    pop_lite_response.set_order_count_info(Some("0".into()));
+    write_typed(output, "typed-pop-lite-response.bin", 0, &pop_lite_response);
+    let mut pop_response = PopMessageResponseHeader::default();
+    pop_response.set_pop_time(10);
+    pop_response.set_invisible_time(20);
+    pop_response.set_revive_qid(1);
+    pop_response.set_rest_num(3);
+    pop_response.set_start_offset_info(Some("orders@0:100".into()));
+    pop_response.set_msg_offset_info(Some("orders@0:101".into()));
+    pop_response.set_order_count_info(Some("0".into()));
+    write_typed(output, "typed-pop-response.bin", 0, &pop_response);
     write_typed(
         output,
         "typed-ack.bin",

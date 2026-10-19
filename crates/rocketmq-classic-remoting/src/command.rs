@@ -954,13 +954,18 @@ mod tests {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
 
+        let api_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+        ))
+        .unwrap();
+
         for header_name in [
             "QueryTopicsByConsumerRequestHeader",
             "QuerySubscriptionByConsumerRequestHeader",
             "QueryTopicConsumeByWhoRequestHeader",
         ] {
             assert_eq!(
-                fixture["apiInventories"][header_name]["publicFields"],
+                api_fixture["apiInventories"][header_name]["publicFields"],
                 serde_json::json!([]),
                 "{header_name} public fields"
             );
@@ -1022,6 +1027,11 @@ mod tests {
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
 
+        let api_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/offset-boundary-header-decode-modes.json"
+        ))
+        .unwrap();
+
         for header_name in [
             "SearchOffsetRequestHeader",
             "GetMaxOffsetRequestHeader",
@@ -1033,7 +1043,7 @@ mod tests {
             "GetEarliestMsgStoretimeResponseHeader",
         ] {
             assert_eq!(
-                fixture["apiInventories"][header_name]["publicFields"],
+                api_fixture["apiInventories"][header_name]["publicFields"],
                 serde_json::json!([]),
                 "{header_name} public fields"
             );
@@ -1673,15 +1683,15 @@ mod tests {
         let defaults = &fixture["defaults"];
         let default_header = ChangeInvisibleTimeResponseHeader::default();
         assert_eq!(
-            default_header.pop_time,
+            default_header.get_pop_time(),
             defaults["popTime"].as_i64().unwrap()
         );
         assert_eq!(
-            default_header.invisible_time,
+            default_header.get_invisible_time(),
             defaults["invisibleTime"].as_i64().unwrap()
         );
         assert_eq!(
-            default_header.revive_qid,
+            default_header.get_revive_qid(),
             defaults["reviveQid"].as_i64().unwrap() as i32
         );
 
@@ -1709,17 +1719,17 @@ mod tests {
                     });
                 let expected = &case[mode];
                 assert_eq!(
-                    header.pop_time,
+                    header.get_pop_time(),
                     expected["popTime"].as_i64().unwrap(),
                     "{case_name}/{mode}"
                 );
                 assert_eq!(
-                    header.invisible_time,
+                    header.get_invisible_time(),
                     expected["invisibleTime"].as_i64().unwrap(),
                     "{case_name}/{mode}"
                 );
                 assert_eq!(
-                    header.revive_qid,
+                    header.get_revive_qid(),
                     expected["reviveQid"].as_i64().unwrap() as i32,
                     "{case_name}/{mode}"
                 );
@@ -1733,11 +1743,11 @@ mod tests {
             .iter()
             .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
             .collect::<HeaderMap>();
-        let assigned = ChangeInvisibleTimeResponseHeader {
-            pop_time: accessors["popTime"].as_i64().unwrap(),
-            invisible_time: accessors["invisibleTime"].as_i64().unwrap(),
-            revive_qid: accessors["reviveQid"].as_i64().unwrap() as i32,
-        };
+        assert_eq!(fixture["publicFieldCount"], 0);
+        let mut assigned = ChangeInvisibleTimeResponseHeader::default();
+        assigned.set_pop_time(accessors["popTime"].as_i64().unwrap());
+        assigned.set_invisible_time(accessors["invisibleTime"].as_i64().unwrap());
+        assigned.set_revive_qid(accessors["reviveQid"].as_i64().unwrap() as i32);
         let mut actual_fields = HeaderMap::new();
         CommandHeader::encode_fields(&assigned, &mut actual_fields);
         assert_eq!(actual_fields, encoded_fields);
@@ -1935,29 +1945,35 @@ mod tests {
                     });
                     let expected_header = &expected["header"];
                     assert_eq!(
-                        decoded.suggest_which_broker_id,
+                        decoded.get_suggest_which_broker_id(),
                         expected_header["suggestWhichBrokerId"].as_i64()
                     );
                     assert_eq!(
-                        decoded.next_begin_offset,
+                        decoded.get_next_begin_offset(),
                         expected_header["nextBeginOffset"].as_i64()
                     );
-                    assert_eq!(decoded.min_offset, expected_header["minOffset"].as_i64());
-                    assert_eq!(decoded.max_offset, expected_header["maxOffset"].as_i64());
                     assert_eq!(
-                        decoded.offset_delta,
+                        decoded.get_min_offset(),
+                        expected_header["minOffset"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.get_max_offset(),
+                        expected_header["maxOffset"].as_i64()
+                    );
+                    assert_eq!(
+                        decoded.get_offset_delta(),
                         expected_header["offsetDelta"].as_i64()
                     );
                     assert_eq!(
-                        decoded.topic_sys_flag.map(i64::from),
+                        decoded.get_topic_sys_flag().map(i64::from),
                         expected_header["topicSysFlag"].as_i64()
                     );
                     assert_eq!(
-                        decoded.group_sys_flag.map(i64::from),
+                        decoded.get_group_sys_flag().map(i64::from),
                         expected_header["groupSysFlag"].as_i64()
                     );
                     assert_eq!(
-                        decoded.forbidden_type.map(i64::from),
+                        decoded.get_forbidden_type().map(i64::from),
                         expected_header["forbiddenType"].as_i64()
                     );
                 } else {
@@ -2006,25 +2022,25 @@ mod tests {
                         panic!("{case_name}/{mode}: Java returned OK, Rust returned {error}")
                     });
                     let expected_header = &expected["header"];
-                    assert_eq!(decoded.msg_id.as_deref(), expected_header["msgId"].as_str());
+                    assert_eq!(decoded.get_msg_id(), expected_header["msgId"].as_str());
                     assert_eq!(
-                        decoded.queue_id.map(i64::from),
+                        decoded.get_queue_id().map(i64::from),
                         expected_header["queueId"].as_i64()
                     );
                     assert_eq!(
-                        decoded.queue_offset,
+                        decoded.get_queue_offset(),
                         expected_header["queueOffset"].as_i64()
                     );
                     assert_eq!(
-                        decoded.transaction_id.as_deref(),
+                        decoded.get_transaction_id(),
                         expected_header["transactionId"].as_str()
                     );
                     assert_eq!(
-                        decoded.batch_uniq_id.as_deref(),
+                        decoded.get_batch_uniq_id(),
                         expected_header["batchUniqId"].as_str()
                     );
                     assert_eq!(
-                        decoded.recall_handle.as_deref(),
+                        decoded.get_recall_handle(),
                         expected_header["recallHandle"].as_str()
                     );
                 } else {

@@ -2,6 +2,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -67,6 +68,9 @@ public final class ChangeInvisibleTimeResponseHeaderFixtures {
         fixture.put("headerType", ChangeInvisibleTimeResponseHeader.class.getName());
         fixture.put("publicConstructor", java.lang.reflect.Modifier.isPublic(
             ChangeInvisibleTimeResponseHeader.class.getConstructor().getModifiers()));
+        fixture.put("publicFieldCount", Arrays.stream(ChangeInvisibleTimeResponseHeader.class.getFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .count());
 
         TreeSet<String> methods = new TreeSet<>();
         for (Method method : ChangeInvisibleTimeResponseHeader.class.getDeclaredMethods()) {

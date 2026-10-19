@@ -258,18 +258,21 @@ impl MQClientApi {
             }
         };
         let result: SendMessageResponseHeader = decode_header(&reply, code, addr)?;
-        let queue_id = result.queue_id.ok_or_else(|| RpcError::MalformedResponse {
-            request_code: kind.code(),
-            peer: addr.to_owned(),
-            reason: "the custom field <queueId> is null".into(),
-        })?;
-        let queue_offset = result
-            .queue_offset
+        let queue_id = result
+            .get_queue_id()
             .ok_or_else(|| RpcError::MalformedResponse {
                 request_code: kind.code(),
                 peer: addr.to_owned(),
-                reason: "the custom field <queueOffset> is null".into(),
+                reason: "the custom field <queueId> is null".into(),
             })?;
+        let queue_offset =
+            result
+                .get_queue_offset()
+                .ok_or_else(|| RpcError::MalformedResponse {
+                    request_code: kind.code(),
+                    peer: addr.to_owned(),
+                    reason: "the custom field <queueOffset> is null".into(),
+                })?;
         let ext = reply
             .ext_fields
             .as_ref()
@@ -277,13 +280,13 @@ impl MQClientApi {
         Ok(Some(SendResult {
             status,
             msg_id: uniq_msg_id.to_owned(),
-            offset_msg_id: result.msg_id,
+            offset_msg_id: result.get_msg_id().map(str::to_owned),
             topic: header.topic.clone(),
             broker_name: broker_name.to_owned(),
             queue_id,
             queue_offset,
-            transaction_id: result.transaction_id,
-            recall_handle: result.recall_handle,
+            transaction_id: result.get_transaction_id().map(str::to_owned),
+            recall_handle: result.get_recall_handle().map(str::to_owned),
             raw_resp_body: None,
             region_id: ext
                 .get("MSG_REGION")

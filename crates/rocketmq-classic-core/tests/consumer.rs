@@ -80,13 +80,12 @@ async fn pull_statuses_and_malformed_success() {
         sys_flag: Some(0),
         ..Default::default()
     };
-    let response_header = fields(&PullMessageResponseHeader {
-        next_begin_offset: Some(12),
-        min_offset: Some(1),
-        max_offset: Some(30),
-        suggest_which_broker_id: Some(2),
-        ..Default::default()
-    });
+    let mut response = PullMessageResponseHeader::default();
+    response.set_next_begin_offset(Some(12));
+    response.set_min_offset(Some(1));
+    response.set_max_offset(Some(30));
+    response.set_suggest_which_broker_id(Some(2));
+    let response_header = fields(&response);
     for (code, status) in [
         (response::SUCCESS, PullStatus::Found),
         (response::PULL_NOT_FOUND, PullStatus::NoNewMessage),

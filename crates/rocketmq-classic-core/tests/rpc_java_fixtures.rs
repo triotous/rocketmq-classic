@@ -61,15 +61,17 @@ fn pinned_java_rpc_replies_decode_in_rust() {
         if outcome == "MALFORMED_SUCCESS" {
             assert!(match code {
                 10 => match SendMessageResponseHeader::decode_fields(&actual) {
-                    Ok(header) => header.queue_id.is_none() || header.queue_offset.is_none(),
+                    Ok(header) => {
+                        header.get_queue_id().is_none() || header.get_queue_offset().is_none()
+                    }
                     Err(_) => true,
                 },
                 11 => match PullMessageResponseHeader::decode_fields(&actual) {
                     Ok(header) => {
-                        header.next_begin_offset.is_none()
-                            && header.min_offset.is_none()
-                            && header.max_offset.is_none()
-                            && header.suggest_which_broker_id.is_none()
+                        header.get_next_begin_offset().is_none()
+                            && header.get_min_offset().is_none()
+                            && header.get_max_offset().is_none()
+                            && header.get_suggest_which_broker_id().is_none()
                     }
                     Err(_) => false,
                 },
@@ -85,8 +87,8 @@ fn pinned_java_rpc_replies_decode_in_rust() {
         match code {
             10 => {
                 let header = SendMessageResponseHeader::decode_fields(&actual).unwrap();
-                assert_eq!(header.msg_id.as_deref(), Some("offset-msg-1"));
-                assert_eq!(header.queue_offset, Some(99));
+                assert_eq!(header.get_msg_id(), Some("offset-msg-1"));
+                assert_eq!(header.get_queue_offset(), Some(99));
                 assert!(
                     [
                         "SEND_OK",
@@ -99,7 +101,7 @@ fn pinned_java_rpc_replies_decode_in_rust() {
             }
             11 => {
                 let header = PullMessageResponseHeader::decode_fields(&actual).unwrap();
-                assert_eq!(header.next_begin_offset, Some(10));
+                assert_eq!(header.get_next_begin_offset(), Some(10));
                 assert!(
                     ["FOUND", "NO_NEW_MSG", "NO_MATCHED_MSG", "OFFSET_ILLEGAL"].contains(&outcome)
                 );

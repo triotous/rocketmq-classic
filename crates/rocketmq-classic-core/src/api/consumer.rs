@@ -274,20 +274,30 @@ impl MQClientApi {
         Ok(PullResultExt {
             status,
             next_begin_offset: required_response_header_field(
-                fields.next_begin_offset,
+                fields.get_next_begin_offset(),
                 "nextBeginOffset",
                 code,
                 addr,
             )?,
-            min_offset: required_response_header_field(fields.min_offset, "minOffset", code, addr)?,
-            max_offset: required_response_header_field(fields.max_offset, "maxOffset", code, addr)?,
+            min_offset: required_response_header_field(
+                fields.get_min_offset(),
+                "minOffset",
+                code,
+                addr,
+            )?,
+            max_offset: required_response_header_field(
+                fields.get_max_offset(),
+                "maxOffset",
+                code,
+                addr,
+            )?,
             suggest_which_broker_id: required_response_header_field(
-                fields.suggest_which_broker_id,
+                fields.get_suggest_which_broker_id(),
                 "suggestWhichBrokerId",
                 code,
                 addr,
             )?,
-            offset_delta: fields.offset_delta,
+            offset_delta: fields.get_offset_delta(),
             raw_messages: reply.body,
         })
     }

@@ -142,10 +142,10 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                             .as_str()
                             .unwrap()
                             .ends_with("header-default");
-                        assert_eq!(header.pop_time, if defaults { 0 } else { 123 });
-                        assert_eq!(header.invisible_time, if defaults { 0 } else { 456 });
-                        assert_eq!(header.revive_queue_id, if defaults { 0 } else { 2 });
-                        assert_eq!(header.rest_num, if defaults { 0 } else { 7 });
+                        assert_eq!(header.get_pop_time(), if defaults { 0 } else { 123 });
+                        assert_eq!(header.get_invisible_time(), if defaults { 0 } else { 456 });
+                        assert_eq!(header.get_revive_qid(), if defaults { 0 } else { 2 });
+                        assert_eq!(header.get_rest_num(), if defaults { 0 } else { 7 });
                         reply.status
                     })
                 } else {
@@ -173,9 +173,9 @@ async fn invoked_pop_ack_callbacks_match_rust_domain_outcomes() {
                             .as_str()
                             .unwrap()
                             .ends_with("header-default");
-                        assert_eq!(header.pop_time, if defaults { 0 } else { 123 });
-                        assert_eq!(header.invisible_time, if defaults { 0 } else { 456 });
-                        assert_eq!(header.revive_queue_id, if defaults { 0 } else { 2 });
+                        assert_eq!(header.get_pop_time(), if defaults { 0 } else { 123 });
+                        assert_eq!(header.get_invisible_time(), if defaults { 0 } else { 456 });
+                        assert_eq!(header.get_revive_qid(), if defaults { 0 } else { 2 });
                         reply.status
                     })
                 };
