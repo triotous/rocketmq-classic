@@ -3019,6 +3019,181 @@ impl std::fmt::Display for TopicOffset {
     }
 }
 
+/// Java `ClientGroup`, whose equality and hash keys are its two nullable
+/// public fields. The Rust names are snake case while the serialized fields
+/// retain Java's camel case.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientGroup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ClientGroupFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    group: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for ClientGroup {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ClientGroupFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            client_id: fields.client_id,
+            group: fields.group,
+        })
+    }
+}
+
+impl ClientGroup {
+    pub fn new(client_id: Option<String>, group: Option<String>) -> Self {
+        Self { client_id, group }
+    }
+}
+
+impl std::fmt::Display for ClientGroup {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "ClientGroup{{clientId='{}', group='{}'}}",
+            self.client_id.as_deref().unwrap_or("null"),
+            self.group.as_deref().unwrap_or("null")
+        )
+    }
+}
+
+/// Java `GetLiteTopicInfoResponseBody`. Its subscriber Set and nested
+/// `TopicOffset` are retained mutable objects; null body responses remain
+/// distinct from an empty default instance.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GetLiteTopicInfoResponseBody;
+/// let _ = GetLiteTopicInfoResponseBody::default().parent_topic;
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GetLiteTopicInfoResponseBody;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// requires_java_identity::<GetLiteTopicInfoResponseBody>();
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLiteTopicInfoResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lite_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscriber: Option<SharedValue<HashSet<Option<ClientGroup>>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_offset: Option<SharedValue<TopicOffset>>,
+    sharding_to_broker: bool,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GetLiteTopicInfoResponseBodyFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    parent_topic: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    lite_topic: Option<String>,
+    #[serde(default)]
+    subscriber: Option<HashSet<Option<ClientGroup>>>,
+    #[serde(default)]
+    topic_offset: Option<TopicOffset>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    sharding_to_broker: bool,
+}
+
+impl<'de> Deserialize<'de> for GetLiteTopicInfoResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GetLiteTopicInfoResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            parent_topic: fields.parent_topic,
+            lite_topic: fields.lite_topic,
+            subscriber: fields.subscriber.map(SharedValue::new),
+            topic_offset: fields.topic_offset.map(SharedValue::new),
+            sharding_to_broker: fields.sharding_to_broker,
+        })
+    }
+}
+
+impl GetLiteTopicInfoResponseBody {
+    pub fn get_parent_topic(&self) -> Option<&str> {
+        self.parent_topic.as_deref()
+    }
+
+    pub fn set_parent_topic(&mut self, value: Option<String>) {
+        self.parent_topic = value;
+    }
+
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+
+    pub fn get_subscriber(&self) -> Option<SharedValue<HashSet<Option<ClientGroup>>>> {
+        self.subscriber.clone()
+    }
+
+    pub fn set_subscriber(&mut self, value: Option<SharedValue<HashSet<Option<ClientGroup>>>>) {
+        self.subscriber = value;
+    }
+
+    pub fn get_topic_offset(&self) -> Option<SharedValue<TopicOffset>> {
+        self.topic_offset.clone()
+    }
+
+    pub fn set_topic_offset(&mut self, value: Option<SharedValue<TopicOffset>>) {
+        self.topic_offset = value;
+    }
+
+    pub fn is_sharding_to_broker(&self) -> bool {
+        self.sharding_to_broker
+    }
+
+    pub fn set_sharding_to_broker(&mut self, value: bool) {
+        self.sharding_to_broker = value;
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        java_fastjson_remoting_body_json(self, false).map(String::into_bytes)
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
 /// retain Java nullability and the map handle returned by the getter.
 ///
@@ -6954,6 +7129,7 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
 }
 
 impl_java_remoting_serializable_body_adapters!(
+    GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
     GetConsumerStatusBody,
@@ -7475,6 +7651,147 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn get_lite_topic_info_response_body_matches_java_api_and_alias_semantics() {
+        use base64::Engine as _;
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/rpc-invoked-ext-more/lite-topic-info-success.json"
+        ))
+        .unwrap();
+        let api = &fixture["liteTopicInfoApi"];
+        assert_eq!(api["requestHeaderPublicFields"], json!([]));
+        assert_eq!(api["responseBodyPublicFields"], json!([]));
+        assert_eq!(api["topicOffsetPublicFields"], json!([]));
+        assert_eq!(
+            api["responseBodyPublicMethods"],
+            json!([
+                "public boolean org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.isShardingToBroker()",
+                "public java.lang.String org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.getLiteTopic()",
+                "public java.lang.String org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.getParentTopic()",
+                "public java.util.Set<org.apache.rocketmq.common.entity.ClientGroup> org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.getSubscriber()",
+                "public org.apache.rocketmq.remoting.protocol.admin.TopicOffset org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.getTopicOffset()",
+                "public void org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.setLiteTopic(java.lang.String)",
+                "public void org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.setParentTopic(java.lang.String)",
+                "public void org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.setShardingToBroker(boolean)",
+                "public void org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.setSubscriber(java.util.Set<org.apache.rocketmq.common.entity.ClientGroup>)",
+                "public void org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody.setTopicOffset(org.apache.rocketmq.remoting.protocol.admin.TopicOffset)"
+            ])
+        );
+        assert_eq!(
+            api["clientGroupPublicFields"],
+            json!(["final String clientId", "final String group"])
+        );
+        assert_eq!(api["clientGroupPublicMethods"].as_array().unwrap().len(), 3);
+        assert_eq!(api["topicOffsetPublicMethods"].as_array().unwrap().len(), 7);
+
+        let defaults = GetLiteTopicInfoResponseBody::default();
+        assert_eq!(defaults.get_parent_topic(), None);
+        assert_eq!(defaults.get_lite_topic(), None);
+        assert!(defaults.get_subscriber().is_none());
+        assert!(defaults.get_topic_offset().is_none());
+        assert!(!defaults.is_sharding_to_broker());
+        assert_eq!(api["responseBodyDefaults"]["parentTopic"], json!(null));
+        assert_eq!(api["responseBodyDefaults"]["liteTopic"], json!(null));
+        assert_eq!(api["responseBodyDefaults"]["subscriberNull"], true);
+        assert_eq!(api["responseBodyDefaults"]["topicOffsetNull"], true);
+        assert_eq!(api["responseBodyDefaults"]["shardingToBroker"], false);
+        assert_eq!(
+            serde_json::to_value(&defaults).unwrap(),
+            json!({"shardingToBroker": false})
+        );
+        let java_default: serde_json::Value = serde_json::from_str(
+            std::str::from_utf8(
+                &base64::engine::general_purpose::STANDARD
+                    .decode(fixture["response"]["bodyBase64"].as_str().unwrap())
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let default_fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/rpc-invoked-ext-more/lite-topic-info-defaults.json"
+        ))
+        .unwrap();
+        let default_body = base64::engine::general_purpose::STANDARD
+            .decode(default_fixture["response"]["bodyBase64"].as_str().unwrap())
+            .unwrap();
+        let default_body: serde_json::Value = serde_json::from_slice(&default_body).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&defaults.java_encode().unwrap()).unwrap(),
+            default_body
+        );
+
+        let encoded = base64::engine::general_purpose::STANDARD
+            .decode(fixture["response"]["bodyBase64"].as_str().unwrap())
+            .unwrap();
+        let decoded = GetLiteTopicInfoResponseBody::java_decode(&encoded).unwrap();
+        assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
+        assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
+        assert!(decoded.is_sharding_to_broker());
+        let subscribers = decoded.get_subscriber().unwrap();
+        assert_eq!(subscribers.with(HashSet::len), 3);
+        assert!(subscribers.with(|set| set.contains(&None)));
+        assert!(subscribers.with(|set| {
+            set.contains(&Some(ClientGroup::new(
+                Some("client-1".into()),
+                Some("workers".into()),
+            )))
+        }));
+        assert_eq!(
+            ClientGroup::new(None, None).to_string(),
+            api["clientGroupNullToString"].as_str().unwrap()
+        );
+        assert_eq!(api["clientGroupEqualValuesCompareEqual"], true);
+        assert_eq!(api["clientGroupDifferentValuesCompareUnequal"], true);
+        let offset = decoded.get_topic_offset().unwrap();
+        assert_eq!(offset.with(TopicOffset::get_min_offset), -2);
+        assert_eq!(offset.with(TopicOffset::get_max_offset), 17);
+        assert_eq!(offset.with(TopicOffset::get_last_update_timestamp), 1234);
+        let encoded: serde_json::Value =
+            serde_json::from_slice(&decoded.java_encode().unwrap()).unwrap();
+        assert_eq!(encoded["parentTopic"], java_default["parentTopic"]);
+        assert_eq!(encoded["liteTopic"], java_default["liteTopic"]);
+        assert_eq!(
+            encoded["shardingToBroker"],
+            java_default["shardingToBroker"]
+        );
+        assert_eq!(encoded["topicOffset"], java_default["topicOffset"]);
+        let encoded_subscribers: HashSet<Option<ClientGroup>> =
+            serde_json::from_value(encoded["subscriber"].clone()).unwrap();
+        assert_eq!(
+            encoded_subscribers,
+            subscribers.with(std::clone::Clone::clone)
+        );
+
+        let assigned_subscribers = SharedValue::new(HashSet::new());
+        let assigned_offset = SharedValue::new(TopicOffset::default());
+        let mut value = GetLiteTopicInfoResponseBody::default();
+        value.set_subscriber(Some(assigned_subscribers.clone()));
+        value.set_topic_offset(Some(assigned_offset.clone()));
+        assert!(
+            value
+                .get_subscriber()
+                .unwrap()
+                .ptr_eq(&assigned_subscribers)
+        );
+        assert!(value.get_topic_offset().unwrap().ptr_eq(&assigned_offset));
+        value
+            .get_subscriber()
+            .unwrap()
+            .with_mut(|set| set.insert(Some(ClientGroup::new(Some("c".into()), Some("g".into())))));
+        value
+            .get_topic_offset()
+            .unwrap()
+            .with_mut(|offset| offset.set_min_offset(8));
+        assert_eq!(assigned_subscribers.with(HashSet::len), 1);
+        assert_eq!(assigned_offset.with(TopicOffset::get_min_offset), 8);
+        assert_eq!(api["subscriberGetterReturnsAssignedSet"], true);
+        assert_eq!(api["subscriberGetterMutationVisible"], true);
+        assert_eq!(api["topicOffsetGetterReturnsAssignedObject"], true);
+        assert_eq!(api["topicOffsetMutationVisible"], true);
     }
 
     #[test]

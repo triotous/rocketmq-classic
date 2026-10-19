@@ -1,13 +1,13 @@
 //! One-attempt lifecycle and extension requests. Message decoding belongs to the consumer layer.
 use rocketmq_classic_protocol::{
     body::{
-        BatchAckMessageRequestBody, LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody,
-        QueryAssignmentResponseBody, SetMessageRequestModeRequestBody,
+        BatchAckMessageRequestBody, GetLiteTopicInfoResponseBody, LiteSubscriptionCtlRequestBody,
+        QueryAssignmentRequestBody, QueryAssignmentResponseBody, SetMessageRequestModeRequestBody,
     },
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, HeartbeatRequestHeader,
+        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader, HeartbeatRequestHeader,
         LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
@@ -290,6 +290,34 @@ impl MQClientApi {
         Ok(result)
     }
 
+    /// Queries Lite topic details through Java's asynchronous
+    /// `MQClientAPIExt.getLiteTopicInfoAsync` operation. A missing response
+    /// body is a successful null result in the Java implementation.
+    pub async fn get_lite_topic_info(
+        &self,
+        addr: &str,
+        parent_topic: Option<&str>,
+        lite_topic: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<GetLiteTopicInfoResponseBody>, RpcError> {
+        let mut header = GetLiteTopicInfoRequestHeader::default();
+        header.set_parent_topic(parent_topic.map(str::to_owned));
+        header.set_lite_topic(lite_topic.map(str::to_owned));
+        let reply = classify(
+            self.request_future(addr, request::GET_LITE_TOPIC_INFO, &header, None, deadline)
+                .await?,
+            request::GET_LITE_TOPIC_INFO,
+            addr,
+        )?;
+        GetLiteTopicInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: request::GET_LITE_TOPIC_INFO,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
     pub async fn send_heartbeat(
         &self,
         addr: &str,
@@ -307,6 +335,43 @@ impl MQClientApi {
             )
             .await?;
         Ok(classify(reply, request::HEART_BEAT, addr)?.version)
+    }
+
+    /// Future-based counterpart of Java `MQClientAPIExt.sendHeartbeatAsync`.
+    pub async fn send_heartbeat_async(
+        &self,
+        addr: &str,
+        data: &HeartbeatData,
+        deadline: Instant,
+    ) -> Result<i32, RpcError> {
+        let body = heartbeat_json_body(data)?;
+        let reply = self
+            .request_future(
+                addr,
+                request::HEART_BEAT,
+                &HeartbeatRequestHeader::default(),
+                Some(body),
+                deadline,
+            )
+            .await?;
+        Ok(classify(reply, request::HEART_BEAT, addr)?.version)
+    }
+
+    /// One-way counterpart of Java `MQClientAPIExt.sendHeartbeatOneway`.
+    pub async fn send_heartbeat_oneway(
+        &self,
+        addr: &str,
+        data: &HeartbeatData,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.oneway(
+            addr,
+            request::HEART_BEAT,
+            &HeartbeatRequestHeader::default(),
+            Some(heartbeat_json_body(data)?),
+            deadline,
+        )
+        .await
     }
 
     pub async fn send_heartbeat_v2(

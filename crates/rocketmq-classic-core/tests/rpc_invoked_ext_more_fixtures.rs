@@ -68,15 +68,22 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "notification-error",
         "notification-unknown",
         "notification-defaults",
+        "lite-topic-info-success",
+        "lite-topic-info-defaults",
+        "lite-topic-info-null-body",
+        "lite-topic-info-null-inputs",
+        "lite-topic-info-error",
+        "lite-topic-info-unknown",
+        "lite-topic-info-invalid-body",
     ];
-    assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len());
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len() + 35);
     for name in names {
         let fixture: Value =
             serde_json::from_slice(&fs::read(dir.join(format!("{name}.json"))).unwrap()).unwrap();
         assert_eq!(fixture["case"], name);
         assert_eq!(
             fixture["mode"],
-            if name.starts_with("notification-") {
+            if name.starts_with("notification-") || name.starts_with("lite-topic-info-") {
                 "ASYNC"
             } else {
                 "SYNC"
@@ -94,6 +101,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 } else {
                     "MQClientAPIExt.notificationWithPollingStats"
                 }
+            } else if name.starts_with("lite-topic-info-") {
+                "MQClientAPIExt.getLiteTopicInfoAsync"
             } else {
                 "MQClientAPIImpl"
             }
@@ -119,6 +128,30 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 notify_result["populatedToString"],
                 "NotifyResult{hasMsg=true, pollingFull=true}"
             );
+        }
+        if name.starts_with("lite-topic-info-") {
+            let api = &fixture["liteTopicInfoApi"];
+            assert_eq!(
+                api["requestHeaderConstructors"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(api["requestHeaderPublicFields"], serde_json::json!([]));
+            assert_eq!(api["responseBodyConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["responseBodyPublicFields"], serde_json::json!([]));
+            assert_eq!(api["clientGroupConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["clientGroupPublicFields"].as_array().unwrap().len(), 2);
+            assert_eq!(api["topicOffsetConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["topicOffsetPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["requestHeaderPublicMethods"].as_array().unwrap().len(),
+                5
+            );
+            assert_eq!(
+                api["responseBodyPublicMethods"].as_array().unwrap().len(),
+                10
+            );
+            assert_eq!(api["clientGroupPublicMethods"].as_array().unwrap().len(), 3);
+            assert_eq!(api["topicOffsetPublicMethods"].as_array().unwrap().len(), 7);
         }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
@@ -202,6 +235,47 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                     }
                     other => panic!("unexpected notification stats result: {other:?}"),
                 }
+            }
+        } else if name.starts_with("lite-topic-info-") {
+            let (parent_topic, lite_topic) = if name == "lite-topic-info-null-inputs" {
+                (None, None)
+            } else {
+                (Some("lite-parent"), Some("%LMQ%lite-parent%orders"))
+            };
+            match api
+                .get_lite_topic_info(&addr, parent_topic, lite_topic, deadline)
+                .await
+            {
+                Ok(None) => "null".to_owned(),
+                Ok(Some(result)) if name == "lite-topic-info-success" => {
+                    let subscribers = result.get_subscriber().unwrap();
+                    let subscriber_count = subscribers.with(|set| set.len());
+                    let topic_offset = result.get_topic_offset().unwrap();
+                    topic_offset.with(|offset| {
+                        format!(
+                            "parent={};lite={};subscribers={subscriber_count};min={};max={};updated={};sharding={}",
+                            result.get_parent_topic().unwrap_or("null"),
+                            result.get_lite_topic().unwrap_or("null"),
+                            offset.get_min_offset(),
+                            offset.get_max_offset(),
+                            offset.get_last_update_timestamp(),
+                            result.is_sharding_to_broker(),
+                        )
+                    })
+                }
+                Ok(Some(result)) => format!(
+                    "parent={};lite={};subscriberNull={};offsetNull={};sharding={}",
+                    result.get_parent_topic().unwrap_or("null"),
+                    result.get_lite_topic().unwrap_or("null"),
+                    result.get_subscriber().is_none(),
+                    result.get_topic_offset().is_none(),
+                    result.is_sharding_to_broker(),
+                ),
+                Err(RpcError::Response { code, .. }) => {
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
+                other => panic!("unexpected lite topic info result: {other:?}"),
             }
         } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {

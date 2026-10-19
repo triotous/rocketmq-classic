@@ -4375,6 +4375,52 @@ impl CommandHeader for LiteSubscriptionCtlRequestHeader {
     }
 }
 
+/// Java `GetLiteTopicInfoRequestHeader` for the asynchronous Lite topic-info RPC.
+/// Its `checkFields()` is a no-op even though `parentTopic` carries a
+/// `CFNotNull` annotation, so both fields remain nullable at the wire boundary.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetLiteTopicInfoRequestHeader;
+/// let _ = GetLiteTopicInfoRequestHeader::default().parent_topic;
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetLiteTopicInfoRequestHeader {
+    parent_topic: Option<String>,
+    lite_topic: Option<String>,
+}
+
+impl CommandHeader for GetLiteTopicInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "parentTopic", self.parent_topic.clone());
+        put_optional(fields, "liteTopic", self.lite_topic.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            parent_topic: fields.get("parentTopic").cloned(),
+            lite_topic: fields.get("liteTopic").cloned(),
+        })
+    }
+}
+
+impl GetLiteTopicInfoRequestHeader {
+    pub fn get_parent_topic(&self) -> Option<&str> {
+        self.parent_topic.as_deref()
+    }
+
+    pub fn set_parent_topic(&mut self, value: Option<String>) {
+        self.parent_topic = value;
+    }
+
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+}
+
 /// Java 5.5.1's client heartbeat RPC header. The Java class declares no
 /// payload fields and inherits its namespace and routing fields from
 /// `RpcRequestHeader`.

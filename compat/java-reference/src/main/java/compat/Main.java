@@ -326,6 +326,10 @@ public final class Main {
             InvokedExtFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;
         }
+        if (args.length > 0 && "rpc-invoked-ext-more-fixtures".equals(args[0])) {
+            ExtensionMoreInvokedFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "rpc-invoked-fixtures".equals(args[0])) {
             InvokedRpcFixtures.run(option(args, "--output"), java.util.Arrays.asList(args).contains("--verify"));
             return;
@@ -384,7 +388,7 @@ public final class Main {
             writeScenario(id, output);
             return;
         }
-        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | change-invisible-time-header-decode-mode-fixture <file> [--verify] | change-invisible-time-response-header-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | decode --input FILE | scenario --id ID --output FILE");
+        throw new IllegalArgumentException("usage: self-test | fixtures --output DIR | header-fixtures --output DIR | code-registry-fixtures <file> [--verify] | client-config-properties-fixture <file> [--verify] | change-invisible-time-header-decode-mode-fixture <file> [--verify] | change-invisible-time-response-header-fixture <file> [--verify] | lite-pop-fixture <file> [--verify] | transaction-fixture <file> [--verify] | request-reply-fixture <file> [--verify] | remoting-api-surface-fixture <file> [--verify] | orderly-consumer-fixture <file> [--verify] | rebalance-fixtures <file> [--verify] | message-utils-fixture <file> [--verify] | rpc-invoked-ext-more-fixtures <DIR> [--verify] | decode --input FILE | scenario --id ID --output FILE");
     }
 
     private static Path option(String[] args, String name) {

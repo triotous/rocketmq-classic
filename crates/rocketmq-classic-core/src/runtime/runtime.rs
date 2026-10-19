@@ -60,6 +60,42 @@ fn rpc_timeout_reads_the_live_runtime_configuration() {
     assert_eq!(runtime.rpc_timeout(), tokio::time::Duration::ZERO);
 }
 
+#[cfg(test)]
+#[test]
+fn nameserver_refresh_reads_the_current_nullable_config_value() {
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/rpc-invoked-ext-more");
+    for name in [
+        "nameserver-refresh-present",
+        "nameserver-refresh-null",
+        "nameserver-refresh-empty",
+    ] {
+        let fixture: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixtures.join(format!("{name}.json"))).unwrap())
+                .unwrap();
+        let mut config = ClientConfig::new("nameserver-refresh");
+        config.namesrv_addr = Some("initial:9876".into());
+        let runtime = ClientRuntime::construct(config, &HashMap::new(), None).unwrap();
+        let configured = fixture["inputNamesrvAddr"].as_str().map(str::to_owned);
+        runtime.config().write().unwrap().namesrv_addr = configured;
+        assert_eq!(
+            runtime.update_name_server_address_list_from_config(),
+            fixture["returnValue"].as_bool().unwrap(),
+            "{name}"
+        );
+        let mut actual = runtime.remoting.get_name_server_address_list().unwrap();
+        let mut expected = fixture["resultingAddresses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|address| address.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected, "{name}");
+    }
+}
+
 /// A manager-owned transport and typed API. Construction does not start tasks.
 pub struct ClientRuntime {
     boot_timestamp: i64,
@@ -98,6 +134,19 @@ impl ClientRuntime {
     pub fn update_name_server_address_list(&self, addresses: &str) {
         self.remoting
             .update_name_server_address_list(crate::namesrv::split_addresses(addresses));
+    }
+
+    /// Reapplies the retained NameServer setting, matching
+    /// `MQClientAPIExt.updateNameServerAddressList()`. Returns false and keeps
+    /// the prior transport list when the setting is null.
+    pub fn update_name_server_address_list_from_config(&self) -> bool {
+        let config = self.config_read();
+        let Some(addresses) = config.namesrv_addr.as_deref() else {
+            return false;
+        };
+        self.remoting
+            .update_name_server_address_list(crate::namesrv::split_addresses(addresses));
+        true
     }
 
     #[cfg(test)]

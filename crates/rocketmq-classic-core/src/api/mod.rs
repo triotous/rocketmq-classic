@@ -28,6 +28,29 @@ impl MQClientApi {
         )
     }
 
+    /// Forwards a caller-built remoting command and preserves the raw Broker
+    /// response, matching `MQClientAPIExt.invoke`.
+    pub async fn invoke(
+        &self,
+        addr: &str,
+        command: RemotingCommand,
+        deadline: Instant,
+    ) -> Result<RemotingCommand, RpcError> {
+        Ok(self.remoting.invoke(addr, command, deadline).await?)
+    }
+
+    /// Starts a caller-built one-way request and returns call-boundary errors,
+    /// matching `MQClientAPIExt.invokeOneway`.
+    pub async fn invoke_oneway(
+        &self,
+        addr: &str,
+        command: RemotingCommand,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.remoting.invoke_oneway(addr, command, deadline)?;
+        Ok(())
+    }
+
     pub(crate) fn with_language(
         remoting: RemotingClient,
         language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
@@ -148,11 +171,20 @@ impl MQClientApi {
     ) -> Result<(), RpcError> {
         let mut fields = HeaderMap::new();
         header.encode_fields(&mut fields);
+        let heartbeat_language = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).language)
+            .unwrap_or(self.language);
         self.remoting.invoke_oneway(
             addr,
             RemotingCommand {
                 code,
-                language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                language: if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
+                    heartbeat_language
+                } else {
+                    Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+                },
                 ext_fields: Some(fields.into()),
                 body,
                 ..RemotingCommand::default()

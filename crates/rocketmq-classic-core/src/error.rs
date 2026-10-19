@@ -29,4 +29,11 @@ pub enum RpcError {
         code: i32,
         remark: Option<String>,
     },
+    #[error("consumer offset is not found at {peer}: {remark:?}")]
+    OffsetNotFound {
+        request_code: i32,
+        peer: String,
+        code: i32,
+        remark: Option<String>,
+    },
 }

@@ -201,6 +201,26 @@ impl MQClientApi {
         )
     }
 
+    /// Future-based counterpart of Java `MQClientAPIExt.searchOffset`.
+    pub async fn search_offset_future(
+        &self,
+        addr: &str,
+        header: &SearchOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<i64>, RpcError> {
+        let code = request::SEARCH_OFFSET_BY_TIMESTAMP;
+        let reply = classify(
+            self.request_future(addr, code, header, None, deadline)
+                .await?,
+            code,
+            addr,
+        )?;
+        Ok(
+            decode_header_with_mode::<SearchOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
+        )
+    }
+
     pub async fn get_max_offset(
         &self,
         addr: &str,
@@ -219,6 +239,26 @@ impl MQClientApi {
         )
     }
 
+    /// Future-based counterpart of Java `MQClientAPIExt.getMaxOffset`.
+    pub async fn get_max_offset_future(
+        &self,
+        addr: &str,
+        header: &GetMaxOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<i64>, RpcError> {
+        let code = request::GET_MAX_OFFSET;
+        let reply = classify(
+            self.request_future(addr, code, header, None, deadline)
+                .await?,
+            code,
+            addr,
+        )?;
+        Ok(
+            decode_header_with_mode::<GetMaxOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
+        )
+    }
+
     pub async fn get_min_offset(
         &self,
         addr: &str,
@@ -234,6 +274,26 @@ impl MQClientApi {
             "offset",
             code,
             addr,
+        )
+    }
+
+    /// Future-based counterpart of Java `MQClientAPIExt.getMinOffset`.
+    pub async fn get_min_offset_future(
+        &self,
+        addr: &str,
+        header: &GetMinOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<i64>, RpcError> {
+        let code = request::GET_MIN_OFFSET;
+        let reply = classify(
+            self.request_future(addr, code, header, None, deadline)
+                .await?,
+            code,
+            addr,
+        )?;
+        Ok(
+            decode_header_with_mode::<GetMinOffsetResponseHeader>(&reply, code, addr, true)?
+                .get_offset(),
         )
     }
 
@@ -315,13 +375,40 @@ impl MQClientApi {
             return Ok(None);
         }
         let reply = classify(reply, code, addr)?;
-        let fields: QueryConsumerOffsetResponseHeader = decode_header(&reply, code, addr)?;
+        let fields: QueryConsumerOffsetResponseHeader =
+            decode_header_with_mode(&reply, code, addr, true)?;
         Ok(Some(required_response_header_field(
             fields.get_offset(),
             "offset",
             code,
             addr,
         )?))
+    }
+
+    /// Java `MQClientAPIExt.queryConsumerOffsetWithFuture` reports
+    /// `QUERY_NOT_FOUND` as an exceptional result instead of returning `None`.
+    pub async fn query_consumer_offset_with_future(
+        &self,
+        addr: &str,
+        header: &QueryConsumerOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<i64>, RpcError> {
+        let code = request::QUERY_CONSUMER_OFFSET;
+        let reply = self
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        if reply.code == response::QUERY_NOT_FOUND {
+            return Err(RpcError::OffsetNotFound {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let reply = classify(reply, code, addr)?;
+        let fields: QueryConsumerOffsetResponseHeader =
+            decode_header_with_mode(&reply, code, addr, true)?;
+        Ok(fields.get_offset())
     }
 
     pub async fn update_consumer_offset(
@@ -339,6 +426,41 @@ impl MQClientApi {
             classify(reply, code, addr)?;
             Ok(())
         }
+    }
+
+    /// Future-based counterpart of Java `MQClientAPIExt.updateConsumerOffsetAsync`.
+    pub async fn update_consumer_offset_async(
+        &self,
+        addr: &str,
+        header: &UpdateConsumerOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_CONSUMER_OFFSET;
+        let reply = self
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        if reply.code == response::SUCCESS {
+            Ok(())
+        } else {
+            classify(reply, code, addr).map(|_| ())
+        }
+    }
+
+    /// Future-shaped wrapper for Java `MQClientAPIExt.updateConsumerOffsetOneWay`.
+    pub async fn update_consumer_offset_oneway(
+        &self,
+        addr: &str,
+        header: &UpdateConsumerOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.oneway(
+            addr,
+            request::UPDATE_CONSUMER_OFFSET,
+            header,
+            None,
+            deadline,
+        )
+        .await
     }
 
     pub async fn get_consumer_list_by_group(
@@ -380,6 +502,43 @@ impl MQClientApi {
             .map(|consumer_ids| consumer_ids.snapshot()))
     }
 
+    /// Future-based `MQClientAPIExt.getConsumerListByGroupAsync`. Java treats
+    /// `SYSTEM_ERROR` as an empty list because the Broker uses that status when
+    /// the group has no consumers.
+    pub async fn get_consumer_list_by_group_future(
+        &self,
+        addr: &str,
+        consumer_group: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<Vec<Option<String>>>, RpcError> {
+        let code = request::GET_CONSUMER_LIST_BY_GROUP;
+        let mut fields = HeaderMap::new();
+        if let Some(consumer_group) = consumer_group {
+            fields.insert("consumerGroup".into(), consumer_group.to_owned());
+        }
+        let reply = self
+            .request_fields_with_mode(addr, code, fields, None, deadline, false)
+            .await?;
+        if reply.code == response::SYSTEM_ERROR
+            || (reply.code == response::SUCCESS && reply.body.is_none())
+        {
+            return Ok(Some(Vec::new()));
+        }
+        let reply = classify(reply, code, addr)?;
+        if reply.body.is_none() {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
+        Ok(body
+            .get_consumer_id_list()
+            .map(|consumer_ids| consumer_ids.snapshot()))
+    }
+
     pub async fn consumer_send_message_back(
         &self,
         addr: &str,
@@ -390,6 +549,25 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Future-based counterpart of `MQClientAPIExt.sendMessageBackAsync`.
+    /// Java returns the raw remoting command, including non-success status.
+    pub async fn consumer_send_message_back_async(
+        &self,
+        addr: &str,
+        header: &ConsumerSendMsgBackRequestHeader,
+        deadline: Instant,
+    ) -> Result<rocketmq_classic_remoting::RemotingCommand, RpcError> {
+        Ok(self
+            .request_future(
+                addr,
+                request::CONSUMER_SEND_MSG_BACK,
+                header,
+                None,
+                deadline,
+            )
+            .await?)
     }
 
     pub async fn lock_batch_mq(
@@ -410,6 +588,42 @@ impl MQClientApi {
             )
             .await?;
         let reply = classify(reply, code, addr)?;
+        let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
+        Ok(body.get_lock_okmq_set().map(|queues| {
+            queues.with(|queues| {
+                queues
+                    .iter()
+                    .map(|queue| queue.as_ref().map(|queue| queue.snapshot()))
+                    .collect()
+            })
+        }))
+    }
+
+    /// Future-based counterpart of Java `MQClientAPIExt.lockBatchMQWithFuture`.
+    pub async fn lock_batch_mq_with_future(
+        &self,
+        addr: &str,
+        body: &LockBatchRequestBody,
+        deadline: Instant,
+    ) -> Result<Option<std::collections::HashSet<Option<MessageQueue>>>, RpcError> {
+        let code = request::LOCK_BATCH_MQ;
+        let payload =
+            serde_json::to_vec(body).map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        let reply = classify(
+            self.request_future(
+                addr,
+                code,
+                &LockBatchMqRequestHeader::default(),
+                Some(payload),
+                deadline,
+            )
+            .await?,
+            code,
+            addr,
+        )?;
         let body: LockBatchResponseBody = decode_body(&reply, code, addr)?;
         Ok(body.get_lock_okmq_set().map(|queues| {
             queues.with(|queues| {
@@ -452,6 +666,29 @@ impl MQClientApi {
             classify(reply, code, addr)?;
             Ok(())
         }
+    }
+
+    /// Java `MQClientAPIExt.unlockBatchMQOneway` always uses the one-way path.
+    pub async fn unlock_batch_mq_oneway(
+        &self,
+        addr: &str,
+        body: &UnlockBatchRequestBody,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UNLOCK_BATCH_MQ;
+        let payload =
+            serde_json::to_vec(body).map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        self.oneway(
+            addr,
+            code,
+            &LockBatchMqRequestHeader::default(),
+            Some(payload),
+            deadline,
+        )
+        .await
     }
 }
 
