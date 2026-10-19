@@ -187,7 +187,7 @@ fn java_request_and_response_header_fixtures_decode() {
         "header-recall-message-response",
     ))
     .unwrap();
-    assert_eq!(recall_response.msg_id, "broker-message-id");
+    assert_eq!(recall_response.get_msg_id(), Some("broker-message-id"));
     let unregister =
         UnregisterClientRequestHeader::decode_fields(&java_ext_fields("header-unregister-request"))
             .unwrap();
@@ -1879,10 +1879,10 @@ fn header_validation_matrix() {
         row!(
             RecallMessageResponseHeader,
             "recall-message-response",
+            "",
+            "",
+            "",
             "msgId",
-            "",
-            "",
-            "",
             ""
         ),
         row!(

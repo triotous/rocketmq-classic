@@ -77,11 +77,13 @@ impl RecallMessageHandle {
 
 impl Producer {
     /// Recalls a delayed message by sending Java's `RECALL_MESSAGE` request.
+    /// A successful response without an extension-field map is `Ok(None)`;
+    /// a present map missing `msgId` is a malformed response.
     pub async fn recall_message(
         &self,
         topic: &str,
         recall_handle: &str,
-    ) -> Result<String, ProducerError> {
+    ) -> Result<Option<String>, ProducerError> {
         let runtime = self.started_runtime().await?;
         let mut client_config = self.config.client_config().clone();
         let topic = client_config

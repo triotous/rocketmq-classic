@@ -2715,19 +2715,34 @@ impl CommandHeader for RecallMessageRequestHeader {
 /// fn requires_value_equality<T: PartialEq + Eq>() {}
 /// fn main() { requires_value_equality::<RecallMessageResponseHeader>(); }
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::RecallMessageResponseHeader;
+/// let _ = RecallMessageResponseHeader::default().msg_id;
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RecallMessageResponseHeader {
-    pub msg_id: String,
+    pub(crate) msg_id: Option<String>,
+}
+
+impl RecallMessageResponseHeader {
+    pub fn get_msg_id(&self) -> Option<&str> {
+        self.msg_id.as_deref()
+    }
+
+    pub fn set_msg_id(&mut self, value: Option<String>) {
+        self.msg_id = value;
+    }
 }
 
 impl CommandHeader for RecallMessageResponseHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
-        fields.insert("msgId".into(), self.msg_id.clone());
+        put_optional(fields, "msgId", self.msg_id.as_deref());
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            msg_id: required_string(fields, "msgId")?.to_owned(),
+            msg_id: optional_string(fields, "msgId"),
         })
     }
 }
@@ -4432,8 +4447,49 @@ mod tests {
             "efa1be59d6fc747ad220f036c86030f05f0419f9"
         );
         assert_eq!(fixture["serverContacted"], false);
+        assert_eq!(
+            fixture["recallMessageIdNullability"]["defaultMsgIdIsNull"],
+            true
+        );
+        assert_eq!(
+            fixture["recallMessageIdNullability"]["msgIdAfterNullSetterIsNull"],
+            true
+        );
+        assert_eq!(
+            fixture["recallMessageIdNullability"]["nullExtFieldsDecodeReturnsNullMsgId"],
+            true
+        );
+        assert_eq!(
+            fixture["recallMessageIdNullability"]["emptyExtFieldsMissingMsgIdRejected"],
+            false
+        );
         let cases = fixture["identityCases"].as_object().unwrap();
         assert_eq!(cases.len(), 16);
+        let api_inventories = fixture["apiInventories"].as_object().unwrap();
+        assert_eq!(api_inventories.len(), 16);
+        for (rust_name, inventory) in api_inventories {
+            assert_eq!(
+                inventory["publicFields"],
+                serde_json::json!([]),
+                "{rust_name}"
+            );
+        }
+        let recall_methods =
+            api_inventories["RecallMessageResponseHeader"]["callablePublicMethods"]
+                .as_array()
+                .unwrap();
+        assert!(recall_methods.iter().any(|method| {
+            method
+                .as_str()
+                .unwrap()
+                .ends_with("RecallMessageResponseHeader.getMsgId()")
+        }));
+        assert!(recall_methods.iter().any(|method| {
+            method
+                .as_str()
+                .unwrap()
+                .ends_with("RecallMessageResponseHeader.setMsgId(java.lang.String)")
+        }));
         for (rust_name, identity) in cases {
             assert_eq!(
                 identity["javaClass"],
@@ -5033,7 +5089,7 @@ mod tests {
     }
 
     #[test]
-    fn recall_headers_match_java_field_names_and_required_response_msg_id() {
+    fn recall_headers_match_java_field_names_and_nullable_response_msg_id() {
         let request = RecallMessageRequestHeader {
             producer_group: Some("recall-group".into()),
             topic: "orders".into(),
@@ -5056,15 +5112,29 @@ mod tests {
             RecallMessageRequestHeader::decode_fields(&fields),
             Ok(request)
         );
-        assert!(matches!(
-            RecallMessageResponseHeader::decode_fields(&HeaderMap::new()),
-            Err(ProtocolError::MissingField("msgId"))
-        ));
+        assert_eq!(
+            RecallMessageResponseHeader::decode_fields(&HeaderMap::new())
+                .unwrap()
+                .get_msg_id(),
+            None
+        );
         let decoded = RecallMessageResponseHeader::decode_fields(&HeaderMap::from([(
             "msgId".into(),
             "recalled-id".into(),
         )]))
         .unwrap();
-        assert_eq!(decoded.msg_id, "recalled-id");
+        assert_eq!(decoded.get_msg_id(), Some("recalled-id"));
+
+        let mut response = RecallMessageResponseHeader::default();
+        response.set_msg_id(Some("recalled-id".into()));
+        assert_eq!(response.get_msg_id(), Some("recalled-id"));
+        let mut encoded = HeaderMap::new();
+        response.encode_fields(&mut encoded);
+        assert_eq!(
+            encoded.get("msgId").map(String::as_str),
+            Some("recalled-id")
+        );
+        response.set_msg_id(None);
+        assert_eq!(response.get_msg_id(), None);
     }
 }

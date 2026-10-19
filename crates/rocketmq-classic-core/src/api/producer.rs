@@ -129,12 +129,16 @@ impl MQClientApi {
         addr: &str,
         header: &RecallMessageRequestHeader,
         deadline: Instant,
-    ) -> Result<String, RpcError> {
+    ) -> Result<Option<String>, RpcError> {
         let code = request::RECALL_MESSAGE;
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = super::classify(reply, code, addr)?;
-        let response: RecallMessageResponseHeader = super::decode_header(&reply, code, addr)?;
-        Ok(response.msg_id)
+        let response: RecallMessageResponseHeader = if reply.ext_fields.is_some() {
+            super::decode_header(&reply, code, addr)?
+        } else {
+            RecallMessageResponseHeader::default()
+        };
+        Ok(response.get_msg_id().map(str::to_owned))
     }
 
     /// Java's optional latency detector probes a broker with GET_MAX_OFFSET

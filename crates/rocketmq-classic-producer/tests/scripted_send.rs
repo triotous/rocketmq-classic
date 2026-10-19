@@ -429,7 +429,7 @@ async fn recall_wraps_topic_and_group_once_at_the_namespace_wire_boundary() {
     let handle = RecallMessageHandle::build_handle("orders", "broker-a", "123", "message-id");
     assert_eq!(
         producer.recall_message("orders", &handle).await.unwrap(),
-        "recalled-id"
+        Some("recalled-id".to_owned())
     );
 
     assert!(
