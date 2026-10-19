@@ -1103,3 +1103,25 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   checks both public magic constants; a compile-fail doctest guards the
   removed export. This closes this constant mismatch only; the aggregate
   P18-V01 reverse-export reconciliation remains in progress.
+
+- P18-V01 Lite topic-info `ClientGroup` field mutability correction (2026-10-19,
+  pinned Java 5.5.1 fixture): Java exposes `clientId` and `group` as public
+  `final String` fields, with no setters. Rust now keeps the values private and
+  exposes read-only `client_id()` and `group()` accessors; compile-fail doctests
+  guard direct reads and mutation. The protocol fixture test confirms the
+  constructor values and nullable representation remain intact. This closes
+  only the extra Rust mutation capability on `ClientGroup`; broad P18-V01
+  reverse-export reconciliation remains open.
+
+- P18-V01 cross-crate Rustdoc field inventory (2026-10-19): generated
+  workspace Rustdoc JSON and enumerated public named-struct fields in Common,
+  Consumer, Core, Producer, Protocol, and Remoting. The counts were 4, 30, 66,
+  32, 58, and 55 (245 total across 41 structs); there are no named public
+  enum-variant fields. The handoff's stated total of 340 was an addition error.
+  After the `ClientGroup` correction, 243 public fields remain. The map records
+  each type/count and its Java setting/result/hook/route disposition. The
+  reviewed remoting `ClientConfig` fields map `NettyClientConfig`, and the
+  remaining mutable bean-like values provide the same read/write properties
+  through idiomatic Rust fields. This closes the field inventory and the
+  surfaced `ClientGroup` mutability gap only; broad P18-V01 method, input,
+  error, flow, and reverse-export reconciliation remains open.

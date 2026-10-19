@@ -3020,15 +3020,28 @@ impl std::fmt::Display for TopicOffset {
 }
 
 /// Java `ClientGroup`, whose equality and hash keys are its two nullable
-/// public fields. The Rust names are snake case while the serialized fields
-/// retain Java's camel case.
+/// public final fields. The Rust names are snake case while the serialized
+/// fields retain Java's camel case. Read-only accessors preserve the Java
+/// field boundary without allowing Rust callers to replace either value.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ClientGroup;
+/// let group = ClientGroup::new(Some("client".into()), Some("workers".into()));
+/// let _ = group.client_id;
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::ClientGroup;
+/// let mut group = ClientGroup::new(Some("client".into()), Some("workers".into()));
+/// group.group = Some("other".into());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientGroup {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
+    client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub group: Option<String>,
+    group: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -3063,6 +3076,14 @@ impl<'de> Deserialize<'de> for ClientGroup {
 impl ClientGroup {
     pub fn new(client_id: Option<String>, group: Option<String>) -> Self {
         Self { client_id, group }
+    }
+
+    pub fn client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
     }
 }
 
@@ -7744,6 +7765,9 @@ mod tests {
             ClientGroup::new(None, None).to_string(),
             api["clientGroupNullToString"].as_str().unwrap()
         );
+        let client_group = ClientGroup::new(Some("client-1".into()), Some("workers".into()));
+        assert_eq!(client_group.client_id(), Some("client-1"));
+        assert_eq!(client_group.group(), Some("workers"));
         assert_eq!(api["clientGroupEqualValuesCompareEqual"], true);
         assert_eq!(api["clientGroupDifferentValuesCompareUnequal"], true);
         let offset = decoded.get_topic_offset().unwrap();

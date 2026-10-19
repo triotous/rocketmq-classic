@@ -14,6 +14,29 @@ heartbeat feature loops, and the Phase 18 entry in `docs/release-checklist.md`.
 This supersedes earlier writer-feature status paragraphs below. The broad
 P18-V01 API/source/input/error/control-flow/reverse-export audit remains open.
 
+## P18-V01 Rustdoc public-field reverse inventory (2026-10-19)
+
+`RUSTDOCFLAGS='-Z unstable-options --output-format json' cargo +nightly doc
+--workspace --no-deps --locked` exposed 245 public struct fields across 41
+named-field structs before the `ClientGroup` correction below; no public named
+enum-variant fields were present. The first inventory's crate counts were
+Common 4, Consumer 30, Core 66, Producer 32, Protocol 58, and Remoting 55.
+After hiding the two `ClientGroup` fields, the current total is 243: Protocol
+56 and the other crate counts are unchanged.
+
+| Crate | Rust types and field counts | Java/API disposition |
+| --- | --- | --- |
+| Common | `DecodeOptions` (4) | Per-call decode options map Java decoder overloads; these do not add a persistent setting. |
+| Consumer | `ProcessedPullResult` (2), `LiteTraceBean` (7), `ConsumeMessageContext` (9), `LiteTraceContext` (10), `FilterMessageContext` (2) | Consumer result, hook, and trace values carried through existing Java consumer flows. |
+| Core | `PullResultExt` (7), `ChangeInvisibleTimeResult` (5), `TopicSnapshot` (5), `RouteSnapshot` (3), `SendResult` (12), `TraceContext` (11), `PopReply` (3), `HeartbeatV2Result` (3), `BrokerAddress` (3), `TraceBean` (14) | Java pull/POP/send/trace values and route/cache views. `SendResult` keeps the Java `MessageQueue` values as Rust `topic`/`broker_name`/`queue_id` fields; this is a flattened carrier, not another send option. |
+| Producer | `EndTransactionContext` (7), `CheckForbiddenContext` (10), `TransactionSendResult` (2), `SendMessageContext` (13) | Producer hook contexts and transaction results correspond to existing Java hook/result properties. |
+| Protocol | `OffsetOption` (2), `LiteSubscriptionCtlRequestBody` (1), `LiteSubscriptionDto` (7), `LiteSubscription` (4), `ClientGroup` (2 before correction), `SubscriptionData` (8), `QueueData` (5), `TopicQueueMappingInfo` (7), `ProducerData` (1), `ConsumerData` (6), `TopicRouteData` (5), `BrokerData` (5), `HeartbeatData` (5) | Typed wire/route/heartbeat values. Java bean getter/setter properties use direct Rust fields as their idiomatic read/write path; `ClientGroup` is the exception because Java's two public fields are `final`, so Rust now provides read-only accessors. |
+| Remoting | `TlsConfig` (8), `ChannelEvent` (4), `RemotingCommand` (10), `MetricView` (5), `ProcessorRegistration` (2), `ClientConfig` (20), `GoAwayCause` (3), `SocksProxyConfig` (3) | TLS, transport config, command, event, registration, metrics, and diagnostic carriers map to existing Java remoting settings/operations. `ClientConfig` settings map Java `NettyClientConfig`; no additional Rust-only persistent transport setting was found. |
+
+This is a surface inventory and a disposition of field-shaped APIs, not a claim
+that every mapped method, null boundary, input shape, error, or control-flow
+branch has passed the broader P18-V01 audit.
+
 ClientConfig field-visibility reconciliation (2026-10-15, pinned Java source
 `efa1be59d6fc747ad220f036c86030f05f0419f9`): Java 5.5.1 keeps the 33
 configuration values behind getter/setter methods. Rust now keeps the backing
@@ -1300,6 +1323,12 @@ null request inputs, known/unknown response codes, and invalid JSON. The Core
 scripted peer checks the request ext fields, body, result values and error
 category. `POLLING_INFO` remains a registry/wire model because pinned 5.5.1 has
 no outbound client callsite.
+
+`ClientGroup.clientId` and `ClientGroup.group` are public final Java fields.
+Rust keeps both fields private and exposes read-only `client_id()`/`group()`
+accessors, so callers retain value access without gaining Java-absent mutation.
+Compile-fail doctests guard both field names; the invoked fixture's constructor,
+equality, hash, and text behavior remain unchanged.
 
 ## NameServer address refresh
 

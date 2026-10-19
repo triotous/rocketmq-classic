@@ -5212,3 +5212,20 @@ owner-specific checks belong in the manual handoff.
 - This closes one previously unrecorded header fixture. Full P18-V01
   source/API/settings/input/error/flow and reverse-export reconciliation plus
   final workspace validation remain open.
+
+## P18-V01 `ClientGroup` public-final field parity — 2026-10-19
+
+- [x] The pinned Lite topic-info fixture reports `ClientGroup.clientId` and
+  `ClientGroup.group` as `public final String`, with a public two-argument
+  constructor and no setters. Rust fields are now private with read-only
+  `client_id()`/`group()` accessors; two compile-fail doctests reject direct
+  field access and mutation. The existing Protocol differential also asserts
+  both accessor values for the populated constructor case.
+- [x] `cargo fmt --all -- --check` passed. The locked Protocol `--tests` suite
+  passed 145 unit tests and all 39 integration tests. The `ClientGroup`-filtered
+  rustdoc run passed both new compile-fail guards. Workspace Rustdoc JSON
+  generation succeeded and reports 243 remaining public fields after this
+  correction. Code commit: pending.
+- This closes only the `ClientGroup` mutability discrepancy. Broad P18-V01
+  bidirectional API/settings/flow and reverse-export reconciliation remains
+  open.
