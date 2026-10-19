@@ -559,15 +559,14 @@ impl MQClientApi {
         header: &ConsumerSendMsgBackRequestHeader,
         deadline: Instant,
     ) -> Result<rocketmq_classic_remoting::RemotingCommand, RpcError> {
-        Ok(self
-            .request_future(
-                addr,
-                request::CONSUMER_SEND_MSG_BACK,
-                header,
-                None,
-                deadline,
-            )
-            .await?)
+        self.request_future(
+            addr,
+            request::CONSUMER_SEND_MSG_BACK,
+            header,
+            None,
+            deadline,
+        )
+        .await
     }
 
     pub async fn lock_batch_mq(
