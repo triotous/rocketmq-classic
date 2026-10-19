@@ -40,14 +40,17 @@ fn public_code_registries_match_all_pinned_java_constants() {
         "pinned Java RemotingSysResponseCode declaration count"
     );
 
-    let mut expected_rust_response = response;
-    for (java_name, value) in remoting_system {
-        expected_rust_response.insert(format!("REMOTING_{java_name}"), value);
+    for (java_name, value) in &remoting_system {
+        assert_eq!(
+            response.get(java_name),
+            Some(value),
+            "ResponseCode inherits RemotingSysResponseCode.{java_name}"
+        );
     }
     assert_eq!(
         parse_rust_constants(RESPONSE_SOURCE),
-        expected_rust_response,
-        "Rust preserves all ResponseCode names and separately prefixes colliding RemotingSysResponseCode names"
+        response,
+        "Rust response fields match ResponseCode's public fields, including inherited fields"
     );
 }
 

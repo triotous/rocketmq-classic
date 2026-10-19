@@ -1,18 +1,37 @@
-// Audited from Apache RocketMQ rocketmq-all-5.5.1 RemotingSysResponseCode and ResponseCode.
+//! RocketMQ response codes from Java's `RemotingSysResponseCode` and
+//! `ResponseCode`. `ResponseCode` inherits the base values, so the shared
+//! Java field names are exposed once here.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::codes::response::REMOTING_SUCCESS;
+//! # fn main() {}
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::codes::response::REMOTING_SYSTEM_ERROR;
+//! # fn main() {}
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::codes::response::REMOTING_SYSTEM_BUSY;
+//! # fn main() {}
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::codes::response::REMOTING_REQUEST_CODE_NOT_SUPPORTED;
+//! # fn main() {}
+//! ```
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::codes::response::REMOTING_TRANSACTION_FAILED;
+//! # fn main() {}
+//! ```
 
-pub const REMOTING_SUCCESS: i32 = 0;
-pub const REMOTING_SYSTEM_ERROR: i32 = 1;
-pub const REMOTING_SYSTEM_BUSY: i32 = 2;
-pub const REMOTING_REQUEST_CODE_NOT_SUPPORTED: i32 = 3;
-pub const REMOTING_TRANSACTION_FAILED: i32 = 4;
-
-// RemotingSysResponseCode and ResponseCode define these duplicate numeric values;
-// preserve both Java names for callers to select the originating registry.
-pub const SUCCESS: i32 = REMOTING_SUCCESS;
-pub const SYSTEM_ERROR: i32 = REMOTING_SYSTEM_ERROR;
-pub const SYSTEM_BUSY: i32 = REMOTING_SYSTEM_BUSY;
-pub const REQUEST_CODE_NOT_SUPPORTED: i32 = REMOTING_REQUEST_CODE_NOT_SUPPORTED;
-pub const TRANSACTION_FAILED: i32 = REMOTING_TRANSACTION_FAILED;
+pub const SUCCESS: i32 = 0;
+pub const SYSTEM_ERROR: i32 = 1;
+pub const SYSTEM_BUSY: i32 = 2;
+pub const REQUEST_CODE_NOT_SUPPORTED: i32 = 3;
+pub const TRANSACTION_FAILED: i32 = 4;
 pub const FLUSH_DISK_TIMEOUT: i32 = 10;
 pub const SLAVE_NOT_AVAILABLE: i32 = 11;
 pub const FLUSH_SLAVE_TIMEOUT: i32 = 12;
