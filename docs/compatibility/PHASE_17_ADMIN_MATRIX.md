@@ -564,3 +564,20 @@ reset. Existing tests cover defaults, JSON behavior, and shared
 `e5c6405810fbe550a58bd7ce3b843b3e21410fc3e1674c1692f18836a2e969af`.
 This closes only this DTO API inventory slice; broad P18-V01 reconciliation
 remains open.
+
+## P18-V01 `MQClientAPIExt` notification operations
+
+The pinned `MQClientAPIExt` declares `notification` and
+`notificationWithPollingStats` using request 200054. Rust now implements both
+through `MQClientApi`: `notification` returns the Java `hasMsg` Boolean, while
+`notification_with_polling_stats` returns `NotifyResult` with both response
+flags. The DTO keeps fields private, matches Java's public constructor and
+accessor inventory, preserves false defaults for missing or malformed boolean
+fields, and renders the pinned `toString()` form. Non-success response codes
+and remarks retain the common typed Broker error path.
+
+The invoked Java fixtures record the request ext fields, async invoke mode,
+response flags, `NotifyResult` public API, defaults and string form for both
+entrypoints, plus known and unknown Broker errors. Rust's scripted peer
+compares all five cases. The `POLLING_INFO` request code remains a wire registry
+entry; pinned client sources contain no outbound callsite for it.

@@ -5170,3 +5170,29 @@ owner-specific checks belong in the manual handoff.
   P18-V01 bidirectional reconciliation, the final current-revision P18-V02
   gate, current GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19's
   30 missing local Broker/Docker scenario runners/profiles remain open.
+
+## P18-V01 remaining response-header field visibility — 2026-10-19
+
+- [x] Pinned Java 5.5.1 inventories confirm that
+  `PullMessageResponseHeader`, `SendMessageResponseHeader`,
+  `CheckTransactionStateResponseHeader`, `NotificationResponseHeader`,
+  `PopMessageResponseHeader`, `PopLiteMessageResponseHeader`, and
+  `PollingInfoResponseHeader` expose no public fields. The separate
+  `ChangeInvisibleTimeResponseHeader` fixture also reports zero public fields.
+  Their Rust backing fields are now crate-private with the Java getter/setter pairs public;
+  nullable wrappers remain nullable, and primitive defaults are preserved.
+  The response identity fixture records the 16-header inventory; the separate
+  change-invisibility fixture records its exact method inventory.
+  Compile-fail doctests guard field visibility, and Protocol tests exercise
+  accessors/null defaults while Remoting/Core callers use them.
+- [x] `cargo fmt --all -- --check`, `git diff --check`, and pinned offline
+  Maven `verify` pass (37 scenarios, 66 typed-header and 15 typed-body
+  cross-decodes). The full Remoting all-feature suite passes (138 unit, 8
+  codec, 1 fuzz-regression, 7 security, 107 transport, and 18 doctests),
+  including the corrected Query Admin and Offset Boundary API-inventory
+  assertions. Protocol and full-workspace gates remain to be rerun before this
+  slice is finalized.
+- This closes the response-header field-visibility/API slice only. Broad
+  P18-V01 source/API/settings/input/error/flow and Rust reverse-export
+  reconciliation, current-revision Ubuntu/native Windows evidence, and Phase
+  19 live Broker validation remain separate gates.

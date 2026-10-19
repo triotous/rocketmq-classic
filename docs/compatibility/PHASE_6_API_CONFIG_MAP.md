@@ -1138,7 +1138,7 @@ Pinned `javap -public` on Java `SendResult` and `SendMessageResponseHeader` esta
 | `PopReply<H>.raw_messages` | Raw wire message body returned before Java's `PopResult.getMsgFoundList()` decode; Rust message decoding belongs to its later consumer layer |
 | `ChangeInvisibleTimeResult.status` | `AckResult.getStatus()` (`OK`/`NO_EXIST`) |
 | `ChangeInvisibleTimeResult.pop_time`, `invisible_time`, `revive_qid` | `ChangeInvisibleTimeResponseHeader` getters; success exposes parsed values, and missing/invalid primitive values retain zero defaults |
-| `ChangeInvisibleTimeResponseHeader` public constructor, `get/setPopTime`, `get/setInvisibleTime`, `get/setReviveQid`, and inherited identity methods | `ChangeInvisibleTimeResponseHeader` is now a public typed protocol header with equivalent public Rust fields and `CommandHeader` encode/decode support. It preserves Java's per-field zero defaults for absent/malformed values, signed integer limits, Unicode decimal parsing, and identity-based equality boundary. The direct pinned fixture checks the method inventory, both reflective decode hints, and encoded fields. |
+| `ChangeInvisibleTimeResponseHeader` public constructor, `get/setPopTime`, `get/setInvisibleTime`, `get/setReviveQid`, and inherited identity methods | Crate-private Rust backing fields with Java-named getter/setter pairs and `CommandHeader` encode/decode support. It preserves Java's per-field zero defaults for absent/malformed values, signed integer limits, Unicode decimal parsing, and identity-based equality boundary. The pinned fixture checks the exact method inventory, zero public fields, both reflective decode hints, and encoded fields. |
 | `ChangeInvisibleTimeResult.extra_info` | `AckResult.getExtraInfo()`; built from request offset, response values, topic retry class, broker name and queue ID; null on non-success |
 | `TopicSnapshot.route` | Copied Java `TopicRouteData` as exposed by `TopicPublishInfo.getTopicRouteData()` |
 | `TopicSnapshot.publish_queues`, `subscribe_queues` | Results of `MQClientInstance.topicRouteData2TopicPublishInfo/SubscribeInfo`; same route conversion and queue content, with Rust-native collection types |
@@ -1244,6 +1244,19 @@ The invoked `ProtocolDtoIdentityFixtures` reflects both inherited methods and co
 
 `HeaderResponseIdentityFixtures` reflects both inherited methods and confirms self-equality plus unequal distinct default instances for all 16 Java classes. Compile-fail doctests guard every Rust header boundary. Fixture: `fixtures/protocol/header-response-identity.json`, SHA-256 `d618338067333760a74c956d3ca677d4acf0c44acef87b4f9607395fb96f6e6f`.
 
+## Protocol response-header field visibility and accessors
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `PullMessageResponseHeader` | Crate-private fields with Java `get*`/`set*` pairs; boxed values remain `Option` |
+| `SendMessageResponseHeader` | Crate-private fields with Java accessor pairs for message ID, queue ID/offset, transaction ID, batch unique ID, and recall handle |
+| `CheckTransactionStateResponseHeader` | Crate-private nullable fields with Java getter/setter pairs, including `getTranStateTableOffset` |
+| `NotificationResponseHeader` | Crate-private booleans with Java `isHasMsg`/`isPollingFull` and setter pairs |
+| `PopMessageResponseHeader`, `PopLiteMessageResponseHeader` | Crate-private fields with Java accessor pairs, including `getReviveQid`; primitive defaults and nullable strings are preserved |
+| `PollingInfoResponseHeader` | Crate-private `pollingNum` with Java `getPollingNum`/`setPollingNum` |
+
+`HeaderResponseIdentityFixtures` records constructor, public-field, declared-method, and callable-method inventories for all 16 response headers. The seven listed above expose no public fields in Java; Rust compile-fail doctests guard representative field accesses, and the Protocol integration test checks Java accessor inventories and null/default behavior. `ChangeInvisibleTimeResponseHeader` has a separate fixture with its exact method list and `publicFieldCount=0`, SHA-256 `2f4a383eec8057a43d97dbd053f2e8c9279d908ec947efcdfb5cfb37393b25bb`. Remoting and Core callers and fixture generation use the accessors. `header-response-identity.json` SHA-256: `d618338067333760a74c956d3ca677d4acf0c44acef87b4f9607395fb96f6e6f`.
+
 ## Protocol request-header inherited equality
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |
@@ -1251,6 +1264,53 @@ The invoked `ProtocolDtoIdentityFixtures` reflects both inherited methods and co
 | 35 modeled request-header classes inheriting `RpcRequestHeader.equals/hashCode`, including `TopicRequestHeader` and `TopicQueueRequestHeader` descendants | Rust request-header DTOs retain and encode/decode nullable `ns`, `nsd`, `bname`, and `oway`; `PartialEq`, `Eq`, and `Hash` use only those four values, ignoring subclass payload and `TopicRequestHeader.lo`. `UnlockBatchMqRequestHeader` has its own type instead of aliasing the Lock class. `ConsumeMessageDirectlyResultRequestHeader` keeps its subclass `brokerName` separate from inherited `bname`. |
 
 `RequestHeaderIdentityFixtures` invokes all 35 pinned Java classes. It confirms that each inherited method is declared by `RpcRequestHeader`, distinct default instances compare equal, any changed base field compares unequal, and payload-only changes leave equality/hash unchanged when the class has a payload field. Rust tests exercise the same four base fields and codec round-trips for all 35 types. Fixture: `fixtures/protocol/request-header-identity.json`, SHA-256 `2849daef72f0bbc29c64f311b8dc41761602845ef1256f12c6937e2ccdbea48f`.
+
+## Protocol request-header field visibility and accessors
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| 35 modeled `RpcRequestHeader` request headers and their inherited topic/queue fields | Rust backing fields are crate-private; public snake-case getter/setter pairs map the Java callable accessor inventory. The `ConsumeMessageDirectlyResultRequestHeader` inherited `lo` field and `PullMessageRequestHeader.liteTopic` are retained by typed encode/decode. |
+| `CreateTopicRequestHeader.getTopicFilterTypeEnum()` | `get_topic_filter_type_enum()` maps `SINGLE_TAG`/`MULTI_TAG` to `TopicFilterType` and returns `ProtocolError` for Java `null` or `valueOf` failures; `check_fields()` uses the same conversion. |
+| `FastCodesHeader.getAndCheckNotNull` and `writeIfNotNull` on the four implementing headers | Public Rust `FastCodesHeader` default methods provide nullable field lookup and omission of null values through `HeaderMap`; the trait is implemented by Pull request/response and Send V2 request/response headers. |
+
+The Java fixture records constructors, public fields, declared methods, and callable methods for all 35 request headers. The Rust inventory test requires Java's public-field list to be empty, verifies each Rust field is non-public, and cross-checks each Java getter/setter and the two `FastCodesHeader` helpers against the Rust API. Compile-fail doctests guard representative field visibility. The Java typed fixtures exercise `liteTopic` and inherited `lo`; Rust Protocol round-trip tests and Java cross-decode verify both values. `request-header-identity.json` SHA-256: `f51cda7207524066714b35fd393819e001ab2a119621ae1c25a6018edf3c88ba`.
+
+## Public consumer notification result DTO
+
+Pinned `org.apache.rocketmq.client.consumer.NotifyResult` has private
+`hasMsg`/`pollingFull` fields, one public no-argument constructor, the two
+boolean getters, two setters, and a stable `toString()`. Rust exposes
+`NotifyResult` from the product facade with private fields, `Default`, matching
+snake-case getters/setters, and the Java string form through `Display`; it
+does not add value equality. The invoked `MQClientAPIExt` notification fixtures
+assert the exact Java constructor/method/public-field inventory, defaults, and
+string value.
+
+## Lite topic information RPC and DTOs
+
+`MQClientAPIExt.getLiteTopicInfoAsync` is exposed as `MQClientApi::get_lite_topic_info`.
+It sends request 200076 with nullable `parentTopic`/`liteTopic` fields, uses the
+future remoting path, maps Broker errors, and returns `None` for a successful
+response with no body. A present body maps Java `GetLiteTopicInfoResponseBody`;
+its subscriber `Set` and nested `TopicOffset` retain setter/getter identity
+through shared handles, and `ClientGroup` equality/hash use its two nullable
+values. The invoked Java fixtures cover constructors, field visibility,
+accessors, defaults, aliases, successful populated/default bodies, null body,
+null request inputs, known/unknown response codes, and invalid JSON. The Core
+scripted peer checks the request ext fields, body, result values and error
+category. `POLLING_INFO` remains a registry/wire model because pinned 5.5.1 has
+no outbound client callsite.
+
+## NameServer address refresh
+
+Pinned `MQClientAPIExt.updateNameServerAddressList()` rereads its retained
+`ClientConfig.namesrvAddr`, returns false without changing the remoting list
+when the value is null, and applies even an empty string when present. Rust
+provides `ClientRuntime::update_name_server_address_list_from_config()` over
+its retained shared config. `nameserver-refresh-{present,null,empty}` fixtures
+and the runtime test compare the return value and resulting address membership;
+the existing parameter-taking runtime helper remains the direct list-update
+entry used by discovery callbacks.
 
 ## Common public API: TopicValidator
 

@@ -1,5 +1,36 @@
 # Phase 6 requirement and handoff audit
 
+P18-V01 `MQClientAPIExt` public-operation closure slice (2026-10-19): the
+pinned 5.5.1 `javap -public` inventory has 29 declared non-constructor methods.
+Every operation now has a Rust owner: existing Producer/Consumer/Core APIs
+cover the inherited send, POP/ACK, pull, recall, Lite-subscription and admin
+paths; `MQClientApi` now also covers heartbeat future/oneway, raw async
+send-back and invoke, consumer-offset futures, callback consumer-list lookup,
+nullable offset futures, lock future, and unlock oneway; `ClientRuntime`
+reapplies the retained nullable NameServer setting; notification and Lite topic
+information have typed RPC/DTO paths. Thirty-five future/oneway/config cases
+plus 7 Lite-topic-info cases cover the added branches, nullable offsets, raw
+response preservation, callback modes, and NameServer null/empty transitions.
+The fixture suite also checks success with no consumer-list body falling
+through to an empty list.
+The method/branch crosswalk is in the [Phase 5 matrix](PHASE_5_OFFLINE_METHOD_MATRIX.md).
+The external Java checkout currently has a different HEAD; provenance and
+behavior are taken from pinned source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` and the 5.5.1 dependency artifact,
+not the mutable checkout. This closes the `MQClientAPIExt` operation slice
+only; broad P18-V01 DTO/config/input/error/control-flow/reverse-export
+reconciliation remains PARTIAL.
+
+P18-V01 protocol response-header visibility slice (2026-10-19): the pinned
+response-header inventory records no Java public fields for
+`PullMessageResponseHeader`, `SendMessageResponseHeader`,
+`CheckTransactionStateResponseHeader`, `NotificationResponseHeader`,
+`PopMessageResponseHeader`, `PopLiteMessageResponseHeader`, and
+`PollingInfoResponseHeader`. Rust storage is crate-private with Java-mapped
+accessors, and compile-fail/API inventory plus accessor/default tests guard the
+surface. This closes the field-visibility/accessor slice only; the broad audit
+remains PARTIAL.
+
 P18-V01 Fastjson writer-feature closure (`07d2fba1`, 2026-10-17): the pinned
 48-value `JSONWriter.Feature` inventory is mapped 48/48. The final
 `WriteClassName` implementation compares invoked Java and Rust output for
