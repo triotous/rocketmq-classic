@@ -106,6 +106,10 @@ public final class Main {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && "extension-more-fixture".equals(args[0])) {
+            ExtensionMoreInvokedFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "change-invisible-time-header-decode-mode-fixture".equals(args[0])) {
             ChangeInvisibleTimeHeaderDecodeModeFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;

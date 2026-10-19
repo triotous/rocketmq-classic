@@ -14,6 +14,7 @@ pub use rocketmq_classic_consumer::{
     PushConsumer, PushConsumerConfig, PushConsumerError, PushMessageListener,
     TopicMessageQueueChangeListener, offset, pull,
 };
+pub use rocketmq_classic_core::api::extensions::NotifyResult;
 pub use rocketmq_classic_core::auth::{
     AclClientRpcHook, AclException, AclSigner, AclUtils, AclUtilsError, SessionCredentials,
     SigningAlgorithm,

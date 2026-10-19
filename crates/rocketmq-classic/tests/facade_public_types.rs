@@ -1,6 +1,6 @@
 use rocketmq_classic::{
     ConsumerServiceState, DEFAULT_CONSUMER_GROUP, DEFAULT_PRODUCER_GROUP, EndTransactionContext,
-    EndTransactionHook, Message, MessageBatch, NullablePublishInfoQueueFilters,
+    EndTransactionHook, Message, MessageBatch, NotifyResult, NullablePublishInfoQueueFilters,
     OrderlyListenerFuture, PopResult, PopStatus, Producer, ProducerConfig,
     ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter,
     QueryResult, SharedMessageBody, SharedMessageProperties, TopicPublishInfo,
@@ -45,6 +45,16 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_public_type::<OrderlyListenerFuture>();
     assert_public_type::<PopResult>();
     assert_public_type::<PopStatus>();
+    let mut notification = NotifyResult::default();
+    assert!(!notification.is_has_msg());
+    assert!(!notification.is_polling_full());
+    notification.set_has_msg(true);
+    notification.set_polling_full(true);
+    assert_eq!(
+        notification.to_string(),
+        "NotifyResult{hasMsg=true, pollingFull=true}"
+    );
+    assert_public_type::<NotifyResult>();
     assert_public_type::<EndTransactionContext<'static>>();
     assert_public_type::<dyn EndTransactionHook>();
     assert_public_type::<NullablePublishInfoQueueFilters<'static>>();

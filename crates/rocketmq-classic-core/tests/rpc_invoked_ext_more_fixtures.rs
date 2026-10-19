@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use rocketmq_classic_core::{api::MQClientApi, error::RpcError};
 use rocketmq_classic_protocol::{
     body::{MessageRequestMode, QueryAssignmentRequestBody, SetMessageRequestModeRequestBody},
-    header::UnregisterClientRequestHeader,
+    header::{NotificationRequestHeader, UnregisterClientRequestHeader},
     heartbeat::{HeartbeatData, MessageModel},
 };
 use rocketmq_classic_remoting::{
@@ -63,19 +63,63 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "request-mode-success",
         "request-mode-error",
         "request-mode-unknown",
+        "notification-stats-success",
+        "notification-bool-success",
+        "notification-error",
+        "notification-unknown",
+        "notification-defaults",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len());
     for name in names {
         let fixture: Value =
             serde_json::from_slice(&fs::read(dir.join(format!("{name}.json"))).unwrap()).unwrap();
         assert_eq!(fixture["case"], name);
-        assert_eq!(fixture["mode"], "SYNC");
+        assert_eq!(
+            fixture["mode"],
+            if name.starts_with("notification-") {
+                "ASYNC"
+            } else {
+                "SYNC"
+            }
+        );
         assert_eq!(
             fixture["provenance"]["client"],
             "org.apache.rocketmq:rocketmq-client:5.5.1"
         );
-        assert_eq!(fixture["provenance"]["entrypoint"], "MQClientAPIImpl");
+        assert_eq!(
+            fixture["provenance"]["entrypoint"],
+            if name.starts_with("notification-") {
+                if name == "notification-bool-success" {
+                    "MQClientAPIExt.notification"
+                } else {
+                    "MQClientAPIExt.notificationWithPollingStats"
+                }
+            } else {
+                "MQClientAPIImpl"
+            }
+        );
         assert_eq!(fixture["provenance"]["serverBaselineContacted"], false);
+        if name.starts_with("notification-") {
+            let notify_result = &fixture["notifyResultApi"];
+            assert_eq!(notify_result["publicFieldCount"], 0);
+            assert_eq!(notify_result["publicConstructorCount"], 1);
+            assert_eq!(notify_result["defaultHasMsg"], false);
+            assert_eq!(notify_result["defaultPollingFull"], false);
+            assert_eq!(
+                notify_result["declaredPublicMethods"],
+                serde_json::json!([
+                    "isHasMsg:boolean()",
+                    "isPollingFull:boolean()",
+                    "setHasMsg:void(boolean)",
+                    "setPollingFull:void(boolean)",
+                    "toString:String()"
+                ])
+            );
+            assert_eq!(
+                notify_result["populatedToString"],
+                "NotifyResult{hasMsg=true, pollingFull=true}"
+            );
+        }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         let expected = fixture.clone();
@@ -122,7 +166,44 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         client.start().unwrap();
         let api = MQClientApi::new(client.clone());
         let deadline = Instant::now() + Duration::from_secs(3);
-        let result = if name.starts_with("heartbeat-v2-") {
+        let result = if name.starts_with("notification-") {
+            let mut header = NotificationRequestHeader::default();
+            header.set_consumer_group("workers".into());
+            header.set_topic("orders".into());
+            header.set_queue_id(2);
+            header.set_poll_time(3_000);
+            header.set_born_time(1_000);
+            header.set_order(Some(true));
+            header.set_attempt_id(Some("attempt-1".into()));
+            header.set_lite_consumer(true);
+            header.set_client_id(Some("client".into()));
+            header.set_exp_type(Some("TAG".into()));
+            header.set_exp(Some("red || blue".into()));
+            if name == "notification-bool-success" {
+                match api.notification(&addr, &header, deadline).await {
+                    Ok(has_msg) => format!("hasMsg={has_msg}"),
+                    Err(RpcError::Response { code, .. }) => {
+                        format!("MQBrokerException;code={code}")
+                    }
+                    other => panic!("unexpected notification result: {other:?}"),
+                }
+            } else {
+                match api
+                    .notification_with_polling_stats(&addr, &header, deadline)
+                    .await
+                {
+                    Ok(result) => format!(
+                        "hasMsg={};pollingFull={};toString={result}",
+                        result.is_has_msg(),
+                        result.is_polling_full()
+                    ),
+                    Err(RpcError::Response { code, .. }) => {
+                        format!("MQBrokerException;code={code}")
+                    }
+                    other => panic!("unexpected notification stats result: {other:?}"),
+                }
+            }
+        } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {
                 client_id: Some("client".into()),
                 ..Default::default()
@@ -146,11 +227,12 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 other => panic!("unexpected heartbeat result: {other:?}"),
             }
         } else if name.starts_with("unregister-") {
-            let header = UnregisterClientRequestHeader {
-                client_id: "client".into(),
-                producer_group: Some("producer".into()),
-                consumer_group: Some("consumer".into()),
-                ..UnregisterClientRequestHeader::default()
+            let header = {
+                let mut __phase18_header_0 = UnregisterClientRequestHeader::default();
+                __phase18_header_0.set_client_id("client".into());
+                __phase18_header_0.set_producer_group(Some("producer".into()));
+                __phase18_header_0.set_consumer_group(Some("consumer".into()));
+                __phase18_header_0
             };
             match api.unregister_client(&addr, &header, deadline).await {
                 Ok(()) => "ok".into(),

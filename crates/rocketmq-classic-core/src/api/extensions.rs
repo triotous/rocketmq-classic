@@ -8,16 +8,16 @@ use rocketmq_classic_protocol::{
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, HeartbeatRequestHeader,
-        LiteSubscriptionCtlRequestHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        ProtocolError, UnregisterClientRequestHeader,
+        LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
 use rocketmq_classic_remoting::RemotingCommand;
 use tokio::time::Instant;
 
-use super::{MQClientApi, classify, decode_body};
+use super::{MQClientApi, classify, decode_body, decode_header};
 use crate::error::RpcError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +162,50 @@ pub struct ChangeInvisibleTimeResult {
     pub extra_info: Option<String>,
 }
 
+/// Result returned by Java `MQClientAPIExt.notificationWithPollingStats`.
+///
+/// Java's `NotifyResult` has private fields, a public no-argument constructor,
+/// accessors, and a stable `toString()` representation. Rust keeps the fields
+/// private and exposes the same state through idiomatic accessors.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::api::extensions::NotifyResult;
+/// let _ = NotifyResult::default().has_msg;
+/// ```
+#[derive(Debug, Default)]
+pub struct NotifyResult {
+    has_msg: bool,
+    polling_full: bool,
+}
+
+impl NotifyResult {
+    pub fn is_has_msg(&self) -> bool {
+        self.has_msg
+    }
+
+    pub fn set_has_msg(&mut self, value: bool) {
+        self.has_msg = value;
+    }
+
+    pub fn is_polling_full(&self) -> bool {
+        self.polling_full
+    }
+
+    pub fn set_polling_full(&mut self, value: bool) {
+        self.polling_full = value;
+    }
+}
+
+impl std::fmt::Display for NotifyResult {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "NotifyResult{{hasMsg={}, pollingFull={}}}",
+            self.has_msg, self.polling_full
+        )
+    }
+}
+
 fn json_body<T: serde::Serialize>(value: &T, request_code: i32) -> Result<Vec<u8>, RpcError> {
     serde_json::to_vec(value).map_err(|source| RpcError::RequestSerialization {
         request_code,
@@ -211,6 +255,41 @@ fn optional_field(reply: &RemotingCommand, key: &str) -> Option<String> {
 }
 
 impl MQClientApi {
+    /// Ask a Broker whether the specified POP queue currently has messages.
+    /// This maps Java `MQClientAPIExt.notification` and uses the async invoke
+    /// path even though the result is awaited here.
+    pub async fn notification(
+        &self,
+        addr: &str,
+        header: &NotificationRequestHeader,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        Ok(self
+            .notification_with_polling_stats(addr, header, deadline)
+            .await?
+            .is_has_msg())
+    }
+
+    /// Ask a Broker for the POP notification flags, including polling capacity.
+    /// This maps Java `MQClientAPIExt.notificationWithPollingStats`.
+    pub async fn notification_with_polling_stats(
+        &self,
+        addr: &str,
+        header: &NotificationRequestHeader,
+        deadline: Instant,
+    ) -> Result<NotifyResult, RpcError> {
+        let reply = self
+            .request_future(addr, request::NOTIFICATION, header, None, deadline)
+            .await?;
+        let reply = classify(reply, request::NOTIFICATION, addr)?;
+        let response_header =
+            decode_header::<NotificationResponseHeader>(&reply, request::NOTIFICATION, addr)?;
+        let mut result = NotifyResult::default();
+        result.set_has_msg(response_header.is_has_msg());
+        result.set_polling_full(response_header.is_polling_full());
+        Ok(result)
+    }
+
     pub async fn send_heartbeat(
         &self,
         addr: &str,
@@ -470,10 +549,12 @@ impl MQClientApi {
                 extra_info: None,
             });
         }
-        let offset = header.offset.ok_or(ProtocolError::MissingField("offset"))?;
-        let topic = header.topic.as_deref();
+        let offset = header
+            .get_offset()
+            .ok_or(ProtocolError::MissingField("offset"))?;
+        let topic = header.get_topic();
         let queue_id = header
-            .queue_id
+            .get_queue_id()
             .ok_or(ProtocolError::MissingField("queueId"))?;
         let topic = topic.ok_or(ProtocolError::MissingField("topic"))?;
         Ok(ChangeInvisibleTimeResult {
