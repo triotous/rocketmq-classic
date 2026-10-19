@@ -1,3 +1,13 @@
+//! Shared RocketMQ message and utility types.
+//!
+//! Java exposes the V1 magic value as `MESSAGE_MAGIC_CODE`; the V1 label is
+//! kept internal to the decoder.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_common::message::MESSAGE_MAGIC_CODE_V1;
+//! # fn main() {}
+//! ```
+
 mod compact;
 pub mod constants;
 pub mod decoder;
@@ -14,7 +24,7 @@ pub use compact::{
 };
 pub use decoder::{
     BLANK_MAGIC_CODE, CHARSET_UTF8, DecodeError, DecodeOptions, MESSAGE_FLAG_POSITION,
-    MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION, MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2,
+    MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION, MESSAGE_MAGIC_CODE_V2,
     MESSAGE_PHYSIC_OFFSET_POSITION, MESSAGE_STORE_TIMESTAMP_POSITION, MessageVersion,
     MessageVersionError, PHY_POS_POSITION, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
     append_crc32_property, client_decode, client_decodes, client_decodes_with_body, decode_many,

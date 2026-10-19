@@ -3,18 +3,17 @@ use rocketmq_classic_common::{
     message::{
         BLANK_MAGIC_CODE, CHARSET_UTF8, CompactMessageError, DecodeError, DecodeOptions,
         MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
-        MESSAGE_MAGIC_CODE_V1, MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION,
-        MESSAGE_STORE_TIMESTAMP_POSITION, Message, MessageClientExt, MessageExt,
-        MessageHostAddress, MessageHostAddressBytesError, MessageId, MessageIdError,
-        MessageProperties, MessageVersion, MessageVersionError, PHY_POS_POSITION,
-        PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION, TopicFilterType,
-        append_crc32_property, client_decode, client_decodes, client_decodes_with_body,
-        count_inner_messages, create_message_id, create_message_id_from_host_bytes,
-        decode_compact_message, decode_compact_messages, decode_inner_batch, decode_many,
-        decode_many_as_client, decode_message_id, decode_one, decode_one_as_client,
-        decode_properties_nullable, decode_record_properties, encode_compact_message,
-        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
-        encode_nullable_property_entries, encode_properties_nullable,
+        MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION, MESSAGE_STORE_TIMESTAMP_POSITION,
+        Message, MessageClientExt, MessageExt, MessageHostAddress, MessageHostAddressBytesError,
+        MessageId, MessageIdError, MessageProperties, MessageVersion, MessageVersionError,
+        PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
+        TopicFilterType, append_crc32_property, client_decode, client_decodes,
+        client_decodes_with_body, count_inner_messages, create_message_id,
+        create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
+        decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
+        decode_one_as_client, decode_properties_nullable, decode_record_properties,
+        encode_compact_message, encode_compact_messages, encode_message_ext,
+        encode_message_ext_uniquely, encode_nullable_property_entries, encode_properties_nullable,
     },
     sysflag::{message, pull},
 };
@@ -1065,7 +1064,6 @@ fn message_decoder_public_constants_match_java_551() {
     );
     assert_eq!(CHARSET_UTF8, expected["charsetUtf8"]);
     assert_eq!(MESSAGE_MAGIC_CODE, expected["messageMagicCode"]);
-    assert_eq!(MESSAGE_MAGIC_CODE_V1, expected["messageMagicCode"]);
     assert_eq!(MESSAGE_MAGIC_CODE_V2, expected["messageMagicCodeV2"]);
     assert_eq!(BLANK_MAGIC_CODE, expected["blankMagicCode"]);
     assert_eq!(

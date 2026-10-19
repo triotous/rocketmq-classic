@@ -9,7 +9,7 @@ use crate::{
     sysflag::message,
 };
 
-pub const MESSAGE_MAGIC_CODE_V1: i32 = -626_843_481;
+const MESSAGE_MAGIC_CODE_V1: i32 = -626_843_481;
 pub const MESSAGE_MAGIC_CODE_V2: i32 = -626_843_477;
 /// Java `MessageDecoder.CHARSET_UTF8`, represented by its encoding name.
 pub const CHARSET_UTF8: &str = "UTF-8";
