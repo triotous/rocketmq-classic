@@ -134,6 +134,16 @@ The monitor/envelope/guard are private transport-runtime machinery.
 
 ## Audit boundary
 
+The additional `unsubscribedTruncation` Java probe invokes the real
+`doRebalance` after a nullable reset leaves an unsubscribed queue dropped.
+Java removes that queue from the table without persisting or removing its
+offset. Rust now performs the same separate truncation, cancelling the native
+pull assignment while retaining the offset. The comparison failed with a lost
+offset before the fix and checks table presence, dropped state, retained value,
+persisted value and store callback events. Fixture checkpoint SHA-256:
+`2935595b5c94dc9496d342d004f3869cf3d66d5e5ca042c6ad445bae1ec712b4`.
+The real resume/finally rebalance boundary remains under review.
+
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove
 completion of the complete Java/Rust public API/settings/control-flow audit.

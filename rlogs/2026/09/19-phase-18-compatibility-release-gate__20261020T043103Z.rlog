@@ -30,3 +30,14 @@
 - Full locked Consumer tests/doctests, focused Maven fixture verification,
   workspace formatting and diff checks passed. Commit this direct-input
   correction independently before continuing resume/rebalance reconciliation.
+- Committed raw direct-input correction as c99eff31. Continued pinned-source
+  review found Java truncates unsubscribed ProcessQueues independently of
+  assignment cleanup, without persist/removeOffset/unlock calls. Added a real
+  Java doRebalance probe after nullable reset; Rust initially failed because
+  it discarded the retained value 50. Added separate identity-checked native
+  truncation with pull cancellation and no store effects. Regression now passes.
+- Full locked Consumer tests/doctests, strict workspace/all-target/all-feature
+  Clippy, focused Maven runtime fixture verification, formatting and diff checks
+  passed for the truncation correction. Fixture SHA-256:
+  2935595b5c94dc9496d342d004f3869cf3d66d5e5ca042c6ad445bae1ec712b4.
+  Next review is real resume/finally target rebalance, not yet closed.

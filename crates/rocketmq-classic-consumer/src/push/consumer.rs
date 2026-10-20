@@ -5091,8 +5091,21 @@ impl PushConsumer {
                     continue;
                 }
             };
+            if !subscribed_topics.contains(topic) {
+                // Java truncates queues for removed subscriptions separately
+                // from assignment cleanup: it retains their stored offsets.
+                let _ = process_queue.drop_assignment(generation);
+                context.scheduler.cancel(&queue, generation);
+                let mut queues = write_lock(&self.process_queues);
+                if queues
+                    .get(&queue)
+                    .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+                {
+                    queues.remove(&queue);
+                }
+                continue;
+            }
             let should_remove = snapshot.dropped
-                || !subscribed_topics.contains(topic)
                 || (authoritative_topics.contains(topic) && !desired_push_queues.contains(&queue));
             if !should_remove {
                 continue;
@@ -9812,6 +9825,63 @@ mod tests {
         assert_eq!(first.reset_events.lock().unwrap()[&0], vec!["update:7"]);
         assert_eq!(second.reset_events.lock().unwrap()[&0], vec!["persist"]);
         assert_eq!(third.reset_events.lock().unwrap()[&0], vec!["remove"]);
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rebalance_truncates_unsubscribed_queues_without_store_side_effects() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let expected = &fixture["unsubscribedTruncation"];
+        let mut config = PushConsumerConfig::new("unsubscribed-truncation").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let store = Arc::new(RecordingOffsetStore::default());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 100));
+        // Match the Java probe's nullable-reset precondition at entry to its
+        // real doRebalance: dropped queue, retained offset and no subscription.
+        process_queue.drop_assignment(100).unwrap();
+        process_queue.clear();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        store.values.lock().unwrap().insert(queue.clone(), 50);
+        consumer.do_rebalance().await;
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            expected["queues"][0]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            process_queue.snapshot(100).unwrap().dropped,
+            expected["queues"][0]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            store.values.lock().unwrap().get(&queue).copied(),
+            expected["queues"][0]["value"].as_i64()
+        );
+        assert_eq!(
+            store.persisted.lock().unwrap().get(&queue).copied(),
+            expected["queues"][0]["persisted"].as_i64()
+        );
+        assert_eq!(
+            serde_json::to_value(&*store.reset_events.lock().unwrap()).unwrap(),
+            expected["events"]
+        );
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }

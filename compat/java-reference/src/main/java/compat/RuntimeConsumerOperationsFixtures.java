@@ -56,6 +56,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resetOffsetEntrypoint", "MQClientInstance.resetOffset(String,String,Map<MessageQueue,Long>)");
         fixture.put("resetOffset", reset);
         fixture.put("resetStoreHandoff", reset("store-handoff"));
+        fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resetOffsetSynchronized", java.lang.reflect.Modifier.isSynchronized(
             MQClientInstance.class.getMethod("resetOffset", String.class, String.class, Map.class).getModifiers()));
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -137,7 +138,7 @@ public final class RuntimeConsumerOperationsFixtures {
             table.put(queue1, processQueue); queues.put(1, processQueue); values.put(1, 60L);
         }
         Map<org.apache.rocketmq.common.message.MessageQueue, Long> offsets = new java.util.LinkedHashMap<>();
-        offsets.put(queue0, name.equals("null-value") ? null : 7L);
+        offsets.put(queue0, name.equals("null-value") || name.equals("rebalance-unsubscribed") ? null : 7L);
         if (name.equals("per-queue-failure") || name.equals("live-new-queue")) offsets.put(queue1, 9L);
         if (name.equals("null-key-only")) { offsets.clear(); offsets.put(null, 8L); }
         if (name.equals("unassigned-offset")) { offsets.clear(); offsets.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 9), 99L); }
@@ -182,6 +183,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 catch (Exception error) { item.put("error", error.getClass().getSimpleName()); }
                 finally { Thread.interrupted(); }
             }
+            if (name.equals("rebalance-unsubscribed")) { lifecycle.add("rebalance"); consumer.doRebalance(); }
             List<Object> rows = new ArrayList<>();
             for (var entry : queues.entrySet()) {
                 int id = entry.getKey(); var queue = id == 0 ? queue0 : queue1;
