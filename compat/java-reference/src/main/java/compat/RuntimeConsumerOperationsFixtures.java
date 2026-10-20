@@ -58,6 +58,8 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resetStoreHandoff", reset("store-handoff"));
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resume", resume());
+        fixture.put("rebalanceRetention", List.of(reset("subscribed-null-value-missing-route"),
+            reset("subscribed-null-value-assigned")));
         fixture.put("resetOffsetSynchronized", java.lang.reflect.Modifier.isSynchronized(
             MQClientInstance.class.getMethod("resetOffset", String.class, String.class, Map.class).getModifiers()));
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -153,6 +155,13 @@ public final class RuntimeConsumerOperationsFixtures {
         var cleared = new java.util.concurrent.CountDownLatch(1);
         var queue0 = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
         var queue1 = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1);
+        if (name.startsWith("subscribed-null-value-")) {
+            consumer.getRebalanceImpl().setMessageModel(facade.getMessageModel());
+            consumer.getRebalanceImpl().setmQClientFactory(runtime);
+            consumer.getRebalanceImpl().getSubscriptionInner().put("orders",
+                new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData("orders", "*"));
+            if (name.endsWith("-assigned")) consumer.getRebalanceImpl().getTopicSubscribeInfoTable().put("orders", java.util.Set.of(queue0));
+        }
         if (!name.equals("empty-push-null-inputs")) {
             var processQueue = new org.apache.rocketmq.client.impl.consumer.ProcessQueue() {
                 @Override public void clear() { super.clear(); cleared.countDown(); }
@@ -164,7 +173,8 @@ public final class RuntimeConsumerOperationsFixtures {
             table.put(queue1, processQueue); queues.put(1, processQueue); values.put(1, 60L);
         }
         Map<org.apache.rocketmq.common.message.MessageQueue, Long> offsets = new java.util.LinkedHashMap<>();
-        offsets.put(queue0, name.equals("null-value") || name.equals("rebalance-unsubscribed") ? null : 7L);
+        offsets.put(queue0, name.equals("null-value") || name.equals("rebalance-unsubscribed")
+            || name.startsWith("subscribed-null-value-") ? null : 7L);
         if (name.equals("per-queue-failure") || name.equals("live-new-queue")) offsets.put(queue1, 9L);
         if (name.equals("null-key-only")) { offsets.clear(); offsets.put(null, 8L); }
         if (name.equals("unassigned-offset")) { offsets.clear(); offsets.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 9), 99L); }

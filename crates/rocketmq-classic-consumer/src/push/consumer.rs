@@ -5124,8 +5124,8 @@ impl PushConsumer {
                 }
                 continue;
             }
-            let should_remove = snapshot.dropped
-                || (authoritative_topics.contains(topic) && !desired_push_queues.contains(&queue));
+            let should_remove =
+                authoritative_topics.contains(topic) && !desired_push_queues.contains(&queue);
             if !should_remove {
                 continue;
             }
@@ -9623,7 +9623,9 @@ mod tests {
         .unwrap();
         let cases = fixture["resetOffset"].as_array().unwrap();
         assert_eq!(cases.len(), 15);
-        for case in cases {
+        let retention_cases = fixture["rebalanceRetention"].as_array().unwrap();
+        assert_eq!(retention_cases.len(), 2);
+        for case in cases.iter().chain(retention_cases) {
             let name = case["name"].as_str().unwrap();
             let mut config = PushConsumerConfig::new(format!("reset-{name}")).unwrap();
             config
@@ -9658,6 +9660,16 @@ mod tests {
             };
             let queue0 = MessageQueue::new("orders", "broker-a", 0);
             let queue1 = MessageQueue::new("orders", "broker-a", 1);
+            if name.starts_with("subscribed-null-value-") {
+                write_lock(&consumer.subscriptions).insert(
+                    "orders".into(),
+                    SubscriptionData::new(Some("orders".into()), Some("*".into())),
+                );
+                if name.ends_with("-assigned") {
+                    write_lock(&consumer.topic_queues)
+                        .insert("orders".into(), BTreeSet::from([queue0.clone()]));
+                }
+            }
             let mut queues = BTreeMap::new();
             if name != "empty-push-null-inputs" {
                 let process_queue = Arc::new(ProcessQueue::new(queue0.clone(), 100));

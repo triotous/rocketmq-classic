@@ -61,3 +61,23 @@
   SHA-256 ee07499b6b8eb58ea9cefc013592013a2c378e97709f4fd0096cd2ba81ec2eea.
   Broad P18-V01 still open, including authoritative assignment/dropped queue
   retention and pull-idle-expiry branches; no current full-phase acceptance.
+- Committed real resume/finally target round as ee7e6d7f. Added two Java
+  subscribed-null-value retention cases (missing route / unchanged broadcast
+  assignment). The first probe setup lacked an explicit rebalance model;
+  corrected model/runtime initialization and regenerated before final checks.
+  Pinned source only cleans excluded/expired assignments, not dropped alone.
+- Existing Rust failed missing-route retention: present=false, persisted=50,
+  value=null versus Java present=true, persisted=null, value=50. Removed the
+  dropped-only cleanup trigger. Both corrected Java/Rust cases and all fifteen
+  reset cases pass, with queue states, values and callback events compared.
+  Full locked Consumer tests/doctests and strict workspace/all-target/all-feature
+  Clippy pass. Fixture SHA-256:
+  0ed55128b1905a5d0c451ca93c0fbb33b6c5089f2a0a8c5e188770354293a04b.
+- Updated the Phase 11 matrix to bound historical method claims and explicitly
+  retain pull-expiry/POP/public Rebalance-ProcessQueue review in the open audit.
+  Broad current-source default/all-feature workspace tests and full Maven
+  verification are running; no completion inferred from partial output.
+- Comparator self-test and 37-scenario manifest, metadata/license/dependency
+  checks, 16 race/leak cases x3, fuzz smoke (121/11 seeds, 2112 mutations,
+  170/109 decodes), release example build, and Asia/Taipei Unique ID test pass.
+  Offline benchmark remains running at this commit boundary.
