@@ -149,3 +149,39 @@
   operations (2), strict workspace Clippy, fmt and diff checks also pass.
 - Committing this cancellation correction independently; final current-source
   broad gates must be rerun after this control-flow refinement.
+- Monitor ownership correction committed as `6b5129f1`.
+
+## Current-source validation and completion audit at 6b5129f1
+
+- `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` both exited 0: each passed
+  1,667 tests across 89 result-bearing targets. The tests include public
+  runtime operations, live reset maps/stores, callback/offset fencing,
+  cancelled unregister ordering and abandoned-registration monitor ownership.
+- Strict workspace/all-target/all-feature Clippy, formatting and diff checks
+  passed. Offline Maven verify exited 0: pinned Java 5.5.1 fixtures, 37 offline
+  scenarios, 67 typed-header and 15 typed-body cross-decodes. New runtime
+  fixtures contain 9 Running Info, 16 direct-consume, 15 reset cases and the
+  additional three-store handoff. Fixture hash remains
+  `ed123fb25e329d0166329dea123add868ac9846ffc251e2469970493691b9665`.
+  Existing JDK/Netty Unsafe/final-field warnings remain warnings.
+- Current deterministic race/leak smoke passed all 16 cases x 3. Fixed-seed
+  fuzz passed 121 frame seeds, 11 message seeds, 2,112 bounded mutations,
+  170 frame decodes and 109 message decodes. Release facade examples built;
+  the Asia/Taipei unique-ID fixture regression passed (1 test).
+- Comparator self-tests, all 37 manifest scenarios and workspace metadata,
+  package-license/dependency-direction checks passed. No dependency, feature
+  flag or public tuning setting was added. Phase 18 and all earlier phase
+  branch refs remain separate; all changes here are on the Phase 18 branch.
+- Every command session started in this execution is terminal. Preserved the
+  pre-existing unstaged Phase 19 README/runner/log files. No live server,
+  Docker, production check, publication, push or external message was run.
+- Full goal completion remains unproven. The operation entries now have the
+  scoped evidence described above; P18-V01 still requires complete public,
+  inherited, DTO/configuration and reverse-export reconciliation. Concrete
+  next review areas include nullable/subclass-sensitive raw MessageExt
+  direct-consume inputs and reset resume/rebalance behavior outside the Java
+  probe's isolated resume override. Native platform/current-revision CI
+  evidence also remains outstanding. The full original-plan completion audit
+  has not passed, so no Phase 18 acceptance or final compatibility is claimed.
+  The original through-Phase-18 goal remains active.
