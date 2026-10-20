@@ -138,3 +138,20 @@ does not close the wider P18-V01 input/branch audit.
 | P9-V03 | `PENDING_PHASE_19` | Live 5.3.4 Broker pull/restart, all statuses, suggested Broker and boundary calls have not run. |
 
 Offline test fixtures demonstrate client request/response behavior and do not claim live Broker interoperability. Phase 9 implementation evidence is not final compatibility or release acceptance; Phase 19 owns live Broker validation.
+
+## Phase 18 offset topic-filter correction — 2026-10-20
+
+Java `LocalFileOffsetStore.cloneOffsetTable` and
+`RemoteBrokerOffsetStore.cloneOffsetTable` call `UtilAll.isBlank`, which delegates
+to Commons Lang `StringUtils.isBlank` / `Character.isWhitespace`. Rust now uses
+the same character set in the private shared snapshot path. U+001C–U+001F
+select the whole table; U+0085, U+00A0, U+2007 and U+202F are literal topic
+filters. Nonblank filters remain exact, without trimming or namespace removal.
+
+`RuntimeOffsetFixtures` directly invokes both Java stores for all 65,536 UTF-16
+code units and records the 25 blank units in `fixtures/runtime/offsets.json`
+(SHA-256 `6db97bc2f3f6a82002aa9bbd8b65a460429d3fda25d3d7ca0d3093884e2648be`).
+Both Rust stores' `clone_topic_filter_matches_pinned_java_for_every_bmp_scalar`
+regressions compare every representable BMP scalar, null/empty/mixed blank
+filters, exact/untrimmed topic matching and detached snapshot behavior. No
+transport starts and no Java offset file is loaded or persisted for the probe.

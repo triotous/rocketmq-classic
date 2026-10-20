@@ -219,7 +219,6 @@ impl OffsetStore for RemoteBrokerOffsetStore {
     }
 
     fn clone_offset_table(&self, topic: Option<&str>) -> HashMap<MessageQueue, i64> {
-        let topic = topic.filter(|topic| !topic.trim().is_empty());
         self.offsets.snapshot(topic)
     }
 
@@ -230,5 +229,23 @@ impl OffsetStore for RemoteBrokerOffsetStore {
         oneway: bool,
     ) -> OffsetStoreFuture<'a, ()> {
         Box::pin(self.send_to_broker(queue, offset, oneway))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn clone_topic_filter_matches_pinned_java_for_every_bmp_scalar() {
+        let mut config = rocketmq_classic_core::config::ClientConfig::new("offset-clone-oracle");
+        config.set_namesrv_addr(None);
+        let runtime = rocketmq_classic_core::runtime::ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let store = RemoteBrokerOffsetStore::new(runtime.clone(), "group");
+        super::super::assert_clone_topic_filter_matches_java(&store);
+        runtime.shutdown().await.unwrap();
     }
 }

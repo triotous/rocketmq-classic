@@ -251,7 +251,6 @@ impl OffsetStore for LocalFileOffsetStore {
     }
 
     fn clone_offset_table(&self, topic: Option<&str>) -> HashMap<MessageQueue, i64> {
-        let topic = topic.filter(|topic| !topic.trim().is_empty());
         self.offsets.snapshot(topic)
     }
 
@@ -729,6 +728,15 @@ fn encode_offset_store(values: &HashMap<MessageQueue, i64>) -> Result<Vec<u8>, O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clone_topic_filter_matches_pinned_java_for_every_bmp_scalar() {
+        let root = temporary_root();
+        let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        super::super::assert_clone_topic_filter_matches_java(&store);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn temporary_root() -> PathBuf {
         std::env::temp_dir().join(format!(

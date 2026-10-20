@@ -1,0 +1,33 @@
+# Phase 18 continuation — 2026-10-20T03:29:44Z
+
+- Resumed on `phase/18-phase-18-compatibility-closure` at `c5e9918a`.
+  The previous turn made progress by identifying offset-store blank-topic
+  divergence and adding an invoked Java oracle; its Maven command failed on
+  sandboxed ~/.m2 lock-file access. The permission interruption left no live
+  Maven process. After the environment changed, resumed normally.
+- Read the Phase 18 plan and coding/Rust/testing instructions. The broad
+  P18-V01 API/configuration/control-flow audit remains open. Preserved existing
+  Phase 19 worktree changes and existing channel-generation documentation.
+- Added direct Java LocalFileOffsetStore/RemoteBrokerOffsetStore observations
+  for all 65,536 UTF-16 code-unit topic filters. Both stores agree on the 25
+  blank code units. The oracle operates on memory only, with no Broker, load,
+  or persistence. Existing runtime-offset fixture verification runs this probe.
+- `mvn -o -q -f compat/java-reference/pom.xml compile exec:java
+  '-Dexec.args=runtime-offset-fixtures /Users/bruce.tsai/Projects/trio/rocketmq-classic/fixtures/runtime/offsets.json'`
+  passed; existing Netty Unsafe deprecation warnings remain.
+- Both new Rust store regressions failed on U+001C before the fix, proving
+  Rust trim() dropped Java-blank controls from whole-table status snapshots.
+  Rust also treats U+0085, U+00A0, U+2007, and U+202F as whitespace where Java
+  requires a literal topic lookup. Moved the Java whitespace decision into the
+  shared private OffsetTable snapshot path and removed both trim() calls.
+- The regressions compare every representable BMP scalar against the invoked
+  Java fixture, plus null/empty/mixed-whitespace, exact topic, untrimmed topic,
+  and detached snapshot behavior. Java-only surrogate code units are absent
+  from the blank set and cannot occur in a Rust String.
+- Both focused regressions pass after the fix. Full locked Consumer tests and
+  doctests passed. Strict workspace/all-target/all-feature Clippy first rejected
+  placement of the new remote test module before production items; moved that
+  module to the end and reran successfully, without lint suppression.
+  Workspace formatting and diff whitespace checks passed. Full offline Maven
+  verify is still running (session 61203); its runtime-offset verification,
+  including the exhaustive blank-filter probe, has passed.

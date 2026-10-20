@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import org.apache.rocketmq.client.ClientConfig;
+import org.apache.rocketmq.client.consumer.store.LocalFileOffsetStore;
+import org.apache.rocketmq.client.consumer.store.RemoteBrokerOffsetStore;
+import org.apache.rocketmq.client.consumer.store.OffsetStore;
 import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.message.MessageQueue;
@@ -22,7 +25,24 @@ public final class RuntimeOffsetFixtures {
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
         List<Object> cases = new ArrayList<>();
         List<Object> nullableCases = new ArrayList<>();
+        List<Integer> blankTopicCodeUnits = new ArrayList<>();
         try {
+            OffsetStore local = new LocalFileOffsetStore(runtime, "offset-blank-fixture");
+            OffsetStore remote = new RemoteBrokerOffsetStore(runtime, "offset-blank-fixture");
+            MessageQueue queue = new MessageQueue("orders", "broker", 0);
+            local.updateOffset(queue, 42L, false);
+            remote.updateOffset(queue, 42L, false);
+            // Invoke both stores for every UTF-16 code unit. Neither store is
+            // loaded or persisted; all observations use the in-memory table.
+            for (int code = 0; code <= Character.MAX_VALUE; code++) {
+                String topic = String.valueOf((char) code);
+                Map<MessageQueue, Long> localResult = local.cloneOffsetTable(topic);
+                Map<MessageQueue, Long> remoteResult = remote.cloneOffsetTable(topic);
+                if (!localResult.equals(remoteResult)) {
+                    throw new IllegalStateException("cloneOffsetTable mismatch: " + code);
+                }
+                if (!localResult.isEmpty()) blankTopicCodeUnits.add(code);
+            }
             for (String namespace : new String[] {null, "", "ns", "other", " "}) {
                 Map<MessageQueue, Long> input = new TreeMap<>();
                 String[] topics = {"ns%topic", "other%topic", "%RETRY%ns%group", "%DLQ%ns%group", "TBW102", "rmq_sys_custom", "", "plain", "ns%collision", "collision"};
@@ -67,6 +87,7 @@ public final class RuntimeOffsetFixtures {
         fixture.put("inputMapType", "TreeMap; MessageQueue ordering; unequal collision follows input iteration");
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         fixture.put("nullableCases", nullableCases);
+        fixture.put("cloneOffsetTableBlankTopicCodeUnits", blankTopicCodeUnits);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {
