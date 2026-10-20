@@ -57,6 +57,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resetOffset", reset);
         fixture.put("resetStoreHandoff", reset("store-handoff"));
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
+        fixture.put("resume", resume());
         fixture.put("resetOffsetSynchronized", java.lang.reflect.Modifier.isSynchronized(
             MQClientInstance.class.getMethod("resetOffset", String.class, String.class, Map.class).getModifiers()));
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -70,6 +71,27 @@ public final class RuntimeConsumerOperationsFixtures {
             + " Running Info, " + direct.size() + " direct-consume, " + reset.size() + " reset cases");
     }
 
+    private static List<Object> resume() {
+        var selected = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("selected").getDefaultMQPushConsumerImpl();
+        var sibling = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("sibling").getDefaultMQPushConsumerImpl();
+        var queue = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
+        sibling.getRebalanceImpl().getProcessQueueTable().put(queue, new org.apache.rocketmq.client.impl.consumer.ProcessQueue());
+        List<Object> rows = new ArrayList<>();
+        for (int round = 0; round < 2; round++) {
+            var processQueue = new org.apache.rocketmq.client.impl.consumer.ProcessQueue();
+            selected.getRebalanceImpl().getProcessQueueTable().put(queue, processQueue);
+            if (round == 0) selected.suspend();
+            selected.resume();
+            Map<String, Object> row = new TreeMap<>();
+            row.put("present", selected.getRebalanceImpl().getProcessQueueTable().containsKey(queue));
+            row.put("dropped", processQueue.isDropped());
+            row.put("paused", selected.isPause());
+            row.put("siblingPresent", sibling.getRebalanceImpl().getProcessQueueTable().containsKey(queue));
+            rows.add(row);
+        }
+        return rows;
+    }
+
     private static Map<String, Object> reset(String name) throws Exception {
         ClientConfig config = new ClientConfig(); config.setClientIP("reset-runtime"); config.setNamesrvAddr(null);
         MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
@@ -78,9 +100,13 @@ public final class RuntimeConsumerOperationsFixtures {
         List<String> lifecycle = new ArrayList<>();
         var consumer = new org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl(facade, null) {
             @Override public void suspend() { super.suspend(); lifecycle.add("suspend"); }
-            // Record the required finally action without running an unrelated
-            // assignment round in this isolated, never-started runtime probe.
-            @Override public void resume() { setPause(false); lifecycle.add("resume"); }
+            @Override public void resume() {
+                // Keep the separate truncation probe's entry state isolated;
+                // all reset cases exercise the real finally rebalance.
+                if (name.equals("rebalance-unsubscribed")) setPause(false);
+                else super.resume();
+                lifecycle.add("resume");
+            }
         };
         var values = new TreeMap<Integer, Long>(); var persisted = new TreeMap<Integer, Long>();
         Map<Integer, List<String>> events = new TreeMap<>();

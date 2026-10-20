@@ -7,18 +7,21 @@ The direct public runtime `consumerRunningInfo`, `consumeMessageDirectly` and
 `4bf3e83c` and `6b5129f1` add their owner adapters and close the discovered
 shared-map/store read timing, per-queue failure and runtime-monitor ownership
 gaps. [The scoped operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md)
-records Java source, nine Running Info cases, sixteen direct-consume cases,
-fifteen reset cases plus a three-store handoff, and cancellation/cleanup tests.
+records Java source, nine Running Info cases, 26 direct-consume cases,
+fifteen reset cases plus a three-store handoff, real resume/rebalance probes,
+and cancellation/cleanup tests. Continuation `c99eff31` preserves raw ordinary
+versus client message IDs and nullable topics; `98fb3feb` preserves offsets
+when rebalance truncates unsubscribed queues. Reset probes now invoke real
+resume, including its final target rebalance before returning. The separate
+resume probe checks repeated unpaused invocation and sibling isolation.
 The earlier [consumer-status audit](PHASE_18_RUNTIME_CONSUMER_STATUS.md) covers
 the fourth direct runtime operation and its 54 group/topic cases.
 
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, including nullable and subclass-sensitive raw
-`MessageExt` inputs beyond the current direct-consume corpus. Current-revision
-reset resume/rebalance side effects also require review beyond the Java probe's
-isolated resume override; that override is not proof of full rebalance behavior
-at the public method's return boundary. Native platform CI evidence is still
+`MessageExt` inputs beyond the current direct-consume corpus, and the broader
+rebalance assignment/pull-expiry branches. Native platform CI evidence is still
 outstanding. Historical checkpoints
 below retain their original scope and results; none is a current full-phase
 acceptance claim.

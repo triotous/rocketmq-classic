@@ -87,18 +87,18 @@ nullable inputs. A null group still fails lookup.
 | --- | --- |
 | Runtime monitor serializes reset, producer/consumer registration/removal and start | Private async monitor shared by those methods; Core test blocks a second reset, null registration and start while permitting raw map mutation and unsynchronized admin registration |
 | Shutdown checks user tables before its synchronized block | An active-user shutdown returns false during the blocked reset; terminal shutdown uses the monitor |
-| Suspend before traversal; resume in finally | Private resume guard restores pause/scheduler state on success, error and Rust future cancellation; cancellation regression also verifies monitor release |
+| Suspend before traversal; resume in finally | Normal/error returns await the target owner's rebalance after restoring pause/scheduler state; a cancellation-only guard restores scheduling if the Rust future is dropped early |
 | First traversal uses topic equality then `containsKey` | Null-topic/table branches and null-valued matching keys match Java; matching queues are dropped/cleared even when the offset value is null |
 | Concurrent drain waits ten seconds; orderly reset waits on each queue's consume lock | Paused-time tests exercise the full drain and existing orderly lock windows; Java oracle uses its explicitly ignored interrupt path to bound wall-clock time |
 | Second traversal reads the current map and current queue table | Live map value changes and queue insertion are checked against direct Java execution, without reusing first-pass values |
-| Per-queue persistence failure is logged and does not abort sibling queues | Java/Rust compare retained queue/value state, persisted values and update→persist→remove order within each queue; a failed queue stays dropped and registered |
-| Missing/null offsets do not update or remove a queue | Null-key, null-value, absent-assignment and empty-input cases |
+| Per-queue persistence failure is logged and does not abort sibling queues | Java/Rust compare queue/value state, persisted values and update→persist→remove order within each queue; the final rebalance can truncate a failed queue whose topic is no longer subscribed |
+| Missing/null offsets skip reset's update/removal stage | Null-key, null-value, absent-assignment and empty-input cases; finally still runs rebalance |
 | Store selected at each virtual-call boundary | Reset rereads the live field for update, persist and remove; a Java/Rust store-handoff case changes the field in both update and persist callbacks |
 
 The same public runtime entrypoint now owns inbound reset and owner timestamp
 reset calls. The fifteen Java cases invoke the real runtime and rebalance
-removal path. The probe overrides consumer resume only to record the finally
-action without launching an unrelated assignment round. Events from distinct
+removal path, including the real consumer resume and its target rebalance.
+Events from distinct
 ConcurrentHashMap queues are grouped by queue ID; ordering within each queue,
 all values, dropped/presence states and errors remain compared.
 
@@ -142,7 +142,20 @@ pull assignment while retaining the offset. The comparison failed with a lost
 offset before the fix and checks table presence, dropped state, retained value,
 persisted value and store callback events. Fixture checkpoint SHA-256:
 `2935595b5c94dc9496d342d004f3869cf3d66d5e5ca042c6ad445bae1ec712b4`.
-The real resume/finally rebalance boundary remains under review.
+
+The `resume` fixture also checks a suspended invocation followed by an already
+unpaused invocation, with a new unsubscribed queue inserted before each call.
+Both calls complete the selected owner's round before returning, while leaving
+a sibling owner's queue alone. Rust compares both rounds using two consumers
+sharing one runtime. A private weak owner reference preserves the existing
+`resume(&self)` API without looking the owner up through replaceable raw group
+registrations or introducing a strong reference cycle. No state lock is held
+across the rebalance callbacks. Reset's cancellation guard is disarmed before
+that round, so a callback's new suspend remains effective.
+An additional native callback regression checks that state inspection is
+available during the round and that a new pause survives finally's return.
+The real-resume fixture checkpoint SHA-256 is
+`ee07499b6b8eb58ea9cefc013592013a2c378e97709f4fd0096cd2ba81ec2eea`.
 
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove

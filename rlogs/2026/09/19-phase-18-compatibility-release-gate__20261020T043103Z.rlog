@@ -41,3 +41,23 @@
   passed for the truncation correction. Fixture SHA-256:
   2935595b5c94dc9496d342d004f3869cf3d66d5e5ca042c6ad445bae1ec712b4.
   Next review is real resume/finally target rebalance, not yet closed.
+- Committed unsubscribed truncation as 98fb3feb. Replaced the Java reset
+  probe's isolated resume override with actual super.resume for all reset and
+  store-handoff cases (the separate truncation probe keeps its isolated entry).
+  Regenerated fixtures before compiling the Rust comparison; existing Rust
+  failed null-topic-active because its returned queue had not been truncated.
+- Resume now always clears pause and awaits this owner's rebalance, including
+  already-unpaused invocations. A private weak owner reference preserves the
+  existing &self receiver and avoids selecting through replaceable group maps.
+  Normal reset success/error also awaits the round before returning; early
+  future cancellation retains its private scheduling recovery guard. Disarm
+  recovery before callbacks so a new callback suspend is not overwritten.
+- Added Java/Rust suspended then unpaused rounds with a sibling consumer left
+  untouched. Rust owners share one runtime. Added callback state-lock/new-pause
+  regression and reconciled the null-offset test to Java's final truncation.
+  All fifteen real-resume reset comparisons and both resume rounds pass.
+- Full locked Consumer tests/doctests, strict workspace/all-target/all-feature
+  Clippy, focused Maven verification, formatting and diff checks pass. Fixture
+  SHA-256 ee07499b6b8eb58ea9cefc013592013a2c378e97709f4fd0096cd2ba81ec2eea.
+  Broad P18-V01 still open, including authoritative assignment/dropped queue
+  retention and pull-idle-expiry branches; no current full-phase acceptance.

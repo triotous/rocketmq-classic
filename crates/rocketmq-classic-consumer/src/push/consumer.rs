@@ -412,6 +412,7 @@ pub struct PushConsumer {
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
+    owner: std::sync::Mutex<Weak<Self>>,
     service_state: RwLock<Option<ConsumerServiceState>>,
     running_info_runtime_snapshot: RwLock<Option<RunningInfoRuntimeSnapshot>>,
     offset_store: std::sync::Mutex<Option<Arc<dyn OffsetStore>>>,
@@ -490,6 +491,7 @@ impl PushConsumer {
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
+            owner: std::sync::Mutex::new(Weak::new()),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
             running_info_runtime_snapshot: RwLock::new(None),
             offset_store: std::sync::Mutex::new(None),
@@ -1374,20 +1376,24 @@ impl PushConsumer {
     }
 
     pub async fn resume(&self) {
-        if !self.paused.swap(false, Ordering::AcqRel) {
-            return;
-        }
-        let state = self.state.lock().await;
-        if let State::Started {
-            runtime,
-            pull_scheduler,
-            ..
-        } = &*state
+        self.paused.store(false, Ordering::Release);
         {
-            pull_scheduler.resume_all();
-            if let Some(runtime) = runtime.upgrade() {
-                runtime.rebalance_immediately();
+            let state = self.state.lock().await;
+            if let State::Started { pull_scheduler, .. } = &*state {
+                pull_scheduler.resume_all();
             }
+        }
+        self.rebalance_after_resume().await;
+    }
+
+    async fn rebalance_after_resume(&self) {
+        let owner = self
+            .owner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade();
+        if let Some(owner) = owner {
+            owner.do_rebalance().await;
         }
     }
 
@@ -1430,23 +1436,25 @@ impl PushConsumer {
             consumer: &'a PushConsumer,
             scheduler: Arc<PullScheduler>,
             runtime: Arc<ClientRuntime>,
+            armed: bool,
         }
         impl Drop for ResumeReset<'_> {
             fn drop(&mut self) {
-                if self.consumer.paused.swap(false, Ordering::AcqRel) {
+                if self.armed && self.consumer.paused.swap(false, Ordering::AcqRel) {
                     self.scheduler.resume_all();
                     self.runtime.rebalance_immediately();
                 }
             }
         }
-        let _resume = ResumeReset {
+        let mut resume = ResumeReset {
             consumer: self,
             scheduler: context.scheduler.clone(),
             runtime: context.runtime.clone(),
+            armed: true,
         };
         self.paused.store(true, Ordering::Release);
         context.scheduler.pause_all();
-        async {
+        let result = async {
             // Java first marks every matching live ProcessQueue dropped and
             // clears it, including rows whose nullable offset has no value.
             // Offset-table rows without a live ProcessQueue are ignored.
@@ -1577,7 +1585,14 @@ impl PushConsumer {
             }
             Ok(())
         }
-        .await
+        .await;
+        self.paused.store(false, Ordering::Release);
+        context.scheduler.resume_all();
+        // Only cancellation before the finally action needs Drop recovery.
+        // A rebalance callback can suspend again; do not undo that on return.
+        resume.armed = false;
+        self.rebalance_after_resume().await;
+        result
     }
 
     async fn try_remove_orderly_queue_after_reset(
@@ -3844,6 +3859,10 @@ impl PushConsumer {
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), PushConsumerError> {
+        *self
+            .owner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(self);
         let mut state = self.state.lock().await;
         match &*state {
             State::Started { .. } => return Err(PushConsumerError::AlreadyStarted),
@@ -8625,6 +8644,7 @@ mod tests {
         pull_scheduler: Arc<PullScheduler>,
         pull_rpc_workers: Arc<PullRpcWorkers>,
     ) -> Arc<ClientRuntime> {
+        *consumer.owner.lock().unwrap() = Arc::downgrade(consumer);
         consumer.consume_orderly.store(
             matches!(&consume_service, ConsumeService::Orderly(_)),
             Ordering::Release,
@@ -9830,6 +9850,119 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn resume_completes_each_target_round_without_rebalancing_siblings() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let manager = ClientRuntimeManager::new();
+        let mut owners = Vec::new();
+        let mut runtimes = Vec::new();
+        let mut stores = Vec::new();
+        for group in ["resume-selected", "resume-sibling"] {
+            let mut config = PushConsumerConfig::new(group).unwrap();
+            config
+                .client_config_mut()
+                .set_namesrv_addr(Some(String::new()));
+            let owner = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+            let store = Arc::new(RecordingOffsetStore::default());
+            runtimes.push(
+                install_started_consumer(
+                    &owner,
+                    &manager,
+                    store.clone(),
+                    idle_consume_service(),
+                    Arc::new(PullScheduler::new()),
+                    Arc::new(PullRpcWorkers::new()),
+                )
+                .await,
+            );
+            owners.push(owner);
+            stores.push(store);
+        }
+        assert!(Arc::ptr_eq(&runtimes[0], &runtimes[1]));
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        write_lock(&owners[1].process_queues).insert(
+            queue.clone(),
+            Arc::new(ProcessQueue::new(queue.clone(), 200)),
+        );
+        let cases = fixture["resume"].as_array().unwrap();
+        assert_eq!(cases.len(), 2);
+        for (round, expected) in cases.iter().enumerate() {
+            let process_queue = Arc::new(ProcessQueue::new(queue.clone(), round as u64 + 100));
+            write_lock(&owners[0].process_queues).insert(queue.clone(), process_queue.clone());
+            if round == 0 {
+                owners[0].suspend().await;
+            }
+            owners[0].resume().await;
+            assert_eq!(
+                serde_json::json!({
+                    "present": read_lock(&owners[0].process_queues).contains_key(&queue),
+                    "dropped": process_queue.snapshot(process_queue.generation()).unwrap().dropped,
+                    "paused": owners[0].is_pause(),
+                    "siblingPresent": read_lock(&owners[1].process_queues).contains_key(&queue),
+                }),
+                *expected,
+                "resume round {round}"
+            );
+            assert!(
+                stores
+                    .iter()
+                    .all(|store| store.reset_events.lock().unwrap().is_empty())
+            );
+        }
+        for owner in owners {
+            owner.shutdown().await.unwrap();
+        }
+        runtimes[0].shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reset_finally_preserves_a_rebalance_callback_suspend_without_holding_state() {
+        let mut config = PushConsumerConfig::new("reset-resume-callback").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        write_lock(&consumer.subscriptions).insert(
+            "orders".into(),
+            SubscriptionData::new(Some("orders".into()), Some("*".into())),
+        );
+        let owner = Arc::downgrade(&consumer);
+        consumer
+            .config()
+            .set_message_queue_listener(Some(Arc::new(move |_, _, _| {
+                let owner = owner.upgrade().unwrap();
+                assert!(
+                    owner.state.try_lock().is_ok(),
+                    "state must be available to callbacks"
+                );
+                owner.paused.store(true, Ordering::Release);
+            })));
+        consumer
+            .reset_consumer_offsets_shared(None, None)
+            .await
+            .unwrap();
+        assert!(
+            consumer.is_pause(),
+            "finally must retain the callback's new suspend"
+        );
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn rebalance_truncates_unsubscribed_queues_without_store_side_effects() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/consumer-operations.json"
@@ -10156,7 +10289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reset_offset_with_null_value_drops_but_does_not_remove_the_queue() {
+    async fn reset_offset_with_null_value_retains_offset_through_unsubscribed_truncation() {
         let mut config = PushConsumerConfig::new("reset-offset-null-value").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
         config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Clustering);
@@ -10184,10 +10317,9 @@ mod tests {
             .unwrap();
 
         assert!(process_queue.snapshot(73).unwrap().dropped);
-        assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+        assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
         assert_eq!(store.values.lock().unwrap().get(&queue), Some(&50));
         assert_eq!(store.persisted.lock().unwrap().get(&queue), Some(&50));
-        write_lock(&consumer.process_queues).remove(&queue);
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
