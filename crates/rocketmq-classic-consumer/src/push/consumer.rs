@@ -6161,6 +6161,34 @@ impl PushConsumer {
 }
 
 impl ConsumerRuntime for PushConsumerRegistration {
+    fn consume_message_directly(
+        &self,
+        message: Option<MessageExt>,
+        broker_name: Option<String>,
+    ) -> Option<
+        rocketmq_classic_core::runtime::ConsumerOperationFuture<
+            '_,
+            Option<ConsumeMessageDirectlyResult>,
+        >,
+    > {
+        let consumer = self.consumer.upgrade();
+        Some(Box::pin(async move {
+            let consumer = consumer.ok_or_else(|| {
+                RuntimeError::ConsumerOperation("push consumer is unavailable".into())
+            })?;
+            let message = message.ok_or_else(|| {
+                RuntimeError::ConsumerOperation("null direct-consume message".into())
+            })?;
+            consumer
+                .consume_message_directly(message, broker_name)
+                .await
+                .map(Some)
+                .ok_or_else(|| {
+                    RuntimeError::ConsumerOperation("consume message service is unavailable".into())
+                })
+        }))
+    }
+
     fn consumer_running_info(&self) -> Result<ConsumerRunningInfoBody, RuntimeError> {
         let consumer = self.consumer.upgrade().ok_or_else(|| {
             RuntimeError::ConsumerOperation("push consumer is unavailable".into())

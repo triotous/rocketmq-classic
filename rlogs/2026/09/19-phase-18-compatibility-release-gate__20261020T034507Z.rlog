@@ -29,3 +29,24 @@
 - Real Pull/Push integration now passes, as do workspace formatting and diff
   checks. Running Info code, Java probe/fixture, tests and the scoped mapping
   are committed independently; direct reset/consume and the broad audit remain.
+- Running Info committed as `7f3bd2d9`.
+
+## Direct runtime consumption
+
+- Added async `ClientRuntime::consume_message_directly` and the Push owner
+  future adapter, preserving lookup-before-message validation, non-Push null
+  results, null group/message failures and unavailable-service errors.
+- Extended the direct Java oracle with 16 actual runtime/concurrent/orderly
+  service cases. The Rust public integration compares callback counts, status,
+  auto-commit, namespaces, broker/queue fields and offsets across the same cases.
+  Wall-clock duration and JVM/Rust exception text are the explicitly scoped
+  nondeterministic/diagnostic fields; nonnegative duration, error category and
+  remark presence remain checked. Fixture checkpoint SHA-256:
+  `ac828e506ea02848e9cacbe0e3ae02608dd1d189500a45d51b41e8d3a4208b22`.
+- Initial Rust integration compile required explicit context types on the
+  generic listener closures. Added the existing public context types; the
+  16-case integration then passed, including exception/null callback outcomes,
+  raw-registry unavailable service, and unchanged offset tables.
+- Direct-consume strict workspace/all-target/all-feature Clippy, focused Maven
+  fixture verification, formatting and diff checks passed. Committing this API
+  row independently before the reset-offset row.

@@ -49,8 +49,12 @@ pub trait ProducerRuntime: Send + Sync + 'static {
     fn update_topic_publish_info(&self, _topic: &str, _info: Arc<crate::route::TopicSnapshot>) {}
 }
 
-/// MQConsumerInner capabilities; optional futures are absent until an owning
-/// consumer phase implements the operation. Absence is not reported as success.
+/// Async owner result used by the Java runtime consumer-operation adapters.
+pub type ConsumerOperationFuture<'a, T> =
+    Pin<Box<dyn Future<Output = Result<T, RuntimeError>> + Send + 'a>>;
+
+/// MQConsumerInner capabilities. Optional operation futures distinguish a
+/// consumer type without that Java capability from an operation failure.
 pub trait ConsumerRuntime: Send + Sync + 'static {
     /// Current key used only by Java-style conditional map operations. `None`
     /// keeps Object identity semantics. Implementations with value-based Java
@@ -98,6 +102,20 @@ pub trait ConsumerRuntime: Send + Sync + 'static {
     }
     fn consume_type(&self) -> Option<rocketmq_classic_protocol::heartbeat::ConsumeType> {
         self.heartbeat_data().consume_type
+    }
+    /// Push-only direct-consume capability. Other Java consumer types return
+    /// null without touching the supplied message or broker name.
+    fn consume_message_directly(
+        &self,
+        _message: Option<MessageExt>,
+        _broker_name: Option<String>,
+    ) -> Option<
+        ConsumerOperationFuture<
+            '_,
+            Option<rocketmq_classic_protocol::body::ConsumeMessageDirectlyResult>,
+        >,
+    > {
+        None
     }
     fn is_subscribe_topic_need_update(&self, _topic: &str) -> bool {
         false

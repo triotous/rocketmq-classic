@@ -33,9 +33,35 @@ checks the same inputs, results, call ordering and partial mutations.
 `runtime_consumer_status` exercises both registered Rust consumer types.
 Java exceptions map to Rust typed errors; no extra client setting is added.
 
+## Direct consumption
+
+Java `consumeMessageDirectly(MessageExt, String, String)` maps to async
+`ClientRuntime::consume_message_directly(Option<MessageExt>, Option<&str>,
+Option<&str>)`. `ConsumerRuntime::consume_message_directly` is the Push service
+adapter; its optional future preserves the non-Push null-result branch without
+inspecting the message. `ConsumerOperationFuture` expresses the asynchronous
+Rust owner result, not a new client feature or setting.
+
+The Java oracle calls the actual runtime and concurrent/orderly consume
+services for 16 cases. `runtime_direct_consume` starts real Rust facades and
+checks the same result categories, order/auto-commit flags, callback counts,
+callback message/queue topics and broker names. It covers success, retry,
+commit, rollback, suspend, null listener result and listener failure; nullable
+broker/message, missing/Pull/custom/null group, and unavailable Push service.
+Namespace conversion affects callback messages while queue context retains the
+original topic. Concurrent consumption writes the message broker; orderly
+consumption retains its original broker. Every case checks offset isolation.
+
+The extended fixture checkpoint SHA-256 is
+`ac828e506ea02848e9cacbe0e3ae02608dd1d189500a45d51b41e8d3a4208b22`.
+Only elapsed duration and runtime-specific exception rendering are excluded
+from equality: Java/Rust both assert nonnegative duration, identical failure
+result category and presence of a diagnostic remark. Broker/offset/callback
+relationships are compared directly.
+
 ## Remaining rows
 
-Direct runtime `resetOffset` and `consumeMessageDirectly` still require their
-public entrypoints and source/fixture reconciliation. Existing inbound/owner
-handlers are supporting implementation, not proof of those public APIs.
+Direct runtime `resetOffset` still requires its public entrypoint and
+source/fixture reconciliation. Its inbound/owner handler is supporting
+implementation, not proof of that public API.
 Broad P18-V01 remains open and live evidence remains `PENDING_PHASE_19`.

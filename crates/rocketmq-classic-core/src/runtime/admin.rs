@@ -9,6 +9,25 @@ use super::{ClientRuntime, RuntimeError};
 use rocketmq_classic_protocol::body::ConsumerRunningInfoBody;
 
 impl ClientRuntime {
+    /// Java `MQClientInstance.consumeMessageDirectly(msg, group, brokerName)`.
+    /// Only Push consumers invoke the service; other/missing groups return
+    /// null before the message is inspected. No offset is advanced.
+    pub async fn consume_message_directly(
+        &self,
+        message: Option<rocketmq_classic_common::message::MessageExt>,
+        group: Option<&str>,
+        broker_name: Option<&str>,
+    ) -> Result<Option<rocketmq_classic_protocol::body::ConsumeMessageDirectlyResult>, RuntimeError>
+    {
+        let Some(consumer) = self.select_consumer_nullable(group)? else {
+            return Ok(None);
+        };
+        match consumer.consume_message_directly(message, broker_name.map(str::to_owned)) {
+            Some(operation) => operation.await,
+            None => Ok(None),
+        }
+    }
+
     /// Java `MQClientInstance.consumerRunningInfo(group)`. The snapshot's
     /// shared properties are enriched in place, in Java's observable order.
     pub fn consumer_running_info(
