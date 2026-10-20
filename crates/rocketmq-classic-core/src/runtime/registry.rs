@@ -53,9 +53,23 @@ pub trait ProducerRuntime: Send + Sync + 'static {
 pub type ConsumerOperationFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RuntimeError>> + Send + 'a>>;
 
+/// Live nullable Java `Map<MessageQueue, Long>` input to runtime offset reset.
+pub type ConsumerOffsetTable =
+    rocketmq_classic_protocol::SharedValue<BTreeMap<Option<MessageQueue>, Option<i64>>>;
+
 /// MQConsumerInner capabilities. Optional operation futures distinguish a
 /// consumer type without that Java capability from an operation failure.
 pub trait ConsumerRuntime: Send + Sync + 'static {
+    /// Push-only `MQClientInstance.resetOffset` owner operation. Other Java
+    /// consumer types ignore the topic/table, including null values.
+    fn reset_offset(
+        &self,
+        _topic: Option<String>,
+        _offsets: Option<ConsumerOffsetTable>,
+    ) -> Option<ConsumerOperationFuture<'_, ()>> {
+        None
+    }
+
     /// Current key used only by Java-style conditional map operations. `None`
     /// keeps Object identity semantics. Implementations with value-based Java
     /// `equals` should return the same key exactly when those values compare

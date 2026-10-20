@@ -1575,3 +1575,17 @@ through inbound status handling. The direct Java 54-case comparison and
 current source/test mapping are recorded in
 [the Phase 18 runtime status audit](PHASE_18_RUNTIME_CONSUMER_STATUS.md).
 This closes this API row only; the broader P18-V01 audit remains open.
+
+## Direct runtime consumer operations — 2026-10-20
+
+The public `MQClientInstance.consumerRunningInfo`, `consumeMessageDirectly`
+and `resetOffset` methods now map to `ClientRuntime::consumer_running_info`,
+`consume_message_directly` and `reset_offset`. Owner adapters preserve snapshot
+aliases, virtual-call ordering, nullable arguments, direct-consume callback
+results and offset isolation, shared reset-map reads, runtime monitor ordering,
+and per-queue failure behavior. `ConsumerOffsetTable` represents the live Java
+Map and `ConsumerOperationFuture` represents an asynchronous Rust owner result;
+neither is a new setting or independent feature. The exact Java methods, inputs,
+fixtures and regression IDs are recorded in
+[the direct runtime consumer-operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md).
+These scoped rows do not close the complete P18-V01 bidirectional audit.

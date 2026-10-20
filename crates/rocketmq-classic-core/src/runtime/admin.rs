@@ -9,6 +9,26 @@ use super::{ClientRuntime, RuntimeError};
 use rocketmq_classic_protocol::body::ConsumerRunningInfoBody;
 
 impl ClientRuntime {
+    /// Java's synchronized `MQClientInstance.resetOffset(topic, group, table)`.
+    /// Resets for this runtime serialize across groups. The shared table is
+    /// observed by the owner at each Java lookup boundary, including after the
+    /// drain wait. Missing/non-Push groups ignore the nullable topic/table.
+    pub async fn reset_offset(
+        &self,
+        topic: Option<&str>,
+        group: Option<&str>,
+        offsets: Option<super::ConsumerOffsetTable>,
+    ) -> Result<(), RuntimeError> {
+        let _gate = self.monitor_gate.lock().await;
+        let Some(consumer) = self.select_consumer_nullable(group)? else {
+            return Ok(());
+        };
+        match consumer.reset_offset(topic.map(str::to_owned), offsets) {
+            Some(operation) => operation.await,
+            None => Ok(()),
+        }
+    }
+
     /// Java `MQClientInstance.consumeMessageDirectly(msg, group, brokerName)`.
     /// Only Push consumers invoke the service; other/missing groups return
     /// null before the message is inspected. No offset is advanced.

@@ -585,14 +585,16 @@ impl RequestProcessor for ResetOffsetProcessor {
             .get_offset_table()
             .map(|table| table.snapshot())
             .unwrap_or_default();
-        let (Some(consumer), Some(runtime)) = (self.consumer.upgrade(), self.runtime.upgrade())
+        let (Some(_consumer), Some(runtime)) = (self.consumer.upgrade(), self.runtime.upgrade())
         else {
             return Ok(None);
         };
+        let reset_runtime = runtime.clone();
         runtime
             .execute_task(async move {
-                if let Err(error) = consumer
-                    .reset_consumer_offsets(header.get_topic(), offsets)
+                let offsets = SharedValue::new(offsets.into_iter().map(|(queue, offset)| (Some(queue), offset)).collect());
+                if let Err(error) = reset_runtime
+                    .reset_offset(Some(header.get_topic()), Some(header.get_group()), Some(offsets))
                     .await
                 {
                     tracing::warn!(group = %header.get_group(), topic = %header.get_topic(), error = %error, "consumer offset reset did not complete");

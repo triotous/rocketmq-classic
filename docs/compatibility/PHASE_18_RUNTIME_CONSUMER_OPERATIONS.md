@@ -59,9 +59,58 @@ from equality: Java/Rust both assert nonnegative duration, identical failure
 result category and presence of a diagnostic remark. Broker/offset/callback
 relationships are compared directly.
 
-## Remaining rows
+## Offset reset
 
-Direct runtime `resetOffset` still requires its public entrypoint and
-source/fixture reconciliation. Its inbound/owner handler is supporting
-implementation, not proof of that public API.
+Java `resetOffset(String, String, Map<MessageQueue, Long>)` maps to async
+`ClientRuntime::reset_offset(Option<&str>, Option<&str>,
+Option<ConsumerOffsetTable>)`. `ConsumerOffsetTable` is a shared nullable-key,
+nullable-offset map; it retains the caller alias during the drain wait. The
+Push owner supplies the operation; other/missing consumer types ignore both
+nullable inputs. A null group still fails lookup.
+
+| Java branch / boundary | Rust mapping and evidence |
+| --- | --- |
+| Runtime monitor serializes reset, producer/consumer registration/removal and start | Private async monitor shared by those methods; Core test blocks a second reset, null registration and start while permitting raw map mutation and unsynchronized admin registration |
+| Shutdown checks user tables before its synchronized block | An active-user shutdown returns false during the blocked reset; terminal shutdown uses the monitor |
+| Suspend before traversal; resume in finally | Private resume guard restores pause/scheduler state on success, error and Rust future cancellation; cancellation regression also verifies monitor release |
+| First traversal uses topic equality then `containsKey` | Null-topic/table branches and null-valued matching keys match Java; matching queues are dropped/cleared even when the offset value is null |
+| Concurrent drain waits ten seconds; orderly reset waits on each queue's consume lock | Paused-time tests exercise the full drain and existing orderly lock windows; Java oracle uses its explicitly ignored interrupt path to bound wall-clock time |
+| Second traversal reads the current map and current queue table | Live map value changes and queue insertion are checked against direct Java execution, without reusing first-pass values |
+| Per-queue persistence failure is logged and does not abort sibling queues | Java/Rust compare retained queue/value state, persisted values and update→persist→remove order within each queue; a failed queue stays dropped and registered |
+| Missing/null offsets do not update or remove a queue | Null-key, null-value, absent-assignment and empty-input cases |
+| Store selected at each virtual-call boundary | Reset rereads the live field for update, persist and remove; a Java/Rust store-handoff case changes the field in both update and persist callbacks |
+
+The same public runtime entrypoint now owns inbound reset and owner timestamp
+reset calls. The fifteen Java cases invoke the real runtime and rebalance
+removal path. The probe overrides consumer resume only to record the finally
+action without launching an unrelated assignment round. Events from distinct
+ConcurrentHashMap queues are grouped by queue ID; ordering within each queue,
+all values, dropped/presence states and errors remain compared.
+
+The initial reset fixture checkpoint SHA-256 is
+`594e1e51bfd5f0d3598d309ae8932b9c596a83969ab6c6f8b43f0ac347daaf06`.
+`runtime_reset_matches_java_live_maps_nulls_and_per_queue_failures` compares
+all fifteen cases. The reset filter also runs existing callback/pull fencing,
+unassigned/null-value, cache-clear and orderly-removal regressions.
+
+The additional `resetStoreHandoff` case records update in the first store,
+persist in the second and remove in the third, with final values `[7, 60, null]`
+and a persisted value of 60. It prevents a single captured store from silently
+changing the Java setter's activation timing. The Rust regression also verifies
+that the custom removal callback can inspect the process-queue map before its
+entry is removed. No user store callback runs under that map's write lock.
+Orderly persistence exceptions leave the queue registered; unsuccessful lock
+or unlock attempts retain Java's separate local-removal behavior.
+
+The final extended fixture SHA-256 is
+`ed123fb25e329d0166329dea123add868ac9846ffc251e2469970493691b9665`.
+Live Java map/queue changes wait for the observed drain-sleep stack frame after
+the clear latch, then mutate and interrupt the worker; first-pass iterator
+prefetch timing is not used as synchronization.
+
+## Audit boundary
+
+The direct Running Info, direct-consume and reset runtime rows above are now
+implemented with scoped offline evidence. Their existence does not prove
+completion of the complete Java/Rust public API/settings/control-flow audit.
 Broad P18-V01 remains open and live evidence remains `PENDING_PHASE_19`.

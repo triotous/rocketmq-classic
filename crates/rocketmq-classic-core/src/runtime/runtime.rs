@@ -105,6 +105,7 @@ pub struct ClientRuntime {
     api: MQClientApi,
     routes: crate::route::RouteCache,
     namesrv_gate: tokio::sync::Mutex<()>,
+    pub(super) monitor_gate: tokio::sync::Mutex<()>,
     pub(super) groups: Arc<GroupRegistry>,
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
@@ -251,6 +252,7 @@ impl ClientRuntime {
             remoting,
             routes: crate::route::RouteCache::default(),
             namesrv_gate: tokio::sync::Mutex::new(()),
+            monitor_gate: tokio::sync::Mutex::new(()),
             groups: Arc::new(GroupRegistry::default()),
             control: ControlPlane::default(),
             inbound: Arc::default(),
@@ -959,6 +961,7 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let _monitor = self.monitor_gate.lock().await;
         let gate = self
             .groups
             .table_mutation_gate(super::tables::TableKind::Producer, group)?
@@ -989,6 +992,7 @@ impl ClientRuntime {
         handle: Option<Arc<dyn ProducerRuntime>>,
     ) -> Result<Option<GroupLease>, RuntimeError> {
         let (Some(group), Some(handle)) = (group, handle) else {
+            let _monitor = self.monitor_gate.lock().await;
             return Ok(None);
         };
         self.register_producer(group, handle).await.map(Some)
@@ -1002,6 +1006,7 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
+        let _monitor = self.monitor_gate.lock().await;
         let gate = self
             .groups
             .table_mutation_gate(super::tables::TableKind::Consumer, group)?
@@ -1028,6 +1033,7 @@ impl ClientRuntime {
         handle: Option<Arc<dyn ConsumerRuntime>>,
     ) -> Result<Option<GroupLease>, RuntimeError> {
         let (Some(group), Some(handle)) = (group, handle) else {
+            let _monitor = self.monitor_gate.lock().await;
             return Ok(None);
         };
         self.register_consumer(group, handle).await.map(Some)
@@ -1202,6 +1208,7 @@ impl ClientRuntime {
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
         let Some(group) = group else {
+            let _monitor = self.monitor_gate.lock().await;
             return Err(RuntimeError::InvalidRoute("null producer group"));
         };
         self.unregister_producer_by_group(group, deadline).await
@@ -1226,6 +1233,7 @@ impl ClientRuntime {
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
         let Some(group) = group else {
+            let _monitor = self.monitor_gate.lock().await;
             return Err(RuntimeError::InvalidRoute("null consumer group"));
         };
         self.unregister_consumer_by_group(group, deadline).await
@@ -1406,6 +1414,7 @@ impl ClientRuntime {
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), RuntimeError> {
+        let _monitor = self.monitor_gate.lock().await;
         if self.state() == RuntimeState::Stopped {
             self.control.join_terminal().await?;
             return Ok(());
@@ -1439,6 +1448,15 @@ impl ClientRuntime {
     }
 
     pub async fn shutdown(self: &Arc<Self>) -> Result<bool, RuntimeError> {
+        // Java checks user tables before entering synchronized(this).
+        let _monitor = if self
+            .groups
+            .has_active_users(super::control::INNER_PRODUCER)?
+        {
+            None
+        } else {
+            Some(self.monitor_gate.lock().await)
+        };
         if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
             self.control.join_terminal().await?;
             return Ok(false);
@@ -1474,6 +1492,11 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        let _monitor = if kind == GroupKind::Admin {
+            None
+        } else {
+            Some(self.monitor_gate.lock().await)
+        };
         let table_kind = match kind {
             GroupKind::Producer => Some(super::tables::TableKind::Producer),
             GroupKind::Consumer => Some(super::tables::TableKind::Consumer),
@@ -1541,6 +1564,11 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
+        let _monitor = if kind == GroupKind::Admin {
+            None
+        } else {
+            Some(self.monitor_gate.lock().await)
+        };
         let table_kind = match kind {
             GroupKind::Producer => Some(super::tables::TableKind::Producer),
             GroupKind::Consumer => Some(super::tables::TableKind::Consumer),

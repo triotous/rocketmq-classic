@@ -28,7 +28,7 @@ pub use manager::{
 };
 pub use pull::MessageRequest;
 pub use registry::{
-    ConsumerOperation, ConsumerOperationFuture, ConsumerRuntime, GroupLease,
+    ConsumerOffsetTable, ConsumerOperation, ConsumerOperationFuture, ConsumerRuntime, GroupLease,
     PendingReplyCompletion, PendingReplyControl, PendingReplyRequest, ProducerRuntime,
     RequestFutureTable,
 };

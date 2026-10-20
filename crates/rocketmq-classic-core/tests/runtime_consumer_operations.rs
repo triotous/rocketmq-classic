@@ -14,6 +14,122 @@ use rocketmq_classic_protocol::{
 };
 use serde_json::Value;
 
+struct ResetOwner {
+    name: &'static str,
+    started: tokio::sync::mpsc::UnboundedSender<&'static str>,
+    release: Arc<tokio::sync::Notify>,
+}
+
+impl ConsumerRuntime for ResetOwner {
+    fn heartbeat_data(&self) -> ConsumerData {
+        ConsumerData::default()
+    }
+    fn reset_offset(
+        &self,
+        _topic: Option<String>,
+        _offsets: Option<rocketmq_classic_core::runtime::ConsumerOffsetTable>,
+    ) -> Option<rocketmq_classic_core::runtime::ConsumerOperationFuture<'_, ()>> {
+        Some(Box::pin(async move {
+            self.started.send(self.name).unwrap();
+            self.release.notified().await;
+            Ok(())
+        }))
+    }
+}
+
+#[tokio::test]
+async fn reset_shares_java_monitor_with_registration_and_start_but_not_raw_maps() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/runtime/consumer-operations.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture["resetOffsetSynchronized"], true);
+    let mut config = ClientConfig::new("runtime-monitor");
+    config.set_namesrv_addr(Some(String::new()));
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let (started, mut receive) = tokio::sync::mpsc::unbounded_channel();
+    let first_release = Arc::new(tokio::sync::Notify::new());
+    let second_release = Arc::new(tokio::sync::Notify::new());
+    for (name, release) in [
+        ("first", first_release.clone()),
+        ("second", second_release.clone()),
+    ] {
+        runtime
+            .consumer_table()
+            .put(
+                name,
+                Arc::new(ResetOwner {
+                    name,
+                    started: started.clone(),
+                    release,
+                }),
+            )
+            .await
+            .unwrap();
+    }
+    let first_runtime = runtime.clone();
+    let first =
+        tokio::spawn(async move { first_runtime.reset_offset(None, Some("first"), None).await });
+    assert_eq!(receive.recv().await, Some("first"));
+    let second_runtime = runtime.clone();
+    let second = tokio::spawn(async move {
+        second_runtime
+            .reset_offset(None, Some("second"), None)
+            .await
+    });
+    for _ in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    let register_runtime = runtime.clone();
+    let null_registration = tokio::spawn(async move {
+        register_runtime
+            .register_consumer_nullable(None, None)
+            .await
+    });
+    let start_runtime = runtime.clone();
+    let start = tokio::spawn(async move { start_runtime.start().await });
+    for _ in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    assert!(receive.try_recv().is_err());
+    assert!(!null_registration.is_finished());
+    assert!(!start.is_finished());
+    // Raw map mutation and admin registration are not synchronized Java methods.
+    runtime
+        .consumer_table()
+        .put(
+            "raw",
+            Arc::new(ResetOwner {
+                name: "raw",
+                started,
+                release: Arc::new(tokio::sync::Notify::new()),
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        runtime
+            .register_admin_ext(Some("admin"), Some(Arc::new(())))
+            .unwrap()
+    );
+    assert!(!runtime.shutdown().await.unwrap());
+    runtime.unregister_admin_ext(Some("admin")).unwrap();
+    first_release.notify_one();
+    first.await.unwrap().unwrap();
+    assert_eq!(receive.recv().await, Some("second"));
+    second_release.notify_one();
+    second.await.unwrap().unwrap();
+    assert!(null_registration.await.unwrap().unwrap().is_none());
+    start.await.unwrap().unwrap();
+    for group in ["first", "second", "raw"] {
+        runtime.consumer_table().remove(group).await.unwrap();
+    }
+    runtime.shutdown().await.unwrap();
+}
+
 struct RunningInfoOwner {
     snapshot: ConsumerRunningInfoBody,
     name: String,

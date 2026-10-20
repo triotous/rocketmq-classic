@@ -50,3 +50,79 @@
 - Direct-consume strict workspace/all-target/all-feature Clippy, focused Maven
   fixture verification, formatting and diff checks passed. Committing this API
   row independently before the reset-offset row.
+- Direct consumption committed as `4eee824f`.
+
+## Direct runtime offset reset
+
+- Added the shared nullable-key/nullable-offset `ConsumerOffsetTable` carrier,
+  public `ClientRuntime::reset_offset` and Push owner adapter. Inbound reset
+  and the owner's timestamp-reset helper now use this runtime entrypoint.
+- Source review found the old helper reused first-pass map values and queue
+  membership after its drain wait and returned a sibling queue's persistence
+  error. It now reads the current shared table and current queue table for the
+  second pass, logs/continues per-queue failures, and reads the current store.
+  A private finally guard restores pause/scheduler state even on cancellation.
+- The Java reset method shares synchronized(this) with lifecycle and
+  producer/consumer registry operations. Added the private runtime monitor to
+  reset, producer/consumer registration/removal and start; shutdown preserves
+  Java's active-user precheck before monitor acquisition. Raw map and admin
+  APIs continue to bypass that monitor like Java.
+- Added fifteen actual Java runtime/rebalance cases: missing/Pull/null groups,
+  empty/null topic/table/key/value branches, unassigned queues, successful and
+  per-queue-failed persistence, live map update, newly inserted queue and
+  orderly reset. The probe overrides resume to record the finally action
+  without an unrelated rebalance. Java's ignored sleep-interruption path bounds
+  the ordinary cases; the live cases use a clear latch and worker interrupt.
+  Per-queue events are grouped across unordered ConcurrentHashMap iteration;
+  status, ordering within each queue and data/ownership outcomes are preserved.
+- The initial existing-race run exposed a test harness discrepancy: manual
+  Started-state installation omitted the raw offset-store field that real
+  startup initializes. The new live-store read therefore found null. One case
+  failed and a second remained parked on its expected persist barrier. Confirmed
+  test PID 81467 was live, terminated only that test process, initialized the
+  harness field consistently with real startup and reran. All four existing
+  reset_offset cases passed; the broader reset filter then passed ten tests.
+- The first Java reset fixture serialized Integer event keys without quotes
+  under Fastjson defaults. Converted only the event-group map keys to Strings;
+  strict JSON and all semantic comparisons then passed. A Core monitor test
+  initially compiled before the new Java synchronization metadata was written;
+  after confirming generation finished, recompilation passed both Core tests.
+- Current reset fixture SHA-256:
+  `594e1e51bfd5f0d3598d309ae8932b9c596a83969ab6c6f8b43f0ac347daaf06`.
+  Core monitor/Running Info tests (2), Consumer reset tests (10), lifecycle
+  tests (5), strict workspace/all-target/all-feature Clippy, fmt/diff checks,
+  comparator self-tests, 37-scenario inventory and workspace metadata checks pass.
+- Full offline Maven verify (session 86772), locked workspace tests (98164)
+  and deterministic race/leak smoke (52107) are live; observe these handles
+  before starting dependent verification or claiming their results.
+- Those three runs completed successfully: provisional reset implementation
+  passed 1,665 workspace tests across 89 targets, offline Maven verify and
+  deterministic race/leak smoke (16 x 3). A subsequent source-read refinement
+  is described below, so those results are not the final current-source gate.
+
+## Offset-store callback handoff refinement
+
+- Java rereads `getOffsetStore()` at update, persist and remove boundaries.
+  Added an actual Java store-handoff case that changes the field in update
+  and persist callbacks: the first store retains 7, the second persists 60,
+  and the third removes its 70. Rust now rereads the field at each boundary.
+  Orderly second-persist exceptions preserve the registered queue rather than
+  silently treating them as an unsuccessful unlock result.
+- Moved custom remove_offset invocation outside the process-queue map write
+  lock; a private test hook inspects that map from the callback to detect a
+  reentrancy deadlock. Hooks remain cfg(test), not public client seams/settings.
+- Strengthened the Java live-map/new-queue probe to observe the actual drain
+  sleep stack frame after the clear latch before mutation/interrupt, avoiding
+  reliance on ConcurrentHashMap iterator prefetch. Regenerated fixture SHA-256:
+  `ed123fb25e329d0166329dea123add868ac9846ffc251e2469970493691b9665`.
+- After generation completed, Consumer reset filter passed 11 tests, including
+  all fifteen map/queue cases, callback/pull fences, orderly removal, cancelled
+  caller resume, and the new three-store handoff/lock regression.
+- Final current-source strict Clippy (38137), workspace tests (78838), and
+  offline Maven verify (10999) are being observed; do not replace or restart
+  live sessions due to an observation timeout.
+- Final current-source Clippy session 38137 exited 0. Formatting and diff
+  checks pass. Committing the reset API, shared monitor, map/store read timing,
+  callback lock fix, scoped fixtures/tests/docs as one reset-operation change;
+  the complete workspace/Maven processes remain live and will be recorded
+  after their actual completion.
