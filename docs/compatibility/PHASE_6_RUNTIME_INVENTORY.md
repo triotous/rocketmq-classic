@@ -596,3 +596,14 @@ Runtime NameServer setting snapshot coverage (`b2cc4e21` Java oracle, `b790edc2`
 Raw topic-route remapping concurrency (`2026-10-10`): pinned Java `compute`/`put` records four outcomes: one callback, callback-time read of the current mapping, writer waiting during the callback, and writer observation/replacement of the computed value. A second Java `replaceAll`/`put` race records that the writer completes during the callback and that `replaceAll` reruns its callback after conditional replacement loses. `TopicRouteTable` uses weak exact-topic gates for compute-style remapping, keyed mutations, conditional view removals, route refresh publication, and only the compare-and-replace portion of `replace_all`; callback reads do not take the mutation gate. The fixture has 73 route-table primitive/view outcomes; whole-file `route.json` SHA-256 `4fd7e22a55485451500375b6c9e9d30cfb154c1b15925ecbccaf9c1295414a8c`. Focused/full workspace tests, strict all-feature Clippy, pinned offline Maven verification, formatting and diff checks pass. See [ADR-0082](../architecture/ADR-0082-raw-route-table-remapping-atomicity.md); whole Phase 6 reconciliation remains open and P6-V04 remains PENDING_PHASE_19.
 
 Client-check null-set coverage (`73b1934e`, 2026-10-10): the pinned Java runtime fixture now makes `MQClientInstance.checkClientInBroker` observe a consumer whose `subscriptions()` returns `null`; Java returns from the whole round with no remoting call. The native test compares `ClientRuntime::check_client_in_broker` with that result. The existing Rust branch already matched, so no production correction was needed. The Java runtime/API fixture now has 17 cases and SHA-256 `ac512789f2eca796567ec0f2a46fed23d88d6a8534e1eb0f5b837f0e318a8a23`. The focused client-check integration suite passed 5 tests, full workspace/all-target tests passed, strict all-target/all-feature Clippy passed, pinned offline Maven `verify` passed (22 scenarios), comparator self-test/manifest22, formatting and diff checks passed. This closes only the null subscription-set branch; whole Phase 6 source/API/input/platform reconciliation remains open and P6-V04 remains PENDING_PHASE_19.
+
+## Public channel-generation visibility correction — 2026-10-19
+
+The earlier Netty event entry records the implementation at that checkpoint.
+Pinned Java 5.5.1 `ChannelEventListener` declares only the five callbacks that
+receive a remote address and `Channel`; it exposes no connection-generation
+value. Rust has removed `ChannelEvent.generation` and
+`ChannelHandle::generation()`. Connection generations remain private transport
+bookkeeping, while channel identity is preserved by the owned handle. The
+current API and regression-test crosswalk is in
+[PHASE_3_REMOTING_INVENTORY.md](PHASE_3_REMOTING_INVENTORY.md).

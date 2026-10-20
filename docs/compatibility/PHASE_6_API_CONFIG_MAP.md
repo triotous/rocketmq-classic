@@ -1175,7 +1175,7 @@ The pinned public API scan used `javap -public` on `PullResult`, `PullResultExt`
 | --- | --- |
 | `NettyEventType.values()` / `valueOf(String)` / inherited enum methods | `client::NettyEventType::values()`, `value_of_name`, `name`, `ordinal`, `Display`, and `java_compare_to()` match Java names, declaration order, and lookup failures |
 | `NettyEvent.getType()` | Native channel event queue stores the public `NettyEventType` directly; listener callbacks remain event-specific and carry the remote address |
-| `NettyEvent.getChannel()` | `ChannelEvent` and listener callbacks carry an identity-preserving `ChannelHandle` with address, generation, state, close, and write capabilities. This maps the RocketMQ channel operations without exposing a Netty object or raw Tokio socket; generic Netty methods remain framework-specific. The request-processor context disposition is recorded below. |
+| `NettyEvent.getChannel()` | `ChannelEvent` and listener callbacks carry an identity-preserving `ChannelHandle` with address, state, close, and write capabilities. This maps the RocketMQ channel operations without exposing a Netty object or raw Tokio socket; generic Netty methods remain framework-specific. The request-processor context disposition is recorded below. |
 
 The pinned Java fixture invokes all five constants, defensive `values()` copies, and null/unknown/case-mismatched name lookups; the native differential checks 12 outcomes. See [ADR-0033](../architecture/ADR-0033-netty-event-type-java-enum-api.md).
 

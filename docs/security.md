@@ -152,9 +152,10 @@ before stopping the trace producer.
 
 The lower-level remoting client can receive connect, close, exception, idle,
 and active events through `ChannelEventListener`. Existing address callbacks
-remain available; `on_channel_event` also exposes the connection generation so
-applications can distinguish successive connections to the same peer. URI
-userinfo is redacted from the peer address before delivery. Events are
+remain available; `on_channel_event` groups the event type, peer address, and an
+identity-preserving `ChannelHandle` for the affected connection. Connection
+generation remains private transport bookkeeping. URI userinfo is redacted from
+the peer address before delivery. Events are
 delivered by an owned worker outside the transport reader. The event queue is
 bounded; events may be dropped when it is full, so use it for telemetry and
 connection observation, not correctness-critical work. Keep callbacks short

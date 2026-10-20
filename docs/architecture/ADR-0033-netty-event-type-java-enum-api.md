@@ -25,7 +25,8 @@ five constants, defensive `values()` copies, and null/unknown/case-mismatched
 name lookups. The native differential checks 12 Java cases.
 Java `NettyEvent.getChannel()` and channel-event callbacks expose Java `Channel`
 objects. Rust callbacks and `ChannelEvent` carry an identity-preserving
-`ChannelHandle` with address, generation, state, close, and write capabilities.
+`ChannelHandle` with address, state, close, and write capabilities. Connection
+generation remains private transport bookkeeping.
 This provides the mapped Rust channel operations without fabricating a Netty
 object or exposing a raw Tokio socket; it does not reproduce the full Netty
 Channel method surface. The enum mapping is separate from that carrier
