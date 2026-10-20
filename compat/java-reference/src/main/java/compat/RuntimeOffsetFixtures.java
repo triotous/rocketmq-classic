@@ -26,12 +26,41 @@ public final class RuntimeOffsetFixtures {
         List<Object> cases = new ArrayList<>();
         List<Object> nullableCases = new ArrayList<>();
         List<Integer> blankTopicCodeUnits = new ArrayList<>();
+        List<Object> statusCases = new ArrayList<>();
+        Map<String, Object> statusStoreTransitions = new TreeMap<>();
         try {
             OffsetStore local = new LocalFileOffsetStore(runtime, "offset-blank-fixture");
             OffsetStore remote = new RemoteBrokerOffsetStore(runtime, "offset-blank-fixture");
             MessageQueue queue = new MessageQueue("orders", "broker", 0);
             local.updateOffset(queue, 42L, false);
             remote.updateOffset(queue, 42L, false);
+            org.apache.rocketmq.client.consumer.DefaultMQPullConsumer pull =
+                new org.apache.rocketmq.client.consumer.DefaultMQPullConsumer("status-pull");
+            pull.getDefaultMQPullConsumerImpl().setOffsetStore(local);
+            org.apache.rocketmq.client.consumer.DefaultMQPushConsumer push =
+                new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("status-push");
+            push.getDefaultMQPushConsumerImpl().setOffsetStore(remote);
+            runtime.getConsumerTable().put("pull", pull.getDefaultMQPullConsumerImpl());
+            runtime.getConsumerTable().put("push", push.getDefaultMQPushConsumerImpl());
+            runtime.getConsumerTable().put("other", (org.apache.rocketmq.client.impl.consumer.MQConsumerInner)
+                java.lang.reflect.Proxy.newProxyInstance(RuntimeOffsetFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.client.impl.consumer.MQConsumerInner.class},
+                    (proxy, method, arguments) -> { throw new IllegalStateException("unexpected consumer call"); }));
+            for (String group : new String[] {"pull", "push", "other", "missing", "", null}) {
+                for (String topic : new String[] {null, "", "orders", "missing", " orders ",
+                    "\u001c", "\u0085", "\u00a0", "ignored-config-namespace%orders"}) {
+                    Map<String, Object> item = new TreeMap<>();
+                    item.put("group", group); item.put("topic", topic);
+                    try {
+                        item.put("output", rows(runtime.getConsumerStatus(topic, group)));
+                        item.put("error", null);
+                    } catch (Exception error) {
+                        item.put("output", null);
+                        item.put("error", error.getClass().getSimpleName());
+                    }
+                    statusCases.add(item);
+                }
+            }
             // Invoke both stores for every UTF-16 code unit. Neither store is
             // loaded or persisted; all observations use the in-memory table.
             for (int code = 0; code <= Character.MAX_VALUE; code++) {
@@ -42,6 +71,16 @@ public final class RuntimeOffsetFixtures {
                     throw new IllegalStateException("cloneOffsetTable mismatch: " + code);
                 }
                 if (!localResult.isEmpty()) blankTopicCodeUnits.add(code);
+            }
+            local.updateOffset(queue, 73L, false);
+            push.getDefaultMQPushConsumerImpl().setOffsetStore(local);
+            statusStoreTransitions.put("pushReplacedStore", rows(runtime.getConsumerStatus(null, "push")));
+            push.getDefaultMQPushConsumerImpl().setOffsetStore(null);
+            try {
+                runtime.getConsumerStatus(null, "push");
+                throw new IllegalStateException("null offset store unexpectedly accepted");
+            } catch (NullPointerException error) {
+                statusStoreTransitions.put("pushNullStoreError", error.getClass().getSimpleName());
             }
             for (String namespace : new String[] {null, "", "ns", "other", " "}) {
                 Map<MessageQueue, Long> input = new TreeMap<>();
@@ -78,6 +117,7 @@ public final class RuntimeOffsetFixtures {
             recordNullable(nullableCases, runtime, "null-input-map-empty-namespace", "", null);
             recordNullable(nullableCases, runtime, "null-input-map-nonempty-namespace", "ns", null);
         } finally {
+            runtime.getConsumerTable().clear();
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
         }
@@ -88,6 +128,8 @@ public final class RuntimeOffsetFixtures {
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         fixture.put("nullableCases", nullableCases);
         fixture.put("cloneOffsetTableBlankTopicCodeUnits", blankTopicCodeUnits);
+        fixture.put("consumerStatusCases", statusCases);
+        fixture.put("consumerStatusStoreTransitions", statusStoreTransitions);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
         if (args.length > 1 && "--verify".equals(args[1])) {

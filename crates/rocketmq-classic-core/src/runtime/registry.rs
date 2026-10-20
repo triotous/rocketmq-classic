@@ -78,6 +78,15 @@ pub trait ConsumerRuntime: Send + Sync + 'static {
         None
     }
     fn heartbeat_data(&self) -> ConsumerData;
+    /// Offset-store snapshot used by `MQClientInstance.getConsumerStatus`.
+    /// Pull/Push owners override this; other MQConsumerInner implementations
+    /// return Java's empty status map.
+    fn consumer_status(
+        &self,
+        _topic: Option<&str>,
+    ) -> Result<HashMap<MessageQueue, i64>, RuntimeError> {
+        Ok(HashMap::new())
+    }
     fn is_subscribe_topic_need_update(&self, _topic: &str) -> bool {
         false
     }

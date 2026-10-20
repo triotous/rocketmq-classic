@@ -191,6 +191,7 @@ fn no_broker_error(topic: &str) -> RpcError {
 
 pub(crate) struct ConsumerStatusProcessor {
     offset_store: Weak<dyn OffsetStore>,
+    push_consumer: Option<Weak<crate::push::PushConsumer>>,
 }
 
 pub(crate) struct ResetOffsetProcessor {
@@ -605,7 +606,20 @@ impl RequestProcessor for ResetOffsetProcessor {
 
 impl ConsumerStatusProcessor {
     pub(crate) fn new(offset_store: Weak<dyn OffsetStore>) -> Self {
-        Self { offset_store }
+        Self {
+            offset_store,
+            push_consumer: None,
+        }
+    }
+
+    pub(crate) fn for_push(
+        consumer: Weak<crate::push::PushConsumer>,
+        offset_store: Weak<dyn OffsetStore>,
+    ) -> Self {
+        Self {
+            offset_store,
+            push_consumer: Some(consumer),
+        }
     }
 }
 
@@ -617,9 +631,15 @@ impl RequestProcessor for ConsumerStatusProcessor {
             .ok_or_else(|| "consumer status request has no ext fields".to_owned())?;
         let header = GetConsumerStatusRequestHeader::decode_fields(fields)
             .map_err(|error| error.to_string())?;
-        let message_queue_table = self
-            .offset_store
-            .upgrade()
+        let offset_store = match self.push_consumer.as_ref().and_then(Weak::upgrade) {
+            Some(consumer) => Some(
+                consumer
+                    .get_offset_store()
+                    .ok_or_else(|| "consumer offset store is null".to_owned())?,
+            ),
+            None => self.offset_store.upgrade(),
+        };
+        let message_queue_table = offset_store
             .map(|offset_store| {
                 offset_store
                     .clone_offset_table(Some(header.get_topic()))
@@ -771,5 +791,48 @@ mod tests {
         ] {
             assert!(processor.process(command).is_err());
         }
+    }
+
+    #[tokio::test]
+    async fn push_status_processor_observes_replaced_and_null_offset_stores() {
+        let consumer = Arc::new(crate::PushConsumer::new(
+            crate::PushConsumerConfig::new("status-live-store").unwrap(),
+        ));
+        let first: Arc<dyn OffsetStore> = Arc::new(MemoryOffsetStore::default());
+        let second: Arc<dyn OffsetStore> = Arc::new(MemoryOffsetStore::default());
+        let queue = MessageQueue::new("orders", "broker", 0);
+        first.update_offset(&queue, 42, false);
+        second.update_offset(&queue, 73, false);
+        consumer
+            .set_offset_store(Some(first.clone()))
+            .await
+            .unwrap();
+        let processor =
+            ConsumerStatusProcessor::for_push(Arc::downgrade(&consumer), Arc::downgrade(&first));
+        let command = || RemotingCommand {
+            ext_fields: Some(
+                std::collections::BTreeMap::from([
+                    ("topic".into(), "orders".into()),
+                    ("group".into(), "status-live-store".into()),
+                ])
+                .into(),
+            ),
+            ..Default::default()
+        };
+        let offset = || {
+            let response = processor.process(command()).unwrap().unwrap();
+            let body = GetConsumerStatusBody::decode_java_json(
+                std::str::from_utf8(response.body.as_deref().unwrap()).unwrap(),
+            )
+            .unwrap();
+            body.get_message_queue_table()
+                .unwrap()
+                .with(|rows| rows[0].1.unwrap())
+        };
+        assert_eq!(offset(), 42);
+        consumer.set_offset_store(Some(second)).await.unwrap();
+        assert_eq!(offset(), 73);
+        consumer.set_offset_store(None).await.unwrap();
+        assert!(processor.process(command()).is_err());
     }
 }

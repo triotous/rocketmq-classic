@@ -1103,6 +1103,22 @@ impl ClientRuntime {
         self.select_consumer(group)
     }
 
+    /// Java `MQClientInstance.getConsumerStatus(topic, group)`: snapshot the
+    /// selected Pull/Push consumer's offset store without a lifecycle check.
+    /// Topic filtering belongs to that store; no namespace conversion occurs.
+    /// A null group fails the registry lookup, while an absent/other consumer
+    /// returns an empty map.
+    pub fn get_consumer_status(
+        &self,
+        topic: Option<&str>,
+        group: Option<&str>,
+    ) -> Result<HashMap<rocketmq_classic_common::message::MessageQueue, i64>, RuntimeError> {
+        match self.select_consumer_nullable(group)? {
+            Some(consumer) => consumer.consumer_status(topic),
+            None => Ok(HashMap::new()),
+        }
+    }
+
     pub fn prepare_heartbeat_data(
         &self,
         without_sub: bool,

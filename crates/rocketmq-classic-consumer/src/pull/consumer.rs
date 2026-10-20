@@ -20,6 +20,7 @@ use rocketmq_classic_core::{
     route::{BrokerAddress, RouteSnapshot},
     runtime::{
         ClientRuntime, ClientRuntimeManager, ConsumerOperation, ConsumerRuntime, GroupLease,
+        RuntimeError,
     },
 };
 use rocketmq_classic_protocol::{
@@ -1965,6 +1966,18 @@ struct PullConsumerRegistration {
 }
 
 impl ConsumerRuntime for PullConsumerRegistration {
+    fn consumer_status(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<HashMap<MessageQueue, i64>, RuntimeError> {
+        self.offset_store
+            .upgrade()
+            .map(|store| store.clone_offset_table(topic))
+            .ok_or(RuntimeError::InvalidOffsetTable(
+                "consumer offset store is null",
+            ))
+    }
+
     fn inbound_processor(
         &self,
         operation: ConsumerOperation,

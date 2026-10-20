@@ -28,6 +28,7 @@ use rocketmq_classic_core::api::{
 use rocketmq_classic_core::route::broker_vip_channel;
 use rocketmq_classic_core::runtime::{
     ClientRuntime, ClientRuntimeManager, ConsumerOperation, ConsumerRuntime, GroupLease,
+    RuntimeError,
 };
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -6160,6 +6161,23 @@ impl PushConsumer {
 }
 
 impl ConsumerRuntime for PushConsumerRegistration {
+    fn consumer_status(
+        &self,
+        topic: Option<&str>,
+    ) -> Result<HashMap<MessageQueue, i64>, RuntimeError> {
+        // The raw implementation setter is live after startup. Read its
+        // current field rather than the store captured at registration.
+        let store = match self.consumer.upgrade() {
+            Some(consumer) => consumer.get_offset_store(),
+            None => self.offset_store.upgrade(),
+        };
+        store
+            .map(|store| store.clone_offset_table(topic))
+            .ok_or(RuntimeError::InvalidOffsetTable(
+                "consumer offset store is null",
+            ))
+    }
+
     fn inbound_processor(
         &self,
         operation: ConsumerOperation,
@@ -6171,9 +6189,12 @@ impl ConsumerRuntime for PushConsumerRegistration {
                     self.runtime.clone(),
                 )))
             }
-            ConsumerOperation::ConsumerStatus => Some(Arc::new(
-                crate::admin::ConsumerStatusProcessor::new(self.offset_store.clone()),
-            )),
+            ConsumerOperation::ConsumerStatus => {
+                Some(Arc::new(crate::admin::ConsumerStatusProcessor::for_push(
+                    self.consumer.clone(),
+                    self.offset_store.clone(),
+                )))
+            }
             ConsumerOperation::ConsumeDirectly => {
                 Some(Arc::new(crate::admin::DirectConsumeProcessor::new(
                     self.consumer.clone(),

@@ -65,3 +65,11 @@
   identity, while connection generation is private bookkeeping. The remoting,
   runtime, security and ADR crosswalks use the current regression names. These
   documentation corrections are committed separately from consumer-status code.
+- Channel-generation documentation committed as `a48b5ad5`. Current-source
+  strict workspace/all-target/all-feature Clippy passed; fmt/diff checks,
+  comparator self-tests, all 37 manifest scenarios and workspace package
+  metadata/license/dependency-direction checks passed. Current-source offline
+  Maven verify (session 63920) exited 0, including the regenerated runtime
+  status/store-transition fixture and Java/Rust header/body cross-decodes.
+  Locked workspace tests (session 51603) remain live and are being observed;
+  the focused public status and inbound-store regressions have passed.

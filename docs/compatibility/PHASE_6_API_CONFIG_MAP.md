@@ -1563,3 +1563,15 @@ P18-V01 Fastjson `WriteNullNumberAsZero` follow-up (2026-10-17, code commit `63a
 P18-V01 Fastjson `NullAsDefaultValue` follow-up (2026-10-17, code commit `a54512da`): DTO-schema traversal writes null Strings as `""`, collections as `[]`, and maps or nullable nested DTO references as `{}`; nullable enum fields remain `null`, matching Fastjson2 2.0.63. Existing invoked Java writer fixtures cover body, route, and heartbeat defaults, explicit nulls, nested DTOs, and nullable String collection members. Protocol all-feature tests (126 unit tests, all integration targets, and 42 doctests), strict all-target/all-feature Protocol Clippy, formatting, and diff checks pass. Writer-feature mapping is now 46/48; `WriteClassName` and `ReferenceDetection` remain unmapped. Broad P18-V01 remains open, as do the final full-workspace P18-V02 rerun, current-revision platform CI evidence, and Phase 19 Docker/Broker execution.
 
 P18-V01 Fastjson `ReferenceDetection` follow-up (2026-10-17, code commit `eb991847`): serialization preserves `SharedValue` handle identity while constructing the DTO value tree and emits Fastjson `$ref` paths for repeated handles. An invoked Java `TopicRouteData` fixture reuses one `BrokerData` instance twice and records `$.brokerDatas[0]`; Rust emits the same path. Protocol all-feature tests (127 unit tests, all integration targets, and 42 doctests), strict Protocol Clippy, formatting, `git diff --check`, and Maven verify (37 scenarios, fixture checks, and Java/Rust cross-decodes) pass; the final internal-marker refactor also passes the focused shared-route reference test. Writer-feature mapping is now 47/48; `WriteClassName` remains unmapped. Broad P18-V01 remains open, as do the final full-workspace P18-V02 rerun, current-revision platform CI evidence, and Phase 19 Docker/Broker execution.
+
+## Direct runtime consumer-status API — 2026-10-20
+
+Java `MQClientInstance.getConsumerStatus(topic, group)` now maps to
+`ClientRuntime::get_consumer_status(Option<&str>, Option<&str>)`. Pull/Push
+owner adapters expose current offset-store snapshots; missing/other owners
+return empty, null groups fail, and topic/namespace handling remains with
+the store. Push raw store replacement and null-store errors are also visible
+through inbound status handling. The direct Java 54-case comparison and
+current source/test mapping are recorded in
+[the Phase 18 runtime status audit](PHASE_18_RUNTIME_CONSUMER_STATUS.md).
+This closes this API row only; the broader P18-V01 audit remains open.
