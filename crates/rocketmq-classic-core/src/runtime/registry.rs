@@ -87,6 +87,18 @@ pub trait ConsumerRuntime: Send + Sync + 'static {
     ) -> Result<HashMap<MessageQueue, i64>, RuntimeError> {
         Ok(HashMap::new())
     }
+    /// Java `MQConsumerInner.consumerRunningInfo()` snapshot. A missing
+    /// implementation represents Java's null snapshot and fails when queried.
+    fn consumer_running_info(
+        &self,
+    ) -> Result<rocketmq_classic_protocol::body::ConsumerRunningInfoBody, RuntimeError> {
+        Err(RuntimeError::ConsumerOperation(
+            "null consumer running info".into(),
+        ))
+    }
+    fn consume_type(&self) -> Option<rocketmq_classic_protocol::heartbeat::ConsumeType> {
+        self.heartbeat_data().consume_type
+    }
     fn is_subscribe_topic_need_update(&self, _topic: &str) -> bool {
         false
     }

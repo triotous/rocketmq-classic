@@ -61,6 +61,28 @@ async fn runtime_consumer_status_matches_direct_java_calls_and_live_store_change
         .await
         .unwrap();
 
+    runtime
+        .remoting()
+        .with_name_server_address_list(|addresses| addresses.unwrap().clear());
+    for (group, consume_type) in [("pull", "CONSUME_ACTIVELY"), ("push", "CONSUME_PASSIVELY")] {
+        let info = runtime.consumer_running_info(Some(group)).unwrap().unwrap();
+        let properties = info.get_properties().unwrap().snapshot();
+        assert_eq!(properties["PROP_CONSUME_TYPE"], consume_type);
+        assert_eq!(properties["PROP_CLIENT_VERSION"], "V5_5_1");
+        assert_eq!(properties["PROP_NAMESERVER_ADDR"], "");
+        assert!(info.get_jstack().is_none());
+    }
+    assert!(
+        runtime
+            .consumer_running_info(Some("missing"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        runtime.consumer_running_info(None),
+        Err(RuntimeError::InvalidRoute(_))
+    ));
+
     let cases = fixture["consumerStatusCases"].as_array().unwrap();
     assert_eq!(cases.len(), 54);
     for case in cases {

@@ -6161,6 +6161,16 @@ impl PushConsumer {
 }
 
 impl ConsumerRuntime for PushConsumerRegistration {
+    fn consumer_running_info(&self) -> Result<ConsumerRunningInfoBody, RuntimeError> {
+        let consumer = self.consumer.upgrade().ok_or_else(|| {
+            RuntimeError::ConsumerOperation("push consumer is unavailable".into())
+        })?;
+        let runtime = self.runtime.upgrade().ok_or_else(|| {
+            RuntimeError::ConsumerOperation("consumer runtime is unavailable".into())
+        })?;
+        Ok(consumer.running_info_body(&runtime, None, consumer.get_offset_store()))
+    }
+
     fn consumer_status(
         &self,
         topic: Option<&str>,

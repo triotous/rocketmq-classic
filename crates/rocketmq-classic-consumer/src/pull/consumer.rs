@@ -1966,6 +1966,13 @@ struct PullConsumerRegistration {
 }
 
 impl ConsumerRuntime for PullConsumerRegistration {
+    fn consumer_running_info(&self) -> Result<ConsumerRunningInfoBody, RuntimeError> {
+        let consumer = self.consumer.upgrade().ok_or_else(|| {
+            RuntimeError::ConsumerOperation("pull consumer is unavailable".into())
+        })?;
+        Ok(consumer.consumer_running_info())
+    }
+
     fn consumer_status(
         &self,
         topic: Option<&str>,

@@ -57,6 +57,8 @@ pub type NullableTableEntry<T> = (Option<String>, Option<std::sync::Arc<T>>);
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
+    #[error("consumer operation failed: {0}")]
+    ConsumerOperation(String),
     #[error(
         "Check client in broker error, maybe because you use {expression_type} to filter message, but server has not been upgraded to support!This error would not affect the launch of consumer, but may has impact on message receiving if you have use the new features which are not supported by server, please check the log!"
     )]

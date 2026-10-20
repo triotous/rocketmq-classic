@@ -28,7 +28,8 @@ errors. Its `ConsumerRuntime::consumer_status` method is the owner adapter for
 the runtime method; it adds no client setting or independent operation.
 
 This closes the direct consumer-status row. The broad P18-V01 review remains
-open, including public runtime `resetOffset`, `consumeMessageDirectly` and
-`consumerRunningInfo` entrypoints: their existing inbound/owner paths do not
-alone establish the full public runtime API. Phase 19 live evidence remains
-pending.
+open, including public runtime `resetOffset` and `consumeMessageDirectly`
+entrypoints. The direct `consumerRunningInfo` entrypoint is now mapped in
+[the runtime consumer-operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md).
+Existing inbound/owner paths do not alone establish the full public runtime
+API. Phase 19 live evidence remains pending.

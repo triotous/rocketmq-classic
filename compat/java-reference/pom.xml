@@ -426,6 +426,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-runtime-consumer-operations-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeConsumerOperationsFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/consumer-operations.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-offset-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

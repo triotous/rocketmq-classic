@@ -1,0 +1,31 @@
+# Phase 18 continuation — 2026-10-20T03:45:07Z
+
+- Previous goal turn made progress: committed offset-filter/public status fixes
+  and verified both workspace configurations. Revalidated branch
+  `phase/18-phase-18-compatibility-closure` at `798c0073`; preserved the existing
+  unstaged Phase 19 files. No commands from the previous session remain live.
+- Read coding skill, Rust/testing references and the complete Phase 18 plan.
+  The external Java checkout HEAD is not the target tag, so source inspection
+  uses `git show rocketmq-all-5.5.1:<path>` (tag commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`). The Maven harness still invokes
+  pinned client 5.5.1. No external checkout files are modified.
+- Implementing direct runtime Running Info, direct-consume and offset-reset
+  API rows rather than treating existing inbound/owner handlers as proof of
+  the missing runtime public methods. Broad P18-V01 remains open.
+- Running Info uses the selected owner's snapshot, shared properties and Java
+  enrichment order. Null group, missing group, null properties/consume type
+  and partial mutations require direct Java comparisons before acceptance.
+- Added `ClientRuntime::consumer_running_info`, owner snapshot/type adapters,
+  and typed consumer-operation errors. The new direct Java probe records nine
+  missing/null/active/passive/list-order/error cases and is wired into Maven
+  verify. It confirms shared properties and the NameServer partial mutation
+  before a null consume-type failure. Core's fixture-backed regression passes.
+- Strict workspace/all-target/all-feature Clippy and focused Maven fixture
+  verification passed. The first real-consumer integration assertion expected
+  empty NameServer output for a configured empty-string address; that address
+  is an actual list element and correctly serializes as a semicolon. Changed
+  the setup to clear the live list explicitly so its empty-list assertion tests
+  the intended input; no production normalization was changed.
+- Real Pull/Push integration now passes, as do workspace formatting and diff
+  checks. Running Info code, Java probe/fixture, tests and the scoped mapping
+  are committed independently; direct reset/consume and the broad audit remain.
