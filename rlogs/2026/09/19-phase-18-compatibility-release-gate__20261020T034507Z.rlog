@@ -126,3 +126,26 @@
   callback lock fix, scoped fixtures/tests/docs as one reset-operation change;
   the complete workspace/Maven processes remain live and will be recorded
   after their actual completion.
+- Reset API committed as `4bf3e83c`. At that revision, final default and
+  all-feature workspace tests each passed 1,666 tests across 89 targets;
+  offline Maven verify, Clippy, release examples, fuzz smoke and 16 x 3
+  deterministic race/leak smoke also exited 0.
+
+## Runtime monitor cancellation ownership
+
+- Extended the existing scripted Broker unregister-cancellation test with a
+  reset started after caller cancellation but before the Broker reply. It
+  failed: a caller-owned monitor guard released admission while the actor's
+  unregister command was still running. The reset overtook that operation.
+- Added private monitored-command envelopes and one shared owned guard. The
+  caller retains it through post-processing; the actor retains it through
+  completion after caller cancellation. Abandoned registration replies carry
+  it into identity cleanup, including waits for the key's mutation gate.
+  No public knob, executor, worker or test seam was added.
+- The scripted cancellation case now passes. A focused internal regression
+  holds a raw key gate to keep abandoned-registration cleanup pending, proves
+  reset cannot enter early, releases the key and proves both identity cleanup
+  and reset complete. The test passes. Core lifecycle (5) and direct runtime
+  operations (2), strict workspace Clippy, fmt and diff checks also pass.
+- Committing this cancellation correction independently; final current-source
+  broad gates must be rerun after this control-flow refinement.

@@ -105,7 +105,7 @@ pub struct ClientRuntime {
     api: MQClientApi,
     routes: crate::route::RouteCache,
     namesrv_gate: tokio::sync::Mutex<()>,
-    pub(super) monitor_gate: tokio::sync::Mutex<()>,
+    pub(super) monitor_gate: Arc<tokio::sync::Mutex<()>>,
     pub(super) groups: Arc<GroupRegistry>,
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
@@ -252,7 +252,7 @@ impl ClientRuntime {
             remoting,
             routes: crate::route::RouteCache::default(),
             namesrv_gate: tokio::sync::Mutex::new(()),
-            monitor_gate: tokio::sync::Mutex::new(()),
+            monitor_gate: Arc::new(tokio::sync::Mutex::new(())),
             groups: Arc::new(GroupRegistry::default()),
             control: ControlPlane::default(),
             inbound: Arc::default(),
@@ -961,7 +961,7 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ProducerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        let _monitor = self.monitor_gate.lock().await;
+        let monitor = Some(Arc::new(self.monitor_gate.clone().lock_owned().await));
         let gate = self
             .groups
             .table_mutation_gate(super::tables::TableKind::Producer, group)?
@@ -970,12 +970,15 @@ impl ClientRuntime {
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
-            .send(Command::RegisterProducer {
-                group: group.into(),
-                handle,
-                gate,
-                reply,
-            })
+            .send(
+                Command::RegisterProducer {
+                    group: group.into(),
+                    handle,
+                    gate,
+                    reply,
+                }
+                .with_monitor(monitor.clone()),
+            )
             .map_err(|_| self.control_error())?;
         let lease = receive.await.map_err(|_| self.control_error())??.accept()?;
         if lease.group() != super::control::INNER_PRODUCER {
@@ -1006,7 +1009,7 @@ impl ClientRuntime {
         group: &str,
         handle: Arc<dyn ConsumerRuntime>,
     ) -> Result<GroupLease, RuntimeError> {
-        let _monitor = self.monitor_gate.lock().await;
+        let monitor = Some(Arc::new(self.monitor_gate.clone().lock_owned().await));
         let gate = self
             .groups
             .table_mutation_gate(super::tables::TableKind::Consumer, group)?
@@ -1015,12 +1018,15 @@ impl ClientRuntime {
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
-            .send(Command::RegisterConsumer {
-                group: group.into(),
-                handle,
-                gate,
-                reply,
-            })
+            .send(
+                Command::RegisterConsumer {
+                    group: group.into(),
+                    handle,
+                    gate,
+                    reply,
+                }
+                .with_monitor(monitor.clone()),
+            )
             .map_err(|_| self.control_error())?;
         receive.await.map_err(|_| self.control_error())??.accept()
     }
@@ -1414,7 +1420,7 @@ impl ClientRuntime {
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), RuntimeError> {
-        let _monitor = self.monitor_gate.lock().await;
+        let monitor = Some(Arc::new(self.monitor_gate.clone().lock_owned().await));
         if self.state() == RuntimeState::Stopped {
             self.control.join_terminal().await?;
             return Ok(());
@@ -1426,7 +1432,7 @@ impl ClientRuntime {
         if self
             .control
             .sender(self)?
-            .send(Command::Start { reply })
+            .send(Command::Start { reply }.with_monitor(monitor.clone()))
             .is_err()
         {
             if self.state() == RuntimeState::Stopped {
@@ -1449,13 +1455,13 @@ impl ClientRuntime {
 
     pub async fn shutdown(self: &Arc<Self>) -> Result<bool, RuntimeError> {
         // Java checks user tables before entering synchronized(this).
-        let _monitor = if self
+        let monitor = if self
             .groups
             .has_active_users(super::control::INNER_PRODUCER)?
         {
             None
         } else {
-            Some(self.monitor_gate.lock().await)
+            Some(Arc::new(self.monitor_gate.clone().lock_owned().await))
         };
         if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
             self.control.join_terminal().await?;
@@ -1465,7 +1471,7 @@ impl ClientRuntime {
         if self
             .control
             .sender(self)?
-            .send(Command::Shutdown { reply })
+            .send(Command::Shutdown { reply }.with_monitor(monitor.clone()))
             .is_err()
         {
             if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
@@ -1492,10 +1498,10 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
-        let _monitor = if kind == GroupKind::Admin {
+        let monitor = if kind == GroupKind::Admin {
             None
         } else {
-            Some(self.monitor_gate.lock().await)
+            Some(Arc::new(self.monitor_gate.clone().lock_owned().await))
         };
         let table_kind = match kind {
             GroupKind::Producer => Some(super::tables::TableKind::Producer),
@@ -1519,14 +1525,18 @@ impl ClientRuntime {
         }
         let (reply, receive) = tokio::sync::oneshot::channel();
         let sender = self.control.sender(self)?;
-        if let Err(error) = sender.send(Command::UnregisterByGroup {
-            group: group.to_owned(),
-            kind,
-            deadline,
-            gate,
-            reply,
-        }) {
-            let Command::UnregisterByGroup { gate, .. } = error.0 else {
+        if let Err(error) = sender.send(
+            Command::UnregisterByGroup {
+                group: group.to_owned(),
+                kind,
+                deadline,
+                gate,
+                reply,
+            }
+            .with_monitor(monitor.clone()),
+        ) {
+            let (command, _monitor) = error.0.split_monitor();
+            let Command::UnregisterByGroup { gate, .. } = command else {
                 unreachable!("failed unregister send returns the sent command")
             };
             if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
@@ -1564,10 +1574,10 @@ impl ClientRuntime {
         kind: GroupKind,
         deadline: tokio::time::Instant,
     ) -> Result<bool, RuntimeError> {
-        let _monitor = if kind == GroupKind::Admin {
+        let monitor = if kind == GroupKind::Admin {
             None
         } else {
-            Some(self.monitor_gate.lock().await)
+            Some(Arc::new(self.monitor_gate.clone().lock_owned().await))
         };
         let table_kind = match kind {
             GroupKind::Producer => Some(super::tables::TableKind::Producer),
@@ -1589,13 +1599,16 @@ impl ClientRuntime {
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
-            .send(Command::Unregister {
-                lease: lease.clone(),
-                kind,
-                deadline,
-                gate,
-                reply: Some(reply),
-            })
+            .send(
+                Command::Unregister {
+                    lease: lease.clone(),
+                    kind,
+                    deadline,
+                    gate,
+                    reply: Some(reply),
+                }
+                .with_monitor(monitor.clone()),
+            )
             .map_err(|_| self.control_error())?;
         receive.await.map_err(|_| self.control_error())?
     }

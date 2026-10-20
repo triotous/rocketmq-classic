@@ -108,6 +108,15 @@ Live Java map/queue changes wait for the observed drain-sleep stack frame after
 the clear latch, then mutate and interrupt the worker; first-pass iterator
 prefetch timing is not used as synchronization.
 
+The private monitor guard is shared by the caller and its owned control
+command. Cancelling a caller waiting for an unregister response cannot let a
+reset overtake the still-running RPC. An undelivered registration reply carries
+that guard through identity cleanup, including time waiting for its raw-map
+key gate. Normal caller post-processing also retains admission. These ownership
+rules are checked by the scripted Broker cancellation case in `lifecycle` and
+`undelivered_registration_retains_monitor_until_identity_cleanup_finishes`.
+The monitor/envelope/guard are private transport-runtime machinery.
+
 ## Audit boundary
 
 The direct Running Info, direct-consume and reset runtime rows above are now

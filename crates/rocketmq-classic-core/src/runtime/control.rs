@@ -24,7 +24,15 @@ pub enum RuntimeState {
     Failed,
 }
 
+// One admission guard remains held until both caller post-processing and the
+// owned command/abandoned-registration cleanup have finished.
+pub(super) type MonitorGuard = Arc<tokio::sync::OwnedMutexGuard<()>>;
+
 pub(super) enum Command {
+    Monitored {
+        command: Box<Command>,
+        monitor: MonitorGuard,
+    },
     MutateTable {
         kind: super::tables::TableKind,
         mutation: super::tables::TableMutation,
@@ -69,9 +77,29 @@ pub(super) enum Command {
     },
 }
 
+impl Command {
+    pub(super) fn with_monitor(self, monitor: Option<MonitorGuard>) -> Self {
+        match monitor {
+            Some(monitor) => Self::Monitored {
+                command: Box::new(self),
+                monitor,
+            },
+            None => self,
+        }
+    }
+
+    pub(super) fn split_monitor(self) -> (Self, Option<MonitorGuard>) {
+        match self {
+            Self::Monitored { command, monitor } => (*command, Some(monitor)),
+            command => (command, None),
+        }
+    }
+}
+
 /// A response cancelled before the receiving future can accept the lease must
 /// undo its registration. Drop enqueues cleanup into the existing owned worker.
 pub(super) struct PendingLease {
+    monitor: Option<MonitorGuard>,
     lease: Option<GroupLease>,
     sender: mpsc::UnboundedSender<Command>,
     groups: Arc<super::registry::GroupRegistry>,
@@ -88,6 +116,7 @@ impl PendingLease {
 impl Drop for PendingLease {
     fn drop(&mut self) {
         if let Some(lease) = self.lease.take() {
+            let monitor = self.monitor.take();
             let kind = lease.kind;
             let deadline = Instant::now() + self.timeout;
             let table_kind = match kind {
@@ -101,37 +130,46 @@ impl Drop for PendingLease {
                     .ok()
             });
             let Some(gate) = gate else {
-                let _ = self.sender.send(Command::Unregister {
-                    lease,
-                    kind,
-                    deadline,
-                    gate: None,
-                    reply: None,
-                });
+                let _ = self.sender.send(
+                    Command::Unregister {
+                        lease,
+                        kind,
+                        deadline,
+                        gate: None,
+                        reply: None,
+                    }
+                    .with_monitor(monitor),
+                );
                 return;
             };
             match gate.clone().try_lock_owned() {
                 Ok(gate) => {
-                    let _ = self.sender.send(Command::Unregister {
-                        lease,
-                        kind,
-                        deadline,
-                        gate: Some(gate),
-                        reply: None,
-                    });
+                    let _ = self.sender.send(
+                        Command::Unregister {
+                            lease,
+                            kind,
+                            deadline,
+                            gate: Some(gate),
+                            reply: None,
+                        }
+                        .with_monitor(monitor),
+                    );
                 }
                 Err(_) => {
                     let wait_gate = gate;
                     let sender = self.sender.clone();
                     self.runtime_handle.spawn(async move {
                         let gate = wait_gate.lock_owned().await;
-                        let _ = sender.send(Command::Unregister {
-                            lease,
-                            kind,
-                            deadline,
-                            gate: Some(gate),
-                            reply: None,
-                        });
+                        let _ = sender.send(
+                            Command::Unregister {
+                                lease,
+                                kind,
+                                deadline,
+                                gate: Some(gate),
+                                reply: None,
+                            }
+                            .with_monitor(monitor),
+                        );
                     });
                 }
             }
@@ -275,12 +313,16 @@ async fn run(
     let mut pull_workers: [Option<super::pull::OwnedPullWorker>; 2] = [None, None];
     let mut pull_order = Vec::new();
     while let Some(command) = receiver.recv().await {
+        // The command owns admission through completion, even when its caller
+        // cancels the reply future while an unregister RPC remains in flight.
+        let (command, monitor) = command.split_monitor();
         let Some(runtime) = runtime.upgrade() else {
             return;
         };
         let state = runtime.control.state();
         let allowed = matches!(state, RuntimeState::Created | RuntimeState::Running);
         match command {
+            Command::Monitored { .. } => unreachable!("monitor envelopes are never nested"),
             Command::MutateTable {
                 kind,
                 mutation,
@@ -316,7 +358,7 @@ async fn run(
                 } else {
                     Err(RuntimeError::InvalidState(state))
                 };
-                deliver(result, reply, &sender, &runtime);
+                deliver(result, reply, &sender, &runtime, monitor.clone());
             }
             Command::RegisterConsumer {
                 group,
@@ -332,7 +374,7 @@ async fn run(
                 } else {
                     Err(RuntimeError::InvalidState(state))
                 };
-                deliver(result, reply, &sender, &runtime);
+                deliver(result, reply, &sender, &runtime, monitor.clone());
             }
             Command::RegisterAdmin { group, reply } => {
                 if reply.is_closed() {
@@ -343,7 +385,7 @@ async fn run(
                 } else {
                     Err(RuntimeError::InvalidState(state))
                 };
-                deliver(result, reply, &sender, &runtime);
+                deliver(result, reply, &sender, &runtime, monitor.clone());
             }
             Command::UnregisterByGroup {
                 group,
@@ -531,10 +573,12 @@ fn deliver(
     reply: oneshot::Sender<Result<PendingLease, RuntimeError>>,
     sender: &mpsc::WeakUnboundedSender<Command>,
     runtime: &ClientRuntime,
+    monitor: Option<MonitorGuard>,
 ) {
     let result = result.and_then(|lease| {
         let sender = sender.upgrade().ok_or(RuntimeError::ControlTaskFailed)?;
         Ok(PendingLease {
+            monitor,
             lease: Some(lease),
             sender,
             groups: runtime.groups.clone(),
@@ -549,6 +593,57 @@ fn deliver(
 mod tests {
     use super::*;
     use crate::{config::ClientConfig, runtime::ClientRuntimeManager};
+
+    #[tokio::test]
+    async fn undelivered_registration_retains_monitor_until_identity_cleanup_finishes() {
+        struct Producer;
+        impl ProducerRuntime for Producer {}
+        let mut config = ClientConfig::new("unaccepted-monitor");
+        config.set_namesrv_addr(Some(String::new()));
+        let runtime = ClientRuntimeManager::new()
+            .get_or_create(&config)
+            .await
+            .unwrap();
+        let sender = runtime.control.sender(&runtime).unwrap();
+        let lease = runtime
+            .groups
+            .register_producer("unaccepted", Arc::new(Producer))
+            .unwrap();
+        let key_gate = runtime
+            .groups
+            .table_mutation_gate(super::super::tables::TableKind::Producer, "unaccepted")
+            .unwrap()
+            .lock_owned()
+            .await;
+        let monitor = Arc::new(runtime.monitor_gate.clone().lock_owned().await);
+        let (reply, receive) = oneshot::channel();
+        drop(receive);
+        deliver(
+            Ok(lease),
+            reply,
+            &sender.downgrade(),
+            &runtime,
+            Some(monitor.clone()),
+        );
+        drop(monitor);
+        // Cleanup is deliberately waiting for this key gate. The abandoned
+        // reply must keep monitor ownership while the accepted entry exists.
+        assert!(runtime.monitor_gate.try_lock().is_err());
+        let reset_runtime = runtime.clone();
+        let reset = tokio::spawn(async move {
+            reset_runtime
+                .reset_offset(None, Some("missing"), None)
+                .await
+        });
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!reset.is_finished());
+        drop(key_gate);
+        reset.await.unwrap().unwrap();
+        assert!(runtime.select_producer("unaccepted").unwrap().is_none());
+        runtime.shutdown().await.unwrap();
+    }
 
     struct BlankAddressing;
     impl crate::namesrv::TopAddressing for BlankAddressing {

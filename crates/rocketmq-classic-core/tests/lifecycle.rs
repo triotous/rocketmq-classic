@@ -300,6 +300,18 @@ async fn cancelled_unregister_finishes_before_replacement_registration_and_last_
     started.await.unwrap();
     cleanup.abort();
     assert!(matches!(cleanup.await, Err(error) if error.is_cancelled()));
+    let reset_runtime = runtime.clone();
+    let mut resetting = tokio::spawn(async move {
+        reset_runtime
+            .reset_offset(None, Some("missing"), None)
+            .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut resetting)
+            .await
+            .is_err(),
+        "reset must wait until the owned unregister command completes after caller cancellation"
+    );
     let registering_runtime = runtime.clone();
     let registering_producer = producer.clone();
     let mut registering = tokio::spawn(async move {
@@ -313,6 +325,7 @@ async fn cancelled_unregister_finishes_before_replacement_registration_and_last_
             .is_err()
     );
     release.send(()).unwrap();
+    resetting.await.unwrap().unwrap();
     let replacement = registering.await.unwrap().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     assert!(!runtime.unregister_producer(&old, deadline).await.unwrap());
