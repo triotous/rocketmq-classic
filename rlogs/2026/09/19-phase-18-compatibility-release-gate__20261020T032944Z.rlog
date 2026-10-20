@@ -73,3 +73,36 @@
   status/store-transition fixture and Java/Rust header/body cross-decodes.
   Locked workspace tests (session 51603) remain live and are being observed;
   the focused public status and inbound-store regressions have passed.
+
+## Verification at code revision 43cb8b4c
+
+- Consumer-status implementation, direct Java fixtures, unit/integration tests
+  and source crosswalk committed as `43cb8b4c`.
+- `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` both exited 0: each passed
+  1,660 tests across 87 result-bearing targets. This includes the new public
+  runtime-status and live Push-store regressions, existing field/API guards
+  and the previously committed private-generation remoting regressions.
+- Strict workspace/all-target/all-feature Clippy, workspace fmt check and
+  `git diff --check` passed. Offline Maven verify passed with the updated
+  status oracle, all 37 scenarios, golden fixtures, 67 typed-header and 15
+  typed-body cross-decodes. Existing Java 27 Netty Unsafe/final-field warnings
+  remain warnings; the Maven process exited 0.
+- Comparator self-tests, 37-scenario manifest validation and workspace
+  metadata/package-license/dependency-direction checks passed. Fixed-seed fuzz
+  passed with 121 frame seeds, 11 message seeds, 2,112 mutations, 170 frame and
+  109 message decodes. Deterministic race/leak smoke passed 16 cases x 3.
+- Release facade examples built successfully. The isolated Asia/Taipei unique-ID
+  Java-fixture regression passed (1 test). No benchmarked code path or package
+  metadata changed in this session; previous benchmark/package preparation
+  evidence is not a new benchmark or registry-availability claim.
+- All command sessions started here have completed. Branch inspection confirms
+  retained Phase 0–6 branches (`01-phase-00` through `07-phase-06`) and separate
+  Phase 7–18 branches; this session's changes remain on the Phase 18 branch.
+  Pre-existing Phase 19 files remain unstaged and untouched.
+- Completion audit remains open: direct runtime `resetOffset`,
+  `consumeMessageDirectly` and `consumerRunningInfo` are confirmed API rows
+  requiring further implementation/reconciliation; existing inbound/owner
+  handlers alone are insufficient evidence. Broader bidirectional P18-V01 and
+  current-revision native platform CI evidence remain incomplete. No Phase 18
+  acceptance or Phase 19 live compatibility claim is made; the goal stays active.
