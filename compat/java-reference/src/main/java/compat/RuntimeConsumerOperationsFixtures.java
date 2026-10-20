@@ -30,7 +30,10 @@ public final class RuntimeConsumerOperationsFixtures {
             runningInfo.add(runningInfo(name));
         }
         List<Object> direct = new ArrayList<>();
-        for (String name : new String[] {"concurrent-success", "concurrent-later", "concurrent-null-status",
+        for (String name : new String[] {"concurrent-plain-unique", "orderly-plain-unique", "concurrent-plain-id",
+            "concurrent-null-topic", "orderly-null-topic", "concurrent-empty-topic",
+            "concurrent-client-unique", "orderly-client-unique", "concurrent-client-no-unique", "orderly-client-no-unique",
+            "concurrent-success", "concurrent-later", "concurrent-null-status",
             "concurrent-throws", "concurrent-null-broker", "orderly-success", "orderly-commit",
             "orderly-rollback", "orderly-later", "orderly-null-status", "push-null-message",
             "push-null-service", "missing-group", "pull-group", "other-group", "null-group"}) {
@@ -215,8 +218,16 @@ public final class RuntimeConsumerOperationsFixtures {
         var push = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("tenant%direct");
         push.setNamespace("tenant");
         var implementation = push.getDefaultMQPushConsumerImpl();
-        var message = new org.apache.rocketmq.common.message.MessageExt();
-        message.setTopic("tenant%orders"); message.setQueueId(3); message.setBody(new byte[] {1});
+        boolean clientMessage = name.contains("-client-");
+        org.apache.rocketmq.common.message.MessageExt message = clientMessage
+            ? new org.apache.rocketmq.common.message.MessageClientExt() : new org.apache.rocketmq.common.message.MessageExt();
+        String topic = name.endsWith("null-topic") ? null : name.endsWith("empty-topic") ? "" : "tenant%orders";
+        String physicalId = clientMessage || name.contains("-plain-") ? "physical-id" : null;
+        String uniqueId = name.endsWith("-unique") && !name.endsWith("-no-unique") ? "client-unique" : null;
+        message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
+        if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
+        else message.setMsgId(physicalId);
+        if (uniqueId != null) org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "UNIQ_KEY", uniqueId);
         List<Object> callbacks = new ArrayList<>();
         java.util.function.BiConsumer<List<org.apache.rocketmq.common.message.MessageExt>,
             org.apache.rocketmq.common.message.MessageQueue> record = (messages, queue) -> {
@@ -224,6 +235,10 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("topic", messages.get(0).getTopic()); item.put("broker", messages.get(0).getBrokerName());
                 item.put("queueTopic", queue.getTopic()); item.put("queueBroker", queue.getBrokerName());
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);
+                item.put("messageId", messages.get(0).getMsgId());
+                item.put("offsetMessageId", messages.get(0) instanceof org.apache.rocketmq.common.message.MessageClientExt
+                    ? ((org.apache.rocketmq.common.message.MessageClientExt) messages.get(0)).getOffsetMsgId() : null);
+                item.put("propertiesPresent", messages.get(0).getProperties() != null);
             };
         org.apache.rocketmq.client.impl.consumer.ConsumeMessageService service;
         if (name.startsWith("orderly")) {
@@ -263,6 +278,8 @@ public final class RuntimeConsumerOperationsFixtures {
             String broker = name.endsWith("null-broker") ? null : "broker-a";
             boolean nullMessage = name.equals("push-null-message") || name.endsWith("group");
             item.put("name", name); item.put("group", group); item.put("broker", broker); item.put("nullMessage", nullMessage);
+            item.put("inputClient", clientMessage); item.put("inputTopic", topic);
+            item.put("inputMessageId", physicalId); item.put("inputUniq", uniqueId);
             try {
                 var result = runtime.consumeMessageDirectly(nullMessage ? null : message, group, broker);
                 item.put("error", null); item.put("resultPresent", result != null);

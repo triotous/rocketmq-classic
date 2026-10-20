@@ -1,3 +1,4 @@
+use base64::Engine;
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -25,8 +26,10 @@ impl ConsumerRuntime for OtherConsumer {
 }
 
 fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
-    json!({"topic": message.topic(), "broker": message.broker_name(),
-        "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id()})
+    json!({"topic": message.topic_nullable(), "broker": message.broker_name(),
+        "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
+        "messageId": message.message_id(), "offsetMessageId": message.offset_message_id(),
+        "propertiesPresent": message.properties_nullable().is_some()})
 }
 
 #[tokio::test]
@@ -36,7 +39,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
     ))
     .unwrap();
     let cases = fixture["directConsume"].as_array().unwrap();
-    assert_eq!(cases.len(), 16);
+    assert_eq!(cases.len(), 26);
     for case in cases {
         let name = case["name"].as_str().unwrap().to_owned();
         let manager = ClientRuntimeManager::shared_default();
@@ -135,9 +138,22 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             .await
             .unwrap();
         let mut message = MessageExt::default();
-        message.set_topic("tenant%orders");
+        message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
         message.set_queue_id(3);
         message.set_body(vec![1]);
+        let physical = case["inputMessageId"].as_str().map(str::to_owned);
+        let unique = case["inputUniq"].as_str().map(str::to_owned);
+        if let Some(unique) = &unique {
+            message.set_system_property("UNIQ_KEY", unique).unwrap();
+        }
+        // Client-decoded Rust messages carry both effective and physical IDs;
+        // ordinary MessageExt inputs retain their own physical msgId field.
+        if case["inputClient"].as_bool().unwrap() {
+            message.set_message_id(unique.or_else(|| physical.clone()));
+            message.set_offset_message_id(physical);
+        } else {
+            message.set_message_id(physical);
+        }
         let message = (!case["nullMessage"].as_bool().unwrap()).then_some(message);
         let result = runtime
             .consume_message_directly(message, case["group"].as_str(), case["broker"].as_str())
@@ -196,4 +212,97 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
         push.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
+}
+
+#[tokio::test]
+async fn inbound_direct_consume_decodes_client_ids_before_invoking_the_owner() {
+    use rocketmq_classic_common::message::{DecodeOptions, decode_one, encode_message_ext};
+    use rocketmq_classic_core::runtime::ConsumerOperation;
+    use rocketmq_classic_protocol::codes::{request, response};
+    use rocketmq_classic_remoting::RemotingCommand;
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "ipv4-v1")
+        .unwrap();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(case["recordBase64"].as_str().unwrap())
+        .unwrap();
+    let (mut message, _) = decode_one(&bytes, DecodeOptions::default()).unwrap();
+    let physical_id = message.message_id().unwrap().to_owned();
+    message.set_topic("tenant%orders");
+    message.set_store_size(0);
+    message
+        .set_system_property("UNIQ_KEY", "wire-client-id")
+        .unwrap();
+    let body = encode_message_ext(&message, false).unwrap();
+    let mut config = PushConsumerConfig::new("wire-client-ids").unwrap();
+    config
+        .client_config_mut()
+        .set_client_ip(Some("wire-client-ids".into()));
+    config
+        .client_config_mut()
+        .set_namespace(Some("tenant".into()));
+    config
+        .client_config_mut()
+        .set_namesrv_addr(Some(String::new()));
+    let runtime = ClientRuntimeManager::shared_default()
+        .get_or_create(config.client_config())
+        .await
+        .unwrap();
+    let consumer = Arc::new(PushConsumer::new(config));
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let callbacks = observed.clone();
+    consumer
+        .register_message_listener(PushMessageListener::concurrently(
+            move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                let callbacks = callbacks.clone();
+                async move {
+                    callbacks
+                        .lock()
+                        .unwrap()
+                        .push(callback_record(&messages[0], context.message_queue()));
+                    (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                }
+            },
+        ))
+        .await
+        .unwrap();
+    consumer.start().await.unwrap();
+    let processor = runtime
+        .select_consumer("tenant%wire-client-ids")
+        .unwrap()
+        .unwrap()
+        .inbound_processor(ConsumerOperation::ConsumeDirectly)
+        .unwrap();
+    let result = tokio::task::spawn_blocking(move || {
+        processor.process(RemotingCommand {
+            code: request::CONSUME_MESSAGE_DIRECTLY,
+            ext_fields: Some(
+                std::collections::BTreeMap::from([
+                    ("consumerGroup".into(), "tenant%wire-client-ids".into()),
+                    ("brokerName".into(), "wire-broker".into()),
+                ])
+                .into(),
+            ),
+            body: Some(body),
+            ..Default::default()
+        })
+    })
+    .await
+    .unwrap()
+    .unwrap()
+    .unwrap();
+    assert_eq!(result.code, response::SUCCESS);
+    let callbacks = observed.lock().unwrap().clone();
+    assert_eq!(callbacks.len(), 1);
+    assert_eq!(callbacks[0]["messageId"], "wire-client-id");
+    assert_eq!(callbacks[0]["offsetMessageId"], physical_id);
+    assert_eq!(callbacks[0]["topic"], "orders");
+    assert_eq!(callbacks[0]["queueTopic"], "tenant%orders");
+    consumer.shutdown().await.unwrap();
+    runtime.shutdown().await.unwrap();
 }

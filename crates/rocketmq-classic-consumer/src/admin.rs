@@ -5,7 +5,7 @@ use std::{
 
 use crate::offset::OffsetStore;
 use rocketmq_classic_common::{
-    message::{DecodeOptions, MessageExt, MessageQueue, decode_one},
+    message::{MessageExt, MessageQueue, client_decode},
     topic::TopicValidator,
 };
 use rocketmq_classic_core::{
@@ -525,8 +525,7 @@ impl RequestProcessor for DirectConsumeProcessor {
             .body
             .as_deref()
             .ok_or_else(|| "direct consume request has no message body".to_owned())?;
-        let (message, _) =
-            decode_one(body, DecodeOptions::default()).map_err(|error| error.to_string())?;
+        let (message, _) = client_decode(body, true).map_err(|error| error.to_string())?;
         let (Some(consumer), Some(runtime)) = (self.consumer.upgrade(), self.runtime.upgrade())
         else {
             return Ok(Some(group_not_found_error(header.get_consumer_group())));

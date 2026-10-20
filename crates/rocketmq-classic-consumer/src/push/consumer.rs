@@ -1825,7 +1825,7 @@ impl PushConsumer {
         let started = std::time::Instant::now();
         let orderly = matches!(&context.consume_service, ConsumeService::Orderly(_));
         let queue = MessageQueue::new_nullable(
-            Some(message.topic().to_owned()),
+            message.topic_nullable().map(str::to_owned),
             broker_name.clone(),
             message.queue_id(),
         );
@@ -1834,16 +1834,6 @@ impl PushConsumer {
         }
         let mut messages = vec![message];
         self.reset_retry_and_namespace_for_group(&mut messages, &self.consume_stats_group());
-        if let Some(message) = messages.first_mut() {
-            let offset_message_id = message.message_id().map(str::to_owned);
-            let message_id = message
-                .properties()
-                .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-                .cloned()
-                .or_else(|| offset_message_id.clone());
-            message.set_offset_message_id(offset_message_id);
-            message.set_message_id(message_id);
-        }
 
         let mut result = ConsumeMessageDirectlyResult::default();
         match context.consume_service.listener() {
@@ -3178,13 +3168,16 @@ impl PushConsumer {
         let mut config = self.config.client_config().clone();
         let retry_topic = format!("%RETRY%{consumer_group}");
         for message in messages {
-            if retry_topic == message.topic() {
-                if let Some(origin_topic) = message.get_property(PROPERTY_RETRY_TOPIC) {
+            // Java reads RETRY_TOPIC even for ordinary/null topics, which
+            // initializes a previously-null properties map.
+            let origin_topic = message.get_property(PROPERTY_RETRY_TOPIC);
+            if message.topic_nullable() == Some(retry_topic.as_str()) {
+                if let Some(origin_topic) = origin_topic {
                     message.set_topic(origin_topic);
                 }
             }
-            if let Ok(Some(topic)) = config.without_namespace(Some(message.topic())) {
-                message.set_topic(topic);
+            if let Ok(topic) = config.without_namespace(message.topic_nullable()) {
+                message.set_topic_nullable(topic);
             }
         }
     }

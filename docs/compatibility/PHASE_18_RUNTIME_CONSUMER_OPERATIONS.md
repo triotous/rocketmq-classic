@@ -43,7 +43,7 @@ inspecting the message. `ConsumerOperationFuture` expresses the asynchronous
 Rust owner result, not a new client feature or setting.
 
 The Java oracle calls the actual runtime and concurrent/orderly consume
-services for 16 cases. `runtime_direct_consume` starts real Rust facades and
+services for 26 cases. `runtime_direct_consume` starts real Rust facades and
 checks the same result categories, order/auto-commit flags, callback counts,
 callback message/queue topics and broker names. It covers success, retry,
 commit, rollback, suspend, null listener result and listener failure; nullable
@@ -58,6 +58,21 @@ Only elapsed duration and runtime-specific exception rendering are excluded
 from equality: Java/Rust both assert nonnegative duration, identical failure
 result category and presence of a diagnostic remark. Broker/offset/callback
 relationships are compared directly.
+
+Raw-input continuation (2026-10-20): the owner no longer converts every
+`MessageExt` to client-message IDs. Ordinary messages retain their supplied
+physical `msgId`, even with an `UNIQ_KEY` property; client-decoded Rust snapshots
+retain their effective and offset IDs. The inbound processor now invokes the
+existing `client_decode` adapter at Java's `MessageDecoder.clientDecode`
+boundary. A separate inbound regression checks both IDs after a full encoded
+record crosses the processor/owned task/listener path.
+
+Callback message/queue topics retain null versus empty input. The retry-topic
+property is read for every message, preserving Java `getProperty`'s observable
+initialization of a null properties map. The ten added raw/client ID and topic
+cases compare IDs, property-map presence, callback fields and offset isolation.
+Fixture checkpoint SHA-256:
+`c7cda96e0bf61f51c9e848c7290859382964c01cd2c4db52b34e8fed2eb00c76`.
 
 ## Offset reset
 

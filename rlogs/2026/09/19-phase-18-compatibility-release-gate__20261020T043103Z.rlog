@@ -1,0 +1,32 @@
+# Phase 18 continuation — 2026-10-20T04:31:03Z
+
+- Previous goal turn made progress: four runtime operation/ownership commits
+  and current-source 1,667-test gates. Revalidated current branch
+  `phase/18-phase-18-compatibility-closure` at `9b110f55`; pre-existing Phase 19
+  README/runner/log files remain unstaged. Prior command sessions are terminal.
+- Read coding/Rust/testing skill guidance and the complete Phase 18 plan.
+  Continue the actual through-Phase-18 objective; broad P18-V01 and final
+  original-plan audit remain open. Java inspection uses the pinned 5.5.1 tag
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`, not checkout HEAD.
+- Raw direct-consume source review found owner code unconditionally applying
+  client-ID conversion to ordinary MessageExt and collapsing null topic to an
+  empty string. Java's service preserves raw IDs, nullable topic and queue
+  topic; ClientRemotingProcessor alone uses MessageDecoder.clientDecode.
+- Extended the actual Java runtime/service probe with raw physical/unique ID,
+  MessageClientExt ID, null and empty topic inputs. Callback observations now
+  include effective/offset IDs and nullable property-map presence. Java always
+  calls getProperty(RETRY_TOPIC), whose null-map initialization is observable.
+- Generated the new Java oracle before compiling Rust comparisons. The first
+  raw plain-unique case failed against existing Rust: Java callback msgId was
+  physical-id and offset ID null; Rust rewrote them to client-unique and
+  physical-id. Removed the owner-side conversion and moved wire conversion
+  to ClientRemotingProcessor's client_decode boundary. Preserved nullable
+  message/queue topics and always performed the Java retry-property lookup.
+- All 26 direct-service cases now pass. The added inbound encoded-record
+  regression verifies unique and physical IDs across the processor's owned
+  task and listener. Strict workspace/all-target/all-feature Clippy passed.
+  Current fixture SHA-256:
+  `c7cda96e0bf61f51c9e848c7290859382964c01cd2c4db52b34e8fed2eb00c76`.
+- Full locked Consumer tests/doctests, focused Maven fixture verification,
+  workspace formatting and diff checks passed. Commit this direct-input
+  correction independently before continuing resume/rebalance reconciliation.
