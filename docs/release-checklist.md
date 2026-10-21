@@ -5777,3 +5777,8 @@ owner-specific checks belong in the manual handoff.
 - This closes the current-revision local P18-V02 server-free gate. Broad
   P18-V01 remains open; current Ubuntu/native Windows evidence and the
   remaining Phase 19 Broker/Docker scenarios remain open.
+
+## P18-V01 writer-feature crosswalk reconciliation — 2026-10-21
+
+- [x] Reconciled the Phase 6 API map and Rust source documentation with the current 48/48 Fastjson writer-feature implementation. Removed stale statements that 13 features remain unmapped and repaired the malformed `RemotingSerializable` table row. This documentation-only follow-up does not close the broader P18-V01 API/source/settings/input/error/control-flow/reverse-export audit.
+- [x] Protocol all-feature tests, strict all-target/all-feature Protocol Clippy, `cargo fmt --all -- --check`, and `git diff --check` pass on code revision `6441ca56`; the current-revision full-workspace and Maven evidence is recorded in the P18-V02 section above.

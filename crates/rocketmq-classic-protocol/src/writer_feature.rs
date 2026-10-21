@@ -62,13 +62,12 @@
 /// `WriteNullNumberAsZero` option preserves output for the mapped DTO graph:
 /// numeric bean fields are primitive, while Fastjson's map and collection
 /// writers emit bare nulls for null entries independent of this flag.
-/// remaining four options preserve output for the
-/// mapped RocketMQ DTO graph: it contains no
-/// byte-array field (BatchAck's BitSet uses RocketMQ's custom serializer),
-/// Pair field, Throwable field, or `java.util.Date` field. Other variants
-/// not yet mapped return an explicit unsupported-feature error. The DTO graph
-/// also has no `BigDecimal`, `Float`, or `Double` fields,
-/// so their number-format options preserve output.
+/// The pinned 48-value enum is fully mapped for the supported RocketMQ DTO
+/// adapters. Byte-array, Pair, Throwable, and `java.util.Date` options
+/// preserve output because those values are absent from the mapped DTO graph;
+/// BatchAck's BitSet uses RocketMQ's custom serializer. The DTO graph also has
+/// no `BigDecimal`, `Float`, or `Double` fields, so their number-format options
+/// preserve output.
 /// `FieldBased` also preserves output for the mapped RocketMQ DTO graph: the
 /// invoked Java fixtures produce the default bytes for every body, route, and
 /// heartbeat case, including getter-derived QueueTimeSpan fields.
