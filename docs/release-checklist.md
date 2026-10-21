@@ -6584,3 +6584,20 @@ owner-specific checks belong in the manual handoff.
   supplemental P18-V02 gates after this code change. Current Ubuntu/native
   Windows P18-V04 evidence and Phase 19 Broker/Docker scenarios remain
   separate; protected Phase 19 paths were not changed or staged.
+
+## P18-V01 custom `MessageExt` transient sysFlag hooks — 2026-10-21 (`bf126205`)
+
+- [x] `topic_sys_flag()` and `group_sys_flag()` read through the virtual
+  property hook; `set_topic_sys_flag()` and `set_group_sys_flag()` dispatch to
+  the subtype's Java-virtual setter hooks.
+- [x] The invoked Java fixture compares the overridden values `73` and `-19`
+  and both setter counts. Fixture SHA-256:
+  `71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.
+- [x] Focused direct-consume tests, default/all-feature locked workspace
+  tests, strict all-target/all-feature Clippy, format/diff checks, and pinned
+  Maven `verify` pass on code revision `bf126205`.
+- This closes the inherited property-delegation and setter hooks only; other
+  custom `MessageExt` overrides, mutable `getProperties()` map identity, broad
+  P18-V01 reconciliation and P18-V04 platform evidence remain open. Refresh
+  supplemental P18-V02 gates after this code change. Phase 19 Broker/Docker
+  scenarios remain separate.

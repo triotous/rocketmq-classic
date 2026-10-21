@@ -1614,3 +1614,10 @@ directly. Fixture SHA-256:
 `aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
 Other inherited methods, the mutable `getProperties()` map identity gap, the
 broad P18-V01 audit and P18-V04 platform evidence remain open.
+
+P18-V01 caller-defined subtype transient sysFlag follow-up (2026-10-21):
+`topic_sys_flag()` and `group_sys_flag()` now use the subtype's virtual
+property hook, matching the pinned Java getter delegation; both Java setter
+methods also dispatch to subtype hooks. The direct-consume fixture compares
+custom values and setter counts. Fixture SHA-256:
+`71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.

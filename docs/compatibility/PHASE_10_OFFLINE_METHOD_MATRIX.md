@@ -292,3 +292,10 @@ setter calls. It also distinguishes virtual born/store host values from the
 stored fields used by Java's host string/name/byte helpers. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
+
+P18-V01 caller-defined transient sysFlag follow-up (2026-10-21): Rust's
+topic/group sysFlag getters now dispatch through virtual `getProperty`, and
+their setters dispatch to subtype hooks. The direct-consume Java fixture
+compares the custom topic/group values and setter counts. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.

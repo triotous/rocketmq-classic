@@ -137,6 +137,14 @@ all-target/all-feature Clippy, and pinned Maven `verify` pass on code revision
 `8425a30d`. This extends the selected override slice only; map identity and
 other inherited virtual methods remain open.
 
+Transient sysFlag follow-up (2026-10-21): Rust `topic_sys_flag()` and
+`group_sys_flag()` now read through the subtype's virtual `getProperty` hook,
+matching Java's inherited `getTopicSysFlag()`/`getGroupSysFlag()` delegation.
+The matching `setTopicSysFlag(Integer)`/`setGroupSysFlag(Integer)` methods
+also dispatch to subtype setters. The invoked direct-consume fixture compares
+overridden values `73` and `-19` and both setter counts. Fixture SHA-256:
+`71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.
+
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader
