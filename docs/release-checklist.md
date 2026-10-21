@@ -5455,7 +5455,7 @@ owner-specific checks belong in the manual handoff.
   `false`).
 - [x] Direct Java signature/invocation fixture and Rust scripted RPC compare
   both response branches, request code, exact body and empty ext fields.
-  Current producer core fixture SHA-256:
+  Fixture SHA-256 at this slice checkpoint:
   `434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`.
 - [x] Core all-feature locked suite (177 unit tests, all integration targets,
   and 16 doctests), focused Producer fixture comparison, strict all-target/
@@ -5465,3 +5465,25 @@ owner-specific checks belong in the manual handoff.
 - This closes the direct registration method only. Broad P18-V01,
   current-revision P18-V02, P18-V03 and P18-V04 remain open; no remote CI or
   Phase 19 Broker/Docker validation ran.
+
+## P18-V01 NameServer topic-list RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::get_topic_list_from_nameserver` for the pinned
+  `MQClientAPIImpl.getTopicListFromNameServer(long)` method. It sends request
+  206 with no header/body through the NameServer selector, decodes `TopicList`,
+  and preserves error responses. The Java direct invocation fixture records
+  the exact method signature, null address, request envelope, topic set,
+  Broker address and error result.
+- [x] Rust NameServer differential checks success, error, code, Java language,
+  empty ext fields and missing request body. The protocol `TopicList` now has
+  Java `RemotingSerializable` encode/decode adapters. Current producer core
+  fixture SHA-256:
+  `6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`.
+- [x] Core all-feature locked suite (177 unit tests, all integration targets,
+  and 16 doctests), Producer fixture comparison, strict all-target/all-feature
+  Clippy for Common/Core/Producer/facade, pinned Java Maven `verify` (37
+  scenarios, fixture drift, 67 typed-header frames, 15 typed-body fixtures
+  and Java/Rust cross-decodes), formatting, and scoped whitespace checks pass.
+- The composite `getSystemTopicList` operation remains open. This closes the
+  direct topic-list RPC only; broad P18-V01, current-worktree P18-V02, P18-V03
+  and P18-V04 remain open.

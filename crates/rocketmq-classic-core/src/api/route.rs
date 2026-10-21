@@ -1,4 +1,5 @@
 use rocketmq_classic_protocol::{
+    body::TopicList,
     codes::{request, response},
     header::{CommandHeader, GetRouteInfoRequestHeader, HeaderMap},
     route::TopicRouteData,
@@ -32,6 +33,44 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<Option<TopicRouteData>, RpcError> {
         self.get_topic_route_nullable(Some(topic), deadline).await
+    }
+
+    /// Retrieves the NameServer topic list through Java
+    /// `MQClientAPIImpl.getTopicListFromNameServer`.
+    pub async fn get_topic_list_from_nameserver(
+        &self,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        let code = request::GET_ALL_TOPIC_LIST_FROM_NAMESERVER;
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer,
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body = reply.body.ok_or_else(|| RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.clone(),
+            reason: "successful topic-list reply has no body".into(),
+        })?;
+        TopicList::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer,
+            reason: error.to_string(),
+        })
     }
 
     pub(crate) async fn get_topic_route_nullable(

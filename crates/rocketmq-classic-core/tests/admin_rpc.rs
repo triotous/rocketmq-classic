@@ -1,4 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use base64::Engine;
 use bytes::BytesMut;
@@ -628,6 +631,91 @@ async fn register_client_returns_success_boolean_and_matches_java_request() {
                 .ext_fields
                 .as_ref()
                 .is_none_or(|fields| fields.is_empty())
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn topic_list_from_nameserver_matches_java_request_and_response() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["topicListFromNameServerApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getTopicListFromNameServer(long)"));
+    let cases = fixture["topicListFromNameServerOperations"]
+        .as_object()
+        .unwrap();
+    assert_eq!(cases["topics"], json!(["orders", "payments"]));
+    assert_eq!(cases["brokerAddr"], "broker-a:10911");
+    assert_eq!(cases["errorOutcome"], "MQClientException");
+    assert_eq!(cases["errorCode"], response::SYSTEM_ERROR);
+    let requests = cases["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+
+    let (client_api, client) = api().await;
+    for case in requests {
+        assert_eq!(case["addressWasNull"], true);
+        assert_eq!(
+            case["requestCode"],
+            request::GET_ALL_TOPIC_LIST_FROM_NAMESERVER
+        );
+        assert_eq!(case["extFieldsPresent"], false);
+        assert_eq!(case["requestBodyPresent"], false);
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            response_body,
+        )
+        .await;
+        client.update_name_server_address_list(vec![addr.clone()]);
+
+        let result = client_api
+            .get_topic_list_from_nameserver(Instant::now() + Duration::from_secs(2))
+            .await;
+        if response_code == response::SUCCESS {
+            let topic_list = result.unwrap();
+            assert_eq!(
+                topic_list.get_topic_list().unwrap().snapshot(),
+                HashSet::from(["orders".to_owned(), "payments".to_owned()])
+            );
+            assert_eq!(topic_list.get_broker_addr(), Some("broker-a:10911"));
+        } else {
+            match result {
+                Err(RpcError::Response {
+                    request_code,
+                    peer,
+                    code,
+                    remark: Some(remark),
+                }) => {
+                    assert_eq!(request_code, request::GET_ALL_TOPIC_LIST_FROM_NAMESERVER);
+                    assert_eq!(peer, addr);
+                    assert_eq!(code, response_code);
+                    assert_eq!(remark, "nameserver unavailable");
+                }
+                other => panic!("unexpected NameServer result: {other:?}"),
+            }
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::GET_ALL_TOPIC_LIST_FROM_NAMESERVER);
+        assert!(request.body.is_none());
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
         );
     }
     client.shutdown().await;

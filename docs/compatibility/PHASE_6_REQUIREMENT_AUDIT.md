@@ -1202,7 +1202,20 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   `send_heartbeat`, whose Java-facing contract returns the Broker version and
   raises on non-success. The Java invocation fixture and Rust scripted RPC
   compare signature, body, empty header, timeout, and both response branches.
-  Current producer core fixture SHA-256:
+  At this slice checkpoint, producer core fixture SHA-256 was
   `434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`.
   This closes the direct registration method only; broad P18-V01 and the final
   current-worktree P18-V02 refresh remain open.
+
+- P18-V01 `getTopicListFromNameServer` (2026-10-21): the pinned public
+  `MQClientAPIImpl.getTopicListFromNameServer(long)` method sends request 206
+  through the configured NameServer selector with no header or body. Core now
+  decodes `TopicList`, retaining its topic set and Broker address, and preserves
+  response errors. The direct Java invocation fixture and Rust scripted
+  NameServer differential compare signature, request envelope and success and
+  error outcomes. A missing body on `SUCCESS` maps to structured
+  `MalformedResponse`; Java raises `MQClientException` with code 0. Current
+  producer core fixture SHA-256:
+  `6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`.
+  This closes the single NameServer API call only; `getSystemTopicList` and the
+  broad P18-V01 audit remain open.

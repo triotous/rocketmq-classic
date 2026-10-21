@@ -7038,6 +7038,7 @@ impl_java_remoting_serializable_adapters!(
     ConsumerListByGroupResponseBody,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
+    TopicList,
 );
 
 macro_rules! impl_java_remoting_serializable_body_adapters {

@@ -48,8 +48,10 @@ nullable results, Broker errors and request fields; a VIP-enabled loopback test
 checks both mutation operations. Current producer core fixture SHA-256 is
 `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0` at this
 slice checkpoint. The subsequent `registerClient` addition advances the
-current fixture SHA-256 to
-`434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`. The
+fixture SHA-256 at the registration checkpoint to
+`434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`; the
+later NameServer topic-list fixture advances the current digest to
+`6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`. The
 tools facade remains outside Phase 17; the Core low-level operation mappings
 do not claim that facade's methods or command-line tools.
 
@@ -61,8 +63,20 @@ with `SUCCESS`; other Broker response codes return `false`. Rust now exposes
 `MQClientApi::register_client` with that result behavior, separate from
 `send_heartbeat`'s Broker-version/error contract. The direct Java fixture and
 Rust scripted RPC compare the exact signature, timeout, body, and success and
-non-success results. Broad P18-V01 and the final current-revision P18-V02
-refresh remain open.
+non-success results. At this slice checkpoint, the producer core fixture
+SHA-256 was `434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`.
+
+Phase 18 NameServer topic-list RPC (2026-10-21): Rust now maps the pinned
+`MQClientAPIImpl.getTopicListFromNameServer(long)` request code 206 through
+NameServer selection, with no header or body, and decodes the returned
+`TopicList`. The Java direct invocation fixture and Rust scripted NameServer
+case compare the signature, request envelope, topic set, Broker address,
+response code and remark. Rust maps a successful reply without a body to a
+structured `MalformedResponse`; Java throws `MQClientException` with response
+code 0. Current producer core fixture SHA-256:
+`6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`. This
+closes that direct RPC only; the composite `getSystemTopicList` operation and
+broad P18-V01 remain open, as do the final P18-V02 refresh and later gates.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

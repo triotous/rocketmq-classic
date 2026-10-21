@@ -194,6 +194,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("registerClientOperations", registerClientOperations());
+        result.put("topicListFromNameServerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getTopicListFromNameServer"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("topicListFromNameServerOperations", topicListFromNameServerOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -1643,6 +1650,74 @@ public final class ProducerCoreFixtures {
             heartbeat.setClientID("registration-client");
             result.put("success", api.registerClient("127.0.0.1:10913", heartbeat, 4321L));
             result.put("nonSuccess", api.registerClient("127.0.0.1:10913", heartbeat, 4321L));
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> topicListFromNameServerOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        org.apache.rocketmq.remoting.protocol.body.TopicList topicList =
+            new org.apache.rocketmq.remoting.protocol.body.TopicList();
+        topicList.setTopicList(new java.util.HashSet<>(List.of("orders", "payments")));
+        topicList.setBrokerAddr("broker-a:10911");
+        org.apache.rocketmq.remoting.protocol.RemotingCommand success =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+        success.setBody(topicList.encode());
+        replies.add(success);
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "nameserver unavailable"));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("topic-list-nameserver-api");
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("addressWasNull", values[0] == null);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    replies.removeFirst();
+                                call.put("responseCode", response.getCode());
+                                call.put("responseRemark", response.getRemark());
+                                call.put("responseBodyBase64", response.getBody() == null ? null
+                                    : java.util.Base64.getEncoder().encodeToString(response.getBody()));
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.TopicList received =
+                api.getTopicListFromNameServer(2345L);
+            result.put("topics", new TreeSet<>(received.getTopicList()));
+            result.put("brokerAddr", received.getBrokerAddr());
+            try {
+                api.getTopicListFromNameServer(3456L);
+                result.put("errorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+                result.put("errorOutcome", error.getClass().getSimpleName());
+                result.put("errorCode", error.getResponseCode());
+                result.put("errorMessage", error.getMessage());
+            }
         } finally {
             api.shutdown();
         }
