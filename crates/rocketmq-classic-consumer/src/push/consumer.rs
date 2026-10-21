@@ -4632,7 +4632,23 @@ impl PushConsumer {
     fn unsubscribe_pop_retry_topic(&self, topic: &str, consumer_group: &str) {
         let retry_topic = format!("%RETRY%{consumer_group}_{topic}");
         write_lock(&self.subscriptions).remove(&retry_topic);
-        write_lock(&self.topic_queues).remove(&retry_topic);
+    }
+
+    fn reconcile_pop_retry_topic_subscription(
+        &self,
+        topic: &str,
+        consumer_group: &str,
+        pull_queues: &HashSet<MessageQueue>,
+        pop_queues: &HashSet<MessageQueue>,
+    ) {
+        if topic.starts_with("%RETRY%") {
+            return;
+        }
+        if pop_queues.is_empty() && !pull_queues.is_empty() {
+            self.subscribe_pop_retry_topic(topic, consumer_group);
+        } else if !pop_queues.is_empty() && pull_queues.is_empty() {
+            self.unsubscribe_pop_retry_topic(topic, consumer_group);
+        }
     }
 
     fn select_offset_store(
@@ -5500,13 +5516,12 @@ impl PushConsumer {
                     balanced = false;
                     continue;
                 };
-                if !topic.starts_with("%RETRY%") {
-                    if pop_queues.is_empty() && !pull_queues.is_empty() {
-                        self.subscribe_pop_retry_topic(topic, &consumer_group);
-                    } else if !pop_queues.is_empty() && pull_queues.is_empty() {
-                        self.unsubscribe_pop_retry_topic(topic, &consumer_group);
-                    }
-                }
+                self.reconcile_pop_retry_topic_subscription(
+                    topic,
+                    &consumer_group,
+                    &pull_queues,
+                    &pop_queues,
+                );
                 desired_push_queues.extend(pull_queues.iter().cloned());
                 desired_pop_queues.extend(pop_queues.iter().cloned());
                 authoritative_topics.insert(topic.clone());
@@ -9799,7 +9814,7 @@ mod tests {
     }
 
     #[test]
-    fn pop_to_pull_transition_uses_the_java_retry_topic_and_removes_its_route() {
+    fn pop_to_pull_transition_uses_the_java_retry_topic_and_retains_its_route() {
         let mut config = PushConsumerConfig::new("retry-transition").unwrap();
         config.client_config_mut().set_namesrv_addr(None);
         let consumer = PushConsumer::new(config);
@@ -9814,7 +9829,69 @@ mod tests {
 
         consumer.unsubscribe_pop_retry_topic("orders", "retry-transition");
         assert!(!read_lock(&consumer.subscriptions).contains_key(retry_topic));
-        assert!(!read_lock(&consumer.topic_queues).contains_key(retry_topic));
+        assert!(read_lock(&consumer.topic_queues).contains_key(retry_topic));
+    }
+
+    #[test]
+    fn broker_assignment_modes_match_java_pop_retry_subscription_transitions() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let rows = fixture["popRetryTransitions"].as_array().unwrap();
+        assert_eq!(rows.len(), 5);
+
+        for row in rows {
+            let group = row["group"].as_str().unwrap();
+            let topic = row["topic"].as_str().unwrap();
+            let retry_topic = row["retryTopic"].as_str().unwrap();
+            let mut config = PushConsumerConfig::new(group).unwrap();
+            config.client_config_mut().set_namesrv_addr(None);
+            let consumer = PushConsumer::new(config);
+            if row["initialSubscription"].as_bool().unwrap() {
+                consumer.subscribe_pop_retry_topic(topic, group);
+            }
+            write_lock(&consumer.topic_queues).insert(
+                retry_topic.to_owned(),
+                BTreeSet::from([MessageQueue::new(retry_topic, "broker-a", 7)]),
+            );
+
+            let pull_queues = row["pullQueueIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|queue_id| {
+                    MessageQueue::new(topic, "broker-a", queue_id.as_i64().unwrap() as i32)
+                })
+                .collect::<HashSet<_>>();
+            let pop_queues = row["popQueueIds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|queue_id| {
+                    MessageQueue::new(topic, "broker-a", queue_id.as_i64().unwrap() as i32)
+                })
+                .collect::<HashSet<_>>();
+            consumer.reconcile_pop_retry_topic_subscription(
+                topic,
+                group,
+                &pull_queues,
+                &pop_queues,
+            );
+
+            assert_eq!(
+                read_lock(&consumer.subscriptions).contains_key(retry_topic),
+                row["subscriptionPresent"].as_bool().unwrap(),
+                "{} subscription",
+                row["case"].as_str().unwrap()
+            );
+            assert_eq!(
+                read_lock(&consumer.topic_queues).contains_key(retry_topic),
+                row["routePresent"].as_bool().unwrap(),
+                "{} route",
+                row["case"].as_str().unwrap()
+            );
+        }
     }
 
     #[tokio::test]

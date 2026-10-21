@@ -191,6 +191,18 @@ the recorded POP expiry/retention branches; other POP assignment branches and
 the public Rebalance/ProcessQueue API audit remain open. Fixture SHA-256 is the
 same `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
 
+The `popRetryTransitions` fixture now invokes Java's actual
+`RebalanceImpl.updateMessageQueueAssignment` for pop-to-push, push-to-pop,
+mixed-mode, retry-topic and empty assignments. The five cases compare retry
+subscription presence and cached route presence. Java removes the retry
+subscription on push-to-pop but retains the cached route; Rust now preserves
+that route and matches the subscription branches. The added
+`broker_assignment_modes_match_java_pop_retry_subscription_transitions` test
+checks the same cases. Current fixture SHA-256:
+`104b9fd505b227abc8a8d1f5e35e036ba89989cbfbb4d9725deb13fc87889565`.
+Uncovered assignment expiry/retention dimensions and the public
+Rebalance/ProcessQueue API audit remain open.
+
 The nested ProcessQueue review found a missing concurrent-consume expiry flow.
 Java `ConsumeMessageConcurrentlyService` records `CONSUME_START_TIME`, then
 runs `cleanExpiredMsg` after one `consumeTimeout` period and at that interval.

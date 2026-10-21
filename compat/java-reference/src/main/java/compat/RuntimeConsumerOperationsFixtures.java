@@ -59,6 +59,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resume", resume());
         fixture.put("popRebalance", popRebalance());
+        fixture.put("popRetryTransitions", popRetryTransitions());
         fixture.put("pullMaxIdleTimeMillis", Long.parseLong(
             System.getProperty("rocketmq.client.pull.pullMaxIdleTime", "120000")));
         fixture.put("rebalanceRetention", List.of(reset("subscribed-null-value-missing-route"),
@@ -143,6 +144,86 @@ public final class RuntimeConsumerOperationsFixtures {
             runtime.getMQClientAPIImpl().shutdown();
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("POP rebalance fixture teardown"));
+        }
+    }
+
+    private static List<Object> popRetryTransitions() throws Exception {
+        String group = "pop-transition";
+        return List.of(
+            popRetryTransition("pop-to-push", "orders", group, List.of(0), List.of(), false),
+            popRetryTransition("push-to-pop", "orders", group, List.of(), List.of(0), true),
+            popRetryTransition("mixed-modes", "orders", group, List.of(0), List.of(1), true),
+            popRetryTransition("retry-topic", "%RETRY%workers_orders", group, List.of(0), List.of(), false),
+            popRetryTransition("empty-assignment", "orders", group, List.of(), List.of(), true));
+    }
+
+    private static Map<String, Object> popRetryTransition(String name, String topic, String group,
+        List<Integer> pullQueueIds, List<Integer> popQueueIds, boolean initialSubscription) throws Exception {
+        ClientConfig config = new ClientConfig();
+        config.setClientIP("pop-retry-transition-runtime");
+        config.setNamesrvAddr(null);
+        MQClientInstance runtime = new MQClientInstance(config, 0, config.buildMQClientId());
+        try {
+            var facade = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer(group);
+            var consumer = new org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl(facade, null);
+            var rebalance = consumer.getRebalanceImpl();
+            rebalance.setConsumerGroup(group);
+            consumer.setmQClientFactory(runtime);
+            rebalance.setmQClientFactory(runtime);
+
+            String retryTopic = org.apache.rocketmq.common.KeyBuilder.buildPopRetryTopic(topic, group);
+            if (initialSubscription) {
+                rebalance.getSubscriptionInner().put(retryTopic,
+                    new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData(retryTopic, "*"));
+            }
+            var retryRoute = new java.util.HashSet<org.apache.rocketmq.common.message.MessageQueue>();
+            retryRoute.add(new org.apache.rocketmq.common.message.MessageQueue(retryTopic, "broker-a", 7));
+            rebalance.getTopicSubscribeInfoTable().put(retryTopic, retryRoute);
+
+            var assignments = new java.util.HashSet<org.apache.rocketmq.common.message.MessageQueueAssignment>();
+            for (Integer queueId : pullQueueIds) {
+                var queue = new org.apache.rocketmq.common.message.MessageQueue(topic, "broker-a", queueId);
+                rebalance.getProcessQueueTable().put(queue,
+                    new org.apache.rocketmq.client.impl.consumer.ProcessQueue());
+                var assignment = new org.apache.rocketmq.common.message.MessageQueueAssignment();
+                assignment.setMessageQueue(queue);
+                assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+                assignments.add(assignment);
+            }
+            for (Integer queueId : popQueueIds) {
+                var queue = new org.apache.rocketmq.common.message.MessageQueue(topic, "broker-a", queueId);
+                var processQueue = new org.apache.rocketmq.client.impl.consumer.PopProcessQueue();
+                processQueue.setLastPopTimestamp(System.currentTimeMillis());
+                rebalance.getPopProcessQueueTable().put(queue, processQueue);
+                var assignment = new org.apache.rocketmq.common.message.MessageQueueAssignment();
+                assignment.setMessageQueue(queue);
+                assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.POP);
+                assignments.add(assignment);
+            }
+
+            var update = org.apache.rocketmq.client.impl.consumer.RebalanceImpl.class
+                .getDeclaredMethod("updateMessageQueueAssignment", String.class, java.util.Set.class, boolean.class);
+            update.setAccessible(true);
+            update.invoke(rebalance, topic, assignments, false);
+
+            Map<String, Object> result = new TreeMap<>();
+            result.put("case", name);
+            result.put("topic", topic);
+            result.put("group", group);
+            result.put("retryTopic", retryTopic);
+            result.put("initialSubscription", initialSubscription);
+            result.put("pullQueueIds", pullQueueIds);
+            result.put("popQueueIds", popQueueIds);
+            result.put("subscriptionPresent", rebalance.getSubscriptionInner().containsKey(retryTopic));
+            result.put("routePresent", rebalance.getTopicSubscribeInfoTable().containsKey(retryTopic));
+            return result;
+        } finally {
+            runtime.getPullMessageService().shutdown(true);
+            runtime.getScheduledExecutorService().shutdownNow();
+            runtime.getMQClientAPIImpl().shutdown();
+            Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
+            cleanup.setAccessible(true);
+            cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("POP transition fixture teardown"));
         }
     }
 

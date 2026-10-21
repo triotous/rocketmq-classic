@@ -30,12 +30,20 @@ case and Rust loopback guard that behavior. Fixture SHA-256:
 This closes the named wrapper-surface gap only; broader DTO/config/input/error/
 flow/reverse-export work and current platform CI evidence remain open.
 
+P18-V01 POP retry-assignment transition slice (2026-10-21): the invoked Java
+`RebalanceImpl.updateMessageQueueAssignment` fixture now covers push-to-pop,
+pop-to-push, mixed, retry-topic and empty assignments. It exposed that Java
+removes the retry subscription while retaining the cached route on push-to-pop;
+Rust now matches both observable tables. This closes those transition cases
+only; assignment expiry/retention dimensions and the broader inherited/source
+audit remain open.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, including nullable and subclass-sensitive raw
 `MessageExt` inputs beyond the current direct-consume corpus, and the broader
-rebalance assignment/pull-expiry branches. Native platform CI evidence is still
-outstanding. Historical checkpoints
+rebalance assignment/pull-expiry branches beyond the cases above. Native
+platform CI evidence is still outstanding. Historical checkpoints
 below retain their original scope and results; none is a current full-phase
 acceptance claim.
 

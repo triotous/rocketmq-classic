@@ -6143,3 +6143,22 @@ owner-specific checks belong in the manual handoff.
 - The broad bidirectional P18-V01 audit and final full-workspace P18-V02 rerun
   remain open, as do current-revision Ubuntu/native Windows evidence and Phase
   19 live Broker/Docker scenarios. Preserved Phase 19 paths remain untouched.
+
+## P18-V01 POP retry assignment transitions — 2026-10-21
+
+- [x] Matched the pinned Java `RebalanceImpl.updateMessageQueueAssignment`
+  subscription transitions for pop-to-push, push-to-pop, mixed mode, retry
+  topics and empty assignments. Java removes the retry subscription on
+  push-to-pop but retains its route cache; Rust now preserves the cached route.
+- [x] Added the invoked Java `popRetryTransitions` fixture and Rust regression
+  `broker_assignment_modes_match_java_pop_retry_subscription_transitions`.
+  Fixture SHA-256:
+  `104b9fd505b227abc8a8d1f5e35e036ba89989cbfbb4d9725deb13fc87889565`.
+- [x] The focused Rust regression passes; strict all-target/all-feature
+  consumer Clippy passes; pinned Maven `verify` passes with 37 scenarios, 83
+  Java-decoded typed-header frames and 16 typed-body frames. Formatting and
+  diff checks pass.
+- The broader bidirectional P18-V01 audit, final full-workspace P18-V02 rerun,
+  current-revision Ubuntu/native Windows evidence and Phase 19 live
+  Broker/Docker scenarios remain open. Preserved Phase 19 paths remain
+  untouched and unstaged.

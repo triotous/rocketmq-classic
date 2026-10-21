@@ -19,9 +19,12 @@ The Java pull-idle property and strict expiry path now match for Push and POP
 queues. Concurrent `ProcessQueue.cleanExpiredMsg` now records the Java
 consume-start property and runs on the Java initial-delay/period schedule;
 success, send-back failure, orderly skip, late completion and cleanup timing
-are checked against an invoked Java fixture. Remaining Push POP assignment
-branches, inherited rebalance call correspondence and the full inherited/source
-audit remain under review; P18-V01 is open. Public `ProcessQueue` and
+are checked against an invoked Java fixture. Push POP retry-subscription
+transitions for push-to-pop, pop-to-push, mixed, retry-topic and empty
+assignments now match the invoked Java implementation, including retention of
+the cached retry route after unsubscribe. Other assignment expiry/retention
+dimensions, inherited rebalance call correspondence and the full
+inherited/source audit remain under review; P18-V01 is open. Public `ProcessQueue` and
 `PopProcessQueue` methods and selected live rebalance tables now have direct
 Java/Rust checks. See the
 [scoped runtime operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md) and
