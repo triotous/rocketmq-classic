@@ -1168,11 +1168,14 @@ mod tests {
     #[test]
     fn query_admin_header_reflection_modes_match_invoked_java_551() {
         use rocketmq_classic_protocol::header::{
-            CommandHeader, DeleteKvConfigRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+            AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader,
+            CheckRocksdbCqWriteProgressRequestHeader, CommandHeader, DeleteKvConfigRequestHeader,
+            ExportRocksDBConfigToJsonRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
             QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
             QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
             QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-            ViewMessageRequestHeader,
+            ResetMasterFlushOffsetHeader, ViewMessageRequestHeader,
+            WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
         };
 
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1426,6 +1429,130 @@ mod tests {
                                 "bname": header.get_broker_name(),
                                 "oway": header.get_oneway(),
                                 "lo": header.get_lo(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "add-write-perm-request" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                AddWritePermOfBrokerRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"brokerName": header.get_broker_name()}),
+                            encoded,
+                        )
+                    }
+                    "add-write-perm-response" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                AddWritePermOfBrokerResponseHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"addTopicCount": header.get_add_topic_count()}),
+                            encoded,
+                        )
+                    }
+                    "wipe-write-perm-request" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                WipeWritePermOfBrokerRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"brokerName": header.get_broker_name()}),
+                            encoded,
+                        )
+                    }
+                    "wipe-write-perm-response" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                WipeWritePermOfBrokerResponseHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"wipeTopicCount": header.get_wipe_topic_count()}),
+                            encoded,
+                        )
+                    }
+                    "check-rocksdb-cq-write-progress" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                CheckRocksdbCqWriteProgressRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "topic": header.get_topic(),
+                                "checkStoreTime": header.get_check_store_time(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "export-rocksdb-config" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                ExportRocksDBConfigToJsonRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({"configType": header.get_config_type()}),
+                            encoded,
+                        )
+                    }
+                    "reset-master-flush-offset" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<ResetMasterFlushOffsetHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "masterFlushOffset": header.get_master_flush_offset(),
                             }),
                             encoded,
                         )
