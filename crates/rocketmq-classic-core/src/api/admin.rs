@@ -8,8 +8,9 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection,
-        ConsumerRunningInfoBody, GroupList, QuerySubscriptionResponseBody, ResetOffsetBody,
-        SharedQueueOffsetEntries, SubscriptionGroupList, TopicList, TopicStatsTable,
+        ConsumerRunningInfoBody, CreateTopicListRequestBody, GroupList,
+        QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries,
+        SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -490,6 +491,74 @@ impl MQClientApi {
     ) -> Result<(), RpcError> {
         let code = request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP_LIST;
         let body = SubscriptionGroupList::new(configs.to_vec())
+            .java_encode()
+            .map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    body: Some(body),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Creates a batch of topics through Java `MQClientAPIImpl.createTopicList`.
+    pub async fn create_topic_list(
+        &self,
+        addr: &str,
+        configs: &[TopicConfig],
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.create_topic_list_body(
+            addr,
+            CreateTopicListRequestBody::new(configs.to_vec()),
+            deadline,
+        )
+        .await
+    }
+
+    /// Nullable adapter for Java `createTopicList(String,List,long)`. Java
+    /// accepts a null list and null elements and serializes them as omitted
+    /// `topicConfigList` and JSON null array entries, respectively.
+    pub async fn create_topic_list_nullable(
+        &self,
+        addr: &str,
+        configs: Option<&[Option<TopicConfig>]>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.create_topic_list_body(
+            addr,
+            CreateTopicListRequestBody::new_nullable(configs.map(<[_]>::to_vec)),
+            deadline,
+        )
+        .await
+    }
+
+    async fn create_topic_list_body(
+        &self,
+        addr: &str,
+        request_body: CreateTopicListRequestBody,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_AND_CREATE_TOPIC_LIST;
+        let body = request_body
             .java_encode()
             .map_err(|source| RpcError::RequestSerialization {
                 request_code: code,
@@ -1499,6 +1568,81 @@ mod tests {
         api.create_subscription_group_list(
             &format!("127.0.0.1:{advertised_port}"),
             &[group],
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn create_topic_list_applies_configured_vip_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::{
+            body::{CreateTopicListRequestBody, TopicConfig},
+            codes::{LanguageCode, request, response},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request_command.code, request::UPDATE_AND_CREATE_TOPIC_LIST);
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert!(request_command.ext_fields.is_none());
+            let body =
+                CreateTopicListRequestBody::java_decode(request_command.body.as_deref().unwrap())
+                    .unwrap();
+            assert_eq!(
+                body.topic_config_list().unwrap()[0]
+                    .as_ref()
+                    .unwrap()
+                    .topic_name(),
+                Some("orders")
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("create-topic-list-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        api.create_topic_list(
+            &format!("127.0.0.1:{advertised_port}"),
+            &[TopicConfig::new("orders")],
             Instant::now() + Duration::from_secs(2),
         )
         .await

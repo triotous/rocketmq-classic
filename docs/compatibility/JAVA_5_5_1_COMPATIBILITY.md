@@ -127,6 +127,17 @@ omits from the wire fields. Producer core fixture SHA-256 at this slice
 checkpoint: `ac3462b7351f327839c4a79db5a8a499f6fdbbd56f667f74b2ac5f18fb368fee`.
 This closes that RPC method only; broader P18-V01 and later gates remain open.
 
+Phase 18 batched topic creation RPC (2026-10-21): Rust now maps pinned
+`MQClientAPIImpl.createTopicList(String,List,long)`, sending request 18 with a
+Java-compatible `CreateTopicListRequestBody` through the configured VIP
+address. The fixture and Rust differential compare exact body bytes for
+populated/default/custom and empty lists, Java's omitted null list and encoded
+null elements, plus success and Broker-error outcomes. A VIP-enabled loopback
+checks the two-port transform. Producer core fixture SHA-256 at this slice
+checkpoint: `fcf27463aa5fde04867de50543847ad53dabc1b5c3b526ae8ac2406481514ec7`.
+This closes the batch topic RPC only; broader P18-V01 and later gates remain
+open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

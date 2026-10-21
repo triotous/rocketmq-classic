@@ -1265,3 +1265,14 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   returns structured `MalformedResponse`. Current producer core fixture
   SHA-256: `ac3462b7351f327839c4a79db5a8a499f6fdbbd56f667f74b2ac5f18fb368fee`.
   The broader P18-V01 public API inventory remains open.
+
+- P18-V01 `createTopicList` (2026-10-21): the pinned public
+  `MQClientAPIImpl.createTopicList(String,List,long)` sends request 18 with a
+  `CreateTopicListRequestBody` to the configured VIP Broker address. Core now
+  encodes Java-compatible `TopicConfig` values and preserves null-list and
+  null-element serialization. The invoked Java fixture and Rust differential
+  compare populated/default/custom, empty, null-list and null-element bodies,
+  success/error responses and exact request bytes; a VIP-enabled Core loopback
+  confirms the port transform. Current producer core fixture SHA-256:
+  `fcf27463aa5fde04867de50543847ad53dabc1b5c3b526ae8ac2406481514ec7`.
+  The broader P18-V01 public API inventory remains open.

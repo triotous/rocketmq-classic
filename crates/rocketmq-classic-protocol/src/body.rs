@@ -2007,6 +2007,143 @@ pub struct SubscriptionGroupList {
     group_config_list: Vec<SubscriptionGroupConfig>,
 }
 
+/// Java `TopicConfig`, encoded in `CreateTopicListRequestBody` for batch topic
+/// creation. The field order matches Fastjson's alphabetic bean-property order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TopicConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attributes: Option<BTreeMap<String, String>>,
+    order: bool,
+    perm: i32,
+    read_queue_nums: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_filter_type: Option<TopicConfigFilterType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_name: Option<String>,
+    topic_sys_flag: i32,
+    write_queue_nums: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TopicConfigFilterType {
+    SingleTag,
+    MultiTag,
+}
+
+impl Default for TopicConfig {
+    fn default() -> Self {
+        Self {
+            attributes: Some(BTreeMap::new()),
+            order: false,
+            perm: 6,
+            read_queue_nums: 16,
+            topic_filter_type: Some(TopicConfigFilterType::SingleTag),
+            topic_name: None,
+            topic_sys_flag: 0,
+            write_queue_nums: 16,
+        }
+    }
+}
+
+impl TopicConfig {
+    pub fn new(topic_name: impl Into<String>) -> Self {
+        Self {
+            topic_name: Some(topic_name.into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn topic_name(&self) -> Option<&str> {
+        self.topic_name.as_deref()
+    }
+
+    pub fn set_topic_name(&mut self, topic_name: Option<String>) {
+        self.topic_name = topic_name;
+    }
+
+    pub fn read_queue_nums(&self) -> i32 {
+        self.read_queue_nums
+    }
+
+    pub fn set_read_queue_nums(&mut self, read_queue_nums: i32) {
+        self.read_queue_nums = read_queue_nums;
+    }
+
+    pub fn write_queue_nums(&self) -> i32 {
+        self.write_queue_nums
+    }
+
+    pub fn set_write_queue_nums(&mut self, write_queue_nums: i32) {
+        self.write_queue_nums = write_queue_nums;
+    }
+
+    pub fn perm(&self) -> i32 {
+        self.perm
+    }
+
+    pub fn set_perm(&mut self, perm: i32) {
+        self.perm = perm;
+    }
+
+    pub fn topic_filter_type(&self) -> Option<TopicConfigFilterType> {
+        self.topic_filter_type
+    }
+
+    pub fn set_topic_filter_type(&mut self, topic_filter_type: Option<TopicConfigFilterType>) {
+        self.topic_filter_type = topic_filter_type;
+    }
+
+    pub fn topic_sys_flag(&self) -> i32 {
+        self.topic_sys_flag
+    }
+
+    pub fn set_topic_sys_flag(&mut self, topic_sys_flag: i32) {
+        self.topic_sys_flag = topic_sys_flag;
+    }
+
+    pub fn is_order(&self) -> bool {
+        self.order
+    }
+
+    pub fn set_order(&mut self, order: bool) {
+        self.order = order;
+    }
+
+    pub fn attributes(&self) -> Option<&BTreeMap<String, String>> {
+        self.attributes.as_ref()
+    }
+
+    pub fn set_attributes(&mut self, attributes: Option<BTreeMap<String, String>>) {
+        self.attributes = attributes;
+    }
+}
+
+/// Java `CreateTopicListRequestBody`; a null list is omitted by Fastjson.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTopicListRequestBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_config_list: Option<Vec<Option<TopicConfig>>>,
+}
+
+impl CreateTopicListRequestBody {
+    pub fn new(topic_config_list: Vec<TopicConfig>) -> Self {
+        Self {
+            topic_config_list: Some(topic_config_list.into_iter().map(Some).collect()),
+        }
+    }
+
+    pub fn new_nullable(topic_config_list: Option<Vec<Option<TopicConfig>>>) -> Self {
+        Self { topic_config_list }
+    }
+
+    pub fn topic_config_list(&self) -> Option<&[Option<TopicConfig>]> {
+        self.topic_config_list.as_deref()
+    }
+}
+
 impl SubscriptionGroupList {
     pub fn new(group_config_list: Vec<SubscriptionGroupConfig>) -> Self {
         Self { group_config_list }
@@ -7056,6 +7193,7 @@ impl_java_remoting_serializable_adapters!(
     ConsumerListByGroupResponseBody,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
+    CreateTopicListRequestBody,
     TopicList,
     SubscriptionGroupList,
 );

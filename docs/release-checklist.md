@@ -5568,3 +5568,25 @@ owner-specific checks belong in the manual handoff.
   formatting and scoped `git diff --check` passed.
 - The cluster topic-list RPC is closed. Broader P18-V01 and P18-V02/P18-V03/
   P18-V04 gates remain open.
+
+## P18-V01 batched topic creation RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::create_topic_list` for pinned Java
+  `MQClientAPIImpl.createTopicList(String,List,long)`: request 18 with a Java
+  `CreateTopicListRequestBody`, configured VIP transform and Broker-error
+  handling. The nullable adapter preserves Java's null-list and null-element
+  body encoding.
+- [x] Invoked Java fixture and Rust differential compare populated/default/
+  custom, empty, null-list and null-element body bytes, request code, empty
+  header, success and Broker-error outcomes; a VIP-enabled loopback verifies
+  the two-port transform.
+- [x] Current producer core fixture SHA-256:
+  `fcf27463aa5fde04867de50543847ad53dabc1b5c3b526ae8ac2406481514ec7`.
+- [x] Core all-feature locked suite (180 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- The batch topic method is closed. Broader P18-V01 and P18-V02/P18-V03/P18-V04
+  gates remain open.

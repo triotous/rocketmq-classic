@@ -12,6 +12,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
+    body::TopicConfig,
     codes::{request, response},
     header::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
@@ -1024,6 +1025,86 @@ async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
             request.code,
             request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP_LIST
         );
+        assert_eq!(request.body.as_deref(), Some(expected_body.as_slice()));
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_topic_list_matches_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["createTopicListApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "void org.apache.rocketmq.client.impl.MQClientAPIImpl.createTopicList(java.lang.String,java.util.List,long)"));
+    let cases = fixture["createTopicListOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 5);
+
+    let (client_api, client) = api().await;
+    for case in cases {
+        let configs = if case["configs"].is_null() {
+            None
+        } else {
+            Some(
+                serde_json::from_value::<Vec<Option<TopicConfig>>>(case["configs"].clone())
+                    .unwrap(),
+            )
+        };
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], "broker-a:10911");
+        assert_eq!(
+            expected_request["requestCode"],
+            request::UPDATE_AND_CREATE_TOPIC_LIST
+        );
+        assert_eq!(expected_request["timeoutMillis"], 2345);
+        assert_eq!(expected_request["extFieldsPresent"], false);
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(expected_request["requestBodyBase64"].as_str().unwrap())
+            .unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            None,
+        )
+        .await;
+        let result = client_api
+            .create_topic_list_nullable(
+                &addr,
+                configs.as_deref(),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::UPDATE_AND_CREATE_TOPIC_LIST,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && remark == "topics rejected"
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::UPDATE_AND_CREATE_TOPIC_LIST);
         assert_eq!(request.body.as_deref(), Some(expected_body.as_slice()));
         assert!(
             request

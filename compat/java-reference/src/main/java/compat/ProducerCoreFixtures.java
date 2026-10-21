@@ -222,6 +222,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("createSubscriptionGroupListOperations", createSubscriptionGroupListOperations());
+        result.put("createTopicListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("createTopicList"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("createTopicListOperations", createTopicListOperations());
         result.put("getTopicsByClusterApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("getTopicsByCluster"))
@@ -2004,6 +2011,87 @@ public final class ProducerCoreFixtures {
         result.put("responseRemark", responseRemark);
         try {
             api.createSubscriptionGroupList("broker-a:10911", configs, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> createTopicListOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.common.TopicConfig orders =
+            new org.apache.rocketmq.common.TopicConfig("orders");
+        org.apache.rocketmq.common.TopicConfig payments =
+            new org.apache.rocketmq.common.TopicConfig("payments");
+        payments.setReadQueueNums(8);
+        payments.setWriteQueueNums(7);
+        payments.setPerm(4);
+        payments.setOrder(true);
+        payments.setTopicSysFlag(3);
+        payments.setTopicFilterType(org.apache.rocketmq.common.TopicFilterType.MULTI_TAG);
+        payments.setAttributes(new TreeMap<>(Map.of("+unit", "true")));
+        cases.add(createTopicListCase("populated", List.of(orders, payments),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createTopicListCase("empty", List.of(),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createTopicListCase("null-list", null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createTopicListCase("null-element", Arrays.asList(orders, null),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createTopicListCase("broker-error", List.of(orders),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "topics rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> createTopicListCase(
+        String name,
+        List<org.apache.rocketmq.common.TopicConfig> configs,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("create-topic-list-api");
+        config.setVipChannelEnabled(false);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyBase64", request.getBody() == null ? null
+                                    : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                                requests.add(call);
+                                return org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    responseCode, responseRemark);
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("configs", configs);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.createTopicList("broker-a:10911", configs, 2345L);
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());
