@@ -7449,7 +7449,9 @@ mod tests {
     use crate::push::listener::MessageQueueListener;
     use crate::push::pull_service::PullFlowControlReason;
     use bytes::BytesMut;
-    use rocketmq_classic_common::message::{Message, MessageExt};
+    use rocketmq_classic_common::message::{
+        Message, MessageExt, MessageExtSubtype, MessageHostAddress,
+    };
     use rocketmq_classic_core::api::consumer::PullResultExt;
     use rocketmq_classic_protocol::body::GetConsumerStatusBody;
     use rocketmq_classic_protocol::codes::{request, response};
@@ -8796,6 +8798,27 @@ mod tests {
             crate::test_support::message_ext_from(Message::new("orders", b"body".to_vec()));
         message.set_queue_offset(offset);
         message
+    }
+
+    struct FixedStoreHostSubtype {
+        store_host: MessageHostAddress,
+        setter_calls: AtomicUsize,
+    }
+
+    impl MessageExtSubtype for FixedStoreHostSubtype {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn store_host(&self) -> Option<Option<&MessageHostAddress>> {
+            Some(Some(&self.store_host))
+        }
+
+        fn set_store_host(&self, _store_host: Option<MessageHostAddress>) -> bool {
+            self.setter_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            true
+        }
     }
 
     fn pop_receipt_message(receipt: Option<&str>) -> MessageExt {
@@ -14142,7 +14165,9 @@ mod tests {
         .await;
         {
             let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
-            scripted.broker_results.extend([Ok(()), Ok(()), Ok(())]);
+            scripted
+                .broker_results
+                .extend([Ok(()), Ok(()), Ok(()), Ok(())]);
         }
 
         let message = retry_test_message(7);
@@ -14158,10 +14183,22 @@ mod tests {
             .send_message_back_to_broker(&store_host_message, 4, None)
             .await
             .unwrap();
+        let mut custom_store_host_message = retry_test_message(9);
+        let custom_store_host_subtype = Arc::new(FixedStoreHostSubtype {
+            store_host: MessageHostAddress::new("127.0.0.1", 10912),
+            setter_calls: AtomicUsize::new(0),
+        });
+        custom_store_host_message.set_runtime_subtype(custom_store_host_subtype.clone());
+        custom_store_host_message.set_broker_name(None);
+        custom_store_host_message.set_store_host(Some(MessageHostAddress::new("127.0.0.1", 10911)));
+        consumer
+            .send_message_back_to_broker(&custom_store_host_message, 5, None)
+            .await
+            .unwrap();
 
         {
             let scripted = consumer.scripted_retry_transport.lock().unwrap();
-            assert_eq!(scripted.broker_headers.len(), 3);
+            assert_eq!(scripted.broker_headers.len(), 4);
             assert_eq!(
                 scripted.broker_headers[0].get_broker_name(),
                 Some("broker-a")
@@ -14178,8 +14215,20 @@ mod tests {
                 scripted.broker_targets[2],
                 (None, Some("127.0.0.1:10911".to_owned()))
             );
+            assert_eq!(scripted.broker_headers[3].get_broker_name(), None);
+            assert_eq!(scripted.broker_headers[3].get_delay_level(), 5);
+            assert_eq!(
+                scripted.broker_targets[3],
+                (None, Some("127.0.0.1:10912".to_owned()))
+            );
             assert!(scripted.retry_messages.is_empty());
         }
+        assert_eq!(
+            custom_store_host_subtype
+                .setter_calls
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
         consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }

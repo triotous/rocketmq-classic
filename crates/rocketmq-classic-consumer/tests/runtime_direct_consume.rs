@@ -1,6 +1,7 @@
 use base64::Engine;
 use rocketmq_classic_common::message::{
-    MessageClientExt, MessageExt, MessageExtSubtype, MessageQueue, NullableMessageProperties,
+    MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress, MessageQueue,
+    NullableMessageProperties,
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -45,6 +46,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
         "reconsumeTimes": message.reconsume_times(), "queueOffset": message.queue_offset(),
         "flag": message.flag(),
+        "storeHostPresent": message.store_host().is_some(),
         "bodyLength": message.body_nullable().map(|body| body.len()),
         "propertiesPresent": message.properties_nullable().is_some()});
     if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
@@ -73,6 +75,8 @@ struct CustomDirectMessageExt {
     tags_reads: std::sync::atomic::AtomicUsize,
     keys_reads: std::sync::atomic::AtomicUsize,
     properties_reads: std::sync::atomic::AtomicUsize,
+    store_host_writes: std::sync::atomic::AtomicUsize,
+    custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
 
@@ -89,13 +93,15 @@ impl CustomDirectMessageExt {
             tags_reads: std::sync::atomic::AtomicUsize::new(0),
             keys_reads: std::sync::atomic::AtomicUsize::new(0),
             properties_reads: std::sync::atomic::AtomicUsize::new(0),
+            store_host_writes: std::sync::atomic::AtomicUsize::new(0),
+            custom_store_host: MessageHostAddress::new("127.0.0.1", 10911),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -104,7 +110,8 @@ impl CustomDirectMessageExt {
             self.max_offset_reads.load(Ordering::SeqCst),
             self.tags_reads.load(Ordering::SeqCst),
             self.keys_reads.load(Ordering::SeqCst),
-            self.properties_reads.load(Ordering::SeqCst)
+            self.properties_reads.load(Ordering::SeqCst),
+            self.store_host_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -147,6 +154,15 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             Some("subtype-only".to_owned()),
             Some("visible".to_owned()),
         )])))
+    }
+
+    fn store_host(&self) -> Option<Option<&MessageHostAddress>> {
+        Some(Some(&self.custom_store_host))
+    }
+
+    fn set_store_host(&self, _store_host: Option<MessageHostAddress>) -> bool {
+        self.store_host_writes.fetch_add(1, Ordering::SeqCst);
+        true
     }
 
     fn body(&self) -> Option<Option<Vec<u8>>> {
@@ -347,6 +363,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_reconsume_times(2);
             message.set_queue_offset(17);
             message.set_flag(5);
+            message.set_store_host(Some(MessageHostAddress::new("127.0.0.1", 10911)));
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

@@ -2069,6 +2069,11 @@ impl MessageExt {
     /// Java `MessageExt.getStoreHost()`, represented as a resolved or unresolved
     /// Rust `MessageHostAddress` value.
     pub fn store_host(&self) -> Option<&MessageHostAddress> {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(store_host) = subtype.store_host() {
+                return store_host;
+            }
+        }
         self.store_host.as_ref()
     }
     /// Java `MessageExt.getBornHostString()`; unresolved hosts return `None`.
@@ -2216,7 +2221,13 @@ impl MessageExt {
     }
     /// Java `MessageExt.setStoreHost(SocketAddress)` using Rust value semantics.
     pub fn set_store_host(&mut self, value: Option<MessageHostAddress>) {
-        self.store_host = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_store_host(value.clone()))
+        {
+            self.store_host = value;
+        }
     }
     pub fn set_message_id(&mut self, value: Option<String>) {
         if self
@@ -2380,6 +2391,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn set_broker_name(&self, _broker_name: Option<String>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getStoreHost()`.
+    fn store_host(&self) -> Option<Option<&MessageHostAddress>> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setStoreHost(SocketAddress)`.
+    fn set_store_host(&self, _store_host: Option<MessageHostAddress>) -> bool {
         false
     }
 

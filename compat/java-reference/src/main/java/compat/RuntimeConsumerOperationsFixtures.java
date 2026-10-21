@@ -429,6 +429,7 @@ public final class RuntimeConsumerOperationsFixtures {
         String uniqueId = name.endsWith("-unique") && !name.endsWith("-no-unique") ? "client-unique" : null;
         message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
         if (customSubtype) message.setFlag(5);
+        if (customSubtype) message.setStoreHost(new java.net.InetSocketAddress("127.0.0.1", 10911));
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
         if (customSubtype) {
@@ -447,6 +448,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);
                 item.put("messageId", messages.get(0).getMsgId());
                 item.put("flag", messages.get(0).getFlag());
+                item.put("storeHostPresent", messages.get(0).getStoreHost() != null);
                 item.put("reconsumeTimes", messages.get(0).getReconsumeTimes());
                 item.put("queueOffset", messages.get(0).getQueueOffset());
                 item.put("bodyLength", messages.get(0).getBody() == null ? null : messages.get(0).getBody().length);
@@ -536,6 +538,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int tagsReads;
         private int keysReads;
         private int propertiesReads;
+        private int storeHostWrites;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -643,12 +646,22 @@ public final class RuntimeConsumerOperationsFixtures {
             return customProperties;
         }
 
+        @Override
+        public java.net.SocketAddress getStoreHost() {
+            return new java.net.InetSocketAddress("127.0.0.1", 10911);
+        }
+
+        @Override
+        public void setStoreHost(java.net.SocketAddress storeHost) {
+            this.storeHostWrites++;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
                 + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
                 + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
-                + ";propertiesReads=" + propertiesReads;
+                + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites;
         }
 
         @Override
