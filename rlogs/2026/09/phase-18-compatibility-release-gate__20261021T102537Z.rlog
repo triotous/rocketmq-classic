@@ -22,6 +22,8 @@ The Rust Protocol layer now exposes `ExportRocksDBConfigToJsonRequestHeader` and
 
 The code/documentation slice is validated and ready for its bounded commit. Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04, and Phase 19 work remain open.
 
+Post-validation: committed the bounded slice as `ea7a7818` (`fix(compat): map RocksDB config export RPC`). The post-commit worktree check shows only the four listed Phase 19 paths; they remain unstaged.
+
 Pre-existing Phase 19 worktree paths preserved without staging or edits:
 
 - `integration-tests/README.md`
