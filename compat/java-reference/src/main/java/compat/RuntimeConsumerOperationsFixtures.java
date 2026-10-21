@@ -39,7 +39,8 @@ public final class RuntimeConsumerOperationsFixtures {
             "concurrent-throws", "concurrent-null-broker", "orderly-success", "orderly-commit",
             "orderly-rollback", "orderly-later", "orderly-null-status", "push-null-message",
             "push-null-service", "missing-group", "pull-group", "other-group", "null-group",
-            "concurrent-custom-subtype"}) {
+            "concurrent-custom-subtype", "concurrent-client-custom-subtype",
+            "concurrent-client-custom-subtype-unique"}) {
             direct.add(direct(name));
         }
         List<Object> reset = new ArrayList<>();
@@ -421,9 +422,11 @@ public final class RuntimeConsumerOperationsFixtures {
         push.setNamespace("tenant");
         var implementation = push.getDefaultMQPushConsumerImpl();
         boolean customSubtype = name.equals("concurrent-custom-subtype");
+        boolean customClientSubtype = name.startsWith("concurrent-client-custom-subtype");
         boolean clientMessage = name.contains("-client-");
         org.apache.rocketmq.common.message.MessageExt message = customSubtype
-            ? new CustomDirectMessageExt() : clientMessage
+            ? new CustomDirectMessageExt() : customClientSubtype
+                ? new CustomDirectMessageClientExt() : clientMessage
                 ? new org.apache.rocketmq.common.message.MessageClientExt()
                 : new org.apache.rocketmq.common.message.MessageExt();
         String topic = name.endsWith("null-topic") ? null : name.endsWith("empty-topic") ? "" : "tenant%orders";
@@ -1007,6 +1010,21 @@ public final class RuntimeConsumerOperationsFixtures {
         @Override
         public String toString() {
             return "CustomDirectMessageExt[topicWrites=" + topicWrites + "]";
+        }
+    }
+
+    private static final class CustomDirectMessageClientExt
+        extends org.apache.rocketmq.common.message.MessageClientExt {
+        private String offsetMessageId;
+
+        @Override
+        public String getOffsetMsgId() {
+            return offsetMessageId;
+        }
+
+        @Override
+        public void setOffsetMsgId(String offsetMessageId) {
+            this.offsetMessageId = offsetMessageId == null ? null : "subtype-" + offsetMessageId;
         }
     }
 

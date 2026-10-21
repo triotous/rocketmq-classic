@@ -4,10 +4,10 @@ use rocketmq_classic_common::{
         BLANK_MAGIC_CODE, CHARSET_UTF8, CompactMessageError, DecodeError, DecodeOptions,
         MESSAGE_FLAG_POSITION, MESSAGE_MAGIC_CODE, MESSAGE_MAGIC_CODE_POSITION,
         MESSAGE_MAGIC_CODE_V2, MESSAGE_PHYSIC_OFFSET_POSITION, MESSAGE_STORE_TIMESTAMP_POSITION,
-        Message, MessageClientExt, MessageExt, MessageHostAddress, MessageHostAddressBytesError,
-        MessageId, MessageIdError, MessageProperties, MessageVersion, MessageVersionError,
-        PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
-        TopicFilterType, append_crc32_property, client_decode, client_decodes,
+        Message, MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress,
+        MessageHostAddressBytesError, MessageId, MessageIdError, MessageProperties, MessageVersion,
+        MessageVersionError, PHY_POS_POSITION, PROPERTY_SEPARATOR, QUEUE_OFFSET_POSITION,
+        SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
         client_decodes_with_body, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
         decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
@@ -21,11 +21,37 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 // These fixtures both inspect or mutate the process-wide Java-compatible
 // reserved-property set, so keep them isolated from one another.
 static MESSAGE_CONSTANTS_MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Default)]
+struct OffsetOnlyClientExtSubtype {
+    offset_message_id: Mutex<Option<String>>,
+    offset_writes: Mutex<Vec<Option<String>>>,
+}
+
+impl MessageExtSubtype for OffsetOnlyClientExtSubtype {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn offset_message_id(&self) -> Option<Option<String>> {
+        Some(self.offset_message_id.lock().unwrap().clone())
+    }
+
+    fn set_offset_message_id(&self, offset_message_id: Option<String>) -> bool {
+        self.offset_writes
+            .lock()
+            .unwrap()
+            .push(offset_message_id.clone());
+        *self.offset_message_id.lock().unwrap() =
+            offset_message_id.map(|value| format!("subtype-{value}"));
+        true
+    }
+}
 
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
@@ -355,7 +381,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["defaultMessageId"].as_str()
     );
     assert_eq!(
-        message.offset_message_id(),
+        message.offset_message_id().as_deref(),
         expected["defaultOffsetMessageId"].as_str()
     );
     message.set_message_id(Some("ignored-initial".to_owned()));
@@ -364,12 +390,12 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["setMessageIdOnDefault"].as_str()
     );
     assert_eq!(
-        message.offset_message_id(),
+        message.offset_message_id().as_deref(),
         expected["setMessageIdDoesNotSetOffset"].as_str()
     );
     message.set_offset_message_id(Some("offset-1".to_owned()));
     assert_eq!(
-        message.offset_message_id(),
+        message.offset_message_id().as_deref(),
         expected["offsetMessageId"].as_str()
     );
     assert_eq!(
@@ -387,7 +413,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         expected["messageIdPrefersUnique"].as_str()
     );
     assert_eq!(
-        message.offset_message_id(),
+        message.offset_message_id().as_deref(),
         expected["offsetRemainsWhenUniqueExists"].as_str()
     );
     message.set_message_id(Some("ignored-after-unique".to_owned()));
@@ -407,7 +433,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
     );
     message.set_offset_message_id(Some("offset-2".to_owned()));
     assert_eq!(
-        message.offset_message_id(),
+        message.offset_message_id().as_deref(),
         expected["offsetMessageIdReplaced"].as_str()
     );
     assert_eq!(
@@ -478,6 +504,52 @@ fn message_client_ext_api_matches_java_551_fixture() {
     assert_eq!(
         base_view.message_id_for_runtime_type().as_deref(),
         Some("offset-2")
+    );
+}
+
+#[test]
+fn message_client_ext_offset_methods_dispatch_to_runtime_subtype() {
+    let subtype = Arc::new(OffsetOnlyClientExtSubtype::default());
+    let mut message = MessageClientExt::new();
+    message.set_runtime_subtype(subtype.clone());
+    message.set_offset_message_id(Some("physical-id".to_owned()));
+
+    assert_eq!(
+        message.offset_message_id().as_deref(),
+        Some("subtype-physical-id")
+    );
+    assert_eq!(message.message_id().as_deref(), Some("subtype-physical-id"));
+
+    message.set_message_id(Some("ignored-id".to_owned()));
+    assert_eq!(message.message_id().as_deref(), Some("subtype-physical-id"));
+    message
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-id",
+        )
+        .unwrap();
+    assert_eq!(message.message_id().as_deref(), Some("unique-id"));
+    assert_eq!(
+        message.offset_message_id().as_deref(),
+        Some("subtype-physical-id")
+    );
+    message.clear_system_property(
+        rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+    );
+
+    let base_view = message.into_message_ext();
+    assert!(base_view.is_message_client_ext());
+    assert_eq!(
+        base_view.message_id_for_runtime_type().as_deref(),
+        Some("subtype-physical-id")
+    );
+    assert_eq!(
+        base_view.offset_message_id_for_runtime_type().as_deref(),
+        Some("subtype-physical-id")
+    );
+    assert_eq!(
+        subtype.offset_writes.lock().unwrap().as_slice(),
+        &[Some("physical-id".to_owned())]
     );
 }
 

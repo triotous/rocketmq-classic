@@ -44,6 +44,27 @@ impl MessageExtSubtype for PriorityPropertyOnlySubtype {
     }
 }
 
+#[derive(Default)]
+struct CustomDirectMessageClientExt {
+    offset_message_id: Mutex<Option<String>>,
+}
+
+impl MessageExtSubtype for CustomDirectMessageClientExt {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn offset_message_id(&self) -> Option<Option<String>> {
+        Some(self.offset_message_id.lock().unwrap().clone())
+    }
+
+    fn set_offset_message_id(&self, offset_message_id: Option<String>) -> bool {
+        *self.offset_message_id.lock().unwrap() =
+            offset_message_id.map(|value| format!("subtype-{value}"));
+        true
+    }
+}
+
 fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
     let message_class = message
         .runtime_subtype_name()
@@ -56,7 +77,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
     let mut record = json!({"messageClass": message_class,
         "topic": message.topic_nullable(), "broker": message.broker_name(),
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
-        "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
+        "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id_for_runtime_type(),
         "reconsumeTimes": message.reconsume_times(), "queueOffset": message.queue_offset(),
         "flag": message.flag(),
         "storeHostPresent": message.store_host().is_some(),
@@ -607,7 +628,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
     ))
     .unwrap();
     let cases = fixture["directConsume"].as_array().unwrap();
-    assert_eq!(cases.len(), 27);
+    assert_eq!(cases.len(), 29);
     for case in cases {
         let name = case["name"].as_str().unwrap().to_owned();
         let manager = ClientRuntimeManager::shared_default();
@@ -754,6 +775,17 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_keys_from(["first", "second"]);
             message.set_transaction_id(Some("base-transaction".to_owned()));
             message
+        } else if name.starts_with("concurrent-client-custom-subtype") {
+            let mut message = MessageClientExt::new();
+            message.set_runtime_subtype(Arc::new(CustomDirectMessageClientExt::default()));
+            message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
+            message.set_queue_id(3);
+            message.set_body(vec![1]);
+            if let Some(unique) = unique.as_deref() {
+                message.set_system_property("UNIQ_KEY", unique).unwrap();
+            }
+            message.set_offset_message_id(physical);
+            message.into_message_ext()
         } else if client_message {
             let mut message = MessageClientExt::new();
             message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));

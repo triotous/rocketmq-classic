@@ -2548,7 +2548,7 @@ impl MessageExt {
             message_id
         } else if self.client_ext {
             self.get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-                .or_else(|| self.offset_message_id().map(str::to_owned))
+                .or_else(|| self.offset_message_id_for_runtime_type())
                 .or_else(|| self.message_id().map(str::to_owned))
         } else {
             self.message_id().map(str::to_owned)
@@ -2560,6 +2560,25 @@ impl MessageExt {
     }
     pub fn offset_message_id(&self) -> Option<&str> {
         self.offset_message_id.as_deref()
+    }
+    /// Returns Java `MessageClientExt.getOffsetMsgId()` through the retained
+    /// runtime subtype, falling back to the stored physical ID for the base
+    /// client extension type.
+    pub fn offset_message_id_for_runtime_type(&self) -> Option<String> {
+        if let Some(offset_message_id) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.offset_message_id())
+        {
+            return offset_message_id;
+        }
+        if self.client_ext {
+            self.offset_message_id
+                .clone()
+                .or_else(|| self.message_id.clone())
+        } else {
+            self.offset_message_id.clone()
+        }
     }
     pub fn prepared_transaction_offset(&self) -> i64 {
         self.runtime_subtype
@@ -2721,7 +2740,13 @@ impl MessageExt {
         self.message_id = client_message_id;
     }
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
-        self.offset_message_id = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_offset_message_id(value.clone()))
+        {
+            self.offset_message_id = value;
+        }
     }
     pub fn set_prepared_transaction_offset(&mut self, value: i64) {
         if !self
@@ -3136,6 +3161,17 @@ pub trait MessageExtSubtype: Any + Send + Sync {
         None
     }
 
+    /// Override Java `MessageClientExt.getOffsetMsgId()`. This owned result
+    /// supports subtype getters backed by interior mutable state.
+    fn offset_message_id(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// Handle Java `MessageClientExt.setOffsetMsgId(String)`.
+    fn set_offset_message_id(&self, _offset_message_id: Option<String>) -> bool {
+        false
+    }
+
     fn set_message_id(&self, _message_id: Option<String>) -> bool {
         false
     }
@@ -3224,18 +3260,18 @@ impl MessageClientExt {
     }
 
     pub fn message_id(&self) -> Option<String> {
-        self.0
-            .get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-            .or_else(|| self.0.offset_message_id().map(str::to_owned))
-            .or_else(|| self.0.message_id().map(str::to_owned))
+        self.0.message_id_for_runtime_type()
     }
 
     /// Java `MessageClientExt.setMsgId` intentionally does nothing.
-    pub fn set_message_id(&mut self, _value: Option<String>) {}
+    pub fn set_message_id(&mut self, value: Option<String>) {
+        self.0.set_message_id(value);
+    }
 
-    /// Java `MessageClientExt.getOffsetMsgId` returns the inherited `msgId`.
-    pub fn offset_message_id(&self) -> Option<&str> {
-        self.0.offset_message_id().or_else(|| self.0.message_id())
+    /// Java `MessageClientExt.getOffsetMsgId` returns the inherited `msgId`
+    /// through the runtime subtype's virtual getter.
+    pub fn offset_message_id(&self) -> Option<String> {
+        self.0.offset_message_id_for_runtime_type()
     }
 
     /// Java `MessageClientExt.setOffsetMsgId` writes the inherited `msgId`.
@@ -3246,7 +3282,7 @@ impl MessageClientExt {
     /// Convert to the base type accepted by Java APIs whose parameter is
     /// `MessageExt`; the runtime subtype remains observable on the Rust value.
     pub fn into_message_ext(mut self) -> MessageExt {
-        let offset_message_id = self.offset_message_id().map(str::to_owned);
+        let offset_message_id = self.offset_message_id();
         let client_message_id = self.message_id();
         self.0
             .apply_client_decode_ids(offset_message_id, client_message_id);
