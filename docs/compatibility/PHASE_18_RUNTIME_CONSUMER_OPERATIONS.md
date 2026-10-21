@@ -392,5 +392,14 @@ P18-V01 born-host string getter override follow-up (code revision `7473872c`,
 through subtype hooks and matches the returned strings. The base fallback
 continues to derive values from the stored host address. Fixture SHA-256:
 `dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
-Host-byte helper overrides, other inherited methods, broad P18-V01 and
-P18-V04 platform evidence remain open.
+
+P18-V01 born/store host-byte override follow-up (code revision `625e80c6`,
+2026-10-21): Rust dispatches Java's no-argument `getBornHostBytes()` and
+`getStoreHostBytes()` plus both `ByteBuffer` overloads through subtype hooks.
+The invoked Java fixture overrides all four calls; direct-consume comparison
+matches returned bytes and caller-buffer writes. Rust represents the
+`ByteBuffer` overloads with mutable output slices and a returned byte count,
+without Java buffer identity or position state. Fixture SHA-256:
+`30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
+Other inherited methods, broad P18-V01 and P18-V04 platform evidence remain
+open.

@@ -344,5 +344,13 @@ invoked Java direct-consume fixture overrides both and matches the Rust custom
 values; inherited behavior still reads the stored born-host field. Fixture
 SHA-256:
 `dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
-Host-byte getter overrides, the ByteBuffer overloads and remaining inherited
-methods need further reconciliation.
+
+P18-V01 `MessageExt` born/store host-byte getters (code revision `625e80c6`,
+2026-10-21): Rust dispatches both no-argument getters and both Java
+`ByteBuffer` overloads through `MessageExtSubtype`. The invoked Java/Rust
+direct-consume fixture compares custom getter bytes and caller-buffer writes.
+Rust models each `ByteBuffer` argument as a mutable byte slice and returns the
+written byte count; buffer identity and position metadata are outside this
+mapping. Fixture SHA-256:
+`30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
+Remaining inherited methods and broad P18-V01 reconciliation remain open.

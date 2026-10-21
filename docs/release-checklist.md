@@ -6751,3 +6751,34 @@ owner-specific checks belong in the manual handoff.
   current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
   No push, remote CI, Broker or Docker run was performed; protected Phase 19
   paths were untouched.
+
+## P18-V01 born/store host-byte overrides and current-revision P18-V02 — 2026-10-21 (`625e80c6`)
+
+- [x] Added independent subtype hooks for Java's no-argument
+  `getBornHostBytes()` and `getStoreHostBytes()` getters and their
+  `ByteBuffer` overloads. The invoked direct-consume fixture overrides all
+  four calls and compares returned byte content and caller-buffer writes.
+  Rust represents Java `ByteBuffer` with a mutable output slice and reports
+  the written byte count; Java object identity and position metadata are not
+  represented. Fixture SHA-256:
+  `30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
+- [x] Focused direct-consume comparison; default and all-feature workspace
+  tests; strict all-target/all-feature Clippy; formatting/diff checks; and
+  pinned Maven `verify` pass on `625e80c6`. Maven verified 37 scenarios,
+  9 Running Info, 27 direct-consume, 15 reset cases, 83 typed headers, 16
+  typed bodies and Java/Rust cross-decodes. Existing JDK Unsafe, Netty Unsafe
+  and reflective-final-field warnings were emitted.
+- [x] Current-revision server-free P18-V02 passes: differential self-test
+  and 37-scenario manifest; offline stress (16 cases × 3); release fuzz
+  (137 frame seeds, 11 message seeds, 2,368 bounded mutations); release
+  examples and workspace benches; locked metadata/package/license checks;
+  and four Unique ID tests under UTC and Asia/Taipei. Full record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T204424Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,228.9 ns/iteration; zstd decode 1,140.1 ns; producer
+  request construction 1,182.9 ns; route lookup 14.7 ns; loopback completion
+  62,624.2 ns. Measurements are observations, not thresholds.
+- Broad P18-V01 API/settings/input/error/control-flow/reverse-export audit,
+  remaining inherited methods, and current-revision GitHub Ubuntu/native
+  Windows P18-V04 evidence remain open. No push, remote CI, Broker or Docker
+  run was performed; protected Phase 19 paths were left untouched.

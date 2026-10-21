@@ -1672,6 +1672,15 @@ path continues to derive both results from its stored born-host address. The
 Java/Rust direct-consume fixture overrides both getters and compares their
 custom values. Fixture SHA-256:
 `dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
-Overrides of `getBornHostBytes()` and its ByteBuffer overloads,
-`getStoreHostBytes()` and its overloads, other inherited methods, broad
-P18-V01 reconciliation and P18-V04 platform evidence remain open.
+
+P18-V01 `MessageExt` born/store host-byte override follow-up (code revision
+`625e80c6`, 2026-10-21): `MessageExtSubtype` now dispatches the virtual
+no-argument `getBornHostBytes()` and `getStoreHostBytes()` results and their
+`ByteBuffer` overloads. The invoked Java/Rust direct-consume fixture compares
+both returned byte arrays and caller-buffer writes. Rust maps each Java
+`ByteBuffer` overload to a caller-provided mutable byte slice and returns the
+written byte count; Java buffer identity and position metadata are not
+represented. Fixture SHA-256:
+`30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
+Other inherited methods, broad P18-V01 reconciliation and P18-V04 platform
+evidence remain open.

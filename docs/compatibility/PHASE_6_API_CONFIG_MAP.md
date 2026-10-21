@@ -1552,7 +1552,7 @@ above.
 | `MessageExt()`; `(int, long, SocketAddress, long, SocketAddress, String)` | `MessageExt::new`/`Default` and `MessageExt::with_socket_addresses`. Nullable/resolved/unresolved address and scalar defaults/constructor values are fixture-covered. |
 | `get/setBrokerName`, `get/setQueueId`, `get/setBornTimestamp`, `get/setStoreTimestamp`, `get/setMsgId`, `get/setSysFlag`, `get/setBodyCRC`, `get/setQueueOffset`, `get/setCommitLogOffset`, `get/setStoreSize`, `get/setReconsumeTimes`, `get/setPreparedTransactionOffset` | Matching snake-case getters/setters on `MessageExt`; Java null strings map to `Option<String>`, and signed scalar values retain Java's full `int`/`long` range. |
 | `get/setBornHost`, `get/setStoreHost`, `getBornHostString`, `getBornHostNameString` | `born_host`/`set_born_host`, `store_host`/`set_store_host`, `born_host_string`, and `born_host_name_string` use `MessageHostAddress` to retain resolved and unresolved Java socket-address states and Java-formatted host text. |
-| `getBornHostBytes()` / `(ByteBuffer)`; `getStoreHostBytes()` / `(ByteBuffer)`; static `socketAddress2ByteBuffer(SocketAddress)` / `(SocketAddress, ByteBuffer)` | `MessageHostAddress::network_bytes`, `MessageHostAddress::write_network_bytes`, `MessageExt::born_host_bytes`/`write_born_host_bytes`, and `store_host_bytes`/`write_store_host_bytes` map returned bytes and caller-buffer overloads. Resolved IPv4/IPv6 output, null/unresolved-host failures, and short-buffer prefix writes before port overflow are fixture-tested. |
+| `getBornHostBytes()` / `(ByteBuffer)`; `getStoreHostBytes()` / `(ByteBuffer)`; static `socketAddress2ByteBuffer(SocketAddress)` / `(SocketAddress, ByteBuffer)` | `MessageHostAddress::network_bytes`, `MessageHostAddress::write_network_bytes`, `MessageExt::born_host_bytes`/`write_born_host_bytes`, and `store_host_bytes`/`write_store_host_bytes` map returned bytes and caller-buffer overloads; `MessageExtSubtype` hooks preserve virtual subtype results and writes. Resolved IPv4/IPv6 output, null/unresolved-host failures, short-buffer prefix writes before port overflow, and custom subtype returns/writes are fixture-tested. |
 | `parseTopicFilterType(int)`; `get/setTopicSysFlag`; `get/setGroupSysFlag` | `parse_topic_filter_type`, `topic_sys_flag`/`set_topic_sys_flag`, and `group_sys_flag`/`set_group_sys_flag`; absent/empty/null values, malformed and Unicode decimal inputs, and single/multi-tag flags are compared. |
 | `setBornHostV6Flag`; `setStoreHostAddressV6Flag`; `toString` | `set_born_host_v6_flag`, `set_store_host_address_v6_flag`, and `Display` preserve the Java flag bits and observed message text. Identity-based equality/hash behavior is recorded in [Message equality semantics](#common-public-api-message-equality-semantics). |
 | `MessageClientExt()`; `getMsgId` / `setMsgId`; `getOffsetMsgId` / `setOffsetMsgId` | `MessageClientExt::new`/`Default`, `message_id`/`set_message_id`, and `offset_message_id`/`set_offset_message_id`. Message ID fallback to offset ID, preference for the unique-message property, ignored setters under those conditions, and inherited Message/MessageExt accessors are fixture-tested. |
@@ -1590,6 +1590,16 @@ Common all-feature suite, strict Common Clippy, formatting, and offline Maven
 `6b1a19fef78c1f88f52d7e0851905a6c4a1d6adb98de90fe2028642880a513b3`.
 This closes only the host-byte failure-ordering slice; broad P18-V01 remains
 open.
+
+Runtime subtype override follow-up (code revision `625e80c6`, 2026-10-21):
+`MessageExtSubtype` independently overrides the no-argument born/store host
+byte getters and maps each Java `ByteBuffer` overload to a Rust mutable output
+slice with a returned byte count. The invoked direct-consume fixture compares
+both custom byte arrays and both caller-buffer writes. Java buffer identity
+and position metadata are not represented. Fixture SHA-256:
+`30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
+This closes the subtype dispatch slice; inherited methods and broad P18-V01
+reconciliation remain open.
 
 ## Common public API: MessageAccessor
 
