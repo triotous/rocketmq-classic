@@ -8,7 +8,8 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection,
-        ConsumerRunningInfoBody, CreateTopicListRequestBody, GroupList,
+        ConsumerRunningInfoBody, CreateTopicListRequestBody,
+        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList,
         QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries,
         SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
@@ -855,6 +856,36 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Deletes multiple topics from a Broker through Java
+    /// `MQClientAPIImpl.deleteTopicInBrokerList`.
+    pub async fn delete_topic_in_broker_list(
+        &self,
+        addr: &str,
+        topics: &[String],
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let nullable_topics = topics.iter().cloned().map(Some).collect::<Vec<_>>();
+        self.delete_topic_in_broker_list_nullable(addr, Some(&nullable_topics), deadline)
+            .await
+    }
+
+    /// Nullable adapter preserving Java's null list and null topic entries.
+    pub async fn delete_topic_in_broker_list_nullable(
+        &self,
+        addr: &str,
+        topics: Option<&[Option<String>]>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_TOPIC_IN_BROKER_LIST;
+        let body = DeleteTopicListRequestBody::new_nullable(topics.map(<[_]>::to_vec))
+            .java_encode()
+            .map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        self.delete_batch_request(addr, code, body, deadline).await
+    }
+
     /// Deletes one topic from a NameServer through Java `MqClientAdmin`'s RPC.
     pub async fn delete_topic_in_nameserver(
         &self,
@@ -890,6 +921,76 @@ impl MQClientApi {
     ) -> Result<(), RpcError> {
         let code = request::DELETE_SUBSCRIPTIONGROUP;
         let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes multiple subscription groups through Java
+    /// `MQClientAPIImpl.deleteSubscriptionGroupList`.
+    pub async fn delete_subscription_group_list(
+        &self,
+        addr: &str,
+        group_names: &[String],
+        clean_offset: bool,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let nullable_groups = group_names.iter().cloned().map(Some).collect::<Vec<_>>();
+        self.delete_subscription_group_list_nullable(
+            addr,
+            Some(&nullable_groups),
+            clean_offset,
+            deadline,
+        )
+        .await
+    }
+
+    /// Nullable adapter preserving Java's null group list and null entries.
+    pub async fn delete_subscription_group_list_nullable(
+        &self,
+        addr: &str,
+        group_names: Option<&[Option<String>]>,
+        clean_offset: bool,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::DELETE_SUBSCRIPTION_GROUP_LIST;
+        let body = DeleteSubscriptionGroupListRequestBody::new_nullable(
+            group_names.map(<[_]>::to_vec),
+            clean_offset,
+        )
+        .java_encode()
+        .map_err(|source| RpcError::RequestSerialization {
+            request_code: code,
+            source,
+        })?;
+        self.delete_batch_request(addr, code, body, deadline).await
+    }
+
+    async fn delete_batch_request(
+        &self,
+        addr: &str,
+        code: i32,
+        body: Vec<u8>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    body: Some(body),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
         classify(reply, code, addr)?;
         Ok(())
     }
@@ -1643,6 +1744,102 @@ mod tests {
         api.create_topic_list(
             &format!("127.0.0.1:{advertised_port}"),
             &[TopicConfig::new("orders")],
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn batch_delete_apis_apply_configured_vip_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::{
+            body::{DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody},
+            codes::{LanguageCode, request, response},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            for expected_code in [
+                request::DELETE_TOPIC_IN_BROKER_LIST,
+                request::DELETE_SUBSCRIPTION_GROUP_LIST,
+            ] {
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = bytes::BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+                assert_eq!(request_command.code, expected_code);
+                assert_eq!(request_command.language, Some(LanguageCode::Java));
+                assert!(request_command.ext_fields.is_none());
+                if expected_code == request::DELETE_TOPIC_IN_BROKER_LIST {
+                    let body = DeleteTopicListRequestBody::java_decode(
+                        request_command.body.as_deref().unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(body.topic_list().unwrap()[0].as_deref(), Some("orders"));
+                } else {
+                    let body = DeleteSubscriptionGroupListRequestBody::java_decode(
+                        request_command.body.as_deref().unwrap(),
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        body.group_name_list().unwrap()[0].as_deref(),
+                        Some("workers")
+                    );
+                    assert!(body.clean_offset());
+                }
+                let mut reply = RemotingCommand {
+                    code: response::SUCCESS,
+                    opaque: request_command.opaque,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("batch-delete-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let addr = format!("127.0.0.1:{advertised_port}");
+        api.delete_topic_in_broker_list(
+            &addr,
+            &["orders".to_owned()],
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        api.delete_subscription_group_list(
+            &addr,
+            &["workers".to_owned()],
+            true,
             Instant::now() + Duration::from_secs(2),
         )
         .await

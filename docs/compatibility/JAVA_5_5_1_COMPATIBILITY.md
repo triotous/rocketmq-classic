@@ -138,6 +138,17 @@ checkpoint: `fcf27463aa5fde04867de50543847ad53dabc1b5c3b526ae8ac2406481514ec7`.
 This closes the batch topic RPC only; broader P18-V01 and later gates remain
 open.
 
+Phase 18 batched topic and subscription-group deletion RPCs (2026-10-21): Rust
+now maps pinned `deleteTopicInBrokerList(String,List,long)` request 5002 and
+`deleteSubscriptionGroupList(String,List,boolean,long)` request 5003, with
+Java-compatible body DTOs, VIP address transforms and Broker error handling.
+Invoked Java fixtures and Rust differentials compare exact request bytes for
+populated, empty, null-list and null-element cases; group deletion also checks
+both `cleanOffset` values. A VIP-enabled loopback verifies both operations.
+Producer core fixture SHA-256 at this slice checkpoint:
+`33b7788c15092caaeb2e5cc42ac69eb7bcda5baf5ebc27c2caf01aac9c5e9ff3`. These
+RPC methods are closed; broader P18-V01 and later gates remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

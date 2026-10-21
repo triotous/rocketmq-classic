@@ -2144,6 +2144,63 @@ impl CreateTopicListRequestBody {
     }
 }
 
+/// Java `DeleteTopicListRequestBody`; a null list is omitted by Fastjson.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteTopicListRequestBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_list: Option<Vec<Option<String>>>,
+}
+
+impl DeleteTopicListRequestBody {
+    pub fn new(topic_list: Vec<String>) -> Self {
+        Self {
+            topic_list: Some(topic_list.into_iter().map(Some).collect()),
+        }
+    }
+
+    pub fn new_nullable(topic_list: Option<Vec<Option<String>>>) -> Self {
+        Self { topic_list }
+    }
+
+    pub fn topic_list(&self) -> Option<&[Option<String>]> {
+        self.topic_list.as_deref()
+    }
+}
+
+/// Java `DeleteSubscriptionGroupListRequestBody`; a null group list is omitted.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteSubscriptionGroupListRequestBody {
+    clean_offset: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_name_list: Option<Vec<Option<String>>>,
+}
+
+impl DeleteSubscriptionGroupListRequestBody {
+    pub fn new(group_name_list: Vec<String>, clean_offset: bool) -> Self {
+        Self {
+            clean_offset,
+            group_name_list: Some(group_name_list.into_iter().map(Some).collect()),
+        }
+    }
+
+    pub fn new_nullable(group_name_list: Option<Vec<Option<String>>>, clean_offset: bool) -> Self {
+        Self {
+            clean_offset,
+            group_name_list,
+        }
+    }
+
+    pub fn group_name_list(&self) -> Option<&[Option<String>]> {
+        self.group_name_list.as_deref()
+    }
+
+    pub fn clean_offset(&self) -> bool {
+        self.clean_offset
+    }
+}
+
 impl SubscriptionGroupList {
     pub fn new(group_config_list: Vec<SubscriptionGroupConfig>) -> Self {
         Self { group_config_list }
@@ -7194,6 +7251,8 @@ impl_java_remoting_serializable_adapters!(
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
     CreateTopicListRequestBody,
+    DeleteTopicListRequestBody,
+    DeleteSubscriptionGroupListRequestBody,
     TopicList,
     SubscriptionGroupList,
 );

@@ -229,6 +229,20 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("createTopicListOperations", createTopicListOperations());
+        result.put("deleteTopicInBrokerListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("deleteTopicInBrokerList"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("deleteTopicInBrokerListOperations", deleteTopicInBrokerListOperations());
+        result.put("deleteSubscriptionGroupListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("deleteSubscriptionGroupList"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("deleteSubscriptionGroupListOperations", deleteSubscriptionGroupListOperations());
         result.put("getTopicsByClusterApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("getTopicsByCluster"))
@@ -2092,6 +2106,102 @@ public final class ProducerCoreFixtures {
         result.put("responseRemark", responseRemark);
         try {
             api.createTopicList("broker-a:10911", configs, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> deleteTopicInBrokerListOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(deleteListCase("populated", List.of("orders", "payments"), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("empty", List.of(), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("null-list", null, false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("null-element", Arrays.asList("orders", null), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("broker-error", List.of("orders"), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "topic deletion rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> deleteSubscriptionGroupListOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(deleteListCase("populated-clean", List.of("workers", "analytics"), true, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("populated-keep-offset", List.of("workers"), false, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("empty", List.of(), true, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("null-list", null, false, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("null-element", Arrays.asList("workers", null), true, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteListCase("broker-error", List.of("workers"), true, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "group deletion rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> deleteListCase(
+        String name,
+        List<String> values,
+        boolean cleanOffset,
+        boolean subscriptionGroups,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("delete-batch-list-api");
+        config.setVipChannelEnabled(false);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, args) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) args[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", args[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", args[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyBase64", request.getBody() == null ? null
+                                    : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                                requests.add(call);
+                                return org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    responseCode, responseRemark);
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("values", values);
+        result.put("cleanOffset", cleanOffset);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            if (subscriptionGroups) {
+                api.deleteSubscriptionGroupList("broker-a:10911", values, cleanOffset, 2345L);
+            } else {
+                api.deleteTopicInBrokerList("broker-a:10911", values, 2345L);
+            }
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());

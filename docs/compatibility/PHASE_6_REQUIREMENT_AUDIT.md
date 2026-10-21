@@ -1276,3 +1276,14 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   confirms the port transform. Current producer core fixture SHA-256:
   `fcf27463aa5fde04867de50543847ad53dabc1b5c3b526ae8ac2406481514ec7`.
   The broader P18-V01 public API inventory remains open.
+
+- P18-V01 batch delete RPCs (2026-10-21): the pinned public
+  `MQClientAPIImpl.deleteTopicInBrokerList(String,List,long)` request 5002 and
+  `deleteSubscriptionGroupList(String,List,boolean,long)` request 5003 both send
+  body DTOs through the configured VIP Broker address. Rust now preserves topic
+  and group-list body encoding, including null lists and null entries, plus the
+  group's `cleanOffset` flag. Invoked Java fixtures and Rust differential tests
+  compare signatures, exact bodies, empty headers, success/errors and nullable
+  inputs; a VIP-enabled loopback checks both port transforms. Current producer
+  core fixture SHA-256: `33b7788c15092caaeb2e5cc42ac69eb7bcda5baf5ebc27c2caf01aac9c5e9ff3`.
+  The broader P18-V01 public API inventory remains open.

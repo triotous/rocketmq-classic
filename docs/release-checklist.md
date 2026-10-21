@@ -5590,3 +5590,26 @@ owner-specific checks belong in the manual handoff.
   `git diff --check` passed.
 - The batch topic method is closed. Broader P18-V01 and P18-V02/P18-V03/P18-V04
   gates remain open.
+
+## P18-V01 batch topic and subscription-group deletion RPC slice — 2026-10-21
+
+- [x] Added `delete_topic_in_broker_list` for pinned Java
+  `deleteTopicInBrokerList(String,List,long)`, request 5002, and
+  `delete_subscription_group_list` for
+  `deleteSubscriptionGroupList(String,List,boolean,long)`, request 5003. Both
+  use Java-compatible request bodies and the configured VIP address; nullable
+  adapters preserve null lists and list elements.
+- [x] Invoked Java fixtures and Rust differentials compare populated, empty,
+  null-list, null-element, success and Broker-error cases; group deletion also
+  covers both `cleanOffset` values. A VIP-enabled loopback verifies both
+  two-port transforms.
+- [x] Current producer core fixture SHA-256:
+  `33b7788c15092caaeb2e5cc42ac69eb7bcda5baf5ebc27c2caf01aac9c5e9ff3`.
+- [x] Core all-feature locked suite (181 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- The batch deletion RPCs are closed. Broader P18-V01 and P18-V02/P18-V03/
+  P18-V04 gates remain open.
