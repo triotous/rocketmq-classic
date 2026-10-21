@@ -6434,3 +6434,22 @@ owner-specific checks belong in the manual handoff.
   code revision. Current Ubuntu/native Windows P18-V04 evidence and Phase 19
   Broker/Docker scenarios remain separate. Protected Phase 19 paths were not
   changed or staged.
+
+## P18-V01 custom `MessageExt` queue-offset hooks — 2026-10-21 (`a5bfd35b`)
+
+- [x] `MessageExtSubtype` now dispatches Java's virtual `getQueueOffset` and
+  `setQueueOffset` methods. Rust `ProcessQueue` uses the custom offset as its
+  message-tree key, matching Java `ProcessQueue.putMessage`.
+- [x] The invoked Java fixture compares callback offset `987654321` and a real
+  ProcessQueue insertion: dispatch result, message count, body size, tree key
+  and setter count all match. Fixture SHA-256:
+  `00a09f96bb75f96f2ae81111e83c916af4dc47999b7462efdb82163ab8e1fe54`.
+- [x] Default and all-feature locked workspace tests, Common and Consumer
+  package tests, strict all-target/all-feature Clippy, format/diff checks, and
+  pinned Maven `verify` pass on code revision `a5bfd35b`.
+- This closes the queue-offset virtual hooks only. Other inherited
+  `Message`/`MessageExt` overrides and broad P18-V01 reconciliation remain
+  open; supplemental P18-V02 release gates must still be refreshed after this
+  code revision. Current Ubuntu/native Windows P18-V04 evidence and Phase 19
+  Broker/Docker scenarios remain separate. Protected Phase 19 paths were not
+  changed or staged.

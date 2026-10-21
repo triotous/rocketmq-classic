@@ -226,3 +226,12 @@ Push retry/send-back call sites and leaves other inherited virtual methods in
 the broader reverse/API audit. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `c05bde846eae0f39cc654cf49cfa33f624be62165c17cbc2da46fa80d1a77c0a`.
+
+P18-V01 caller-defined `MessageExt` queue-offset follow-up (2026-10-21): the
+subtype adapter now dispatches virtual `getQueueOffset`/`setQueueOffset`.
+Java's invoked direct-consume and `ProcessQueue.putMessage` fixture compares
+the callback value, message-tree key, count, body size, dispatch result and
+setter side effect with Rust. This covers the queue-index flow for custom
+subtypes; other inherited virtual methods remain in the broad audit. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`00a09f96bb75f96f2ae81111e83c916af4dc47999b7462efdb82163ab8e1fe54`.
