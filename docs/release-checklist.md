@@ -5753,4 +5753,27 @@ owner-specific checks belong in the manual handoff.
   header frames, 15 typed body fixtures, and Java/Rust cross-decodes.
 - [x] `cargo fmt --all -- --check` and `git diff --check` pass.
 - This closes the missing header inventory and reverse-frame evidence only.
-  Broad P18-V01 and P18-V02/P18-V03/P18-V04 remain open.
+  Broad P18-V01 remains open; current P18-V02 server-free disposition is
+  recorded below.
+
+## P18-V02 current-revision server-free gate — 2026-10-21 (`6441ca56`)
+
+- [x] Default and all-feature locked workspace tests, strict all-target and
+  all-feature workspace Clippy, and pinned Java Maven `verify` pass. Maven
+  checked 37 invoked RPC scenarios, 68 typed-header frames, 15 typed-body
+  fixtures, and Java/Rust cross-decodes.
+- [x] Differential comparator self-test and the 37-row handoff manifest pass.
+  Offline race/leak smoke passes 16 cases × 3; fuzz smoke passes 121 frame
+  seeds, 11 message seeds, 2,112 mutations, 170 frame decodes, and 109 message
+  decodes.
+- [x] Release facade examples build; the workspace benchmark target compiles
+  and the offline benchmark runs. Its macOS AArch64, Apple M5 Max, 18 logical
+  CPU, Rust 1.85.0 observations are recorded in
+  `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [x] Locked Cargo metadata, workspace metadata/license/dependency checks, and
+  all seven package-content listings pass; every listing contains `LICENSE`
+  and `NOTICE`. The Unique ID differential passes under UTC and
+  `TZ=Asia/Taipei`; formatting and diff checks pass.
+- This closes the current-revision local P18-V02 server-free gate. Broad
+  P18-V01 remains open; current Ubuntu/native Windows evidence and the
+  remaining Phase 19 Broker/Docker scenarios remain open.
