@@ -178,6 +178,15 @@ public final class ProducerCoreFixtures {
             .map(ProducerCoreFixtures::methodSignature)
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
+        result.put("coldDataFlowAndReadAheadApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("updateColdDataFlowCtrGroupConfig",
+                "removeColdDataFlowCtrGroupConfig", "getColdDataFlowCtrInfo",
+                "setCommitLogReadAheadMode").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("coldDataFlowAndReadAheadOperations", coldDataFlowAndReadAheadOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -1450,6 +1459,134 @@ public final class ProducerCoreFixtures {
             }
         }
         result.put("entries", entries);
+        return result;
+    }
+
+    private static Map<String, Object> coldDataFlowAndReadAheadOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "update rejected"));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "remove rejected"));
+        org.apache.rocketmq.remoting.protocol.RemotingCommand info =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+        info.setBody("coldData=enabled\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        replies.add(info);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand emptyInfo =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+        emptyInfo.setBody(new byte[0]);
+        replies.add(emptyInfo);
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "unavailable"));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, "updated"));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, ""));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "mode rejected"));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("cold-data-flow-api");
+        config.setVipChannelEnabled(false);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFields", request.getExtFields());
+                                call.put("body", request.getBody() == null ? null
+                                    : new String(request.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    replies.removeFirst();
+                                call.put("responseCode", response.getCode());
+                                call.put("responseRemark", response.getRemark());
+                                call.put("responseBody", response.getBody() == null ? null
+                                    : new String(response.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        try {
+            java.util.Properties properties = new java.util.Properties();
+            api.updateColdDataFlowCtrGroupConfig("127.0.0.1:10913", new java.util.Properties(), 1234L);
+            result.put("callsAfterEmptyUpdate", requests.size());
+            properties.setProperty("group", "workers");
+            api.updateColdDataFlowCtrGroupConfig("127.0.0.1:10913", properties, 1234L);
+            result.put("updateOutcome", "returned");
+            try {
+                api.updateColdDataFlowCtrGroupConfig("127.0.0.1:10913", properties, 1234L);
+                result.put("updateErrorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+                result.put("updateErrorOutcome", error.getClass().getSimpleName());
+                result.put("updateErrorCode", error.getResponseCode());
+                result.put("updateErrorMessage", error.getMessage());
+            }
+            api.removeColdDataFlowCtrGroupConfig("127.0.0.1:10913", null, 1234L);
+            api.removeColdDataFlowCtrGroupConfig("127.0.0.1:10913", "", 1234L);
+            result.put("callsAfterNullAndEmptyRemove", requests.size());
+            api.removeColdDataFlowCtrGroupConfig("127.0.0.1:10913", "workers", 1234L);
+            result.put("removeOutcome", "returned");
+            try {
+                api.removeColdDataFlowCtrGroupConfig("127.0.0.1:10913", "workers", 1234L);
+                result.put("removeErrorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+                result.put("removeErrorOutcome", error.getClass().getSimpleName());
+                result.put("removeErrorCode", error.getResponseCode());
+                result.put("removeErrorMessage", error.getMessage());
+            }
+            result.put("infoValue", api.getColdDataFlowCtrInfo("127.0.0.1:10913", 1234L));
+            result.put("emptyInfoValue", api.getColdDataFlowCtrInfo("127.0.0.1:10913", 1234L));
+            result.put("missingInfoValue", api.getColdDataFlowCtrInfo("127.0.0.1:10913", 1234L));
+            try {
+                api.getColdDataFlowCtrInfo("127.0.0.1:10913", 1234L);
+                result.put("infoErrorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+                result.put("infoErrorOutcome", error.getClass().getSimpleName());
+                result.put("infoErrorCode", error.getResponseCode());
+                result.put("infoErrorMessage", error.getMessage());
+            }
+            result.put("setModeResult", api.setCommitLogReadAheadMode(
+                "127.0.0.1:10913", "ASYNC", 1234L));
+            result.put("emptyModeResult", api.setCommitLogReadAheadMode(
+                "127.0.0.1:10913", "SYNC", 1234L));
+            result.put("nullModeResult", api.setCommitLogReadAheadMode(
+                "127.0.0.1:10913", null, 1234L));
+            try {
+                api.setCommitLogReadAheadMode("127.0.0.1:10913", "INVALID", 1234L);
+                result.put("modeErrorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+                result.put("modeErrorOutcome", error.getClass().getSimpleName());
+                result.put("modeErrorCode", error.getResponseCode());
+                result.put("modeErrorMessage", error.getMessage());
+            }
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

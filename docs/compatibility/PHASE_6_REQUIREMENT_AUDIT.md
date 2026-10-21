@@ -1172,7 +1172,23 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
   and a trailing backslash; the Rust parser and scripted RPC tests compare the
   outcomes. An absent response body maps to structured `MalformedResponse`,
-  while Java dereferences null before property parsing. Current fixture SHA-256
-  is `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`.
+  while Java dereferences null before property parsing. At this operation
+  checkpoint the fixture SHA-256 was
+  `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`.
   This closes the named operation/property-input slice only; broad P18-V01 and
   the final current-worktree P18-V02 refresh remain open.
+
+- P18-V01 adjacent cold-data flow and read-ahead RPCs (2026-10-21): pinned
+  source review found four neighboring public `MQClientAPIImpl` operations
+  absent from the Core API map. Rust now maps request codes 2001–2004,
+  including VIP selection on the two mutation calls, empty/null no-op inputs,
+  the `READ_AHEAD_MODE` field, nullable body/remark results, and Broker error
+  handling. The Java fixture directly invokes all four methods and records
+  request envelopes and response outcomes; Rust scripted RPCs compare them,
+  and a VIP-enabled loopback test checks update/remove address transformation.
+  Java's null read-ahead field is omitted by the wire encoder; Rust's nullable
+  adapter emits no ext fields for that input. Current fixture SHA-256 is
+  `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`.
+  The high-level `rocketmq-tools` facade stays outside Phase 17. This closes
+  these low-level RPC operations only; broad P18-V01 and the final current-tree
+  P18-V02 refresh remain open.

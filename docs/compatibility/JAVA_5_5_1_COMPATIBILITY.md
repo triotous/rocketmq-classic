@@ -31,10 +31,24 @@ RocketMQ's UTF-8 decode/re-encode step. The fixture covers empty Properties,
 escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
 and a final backslash. A missing response body produces Rust's structured
 malformed-response error; Java dereferences the missing body before parsing.
-The current producer core fixture SHA-256 is
+At this read-operation checkpoint the producer core fixture SHA-256 was
 `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`. The
 focused Core RPC/parser tests and Producer fixture test pass; broad P18-V01 and
 the final current-revision P18-V02 refresh remain open.
+
+Phase 18 adjacent cold-data flow and CommitLog read-ahead RPCs (2026-10-21):
+the four pinned `MQClientAPIImpl` methods now map to Core request codes
+2001–2004. Cold-data flow updates serialize non-empty Properties and use the
+configured VIP address; empty Properties and null/empty group removal inputs
+produce no request. Cold-data status reads the supplied address and returns
+`None` for an absent or empty body. Read-ahead mode uses the
+`READ_AHEAD_MODE` extension field, returns only a non-empty Broker remark, and
+omits Java's null field value on the wire. Scripted tests compare success,
+nullable results, Broker errors and request fields; a VIP-enabled loopback test
+checks both mutation operations. Current producer core fixture SHA-256 is
+`c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`. The
+tools facade remains outside Phase 17; the Core low-level operation mappings
+do not claim that facade's methods or command-line tools.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

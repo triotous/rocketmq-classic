@@ -321,6 +321,13 @@ the tools extension. The Phase 17 plan explicitly excludes the separate
 missing Rust client capabilities. Rust still carries request code 354 as a
 protocol constant; this does not expose a RocksDB administration API.
 
+The same pinned-source call-site scan places
+`updateColdDataFlowCtrGroupConfig`, `removeColdDataFlowCtrGroupConfig`,
+`getColdDataFlowCtrInfo`, and `setCommitLogReadAheadMode` behind
+`tools/.../MQAdminExt`. Their low-level `MQClientAPIImpl` request operations
+are mapped by Core for the Phase 18 client API audit; the tools facade methods
+and command-line commands remain outside Phase 17.
+
 Pinned-source check:
 
 ```bash

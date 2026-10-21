@@ -5411,7 +5411,7 @@ owner-specific checks belong in the manual handoff.
   escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
   and a final backslash. Missing response bodies map to a structured Rust
   `MalformedResponse`; Java dereferences null before parsing.
-- [x] Current `fixtures/producer/core.json` SHA-256:
+- [x] At the read-operation checkpoint, `fixtures/producer/core.json` SHA-256:
   `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`.
 - [x] Core all-feature locked tests (176 unit tests, all integration targets,
   and 16 doctests), strict all-target/all-feature Clippy for Common/Core/
@@ -5421,3 +5421,26 @@ owner-specific checks belong in the manual handoff.
   inputs. Broad P18-V01, the final current-revision P18-V02 refresh, P18-V03
   package/provenance review and current Ubuntu/native Windows P18-V04 evidence
   remain open. Phase 19 Broker/Docker validation was not run.
+
+## P18-V01 cold-data flow and CommitLog read-ahead RPC slice — 2026-10-21
+
+- [x] Added the four pinned `MQClientAPIImpl` low-level operations: request
+  2001 updates cold-data group Properties; request 2002 removes a group;
+  request 2003 reads nullable status text; request 2004 sets CommitLog
+  read-ahead mode and returns a nullable remark. Tests cover no-op inputs,
+  exact request bodies/ext fields, VIP transformation for mutations, direct
+  address for reads, empty/null results and Broker errors. The null mode is
+  omitted from the remoting wire fields, matching Java's serializer.
+- [x] Java invocation fixture and Rust scripted differential cover all four
+  methods and their named response branches. Current producer core fixture
+  SHA-256: `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`.
+- [x] Core all-feature locked suite (177 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy for Common/Core/
+  Producer/facade, Producer fixture comparison, pinned Java Maven `verify`
+  (37 scenarios, fixture drift and cross-decodes), formatting, and scoped
+  whitespace checks pass.
+- The high-level `rocketmq-tools` facade remains outside Phase 17. This closes
+  the Core transport-operation mappings only; broad P18-V01, current-revision
+  P18-V02, P18-V03 package/provenance review and current Ubuntu/native Windows
+  P18-V04 evidence remain open. No remote CI or Phase 19 Broker/Docker run was
+  triggered.

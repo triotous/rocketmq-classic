@@ -566,6 +566,133 @@ impl MQClientApi {
         Ok(crate::auth::parse_java_properties(decoded.as_bytes()))
     }
 
+    /// Updates Java `MQClientAPIImpl` cold-data flow control Properties.
+    ///
+    /// An empty map is a no-op. Non-empty values are encoded as UTF-8
+    /// `key=value\n` lines and sent to the Broker's VIP address when enabled.
+    pub async fn update_cold_data_flow_ctr_group_config(
+        &self,
+        addr: &str,
+        properties: &HashMap<String, String>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        if properties.is_empty() {
+            return Ok(());
+        }
+        let mut body = String::new();
+        for (key, value) in properties {
+            body.push_str(key);
+            body.push('=');
+            body.push_str(value);
+            body.push('\n');
+        }
+        let code = request::UPDATE_COLD_DATA_FLOW_CTR_CONFIG;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            body: Some(body.into_bytes()),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(&broker_addr, command, deadline)
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Removes one Java cold-data flow control group configuration.
+    ///
+    /// Java does nothing for a null or empty group. A non-empty group is sent
+    /// as a UTF-8 body to the configured Broker VIP address.
+    pub async fn remove_cold_data_flow_ctr_group_config(
+        &self,
+        addr: &str,
+        consumer_group: Option<&str>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let Some(consumer_group) = consumer_group.filter(|group| !group.is_empty()) else {
+            return Ok(());
+        };
+        let code = request::REMOVE_COLD_DATA_FLOW_CTR_CONFIG;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            body: Some(consumer_group.as_bytes().to_vec()),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(&broker_addr, command, deadline)
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Reads the Broker's cold-data flow control status text.
+    ///
+    /// Java sends request 2003 to the supplied address without VIP
+    /// transformation and returns null for an absent or empty success body.
+    pub async fn get_cold_data_flow_ctr_info(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<Option<String>, RpcError> {
+        let code = request::GET_COLD_DATA_FLOW_CTR_INFO;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(addr, command, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(reply
+            .body
+            .filter(|body| !body.is_empty())
+            .map(|body| String::from_utf8_lossy(&body).into_owned()))
+    }
+
+    /// Sets the CommitLog read-ahead mode and returns Java's non-empty remark.
+    ///
+    /// The request uses the `READ_AHEAD_MODE` extension field and the supplied
+    /// Broker address directly. Java's RocketMQ serializer omits a null mode
+    /// value from the wire, so `None` produces no extension fields.
+    pub async fn set_commit_log_read_ahead_mode(
+        &self,
+        addr: &str,
+        mode: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<String>, RpcError> {
+        let code = request::SET_COMMITLOG_READ_MODE;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            ext_fields: mode.map(|mode| [("READ_AHEAD_MODE".to_owned(), mode.to_owned())].into()),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(addr, command, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        Ok(reply.remark.filter(|remark| !remark.is_empty()))
+    }
+
     /// Deletes one topic from a Broker through Java `MqClientAdmin`'s RPC.
     pub async fn delete_topic_in_broker(
         &self,
@@ -1147,6 +1274,88 @@ mod tests {
             )]))
         );
         peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn cold_data_flow_mutations_apply_the_configured_vip_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, request, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            collections::HashMap,
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut requests = Vec::new();
+            for _ in 0..2 {
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = bytes::BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+                let mut reply = RemotingCommand {
+                    code: response::SUCCESS,
+                    opaque: request.opaque,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+                requests.push(request);
+            }
+            requests
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("cold-flow-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let addr = format!("127.0.0.1:{advertised_port}");
+        api.update_cold_data_flow_ctr_group_config(
+            &addr,
+            &HashMap::from([("group".to_owned(), "workers".to_owned())]),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        api.remove_cold_data_flow_ctr_group_config(
+            &addr,
+            Some("workers"),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        let requests = peer.await.unwrap();
+        assert_eq!(requests[0].code, request::UPDATE_COLD_DATA_FLOW_CTR_CONFIG);
+        assert_eq!(requests[0].language, Some(LanguageCode::Java));
+        assert_eq!(
+            requests[0].body.as_deref(),
+            Some(b"group=workers\n".as_slice())
+        );
+        assert_eq!(requests[1].code, request::REMOVE_COLD_DATA_FLOW_CTR_CONFIG);
+        assert_eq!(requests[1].language, Some(LanguageCode::Java));
+        assert_eq!(requests[1].body.as_deref(), Some(b"workers".as_slice()));
         remoting.shutdown().await;
     }
 

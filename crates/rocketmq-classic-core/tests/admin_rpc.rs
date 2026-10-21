@@ -386,6 +386,206 @@ async fn get_broker_config_rejects_missing_body_and_preserves_broker_error() {
 }
 
 #[tokio::test]
+async fn cold_data_flow_and_read_ahead_operations_match_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["coldDataFlowAndReadAheadApi"].as_array().unwrap();
+    for signature in [
+        "void org.apache.rocketmq.client.impl.MQClientAPIImpl.updateColdDataFlowCtrGroupConfig(java.lang.String,java.util.Properties,long)",
+        "void org.apache.rocketmq.client.impl.MQClientAPIImpl.removeColdDataFlowCtrGroupConfig(java.lang.String,java.lang.String,long)",
+        "java.lang.String org.apache.rocketmq.client.impl.MQClientAPIImpl.getColdDataFlowCtrInfo(java.lang.String,long)",
+        "java.lang.String org.apache.rocketmq.client.impl.MQClientAPIImpl.setCommitLogReadAheadMode(java.lang.String,java.lang.String,long)",
+    ] {
+        assert!(signatures.iter().any(|value| value == signature));
+    }
+
+    let cases = fixture["coldDataFlowAndReadAheadOperations"]
+        .as_object()
+        .unwrap();
+    assert_eq!(cases["callsAfterEmptyUpdate"], 0);
+    assert_eq!(cases["callsAfterNullAndEmptyRemove"], 2);
+    assert_eq!(cases["updateOutcome"], "returned");
+    assert_eq!(cases["updateErrorOutcome"], "MQBrokerException");
+    assert_eq!(cases["updateErrorCode"], response::SYSTEM_ERROR);
+    assert_eq!(cases["removeOutcome"], "returned");
+    assert_eq!(cases["removeErrorOutcome"], "MQBrokerException");
+    assert_eq!(cases["removeErrorCode"], response::SYSTEM_ERROR);
+    assert_eq!(cases["infoValue"], "coldData=enabled\n");
+    assert_eq!(
+        cases.get("emptyInfoValue").cloned().unwrap_or(Value::Null),
+        Value::Null
+    );
+    assert_eq!(
+        cases
+            .get("missingInfoValue")
+            .cloned()
+            .unwrap_or(Value::Null),
+        Value::Null
+    );
+    assert_eq!(cases["infoErrorOutcome"], "MQBrokerException");
+    assert_eq!(cases["infoErrorCode"], response::SYSTEM_ERROR);
+    assert_eq!(cases["setModeResult"], "updated");
+    assert_eq!(
+        cases.get("emptyModeResult").cloned().unwrap_or(Value::Null),
+        Value::Null
+    );
+    assert_eq!(
+        cases.get("nullModeResult").cloned().unwrap_or(Value::Null),
+        Value::Null
+    );
+    assert_eq!(cases["modeErrorOutcome"], "MQBrokerException");
+    assert_eq!(cases["modeErrorCode"], response::SYSTEM_ERROR);
+
+    let requests = cases["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 12);
+    let (client_api, client) = api().await;
+    client_api
+        .update_cold_data_flow_ctr_group_config(
+            "unused",
+            &HashMap::new(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    client_api
+        .remove_cold_data_flow_ctr_group_config(
+            "unused",
+            None,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+    client_api
+        .remove_cold_data_flow_ctr_group_config(
+            "unused",
+            Some(""),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+
+    for case in requests {
+        let code = case["requestCode"].as_i64().unwrap() as i32;
+        let body = case["body"].as_str().map(|value| value.as_bytes().to_vec());
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|value| value.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, response_body)
+                .await;
+        assert!(case["address"].as_str().unwrap().ends_with(":10913"));
+        let result = match code {
+            request::UPDATE_COLD_DATA_FLOW_CTR_CONFIG => {
+                let (key, value) = case["body"]
+                    .as_str()
+                    .unwrap()
+                    .trim_end()
+                    .split_once('=')
+                    .unwrap();
+                client_api
+                    .update_cold_data_flow_ctr_group_config(
+                        &addr,
+                        &HashMap::from([(key.to_owned(), value.to_owned())]),
+                        Instant::now() + Duration::from_secs(2),
+                    )
+                    .await
+                    .map(|()| Value::String("returned".to_owned()))
+            }
+            request::REMOVE_COLD_DATA_FLOW_CTR_CONFIG => client_api
+                .remove_cold_data_flow_ctr_group_config(
+                    &addr,
+                    case["body"].as_str(),
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await
+                .map(|()| Value::String("returned".to_owned())),
+            request::GET_COLD_DATA_FLOW_CTR_INFO => client_api
+                .get_cold_data_flow_ctr_info(&addr, Instant::now() + Duration::from_secs(2))
+                .await
+                .map(|value| value.map(Value::String).unwrap_or(Value::Null)),
+            request::SET_COMMITLOG_READ_MODE => {
+                let mode = case["extFields"]["READ_AHEAD_MODE"].as_str();
+                client_api
+                    .set_commit_log_read_ahead_mode(
+                        &addr,
+                        mode,
+                        Instant::now() + Duration::from_secs(2),
+                    )
+                    .await
+                    .map(|value| value.map(Value::String).unwrap_or(Value::Null))
+            }
+            _ => panic!("unexpected Broker config operation code {code}"),
+        };
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, code);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert_eq!(request.body.as_deref(), body.as_deref());
+        let expected_ext = case["extFields"]
+            .as_object()
+            .filter(|fields| !fields.is_empty())
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<HashMap<_, _>>()
+            });
+        let actual_ext = request.ext_fields.map(|fields| {
+            fields
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect::<HashMap<_, _>>()
+        });
+        assert_eq!(actual_ext, expected_ext, "request code {code}");
+        match (result, response_code) {
+            (Ok(actual), response::SUCCESS) => {
+                let expected = match code {
+                    request::UPDATE_COLD_DATA_FLOW_CTR_CONFIG
+                    | request::REMOVE_COLD_DATA_FLOW_CTR_CONFIG => Value::String("returned".into()),
+                    request::GET_COLD_DATA_FLOW_CTR_INFO
+                        if case["responseBody"]
+                            .as_str()
+                            .is_some_and(|body| !body.is_empty()) =>
+                    {
+                        case["responseBody"].clone()
+                    }
+                    request::GET_COLD_DATA_FLOW_CTR_INFO => Value::Null,
+                    request::SET_COMMITLOG_READ_MODE
+                        if case["responseRemark"]
+                            .as_str()
+                            .is_some_and(|remark| !remark.is_empty()) =>
+                    {
+                        case["responseRemark"].clone()
+                    }
+                    request::SET_COMMITLOG_READ_MODE => Value::Null,
+                    _ => unreachable!(),
+                };
+                assert_eq!(actual, expected, "request code {code}");
+            }
+            (
+                Err(RpcError::Response {
+                    code: actual_code,
+                    remark,
+                    ..
+                }),
+                expected_code,
+            ) => {
+                assert_eq!(actual_code, expected_code);
+                assert_eq!(remark, response_remark);
+            }
+            (result, expected_code) => panic!(
+                "request code {code} result {result:?} disagrees with response {expected_code}"
+            ),
+        }
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(
