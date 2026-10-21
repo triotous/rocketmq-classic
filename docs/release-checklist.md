@@ -6047,3 +6047,20 @@ owner-specific checks belong in the manual handoff.
   P18-V04 evidence remain open. Phase 19 live Broker scenarios remain in
   Phase 19. The four preserved Phase 19 worktree paths remain untouched and
   unstaged.
+
+## P18-V01 RPC slice: `getBrokerLiteInfo` — 2026-10-21
+
+- [x] Added `MQClientApi::get_broker_lite_info` for request 200074 with an
+  empty request, configured VIP conversion, caller deadline and nullable
+  `GetBrokerLiteInfoResponseBody` result. The DTO preserves primitive defaults,
+  nullable metadata maps and mutable map aliases.
+- [x] Invoked Java fixtures cover the pinned RPC/DTO API surface, populated and
+  default response bodies, absent and malformed bodies, and Broker errors.
+  Rust fixture differential checks response fields and outcomes; a VIP loopback
+  verifies the transformed address. Success fixture SHA-256:
+  `57eff87ee4fd5bc652076a744109cdc2fb4d395362558b6ed5802e5dc166fe0e`.
+- [x] `cargo fmt --all -- --check`, the focused protocol/Core regressions and
+  invoked fixture differential pass. Full workspace Clippy/test and Maven
+  verification results are recorded in the Phase 18 execution log.
+- The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
+  evidence and Phase 19 live Broker scenarios remain open.

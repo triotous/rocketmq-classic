@@ -755,3 +755,16 @@ target address, timeout and response outcomes; the Rust loopback differential
 checks the decoded extension fields and empty body. Producer core fixture
 SHA-256: `7846aa7100a8f2339917fc71ad0018e32786692e4b3cff3c1bfafe1c6621372f`.
 This closes this RPC mapping only; broad P18-V01 remains open.
+
+Phase 18 `getBrokerLiteInfo` RPC (2026-10-21): pinned
+`MQClientAPIImpl.getBrokerLiteInfo(String,long)` sends request 200074 with an
+empty envelope through the configured VIP address transform. Rust decodes a
+nullable `GetBrokerLiteInfoResponseBody`, including primitive counter defaults
+and nullable `topicMeta`/`groupMeta` maps with mutable getter aliases; absent
+success bodies return `None`, malformed bodies are reported, and Broker errors
+preserve the source address. Invoked Java fixtures compare the method and DTO
+accessor inventories, defaults, populated metadata, null body, malformed body,
+and Broker rejection; a Rust VIP loopback verifies the address transform.
+Fixture SHA-256:
+`57eff87ee4fd5bc652076a744109cdc2fb4d395362558b6ed5802e5dc166fe0e`. This
+closes this RPC/DTO slice only; broad P18-V01 remains open.
