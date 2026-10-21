@@ -2,17 +2,17 @@
 use rocketmq_classic_protocol::{
     body::{
         BatchAckMessageRequestBody, GetBrokerLiteInfoResponseBody, GetLiteTopicInfoResponseBody,
-        LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody, QueryAssignmentResponseBody,
-        SetMessageRequestModeRequestBody,
+        GetParentTopicInfoResponseBody, LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody,
+        QueryAssignmentResponseBody, SetMessageRequestModeRequestBody,
     },
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader, HeaderMap,
-        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, ProtocolError,
-        UnregisterClientRequestHeader,
+        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader,
+        GetParentTopicInfoRequestHeader, HeaderMap, HeartbeatRequestHeader,
+        LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -321,6 +321,37 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         GetBrokerLiteInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
+            |error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            },
+        )
+    }
+
+    /// Queries a Lite parent topic's metadata through Java's synchronous
+    /// `MQClientAPIImpl.getParentTopicInfo` operation. A missing response body
+    /// is a successful null result in Java.
+    pub async fn get_parent_topic_info(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<GetParentTopicInfoResponseBody>, RpcError> {
+        let code = request::GET_PARENT_TOPIC_INFO;
+        let mut header = GetParentTopicInfoRequestHeader::default();
+        header.set_topic(topic.map(str::to_owned));
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| crate::config::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request(&broker_addr, code, &header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        GetParentTopicInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
             |error| RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -1208,6 +1239,90 @@ mod broker_lite_info_tests {
             .unwrap();
         assert_eq!(result.get_store_type(), Some("rocksdb"));
         assert_eq!(result.get_max_lmq_num(), 12);
+        peer.await.unwrap();
+        client.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod parent_topic_info_tests {
+    use super::MQClientApi;
+    use crate::config::ClientConfig;
+    use bytes::BytesMut;
+    use rocketmq_classic_protocol::codes::{LanguageCode, request};
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame,
+    };
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::Instant,
+    };
+
+    #[tokio::test]
+    async fn get_parent_topic_info_uses_vip_address_and_typed_header() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("get-parent-topic-info");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let address = format!("127.0.0.1:{}", server_addr.port() + 2);
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::GET_PARENT_TOPIC_INFO);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request.ext_fields,
+                Some(BTreeMap::from([("topic".into(), "lite-parent".into())]).into())
+            );
+            assert!(request.body.is_none());
+
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(
+                    br#"{"topic":"lite-parent","ttl":3600,"groups":["workers"],"lmqNum":3,"liteTopicCount":12}"#
+                        .to_vec(),
+                ),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let result = api
+            .get_parent_topic_info(
+                &address,
+                Some("lite-parent"),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.get_topic(), Some("lite-parent"));
+        assert_eq!(result.get_ttl(), 3600);
+        assert_eq!(result.get_groups().unwrap().with(|groups| groups.len()), 1);
+        assert_eq!(result.get_lmq_num(), 3);
+        assert_eq!(result.get_lite_topic_count(), 12);
         peer.await.unwrap();
         client.shutdown().await;
     }

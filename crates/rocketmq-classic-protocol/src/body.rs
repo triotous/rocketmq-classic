@@ -3986,6 +3986,104 @@ impl GetBrokerLiteInfoResponseBody {
     }
 }
 
+/// Java `GetParentTopicInfoResponseBody`, preserving nullable topic/group
+/// values, primitive counter defaults and the mutable group Set getter alias.
+pub type ParentTopicInfoGroups = SharedValue<HashSet<Option<String>>>;
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetParentTopicInfoResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
+    ttl: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    groups: Option<ParentTopicInfoGroups>,
+    lmq_num: i32,
+    lite_topic_count: i32,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct GetParentTopicInfoResponseBodyFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    topic: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    ttl: i32,
+    groups: Option<HashSet<Option<String>>>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    lmq_num: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    lite_topic_count: i32,
+}
+
+impl<'de> Deserialize<'de> for GetParentTopicInfoResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GetParentTopicInfoResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            topic: fields.topic,
+            ttl: fields.ttl,
+            groups: fields.groups.map(SharedValue::new),
+            lmq_num: fields.lmq_num,
+            lite_topic_count: fields.lite_topic_count,
+        })
+    }
+}
+
+impl GetParentTopicInfoResponseBody {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_ttl(&self) -> i32 {
+        self.ttl
+    }
+
+    pub fn set_ttl(&mut self, value: i32) {
+        self.ttl = value;
+    }
+
+    pub fn get_groups(&self) -> Option<ParentTopicInfoGroups> {
+        self.groups.clone()
+    }
+
+    pub fn set_groups(&mut self, value: Option<ParentTopicInfoGroups>) {
+        self.groups = value;
+    }
+
+    pub fn get_lmq_num(&self) -> i32 {
+        self.lmq_num
+    }
+
+    pub fn set_lmq_num(&mut self, value: i32) {
+        self.lmq_num = value;
+    }
+
+    pub fn get_lite_topic_count(&self) -> i32 {
+        self.lite_topic_count
+    }
+
+    pub fn set_lite_topic_count(&mut self, value: i32) {
+        self.lite_topic_count = value;
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        java_fastjson_remoting_body_json(self, false).map(String::into_bytes)
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
 /// retain Java nullability and the map handle returned by the getter.
 ///
@@ -7931,6 +8029,7 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
 
 impl_java_remoting_serializable_body_adapters!(
     GetBrokerLiteInfoResponseBody,
+    GetParentTopicInfoResponseBody,
     GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
@@ -8663,6 +8762,38 @@ mod tests {
             map.insert("billing".into(), Some(1));
         });
         assert_eq!(assigned.with(|map| map["billing"]), Some(1));
+    }
+
+    #[test]
+    fn get_parent_topic_info_response_body_preserves_defaults_and_group_aliases() {
+        let defaults = GetParentTopicInfoResponseBody::default();
+        assert_eq!(defaults.get_topic(), None);
+        assert_eq!(defaults.get_ttl(), 0);
+        assert!(defaults.get_groups().is_none());
+        assert_eq!(defaults.get_lmq_num(), 0);
+        assert_eq!(defaults.get_lite_topic_count(), 0);
+
+        let decoded = GetParentTopicInfoResponseBody::java_decode(
+            br#"{"topic":"lite-parent","ttl":3600,"groups":["billing","workers",null],"lmqNum":3,"liteTopicCount":12}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_topic(), Some("lite-parent"));
+        assert_eq!(decoded.get_ttl(), 3600);
+        assert_eq!(decoded.get_lmq_num(), 3);
+        assert_eq!(decoded.get_lite_topic_count(), 12);
+        let groups = decoded.get_groups().unwrap();
+        assert_eq!(groups.with(HashSet::len), 3);
+        assert!(groups.with(|set| set.contains(&None)));
+        assert!(groups.with(|set| set.contains(&Some("workers".into()))));
+
+        let assigned = SharedValue::new(HashSet::new());
+        let mut value = GetParentTopicInfoResponseBody::default();
+        value.set_groups(Some(assigned.clone()));
+        assert!(value.get_groups().unwrap().ptr_eq(&assigned));
+        assigned.with_mut(|set| {
+            set.insert(Some("workers".into()));
+        });
+        assert_eq!(value.get_groups().unwrap().with(HashSet::len), 1);
     }
 
     #[test]

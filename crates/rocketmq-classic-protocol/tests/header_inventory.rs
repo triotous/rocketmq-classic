@@ -74,6 +74,7 @@ macro_rules! inventory {
             NotificationRequestHeader => ("header-notification-request", "typed-notification.bin"),
             NotificationResponseHeader => ("header-notification-response", "typed-notification-response.bin"),
             GetLiteTopicInfoRequestHeader => ("header-lite-topic-info-request", "typed-lite-topic-info-request.bin"),
+            GetParentTopicInfoRequestHeader => ("header-parent-topic-info-request", "typed-parent-topic-info-request.bin"),
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
             ResetMasterFlushOffsetHeader => ("header-reset-master-flush-offset", "typed-reset-master-flush-offset.bin"),
             ExportRocksDBConfigToJsonRequestHeader => ("header-export-rocksdb-config-request", "typed-export-rocksdb-config-request.bin"),

@@ -35,11 +35,13 @@ import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
 import org.apache.rocketmq.remoting.protocol.body.GetBrokerLiteInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody;
+import org.apache.rocketmq.remoting.protocol.body.GetParentTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetParentTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupResponseBody;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
@@ -111,7 +113,8 @@ public final class ExtensionMoreInvokedFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
-        provenance.put("entrypoint", "MQClientAPIImpl");
+        provenance.put("entrypoint", name.startsWith("parent-topic-info-")
+            ? "MQClientAPIImpl.getParentTopicInfo" : "MQClientAPIImpl");
         provenance.put("transport", "mock RemotingClient");
         provenance.put("serverBaselineContacted", false);
         fixture.put("provenance", provenance);
@@ -125,6 +128,9 @@ public final class ExtensionMoreInvokedFixtures {
         fixture.put("outcome", outcome);
         if (name.startsWith("lite-broker-info-")) {
             fixture.put("brokerLiteInfoApi", brokerLiteInfoApi());
+        }
+        if (name.startsWith("parent-topic-info-")) {
+            fixture.put("parentTopicInfoApi", parentTopicInfoApi());
         }
         Path file = dir.resolve(name + ".json");
         String json = JSON.toJSONString(fixture) + "\n";
@@ -265,6 +271,39 @@ public final class ExtensionMoreInvokedFixtures {
         values.put("topicMetaNull", defaults.getTopicMeta() == null);
         values.put("groupMetaNull", defaults.getGroupMeta() == null);
         api.put("responseBodyDefaults", values);
+        return api;
+    }
+
+    private static Map<String, Object> parentTopicInfoApi() {
+        Map<String, Object> api = new TreeMap<>();
+        api.put("rpcMethods", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getParentTopicInfo"))
+            .map(java.lang.reflect.Method::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderConstructors", Arrays.stream(GetParentTopicInfoRequestHeader.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderPublicFields", publicFields(GetParentTopicInfoRequestHeader.class));
+        api.put("requestHeaderPublicMethods", publicMethods(GetParentTopicInfoRequestHeader.class));
+        api.put("responseBodyConstructors", Arrays.stream(GetParentTopicInfoResponseBody.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("responseBodyPublicFields", publicFields(GetParentTopicInfoResponseBody.class));
+        api.put("responseBodyPublicMethods", publicMethods(GetParentTopicInfoResponseBody.class));
+        GetParentTopicInfoResponseBody defaults = new GetParentTopicInfoResponseBody();
+        Map<String, Object> values = new TreeMap<>();
+        values.put("topic", defaults.getTopic());
+        values.put("ttl", defaults.getTtl());
+        values.put("groupsNull", defaults.getGroups() == null);
+        values.put("lmqNum", defaults.getLmqNum());
+        values.put("liteTopicCount", defaults.getLiteTopicCount());
+        api.put("responseBodyDefaults", values);
+        Set<String> assigned = new HashSet<>();
+        defaults.setGroups(assigned);
+        api.put("groupsGetterReturnsAssignedSet", defaults.getGroups() == assigned);
+        defaults.getGroups().add("workers");
+        api.put("groupsGetterMutationVisible", assigned.size() == 1);
         return api;
     }
 
@@ -625,7 +664,7 @@ public final class ExtensionMoreInvokedFixtures {
                 topicMeta.put("payments", 9);
                 body.setTopicMeta(topicMeta);
                 Map<String, Set<String>> groupMeta = new TreeMap<>();
-                groupMeta.put("workers", Set.of("orders", "payments"));
+                groupMeta.put("workers", new java.util.TreeSet<>(Set.of("orders", "payments")));
                 body.setGroupMeta(groupMeta);
                 lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
                 lite.response.setBody(body.encode());
@@ -667,6 +706,61 @@ public final class ExtensionMoreInvokedFixtures {
                 liteApi.shutdown();
             }
             record(dir, verify, lite, name, RequestCode.GET_BROKER_LITE_INFO, outcome);
+        }
+
+        for (String name : new String[] {"parent-topic-info-success", "parent-topic-info-defaults",
+            "parent-topic-info-null-body", "parent-topic-info-null-topic", "parent-topic-info-error",
+            "parent-topic-info-unknown", "parent-topic-info-invalid-body"}) {
+            Capture parent = new Capture();
+            ClientConfig parentConfig = new ClientConfig();
+            parentConfig.setVipChannelEnabled(false);
+            MQClientAPIImpl parentApi = new MQClientAPIImpl(new NettyClientConfig(), null, null, parentConfig,
+                null, nettyConfig -> parent.proxy());
+            if (name.equals("parent-topic-info-success")) {
+                GetParentTopicInfoResponseBody body = new GetParentTopicInfoResponseBody();
+                body.setTopic("lite-parent");
+                body.setTtl(3600);
+                body.setGroups(new java.util.TreeSet<>(Arrays.asList("billing", "workers")));
+                body.setLmqNum(3);
+                body.setLiteTopicCount(12);
+                parent.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                parent.response.setBody(body.encode());
+            } else if (name.equals("parent-topic-info-defaults")) {
+                parent.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                parent.response.setBody(new GetParentTopicInfoResponseBody().encode());
+            } else if (name.equals("parent-topic-info-null-body")) {
+                parent.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+            } else if (name.equals("parent-topic-info-error")) {
+                parent.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+            } else if (name.equals("parent-topic-info-invalid-body")) {
+                parent.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                parent.response.setBody(new byte[] {'{'});
+            } else {
+                parent.response = RemotingCommand.createResponseCommand(987654, "offline");
+            }
+            String topic = name.equals("parent-topic-info-null-topic") ? null : "lite-parent";
+            String outcome;
+            try {
+                GetParentTopicInfoResponseBody result = parentApi.getParentTopicInfo("broker:10911", topic, 10000);
+                if (result == null) {
+                    outcome = "null";
+                } else if (name.equals("parent-topic-info-success")) {
+                    outcome = "topic=" + result.getTopic() + ";ttl=" + result.getTtl() + ";groups=" +
+                        result.getGroups().size() + ";lmq=" + result.getLmqNum() + ";liteTopics=" +
+                        result.getLiteTopicCount();
+                } else {
+                    outcome = "topic=" + result.getTopic() + ";ttl=" + result.getTtl() + ";groupsNull=" +
+                        (result.getGroups() == null) + ";lmq=" + result.getLmqNum() + ";liteTopics=" +
+                        result.getLiteTopicCount();
+                }
+            } catch (MQBrokerException failure) {
+                outcome = "MQBrokerException;code=" + failure.getResponseCode();
+            } catch (com.alibaba.fastjson2.JSONException failure) {
+                outcome = "JSONException;malformed";
+            } finally {
+                parentApi.shutdown();
+            }
+            record(dir, verify, parent, name, RequestCode.GET_PARENT_TOPIC_INFO, outcome);
         }
 
         HeartbeatData extHeartbeat = new HeartbeatData();

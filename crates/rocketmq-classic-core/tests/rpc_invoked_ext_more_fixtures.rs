@@ -81,6 +81,13 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "lite-broker-info-error",
         "lite-broker-info-unknown",
         "lite-broker-info-invalid-body",
+        "parent-topic-info-success",
+        "parent-topic-info-defaults",
+        "parent-topic-info-null-body",
+        "parent-topic-info-null-topic",
+        "parent-topic-info-error",
+        "parent-topic-info-unknown",
+        "parent-topic-info-invalid-body",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len() + 35);
     for name in names {
@@ -109,6 +116,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 }
             } else if name.starts_with("lite-topic-info-") {
                 "MQClientAPIExt.getLiteTopicInfoAsync"
+            } else if name.starts_with("parent-topic-info-") {
+                "MQClientAPIImpl.getParentTopicInfo"
             } else {
                 "MQClientAPIImpl"
             }
@@ -177,6 +186,35 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             assert_eq!(api["responseBodyDefaults"]["maxLmqNum"], 0);
             assert_eq!(api["responseBodyDefaults"]["topicMetaNull"], true);
             assert_eq!(api["responseBodyDefaults"]["groupMetaNull"], true);
+        }
+        if name.starts_with("parent-topic-info-") {
+            let api = &fixture["parentTopicInfoApi"];
+            assert_eq!(api["rpcMethods"].as_array().unwrap().len(), 1);
+            assert!(
+                api["rpcMethods"][0]
+                    .as_str()
+                    .unwrap()
+                    .contains("getParentTopicInfo")
+            );
+            assert_eq!(
+                api["requestHeaderConstructors"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(api["requestHeaderPublicFields"], serde_json::json!([]));
+            assert_eq!(api["responseBodyConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["responseBodyPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["requestHeaderPublicMethods"].as_array().unwrap().len(),
+                3
+            );
+            assert_eq!(
+                api["responseBodyPublicMethods"].as_array().unwrap().len(),
+                10
+            );
+            assert_eq!(api["responseBodyDefaults"]["ttl"], 0);
+            assert_eq!(api["responseBodyDefaults"]["groupsNull"], true);
+            assert_eq!(api["groupsGetterReturnsAssignedSet"], true);
+            assert_eq!(api["groupsGetterMutationVisible"], true);
         }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
@@ -341,6 +379,36 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 }
                 Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
                 other => panic!("unexpected Lite Broker info result: {other:?}"),
+            }
+        } else if name.starts_with("parent-topic-info-") {
+            let topic = if name == "parent-topic-info-null-topic" {
+                None
+            } else {
+                Some("lite-parent")
+            };
+            match api.get_parent_topic_info(&addr, topic, deadline).await {
+                Ok(None) => "null".to_owned(),
+                Ok(Some(result)) if name == "parent-topic-info-success" => format!(
+                    "topic={};ttl={};groups={};lmq={};liteTopics={}",
+                    result.get_topic().unwrap_or("null"),
+                    result.get_ttl(),
+                    result.get_groups().unwrap().with(|groups| groups.len()),
+                    result.get_lmq_num(),
+                    result.get_lite_topic_count(),
+                ),
+                Ok(Some(result)) => format!(
+                    "topic={};ttl={};groupsNull={};lmq={};liteTopics={}",
+                    result.get_topic().unwrap_or("null"),
+                    result.get_ttl(),
+                    result.get_groups().is_none(),
+                    result.get_lmq_num(),
+                    result.get_lite_topic_count(),
+                ),
+                Err(RpcError::Response { code, .. }) => {
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
+                other => panic!("unexpected parent topic info result: {other:?}"),
             }
         } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {

@@ -4975,6 +4975,41 @@ impl GetLiteTopicInfoRequestHeader {
     }
 }
 
+/// Java `GetParentTopicInfoRequestHeader` for the synchronous Lite parent
+/// topic lookup. The topic is nullable because Java's `checkFields()` is a
+/// no-op despite the `CFNotNull` annotation.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetParentTopicInfoRequestHeader;
+/// let _ = GetParentTopicInfoRequestHeader::default().topic;
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetParentTopicInfoRequestHeader {
+    topic: Option<String>,
+}
+
+impl CommandHeader for GetParentTopicInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.clone());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: fields.get("topic").cloned(),
+        })
+    }
+}
+
+impl GetParentTopicInfoRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+}
+
 /// Java 5.5.1's client heartbeat RPC header. The Java class declares no
 /// payload fields and inherits its namespace and routing fields from
 /// `RpcRequestHeader`.

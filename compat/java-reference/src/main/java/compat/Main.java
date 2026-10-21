@@ -19,6 +19,7 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.SerializeType;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetParentTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader;
@@ -615,6 +616,9 @@ public final class Main {
         liteTopicInfo.setParentTopic("lite-parent");
         liteTopicInfo.setLiteTopic("%LMQ%lite-parent%orders");
         writeTypedHeaderFixture(output, "lite-topic-info-request", 200076, liteTopicInfo);
+        GetParentTopicInfoRequestHeader parentTopicInfo = new GetParentTopicInfoRequestHeader();
+        parentTopicInfo.setTopic("lite-parent");
+        writeTypedHeaderFixture(output, "parent-topic-info-request", 200075, parentTopicInfo);
         DeleteTopicRequestHeader deleteTopic = new DeleteTopicRequestHeader();
         deleteTopic.setTopic("orders");
         deleteTopic.setNamespace("tenant");
@@ -1091,7 +1095,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 80, "all Rust typed header fixtures were supplied");
+            require(count == 81, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1116,6 +1120,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
             assertAllExtFields(byName, "typed-topics-by-cluster-request.bin", 224);
             assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
+            assertAllExtFields(byName, "typed-parent-topic-info-request.bin", 200075);
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
             assertAllExtFields(byName, "typed-delete-kv-config-request.bin", 102);
@@ -1200,6 +1205,7 @@ public final class Main {
                 "group", "workers");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "parentTopic", "lite-parent");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "liteTopic", "%LMQ%lite-parent%orders");
+            assertExtField(byName, "typed-parent-topic-info-request.bin", 200075, "topic", "lite-parent");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "topic", "orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "lo", "true");
             assertExtField(byName, "typed-delete-topic-from-namesrv-request.bin", 216,
@@ -1320,6 +1326,7 @@ public final class Main {
             case "typed-topics-by-cluster-request.bin": fixtureStem = "header-topics-by-cluster-request"; break;
             case "typed-get-subscription-group-config-request.bin": fixtureStem = "header-get-subscription-group-config-request"; break;
             case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
+            case "typed-parent-topic-info-request.bin": fixtureStem = "header-parent-topic-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
             case "typed-delete-kv-config-request.bin": fixtureStem = "header-delete-kv-config-request"; break;

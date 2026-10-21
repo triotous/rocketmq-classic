@@ -25,7 +25,7 @@ use rocketmq_classic_protocol::{
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
         GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
-        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader,
+        GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader, GetRouteInfoRequestHeader,
         GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
         GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
         LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
@@ -743,6 +743,26 @@ fn lite_topic_info_request_header_matches_java_public_api_and_nullable_fields() 
     let decoded = GetLiteTopicInfoRequestHeader::decode_fields(&encoded).unwrap();
     assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
     assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
+}
+
+#[test]
+fn parent_topic_info_request_header_matches_java_fixture_and_nullable_topic() {
+    let mut header = GetParentTopicInfoRequestHeader::default();
+    assert_eq!(header.get_topic(), None);
+    let mut fields = HeaderMap::new();
+    header.encode_fields(&mut fields);
+    assert!(fields.is_empty());
+
+    header.set_topic(Some("lite-parent".into()));
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, java_ext_fields("header-parent-topic-info-request"));
+    assert_eq!(
+        encoded.get("topic").map(String::as_str),
+        Some("lite-parent")
+    );
+    let decoded = GetParentTopicInfoRequestHeader::decode_fields(&encoded).unwrap();
+    assert_eq!(decoded.get_topic(), Some("lite-parent"));
 }
 
 #[test]
@@ -2796,6 +2816,15 @@ fn header_validation_matrix() {
             "",
             "",
             "parentTopic liteTopic",
+            ""
+        ),
+        row!(
+            GetParentTopicInfoRequestHeader,
+            "parent-topic-info-request",
+            "",
+            "",
+            "",
+            "topic",
             ""
         ),
         row!(
