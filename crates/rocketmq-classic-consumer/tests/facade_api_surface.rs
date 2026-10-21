@@ -1,11 +1,12 @@
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
     PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
-    pull::PullConsumer,
+    pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
 use rocketmq_classic_protocol::body::{ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo};
 use rocketmq_classic_protocol::heartbeat::ConsumeType;
 use serde_json::Value;
+use std::sync::Arc;
 
 const JAVA_FACADE_API: &str = include_str!("../../../fixtures/consumer/facade-api.json");
 
@@ -128,9 +129,18 @@ fn pull_rebalance_matches_pinned_java_pop_and_offset_behavior() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     let expected = &fixture["implementationBehaviors"]["rebalancePull"];
     let config = PullConsumerConfig::new("facade-pull-rebalance").unwrap();
-    let consumer = PullConsumer::new(config);
+    let mut consumer = PullConsumer::new(config);
+    consumer.set_consumer_group("pull-group-updated");
+    let consumer = Arc::new(consumer);
+    consumer.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+    let strategy: Arc<dyn rocketmq_classic_consumer::rebalance::AllocateMessageQueueStrategy> =
+        Arc::new(AllocateMessageQueueAveragely);
+    consumer.set_allocate_message_queue_strategy(strategy.clone());
     let queue = MessageQueue::new("orders", "broker-a", 0);
     let actual = serde_json::json!({
+        "groupAfterSet": consumer.get_consumer_group(),
+        "messageModelAfterSet": consumer.message_model().name(),
+        "strategyPreservesIdentity": Arc::ptr_eq(&strategy, &consumer.get_allocate_message_queue_strategy()),
         "clientRebalance": consumer.client_rebalance("orders"),
         "consumeType": consumer.consume_type().name(),
         "pullOffset": consumer.compute_pull_from_where(&queue),
@@ -148,6 +158,107 @@ fn pull_rebalance_matches_pinned_java_pop_and_offset_behavior() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn rebalance_owner_controls_match_java_client_selection_and_settings() {
+    use rocketmq_classic_protocol::heartbeat::MessageModel;
+
+    let pull_config = PullConsumerConfig::new("facade-pull-settings").unwrap();
+    let pull = Arc::new(PullConsumer::new(pull_config));
+    assert!(pull.get_client_runtime().await.is_none());
+    assert_eq!(pull.get_consumer_group(), "facade-pull-settings");
+    assert_eq!(pull.message_model(), MessageModel::Clustering);
+    assert_eq!(pull.get_allocate_message_queue_strategy().name(), "AVG");
+    pull.set_message_model(MessageModel::Broadcasting);
+    pull.set_allocate_message_queue_strategy(Arc::new(AllocateMessageQueueAveragely));
+    assert_eq!(pull.message_model(), MessageModel::Broadcasting);
+    assert!(pull.client_rebalance("orders"));
+    assert!(
+        pull.get_pop_process_queue_table()
+            .read()
+            .unwrap()
+            .is_empty()
+    );
+
+    let push_config = PushConsumerConfig::new("facade-push-settings").unwrap();
+    push_config.set_client_rebalance(false);
+    let push = Arc::new(PushConsumer::new(push_config));
+    assert!(push.get_client_runtime().await.is_none());
+    assert!(!push.client_rebalance("orders"));
+    push.set_message_model(MessageModel::Broadcasting);
+    assert!(push.client_rebalance("orders"));
+    push.set_message_model(MessageModel::Clustering);
+    push.set_consume_orderly(true);
+    assert!(push.client_rebalance("orders"));
+    assert!(push.do_rebalance_with_order(true).await);
+    push.lock_all().await;
+    push.unlock_all(true).await;
+
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    let process_queue = Arc::new(ProcessQueue::new());
+    push.get_process_queue_table()
+        .write()
+        .unwrap()
+        .insert(queue.clone(), process_queue.clone());
+    assert!(push.remove_process_queue(&queue).await);
+    assert!(process_queue.is_dropped());
+    assert!(push.get_process_queue_table().read().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn push_rebalance_methods_match_pinned_java_behavior() {
+    use rocketmq_classic_protocol::heartbeat::MessageModel;
+
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let expected = &fixture["implementationBehaviors"]["rebalancePush"];
+    let config = PushConsumerConfig::new("push-group").unwrap();
+    let push = Arc::new(PushConsumer::new(config));
+    let client_rebalance_default = push.client_rebalance("orders");
+    push.config().set_client_rebalance(false);
+    let client_rebalance_clustering_disabled = push.client_rebalance("orders");
+    push.set_message_model(MessageModel::Broadcasting);
+    let client_rebalance_broadcasting = push.client_rebalance("orders");
+    push.set_message_model(MessageModel::Clustering);
+    push.set_consumer_group(Some("push-group-updated".to_owned()));
+    let strategy = push.get_allocate_message_queue_strategy();
+    push.set_allocate_message_queue_strategy(strategy.clone());
+    let strategy_preserves_identity =
+        Arc::ptr_eq(&strategy, &push.get_allocate_message_queue_strategy());
+    let do_rebalance_empty = push.do_rebalance_with_order(false).await;
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    let process_queue = Arc::new(push.create_process_queue());
+    let pop_process_queue = Arc::new(push.create_pop_process_queue());
+    push.get_process_queue_table()
+        .write()
+        .unwrap()
+        .insert(queue.clone(), process_queue.clone());
+    push.get_pop_process_queue_table()
+        .write()
+        .unwrap()
+        .insert(queue.clone(), pop_process_queue.clone());
+    let remove_unnecessary_pop =
+        push.remove_unnecessary_pop_process_queue(&queue, &pop_process_queue);
+    push.destroy().await;
+    let actual = serde_json::json!({
+        "clientRebalanceDefault": client_rebalance_default,
+        "clientRebalanceClusteringDisabled": client_rebalance_clustering_disabled,
+        "clientRebalanceBroadcasting": client_rebalance_broadcasting,
+        "groupAfterSet": push.get_consumer_group().unwrap(),
+        "messageModelAfterSet": push.message_model().name(),
+        "strategyPreservesIdentity": strategy_preserves_identity,
+        "consumeType": push.consume_type().name(),
+        "consumeInitMode": push.consume_init_mode(),
+        "doRebalanceEmpty": do_rebalance_empty,
+        "processQueueCreated": true,
+        "popProcessQueueCreated": true,
+        "removeUnnecessaryPop": remove_unnecessary_pop,
+        "processQueueDroppedByDestroy": process_queue.is_dropped(),
+        "popProcessQueueDroppedByDestroy": pop_process_queue.is_dropped(),
+        "processTableEmptyAfterDestroy": push.get_process_queue_table().read().unwrap().is_empty(),
+        "popTableEmptyAfterDestroy": push.get_pop_process_queue_table().read().unwrap().is_empty(),
+    });
+    assert_eq!(&actual, expected);
 }
 
 #[test]

@@ -5328,3 +5328,20 @@ owner-specific checks belong in the manual handoff.
   correspondence and the other full client audit rows. P18-V02 refresh and
   P18-V03/V04 review remain outstanding; Phase 19 Broker/Docker validation was
   not run.
+
+## P18 Pull rebalance settings slice — 2026-10-21
+
+- [x] Pull rebalance model and allocation-strategy values now live in shared
+  state used by the active registration. Their setters accept a shared owner
+  and request an immediate rebalance after startup. The pinned Java fixture
+  now checks Pull group/model/strategy setter results and strategy identity;
+  regenerated `fixtures/consumer/facade-api.json` SHA-256:
+  `7a7234d87c260b398f73bbf4b868714f87c5c9f27a6f0659cb0b93a7e9e834f0`.
+- [x] Focused facade tests (9), Consumer all-feature tests (236 unit tests,
+  all integration targets and 13 doctests), strict Consumer Clippy, pinned Java
+  fixture drift verification, formatting and `git diff --check` pass.
+- This closes the Pull model/strategy mutability slice only. Broad P18-V01
+  source/API/settings/input/error/flow and reverse-export reconciliation,
+  current-revision full-workspace P18-V02, final P18-V03 package/provenance
+  review and current Ubuntu/native Windows P18-V04 evidence remain open.
+  Phase 19 Broker/Docker validation was not run.

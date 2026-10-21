@@ -46,12 +46,20 @@ impl RebalanceService {
     }
 
     pub(crate) async fn rebalance(&self, consumer: &Arc<PushConsumer>) -> bool {
+        self.rebalance_with_order(consumer, None).await
+    }
+
+    pub(crate) async fn rebalance_with_order(
+        &self,
+        consumer: &Arc<PushConsumer>,
+        is_order: Option<bool>,
+    ) -> bool {
         let strategy = self
             .strategy
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        self.execute_serialized(consumer.rebalance_once(strategy.as_ref()))
+        self.execute_serialized(consumer.rebalance_once(strategy.as_ref(), is_order))
             .await
     }
 

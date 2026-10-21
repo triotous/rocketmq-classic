@@ -583,6 +583,39 @@ impl PushConsumer {
         ProcessQueue::new()
     }
 
+    /// Matches `RebalancePushImpl.clientRebalance(topic)` for the current
+    /// consumer settings. Push uses broker assignments only when client
+    /// rebalance is disabled and consumption is neither orderly nor broadcast.
+    pub fn client_rebalance(&self, _topic: &str) -> bool {
+        self.config.client_rebalance()
+            || self.consume_orderly.load(Ordering::Acquire)
+            || self.config.message_model()
+                == rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
+    }
+
+    pub fn get_allocate_message_queue_strategy(
+        &self,
+    ) -> Arc<dyn crate::rebalance::AllocateMessageQueueStrategy> {
+        self.config.allocate_message_queue_strategy()
+    }
+
+    pub fn set_allocate_message_queue_strategy(
+        &self,
+        strategy: Arc<dyn crate::rebalance::AllocateMessageQueueStrategy>,
+    ) {
+        self.config
+            .set_allocate_message_queue_strategy(strategy.clone());
+        self.rebalance_service.set_strategy(strategy);
+    }
+
+    pub fn set_message_model(
+        &self,
+        message_model: rocketmq_classic_protocol::heartbeat::MessageModel,
+    ) {
+        self.config.set_message_model(message_model);
+        self.rebalance_service.set_message_model(message_model);
+    }
+
     /// Returns Java `RebalancePushImpl.getConsumeInitMode()` (`MIN = 0`,
     /// `MAX = 1`) for the configured consume origin.
     pub fn consume_init_mode(&self) -> i32 {
@@ -591,6 +624,60 @@ impl PushConsumer {
         } else {
             1
         }
+    }
+
+    /// Java's deprecated helper logs offset lookup failures and returns `-1`.
+    pub async fn compute_pull_from_where(&self, queue: &MessageQueue) -> i64 {
+        self.compute_pull_from_where_with_exception(queue)
+            .await
+            .unwrap_or(-1)
+    }
+
+    /// Computes a queue's initial offset with the exception behavior used by
+    /// Java's `RebalancePushImpl.computePullFromWhereWithException`.
+    pub async fn compute_pull_from_where_with_exception(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<i64, PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let queue = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)?;
+        self.compute_initial_offset(&context.runtime, &context.offset_store, &queue)
+            .await
+    }
+
+    /// Removes any retained offset before a new queue assignment is activated.
+    pub async fn remove_dirty_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<(), PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let queue = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)?;
+        context.offset_store.remove_offset(&queue);
+        Ok(())
+    }
+
+    /// Java's base implementation accepts POP queue removal without additional
+    /// cleanup; Push workers own the actual POP assignment lifecycle.
+    pub const fn remove_unnecessary_pop_process_queue(
+        &self,
+        _queue: &MessageQueue,
+        _process_queue: &PopProcessQueue,
+    ) -> bool {
+        true
     }
 
     fn active_pull_queue_thresholds(&self) -> EffectiveQueueThresholds {
@@ -691,6 +778,16 @@ impl PushConsumer {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Returns the live shared client runtime corresponding to Java's
+    /// `RebalanceImpl.getmQClientFactory`; it is absent before startup and
+    /// after runtime teardown.
+    pub async fn get_client_runtime(&self) -> Option<Arc<ClientRuntime>> {
+        match &*self.state.lock().await {
+            State::Started { runtime, .. } => runtime.upgrade(),
+            State::Created | State::Shutdown => None,
+        }
     }
 
     pub async fn set_offset_store(
@@ -920,6 +1017,224 @@ impl PushConsumer {
     /// Returns the live process-queue table exposed by Java rebalance.
     pub fn get_process_queue_table(&self) -> Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>> {
         self.process_queues.clone()
+    }
+
+    /// Matches Java's `RebalanceImpl.removeProcessQueue` while preserving Rust's
+    /// generation fence and offset-cleanup result.
+    pub async fn remove_process_queue(&self, input_queue: &MessageQueue) -> bool {
+        let Ok(queue) = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)
+        else {
+            return false;
+        };
+        let Some(process_queue) = read_lock(&self.process_queues).get(&queue).cloned() else {
+            return false;
+        };
+        process_queue.set_dropped(true);
+        let Some(context) = self.pull_context().await else {
+            let mut queues = write_lock(&self.process_queues);
+            if queues
+                .get(&queue)
+                .is_some_and(|current| Arc::ptr_eq(current, &process_queue))
+            {
+                queues.remove(&queue);
+                let _ = process_queue.drop_assignment(process_queue.generation());
+                return true;
+            }
+            return false;
+        };
+        let removed = self
+            .remove_process_queue_safely(&context, &queue, &process_queue)
+            .await;
+        if removed {
+            context.scheduler.cancel(&queue, process_queue.generation());
+            context.runtime.rebalance_immediately();
+        }
+        removed
+    }
+
+    /// Matches the subclass queue cleanup invoked by Java rebalance after a
+    /// process queue is dropped.
+    pub async fn remove_unnecessary_message_queue(
+        &self,
+        input_queue: &MessageQueue,
+        process_queue: &Arc<ProcessQueue>,
+    ) -> Result<bool, PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let queue = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)?;
+        process_queue.set_dropped(true);
+        let removed = self
+            .remove_process_queue_safely(&context, &queue, process_queue)
+            .await;
+        if removed {
+            context.scheduler.cancel(&queue, process_queue.generation());
+        }
+        Ok(removed)
+    }
+
+    /// Marks and clears the two assignment tables, as Java's rebalance
+    /// implementation does during destruction.
+    pub async fn destroy(&self) {
+        if let Some(context) = self.pull_context().await {
+            for (queue, process_queue) in read_lock(&self.process_queues).iter() {
+                let generation = process_queue.generation();
+                let _ = process_queue.drop_assignment(generation);
+                context.scheduler.cancel(queue, generation);
+            }
+        } else {
+            for process_queue in read_lock(&self.process_queues).values() {
+                let _ = process_queue.drop_assignment(process_queue.generation());
+            }
+        }
+        write_lock(&self.process_queues).clear();
+        for process_queue in write_lock(&self.pop_process_queues).values() {
+            process_queue.drop_assignment();
+        }
+        write_lock(&self.pop_process_queues).clear();
+        for (_, worker) in std::mem::take(
+            &mut *self
+                .pop_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        ) {
+            worker.abort();
+        }
+    }
+
+    /// Matches Java's single-queue rebalance lock operation. The returned
+    /// response updates local lock state only for queues the Broker confirms.
+    pub async fn lock(&self, input_queue: &MessageQueue) -> bool {
+        let Some(context) = self.pull_context().await else {
+            return false;
+        };
+        let Ok(queue) = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)
+        else {
+            return false;
+        };
+        let result = self
+            .lock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue))
+            .await;
+        for (locked_queue, (timestamp, _)) in &result.lock_times {
+            if let Some(process_queue) = read_lock(&self.process_queues).get(locked_queue) {
+                process_queue.set_locked(true);
+                process_queue.set_last_lock_timestamp(*timestamp);
+            }
+        }
+        result.locked.contains(&queue)
+    }
+
+    /// Locks every live process queue and applies only Broker-confirmed
+    /// responses, matching Java's rebalance `lockAll` behavior.
+    pub async fn lock_all(&self) {
+        let Some(context) = self.pull_context().await else {
+            return;
+        };
+        let queues = read_lock(&self.process_queues)
+            .iter()
+            .filter_map(|(queue, process_queue)| {
+                (!process_queue.is_dropped()).then_some(queue.clone())
+            })
+            .collect::<Vec<_>>();
+        let result = self
+            .lock_orderly_queues_raw(&context.runtime, &queues)
+            .await;
+        for queue in result.responded {
+            if let Some(process_queue) = read_lock(&self.process_queues).get(&queue) {
+                let locked = result.locked.contains(&queue);
+                process_queue.set_locked(locked);
+                if let Some((timestamp, _)) = result.lock_times.get(&queue) {
+                    process_queue.set_last_lock_timestamp(*timestamp);
+                }
+            }
+        }
+    }
+
+    /// Unlocks one queue using Java's `oneway` request option and clears local
+    /// lock state only after the request is accepted.
+    pub async fn unlock(&self, input_queue: &MessageQueue, oneway: bool) {
+        let Some(context) = self.pull_context().await else {
+            return;
+        };
+        let Ok(queue) = self
+            .config
+            .client_config()
+            .clone()
+            .queue_with_namespace(input_queue)
+        else {
+            return;
+        };
+        write_lock(&self.pending_orderly_unlocks).insert(queue.clone());
+        let unlocked = self
+            .unlock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue), oneway)
+            .await;
+        if unlocked.contains(&queue) {
+            write_lock(&self.pending_orderly_unlocks).remove(&queue);
+            if let Some(process_queue) = read_lock(&self.process_queues).get(&queue) {
+                process_queue.set_locked(false);
+            }
+        }
+    }
+
+    /// Unlocks all live queues and updates their local state for confirmed
+    /// Broker responses.
+    pub async fn unlock_all(&self, oneway: bool) {
+        let Some(context) = self.pull_context().await else {
+            return;
+        };
+        let queues = read_lock(&self.process_queues)
+            .iter()
+            .filter_map(|(queue, process_queue)| {
+                (!process_queue.is_dropped()).then_some(queue.clone())
+            })
+            .collect::<Vec<_>>();
+        write_lock(&self.pending_orderly_unlocks).extend(queues.iter().cloned());
+        let unlocked = self
+            .unlock_orderly_queues_raw(&context.runtime, &queues, oneway)
+            .await;
+        for queue in &unlocked {
+            write_lock(&self.pending_orderly_unlocks).remove(queue);
+            if let Some(process_queue) = read_lock(&self.process_queues).get(queue) {
+                process_queue.set_locked(false);
+            }
+        }
+    }
+
+    /// Runs Java's Push queue-change side effects: update the subscription
+    /// version and thresholds, send a heartbeat, and invoke the listener.
+    pub async fn message_queue_changed(
+        &self,
+        topic: impl Into<String>,
+        all_queues: Option<&HashSet<MessageQueue>>,
+        divided_queues: &HashSet<MessageQueue>,
+    ) -> Result<bool, PushConsumerError> {
+        let context = self
+            .pull_context()
+            .await
+            .ok_or(PushConsumerError::NotStarted)?;
+        let assignment = DesiredAssignment {
+            topic: topic.into(),
+            all_queues: all_queues.cloned(),
+            assigned_queues: divided_queues.clone(),
+            pull_queues: HashSet::new(),
+            pop_queues: HashSet::new(),
+        };
+        Ok(self
+            .notify_assignment_changed(&context.runtime, &assignment)
+            .await)
     }
 
     /// Returns the live topic-to-queue table exposed by Java rebalance.
@@ -1203,6 +1518,17 @@ impl PushConsumer {
             return false;
         }
         self.rebalance_service.rebalance(self).await
+    }
+
+    /// Runs the Java `RebalanceImpl.doRebalance(isOrder)` flow and returns
+    /// whether every subscribed topic balanced successfully.
+    pub async fn do_rebalance_with_order(self: &Arc<Self>, is_order: bool) -> bool {
+        if self.paused.load(Ordering::Acquire) {
+            return false;
+        }
+        self.rebalance_service
+            .rebalance_with_order(self, Some(is_order))
+            .await
     }
 
     pub async fn query_message(
@@ -1668,7 +1994,7 @@ impl PushConsumer {
         let _ = process_queue.record_unlocked(generation);
         write_lock(&self.pending_orderly_unlocks).insert(queue.clone());
         let unlocked = self
-            .unlock_orderly_queues_raw(&context.runtime, std::slice::from_ref(queue))
+            .unlock_orderly_queues_raw(&context.runtime, std::slice::from_ref(queue), false)
             .await
             .contains(queue);
         if unlocked {
@@ -2229,7 +2555,7 @@ impl PushConsumer {
         Ok(process_queue)
     }
 
-    pub(crate) async fn remove_process_queue(
+    pub(crate) async fn remove_process_queue_generation(
         &self,
         input_queue: &MessageQueue,
         generation: u64,
@@ -3880,7 +4206,9 @@ impl PushConsumer {
             match offset_store.persist(&queue).await {
                 Ok(()) => {
                     if let Some(consumer) = consumer.upgrade() {
-                        let _ = consumer.remove_process_queue(&queue, generation).await;
+                        let _ = consumer
+                            .remove_process_queue_generation(&queue, generation)
+                            .await;
                     }
                 }
                 Err(error) => {
@@ -5003,6 +5331,7 @@ impl PushConsumer {
     pub(crate) async fn rebalance_once(
         self: &Arc<Self>,
         strategy: &dyn crate::rebalance::AllocateMessageQueueStrategy,
+        is_order: Option<bool>,
     ) -> bool {
         let Some(context) = self.pull_context().await else {
             return true;
@@ -5014,6 +5343,7 @@ impl PushConsumer {
             .collect::<Vec<_>>();
         subscriptions.sort_by(|left, right| java_string_cmp(left, right));
         let message_model = self.rebalance_service.message_model();
+        let is_order = is_order.unwrap_or_else(|| self.consume_orderly.load(Ordering::Acquire));
         let subscribed_topics = subscriptions.iter().cloned().collect::<HashSet<_>>();
         let topic_queues = read_lock(&self.topic_queues).clone();
         let consumer_group = self.consume_stats_group();
@@ -5028,7 +5358,7 @@ impl PushConsumer {
                 return true;
             }
             if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective
-                && (self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire))
+                && (self.config.client_rebalance() || is_order)
             {
                 // Java's LiteSelective rebalance uses the default no-local-allocation branch;
                 // broker assignment is used when client-side rebalance is disabled.
@@ -5056,7 +5386,7 @@ impl PushConsumer {
                 continue;
             }
 
-            if self.config.client_rebalance() || self.consume_orderly.load(Ordering::Acquire) {
+            if self.config.client_rebalance() || is_order {
                 // Java RebalanceImpl checks the local route table before it
                 // queries membership. A missing or empty route notifies with
                 // empty sets and leaves the previous assignment untouched.
@@ -5831,6 +6161,7 @@ impl PushConsumer {
         broker_name: &str,
         topic: &str,
         body: &UnlockBatchRequestBody,
+        oneway: bool,
     ) -> Result<(), String> {
         #[cfg(test)]
         {
@@ -5854,7 +6185,7 @@ impl PushConsumer {
                 .map_err(|error| error.to_string())?;
         runtime
             .api()
-            .unlock_batch_mq(&address, body, false, deadline)
+            .unlock_batch_mq(&address, body, oneway, deadline)
             .await
             .map_err(|error| error.to_string())
     }
@@ -5949,6 +6280,7 @@ impl PushConsumer {
         &self,
         runtime: &Arc<ClientRuntime>,
         queues: &[MessageQueue],
+        oneway: bool,
     ) -> HashSet<MessageQueue> {
         let mut groups = BTreeMap::<String, (String, HashSet<Option<MessageQueue>>)>::new();
         for queue in queues {
@@ -5982,7 +6314,7 @@ impl PushConsumer {
                     .collect(),
             )));
             match self
-                .request_orderly_unlock_batch(runtime, &broker_name, &topic, &body)
+                .request_orderly_unlock_batch(runtime, &broker_name, &topic, &body, oneway)
                 .await
             {
                 Ok(()) => {
@@ -6068,7 +6400,9 @@ impl PushConsumer {
                 .iter()
                 .map(|(queue, _, _)| queue.clone())
                 .collect::<Vec<_>>();
-            let unlocked = self.unlock_orderly_queues_raw(runtime, &queues).await;
+            let unlocked = self
+                .unlock_orderly_queues_raw(runtime, &queues, false)
+                .await;
             for (queue, process_queue, generation) in stale_locked {
                 if unlocked.contains(&queue) {
                     let _ = process_queue.record_unlocked(generation);
@@ -6090,7 +6424,7 @@ impl PushConsumer {
             return true;
         }
         write_lock(&self.pending_orderly_unlocks).extend(queues.iter().cloned());
-        let unlocked = self.unlock_orderly_queues_raw(runtime, queues).await;
+        let unlocked = self.unlock_orderly_queues_raw(runtime, queues, false).await;
         let mut pending = write_lock(&self.pending_orderly_unlocks);
         for queue in &unlocked {
             pending.remove(queue);
@@ -6118,7 +6452,9 @@ impl PushConsumer {
             return true;
         }
         write_lock(&self.pending_orderly_unlocks).extend(queues.iter().cloned());
-        let unlocked = self.unlock_orderly_queues_raw(runtime, &queues).await;
+        let unlocked = self
+            .unlock_orderly_queues_raw(runtime, &queues, false)
+            .await;
         for (queue, process_queue) in targets {
             if unlocked.contains(&queue) {
                 if let Some(process_queue) = process_queue {
@@ -6137,7 +6473,9 @@ impl PushConsumer {
             .iter()
             .cloned()
             .collect::<Vec<_>>();
-        let unlocked = self.unlock_orderly_queues_raw(runtime, &queues).await;
+        let unlocked = self
+            .unlock_orderly_queues_raw(runtime, &queues, false)
+            .await;
         let mut pending = write_lock(&self.pending_orderly_unlocks);
         for queue in unlocked {
             pending.remove(&queue);
@@ -14812,14 +15150,13 @@ mod tests {
 
         assert!(
             !consumer
-                .rebalance_once(&crate::rebalance::AllocateMessageQueueAveragely)
+                .rebalance_once(&crate::rebalance::AllocateMessageQueueAveragely, None)
                 .await
         );
         assert!(!read_lock(&consumer.process_queues).contains_key(&queue));
 
-        let _ = consumer
-            .rebalance_once(&crate::rebalance::AllocateMessageQueueAveragely)
-            .await;
+        consumer.paused.store(false, Ordering::Release);
+        assert!(consumer.do_rebalance_with_order(true).await);
         let process_queue = read_lock(&consumer.process_queues)
             .get(&queue)
             .cloned()

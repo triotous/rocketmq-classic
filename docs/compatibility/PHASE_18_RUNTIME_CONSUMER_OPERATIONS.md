@@ -211,8 +211,10 @@ Rust now exposes both queue types, direct Java-shaped queue behavior, mutable
 message-tree/counter handles and live Push/Pull process-queue tables. Pull
 assignment reconciliation updates its process table. Pull POP behavior now
 matches Java's no-queue/no-dispatch implementation and is fixture checked.
-Remaining gaps are the inherited rebalance call/settings correspondence;
-broad P18-V01 remains open.
+The inherited rebalance operations map to owner methods; Java's raw factory
+replacement and mutable request-list dispatch stay represented by the managed
+runtime and owned request scheduler. The broader Java client source/settings/
+flow and reverse API audit under P18-V01 remains open.
 
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove

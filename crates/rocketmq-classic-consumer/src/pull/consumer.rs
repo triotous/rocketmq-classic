@@ -25,7 +25,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::ConsumerRunningInfoBody,
+    body::{ConsumerRunningInfoBody, LockBatchRequestBody, UnlockBatchRequestBody},
     header::{
         BoundaryType, GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader,
         GetMinOffsetRequestHeader, PullMessageRequestHeader, SearchOffsetRequestHeader,
@@ -128,6 +128,8 @@ enum State {
 pub struct PullConsumer {
     config: PullConsumerConfig,
     current_group_name: RwLock<String>,
+    rebalance_message_model: Arc<RwLock<MessageModel>>,
+    rebalance_strategy: Arc<RwLock<Arc<dyn AllocateMessageQueueStrategy>>>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
@@ -177,11 +179,15 @@ impl PullConsumer {
         rpc_hook: Option<Arc<dyn RpcHook>>,
     ) -> Self {
         let current_group_name = config.consumer_group().to_owned();
+        let rebalance_message_model = Arc::new(RwLock::new(config.message_model()));
+        let rebalance_strategy = Arc::new(RwLock::new(config.allocate_message_queue_strategy()));
         let message_queue_listener = config.message_queue_listener();
         let enable_rebalance = config.enable_rebalance();
         Self {
             config,
             current_group_name: RwLock::new(current_group_name),
+            rebalance_message_model,
+            rebalance_strategy,
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
@@ -221,8 +227,235 @@ impl PullConsumer {
         read_lock(&self.current_group_name).clone()
     }
 
+    pub fn get_consumer_group(&self) -> String {
+        self.group_name()
+    }
+
+    /// Pull configuration can be changed before startup, matching Java's
+    /// rebalance group setter while keeping the Rust owner borrow-safe.
+    pub fn set_consumer_group(&mut self, group: impl Into<String>) {
+        let group = group.into();
+        self.config.set_consumer_group(group.clone());
+        *write_lock(&self.current_group_name) = group;
+    }
+
     pub fn message_model(&self) -> MessageModel {
-        self.config.message_model()
+        *read_lock(&self.rebalance_message_model)
+    }
+
+    pub fn set_message_model(&self, message_model: MessageModel) {
+        *write_lock(&self.rebalance_message_model) = message_model;
+        if let Some(runtime) = read_lock(&self.runtime_for_wakeup)
+            .as_ref()
+            .and_then(Weak::upgrade)
+        {
+            runtime.rebalance_immediately();
+        }
+    }
+
+    pub fn get_allocate_message_queue_strategy(&self) -> Arc<dyn AllocateMessageQueueStrategy> {
+        read_lock(&self.rebalance_strategy).clone()
+    }
+
+    pub fn set_allocate_message_queue_strategy(
+        &self,
+        strategy: Arc<dyn AllocateMessageQueueStrategy>,
+    ) {
+        *write_lock(&self.rebalance_strategy) = strategy;
+        if let Some(runtime) = read_lock(&self.runtime_for_wakeup)
+            .as_ref()
+            .and_then(Weak::upgrade)
+        {
+            runtime.rebalance_immediately();
+        }
+    }
+
+    async fn rebalance_broker_address(
+        &self,
+        runtime: &ClientRuntime,
+        topic: &str,
+        broker: &str,
+        deadline: Instant,
+    ) -> Result<String, PullConsumerError> {
+        let mut route = runtime.route_snapshot()?;
+        if let Some(address) = route.publish_address(broker) {
+            return Ok(address.to_owned());
+        }
+        runtime.update_topic_route(topic, deadline).await?;
+        route = runtime.route_snapshot()?;
+        route
+            .publish_address(broker)
+            .map(str::to_owned)
+            .ok_or_else(|| PullConsumerError::BrokerNotFound {
+                broker: broker.to_owned(),
+            })
+    }
+
+    /// Requests the Java rebalance lock for one queue and applies returned
+    /// lock state to any matching local ProcessQueue.
+    pub async fn lock(&self, input_queue: &MessageQueue) -> Result<bool, PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let topic = queue.topic().ok_or(PullConsumerError::InvalidQueue)?;
+        let broker = queue.broker_name().ok_or(PullConsumerError::InvalidQueue)?;
+        let deadline = Instant::now() + Duration::from_millis(1_000);
+        let address = self
+            .rebalance_broker_address(&runtime, topic, broker, deadline)
+            .await?;
+        let mut body = LockBatchRequestBody::default();
+        body.set_consumer_group(Some(self.group_name()));
+        body.set_client_id(Some(runtime.client_id().to_owned()));
+        body.set_only_this_broker(false);
+        body.set_mq_set(Some(SharedValue::new(HashSet::from([Some(
+            SharedValue::new(queue.clone()),
+        )]))));
+        let Some(locked_queues) = runtime
+            .api()
+            .lock_batch_mq(&address, &body, deadline)
+            .await?
+        else {
+            return Ok(false);
+        };
+        for locked_queue in locked_queues.iter().flatten() {
+            if let Some(process_queue) = read_lock(&self.process_queues).get(locked_queue) {
+                process_queue.set_locked(true);
+                process_queue.set_last_lock_timestamp(epoch_millis());
+            }
+        }
+        Ok(locked_queues.contains(&Some(queue)))
+    }
+
+    /// Locks all non-dropped Pull process queues in one request per Broker.
+    pub async fn lock_all(&self) {
+        let Ok((runtime, _)) = self.started_runtime().await else {
+            return;
+        };
+        let mut groups =
+            BTreeMap::<String, (String, HashSet<Option<SharedValue<MessageQueue>>>)>::new();
+        for (queue, process_queue) in read_lock(&self.process_queues).iter() {
+            if process_queue.is_dropped() {
+                continue;
+            }
+            let (Some(broker), Some(topic)) = (queue.broker_name(), queue.topic()) else {
+                continue;
+            };
+            groups
+                .entry(broker.to_owned())
+                .or_insert_with(|| (topic.to_owned(), HashSet::new()))
+                .1
+                .insert(Some(SharedValue::new(queue.clone())));
+        }
+        for (broker, (topic, queues)) in groups {
+            let deadline = Instant::now() + Duration::from_millis(1_000);
+            let Ok(address) = self
+                .rebalance_broker_address(&runtime, &topic, &broker, deadline)
+                .await
+            else {
+                continue;
+            };
+            let mut body = LockBatchRequestBody::default();
+            body.set_consumer_group(Some(self.group_name()));
+            body.set_client_id(Some(runtime.client_id().to_owned()));
+            body.set_only_this_broker(false);
+            body.set_mq_set(Some(SharedValue::new(queues.clone())));
+            let Ok(Some(locked_queues)) =
+                runtime.api().lock_batch_mq(&address, &body, deadline).await
+            else {
+                continue;
+            };
+            for queue in queues.into_iter().flatten() {
+                let queue = queue.snapshot();
+                if let Some(process_queue) = read_lock(&self.process_queues).get(&queue) {
+                    let locked = locked_queues.contains(&Some(queue));
+                    process_queue.set_locked(locked);
+                    if locked {
+                        process_queue.set_last_lock_timestamp(epoch_millis());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Releases one queue lock, retaining Java's optional one-way request path.
+    pub async fn unlock(
+        &self,
+        input_queue: &MessageQueue,
+        oneway: bool,
+    ) -> Result<(), PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        let topic = queue.topic().ok_or(PullConsumerError::InvalidQueue)?;
+        let broker = queue.broker_name().ok_or(PullConsumerError::InvalidQueue)?;
+        let deadline = Instant::now() + Duration::from_millis(1_000);
+        let address = self
+            .rebalance_broker_address(&runtime, topic, broker, deadline)
+            .await?;
+        let mut body = UnlockBatchRequestBody::default();
+        body.set_consumer_group(Some(self.group_name()));
+        body.set_client_id(Some(runtime.client_id().to_owned()));
+        body.set_only_this_broker(false);
+        body.set_mq_set(Some(SharedValue::new(HashSet::from([Some(
+            SharedValue::new(queue.clone()),
+        )]))));
+        runtime
+            .api()
+            .unlock_batch_mq(&address, &body, oneway, deadline)
+            .await?;
+        if let Some(process_queue) = read_lock(&self.process_queues).get(&queue) {
+            process_queue.set_locked(false);
+        }
+        Ok(())
+    }
+
+    /// Releases all non-dropped Pull process queue locks in one request per
+    /// Broker.
+    pub async fn unlock_all(&self, oneway: bool) {
+        let Ok((runtime, _)) = self.started_runtime().await else {
+            return;
+        };
+        let mut groups =
+            BTreeMap::<String, (String, HashSet<Option<SharedValue<MessageQueue>>>)>::new();
+        for (queue, process_queue) in read_lock(&self.process_queues).iter() {
+            if process_queue.is_dropped() {
+                continue;
+            }
+            let (Some(broker), Some(topic)) = (queue.broker_name(), queue.topic()) else {
+                continue;
+            };
+            groups
+                .entry(broker.to_owned())
+                .or_insert_with(|| (topic.to_owned(), HashSet::new()))
+                .1
+                .insert(Some(SharedValue::new(queue.clone())));
+        }
+        for (broker, (topic, queues)) in groups {
+            let deadline = Instant::now() + Duration::from_millis(1_000);
+            let Ok(address) = self
+                .rebalance_broker_address(&runtime, &topic, &broker, deadline)
+                .await
+            else {
+                continue;
+            };
+            let mut body = UnlockBatchRequestBody::default();
+            body.set_consumer_group(Some(self.group_name()));
+            body.set_client_id(Some(runtime.client_id().to_owned()));
+            body.set_only_this_broker(false);
+            body.set_mq_set(Some(SharedValue::new(queues.clone())));
+            if runtime
+                .api()
+                .unlock_batch_mq(&address, &body, oneway, deadline)
+                .await
+                .is_ok()
+            {
+                for queue in queues.into_iter().flatten() {
+                    if let Some(process_queue) =
+                        read_lock(&self.process_queues).get(&queue.snapshot())
+                    {
+                        process_queue.set_locked(false);
+                    }
+                }
+            }
+        }
     }
 
     pub fn is_unit_mode(&self) -> bool {
@@ -291,6 +524,15 @@ impl PullConsumer {
         Ok(registration.rebalance_once().await)
     }
 
+    /// Returns Java's `RebalanceImpl.doRebalance(isOrder)` result. Pull does
+    /// not use ordered dispatch, so both values share the same assignment pass.
+    pub async fn do_rebalance_with_order(
+        &self,
+        _is_order: bool,
+    ) -> Result<bool, PullConsumerError> {
+        self.try_rebalance().await
+    }
+
     /// Returns the pull-consumer implementation represented by this facade.
     ///
     /// Java's deprecated `DefaultMQPullConsumer.getDefaultMQPullConsumerImpl`
@@ -332,6 +574,98 @@ impl PullConsumer {
     /// Creates the public process queue returned by Java pull rebalance.
     pub fn create_process_queue(&self) -> ProcessQueue {
         ProcessQueue::new()
+    }
+
+    /// Removes stale offset state before explicit Pull adds a new assignment.
+    pub async fn remove_dirty_offset(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<(), PullConsumerError> {
+        let store = self
+            .get_offset_store()
+            .ok_or(PullConsumerError::NotStarted)?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        store.remove_offset(&queue);
+        Ok(())
+    }
+
+    /// Persists and clears offsets when Java removes an explicit Pull queue.
+    pub async fn remove_unnecessary_message_queue(
+        &self,
+        input_queue: &MessageQueue,
+        _process_queue: &Arc<ProcessQueue>,
+    ) -> Result<bool, PullConsumerError> {
+        let (_, store) = self.started_runtime().await?;
+        let queue = self.queue_with_namespace(input_queue)?;
+        store.persist(&queue).await?;
+        store.remove_offset(&queue);
+        Ok(true)
+    }
+
+    /// Pull's base rebalance implementation accepts POP cleanup without work.
+    pub const fn remove_unnecessary_pop_process_queue(
+        &self,
+        _queue: &MessageQueue,
+        _process_queue: &PopProcessQueue,
+    ) -> bool {
+        true
+    }
+
+    /// Invokes the configured Pull queue listener with Java's exception
+    /// isolation behavior.
+    pub fn message_queue_changed(
+        &self,
+        topic: &str,
+        all_queues: Option<&HashSet<MessageQueue>>,
+        divided_queues: &HashSet<MessageQueue>,
+    ) {
+        if let Some(listener) = self.message_queue_listener() {
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                listener(topic, all_queues, divided_queues);
+            }));
+        }
+    }
+
+    /// Removes a Pull assignment, marks its ProcessQueue dropped and clears
+    /// the retained offset state.
+    pub async fn remove_process_queue(
+        &self,
+        input_queue: &MessageQueue,
+    ) -> Result<bool, PullConsumerError> {
+        let queue = self.queue_with_namespace(input_queue)?;
+        let process_queue = write_lock(&self.process_queues).remove(&queue);
+        let Some(process_queue) = process_queue else {
+            return Ok(false);
+        };
+        process_queue.set_dropped(true);
+        let _ = process_queue.drop_assignment(process_queue.generation());
+        write_lock(&self.in_balance_queues).remove(&queue);
+        if let Some(store) = self.get_offset_store() {
+            store.persist(&queue).await?;
+            store.remove_offset(&queue);
+        }
+        if let Some(runtime) = read_lock(&self.runtime_for_wakeup)
+            .as_ref()
+            .and_then(Weak::upgrade)
+        {
+            runtime.rebalance_immediately();
+        }
+        Ok(true)
+    }
+
+    /// Drops and clears Pull assignment tables without shutting down the shared
+    /// client runtime, matching Java rebalance destruction.
+    pub fn destroy(&self) {
+        self.rebalance_active.store(false, Ordering::Release);
+        for process_queue in write_lock(&self.process_queues).values() {
+            let _ = process_queue.drop_assignment(process_queue.generation());
+        }
+        write_lock(&self.process_queues).clear();
+        for process_queue in write_lock(&self.pop_process_queues).values() {
+            process_queue.drop_assignment();
+        }
+        write_lock(&self.pop_process_queues).clear();
+        write_lock(&self.in_balance_queues).clear();
     }
 
     pub fn get_process_queue_table(&self) -> Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>> {
@@ -524,6 +858,16 @@ impl PullConsumer {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Returns the live shared client runtime corresponding to Java's
+    /// `RebalanceImpl.getmQClientFactory`; it is absent before startup and
+    /// after runtime teardown.
+    pub async fn get_client_runtime(&self) -> Option<Arc<ClientRuntime>> {
+        match &*self.state.lock().await {
+            State::Started { runtime, .. } => runtime.upgrade(),
+            State::Created | State::Shutdown => None,
+        }
     }
 
     /// Select a user-supplied OffsetStore before startup. `None` restores the
@@ -878,12 +1222,13 @@ impl PullConsumer {
         let registration = Arc::new(PullConsumerRegistration {
             group: consumer_group.clone(),
             message_model: self.config.message_model(),
+            rebalance_message_model: self.rebalance_message_model.clone(),
             consume_from_where: self.config.consume_from_where(),
             unit_mode: self.config.unit_mode(),
             route_timeout_millis: i64::from(client_config.mq_client_api_timeout()),
             enable_rebalance: self.enable_rebalance.clone(),
             rebalance_active: self.rebalance_active.clone(),
-            strategy: self.config.allocate_message_queue_strategy(),
+            strategy: self.rebalance_strategy.clone(),
             message_queue_listener: self.message_queue_listener.clone(),
             register_topics: self.register_topics.clone(),
             subscriptions: self.subscriptions.clone(),
@@ -2009,12 +2354,13 @@ fn pull_update_topic_subscribe_info(
 struct PullConsumerRegistration {
     group: String,
     message_model: MessageModel,
+    rebalance_message_model: Arc<RwLock<MessageModel>>,
     consume_from_where: ConsumeFromWhere,
     unit_mode: bool,
     route_timeout_millis: i64,
     enable_rebalance: Arc<AtomicBool>,
     rebalance_active: Arc<AtomicBool>,
-    strategy: Arc<dyn AllocateMessageQueueStrategy>,
+    strategy: Arc<RwLock<Arc<dyn AllocateMessageQueueStrategy>>>,
     message_queue_listener: Arc<RwLock<Option<MessageQueueListener>>>,
     register_topics: Arc<RwLock<BTreeSet<String>>>,
     subscriptions: Arc<RwLock<HashMap<String, SubscriptionData>>>,
@@ -2174,6 +2520,8 @@ impl PullConsumerRegistration {
             return true;
         }
 
+        let message_model = *read_lock(&self.rebalance_message_model);
+        let strategy = read_lock(&self.strategy).clone();
         let subscribed = read_lock(&self.subscriptions)
             .keys()
             .cloned()
@@ -2201,7 +2549,7 @@ impl PullConsumerRegistration {
                 balanced &= changed;
                 continue;
             }
-            if self.message_model == MessageModel::LiteSelective {
+            if message_model == MessageModel::LiteSelective {
                 continue;
             }
 
@@ -2211,8 +2559,8 @@ impl PullConsumerRegistration {
                     Instant::now() + Duration::from_millis(self.route_timeout_millis.max(0) as u64);
                 if let Err(error) = runtime.update_topic_route(&topic, deadline).await {
                     tracing::warn!(topic, error = %error, "pull rebalance route lookup failed");
-                    if self.message_model == MessageModel::Broadcasting
-                        || (self.message_model == MessageModel::Clustering
+                    if message_model == MessageModel::Broadcasting
+                        || (message_model == MessageModel::Clustering
                             && !topic.starts_with("%RETRY%"))
                     {
                         self.notify_message_queue_listener(
@@ -2227,7 +2575,7 @@ impl PullConsumerRegistration {
                 queue_snapshot = read_lock(&self.topic_queues).get(&topic).cloned();
             }
 
-            match self.message_model {
+            match message_model {
                 MessageModel::Broadcasting => {
                     let Some(queue_snapshot) = queue_snapshot else {
                         self.notify_message_queue_listener(
@@ -2278,7 +2626,7 @@ impl PullConsumerRegistration {
                     };
                     consumer_ids.sort_by(|left, right| java_string_cmp(left, right));
                     let allocation = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        self.strategy.allocate(
+                        strategy.allocate(
                             &self.group,
                             runtime.client_id(),
                             &all_queues,
@@ -2288,14 +2636,14 @@ impl PullConsumerRegistration {
                     let assigned = match allocation {
                         Ok(Ok(assigned)) => assigned.into_iter().collect::<HashSet<_>>(),
                         Ok(Err(error)) => {
-                            tracing::warn!(topic, strategy = self.strategy.name(), error = %error, "pull queue allocation failed");
+                            tracing::warn!(topic, strategy = strategy.name(), error = %error, "pull queue allocation failed");
                             balanced = false;
                             continue;
                         }
                         Err(_) => {
                             tracing::warn!(
                                 topic,
-                                strategy = self.strategy.name(),
+                                strategy = strategy.name(),
                                 "pull queue allocation panicked"
                             );
                             balanced = false;
@@ -3641,12 +3989,13 @@ mod tests {
         let registration = PullConsumerRegistration {
             group: "pull-subscribe-info-callbacks".to_owned(),
             message_model: MessageModel::Clustering,
+            rebalance_message_model: Arc::new(RwLock::new(MessageModel::Clustering)),
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             route_timeout_millis: 100,
             enable_rebalance: Arc::new(AtomicBool::new(true)),
             rebalance_active: Arc::new(AtomicBool::new(false)),
-            strategy: config.allocate_message_queue_strategy(),
+            strategy: Arc::new(RwLock::new(config.allocate_message_queue_strategy())),
             message_queue_listener: Arc::new(RwLock::new(None)),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["registered-topic".to_owned()]))),
             subscriptions: subscriptions.clone(),
@@ -3963,12 +4312,13 @@ mod tests {
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-broadcast".to_owned(),
             message_model: MessageModel::Broadcasting,
+            rebalance_message_model: Arc::new(RwLock::new(MessageModel::Broadcasting)),
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             route_timeout_millis: 100,
             enable_rebalance: Arc::new(AtomicBool::new(true)),
             rebalance_active: Arc::new(AtomicBool::new(true)),
-            strategy: config.allocate_message_queue_strategy(),
+            strategy: Arc::new(RwLock::new(config.allocate_message_queue_strategy())),
             message_queue_listener: Arc::new(RwLock::new(Some(listener))),
             register_topics: Arc::new(RwLock::new(BTreeSet::from(["orders".to_owned()]))),
             subscriptions: Arc::new(RwLock::new(HashMap::from([(
@@ -4099,12 +4449,13 @@ mod tests {
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-cluster".to_owned(),
             message_model: MessageModel::Clustering,
+            rebalance_message_model: Arc::new(RwLock::new(MessageModel::Clustering)),
             consume_from_where: ConsumeFromWhere::ConsumeFromLastOffset,
             unit_mode: false,
             route_timeout_millis: 100,
             enable_rebalance: Arc::new(AtomicBool::new(true)),
             rebalance_active: Arc::new(AtomicBool::new(true)),
-            strategy: config.allocate_message_queue_strategy(),
+            strategy: Arc::new(RwLock::new(config.allocate_message_queue_strategy())),
             message_queue_listener: Arc::new(RwLock::new(None)),
             register_topics: Arc::new(RwLock::new(BTreeSet::new())),
             subscriptions: Arc::new(RwLock::new(HashMap::from([(

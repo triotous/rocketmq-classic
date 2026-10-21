@@ -14,6 +14,8 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.rebalance.AllocateMessageQueueAveragely;
+import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.consumer.MQPullConsumer;
 import org.apache.rocketmq.client.consumer.MQPushConsumer;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
@@ -29,6 +31,7 @@ import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
 import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
 /** Pins the complete public Java consumer-facade and inherited API denominator. */
@@ -95,10 +98,17 @@ public final class ConsumerFacadeApiFixtures {
     private static Map<String, Object> rebalancePullBehavior() {
         RebalancePullImpl rebalance = new RebalancePullImpl("pull-group",
             MessageModel.CLUSTERING, null, null, null);
+        rebalance.setConsumerGroup("pull-group-updated");
+        rebalance.setMessageModel(MessageModel.BROADCASTING);
+        AllocateMessageQueueAveragely strategy = new AllocateMessageQueueAveragely();
+        rebalance.setAllocateMessageQueueStrategy(strategy);
         rebalance.dispatchPullRequest(List.of(new PullRequest()), 500L);
         rebalance.dispatchPopPullRequest(List.of(new PopRequest()), 500L);
 
         Map<String, Object> result = new TreeMap<>();
+        result.put("groupAfterSet", rebalance.getConsumerGroup());
+        result.put("messageModelAfterSet", rebalance.getMessageModel().name());
+        result.put("strategyPreservesIdentity", rebalance.getAllocateMessageQueueStrategy() == strategy);
         result.put("clientRebalance", rebalance.clientRebalance("orders"));
         result.put("consumeType", rebalance.consumeType().name());
         result.put("pullOffset", rebalance.computePullFromWhere(null));
@@ -115,6 +125,51 @@ public final class ConsumerFacadeApiFixtures {
         } catch (UnsupportedOperationException e) {
             result.put("consumeInitModeError", e.getMessage());
         }
+        return result;
+    }
+
+    private static Map<String, Object> rebalancePushBehavior() {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("push-group");
+        DefaultMQPushConsumerImpl implementation = new DefaultMQPushConsumerImpl(consumer, null);
+        RebalancePushImpl rebalance = new RebalancePushImpl("push-group",
+            MessageModel.CLUSTERING, consumer.getAllocateMessageQueueStrategy(), null, implementation);
+        boolean clientRebalanceDefault = rebalance.clientRebalance("orders");
+        consumer.setClientRebalance(false);
+        boolean clientRebalanceClusteringDisabled = rebalance.clientRebalance("orders");
+        rebalance.setMessageModel(MessageModel.BROADCASTING);
+        boolean clientRebalanceBroadcasting = rebalance.clientRebalance("orders");
+        rebalance.setMessageModel(MessageModel.CLUSTERING);
+        rebalance.setConsumerGroup("push-group-updated");
+        boolean strategyPreservesIdentity =
+            rebalance.getAllocateMessageQueueStrategy() == consumer.getAllocateMessageQueueStrategy();
+        boolean doRebalanceEmpty = rebalance.doRebalance(false);
+
+        MessageQueue queue = new MessageQueue("orders", "broker-a", 0);
+        ProcessQueue processQueue = rebalance.createProcessQueue();
+        PopProcessQueue popProcessQueue = rebalance.createPopProcessQueue();
+        rebalance.getProcessQueueTable().put(queue, processQueue);
+        rebalance.getPopProcessQueueTable().put(queue, popProcessQueue);
+        boolean removeUnnecessaryPop =
+            rebalance.removeUnnecessaryPopMessageQueue(queue, popProcessQueue);
+        rebalance.destroy();
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("clientRebalanceDefault", clientRebalanceDefault);
+        result.put("clientRebalanceClusteringDisabled", clientRebalanceClusteringDisabled);
+        result.put("clientRebalanceBroadcasting", clientRebalanceBroadcasting);
+        result.put("groupAfterSet", rebalance.getConsumerGroup());
+        result.put("messageModelAfterSet", rebalance.getMessageModel().name());
+        result.put("strategyPreservesIdentity", strategyPreservesIdentity);
+        result.put("consumeType", rebalance.consumeType().name());
+        result.put("consumeInitMode", rebalance.getConsumeInitMode());
+        result.put("doRebalanceEmpty", doRebalanceEmpty);
+        result.put("processQueueCreated", processQueue != null);
+        result.put("popProcessQueueCreated", popProcessQueue != null);
+        result.put("removeUnnecessaryPop", removeUnnecessaryPop);
+        result.put("processQueueDroppedByDestroy", processQueue.isDropped());
+        result.put("popProcessQueueDroppedByDestroy", popProcessQueue.isDropped());
+        result.put("processTableEmptyAfterDestroy", rebalance.getProcessQueueTable().isEmpty());
+        result.put("popTableEmptyAfterDestroy", rebalance.getPopProcessQueueTable().isEmpty());
         return result;
     }
 
@@ -262,6 +317,7 @@ public final class ConsumerFacadeApiFixtures {
         Map<String, Object> implementationBehaviors = new TreeMap<>();
         implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
         implementationBehaviors.put("processQueue", processQueueBehavior());
+        implementationBehaviors.put("rebalancePush", rebalancePushBehavior());
         implementationBehaviors.put("rebalancePull", rebalancePullBehavior());
         fixture.put("implementationBehaviors", implementationBehaviors);
 
