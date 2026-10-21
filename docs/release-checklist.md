@@ -6123,3 +6123,23 @@ owner-specific checks belong in the manual handoff.
 - The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
   evidence and Phase 19 live Broker scenarios remain open. The four preserved
   Phase 19 worktree paths remain untouched and unstaged.
+
+## P18-V01 `MqClientAdmin` Rust wrapper surface — 2026-10-21
+
+- [x] `MQClientApi::mq_client_admin()` now exposes all 19 methods in the pinned
+  Java `MqClientAdmin` interface. The invoked fixture records the exact
+  reflection signatures; Rust checks all 19 names and compile-calls every
+  wrapper.
+- [x] The topic-update wrapper preserves Java's direct request behavior. An
+  invalid permission value is sent to the Broker instead of triggering the
+  local validation used by `MQClientAPIImpl.createTopic`; the Java fixture and
+  Rust scripted peer compare the request.
+- [x] Fixture SHA-256:
+  `670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+  `cargo test -p rocketmq-classic-core --test admin_rpc --locked` passes all
+  82 tests; strict Core Clippy passes; pinned Maven `verify` passes 37 scenarios,
+  83 typed-header frames and 16 typed-body frames. Formatting and diff checks
+  pass.
+- The broad bidirectional P18-V01 audit and final full-workspace P18-V02 rerun
+  remain open, as do current-revision Ubuntu/native Windows evidence and Phase
+  19 live Broker/Docker scenarios. Preserved Phase 19 paths remain untouched.

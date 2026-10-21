@@ -10,8 +10,9 @@ use rocketmq_classic_protocol::{
         CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
         ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
         DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList, KvTable,
-        ProducerConnection, ProducerTableInfo, QuerySubscriptionResponseBody, ResetOffsetBody,
-        SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
+        ProducerConnection, ProducerTableInfo, QuerySubscriptionResponseBody, QueueTimeSpan,
+        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList,
+        TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -25,7 +26,7 @@ use rocketmq_classic_protocol::{
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
         GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
         GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader,
         ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
@@ -2049,6 +2050,147 @@ impl MqClientAdmin {
     ) -> Result<ConsumeMessageDirectlyResult, RpcError> {
         self.api
             .consume_message_directly(addr, header, deadline)
+            .await
+    }
+
+    /// Queries one Broker's topic statistics through Java
+    /// `MqClientAdmin.getTopicStatsInfo`.
+    pub async fn get_topic_stats_info(
+        &self,
+        addr: &str,
+        header: &GetTopicStatsInfoRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<TopicStatsTable>, RpcError> {
+        self.api.get_topic_stats_info(addr, header, deadline).await
+    }
+
+    /// Queries one Broker's consume time spans through Java
+    /// `MqClientAdmin.queryConsumeTimeSpan`.
+    pub async fn query_consume_time_span(
+        &self,
+        addr: &str,
+        header: &QueryConsumeTimeSpanRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<Vec<Option<QueueTimeSpan>>>, RpcError> {
+        self.api
+            .query_consume_time_span(addr, header, deadline)
+            .await
+    }
+
+    /// Creates or updates one Broker topic through Java
+    /// `MqClientAdmin.updateOrCreateTopic`.
+    pub async fn update_or_create_topic(
+        &self,
+        addr: &str,
+        header: &CreateTopicRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_AND_CREATE_TOPIC;
+        let reply = self
+            .api
+            .request_future(addr, code, header, None, deadline)
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Deletes one Broker topic through Java `MqClientAdmin.deleteTopicInBroker`.
+    pub async fn delete_topic_in_broker(
+        &self,
+        addr: &str,
+        header: &DeleteTopicRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.api
+            .delete_topic_in_broker(addr, header, deadline)
+            .await
+    }
+
+    /// Deletes one NameServer topic through Java
+    /// `MqClientAdmin.deleteTopicInNameserver`.
+    pub async fn delete_topic_in_nameserver(
+        &self,
+        addr: &str,
+        header: &DeleteTopicFromNamesrvRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.api
+            .delete_topic_in_nameserver(addr, header, deadline)
+            .await
+    }
+
+    /// Deletes one NameServer KV entry through Java `MqClientAdmin.deleteKvConfig`.
+    pub async fn delete_kv_config(
+        &self,
+        addr: &str,
+        header: &DeleteKvConfigRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.api.delete_kv_config(addr, header, deadline).await
+    }
+
+    /// Deletes one Broker subscription group through Java
+    /// `MqClientAdmin.deleteSubscriptionGroup`.
+    pub async fn delete_subscription_group(
+        &self,
+        addr: &str,
+        header: &DeleteSubscriptionGroupRequestHeader,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.api
+            .delete_subscription_group(addr, header, deadline)
+            .await
+    }
+
+    /// Invokes one Broker's reset-offset operation through Java
+    /// `MqClientAdmin.invokeBrokerToResetOffset`.
+    pub async fn invoke_broker_to_reset_offset(
+        &self,
+        addr: &str,
+        header: &ResetOffsetRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<SharedQueueOffsetEntries>, RpcError> {
+        self.api
+            .invoke_broker_to_reset_offset(addr, header, deadline)
+            .await
+    }
+
+    /// Queries the topics consumed by one group through Java
+    /// `MqClientAdmin.queryTopicsByConsumer`.
+    pub async fn query_topics_by_consumer(
+        &self,
+        addr: &str,
+        header: &QueryTopicsByConsumerRequestHeader,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        self.api
+            .query_topics_by_consumer(addr, header, deadline)
+            .await
+    }
+
+    /// Queries one group's subscription through Java
+    /// `MqClientAdmin.querySubscriptionByConsumer`.
+    pub async fn query_subscription_by_consumer(
+        &self,
+        addr: &str,
+        header: &QuerySubscriptionByConsumerRequestHeader,
+        deadline: Instant,
+    ) -> Result<Option<SharedValue<SubscriptionData>>, RpcError> {
+        self.api
+            .query_subscription_by_consumer(addr, header, deadline)
+            .await
+    }
+
+    /// Queries the groups consuming one topic through Java
+    /// `MqClientAdmin.queryTopicConsumeByWho`.
+    pub async fn query_topic_consume_by_who(
+        &self,
+        addr: &str,
+        header: &QueryTopicConsumeByWhoRequestHeader,
+        deadline: Instant,
+    ) -> Result<GroupList, RpcError> {
+        self.api
+            .query_topic_consume_by_who(addr, header, deadline)
             .await
     }
 }

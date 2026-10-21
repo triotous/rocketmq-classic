@@ -24,7 +24,8 @@ use rocketmq_classic_protocol::{
         GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::HeartbeatData,
     heartbeat::SubscriptionData,
@@ -432,6 +433,38 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
             "field {key}"
         );
     }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_update_topic_does_not_add_local_permission_validation() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let expected = &fixture["updateOrCreateTopic"]["invalidPermission"];
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (api, client) = api().await;
+    let mut header = CreateTopicRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_perm(Some(8));
+    api.mq_client_admin()
+        .update_or_create_topic(&addr, &header, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::UPDATE_AND_CREATE_TOPIC);
+    assert_eq!(
+        command.body,
+        expected["requestBody"]
+            .as_str()
+            .map(|s| s.as_bytes().to_vec())
+    );
+    assert_eq!(
+        serde_json::to_value(command.ext_fields).unwrap(),
+        expected["requestExtFields"]
+    );
     client.shutdown().await;
 }
 
@@ -5250,5 +5283,97 @@ async fn view_message_preserves_not_found_response() {
         }
     ));
     assert_eq!(peer.await.unwrap().code, request::VIEW_MESSAGE_BY_ID);
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn mq_client_admin_surface_matches_pinned_java_method_inventory() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/admin/query-consume-time-span.json"
+    ))
+    .unwrap();
+    let methods = fixture["interfacePublicMethods"].as_array().unwrap();
+    assert_eq!(methods.len(), 19);
+    let java_names = methods
+        .iter()
+        .map(|method| {
+            method
+                .as_str()
+                .unwrap()
+                .split('(')
+                .next()
+                .unwrap()
+                .rsplit('.')
+                .next()
+                .unwrap()
+        })
+        .collect::<HashSet<_>>();
+    let expected = HashSet::from([
+        "queryMessage",
+        "getTopicStatsInfo",
+        "queryConsumeTimeSpan",
+        "updateOrCreateTopic",
+        "updateOrCreateSubscriptionGroup",
+        "deleteTopicInBroker",
+        "deleteTopicInNameserver",
+        "deleteKvConfig",
+        "deleteSubscriptionGroup",
+        "invokeBrokerToResetOffset",
+        "viewMessage",
+        "getBrokerClusterInfo",
+        "getConsumerConnectionList",
+        "queryTopicsByConsumer",
+        "querySubscriptionByConsumer",
+        "getConsumeStats",
+        "queryTopicConsumeByWho",
+        "getConsumerRunningInfo",
+        "consumeMessageDirectly",
+    ]);
+    assert_eq!(java_names, expected);
+
+    // Compile-check every Rust owner method. The futures are dropped without
+    // polling, so this surface inventory test does not issue Broker requests.
+    let (api, client) = api().await;
+    let admin = api.mq_client_admin();
+    let address = "127.0.0.1:10911";
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let query_message = QueryMessageRequestHeader::default();
+    let topic_stats = GetTopicStatsInfoRequestHeader::default();
+    let consume_time_span = QueryConsumeTimeSpanRequestHeader::default();
+    let create_topic = CreateTopicRequestHeader::default();
+    let create_subscription_group = SubscriptionGroupConfig::default();
+    let delete_topic = DeleteTopicRequestHeader::default();
+    let delete_topic_nameserver = DeleteTopicFromNamesrvRequestHeader::default();
+    let delete_kv = DeleteKvConfigRequestHeader::default();
+    let delete_subscription_group = DeleteSubscriptionGroupRequestHeader::default();
+    let reset_offset = ResetOffsetRequestHeader::default();
+    let view_message = ViewMessageRequestHeader::default();
+    let consumer_connections = GetConsumerConnectionListRequestHeader::default();
+    let topics_by_consumer = QueryTopicsByConsumerRequestHeader::default();
+    let subscription_by_consumer = QuerySubscriptionByConsumerRequestHeader::default();
+    let consume_stats = GetConsumeStatsRequestHeader::default();
+    let topic_consume_by_who = QueryTopicConsumeByWhoRequestHeader::default();
+    let consumer_running_info = GetConsumerRunningInfoRequestHeader::default();
+    let consume_directly = ConsumeMessageDirectlyResultRequestHeader::default();
+
+    drop(admin.query_message(address, false, false, &query_message, deadline));
+    drop(admin.get_topic_stats_info(address, &topic_stats, deadline));
+    drop(admin.query_consume_time_span(address, &consume_time_span, deadline));
+    drop(admin.update_or_create_topic(address, &create_topic, deadline));
+    drop(admin.update_or_create_subscription_group(address, &create_subscription_group, deadline));
+    drop(admin.delete_topic_in_broker(address, &delete_topic, deadline));
+    drop(admin.delete_topic_in_nameserver(address, &delete_topic_nameserver, deadline));
+    drop(admin.delete_kv_config(address, &delete_kv, deadline));
+    drop(admin.delete_subscription_group(address, &delete_subscription_group, deadline));
+    drop(admin.invoke_broker_to_reset_offset(address, &reset_offset, deadline));
+    drop(admin.view_message(address, &view_message, deadline));
+    drop(admin.get_broker_cluster_info(address, deadline));
+    drop(admin.get_consumer_connection_list(address, &consumer_connections, deadline));
+    drop(admin.query_topics_by_consumer(address, &topics_by_consumer, deadline));
+    drop(admin.query_subscription_by_consumer(address, &subscription_by_consumer, deadline));
+    drop(admin.get_consume_stats(address, &consume_stats, deadline));
+    drop(admin.query_topic_consume_by_who(address, &topic_consume_by_who, deadline));
+    drop(admin.get_consumer_running_info(address, &consumer_running_info, deadline));
+    drop(admin.consume_message_directly(address, &consume_directly, deadline));
     client.shutdown().await;
 }

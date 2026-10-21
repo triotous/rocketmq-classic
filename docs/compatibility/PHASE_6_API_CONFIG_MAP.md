@@ -1746,3 +1746,14 @@ frame, fast/reflection header comparisons, Protocol tests and a Core loopback
 cover the request, DTO defaults, enum surface and outcomes. This closes the
 named API/header slice only; broad P18-V01, P18-V02 and platform evidence gates
 remain open.
+
+## P18-V01 `MqClientAdmin` Rust wrapper inventory — 2026-10-21
+
+`MQClientApi::mq_client_admin()` exposes the complete 19-method Java interface
+surface. The Java reflection fixture pins its declared signatures, and the
+Core surface test compile-calls all 19 Rust methods. These wrappers reuse the
+audited direct RPC implementations; `update_or_create_topic` sends the supplied
+header without the local permission check used by the separate
+`MQClientAPIImpl.createTopic` entrypoint. Fixture SHA-256:
+`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+This closes the surfaced wrapper omission only; broad P18-V01 remains open.

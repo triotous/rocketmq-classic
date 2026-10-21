@@ -223,6 +223,7 @@ public final class MqClientAdminFixtures {
         Map<String, Object> fixture = new TreeMap<>();
         fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("interfacePublicMethods", publicMethods(MqClientAdmin.class));
         fixture.put("method", method.toGenericString());
         fixture.put("success", success);
         fixture.put("brokerError", error);
@@ -1749,6 +1750,22 @@ public final class MqClientAdminFixtures {
         success.put("responseCode", successCapture.response.getCode());
         success.put("completed", true);
 
+        CreateTopicRequestHeader invalidPermissionHeader = new CreateTopicRequestHeader();
+        invalidPermissionHeader.setTopic("orders");
+        invalidPermissionHeader.setPerm(8);
+        Capture invalidPermissionCapture = new Capture();
+        invalidPermissionCapture.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+        new MqClientAdminImpl(invalidPermissionCapture.proxy())
+            .updateOrCreateTopic(BROKER_ADDRESS, invalidPermissionHeader, TIMEOUT_MILLIS).get();
+        Map<String, Object> invalidPermission = new LinkedHashMap<>();
+        invalidPermission.put("address", invalidPermissionCapture.address);
+        invalidPermission.put("timeoutMillis", invalidPermissionCapture.timeoutMillis);
+        invalidPermission.put("requestCode", invalidPermissionCapture.request.getCode());
+        invalidPermission.put("requestExtFields", new TreeMap<>(invalidPermissionCapture.request.getExtFields()));
+        invalidPermission.put("requestBody", invalidPermissionCapture.request.getBody());
+        invalidPermission.put("responseCode", invalidPermissionCapture.response.getCode());
+        invalidPermission.put("completed", true);
+
         Capture errorCapture = new Capture();
         errorCapture.response = RemotingCommand.createResponseCommand(
             ResponseCode.SYSTEM_ERROR, "topic update failed");
@@ -1777,6 +1794,7 @@ public final class MqClientAdminFixtures {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("method", method.toGenericString());
         result.put("success", success);
+        result.put("invalidPermission", invalidPermission);
         result.put("brokerError", brokerError);
         return result;
     }

@@ -17,6 +17,19 @@ resume probe checks repeated unpaused invocation and sibling isolation.
 The earlier [consumer-status audit](PHASE_18_RUNTIME_CONSUMER_STATUS.md) covers
 the fourth direct runtime operation and its 54 group/topic cases.
 
+P18-V01 `MqClientAdmin` Rust wrapper closure (2026-10-21):
+`MQClientApi::mq_client_admin()` now exposes all 19 pinned Java interface
+operations, including the 11 methods that previously existed only through
+other `MQClientApi` paths. The invoked Java fixture records the complete
+interface reflection inventory, and
+`mq_client_admin_surface_matches_pinned_java_method_inventory` checks all 19
+Rust call sites against it. The topic-update wrapper sends the supplied header
+directly, preserving Java's lack of local permission validation; a fixture
+case and Rust loopback guard that behavior. Fixture SHA-256:
+`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+This closes the named wrapper-surface gap only; broader DTO/config/input/error/
+flow/reverse-export work and current platform CI evidence remain open.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, including nullable and subclass-sensitive raw

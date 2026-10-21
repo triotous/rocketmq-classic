@@ -588,3 +588,19 @@ response flags, `NotifyResult` public API, defaults and string form for both
 entrypoints, plus known and unknown Broker errors. Rust's scripted peer
 compares all five cases. The `POLLING_INFO` request code remains a wire registry
 entry; pinned client sources contain no outbound callsite for it.
+
+## P18-V01 `MqClientAdmin` Rust wrapper surface — 2026-10-21
+
+`MQClientApi::mq_client_admin()` now exposes all 19 methods declared by the
+pinned Java `MqClientAdmin` interface. Eleven wrappers delegate to the
+corresponding source-audited `MQClientApi` methods; `update_or_create_topic`
+uses the direct request path so it does not inherit `MQClientAPIImpl`'s
+separate local permission validation. The Java fixture records the full
+interface method signatures and an invalid-permission request. The Core test
+checks the exact 19 Java method names and compile-calls every Rust wrapper; the
+scripted RPC test verifies topic-update request fields. Fixture SHA-256:
+`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+All 82 Core `admin_rpc` tests and Core strict Clippy pass; Maven `verify`
+passes with 37 scenarios, 83 typed header frames and 16 typed body frames.
+This closes the wrapper surface; the broader P18-V01 source/input/error/flow
+and reverse-export audit remains open.
