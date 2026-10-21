@@ -13132,6 +13132,134 @@ mod tests {
             1
         );
 
+        let empty_queue = MessageQueue::new("orders", "broker-a", 5);
+        let empty_process_queue = Arc::new(ProcessQueue::new_for_assignment(empty_queue, 106));
+        let mut empty_message = make_message(50, 4, 0);
+        empty_message
+            .set_system_property(PROPERTY_CONSUME_START_TIMESTAMP, String::new())
+            .unwrap();
+        empty_process_queue
+            .insert_messages(106, vec![empty_message])
+            .unwrap();
+        empty_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
+        let empty_snapshot = empty_process_queue.snapshot(106).unwrap();
+        assert_eq!(
+            empty_snapshot.cached_count,
+            fixture["emptyTimestamp"]["cachedCount"]
+        );
+        assert_eq!(
+            empty_snapshot.cached_bytes,
+            fixture["emptyTimestamp"]["cachedBytes"]
+        );
+        assert_eq!(empty_snapshot.minimum_offset, Some(50));
+        assert!(fixture["emptyTimestamp"]["errorClass"].is_null());
+        assert!(
+            fixture["emptyTimestamp"]["attempts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+
+        let missing_queue = MessageQueue::new("orders", "broker-a", 6);
+        let missing_process_queue = Arc::new(ProcessQueue::new_for_assignment(missing_queue, 107));
+        let missing_message = Message::new("orders", vec![b'x'; 4]);
+        let mut missing_message = crate::test_support::message_ext_from(missing_message);
+        missing_message.set_queue_offset(51);
+        missing_message.set_broker_name(Some("broker-a".to_owned()));
+        missing_process_queue
+            .insert_messages(107, vec![missing_message])
+            .unwrap();
+        missing_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
+        let missing_snapshot = missing_process_queue.snapshot(107).unwrap();
+        assert_eq!(
+            missing_snapshot.cached_count,
+            fixture["missingTimestamp"]["cachedCount"]
+        );
+        assert_eq!(
+            missing_snapshot.cached_bytes,
+            fixture["missingTimestamp"]["cachedBytes"]
+        );
+        assert_eq!(missing_snapshot.minimum_offset, Some(51));
+        assert!(fixture["missingTimestamp"]["errorClass"].is_null());
+        assert!(
+            fixture["missingTimestamp"]["attempts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+
+        let orderly_malformed_queue = MessageQueue::new("orders", "broker-a", 7);
+        let orderly_malformed_process_queue = Arc::new(ProcessQueue::new_for_assignment(
+            orderly_malformed_queue,
+            108,
+        ));
+        let mut orderly_malformed_message = make_message(52, 4, 0);
+        orderly_malformed_message
+            .set_system_property(PROPERTY_CONSUME_START_TIMESTAMP, "not-a-long".to_owned())
+            .unwrap();
+        orderly_malformed_process_queue
+            .insert_messages(108, vec![orderly_malformed_message])
+            .unwrap();
+        consumer.set_consume_orderly(true);
+        orderly_malformed_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
+        consumer.set_consume_orderly(false);
+        let orderly_malformed_snapshot = orderly_malformed_process_queue.snapshot(108).unwrap();
+        assert_eq!(
+            orderly_malformed_snapshot.cached_count,
+            fixture["orderlyMalformedTimestamp"]["cachedCount"]
+        );
+        assert_eq!(orderly_malformed_snapshot.minimum_offset, Some(52));
+        assert!(fixture["orderlyMalformedTimestamp"]["errorClass"].is_null());
+        assert!(
+            fixture["orderlyMalformedTimestamp"]["attempts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+
+        let unicode_queue = MessageQueue::new("orders", "broker-a", 8);
+        let unicode_process_queue = Arc::new(ProcessQueue::new_for_assignment(unicode_queue, 109));
+        let mut unicode_message = make_message(40, 4, 0);
+        unicode_message
+            .set_system_property(PROPERTY_CONSUME_START_TIMESTAMP, "٤٦٠٠٠".to_owned())
+            .unwrap();
+        unicode_process_queue
+            .insert_messages(109, vec![unicode_message])
+            .unwrap();
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+        unicode_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
+        let unicode_snapshot = unicode_process_queue.snapshot(109).unwrap();
+        assert_eq!(
+            unicode_snapshot.cached_count,
+            fixture["unicodeTimestamp"]["cachedCount"]
+        );
+        assert_eq!(
+            unicode_snapshot.cached_bytes,
+            fixture["unicodeTimestamp"]["cachedBytes"]
+        );
+        assert_eq!(unicode_snapshot.minimum_offset, None);
+        assert_eq!(
+            fixture["unicodeTimestamp"]["attempts"],
+            serde_json::json!(["40:3"])
+        );
+
         consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }

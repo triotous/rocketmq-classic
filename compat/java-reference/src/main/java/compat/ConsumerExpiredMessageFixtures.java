@@ -72,14 +72,23 @@ public final class ConsumerExpiredMessageFixtures {
         return result;
     }
 
-    private static Map<String, Object> malformedTimestamp() {
+    private static Map<String, Object> timestampCase(
+        String timestamp, boolean timestampPresent, boolean orderly
+    ) {
         ProcessQueue processQueue = new ProcessQueue();
-        MessageExt malformed = message(40, 4, 0);
-        MessageAccessor.setConsumeStartTimeStamp(malformed, "not-a-long");
-        processQueue.putMessage(List.of(malformed));
+        MessageExt candidate = new MessageExt();
+        candidate.setTopic("orders");
+        candidate.setQueueId(0);
+        candidate.setQueueOffset(40);
+        candidate.setBody(new byte[4]);
+        if (timestampPresent) {
+            MessageAccessor.setConsumeStartTimeStamp(candidate, timestamp);
+        }
+        processQueue.putMessage(List.of(candidate));
 
         RecordingConsumer consumer = new RecordingConsumer();
         consumer.setConsumeTimeout(1);
+        consumer.orderly = orderly;
         String errorClass = null;
         try {
             processQueue.cleanExpiredMsg(consumer);
@@ -108,7 +117,11 @@ public final class ConsumerExpiredMessageFixtures {
         fixture.put("sendBackFailure", runCase(false, true, 20, 21));
         fixture.put("attemptLimit", runCase(false, true, LongStream.range(60, 78).toArray()));
         fixture.put("orderlySkipped", runCase(true, false, 30));
-        fixture.put("malformedTimestamp", malformedTimestamp());
+        fixture.put("malformedTimestamp", timestampCase("not-a-long", true, false));
+        fixture.put("emptyTimestamp", timestampCase("", true, false));
+        fixture.put("missingTimestamp", timestampCase(null, false, false));
+        fixture.put("orderlyMalformedTimestamp", timestampCase("not-a-long", true, true));
+        fixture.put("unicodeTimestamp", timestampCase("٤٦٠٠٠", true, false));
         return fixture;
     }
 
