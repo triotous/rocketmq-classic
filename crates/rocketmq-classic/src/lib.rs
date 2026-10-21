@@ -9,7 +9,7 @@ pub use rocketmq_classic_consumer::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
     ConsumeMessageContext, ConsumeMessageHook, ConsumeOrderlyContext, ConsumeOrderlyStatus,
     ConsumerServiceState, LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError,
-    MessageListenerConcurrently, MessageListenerOrderly, MessageQueueListener,
+    MessageListenerConcurrently, MessageListenerOrderly, MessageQueueListener, MqHelper,
     OrderlyListenerFuture, PopResult, PopStatus, PullConsumerConfig, PullConsumerError,
     PushConsumer, PushConsumerConfig, PushConsumerError, PushMessageListener,
     TopicMessageQueueChangeListener, offset, pull,

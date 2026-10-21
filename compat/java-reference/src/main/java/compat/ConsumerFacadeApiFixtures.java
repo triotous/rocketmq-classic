@@ -21,6 +21,7 @@ import org.apache.rocketmq.client.consumer.MQPushConsumer;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.LitePullConsumer;
 import org.apache.rocketmq.client.MQAdmin;
+import org.apache.rocketmq.client.MQHelper;
 import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.PopRequest;
@@ -306,6 +307,7 @@ public final class ConsumerFacadeApiFixtures {
         apis.put("DefaultLitePullConsumer", publicApiSurface(DefaultLitePullConsumer.class));
         apis.put("LitePullConsumer", publicApiSurface(LitePullConsumer.class));
         apis.put("MQAdmin", publicApiSurface(MQAdmin.class));
+        apis.put("MQHelper", publicApiSurface(MQHelper.class));
         fixture.put("apis", apis);
         Map<String, Object> implementationApis = new TreeMap<>();
         implementationApis.put("RebalanceImpl", publicApiSurface(RebalanceImpl.class));

@@ -5359,3 +5359,24 @@ owner-specific checks belong in the manual handoff.
 - This closes the inherited rebalance crosswalk inventory. Broad P18-V01 still
   covers the rest of the Java client source, input/error/control-flow and
   reverse-export audit.
+
+## P18 `MQHelper` timestamp reset overloads — 2026-10-21
+
+- [x] Added the public `MqHelper` utility to the Consumer crate and top-level
+  facade. Its deprecated overload selects instance `DEFAULT`; the explicit
+  overload configures the requested model and instance, searches queue offsets
+  in Java `TreeSet` order, updates only nonnegative offsets, persists the
+  fetched queue set, and shuts down after the operation.
+- [x] Pinned Java reflection now records both `MQHelper.resetOffsetByTimestamp`
+  overloads in `fixtures/consumer/facade-api.json`; SHA-256:
+  `6d38837ca80e7012a35069800144888fa0980c5e2783785b7e998c1d2efa2b1c`.
+  Rust tests cover sorted queue visitation, negative-offset filtering and
+  stopping at the first search/update error.
+- [x] Consumer all-feature tests (239 unit tests, integration targets and 13
+  doctests), strict Consumer Clippy, the facade public-type test, Java fixture
+  drift verification, formatting and diff checks pass.
+- This closes the `MQHelper` utility API slice only. Broad P18-V01 remains open
+  for Java source/API/settings/input/error/flow and reverse-export
+  reconciliation; current-revision full-workspace P18-V02, final P18-V03
+  review, and current Ubuntu/native Windows P18-V04 evidence remain outstanding.
+  Phase 19 Broker/Docker validation was not run.

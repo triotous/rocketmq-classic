@@ -17,6 +17,7 @@ pub mod config;
 mod consume;
 pub mod error;
 pub mod lite;
+mod mq_helper;
 pub mod offset;
 pub mod pop;
 pub mod process_queue;
@@ -33,6 +34,7 @@ pub use config::PullConsumerConfig;
 pub use consume::{ConsumeMessageContext, ConsumeMessageHook};
 pub use error::{LitePullConsumerError, PullConsumerError, PushConsumerError};
 pub use lite::{LitePullConsumer, LitePullConsumerConfig, TopicMessageQueueChangeListener};
+pub use mq_helper::MqHelper;
 pub use pop::{PopProcessQueue, PopReceipt, PopReceiptError, PopResult, PopStatus};
 pub use process_queue::ProcessQueue;
 pub use push::{

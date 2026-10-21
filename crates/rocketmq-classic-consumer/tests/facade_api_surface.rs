@@ -1,10 +1,11 @@
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
-    PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
+    MqHelper, PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
     pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
 use rocketmq_classic_protocol::body::{ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo};
 use rocketmq_classic_protocol::heartbeat::ConsumeType;
+use rocketmq_classic_protocol::heartbeat::MessageModel;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -36,6 +37,7 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
         ("DefaultLitePullConsumer", 5, 80, 155),
         ("LitePullConsumer", 0, 31, 31),
         ("MQAdmin", 0, 8, 8),
+        ("MQHelper", 1, 2, 2),
     ] {
         let api = &apis[name];
         assert_eq!(
@@ -66,6 +68,38 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
             "{name} keeps unique-key lookup behind viewMessage"
         );
     }
+
+    let helper_methods = &apis["MQHelper"]["declaredPublicMethods"];
+    for signature in [
+        "void org.apache.rocketmq.client.MQHelper.resetOffsetByTimestamp(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel,java.lang.String,java.lang.String,long)",
+        "void org.apache.rocketmq.client.MQHelper.resetOffsetByTimestamp(org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel,java.lang.String,java.lang.String,java.lang.String,long)",
+    ] {
+        assert!(
+            helper_methods
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|method| method == signature),
+            "pinned MQHelper overload: {signature}"
+        );
+    }
+
+    #[allow(deprecated)]
+    {
+        std::mem::drop(MqHelper::reset_offset_by_timestamp(
+            MessageModel::Clustering,
+            String::new(),
+            String::new(),
+            0,
+        ));
+    }
+    std::mem::drop(MqHelper::reset_offset_by_timestamp_with_instance(
+        MessageModel::Clustering,
+        String::new(),
+        String::new(),
+        String::new(),
+        0,
+    ));
 }
 
 #[test]
