@@ -258,6 +258,14 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("unitTopicListsOperations", unitTopicListsOperations());
+        result.put("nameServerConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("updateNameServerConfig", "getNameServerConfig")
+                .contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("nameServerConfigOperations", nameServerConfigOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -2395,6 +2403,207 @@ public final class ProducerCoreFixtures {
         } finally {
             api.shutdown();
         }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> nameServerConfigOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> updates = new ArrayList<>();
+        java.util.Properties empty = new java.util.Properties();
+        updates.add(updateNameServerConfigCase("empty-properties", empty, null,
+            List.of("ns-unused:9876"), List.of()));
+        java.util.Properties twoProperties = new java.util.Properties();
+        twoProperties.setProperty("alpha", "one");
+        twoProperties.setProperty("beta", "two");
+        updates.add(updateNameServerConfigCase("explicit-success", twoProperties,
+            List.of("ns-a:9876", "ns-b:9876"), List.of("ns-unused:9876"), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null),
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null))));
+        java.util.Properties oneProperty = new java.util.Properties();
+        oneProperty.setProperty("rocketmq.namesrv.config", "enabled");
+        updates.add(updateNameServerConfigCase("null-list-fallback", oneProperty, null,
+            List.of("ns-c:9876"), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null))));
+        updates.add(updateNameServerConfigCase("empty-list-fallback", oneProperty, List.of(),
+            List.of("ns-d:9876"), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null))));
+        updates.add(updateNameServerConfigCase("no-configured-servers", oneProperty, null,
+            List.of(), List.of()));
+        updates.add(updateNameServerConfigCase("last-error-after-all", oneProperty,
+            List.of("ns-error-a:9876", "ns-ok:9876", "ns-error-b:9876"), List.of(), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                    "first config rejected", null),
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null),
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.NO_PERMISSION,
+                    "last config rejected", null))));
+        result.put("update", updates);
+
+        List<Map<String, Object>> gets = new ArrayList<>();
+        gets.add(getNameServerConfigCase("null-list-fallback", null,
+            List.of("ns-get-a:9876", "ns-get-b:9876"), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                    null, "alpha=one\n"),
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                    null, "beta=two\n"))));
+        gets.add(getNameServerConfigCase("empty-list-fallback", List.of(),
+            List.of("ns-empty:9876"), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "\n"))));
+        gets.add(getNameServerConfigCase("explicit-error-stops", List.of("ns-error:9876", "ns-unused:9876"),
+            List.of(), List.of(
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                    "config read rejected", null),
+                nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "later=x\n"))));
+        gets.add(getNameServerConfigCase("malformed-properties", List.of("ns-malformed:9876"),
+            List.of(), List.of(nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                null, "broken=\\u12G4\n"))));
+        gets.add(getNameServerConfigCase("missing-body", List.of("ns-no-body:9876"),
+            List.of(), List.of(nameServerConfigReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                null, null))));
+        gets.add(getNameServerConfigCase("no-configured-servers", null, List.of(), List.of()));
+        result.put("get", gets);
+        return result;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.RemotingCommand nameServerConfigReply(
+        int responseCode,
+        String responseRemark,
+        String responseBody) {
+        org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                responseCode, responseRemark);
+        if (responseBody != null) response.setBody(responseBody.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return response;
+    }
+
+    private static org.apache.rocketmq.client.impl.MQClientAPIImpl nameServerConfigApi(
+        List<String> configuredAddresses,
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies,
+        List<Map<String, Object>> requests,
+        AtomicInteger nameServerListLookups) {
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replyQueue =
+            new java.util.ArrayDeque<>(replies);
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("name-server-config-api");
+        return new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+            ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("getNameServerAddressList".equals(method.getName())) {
+                            nameServerListLookups.incrementAndGet();
+                            return configuredAddresses;
+                        }
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response = replyQueue.removeFirst();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFieldsPresent", request.getExtFields() != null
+                                && !request.getExtFields().isEmpty());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            call.put("responseCode", response.getCode());
+                            call.put("responseRemark", response.getRemark());
+                            call.put("responseBodyBase64", response.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(response.getBody()));
+                            requests.add(call);
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+    }
+
+    private static Map<String, Object> updateNameServerConfigCase(
+        String name,
+        java.util.Properties properties,
+        List<String> addresses,
+        List<String> configuredAddresses,
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies) {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        AtomicInteger nameServerListLookups = new AtomicInteger();
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api = nameServerConfigApi(
+            configuredAddresses, replies, requests, nameServerListLookups);
+        result.put("name", name);
+        result.put("addressInput", addresses);
+        result.put("configuredAddresses", configuredAddresses);
+        Map<String, String> inputProperties = new TreeMap<>();
+        for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+            inputProperties.put(entry.getKey().toString(), entry.getValue().toString());
+        }
+        result.put("properties", inputProperties);
+        try {
+            api.updateNameServerConfig(properties, addresses, 2345L);
+            result.put("outcome", "returned");
+        } catch (Throwable error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+            if (error instanceof org.apache.rocketmq.client.exception.MQClientException) {
+                result.put("errorCode", ((org.apache.rocketmq.client.exception.MQClientException) error)
+                    .getResponseCode());
+            }
+        } finally {
+            api.shutdown();
+        }
+        result.put("nameServerListLookups", nameServerListLookups.get());
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> getNameServerConfigCase(
+        String name,
+        List<String> addresses,
+        List<String> configuredAddresses,
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies) {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        AtomicInteger nameServerListLookups = new AtomicInteger();
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api = nameServerConfigApi(
+            configuredAddresses, replies, requests, nameServerListLookups);
+        result.put("name", name);
+        result.put("addressInput", addresses);
+        result.put("configuredAddresses", configuredAddresses);
+        try {
+            Map<String, java.util.Properties> configs = api.getNameServerConfig(addresses, 2345L);
+            result.put("outcome", "returned");
+            if (configs == null) {
+                result.put("configurations", null);
+                result.put("nullProperties", List.of());
+            } else {
+                Map<String, Object> converted = new TreeMap<>();
+                List<String> nullProperties = new ArrayList<>();
+                for (Map.Entry<String, java.util.Properties> entry : configs.entrySet()) {
+                    if (entry.getValue() == null) {
+                        converted.put(entry.getKey(), null);
+                        nullProperties.add(entry.getKey());
+                    } else {
+                        Map<String, String> values = new TreeMap<>();
+                        for (Map.Entry<Object, Object> property : entry.getValue().entrySet()) {
+                            values.put(property.getKey().toString(), property.getValue().toString());
+                        }
+                        converted.put(entry.getKey(), values);
+                    }
+                }
+                result.put("configurations", converted);
+                result.put("nullProperties", nullProperties);
+            }
+        } catch (Throwable error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+            if (error instanceof org.apache.rocketmq.client.exception.MQClientException) {
+                result.put("errorCode", ((org.apache.rocketmq.client.exception.MQClientException) error)
+                    .getResponseCode());
+            }
+        } finally {
+            api.shutdown();
+        }
+        result.put("nameServerListLookups", nameServerListLookups.get());
         result.put("requests", requests);
         return result;
     }

@@ -1302,3 +1302,20 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   `bb5a19cb131f922828ff5effb8eb52ac4a0d95e8bae2863775214da4d6664e5b`.
   This closes these three RPC mappings only; the broad P18-V01 inventory
   remains open.
+
+- P18-V01 NameServer configuration RPCs (2026-10-21): the pinned public
+  `MQClientAPIImpl.updateNameServerConfig(Properties,List,long)` request 318
+  sends serialized properties to each selected server in list order. Empty
+  Properties are a no-op; missing/empty address lists use the configured
+  NameServers; all responses are visited and the last non-success response is
+  reported. `getNameServerConfig(List,long)` request 319 reads each selected
+  server in order, parses its Properties, and stops at the first response
+  error. Core maps both operations, including absent/default address lists,
+  empty/no-server paths, malformed property values retained as null map
+  entries, and the missing-body branch (Java throws `NullPointerException`; Rust
+  returns structured `MalformedResponse`). Invoked Java fixtures and Rust
+  differentials check signatures, requests, body values, per-server results,
+  call order and error selection. Producer core fixture SHA-256:
+  `4276123552ab57632da4a10177b1b529266707234e95785668cfcd12177e783c`.
+  These two RPC mappings are closed; the broader P18-V01 inventory remains
+  open.

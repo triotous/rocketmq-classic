@@ -163,6 +163,22 @@ core fixture SHA-256 at this slice checkpoint:
 `bb5a19cb131f922828ff5effb8eb52ac4a0d95e8bae2863775214da4d6664e5b`. These
 RPCs are closed; broader P18-V01 and later gates remain open.
 
+Phase 18 NameServer configuration RPCs (2026-10-21): Rust maps pinned
+`MQClientAPIImpl.updateNameServerConfig(Properties,List,long)` request 318 and
+`getNameServerConfig(List,long)` request 319. Updates send UTF-8 Properties to
+all explicit or configured NameServers in order, skip empty Properties, and
+return the last non-success response after fanout. Reads query each server in
+order, return address-keyed Properties (including null values for malformed
+content), and stop on the first response error. Missing/empty server lists use
+the configured list; no selected servers yields a no-op update or null read.
+Invoked Java fixtures and Rust differentials compare signatures, request
+envelopes, property body values, per-server results, ordering and errors.
+Java throws `NullPointerException` for a successful read response without a
+body; Rust returns structured `MalformedResponse`. Producer core fixture
+SHA-256 at this slice checkpoint:
+`4276123552ab57632da4a10177b1b529266707234e95785668cfcd12177e783c`. These
+RPC mappings are closed; broader P18-V01 and later gates remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

@@ -5632,3 +5632,19 @@ owner-specific checks belong in the manual handoff.
   `git diff --check` passed.
 - These three RPC mappings are closed. Broad P18-V01 and P18-V02/P18-V03/
   P18-V04 gates remain open.
+
+## P18-V01 NameServer configuration RPC slice — 2026-10-21
+
+- [x] Added `update_name_server_config` for pinned Java request 318 and
+  `get_name_server_config` for request 319, including explicit/configured
+  NameServer selection, empty input behavior and Java Properties conversion.
+- [x] Invoked Java fixtures and Rust differential compare per-server call
+  order, fanout/short-circuit errors, property values, malformed content and
+  missing-body behavior.
+- [x] Current producer core fixture SHA-256:
+  `4276123552ab57632da4a10177b1b529266707234e95785668cfcd12177e783c`.
+- [x] Core all-feature locked suite, strict all-target/all-feature Clippy,
+  Producer pinned fixture comparison, pinned Java Maven `verify`, formatting
+  and `git diff --check` passed.
+- These two RPC mappings are closed. Broad P18-V01 and P18-V02/P18-V03/P18-V04
+  gates remain open.

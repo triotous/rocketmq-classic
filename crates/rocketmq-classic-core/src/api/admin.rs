@@ -38,6 +38,10 @@ use super::{MQClientApi, classify, decode_body, decode_header};
 use crate::config::read_shared_client_config;
 use crate::error::RpcError;
 
+/// Java `getNameServerConfig` results keyed by NameServer address. Each value
+/// is optional because Java returns a null `Properties` for malformed content.
+pub type NameServerConfigs = HashMap<String, Option<HashMap<String, String>>>;
+
 /// The index watermark and matching messages returned by a Broker query.
 /// Its read-only result fields match Java's constructor/getter surface; the
 /// optional list and shared element handles preserve Java null and alias
@@ -228,6 +232,120 @@ impl std::fmt::Display for QueryResult {
 }
 
 impl MQClientApi {
+    /// Updates configuration on each selected NameServer through Java
+    /// `MQClientAPIImpl.updateNameServerConfig`.
+    ///
+    /// An empty property map is a no-op. A missing or empty address slice uses
+    /// the NameServer list configured on the remoting client. The same
+    /// absolute deadline is applied to calls in list order.
+    pub async fn update_name_server_config(
+        &self,
+        properties: &HashMap<String, String>,
+        name_server_addrs: Option<&[String]>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        if properties.is_empty() {
+            return Ok(());
+        }
+
+        let mut body = String::new();
+        for (key, value) in properties {
+            body.push_str(key);
+            body.push('=');
+            body.push_str(value);
+            body.push('\n');
+        }
+        let body = body.into_bytes();
+        let addresses = self.name_server_addresses(name_server_addrs);
+        let code = request::UPDATE_NAMESRV_CONFIG;
+        let mut last_error = None;
+        for addr in addresses {
+            let reply = self
+                .remoting
+                .invoke_sync_with_deadline(
+                    &addr,
+                    RemotingCommand {
+                        code,
+                        language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                        body: Some(body.clone()),
+                        ..RemotingCommand::default()
+                    },
+                    deadline,
+                )
+                .await?;
+            if reply.code != response::SUCCESS {
+                last_error = Some(RpcError::Response {
+                    request_code: code,
+                    peer: addr,
+                    code: reply.code,
+                    remark: reply.remark,
+                });
+            }
+        }
+        last_error.map_or(Ok(()), Err)
+    }
+
+    /// Retrieves NameServer configuration through Java
+    /// `MQClientAPIImpl.getNameServerConfig`.
+    ///
+    /// A missing or empty address slice uses the remoting client's configured
+    /// NameServers. No configured servers returns `None`; malformed Java
+    /// Properties are retained as null values in the returned map.
+    pub async fn get_name_server_config(
+        &self,
+        name_server_addrs: Option<&[String]>,
+        deadline: Instant,
+    ) -> Result<Option<NameServerConfigs>, RpcError> {
+        let addresses = self.name_server_addresses(name_server_addrs);
+        if addresses.is_empty() {
+            return Ok(None);
+        }
+
+        let code = request::GET_NAMESRV_CONFIG;
+        let mut configurations = HashMap::with_capacity(addresses.len());
+        for addr in addresses {
+            let reply = self
+                .remoting
+                .invoke_sync_with_deadline(
+                    &addr,
+                    RemotingCommand {
+                        code,
+                        language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                        ..RemotingCommand::default()
+                    },
+                    deadline,
+                )
+                .await?;
+            if reply.code != response::SUCCESS {
+                return Err(RpcError::Response {
+                    request_code: code,
+                    peer: addr,
+                    code: reply.code,
+                    remark: reply.remark,
+                });
+            }
+            let body = reply.body.ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.clone(),
+                reason: "successful NameServer-config reply has no body".into(),
+            })?;
+            let decoded = String::from_utf8_lossy(&body);
+            configurations.insert(addr, crate::auth::parse_java_properties(decoded.as_bytes()));
+        }
+        Ok(Some(configurations))
+    }
+
+    fn name_server_addresses(&self, addresses: Option<&[String]>) -> Vec<String> {
+        addresses
+            .filter(|addresses| !addresses.is_empty())
+            .map(<[_]>::to_vec)
+            .unwrap_or_else(|| {
+                self.remoting
+                    .get_name_server_address_list()
+                    .unwrap_or_default()
+            })
+    }
+
     /// Retrieves one Broker's Java `ClusterInfo` payload.
     pub async fn get_broker_cluster_info(
         &self,

@@ -1449,6 +1449,288 @@ async fn unit_topic_lists_match_java_nameserver_requests_and_filtering() {
 }
 
 #[tokio::test]
+async fn update_name_server_config_matches_java_fanout_and_error_selection() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures: HashSet<&str> = fixture["nameServerConfigApi"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|signature| signature.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        signatures,
+        HashSet::from([
+            "java.util.Map org.apache.rocketmq.client.impl.MQClientAPIImpl.getNameServerConfig(java.util.List,long)",
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.updateNameServerConfig(java.util.Properties,java.util.List,long)",
+        ])
+    );
+    let cases = fixture["nameServerConfigOperations"]["update"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for case in cases {
+        let java_calls = case["requests"].as_array().unwrap();
+        let mut actual_addresses = Vec::new();
+        let mut peers = Vec::new();
+        for java_call in java_calls {
+            let response_code = java_call["responseCode"].as_i64().unwrap() as i32;
+            let (addr, peer) = scripted_peer_with_remark(
+                response_code,
+                java_call["responseRemark"].as_str().map(str::to_owned),
+                None,
+                None,
+            )
+            .await;
+            actual_addresses.push(addr);
+            peers.push(peer);
+        }
+
+        let configured_count = case["configuredAddresses"].as_array().unwrap().len();
+        let mut configured_addresses = actual_addresses.clone();
+        while configured_addresses.len() < configured_count {
+            configured_addresses.push(format!("unused-configured-{configured_count}"));
+        }
+        let input_addresses = case["addressInput"].as_array();
+        let requested_count = input_addresses.map_or(configured_count, |addresses| addresses.len());
+        let mut address_argument = actual_addresses.clone();
+        while address_argument.len() < requested_count {
+            address_argument.push(format!("unused-explicit-{}", address_argument.len()));
+        }
+
+        let (client_api, client) = api().await;
+        client.update_name_server_address_list(configured_addresses);
+        let address_argument = if case["addressInput"].is_null() {
+            None
+        } else if input_addresses.is_some_and(|addresses| addresses.is_empty()) {
+            Some(&[][..])
+        } else {
+            Some(address_argument.as_slice())
+        };
+        let properties: HashMap<String, String> = case["properties"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect();
+        let result = client_api
+            .update_name_server_config(
+                &properties,
+                address_argument,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await;
+
+        if case["outcome"] == "returned" {
+            assert!(result.is_ok(), "{}: {result:?}", case["name"]);
+        } else {
+            let expected_error_code = case["errorCode"].as_i64().unwrap() as i32;
+            let expected_error_remark =
+                case["requests"].as_array().unwrap().last().unwrap()["responseRemark"]
+                    .as_str()
+                    .unwrap();
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request_code_value,
+                    peer,
+                    code,
+                    remark: Some(remark),
+                }) if request_code_value == request::UPDATE_NAMESRV_CONFIG
+                    && peer == *actual_addresses.last().unwrap()
+                    && code == expected_error_code
+                    && remark == expected_error_remark
+            ));
+        }
+
+        for (index, peer) in peers.into_iter().enumerate() {
+            let request = peer.await.unwrap();
+            let java_call = &java_calls[index];
+            assert_eq!(java_call["address"], case["requests"][index]["address"]);
+            assert_eq!(java_call["requestCode"], request::UPDATE_NAMESRV_CONFIG);
+            assert_eq!(java_call["timeoutMillis"], 2345);
+            assert_eq!(java_call["extFieldsPresent"], false);
+            assert_eq!(request.code, request::UPDATE_NAMESRV_CONFIG);
+            assert!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .is_none_or(|fields| fields.is_empty())
+            );
+            assert_eq!(
+                request.language,
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            );
+            let body_bytes = request.body.as_deref().unwrap();
+            let body = std::str::from_utf8(body_bytes).unwrap();
+            assert!(body.ends_with('\n'));
+            let sent_properties: HashMap<String, String> = body
+                .lines()
+                .map(|line| {
+                    let (key, value) = line.split_once('=').unwrap();
+                    (key.to_owned(), value.to_owned())
+                })
+                .collect();
+            assert_eq!(sent_properties, properties);
+            if properties.len() == 1 {
+                let java_body = base64::engine::general_purpose::STANDARD
+                    .decode(java_call["requestBodyBase64"].as_str().unwrap())
+                    .unwrap();
+                assert_eq!(request.body.as_deref(), Some(java_body.as_slice()));
+            }
+        }
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn get_name_server_config_matches_java_results_and_short_circuiting() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let cases = fixture["nameServerConfigOperations"]["get"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for case in cases {
+        let java_calls = case["requests"].as_array().unwrap();
+        let mut actual_addresses = Vec::new();
+        let mut java_to_actual_address = HashMap::new();
+        let mut peers = Vec::new();
+        for java_call in java_calls {
+            let response_code = java_call["responseCode"].as_i64().unwrap() as i32;
+            let response_body = java_call["responseBodyBase64"].as_str().map(|body| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(body)
+                    .unwrap()
+            });
+            let (addr, peer) = scripted_peer_with_remark(
+                response_code,
+                java_call["responseRemark"].as_str().map(str::to_owned),
+                None,
+                response_body,
+            )
+            .await;
+            java_to_actual_address.insert(
+                java_call["address"].as_str().unwrap().to_owned(),
+                addr.clone(),
+            );
+            actual_addresses.push(addr);
+            peers.push(peer);
+        }
+
+        let configured_count = case["configuredAddresses"].as_array().unwrap().len();
+        let mut configured_addresses = actual_addresses.clone();
+        while configured_addresses.len() < configured_count {
+            configured_addresses.push(format!("unused-configured-{configured_count}"));
+        }
+        let input_addresses = case["addressInput"].as_array();
+        let requested_count = input_addresses.map_or(configured_count, |addresses| addresses.len());
+        let mut address_argument = actual_addresses.clone();
+        while address_argument.len() < requested_count {
+            address_argument.push(format!("unused-explicit-{}", address_argument.len()));
+        }
+
+        let (client_api, client) = api().await;
+        client.update_name_server_address_list(configured_addresses);
+        let address_argument = if case["addressInput"].is_null() {
+            None
+        } else if input_addresses.is_some_and(|addresses| addresses.is_empty()) {
+            Some(&[][..])
+        } else {
+            Some(address_argument.as_slice())
+        };
+        let result = client_api
+            .get_name_server_config(address_argument, Instant::now() + Duration::from_secs(2))
+            .await;
+
+        if case["outcome"] == "returned" {
+            let configurations = result.unwrap();
+            if case["configurations"].is_null() {
+                assert!(configurations.is_none());
+            } else {
+                let configurations = configurations.unwrap();
+                let java_configurations = case["configurations"].as_object().unwrap();
+                let null_properties: HashSet<&str> = case["nullProperties"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|address| address.as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    configurations.len(),
+                    java_configurations.len().max(null_properties.len())
+                );
+                for (java_addr, expected_properties) in java_configurations {
+                    let actual_addr = &java_to_actual_address[java_addr];
+                    let actual_properties = configurations.get(actual_addr).unwrap();
+                    if null_properties.contains(java_addr.as_str()) {
+                        assert!(actual_properties.is_none());
+                    } else {
+                        let expected_properties: HashMap<String, String> = expected_properties
+                            .as_object()
+                            .unwrap()
+                            .iter()
+                            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                            .collect();
+                        assert_eq!(actual_properties.as_ref().unwrap(), &expected_properties);
+                    }
+                }
+                for java_addr in null_properties {
+                    let actual_addr = &java_to_actual_address[java_addr];
+                    assert!(configurations.get(actual_addr).unwrap().is_none());
+                }
+            }
+        } else if case["outcome"] == "NullPointerException" {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::GET_NAMESRV_CONFIG,
+                    peer,
+                    ..
+                }) if peer == actual_addresses[0]
+            ));
+        } else {
+            let expected_error_code = case["errorCode"].as_i64().unwrap() as i32;
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request_code_value,
+                    peer,
+                    code,
+                    remark: Some(remark),
+                }) if request_code_value == request::GET_NAMESRV_CONFIG
+                    && peer == actual_addresses[0]
+                    && code == expected_error_code
+                    && remark == "config read rejected"
+            ));
+        }
+
+        for (index, peer) in peers.into_iter().enumerate() {
+            let request = peer.await.unwrap();
+            let java_call = &java_calls[index];
+            assert_eq!(java_call["requestCode"], request::GET_NAMESRV_CONFIG);
+            assert_eq!(java_call["timeoutMillis"], 2345);
+            assert_eq!(java_call["extFieldsPresent"], false);
+            assert_eq!(request.code, request::GET_NAMESRV_CONFIG);
+            assert!(request.body.is_none());
+            assert!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .is_none_or(|fields| fields.is_empty())
+            );
+            assert_eq!(
+                request.language,
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            );
+        }
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(
