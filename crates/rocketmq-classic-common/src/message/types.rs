@@ -143,6 +143,11 @@ impl SharedMessageProperties {
         self.len() == 0
     }
 
+    /// Returns whether two handles refer to the same mutable property map.
+    pub fn shares_map_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.storage, &other.storage)
+    }
+
     /// Adds or replaces entries from an owned set of Java-style map entries.
     pub fn extend<I>(&self, entries: I)
     where
@@ -1760,6 +1765,18 @@ impl MessageExt {
         if let Some(properties) = self
             .runtime_subtype
             .as_ref()
+            .and_then(|subtype| subtype.live_properties())
+        {
+            return MessagePropertiesReadView(match properties {
+                Some(properties) => {
+                    MessagePropertiesReadSource::Shared(read_message_state(&properties.storage))
+                }
+                None => MessagePropertiesReadSource::Empty,
+            });
+        }
+        if let Some(properties) = self
+            .runtime_subtype
+            .as_ref()
             .and_then(|subtype| subtype.properties())
         {
             return MessagePropertiesReadView(MessagePropertiesReadSource::Runtime(
@@ -1778,6 +1795,17 @@ impl MessageExt {
         &self,
     ) -> Option<impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_>
     {
+        if let Some(properties) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.live_properties())
+        {
+            return properties.map(|properties| {
+                MessagePropertiesReadView(MessagePropertiesReadSource::Shared(read_message_state(
+                    &properties.storage,
+                )))
+            });
+        }
         if let Some(properties) = self
             .runtime_subtype
             .as_ref()
@@ -1814,6 +1842,19 @@ impl MessageExt {
         self.properties_nullable()
     }
 
+    /// Returns a mutable handle to the live property map, including a
+    /// caller-defined subtype map when the subtype exposes one.
+    pub fn shared_properties(&self) -> Option<SharedMessageProperties> {
+        match self.runtime_subtype.as_ref() {
+            Some(subtype) => match subtype.live_properties() {
+                Some(properties) => properties.cloned(),
+                None if subtype.properties().is_some() => None,
+                None => self.message.shared_properties(),
+            },
+            None => self.message.shared_properties(),
+        }
+    }
+
     /// Java-style properties returned by a subtype's `getProperties()`;
     /// base messages retain their stored null keys and values.
     pub fn nullable_property_entries(
@@ -1822,13 +1863,21 @@ impl MessageExt {
         let mut entries = match self
             .runtime_subtype
             .as_ref()
-            .and_then(|subtype| subtype.properties())
+            .and_then(|subtype| subtype.live_properties())
         {
-            Some(properties) => properties
-                .unwrap_or_default()
-                .into_iter()
-                .collect::<Vec<_>>(),
-            None => self.message.nullable_property_entries().collect::<Vec<_>>(),
+            Some(Some(properties)) => properties.snapshot().into_iter().collect(),
+            Some(None) => Vec::new(),
+            None => match self
+                .runtime_subtype
+                .as_ref()
+                .and_then(|subtype| subtype.properties())
+            {
+                Some(properties) => properties
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                None => self.message.nullable_property_entries().collect::<Vec<_>>(),
+            },
         };
         entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
         entries.into_iter()
@@ -2739,6 +2788,14 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     /// Override Java's virtual `Message.getProperties()` with a nullable map.
     /// Returned maps are snapshotted for Rust reads and retry-property copies.
     fn properties(&self) -> Option<Option<NullableMessageProperties>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getProperties()` with a live mutable
+    /// map. The returned handle is borrowed from the subtype and shared by
+    /// Rust clones, preserving caller-visible map aliasing. This takes
+    /// precedence over the snapshot-only `properties` hook.
+    fn live_properties(&self) -> Option<Option<&SharedMessageProperties>> {
         None
     }
 

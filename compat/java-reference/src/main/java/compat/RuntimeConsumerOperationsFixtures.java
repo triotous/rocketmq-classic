@@ -490,6 +490,17 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("keys", messages.get(0).getKeys());
                     Map<String, String> properties = messages.get(0).getProperties();
                     item.put("subtypeProperty", properties == null ? null : properties.get("subtype-only"));
+                    item.put("propertiesSharesSubtypeMap", properties == custom.customProperties);
+                    if (properties != null) {
+                        properties.put("through-view", "visible");
+                        item.put("mapMutationVisibleToSubtype",
+                            "visible".equals(custom.customProperties.get("through-view")));
+                        custom.customProperties.put("through-subtype", "visible");
+                        item.put("subtypeMutationVisibleToMap",
+                            "visible".equals(properties.get("through-subtype")));
+                        item.put("mutationVisibleToLaterGetter",
+                            "visible".equals(messages.get(0).getProperties().get("through-view")));
+                    }
                     item.put("bornTimestamp", messages.get(0).getBornTimestamp());
                     item.put("storeTimestamp", messages.get(0).getStoreTimestamp());
                     item.put("sysFlag", messages.get(0).getSysFlag());

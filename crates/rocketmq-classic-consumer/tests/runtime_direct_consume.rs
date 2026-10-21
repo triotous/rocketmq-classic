@@ -1,7 +1,7 @@
 use base64::Engine;
 use rocketmq_classic_common::message::{
     MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress, MessageQueue,
-    NullableMessageProperties,
+    NullableMessageProperties, SharedMessageProperties,
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -53,11 +53,30 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["messageQueueId"] = json!(message.queue_id());
         record["tags"] = json!(message.tags());
         record["keys"] = json!(message.keys());
-        record["subtypeProperty"] = json!(
-            message
-                .get_properties()
-                .and_then(|properties| properties.get("subtype-only").cloned())
+        let properties = message.shared_properties();
+        record["propertiesSharesSubtypeMap"] = json!(
+            properties
+                .as_ref()
+                .is_some_and(|properties| properties.shares_map_with(&subtype.custom_properties))
         );
+        if let Some(properties) = properties {
+            record["subtypeProperty"] = json!(properties.get(Some("subtype-only")).flatten());
+            properties.insert(Some("through-view".into()), Some("visible".into()));
+            record["mapMutationVisibleToSubtype"] = json!(
+                subtype.custom_properties.get(Some("through-view")) == Some(Some("visible".into()))
+            );
+            subtype
+                .custom_properties
+                .insert(Some("through-subtype".into()), Some("visible".into()));
+            record["subtypeMutationVisibleToMap"] =
+                json!(properties.get(Some("through-subtype")) == Some(Some("visible".into())));
+            record["mutationVisibleToLaterGetter"] = json!(
+                message
+                    .get_properties()
+                    .and_then(|properties| properties.get("through-view").cloned())
+                    == Some("visible".into())
+            );
+        }
         record["bornTimestamp"] = json!(message.born_timestamp());
         record["storeTimestamp"] = json!(message.store_timestamp());
         record["sysFlag"] = json!(message.sys_flag());
@@ -112,6 +131,7 @@ struct CustomDirectMessageExt {
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
+    custom_properties: SharedMessageProperties,
 }
 
 impl CustomDirectMessageExt {
@@ -140,6 +160,12 @@ impl CustomDirectMessageExt {
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
+            custom_properties: SharedMessageProperties::from_nullable_properties(
+                NullableMessageProperties::from([(
+                    Some("subtype-only".to_owned()),
+                    Some("visible".to_owned()),
+                )]),
+            ),
         }
     }
 
@@ -248,12 +274,9 @@ impl MessageExtSubtype for CustomDirectMessageExt {
         Some(Some("subtype-transaction"))
     }
 
-    fn properties(&self) -> Option<Option<NullableMessageProperties>> {
+    fn live_properties(&self) -> Option<Option<&SharedMessageProperties>> {
         self.properties_reads.fetch_add(1, Ordering::SeqCst);
-        Some(Some(NullableMessageProperties::from([(
-            Some("subtype-only".to_owned()),
-            Some("visible".to_owned()),
-        )])))
+        Some(Some(&self.custom_properties))
     }
 
     fn set_topic_sys_flag(&self, _topic_sys_flag: Option<i32>) -> bool {
