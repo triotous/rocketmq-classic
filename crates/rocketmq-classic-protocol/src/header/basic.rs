@@ -906,6 +906,154 @@ impl CommandHeader for DeleteKvConfigRequestHeader {
     }
 }
 
+/// Pinned Java NameServer `GetKVConfigRequestHeader`. The annotations do not
+/// enforce non-null values because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct GetKvConfigRequestHeader {
+    pub(crate) namespace: Option<String>,
+    pub(crate) key: Option<String>,
+}
+
+impl GetKvConfigRequestHeader {
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    pub fn set_key(&mut self, value: Option<String>) {
+        self.key = value;
+    }
+}
+
+impl CommandHeader for GetKvConfigRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "namespace", self.namespace.as_deref());
+        put_optional(fields, "key", self.key.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "namespace"),
+            key: optional_string(fields, "key"),
+        })
+    }
+}
+
+/// Pinned Java NameServer `PutKVConfigRequestHeader`. Java accepts absent
+/// values because `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct PutKvConfigRequestHeader {
+    pub(crate) namespace: Option<String>,
+    pub(crate) key: Option<String>,
+    pub(crate) value: Option<String>,
+}
+
+impl PutKvConfigRequestHeader {
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    pub fn set_key(&mut self, value: Option<String>) {
+        self.key = value;
+    }
+
+    pub fn get_value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
+
+    pub fn set_value(&mut self, value: Option<String>) {
+        self.value = value;
+    }
+}
+
+impl CommandHeader for PutKvConfigRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "namespace", self.namespace.as_deref());
+        put_optional(fields, "key", self.key.as_deref());
+        put_optional(fields, "value", self.value.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "namespace"),
+            key: optional_string(fields, "key"),
+            value: optional_string(fields, "value"),
+        })
+    }
+}
+
+/// Pinned Java NameServer `GetKVListByNamespaceRequestHeader`. The nullable
+/// namespace matches Java's no-op `checkFields()`.
+#[derive(Debug, Clone, Default)]
+pub struct GetKvListByNamespaceRequestHeader {
+    pub(crate) namespace: Option<String>,
+}
+
+impl GetKvListByNamespaceRequestHeader {
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+}
+
+impl CommandHeader for GetKvListByNamespaceRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "namespace", self.namespace.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "namespace"),
+        })
+    }
+}
+
+/// Pinned Java NameServer `GetKVConfigResponseHeader`; the value is nullable.
+#[derive(Debug, Clone, Default)]
+pub struct GetKvConfigResponseHeader {
+    pub(crate) value: Option<String>,
+}
+
+impl GetKvConfigResponseHeader {
+    pub fn get_value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
+
+    pub fn set_value(&mut self, value: Option<String>) {
+        self.value = value;
+    }
+}
+
+impl CommandHeader for GetKvConfigResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "value", self.value.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            value: optional_string(fields, "value"),
+        })
+    }
+}
+
 /// Pinned Java `DeleteSubscriptionGroupRequestHeader`. Its annotated group
 /// name remains nullable because Java's `checkFields()` is a no-op; the
 /// primitive `cleanOffset` field defaults to and encodes `false`.

@@ -74,6 +74,10 @@ import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHead
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.GetKVConfigRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.GetKVConfigResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.GetKVListByNamespaceRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.PutKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader;
@@ -620,6 +624,22 @@ public final class Main {
         deleteKvConfig.setNamespace("config-namespace");
         deleteKvConfig.setKey("config-key");
         writeTypedHeaderFixture(output, "delete-kv-config-request", 102, deleteKvConfig);
+        GetKVConfigRequestHeader getKvConfig = new GetKVConfigRequestHeader();
+        getKvConfig.setNamespace("config-namespace");
+        getKvConfig.setKey("config-key");
+        writeTypedHeaderFixture(output, "get-kv-config-request", 101, getKvConfig);
+        PutKVConfigRequestHeader putKvConfig = new PutKVConfigRequestHeader();
+        putKvConfig.setNamespace("config-namespace");
+        putKvConfig.setKey("config-key");
+        putKvConfig.setValue("config-value");
+        writeTypedHeaderFixture(output, "put-kv-config-request", 100, putKvConfig);
+        GetKVListByNamespaceRequestHeader getKvList = new GetKVListByNamespaceRequestHeader();
+        getKvList.setNamespace("config-namespace");
+        writeTypedHeaderFixture(output, "get-kv-list-by-namespace-request", 219, getKvList);
+        GetKVConfigResponseHeader getKvConfigResponse = new GetKVConfigResponseHeader();
+        getKvConfigResponse.setValue("config-value");
+        writeTypedHeaderFixture(output, "get-kv-config-response",
+            RemotingCommand.createResponseCommandWithHeader(0, getKvConfigResponse));
         DeleteSubscriptionGroupRequestHeader deleteSubscriptionGroup =
             new DeleteSubscriptionGroupRequestHeader();
         deleteSubscriptionGroup.setGroupName("workers");
@@ -1020,7 +1040,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 68, "all Rust typed header fixtures were supplied");
+            require(count == 72, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1048,6 +1068,10 @@ public final class Main {
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
             assertAllExtFields(byName, "typed-delete-kv-config-request.bin", 102);
+            assertAllExtFields(byName, "typed-get-kv-config-request.bin", 101);
+            assertAllExtFields(byName, "typed-put-kv-config-request.bin", 100);
+            assertAllExtFields(byName, "typed-get-kv-list-by-namespace-request.bin", 219);
+            assertAllExtFields(byName, "typed-get-kv-config-response.bin", 0);
             assertAllExtFields(byName, "typed-delete-subscription-group-request.bin", 207);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
@@ -1124,6 +1148,20 @@ public final class Main {
                 "namespace", "config-namespace");
             assertExtField(byName, "typed-delete-kv-config-request.bin", 102,
                 "key", "config-key");
+            assertExtField(byName, "typed-get-kv-config-request.bin", 101,
+                "namespace", "config-namespace");
+            assertExtField(byName, "typed-get-kv-config-request.bin", 101,
+                "key", "config-key");
+            assertExtField(byName, "typed-put-kv-config-request.bin", 100,
+                "namespace", "config-namespace");
+            assertExtField(byName, "typed-put-kv-config-request.bin", 100,
+                "key", "config-key");
+            assertExtField(byName, "typed-put-kv-config-request.bin", 100,
+                "value", "config-value");
+            assertExtField(byName, "typed-get-kv-list-by-namespace-request.bin", 219,
+                "namespace", "config-namespace");
+            assertExtField(byName, "typed-get-kv-config-response.bin", 0,
+                "value", "config-value");
             assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
                 "groupName", "workers");
             assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
@@ -1208,6 +1246,10 @@ public final class Main {
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
             case "typed-delete-kv-config-request.bin": fixtureStem = "header-delete-kv-config-request"; break;
+            case "typed-get-kv-config-request.bin": fixtureStem = "header-get-kv-config-request"; break;
+            case "typed-put-kv-config-request.bin": fixtureStem = "header-put-kv-config-request"; break;
+            case "typed-get-kv-list-by-namespace-request.bin": fixtureStem = "header-get-kv-list-by-namespace-request"; break;
+            case "typed-get-kv-config-response.bin": fixtureStem = "header-get-kv-config-response"; break;
             case "typed-delete-subscription-group-request.bin": fixtureStem = "header-delete-subscription-group-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;

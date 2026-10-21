@@ -1230,6 +1230,167 @@ async fn create_subscription_group_matches_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn name_server_kv_config_operations_match_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["kvConfigApi"].as_array().unwrap();
+    assert_eq!(signatures.len(), 4);
+    for signature in signatures {
+        let signature = signature.as_str().unwrap();
+        assert!(signature.contains("MQClientAPIImpl."));
+        assert!(signature.contains("KV"));
+    }
+
+    let cases = fixture["kvConfigOperations"]["cases"].as_array().unwrap();
+    for case in cases {
+        let operation = case["operation"].as_str().unwrap();
+        if !matches!(operation, "get" | "list") {
+            continue;
+        }
+        let expected = &case["requests"][0];
+        let response_code = expected["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = expected["responseRemark"].as_str().map(str::to_owned);
+        let response_header = if operation == "get" && case["result"].is_string() {
+            Some(HeaderMap::from([(
+                "value".to_owned(),
+                case["result"].as_str().unwrap().to_owned(),
+            )]))
+        } else {
+            None
+        };
+        let response_body = if operation == "list" && case["result"].is_object() {
+            Some(serde_json::to_vec(&case["result"]).unwrap())
+        } else {
+            None
+        };
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            response_remark.clone(),
+            response_header,
+            response_body,
+        )
+        .await;
+        let (client_api, client) = api().await;
+        client.update_name_server_address_list(vec![addr.clone()]);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let result = if operation == "get" {
+            client_api
+                .get_kv_config_value(case["namespace"].as_str(), case["key"].as_str(), deadline)
+                .await
+                .map(|value| json!(value))
+        } else {
+            client_api
+                .get_kv_list_by_namespace(case["namespace"].as_str(), deadline)
+                .await
+                .map(|table| serde_json::to_value(table).unwrap())
+        };
+        if response_code == response::SUCCESS {
+            assert_eq!(result.unwrap(), case["result"], "{case}");
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    code,
+                    remark,
+                    ..
+                }) if code == response_code && remark == response_remark
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        let actual_fields = request
+            .ext_fields
+            .map(serde_json::to_value)
+            .transpose()
+            .unwrap()
+            .unwrap_or_else(|| json!({}));
+        assert_eq!(actual_fields, expected["extFields"]);
+        client.shutdown().await;
+    }
+
+    for case in cases {
+        let operation = case["operation"].as_str().unwrap();
+        if !matches!(operation, "put" | "delete") {
+            continue;
+        }
+        let mut name_server_addrs = Vec::new();
+        let mut peers = Vec::new();
+        for expected in case["requests"].as_array().unwrap() {
+            let response_code = expected["responseCode"].as_i64().unwrap() as i32;
+            let (addr, peer) = scripted_peer_with_remark(
+                response_code,
+                expected["responseRemark"].as_str().map(str::to_owned),
+                None,
+                None,
+            )
+            .await;
+            name_server_addrs.push(addr);
+            peers.push((expected.clone(), peer));
+        }
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        if !name_server_addrs.is_empty() {
+            client.update_name_server_address_list(name_server_addrs.clone());
+            client.with_name_server_address_list(|current| {
+                *current.unwrap() = name_server_addrs.clone();
+            });
+        }
+        let client_api = MQClientApi::new(client.clone());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let result = if operation == "put" {
+            client_api
+                .put_kv_config_value(
+                    case["namespace"].as_str(),
+                    case["key"].as_str(),
+                    case["value"].as_str(),
+                    deadline,
+                )
+                .await
+        } else {
+            client_api
+                .delete_kv_config_value(case["namespace"].as_str(), case["key"].as_str(), deadline)
+                .await
+        };
+        if case["outcome"] == "returned" {
+            result.unwrap();
+        } else {
+            let last = case["requests"].as_array().unwrap().last().unwrap();
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    code,
+                    remark: Some(remark),
+                    ..
+                }) if code == last["responseCode"].as_i64().unwrap() as i32
+                    && remark == last["responseRemark"].as_str().unwrap()
+            ));
+        }
+        for (expected, peer) in peers {
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, expected["requestCode"]);
+            assert_eq!(
+                request.language,
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            );
+            assert!(request.body.is_none());
+            let actual_fields = request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({}));
+            assert_eq!(actual_fields, expected["extFields"]);
+        }
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

@@ -20,7 +20,8 @@ use rocketmq_classic_protocol::{
         FastCodesHeader, GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
-        GetEarliestMsgStoretimeResponseHeader, GetLiteTopicInfoRequestHeader,
+        GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
+        GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
         GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
         GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
@@ -28,7 +29,7 @@ use rocketmq_classic_protocol::{
         NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
         PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
+        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
@@ -1880,6 +1881,42 @@ fn header_validation_matrix() {
             "",
             "",
             "namespace key",
+            ""
+        ),
+        row!(
+            GetKvConfigRequestHeader,
+            "get-kv-config-request",
+            "",
+            "",
+            "",
+            "namespace key",
+            ""
+        ),
+        row!(
+            PutKvConfigRequestHeader,
+            "put-kv-config-request",
+            "",
+            "",
+            "",
+            "namespace key value",
+            ""
+        ),
+        row!(
+            GetKvListByNamespaceRequestHeader,
+            "get-kv-list-by-namespace-request",
+            "",
+            "",
+            "",
+            "namespace",
+            ""
+        ),
+        row!(
+            GetKvConfigResponseHeader,
+            "get-kv-config-response",
+            "",
+            "",
+            "",
+            "value",
             ""
         ),
         row!(

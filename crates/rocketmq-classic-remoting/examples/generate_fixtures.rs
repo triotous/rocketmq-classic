@@ -22,7 +22,8 @@ use rocketmq_classic_protocol::{
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
-        GetEarliestMsgStoretimeResponseHeader, GetLiteTopicInfoRequestHeader,
+        GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
+        GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
         GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
         GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
@@ -30,8 +31,9 @@ use rocketmq_classic_protocol::{
         NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
@@ -157,6 +159,30 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-delete-kv-config-request.bin",
         "header-delete-kv-config-request",
         102,
+    );
+    write_oracle_header::<GetKvConfigRequestHeader>(
+        output,
+        "typed-get-kv-config-request.bin",
+        "header-get-kv-config-request",
+        101,
+    );
+    write_oracle_header::<PutKvConfigRequestHeader>(
+        output,
+        "typed-put-kv-config-request.bin",
+        "header-put-kv-config-request",
+        100,
+    );
+    write_oracle_header::<GetKvListByNamespaceRequestHeader>(
+        output,
+        "typed-get-kv-list-by-namespace-request.bin",
+        "header-get-kv-list-by-namespace-request",
+        219,
+    );
+    write_oracle_header::<GetKvConfigResponseHeader>(
+        output,
+        "typed-get-kv-config-response.bin",
+        "header-get-kv-config-response",
+        0,
     );
     write_oracle_header::<DeleteSubscriptionGroupRequestHeader>(
         output,

@@ -5827,3 +5827,22 @@ owner-specific checks belong in the manual handoff.
   API/source/settings/input/error/control-flow/reverse-export audit, current
   Ubuntu/native Windows P18-V04 evidence, and remaining Phase 19 live Broker
   scenarios remain open.
+
+## P18-V01 direct NameServer KV APIs — 2026-10-21
+
+- [x] Added `MQClientApi` mappings for Java `getKVConfigValue`,
+  `putKVConfigValue`, `deleteKVConfigValue`, and `getKVListByNamespace`.
+  Nullable fields/results, NameServer selection, put/delete broadcast order,
+  empty server lists, and Java's last non-success response behavior have invoked
+  fixture and scripted-peer coverage. The direct low-level deletion remains
+  distinct from `MqClientAdmin.deleteKvConfig`'s explicit-address operation.
+- [x] Added typed Java KV headers with Java→Rust and Rust→Java fixtures; the
+  typed header inventory now covers 72 frames. Producer core fixture SHA-256:
+  `7e6aecbca17b9711ed3276de4aae2c500fdd8f90bdeb1bde7a7c59b0d3c402af`.
+- [x] `cargo test -p rocketmq-classic-protocol --locked` passes (148 tests,
+  including doctests); the focused Core differential passes; strict locked
+  workspace/all-feature Clippy passes. Pinned Maven `verify` passes with 37 RPC
+  cases and Java cross-decodes for 72 typed headers and 15 typed bodies.
+- This closes the NameServer KV slice only. The remaining broad P18-V01
+  API/source/settings/input/error/control-flow/reverse-export audit and the
+  current-revision Ubuntu/native Windows P18-V04 evidence remain open.

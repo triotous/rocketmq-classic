@@ -13,6 +13,18 @@ checks the address transform. Producer core fixture SHA-256:
 `aaab68664cf25ff86c9b19a48c27e4691596b31124123fdbd83f7ceb93f89b57`. This
 closes the named direct RPC only; broad P18-V01 remains open.
 
+Phase 18 direct NameServer KV configuration APIs (2026-10-21): Rust maps
+`MQClientAPIImpl.getKVConfigValue`, `putKVConfigValue`,
+`deleteKVConfigValue`, and `getKVListByNamespace` for request codes 101, 100,
+102, and 219. Nullable request fields follow Java's no-op header validation;
+get operations select a NameServer, while put/delete broadcast in configured
+list order and return the last non-success response after contacting every
+server. Missing `value` and list body remain null. The invoked Java fixture and
+Rust loopback differential cover success, absent values/body, Broker errors,
+broadcast ordering, last-error selection, and empty server lists. Producer
+core fixture SHA-256: `7e6aecbca17b9711ed3276de4aae2c500fdd8f90bdeb1bde7a7c59b0d3c402af`.
+This closes those low-level KV operations only; broad P18-V01 remains open.
+
 Phase 18 cluster-topic header inventory follow-up (2026-10-21): the already
 implemented `GetTopicsByClusterRequestHeader` now appears in the exhaustive
 Rust inventory and field-validation matrix, with its Java constructor and

@@ -19,8 +19,9 @@ use rocketmq_classic_protocol::{
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetConsumerRunningInfoRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
+        GetKvListByNamespaceRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+        PutKvConfigRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -333,6 +334,142 @@ impl MQClientApi {
             configurations.insert(addr, crate::auth::parse_java_properties(decoded.as_bytes()));
         }
         Ok(Some(configurations))
+    }
+
+    /// Reads a NameServer KV value through Java
+    /// `MQClientAPIImpl.getKVConfigValue`.
+    pub async fn get_kv_config_value(
+        &self,
+        namespace: Option<&str>,
+        key: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<String>, RpcError> {
+        let code = request::GET_KV_CONFIG;
+        let mut header = GetKvConfigRequestHeader::default();
+        header.set_namespace(namespace.map(str::to_owned));
+        header.set_key(key.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, &peer)?;
+        Ok(reply
+            .ext_fields
+            .as_ref()
+            .and_then(|fields| fields.get("value"))
+            .cloned())
+    }
+
+    /// Writes a KV value to every configured NameServer, following Java
+    /// `MQClientAPIImpl.putKVConfigValue`. As in Java, a null or empty
+    /// NameServer list makes the operation a no-op, and the last non-success
+    /// response is returned after all servers have been contacted.
+    pub async fn put_kv_config_value(
+        &self,
+        namespace: Option<&str>,
+        key: Option<&str>,
+        value: Option<&str>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let mut header = PutKvConfigRequestHeader::default();
+        header.set_namespace(namespace.map(str::to_owned));
+        header.set_key(key.map(str::to_owned));
+        header.set_value(value.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        self.broadcast_name_server_kv_request(request::PUT_KV_CONFIG, fields, deadline)
+            .await
+    }
+
+    /// Deletes a KV value from every configured NameServer, following Java
+    /// `MQClientAPIImpl.deleteKVConfigValue` and retaining nullable inputs.
+    pub async fn delete_kv_config_value(
+        &self,
+        namespace: Option<&str>,
+        key: Option<&str>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let mut header = DeleteKvConfigRequestHeader::default();
+        header.set_namespace(namespace.map(str::to_owned));
+        header.set_key(key.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        self.broadcast_name_server_kv_request(request::DELETE_KV_CONFIG, fields, deadline)
+            .await
+    }
+
+    /// Lists one NameServer namespace through Java
+    /// `MQClientAPIImpl.getKVListByNamespace`.
+    pub async fn get_kv_list_by_namespace(
+        &self,
+        namespace: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<KvTable>, RpcError> {
+        let code = request::GET_KVLIST_BY_NAMESPACE;
+        let mut header = GetKvListByNamespaceRequestHeader::default();
+        header.set_namespace(namespace.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, &peer)?;
+        KvTable::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer,
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    async fn broadcast_name_server_kv_request(
+        &self,
+        code: i32,
+        fields: HeaderMap,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            ext_fields: Some(fields.into()),
+            ..RemotingCommand::default()
+        };
+        let mut last_error = None;
+        for address in self.name_server_addresses(None) {
+            let reply = self
+                .remoting
+                .invoke_sync_with_deadline(&address, command.clone(), deadline)
+                .await?;
+            if reply.code != response::SUCCESS {
+                last_error = Some(RpcError::Response {
+                    request_code: code,
+                    peer: address,
+                    code: reply.code,
+                    remark: reply.remark,
+                });
+            }
+        }
+        last_error.map_or(Ok(()), Err)
     }
 
     fn name_server_addresses(&self, addresses: Option<&[String]>) -> Vec<String> {

@@ -50,6 +50,10 @@ macro_rules! inventory {
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
             DeleteKvConfigRequestHeader => ("header-delete-kv-config-request", "typed-delete-kv-config-request.bin"),
+            GetKvConfigRequestHeader => ("header-get-kv-config-request", "typed-get-kv-config-request.bin"),
+            GetKvConfigResponseHeader => ("header-get-kv-config-response", "typed-get-kv-config-response.bin"),
+            GetKvListByNamespaceRequestHeader => ("header-get-kv-list-by-namespace-request", "typed-get-kv-list-by-namespace-request.bin"),
+            PutKvConfigRequestHeader => ("header-put-kv-config-request", "typed-put-kv-config-request.bin"),
             DeleteSubscriptionGroupRequestHeader => ("header-delete-subscription-group-request", "typed-delete-subscription-group-request.bin"),
             ViewMessageRequestHeader => ("header-view-message-request", "typed-view-message-request.bin"),
             LockBatchMqRequestHeader => ("header-lock-batch-request", "typed-lock-batch-request.bin"),
@@ -301,6 +305,64 @@ fn get_topics_by_cluster_header_api_matches_java_inventory() {
         "GetTopicsByClusterRequestHeader",
         "check_fields"
     ));
+}
+
+#[test]
+fn name_server_kv_headers_keep_java_nullable_fields_and_names() {
+    let mut get = GetKvConfigRequestHeader::default();
+    assert_eq!(get.get_namespace(), None);
+    assert_eq!(get.get_key(), None);
+    get.set_namespace(Some("tenant".into()));
+    get.set_key(Some("key".into()));
+    let mut get_fields = HeaderMap::new();
+    get.encode_fields(&mut get_fields);
+    assert_eq!(
+        get_fields,
+        HeaderMap::from([
+            ("key".into(), "key".into()),
+            ("namespace".into(), "tenant".into()),
+        ])
+    );
+    let decoded = GetKvConfigRequestHeader::decode_fields(&get_fields).unwrap();
+    assert_eq!(decoded.get_namespace(), Some("tenant"));
+    assert_eq!(decoded.get_key(), Some("key"));
+
+    let mut put = PutKvConfigRequestHeader::default();
+    assert_eq!(put.get_namespace(), None);
+    assert_eq!(put.get_key(), None);
+    assert_eq!(put.get_value(), None);
+    put.set_namespace(Some("tenant".into()));
+    put.set_key(Some("key".into()));
+    put.set_value(Some("value".into()));
+    let mut put_fields = HeaderMap::new();
+    put.encode_fields(&mut put_fields);
+    assert_eq!(put_fields.get("value").map(String::as_str), Some("value"));
+
+    let mut list = GetKvListByNamespaceRequestHeader::default();
+    assert_eq!(list.get_namespace(), None);
+    list.set_namespace(Some("tenant".into()));
+    let mut list_fields = HeaderMap::new();
+    list.encode_fields(&mut list_fields);
+    assert_eq!(
+        list_fields,
+        HeaderMap::from([("namespace".into(), "tenant".into())])
+    );
+
+    let mut response = GetKvConfigResponseHeader::default();
+    assert_eq!(response.get_value(), None);
+    response.set_value(Some("value".into()));
+    let mut response_fields = HeaderMap::new();
+    response.encode_fields(&mut response_fields);
+    assert_eq!(
+        response_fields,
+        HeaderMap::from([("value".into(), "value".into())])
+    );
+    assert_eq!(
+        GetKvConfigResponseHeader::decode_fields(&response_fields)
+            .unwrap()
+            .get_value(),
+        Some("value")
+    );
 }
 
 #[test]

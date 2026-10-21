@@ -224,6 +224,14 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("createSubscriptionGroupOperations", createSubscriptionGroupOperations());
+        result.put("kvConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("getKVConfigValue", "putKVConfigValue", "deleteKVConfigValue",
+                "getKVListByNamespace").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("kvConfigOperations", kvConfigOperations());
         result.put("createSubscriptionGroupListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("createSubscriptionGroupList"))
@@ -2114,6 +2122,139 @@ public final class ProducerCoreFixtures {
             List.of(workers), org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
             "subscription groups rejected"));
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> kvConfigOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(kvConfigCase("get-value", "get", "tenant", "timeout", null,
+            List.of(), List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS),
+            java.util.Collections.singletonList(null), List.of("resolved-value"), java.util.Collections.singletonList(null)));
+        cases.add(kvConfigCase("get-missing-value", "get", "tenant", "missing", null,
+            List.of(), List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS),
+            java.util.Collections.singletonList(null), java.util.Collections.singletonList(null), java.util.Collections.singletonList(null)));
+        cases.add(kvConfigCase("get-error", "get", "tenant", "denied", null,
+            List.of(), List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR),
+            List.of("lookup rejected"), java.util.Collections.singletonList(null), java.util.Collections.singletonList(null)));
+        cases.add(kvConfigCase("put-last-error", "put", "tenant", "key", "value",
+            List.of("ns-a:9876", "ns-b:9876", "ns-c:9876"),
+            List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.NO_PERMISSION),
+            Arrays.asList((String) null, "first put rejected", "last put rejected"),
+            java.util.Collections.nCopies(3, null),
+            java.util.Collections.nCopies(3, null)));
+        cases.add(kvConfigCase("delete-broadcast", "delete", "tenant", "key", null,
+            List.of("ns-a:9876", "ns-b:9876"),
+            List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS),
+            Arrays.asList((String) null, (String) null),
+            java.util.Collections.nCopies(2, null), java.util.Collections.nCopies(2, null)));
+        cases.add(kvConfigCase("delete-no-configured-servers", "delete", "tenant", "key", null,
+            List.of(), List.of(), List.of(), List.of(), List.of()));
+        cases.add(kvConfigCase("list-populated", "list", "tenant", null, null,
+            List.of(), List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS),
+            java.util.Collections.singletonList(null), java.util.Collections.singletonList(null),
+            List.of("{\"table\":{\"alpha\":\"one\",\"beta\":\"two\"}}")));
+        cases.add(kvConfigCase("list-missing-body", "list", "tenant", null, null,
+            List.of(), List.of(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS),
+            java.util.Collections.singletonList(null), java.util.Collections.singletonList(null), java.util.Collections.singletonList(null)));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> kvConfigCase(
+        String name,
+        String operation,
+        String namespace,
+        String key,
+        String value,
+        List<String> nameServers,
+        List<Integer> responseCodes,
+        List<String> responseRemarks,
+        List<String> responseValues,
+        List<String> responseBodies) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig =
+            new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("kv-config-api");
+        clientConfig.setVipChannelEnabled(false);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("getNameServerAddressList".equals(method.getName())) {
+                            return nameServers.isEmpty() ? null : nameServers;
+                        }
+                        if ("invokeSync".equals(method.getName())) {
+                            int index = requests.size();
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand reply =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                    responseCodes.get(index), responseRemarks.get(index));
+                            if (responseValues.get(index) != null) {
+                                reply.addExtField("value", responseValues.get(index));
+                            }
+                            if (responseBodies.get(index) != null) {
+                                reply.setBody(responseBodies.get(index).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            call.put("responseCode", responseCodes.get(index));
+                            call.put("responseRemark", responseRemarks.get(index));
+                            return reply;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("operation", operation);
+        result.put("namespace", namespace);
+        result.put("key", key);
+        result.put("value", value);
+        result.put("nameServers", nameServers);
+        try {
+            switch (operation) {
+                case "get":
+                    result.put("outcome", "returned");
+                    result.put("result", api.getKVConfigValue(namespace, key, 2345L));
+                    break;
+                case "put":
+                    api.putKVConfigValue(namespace, key, value, 2345L);
+                    result.put("outcome", "returned");
+                    break;
+                case "delete":
+                    api.deleteKVConfigValue(namespace, key, 2345L);
+                    result.put("outcome", "returned");
+                    break;
+                case "list":
+                    result.put("outcome", "returned");
+                    result.put("result", api.getKVListByNamespace(namespace, 2345L));
+                    break;
+                default:
+                    throw new IllegalArgumentException("unknown KV operation: " + operation);
+            }
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

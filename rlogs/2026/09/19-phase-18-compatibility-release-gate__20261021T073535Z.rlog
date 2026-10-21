@@ -54,3 +54,21 @@ P18-V01 direct subscription-group RPC closure on 2026-10-21:
   current Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker
   scenarios remain open. The four preserved Phase 19 worktree paths were not
   staged.
+
+P18-V01 NameServer KV direct APIs on 2026-10-21:
+- Added Java `MQClientAPIImpl` mappings for get value (101), broadcast put
+  (100), broadcast delete (102), and get namespace table (219). Null request
+  fields/results are preserved; get operations select one NameServer; put and
+  delete visit all configured NameServers and report the final non-success
+  response, matching the direct low-level Java methods. The separate
+  `MqClientAdmin.deleteKvConfig` explicit-address operation is unchanged.
+- Added Java request/response header models and Java→Rust/Rust→Java typed
+  fixtures. The header inventory and Maven verification now cover 72 frames.
+  Producer core fixture SHA-256:
+  `7e6aecbca17b9711ed3276de4aae2c500fdd8f90bdeb1bde7a7c59b0d3c402af`.
+- Passed Protocol locked tests (148 tests including doctests), focused Core
+  Java differential, strict locked all-feature workspace Clippy, and pinned
+  Maven `verify` (37 RPC cases, 72 typed headers, 15 typed bodies).
+- This closes only the NameServer KV slice. Broad P18-V01 and current-revision
+  Ubuntu/native Windows P18-V04 evidence remain open. Four preserved Phase 19
+  worktree paths remain unstaged.
