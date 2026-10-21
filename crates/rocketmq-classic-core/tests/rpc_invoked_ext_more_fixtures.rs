@@ -75,6 +75,12 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "lite-topic-info-error",
         "lite-topic-info-unknown",
         "lite-topic-info-invalid-body",
+        "lite-broker-info-success",
+        "lite-broker-info-defaults",
+        "lite-broker-info-null-body",
+        "lite-broker-info-error",
+        "lite-broker-info-unknown",
+        "lite-broker-info-invalid-body",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len() + 35);
     for name in names {
@@ -153,6 +159,25 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             assert_eq!(api["clientGroupPublicMethods"].as_array().unwrap().len(), 3);
             assert_eq!(api["topicOffsetPublicMethods"].as_array().unwrap().len(), 7);
         }
+        if name.starts_with("lite-broker-info-") {
+            let api = &fixture["brokerLiteInfoApi"];
+            assert_eq!(api["rpcMethods"].as_array().unwrap().len(), 1);
+            assert!(
+                api["rpcMethods"][0]
+                    .as_str()
+                    .unwrap()
+                    .contains("getBrokerLiteInfo")
+            );
+            assert_eq!(api["responseBodyPublicFields"], serde_json::json!([]));
+            assert_eq!(api["responseBodyConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(
+                api["responseBodyPublicMethods"].as_array().unwrap().len(),
+                20
+            );
+            assert_eq!(api["responseBodyDefaults"]["maxLmqNum"], 0);
+            assert_eq!(api["responseBodyDefaults"]["topicMetaNull"], true);
+            assert_eq!(api["responseBodyDefaults"]["groupMetaNull"], true);
+        }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         let expected = fixture.clone();
@@ -166,10 +191,20 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             let incoming = frame::decode_next(&mut bytes).unwrap().unwrap();
             let request = &expected["request"];
             assert_eq!(incoming.code, request["code"].as_i64().unwrap() as i32);
-            assert_eq!(
-                incoming.ext_fields,
-                Some(serde_json::from_value(request["ext"].clone()).unwrap())
-            );
+            let expected_ext_fields = serde_json::from_value::<
+                std::collections::BTreeMap<String, String>,
+            >(request["ext"].clone())
+            .unwrap();
+            if expected_ext_fields.is_empty() {
+                assert!(
+                    incoming
+                        .ext_fields
+                        .as_ref()
+                        .is_none_or(|fields| fields.is_empty())
+                );
+            } else {
+                assert_eq!(incoming.ext_fields, Some(expected_ext_fields.into()));
+            }
             assert!(!incoming.is_oneway());
             match (incoming.body.as_ref(), body(&request["bodyBase64"])) {
                 (None, None) => (),
@@ -276,6 +311,36 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 }
                 Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
                 other => panic!("unexpected lite topic info result: {other:?}"),
+            }
+        } else if name.starts_with("lite-broker-info-") {
+            match api.get_broker_lite_info(&addr, deadline).await {
+                Ok(None) => "null".to_owned(),
+                Ok(Some(result)) if name == "lite-broker-info-success" => format!(
+                    "store={};max={};current={};subscriptions={};order={};cq={};offset={};events={};topics={};groups={}",
+                    result.get_store_type().unwrap_or("null"),
+                    result.get_max_lmq_num(),
+                    result.get_current_lmq_num(),
+                    result.get_lite_subscription_count(),
+                    result.get_order_info_count(),
+                    result.get_cq_table_size(),
+                    result.get_offset_table_size(),
+                    result.get_event_map_size(),
+                    result.get_topic_meta().unwrap().with(|map| map.len()),
+                    result.get_group_meta().unwrap().with(|map| map.len()),
+                ),
+                Ok(Some(result)) => format!(
+                    "store={};max={};current={};topicMetaNull={};groupMetaNull={}",
+                    result.get_store_type().unwrap_or("null"),
+                    result.get_max_lmq_num(),
+                    result.get_current_lmq_num(),
+                    result.get_topic_meta().is_none(),
+                    result.get_group_meta().is_none(),
+                ),
+                Err(RpcError::Response { code, .. }) => {
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
+                other => panic!("unexpected Lite Broker info result: {other:?}"),
             }
         } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {

@@ -33,6 +33,7 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
+import org.apache.rocketmq.remoting.protocol.body.GetBrokerLiteInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
@@ -122,6 +123,9 @@ public final class ExtensionMoreInvokedFixtures {
         response.put("version", responseVersion);
         fixture.put("response", response);
         fixture.put("outcome", outcome);
+        if (name.startsWith("lite-broker-info-")) {
+            fixture.put("brokerLiteInfoApi", brokerLiteInfoApi());
+        }
         Path file = dir.resolve(name + ".json");
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) check(Files.exists(file) && json.equals(Files.readString(file)), "fixture drift: " + file);
@@ -233,6 +237,34 @@ public final class ExtensionMoreInvokedFixtures {
             nullGroup.equals(new ClientGroup(null, null)));
         api.put("clientGroupDifferentValuesCompareUnequal",
             nullGroup.equals(new ClientGroup("client", "group")) == false);
+        return api;
+    }
+
+    private static Map<String, Object> brokerLiteInfoApi() {
+        Map<String, Object> api = new TreeMap<>();
+        api.put("rpcMethods", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getBrokerLiteInfo"))
+            .map(java.lang.reflect.Method::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("responseBodyConstructors", Arrays.stream(GetBrokerLiteInfoResponseBody.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("responseBodyPublicFields", publicFields(GetBrokerLiteInfoResponseBody.class));
+        api.put("responseBodyPublicMethods", publicMethods(GetBrokerLiteInfoResponseBody.class));
+        GetBrokerLiteInfoResponseBody defaults = new GetBrokerLiteInfoResponseBody();
+        Map<String, Object> values = new TreeMap<>();
+        values.put("storeType", defaults.getStoreType());
+        values.put("maxLmqNum", defaults.getMaxLmqNum());
+        values.put("currentLmqNum", defaults.getCurrentLmqNum());
+        values.put("liteSubscriptionCount", defaults.getLiteSubscriptionCount());
+        values.put("orderInfoCount", defaults.getOrderInfoCount());
+        values.put("cqTableSize", defaults.getCqTableSize());
+        values.put("offsetTableSize", defaults.getOffsetTableSize());
+        values.put("eventMapSize", defaults.getEventMapSize());
+        values.put("topicMetaNull", defaults.getTopicMeta() == null);
+        values.put("groupMetaNull", defaults.getGroupMeta() == null);
+        api.put("responseBodyDefaults", values);
         return api;
     }
 
@@ -568,6 +600,73 @@ public final class ExtensionMoreInvokedFixtures {
                 }
             }
             recordLiteTopicInfo(dir, verify, lite, name, "MQClientAPIExt.getLiteTopicInfoAsync", outcome);
+        }
+
+        for (String name : new String[] {"lite-broker-info-success", "lite-broker-info-defaults",
+            "lite-broker-info-null-body", "lite-broker-info-error", "lite-broker-info-unknown",
+            "lite-broker-info-invalid-body"}) {
+            Capture lite = new Capture();
+            ClientConfig liteConfig = new ClientConfig();
+            liteConfig.setVipChannelEnabled(false);
+            MQClientAPIImpl liteApi = new MQClientAPIImpl(new NettyClientConfig(), null, null, liteConfig,
+                null, nettyConfig -> lite.proxy());
+            if (name.equals("lite-broker-info-success")) {
+                GetBrokerLiteInfoResponseBody body = new GetBrokerLiteInfoResponseBody();
+                body.setStoreType("rocksdb");
+                body.setMaxLmqNum(20);
+                body.setCurrentLmqNum(3);
+                body.setLiteSubscriptionCount(2);
+                body.setOrderInfoCount(4);
+                body.setCqTableSize(5);
+                body.setOffsetTableSize(6);
+                body.setEventMapSize(7);
+                Map<String, Integer> topicMeta = new TreeMap<>();
+                topicMeta.put("orders", 8);
+                topicMeta.put("payments", 9);
+                body.setTopicMeta(topicMeta);
+                Map<String, Set<String>> groupMeta = new TreeMap<>();
+                groupMeta.put("workers", Set.of("orders", "payments"));
+                body.setGroupMeta(groupMeta);
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(body.encode());
+            } else if (name.equals("lite-broker-info-defaults")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new GetBrokerLiteInfoResponseBody().encode());
+            } else if (name.equals("lite-broker-info-null-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+            } else if (name.equals("lite-broker-info-error")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+            } else if (name.equals("lite-broker-info-invalid-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new byte[] {'{'});
+            } else {
+                lite.response = RemotingCommand.createResponseCommand(987654, "offline");
+            }
+            String outcome;
+            try {
+                GetBrokerLiteInfoResponseBody result = liteApi.getBrokerLiteInfo("broker:10911", 10000);
+                if (result == null) {
+                    outcome = "null";
+                } else if (name.equals("lite-broker-info-success")) {
+                    outcome = "store=" + result.getStoreType() + ";max=" + result.getMaxLmqNum() +
+                        ";current=" + result.getCurrentLmqNum() + ";subscriptions=" +
+                        result.getLiteSubscriptionCount() + ";order=" + result.getOrderInfoCount() +
+                        ";cq=" + result.getCqTableSize() + ";offset=" + result.getOffsetTableSize() +
+                        ";events=" + result.getEventMapSize() + ";topics=" + result.getTopicMeta().size() +
+                        ";groups=" + result.getGroupMeta().size();
+                } else {
+                    outcome = "store=" + result.getStoreType() + ";max=" + result.getMaxLmqNum() +
+                        ";current=" + result.getCurrentLmqNum() + ";topicMetaNull=" +
+                        (result.getTopicMeta() == null) + ";groupMetaNull=" + (result.getGroupMeta() == null);
+                }
+            } catch (MQBrokerException failure) {
+                outcome = "MQBrokerException;code=" + failure.getResponseCode();
+            } catch (com.alibaba.fastjson2.JSONException failure) {
+                outcome = "JSONException;malformed";
+            } finally {
+                liteApi.shutdown();
+            }
+            record(dir, verify, lite, name, RequestCode.GET_BROKER_LITE_INFO, outcome);
         }
 
         HeartbeatData extHeartbeat = new HeartbeatData();

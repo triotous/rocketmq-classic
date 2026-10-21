@@ -1,8 +1,9 @@
 //! One-attempt lifecycle and extension requests. Message decoding belongs to the consumer layer.
 use rocketmq_classic_protocol::{
     body::{
-        BatchAckMessageRequestBody, GetLiteTopicInfoResponseBody, LiteSubscriptionCtlRequestBody,
-        QueryAssignmentRequestBody, QueryAssignmentResponseBody, SetMessageRequestModeRequestBody,
+        BatchAckMessageRequestBody, GetBrokerLiteInfoResponseBody, GetLiteTopicInfoResponseBody,
+        LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody, QueryAssignmentResponseBody,
+        SetMessageRequestModeRequestBody,
     },
     codes::{request, response},
     header::{
@@ -289,6 +290,43 @@ impl MQClientApi {
         result.set_has_msg(response_header.is_has_msg());
         result.set_polling_full(response_header.is_polling_full());
         Ok(result)
+    }
+
+    /// Gets Lite-specific Broker metadata. This mirrors the synchronous Java
+    /// `MQClientAPIImpl.getBrokerLiteInfo` call, including its VIP address
+    /// transform and nullable response body.
+    pub async fn get_broker_lite_info(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<Option<GetBrokerLiteInfoResponseBody>, RpcError> {
+        let code = request::GET_BROKER_LITE_INFO;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| crate::config::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        GetBrokerLiteInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
+            |error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            },
+        )
     }
 
     /// Queries Lite topic details through Java's asynchronous
@@ -1101,6 +1139,76 @@ mod trigger_lite_dispatch_tests {
             assert!(request.body.is_none());
             assert_eq!(request.ext_fields.unwrap_or_default(), expected_fields);
         }
+        client.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod broker_lite_info_tests {
+    use super::MQClientApi;
+    use crate::config::ClientConfig;
+    use bytes::BytesMut;
+    use rocketmq_classic_protocol::codes::{LanguageCode, request};
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame,
+    };
+    use std::{
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::Instant,
+    };
+
+    #[tokio::test]
+    async fn get_broker_lite_info_uses_vip_address_and_decodes_nullable_body() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("get-broker-lite-info");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let address = format!("127.0.0.1:{}", server_addr.port() + 2);
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::GET_BROKER_LITE_INFO);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.ext_fields.is_none());
+            assert!(request.body.is_none());
+
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(br#"{"storeType":"rocksdb","maxLmqNum":12}"#.to_vec()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let result = api
+            .get_broker_lite_info(&address, Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.get_store_type(), Some("rocksdb"));
+        assert_eq!(result.get_max_lmq_num(), 12);
+        peer.await.unwrap();
         client.shutdown().await;
     }
 }

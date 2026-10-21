@@ -3827,6 +3827,165 @@ impl GetLiteTopicInfoResponseBody {
     }
 }
 
+/// Java `GetBrokerLiteInfoResponseBody`, preserving nullable metadata maps and
+/// mutable getter aliases alongside primitive counter defaults.
+pub type BrokerLiteTopicMeta = SharedValue<BTreeMap<String, Option<i32>>>;
+pub type BrokerLiteGroupMeta = SharedValue<BTreeMap<String, Option<HashSet<Option<String>>>>>;
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetBrokerLiteInfoResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    store_type: Option<String>,
+    max_lmq_num: i32,
+    current_lmq_num: i32,
+    lite_subscription_count: i32,
+    order_info_count: i32,
+    cq_table_size: i32,
+    offset_table_size: i32,
+    event_map_size: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_meta: Option<BrokerLiteTopicMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group_meta: Option<BrokerLiteGroupMeta>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct GetBrokerLiteInfoResponseBodyFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    store_type: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    max_lmq_num: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    current_lmq_num: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    lite_subscription_count: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    order_info_count: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    cq_table_size: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    offset_table_size: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    event_map_size: i32,
+    topic_meta: Option<BTreeMap<String, Option<i32>>>,
+    group_meta: Option<BTreeMap<String, Option<HashSet<Option<String>>>>>,
+}
+
+impl<'de> Deserialize<'de> for GetBrokerLiteInfoResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GetBrokerLiteInfoResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            store_type: fields.store_type,
+            max_lmq_num: fields.max_lmq_num,
+            current_lmq_num: fields.current_lmq_num,
+            lite_subscription_count: fields.lite_subscription_count,
+            order_info_count: fields.order_info_count,
+            cq_table_size: fields.cq_table_size,
+            offset_table_size: fields.offset_table_size,
+            event_map_size: fields.event_map_size,
+            topic_meta: fields.topic_meta.map(SharedValue::new),
+            group_meta: fields.group_meta.map(SharedValue::new),
+        })
+    }
+}
+
+impl GetBrokerLiteInfoResponseBody {
+    pub fn get_store_type(&self) -> Option<&str> {
+        self.store_type.as_deref()
+    }
+
+    pub fn set_store_type(&mut self, value: Option<String>) {
+        self.store_type = value;
+    }
+
+    pub fn get_max_lmq_num(&self) -> i32 {
+        self.max_lmq_num
+    }
+
+    pub fn set_max_lmq_num(&mut self, value: i32) {
+        self.max_lmq_num = value;
+    }
+
+    pub fn get_current_lmq_num(&self) -> i32 {
+        self.current_lmq_num
+    }
+
+    pub fn set_current_lmq_num(&mut self, value: i32) {
+        self.current_lmq_num = value;
+    }
+
+    pub fn get_lite_subscription_count(&self) -> i32 {
+        self.lite_subscription_count
+    }
+
+    pub fn set_lite_subscription_count(&mut self, value: i32) {
+        self.lite_subscription_count = value;
+    }
+
+    pub fn get_order_info_count(&self) -> i32 {
+        self.order_info_count
+    }
+
+    pub fn set_order_info_count(&mut self, value: i32) {
+        self.order_info_count = value;
+    }
+
+    pub fn get_cq_table_size(&self) -> i32 {
+        self.cq_table_size
+    }
+
+    pub fn set_cq_table_size(&mut self, value: i32) {
+        self.cq_table_size = value;
+    }
+
+    pub fn get_offset_table_size(&self) -> i32 {
+        self.offset_table_size
+    }
+
+    pub fn set_offset_table_size(&mut self, value: i32) {
+        self.offset_table_size = value;
+    }
+
+    pub fn get_event_map_size(&self) -> i32 {
+        self.event_map_size
+    }
+
+    pub fn set_event_map_size(&mut self, value: i32) {
+        self.event_map_size = value;
+    }
+
+    pub fn get_topic_meta(&self) -> Option<BrokerLiteTopicMeta> {
+        self.topic_meta.clone()
+    }
+
+    pub fn set_topic_meta(&mut self, value: Option<BrokerLiteTopicMeta>) {
+        self.topic_meta = value;
+    }
+
+    pub fn get_group_meta(&self) -> Option<BrokerLiteGroupMeta> {
+        self.group_meta.clone()
+    }
+
+    pub fn set_group_meta(&mut self, value: Option<BrokerLiteGroupMeta>) {
+        self.group_meta = value;
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        java_fastjson_remoting_body_json(self, false).map(String::into_bytes)
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
 /// retain Java nullability and the map handle returned by the getter.
 ///
@@ -7771,6 +7930,7 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
 }
 
 impl_java_remoting_serializable_body_adapters!(
+    GetBrokerLiteInfoResponseBody,
     GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
@@ -8437,6 +8597,72 @@ mod tests {
         assert_eq!(api["subscriberGetterMutationVisible"], true);
         assert_eq!(api["topicOffsetGetterReturnsAssignedObject"], true);
         assert_eq!(api["topicOffsetMutationVisible"], true);
+    }
+
+    #[test]
+    fn get_broker_lite_info_response_body_preserves_defaults_and_metadata_aliases() {
+        let defaults = GetBrokerLiteInfoResponseBody::default();
+        assert_eq!(defaults.get_store_type(), None);
+        assert_eq!(defaults.get_max_lmq_num(), 0);
+        assert_eq!(defaults.get_current_lmq_num(), 0);
+        assert_eq!(defaults.get_lite_subscription_count(), 0);
+        assert_eq!(defaults.get_order_info_count(), 0);
+        assert_eq!(defaults.get_cq_table_size(), 0);
+        assert_eq!(defaults.get_offset_table_size(), 0);
+        assert_eq!(defaults.get_event_map_size(), 0);
+        assert!(defaults.get_topic_meta().is_none());
+        assert!(defaults.get_group_meta().is_none());
+
+        let decoded = GetBrokerLiteInfoResponseBody::java_decode(
+            br#"{
+            "storeType":"rocksdb",
+            "maxLmqNum":20,
+            "currentLmqNum":3,
+            "liteSubscriptionCount":2,
+            "orderInfoCount":4,
+            "cqTableSize":5,
+            "offsetTableSize":6,
+            "eventMapSize":7,
+            "topicMeta":{"orders":8,"payments":9},
+            "groupMeta":{"workers":["orders","payments"]}
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_store_type(), Some("rocksdb"));
+        assert_eq!(decoded.get_max_lmq_num(), 20);
+        assert_eq!(decoded.get_current_lmq_num(), 3);
+        assert_eq!(decoded.get_lite_subscription_count(), 2);
+        assert_eq!(decoded.get_order_info_count(), 4);
+        assert_eq!(decoded.get_cq_table_size(), 5);
+        assert_eq!(decoded.get_offset_table_size(), 6);
+        assert_eq!(decoded.get_event_map_size(), 7);
+
+        let topic_meta = decoded.get_topic_meta().unwrap();
+        assert_eq!(topic_meta.with(|map| map["orders"]), Some(8));
+        let group_meta = decoded.get_group_meta().unwrap();
+        assert_eq!(
+            group_meta.with(|map| map["workers"].as_ref().unwrap().len()),
+            2
+        );
+        let encoded: serde_json::Value =
+            serde_json::from_slice(&decoded.java_encode().unwrap()).unwrap();
+        assert_eq!(encoded["topicMeta"]["payments"], 9);
+        let encoded_groups: HashSet<Option<String>> =
+            serde_json::from_value(encoded["groupMeta"]["workers"].clone()).unwrap();
+        assert_eq!(
+            encoded_groups,
+            HashSet::from([Some("orders".into()), Some("payments".into())])
+        );
+
+        let assigned = SharedValue::new(BTreeMap::new());
+        let mut value = GetBrokerLiteInfoResponseBody::default();
+        value.set_topic_meta(Some(assigned.clone()));
+        let getter = value.get_topic_meta().unwrap();
+        assert!(getter.ptr_eq(&assigned));
+        getter.with_mut(|map| {
+            map.insert("billing".into(), Some(1));
+        });
+        assert_eq!(assigned.with(|map| map["billing"]), Some(1));
     }
 
     #[test]
