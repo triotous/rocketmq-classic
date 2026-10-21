@@ -309,3 +309,13 @@ delivery milliseconds. Java and Rust fixtures compare getter results and setter
 dispatch counts. Fixture SHA-256:
 `5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
 Other inherited methods and broad P18-V01 reconciliation remain open.
+
+P18-V01 user-property and transaction accessor follow-up (code revision
+`27c872bc`, 2026-10-21): custom `getUserProperty`, `hasProperty` and
+transaction-ID overrides now route through `MessageExtSubtype`; setter hooks
+cover `putUserProperty`, tags, keys and transaction ID. `setKeys(Collection)`
+forwards to the String setter hook. Java and Rust direct-consume fixtures
+compare values and writes, including blank/null `putUserProperty` inputs.
+Fixture SHA-256:
+`33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
+The broad inherited-method reconciliation remains open.

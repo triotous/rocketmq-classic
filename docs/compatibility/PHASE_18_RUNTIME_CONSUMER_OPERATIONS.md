@@ -356,3 +356,14 @@ calls; Rust matches them. Fixture SHA-256:
 `5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
 Other inherited methods, custom live property-map identity, broad P18-V01 and
 current-revision P18-V04 platform evidence remain open.
+
+P18-V01 caller-defined user-property and transaction follow-up (code revision
+`27c872bc`, 2026-10-21): `MessageExtSubtype` supports independently overridden
+`getUserProperty`, `hasProperty`, and transaction-ID getter/setter methods.
+It dispatches `putUserProperty`, `setTags` and `setKeys`; Java's collection
+`setKeys` overload forwards through the String setter. The direct-consume
+fixture compares custom results and write counts, including empty and null
+user-property inputs accepted by the custom override. Fixture SHA-256:
+`33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
+The remaining inherited methods, Java live property-map identity, broad
+P18-V01 audit and P18-V04 platform evidence remain open.

@@ -6638,3 +6638,32 @@ owner-specific checks belong in the manual handoff.
   remain open. Current-revision GitHub Ubuntu/native Windows P18-V04 evidence
   remains absent. No push, remote CI, Broker or Docker run was performed;
   protected Phase 19 paths were left untouched and unstaged.
+
+## P18-V01 user-property and transaction virtual methods; P18-V02 refresh — 2026-10-21 (`27c872bc`)
+
+- [x] Added subtype dispatch for `getUserProperty`, `hasProperty`, transaction
+  ID getter/setter, `putUserProperty`, `setTags` and `setKeys`. The Java
+  Collection `setKeys` overload routes through the virtual String overload.
+  The direct-consume fixture compares custom values and setter calls and
+  verifies that an override handles blank and null `putUserProperty` inputs
+  before base validation. Fixture SHA-256:
+  `33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
+- [x] Focused direct-consume tests, serial default/all-feature workspace
+  tests, strict all-target/all-feature Clippy, format/diff checks and pinned
+  Maven `verify` pass on `27c872bc`. Maven verified 37 scenarios, 9 Running
+  Info, 27 direct-consume, 15 reset cases, 83 typed headers, 16 typed bodies
+  and Java/Rust cross-decodes.
+- [x] Refreshed current-revision P18-V02 gates on `27c872bc`: differential
+  self-test and 37 manifest scenarios; offline stress (16 cases × 3); release
+  fuzz (137 frame seeds, 11 message seeds, 2,368 mutations); release examples,
+  workspace benches, metadata/package/license/dependency checks, and four
+  Unique ID tests under UTC and Asia/Taipei. Full record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T200032Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,402.6 ns/iteration; zstd decode 1,169.0 ns; producer
+  request construction 1,273.6 ns; route lookup 16.2 ns; loopback completion
+  62,964.1 ns. Measurements are observations, not thresholds.
+- Broad P18-V01 API/settings/input/error/control-flow/reverse-export audit,
+  mutable custom `getProperties()` map identity, and current-revision GitHub
+  Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
+  Broker or Docker run was performed; protected Phase 19 paths were untouched.

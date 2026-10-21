@@ -1632,3 +1632,14 @@ calls. Fixture SHA-256:
 `5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
 The remaining inherited override inventory, mutable custom `getProperties()`
 map identity, broad P18-V01 audit and P18-V04 platform evidence remain open.
+
+P18-V01 inherited user-property and transaction metadata follow-up (code
+revision `27c872bc`, 2026-10-21): subtype hooks now cover `getUserProperty`,
+`hasProperty`, transaction-ID accessors, `putUserProperty`, `setTags` and
+`setKeys`. The Collection `setKeys` path dispatches through the String setter.
+The invoked Java/Rust fixture verifies custom getter results and setter counts,
+including blank and null inputs handled by an overridden `putUserProperty`.
+Fixture SHA-256:
+`33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
+Other inherited methods, custom live property-map identity, broad P18-V01 and
+P18-V04 platform evidence remain open.
