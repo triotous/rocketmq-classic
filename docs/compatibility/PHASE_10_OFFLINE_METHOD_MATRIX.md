@@ -326,3 +326,13 @@ P18-V01 IPv6 host-flag setter follow-up (code revision `c7354649`,
 calls. Without an override, Rust keeps the original base sysFlag bit updates.
 Fixture SHA-256:
 `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
+
+P18-V01 live `getProperties()` subtype-map follow-up (code revision
+`158a049f`, 2026-10-21): `MessageExtSubtype::live_properties` provides a
+shared mutable handle for subtype-owned property maps. Rust nullable/read
+views and `MessageExt::shared_properties()` retain that map; the Java/Rust
+direct-consume case checks identity, bidirectional mutation visibility and a
+subsequent getter read. Snapshot-only subtype property hooks remain supported.
+Fixture SHA-256:
+`8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
+Other inherited-method and broad P18-V01 reconciliation remains open.

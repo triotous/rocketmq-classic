@@ -1651,3 +1651,16 @@ calls; base messages still set their corresponding sysFlag bits. Fixture
 SHA-256: `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
 Other inherited methods, custom live property-map identity, broad P18-V01 and
 P18-V04 platform evidence remain open.
+
+P18-V01 live subtype `getProperties()` map follow-up (code revision
+`158a049f`, 2026-10-21): `MessageExtSubtype::live_properties` now exposes a
+borrowed `SharedMessageProperties` handle. `MessageExt` property views,
+nullable entries and `shared_properties()` use that handle, so mutations
+through either map reference remain visible and repeated getter reads observe
+the same contents. The direct Java/Rust consumer fixture checks map identity,
+mutations through the returned map and subtype field, and visibility through a
+later getter. The older snapshot hook remains available for subtypes that do
+not expose a live map. Fixture SHA-256:
+`8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
+Other inherited methods, broad P18-V01 reconciliation and P18-V04 platform
+evidence remain open.

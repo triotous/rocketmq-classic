@@ -6694,3 +6694,32 @@ owner-specific checks belong in the manual handoff.
   mutable custom `getProperties()` map identity, and current-revision GitHub
   Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
   Broker or Docker run was performed; protected Phase 19 paths were untouched.
+
+## P18-V01 live subtype property-map alias and current-revision P18-V02 — 2026-10-21 (`158a049f`)
+
+- [x] Added `MessageExtSubtype::live_properties` for a borrowed shared mutable
+  map, and routed subtype property views, nullable entries and
+  `MessageExt::shared_properties()` through it. The pinned Java/Rust direct-
+  consume fixture verifies map identity, mutation visibility in both
+  directions and visibility through a later getter. Snapshot-only subtype
+  hooks remain supported. Fixture SHA-256:
+  `8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
+- [x] Focused Java/Rust direct-consume comparison; serial default and
+  all-feature workspace tests; strict all-target/all-feature Clippy;
+  formatting/diff checks; and pinned Maven `verify` pass on `158a049f`.
+  Maven verified 37 scenarios, 9 Running Info, 27 direct-consume, 15 reset
+  cases, 83 typed headers, 16 typed bodies and Java/Rust cross-decodes.
+- [x] Current-revision server-free P18-V02 passes: differential comparator
+  self-test and 37-scenario manifest; offline stress (16 cases × 3); release
+  fuzz (137 frame seeds, 11 message seeds, 2,368 bounded mutations); release
+  examples and workspace benches; locked metadata, package/license checks;
+  and four Unique ID tests under UTC and Asia/Taipei. Full record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T202313Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,314.1 ns/iteration; zstd decode 1,132.7 ns; producer
+  request construction 1,304.0 ns; route lookup 15.1 ns; loopback completion
+  77,214.8 ns. Measurements are observations, not thresholds.
+- Broad P18-V01 API/settings/input/error/control-flow/reverse-export audit
+  and current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain
+  open. No push, remote CI, Broker or Docker run was performed; protected
+  Phase 19 paths were untouched.

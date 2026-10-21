@@ -376,3 +376,12 @@ sets each Java sysFlag bit. Fixture SHA-256:
 `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
 The remaining inherited methods, Java live property-map identity, broad
 P18-V01 audit and P18-V04 platform evidence remain open.
+
+P18-V01 live subtype property-map follow-up (code revision `158a049f`,
+2026-10-21): Rust subtype adapters can return a borrowed
+`SharedMessageProperties` from `MessageExtSubtype::live_properties`. The
+invoked Java fixture and Rust direct-consume path verify that the returned map
+and subtype-owned map share identity, mutations are visible in both
+directions, and a later `getProperties()` read sees prior changes. Fixture
+SHA-256: `8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
+The broad inherited-method/API audit and P18-V04 platform evidence remain open.
