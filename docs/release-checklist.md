@@ -6579,9 +6579,9 @@ owner-specific checks belong in the manual handoff.
 - [x] Focused direct-consume tests, default/all-feature locked workspace tests,
   strict all-target/all-feature Clippy, format/diff checks, and pinned Maven
   `verify` pass on code revision `8425a30d`.
-- This closes the listed metadata hooks only. Other inherited methods and the
-  mutable custom `getProperties()` map identity gap remain open. Refresh the
-  supplemental P18-V02 gates after this code change. Current Ubuntu/native
+- The supplemental P18-V02 gates were refreshed on `bf126205` after the next
+  subtype slice. Other inherited methods and the mutable custom
+  `getProperties()` map identity gap remain open. Current Ubuntu/native
   Windows P18-V04 evidence and Phase 19 Broker/Docker scenarios remain
   separate; protected Phase 19 paths were not changed or staged.
 
@@ -6596,8 +6596,16 @@ owner-specific checks belong in the manual handoff.
 - [x] Focused direct-consume tests, default/all-feature locked workspace
   tests, strict all-target/all-feature Clippy, format/diff checks, and pinned
   Maven `verify` pass on code revision `bf126205`.
+- [x] Refreshed P18-V02 gates on `bf126205`: differential self-test and 37
+  scenarios; stress smoke (16 cases × 3); release fuzz (2,368 mutations);
+  release examples, workspace benches, metadata/package/license checks, and
+  both Unique ID time zones. Full details are in
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T192551Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,395.8 ns/iteration; zstd decode 1,172.6 ns; producer request
+  construction 1,196.6 ns; route lookup 15.0 ns; loopback completion
+  67,861.2 ns. Measurements are observations, not thresholds.
 - This closes the inherited property-delegation and setter hooks only; other
   custom `MessageExt` overrides, mutable `getProperties()` map identity, broad
-  P18-V01 reconciliation and P18-V04 platform evidence remain open. Refresh
-  supplemental P18-V02 gates after this code change. Phase 19 Broker/Docker
-  scenarios remain separate.
+  P18-V01 reconciliation and P18-V04 platform evidence remain open. Phase 19
+  Broker/Docker scenarios remain separate.
