@@ -430,6 +430,16 @@ public final class RuntimeConsumerOperationsFixtures {
         message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
         if (customSubtype) message.setFlag(5);
         if (customSubtype) message.setStoreHost(new java.net.InetSocketAddress("127.0.0.1", 10911));
+        if (customSubtype) {
+            message.setBornTimestamp(1L);
+            message.setStoreTimestamp(2L);
+            message.setSysFlag(3);
+            message.setBodyCRC(4);
+            message.setCommitLogOffset(5L);
+            message.setStoreSize(6);
+            message.setPreparedTransactionOffset(7L);
+            message.setBornHost(new java.net.InetSocketAddress("127.0.0.1", 10912));
+        }
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
         if (customSubtype) {
@@ -462,6 +472,19 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("keys", messages.get(0).getKeys());
                     Map<String, String> properties = messages.get(0).getProperties();
                     item.put("subtypeProperty", properties == null ? null : properties.get("subtype-only"));
+                    item.put("bornTimestamp", messages.get(0).getBornTimestamp());
+                    item.put("storeTimestamp", messages.get(0).getStoreTimestamp());
+                    item.put("sysFlag", messages.get(0).getSysFlag());
+                    item.put("bodyCRC", messages.get(0).getBodyCRC());
+                    item.put("commitLogOffset", messages.get(0).getCommitLogOffset());
+                    item.put("storeSize", messages.get(0).getStoreSize());
+                    item.put("preparedTransactionOffset", messages.get(0).getPreparedTransactionOffset());
+                    item.put("bornHostString", messages.get(0).getBornHostString());
+                    item.put("bornHostNameString", messages.get(0).getBornHostNameString());
+                    item.put("bornHostBytes", unsignedBytes(messages.get(0).getBornHostBytes().array()));
+                    item.put("storeHostBytes", unsignedBytes(messages.get(0).getStoreHostBytes().array()));
+                    item.put("bornHost", messages.get(0).getBornHost().toString());
+                    item.put("storeHost", messages.get(0).getStoreHost().toString());
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -539,6 +562,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int keysReads;
         private int propertiesReads;
         private int storeHostWrites;
+        private int metadataWrites;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -648,12 +672,94 @@ public final class RuntimeConsumerOperationsFixtures {
 
         @Override
         public java.net.SocketAddress getStoreHost() {
-            return new java.net.InetSocketAddress("127.0.0.1", 10911);
+            return new java.net.InetSocketAddress("127.0.0.1", 10913);
         }
 
         @Override
         public void setStoreHost(java.net.SocketAddress storeHost) {
             this.storeHostWrites++;
+            super.setStoreHost(storeHost);
+        }
+
+        @Override
+        public long getBornTimestamp() {
+            return 1700000000123L;
+        }
+
+        @Override
+        public void setBornTimestamp(long bornTimestamp) {
+            metadataWrites++;
+        }
+
+        @Override
+        public java.net.SocketAddress getBornHost() {
+            return new java.net.InetSocketAddress("127.0.0.1", 10913);
+        }
+
+        @Override
+        public void setBornHost(java.net.SocketAddress bornHost) {
+            metadataWrites++;
+            super.setBornHost(bornHost);
+        }
+
+        @Override
+        public long getStoreTimestamp() {
+            return 1700000000456L;
+        }
+
+        @Override
+        public void setStoreTimestamp(long storeTimestamp) {
+            metadataWrites++;
+        }
+
+        @Override
+        public int getSysFlag() {
+            return 0x1234;
+        }
+
+        @Override
+        public void setSysFlag(int sysFlag) {
+            metadataWrites++;
+        }
+
+        @Override
+        public int getBodyCRC() {
+            return 0x4567;
+        }
+
+        @Override
+        public void setBodyCRC(int bodyCRC) {
+            metadataWrites++;
+        }
+
+        @Override
+        public long getCommitLogOffset() {
+            return 9876543L;
+        }
+
+        @Override
+        public void setCommitLogOffset(long commitLogOffset) {
+            metadataWrites++;
+        }
+
+        @Override
+        public int getStoreSize() {
+            return 765;
+        }
+
+        @Override
+        public void setStoreSize(int storeSize) {
+            metadataWrites++;
+        }
+
+        @Override
+        public long getPreparedTransactionOffset() {
+            return 1234567L;
+        }
+
+        @Override
+        public void setPreparedTransactionOffset(long preparedTransactionOffset) {
+            metadataWrites++;
         }
 
         public String getCustomField() {
@@ -661,13 +767,20 @@ public final class RuntimeConsumerOperationsFixtures {
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
                 + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
                 + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
-                + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites;
+                + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites
+                + ";metadataWrites=" + metadataWrites;
         }
 
         @Override
         public String toString() {
             return "CustomDirectMessageExt[topicWrites=" + topicWrites + "]";
         }
+    }
+
+    private static List<Integer> unsignedBytes(byte[] bytes) {
+        List<Integer> result = new ArrayList<>();
+        for (byte value : bytes) result.add(value & 0xff);
+        return result;
     }
 
     private static Map<String, Object> customSubtypeProcessQueue() {

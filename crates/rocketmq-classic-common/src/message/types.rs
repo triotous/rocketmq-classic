@@ -2038,16 +2038,28 @@ impl MessageExt {
             .unwrap_or(self.queue_offset)
     }
     pub fn commit_log_offset(&self) -> i64 {
-        self.commit_log_offset
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.commit_log_offset())
+            .unwrap_or(self.commit_log_offset)
     }
     pub fn sys_flag(&self) -> i32 {
-        self.sys_flag
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.sys_flag())
+            .unwrap_or(self.sys_flag)
     }
     pub fn born_timestamp(&self) -> i64 {
-        self.born_timestamp
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.born_timestamp())
+            .unwrap_or(self.born_timestamp)
     }
     pub fn store_timestamp(&self) -> i64 {
-        self.store_timestamp
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.store_timestamp())
+            .unwrap_or(self.store_timestamp)
     }
     pub fn reconsume_times(&self) -> i32 {
         self.runtime_subtype
@@ -2056,14 +2068,25 @@ impl MessageExt {
             .unwrap_or(self.reconsume_times)
     }
     pub fn store_size(&self) -> i32 {
-        self.store_size
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.store_size())
+            .unwrap_or(self.store_size)
     }
     pub fn body_crc(&self) -> i32 {
-        self.body_crc
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.body_crc())
+            .unwrap_or(self.body_crc)
     }
     /// Java `MessageExt.getBornHost()`, represented as a resolved or unresolved
     /// Rust `MessageHostAddress` value.
     pub fn born_host(&self) -> Option<&MessageHostAddress> {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(born_host) = subtype.born_host() {
+                return born_host;
+            }
+        }
         self.born_host.as_ref()
     }
     /// Java `MessageExt.getStoreHost()`, represented as a resolved or unresolved
@@ -2077,16 +2100,20 @@ impl MessageExt {
         self.store_host.as_ref()
     }
     /// Java `MessageExt.getBornHostString()`; unresolved hosts return `None`.
+    /// The Java implementation reads its stored field directly, like its
+    /// corresponding host-name and host-bytes helpers.
     pub fn born_host_string(&self) -> Option<String> {
         self.born_host
             .as_ref()
             .and_then(MessageHostAddress::host_address_string)
     }
     /// Java `MessageExt.getBornHostNameString()` without reverse DNS lookup.
+    /// The Java implementation reads its stored field directly.
     pub fn born_host_name_string(&self) -> Option<&str> {
         self.born_host.as_ref().map(MessageHostAddress::host_name)
     }
-    /// Java `MessageExt.getBornHostBytes()` in network byte order.
+    /// Java `MessageExt.getBornHostBytes()` in network byte order. The Java
+    /// implementation reads its stored field directly.
     pub fn born_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
         self.born_host
             .as_ref()
@@ -2094,7 +2121,8 @@ impl MessageExt {
             .network_bytes()
             .ok_or(MessageHostAddressBytesError::UnresolvedAddress)
     }
-    /// Java `MessageExt.getStoreHostBytes()` in network byte order.
+    /// Java `MessageExt.getStoreHostBytes()` in network byte order. The Java
+    /// implementation reads its stored field directly.
     pub fn store_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
         self.store_host
             .as_ref()
@@ -2151,7 +2179,10 @@ impl MessageExt {
         self.offset_message_id.as_deref()
     }
     pub fn prepared_transaction_offset(&self) -> i64 {
-        self.prepared_transaction_offset
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.prepared_transaction_offset())
+            .unwrap_or(self.prepared_transaction_offset)
     }
     pub fn set_broker_name(&mut self, value: Option<String>) {
         if !self
@@ -2181,10 +2212,22 @@ impl MessageExt {
         }
     }
     pub fn set_commit_log_offset(&mut self, value: i64) {
-        self.commit_log_offset = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_commit_log_offset(value))
+        {
+            self.commit_log_offset = value;
+        }
     }
     pub fn set_sys_flag(&mut self, value: i32) {
-        self.sys_flag = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_sys_flag(value))
+        {
+            self.sys_flag = value;
+        }
     }
     /// Set the Java `BORNHOST_V6_FLAG` bit without changing other system flags.
     pub fn set_born_host_v6_flag(&mut self) {
@@ -2195,10 +2238,22 @@ impl MessageExt {
         self.sys_flag |= crate::sysflag::message::STOREHOSTADDRESS_V6_FLAG;
     }
     pub fn set_born_timestamp(&mut self, value: i64) {
-        self.born_timestamp = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_born_timestamp(value))
+        {
+            self.born_timestamp = value;
+        }
     }
     pub fn set_store_timestamp(&mut self, value: i64) {
-        self.store_timestamp = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_store_timestamp(value))
+        {
+            self.store_timestamp = value;
+        }
     }
     pub fn set_reconsume_times(&mut self, value: i32) {
         if !self
@@ -2210,14 +2265,32 @@ impl MessageExt {
         }
     }
     pub fn set_store_size(&mut self, value: i32) {
-        self.store_size = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_store_size(value))
+        {
+            self.store_size = value;
+        }
     }
     pub fn set_body_crc(&mut self, value: i32) {
-        self.body_crc = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_body_crc(value))
+        {
+            self.body_crc = value;
+        }
     }
     /// Java `MessageExt.setBornHost(SocketAddress)` using Rust value semantics.
     pub fn set_born_host(&mut self, value: Option<MessageHostAddress>) {
-        self.born_host = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_born_host(value.clone()))
+        {
+            self.born_host = value;
+        }
     }
     /// Java `MessageExt.setStoreHost(SocketAddress)` using Rust value semantics.
     pub fn set_store_host(&mut self, value: Option<MessageHostAddress>) {
@@ -2256,7 +2329,13 @@ impl MessageExt {
         self.offset_message_id = value;
     }
     pub fn set_prepared_transaction_offset(&mut self, value: i64) {
-        self.prepared_transaction_offset = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_prepared_transaction_offset(value))
+        {
+            self.prepared_transaction_offset = value;
+        }
     }
     /// Read Java's transient topic system flag property. An empty property is
     /// treated as absent; malformed decimal input is returned as a parse error.
@@ -2401,6 +2480,86 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Handle Java's virtual `MessageExt.setStoreHost(SocketAddress)`.
     fn set_store_host(&self, _store_host: Option<MessageHostAddress>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getBornTimestamp()`.
+    fn born_timestamp(&self) -> Option<i64> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setBornTimestamp(long)`.
+    fn set_born_timestamp(&self, _born_timestamp: i64) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getBornHost()`.
+    fn born_host(&self) -> Option<Option<&MessageHostAddress>> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setBornHost(SocketAddress)`.
+    fn set_born_host(&self, _born_host: Option<MessageHostAddress>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getStoreTimestamp()`.
+    fn store_timestamp(&self) -> Option<i64> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setStoreTimestamp(long)`.
+    fn set_store_timestamp(&self, _store_timestamp: i64) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getSysFlag()`.
+    fn sys_flag(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setSysFlag(int)`.
+    fn set_sys_flag(&self, _sys_flag: i32) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getBodyCRC()`.
+    fn body_crc(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setBodyCRC(int)`.
+    fn set_body_crc(&self, _body_crc: i32) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getCommitLogOffset()`.
+    fn commit_log_offset(&self) -> Option<i64> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setCommitLogOffset(long)`.
+    fn set_commit_log_offset(&self, _commit_log_offset: i64) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getStoreSize()`.
+    fn store_size(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setStoreSize(int)`.
+    fn set_store_size(&self, _store_size: i32) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getPreparedTransactionOffset()`.
+    fn prepared_transaction_offset(&self) -> Option<i64> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setPreparedTransactionOffset(long)`.
+    fn set_prepared_transaction_offset(&self, _prepared_transaction_offset: i64) -> bool {
         false
     }
 

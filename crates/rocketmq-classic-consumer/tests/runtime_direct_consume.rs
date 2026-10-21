@@ -58,6 +58,19 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
                 .get_properties()
                 .and_then(|properties| properties.get("subtype-only").cloned())
         );
+        record["bornTimestamp"] = json!(message.born_timestamp());
+        record["storeTimestamp"] = json!(message.store_timestamp());
+        record["sysFlag"] = json!(message.sys_flag());
+        record["bodyCRC"] = json!(message.body_crc());
+        record["commitLogOffset"] = json!(message.commit_log_offset());
+        record["storeSize"] = json!(message.store_size());
+        record["preparedTransactionOffset"] = json!(message.prepared_transaction_offset());
+        record["bornHostString"] = json!(message.born_host_string());
+        record["bornHostNameString"] = json!(message.born_host_name_string());
+        record["bornHostBytes"] = json!(message.born_host_bytes().unwrap());
+        record["storeHostBytes"] = json!(message.store_host_bytes().unwrap());
+        record["bornHost"] = json!(message.born_host().map(ToString::to_string));
+        record["storeHost"] = json!(message.store_host().map(ToString::to_string));
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -76,6 +89,8 @@ struct CustomDirectMessageExt {
     keys_reads: std::sync::atomic::AtomicUsize,
     properties_reads: std::sync::atomic::AtomicUsize,
     store_host_writes: std::sync::atomic::AtomicUsize,
+    metadata_writes: std::sync::atomic::AtomicUsize,
+    custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
@@ -94,14 +109,16 @@ impl CustomDirectMessageExt {
             keys_reads: std::sync::atomic::AtomicUsize::new(0),
             properties_reads: std::sync::atomic::AtomicUsize::new(0),
             store_host_writes: std::sync::atomic::AtomicUsize::new(0),
-            custom_store_host: MessageHostAddress::new("127.0.0.1", 10911),
+            metadata_writes: std::sync::atomic::AtomicUsize::new(0),
+            custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
+            custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -111,7 +128,8 @@ impl CustomDirectMessageExt {
             self.tags_reads.load(Ordering::SeqCst),
             self.keys_reads.load(Ordering::SeqCst),
             self.properties_reads.load(Ordering::SeqCst),
-            self.store_host_writes.load(Ordering::SeqCst)
+            self.store_host_writes.load(Ordering::SeqCst),
+            self.metadata_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -162,6 +180,78 @@ impl MessageExtSubtype for CustomDirectMessageExt {
 
     fn set_store_host(&self, _store_host: Option<MessageHostAddress>) -> bool {
         self.store_host_writes.fetch_add(1, Ordering::SeqCst);
+        false
+    }
+
+    fn born_timestamp(&self) -> Option<i64> {
+        Some(1_700_000_000_123)
+    }
+
+    fn set_born_timestamp(&self, _born_timestamp: i64) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn born_host(&self) -> Option<Option<&MessageHostAddress>> {
+        Some(Some(&self.custom_born_host))
+    }
+
+    fn set_born_host(&self, _born_host: Option<MessageHostAddress>) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        false
+    }
+
+    fn store_timestamp(&self) -> Option<i64> {
+        Some(1_700_000_000_456)
+    }
+
+    fn set_store_timestamp(&self, _store_timestamp: i64) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn sys_flag(&self) -> Option<i32> {
+        Some(0x1234)
+    }
+
+    fn set_sys_flag(&self, _sys_flag: i32) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn body_crc(&self) -> Option<i32> {
+        Some(0x4567)
+    }
+
+    fn set_body_crc(&self, _body_crc: i32) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn commit_log_offset(&self) -> Option<i64> {
+        Some(9_876_543)
+    }
+
+    fn set_commit_log_offset(&self, _commit_log_offset: i64) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn store_size(&self) -> Option<i32> {
+        Some(765)
+    }
+
+    fn set_store_size(&self, _store_size: i32) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn prepared_transaction_offset(&self) -> Option<i64> {
+        Some(1_234_567)
+    }
+
+    fn set_prepared_transaction_offset(&self, _prepared_transaction_offset: i64) -> bool {
+        self.metadata_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -364,6 +454,14 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_queue_offset(17);
             message.set_flag(5);
             message.set_store_host(Some(MessageHostAddress::new("127.0.0.1", 10911)));
+            message.set_born_timestamp(1);
+            message.set_store_timestamp(2);
+            message.set_sys_flag(3);
+            message.set_body_crc(4);
+            message.set_commit_log_offset(5);
+            message.set_store_size(6);
+            message.set_prepared_transaction_offset(7);
+            message.set_born_host(Some(MessageHostAddress::new("127.0.0.1", 10912)));
             message
         } else if client_message {
             let mut message = MessageClientExt::new();
