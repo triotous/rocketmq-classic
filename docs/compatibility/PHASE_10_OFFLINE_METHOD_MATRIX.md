@@ -299,3 +299,13 @@ their setters dispatch to subtype hooks. The direct-consume Java fixture
 compares the custom topic/group values and setter counts. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.
+
+P18-V01 inherited scheduling-property follow-up (code revision `c6048c18`,
+2026-10-21): the direct-consume adapter preserves subtype `getProperty`
+overrides for wait-store, buyer ID, delay level, delay seconds, delay
+milliseconds and delivery milliseconds. Seven setter hooks cover wait-store,
+buyer ID, instance ID, delay level, delay seconds, delay milliseconds and
+delivery milliseconds. Java and Rust fixtures compare getter results and setter
+dispatch counts. Fixture SHA-256:
+`5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
+Other inherited methods and broad P18-V01 reconciliation remain open.

@@ -344,3 +344,15 @@ The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove
 completion of the complete Java/Rust public API/settings/control-flow audit.
 Broad P18-V01 remains open and live evidence remains `PENDING_PHASE_19`.
+
+P18-V01 caller-defined inherited scheduling-property follow-up (code revision
+`c6048c18`, 2026-10-21): the direct-consume `MessageExtSubtype` adapter routes
+wait-store, buyer ID, delay-level, delay-seconds, delay-milliseconds and
+delivery-milliseconds reads through the virtual property hook. It dispatches
+the matching wait-store, buyer ID, instance ID, delay-level, delay-seconds,
+delay-milliseconds and delivery-milliseconds setters. The Java fixture invokes
+the pinned 5.5.1 methods and records custom getter values and seven setter
+calls; Rust matches them. Fixture SHA-256:
+`5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
+Other inherited methods, custom live property-map identity, broad P18-V01 and
+current-revision P18-V04 platform evidence remain open.

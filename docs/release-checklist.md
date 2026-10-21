@@ -6609,3 +6609,32 @@ owner-specific checks belong in the manual handoff.
   custom `MessageExt` overrides, mutable `getProperties()` map identity, broad
   P18-V01 reconciliation and P18-V04 platform evidence remain open. Phase 19
   Broker/Docker scenarios remain separate.
+
+## P18-V01 inherited scheduling properties and current-tree P18-V02 — 2026-10-21 (`c6048c18`)
+
+- [x] Added subtype `getProperty` dispatch for wait-store, buyer ID, delay
+  level, delay seconds, delay milliseconds and delivery milliseconds; added
+  subtype setter hooks for wait-store, buyer ID, instance ID, and those delay
+  and delivery properties. The Java direct-consume fixture compares the
+  overridden values and seven setter calls. Fixture SHA-256:
+  `5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
+- [x] Focused direct-consume tests, serial default and all-feature workspace
+  tests, strict all-target/all-feature Clippy, format and diff checks, and
+  pinned Maven `verify` pass on code revision `c6048c18`. Maven verified 37
+  scenarios, 9 Running Info, 27 direct-consume, 15 reset cases, 83 typed
+  headers, 16 typed bodies and Java/Rust cross-decodes.
+- [x] Refreshed current-revision P18-V02 server-free gates on `c6048c18`:
+  differential self-test and 37 manifest scenarios; offline stress (16 cases
+  × 3); release fuzz smoke (137 frame seeds, 11 message seeds, 2,368
+  mutations); release examples and workspace benches; metadata, dependency,
+  package and license checks; four Unique ID tests under UTC and Asia/Taipei.
+  Full record: `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T194233Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,265.5 ns/iteration; zstd decode 1,146.5 ns; producer
+  request construction 1,179.5 ns; route lookup 15.7 ns; loopback completion
+  71,501.4 ns. These measurements are observations, not thresholds.
+- Broad P18-V01 inherited-method/settings/input/error/control-flow/reverse
+  export reconciliation and mutable custom `getProperties()` map identity
+  remain open. Current-revision GitHub Ubuntu/native Windows P18-V04 evidence
+  remains absent. No push, remote CI, Broker or Docker run was performed;
+  protected Phase 19 paths were left untouched and unstaged.

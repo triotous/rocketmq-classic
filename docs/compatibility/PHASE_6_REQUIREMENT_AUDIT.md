@@ -1621,3 +1621,14 @@ property hook, matching the pinned Java getter delegation; both Java setter
 methods also dispatch to subtype hooks. The direct-consume fixture compares
 custom values and setter counts. Fixture SHA-256:
 `71cf67f0bf813630fe084e2be78ea4275a1f04f49063c88a83606e909bb47dbe`.
+
+P18-V01 inherited message-property follow-up (code revision `c6048c18`,
+2026-10-21): `MessageExt` now routes wait-store, buyer ID, delay-level,
+delay-seconds, delay-milliseconds and delivery-milliseconds getters through
+the subtype's virtual `getProperty`. Wait-store, buyer ID, instance ID and the
+four delay/delivery setters dispatch through subtype hooks. The invoked
+Java/Rust direct-consume fixture compares these getter values and seven setter
+calls. Fixture SHA-256:
+`5148df4ac22baa84eb75326238a8d5903927ba1c0380dc34b7cc4093a47bf446`.
+The remaining inherited override inventory, mutable custom `getProperties()`
+map identity, broad P18-V01 audit and P18-V04 platform evidence remain open.
