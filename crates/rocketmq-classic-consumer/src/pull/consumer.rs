@@ -233,6 +233,31 @@ impl PullConsumer {
         ConsumeType::ConsumeActively
     }
 
+    /// Matches `RebalancePullImpl.clientRebalance`: explicit Pull always uses
+    /// the client's local assignment path.
+    pub const fn client_rebalance(&self, _topic: &str) -> bool {
+        true
+    }
+
+    /// Matches the deprecated Java `RebalancePullImpl.computePullFromWhere`.
+    pub const fn compute_pull_from_where(&self, _queue: &MessageQueue) -> i64 {
+        0
+    }
+
+    /// Matches Java's exception-capable Pull offset helper, which also returns
+    /// zero for explicit Pull consumers.
+    pub const fn compute_pull_from_where_with_exception(
+        &self,
+        _queue: &MessageQueue,
+    ) -> Result<i64, PullConsumerError> {
+        Ok(0)
+    }
+
+    /// Pull rebalance does not define a POP consume init mode in Java.
+    pub const fn get_consume_init_mode(&self) -> Result<i32, PullConsumerError> {
+        Err(PullConsumerError::PullConsumeInitModeUnsupported)
+    }
+
     pub const fn consume_from_where(&self) -> ConsumeFromWhere {
         ConsumeFromWhere::ConsumeFromLastOffset
     }
@@ -298,10 +323,10 @@ impl PullConsumer {
         self.topic_queues.clone()
     }
 
-    /// Creates the public queue type returned by Java's
-    /// `RebalancePullImpl.createPopProcessQueue()`.
-    pub fn create_pop_process_queue(&self) -> PopProcessQueue {
-        PopProcessQueue::new()
+    /// Matches Java's `RebalancePullImpl.createPopProcessQueue()`, which
+    /// returns null because explicit Pull does not create POP assignments.
+    pub const fn create_pop_process_queue(&self) -> Option<PopProcessQueue> {
+        None
     }
 
     /// Creates the public process queue returned by Java pull rebalance.

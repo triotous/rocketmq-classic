@@ -44,6 +44,8 @@ pub enum PullConsumerError {
     ServiceStateNotReady(Option<ConsumerServiceState>),
     #[error("pull API wrapper is unavailable")]
     PullApiWrapperUnavailable,
+    #[error("no initMode for Pull")]
+    PullConsumeInitModeUnsupported,
     #[error("offset store must be configured before startup")]
     OffsetStoreAfterStartup,
     #[error("message queue must have a topic and broker name")]

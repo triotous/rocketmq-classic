@@ -4,6 +4,7 @@ use rocketmq_classic_consumer::{
     pull::PullConsumer,
 };
 use rocketmq_classic_protocol::body::{ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo};
+use rocketmq_classic_protocol::heartbeat::ConsumeType;
 use serde_json::Value;
 
 const JAVA_FACADE_API: &str = include_str!("../../../fixtures/consumer/facade-api.json");
@@ -120,6 +121,33 @@ fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() 
             "pinned Java {owner}.{method} is inventoried"
         );
     }
+}
+
+#[test]
+fn pull_rebalance_matches_pinned_java_pop_and_offset_behavior() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let expected = &fixture["implementationBehaviors"]["rebalancePull"];
+    let config = PullConsumerConfig::new("facade-pull-rebalance").unwrap();
+    let consumer = PullConsumer::new(config);
+    let queue = MessageQueue::new("orders", "broker-a", 0);
+    let actual = serde_json::json!({
+        "clientRebalance": consumer.client_rebalance("orders"),
+        "consumeType": consumer.consume_type().name(),
+        "pullOffset": consumer.compute_pull_from_where(&queue),
+        "pullOffsetWithException": consumer.compute_pull_from_where_with_exception(&queue).unwrap(),
+        "processQueueCreated": !consumer.create_process_queue().is_dropped(),
+        "popProcessQueueCreated": consumer.create_pop_process_queue().is_some(),
+        "consumeInitModeError": consumer.get_consume_init_mode().unwrap_err().to_string(),
+    });
+    assert_eq!(&actual, expected);
+    assert_eq!(consumer.consume_type(), ConsumeType::ConsumeActively);
+    assert!(
+        consumer
+            .get_pop_process_queue_table()
+            .read()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -358,12 +386,7 @@ fn rebalance_accessors_retain_live_topic_subscription_and_pop_tables() {
         &pull_rebalance.get_topic_subscribe_info_table(),
         &pull.get_rebalance_impl().get_topic_subscribe_info_table()
     ));
-    assert_eq!(
-        pull_rebalance
-            .create_pop_process_queue()
-            .get_wai_ack_msg_count(),
-        0
-    );
+    assert!(pull_rebalance.create_pop_process_queue().is_none());
 }
 
 #[test]

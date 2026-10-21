@@ -5314,3 +5314,17 @@ owner-specific checks belong in the manual handoff.
   assignment flow. Refresh the full current-revision P18-V02 supplementary
   gates after implementation; P18-V03 review and current Ubuntu/native Windows
   P18-V04 evidence remain open. Phase 19 Broker/Docker validation was not run.
+
+## P18 Pull rebalance behavior slice — 2026-10-21
+
+- [x] Matched pinned `RebalancePullImpl` behavior: client rebalance is enabled,
+  both pull-offset helpers return zero, `consumeType` is active Pull, process
+  queue creation succeeds, POP queue creation returns null, and POP init mode
+  reports `no initMode for Pull`. The Pull POP table remains empty. Java fixture
+  SHA-256: `fe4523a2b16b7737e977dd6b5ff7beec9b4cb2e6c16b15aac6b43a6cd1f16d3a`.
+- [x] The seven-test Consumer facade API suite, focused Java fixture drift
+  verifier, formatting and `git diff --check` pass.
+- P18-V01 remains open for the remaining inherited rebalance method/settings
+  correspondence and the other full client audit rows. P18-V02 refresh and
+  P18-V03/V04 review remain outstanding; Phase 19 Broker/Docker validation was
+  not run.

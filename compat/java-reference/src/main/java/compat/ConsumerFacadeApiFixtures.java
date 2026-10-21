@@ -21,12 +21,15 @@ import org.apache.rocketmq.client.consumer.LitePullConsumer;
 import org.apache.rocketmq.client.MQAdmin;
 import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.client.impl.consumer.PopRequest;
+import org.apache.rocketmq.client.impl.consumer.PullRequest;
 import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePullImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
 import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
 /** Pins the complete public Java consumer-facade and inherited API denominator. */
 public final class ConsumerFacadeApiFixtures {
@@ -86,6 +89,32 @@ public final class ConsumerFacadeApiFixtures {
         result.put("dropped", queue.isDropped());
         result.put("info", infoResult);
         result.put("toString", queue.toString());
+        return result;
+    }
+
+    private static Map<String, Object> rebalancePullBehavior() {
+        RebalancePullImpl rebalance = new RebalancePullImpl("pull-group",
+            MessageModel.CLUSTERING, null, null, null);
+        rebalance.dispatchPullRequest(List.of(new PullRequest()), 500L);
+        rebalance.dispatchPopPullRequest(List.of(new PopRequest()), 500L);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("clientRebalance", rebalance.clientRebalance("orders"));
+        result.put("consumeType", rebalance.consumeType().name());
+        result.put("pullOffset", rebalance.computePullFromWhere(null));
+        try {
+            result.put("pullOffsetWithException", rebalance.computePullFromWhereWithException(null));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+        result.put("processQueueCreated", rebalance.createProcessQueue() != null);
+        result.put("popProcessQueueCreated", rebalance.createPopProcessQueue() != null);
+        try {
+            rebalance.getConsumeInitMode();
+            result.put("consumeInitModeError", null);
+        } catch (UnsupportedOperationException e) {
+            result.put("consumeInitModeError", e.getMessage());
+        }
         return result;
     }
 
@@ -233,6 +262,7 @@ public final class ConsumerFacadeApiFixtures {
         Map<String, Object> implementationBehaviors = new TreeMap<>();
         implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
         implementationBehaviors.put("processQueue", processQueueBehavior());
+        implementationBehaviors.put("rebalancePull", rebalancePullBehavior());
         fixture.put("implementationBehaviors", implementationBehaviors);
 
         String json = JSON.toJSONString(fixture) + "\n";

@@ -245,3 +245,20 @@
   assignment flow. Full current-revision P18-V02 supplementary gates and
   P18-V03/V04 review remain outstanding. No Phase 19 Broker/Docker validation
   was run.
+
+
+# Phase 18 continuation — Pull rebalance behavior slice — 2026-10-21
+
+- Matched pinned `RebalancePullImpl` behavior in Rust: client rebalance is
+  enabled, both offset helpers return zero, consume type is active Pull,
+  ProcessQueue creation succeeds, POP queue creation returns no value, and POP
+  init mode reports `no initMode for Pull`. The Pull POP table stays empty.
+- Added direct Java behavior output to the facade fixture, regenerated it from
+  pinned source, and passed its focused drift verifier. Fixture SHA-256:
+  `fe4523a2b16b7737e977dd6b5ff7beec9b4cb2e6c16b15aac6b43a6cd1f16d3a`.
+- The seven-test Consumer facade API suite, formatting and `git diff --check`
+  pass. An initial focused run caught the old assertion that Pull could create a
+  POP queue; that assertion was updated to match the pinned Java contract.
+- P18-V01 remains open for the inherited rebalance method/settings
+  correspondence and full client audit. Full P18-V02 refresh and P18-V03/V04
+  review remain outstanding. Phase 19 Broker/Docker validation was not run.

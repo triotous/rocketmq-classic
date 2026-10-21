@@ -27,6 +27,7 @@ declared method counts and callable method counts in
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Public direct expiry methods use the pinned Java pull-idle property and async Broker send-back adapter. The runtime concurrent consume service records `CONSUME_START_TIME` and runs its owned expiry sweep. It checks the oldest message, retries send-back at delay level 3 up to the bounded queue attempt count, removes only after successful send-back, and skips orderly consume. Java direct fixtures and Rust tests cover success, failure, retry cap, orderly skip, strict timeout boundary, in-flight completion and initial timer delay. | UNIT_VERIFIED for the direct methods and runtime expiry flow. |
 | `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters | Public locked tree view, mutable counter handles, async read/write consume gate, timestamp/settings accessors and `ConsumerProcessQueueInfo` fill method. | Direct getter/setter behavior and info values are compared with the pinned Java fixture. |
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
+| `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
 ## Remaining public API gap
 
@@ -36,10 +37,11 @@ subscription and topic-assignment tables, plus setters for the client factory,
 strategy, message model and group. Rust now exports both concrete queue types,
 their direct APIs, live tree/counter handles, and live queue tables through the
 owner returned by `get_rebalance_impl`. Pull assignment changes populate its
-process-queue table. Remaining gaps are complete call-level correspondence for
-inherited rebalance operations and setters, including methods whose behavior
-exists internally but lacks a direct owner method or a pinned call-order
-comparison. Pull POP assignment flow also needs reconciliation.
+process-queue table. Pull's pinned Java implementation does not create or
+dispatch POP queues; Rust now matches that behavior and tests the empty Pull
+POP table. Remaining gaps are complete call-level correspondence for inherited
+rebalance operations and setters, including methods whose behavior exists
+internally but lacks a direct owner method or a pinned call-order comparison.
 
 The complete pinned denominator is now recorded, but this direct API mismatch
 is unresolved. P18-V01 stays open until each callable signature has an
