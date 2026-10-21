@@ -769,6 +769,16 @@ public final class RuntimeConsumerOperationsFixtures {
         }
 
         @Override
+        public String getBornHostString() {
+            return "custom-born-host-address";
+        }
+
+        @Override
+        public String getBornHostNameString() {
+            return "custom-born-host-name";
+        }
+
+        @Override
         public void setBornHost(java.net.SocketAddress bornHost) {
             metadataWrites++;
             super.setBornHost(bornHost);

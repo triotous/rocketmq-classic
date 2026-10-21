@@ -366,6 +366,14 @@ impl MessageExtSubtype for CustomDirectMessageExt {
         Some(Some(&self.custom_born_host))
     }
 
+    fn born_host_string(&self) -> Option<Option<String>> {
+        Some(Some("custom-born-host-address".to_owned()))
+    }
+
+    fn born_host_name_string(&self) -> Option<Option<&str>> {
+        Some(Some("custom-born-host-name"))
+    }
+
     fn set_born_host(&self, _born_host: Option<MessageHostAddress>) -> bool {
         self.metadata_writes.fetch_add(1, Ordering::SeqCst);
         false

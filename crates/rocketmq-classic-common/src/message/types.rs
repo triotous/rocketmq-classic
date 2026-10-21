@@ -2413,16 +2413,32 @@ impl MessageExt {
         self.store_host.as_ref()
     }
     /// Java `MessageExt.getBornHostString()`; unresolved hosts return `None`.
-    /// The Java implementation reads its stored field directly, like its
-    /// corresponding host-name and host-bytes helpers.
+    /// The Java base implementation reads its stored field directly, like its
+    /// corresponding host-name and host-bytes helpers. A retained subtype may
+    /// override this virtual getter.
     pub fn born_host_string(&self) -> Option<String> {
+        if let Some(born_host_string) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.born_host_string())
+        {
+            return born_host_string;
+        }
         self.born_host
             .as_ref()
             .and_then(MessageHostAddress::host_address_string)
     }
     /// Java `MessageExt.getBornHostNameString()` without reverse DNS lookup.
-    /// The Java implementation reads its stored field directly.
+    /// The Java base implementation reads its stored field directly; a
+    /// retained subtype may override this virtual getter.
     pub fn born_host_name_string(&self) -> Option<&str> {
+        if let Some(born_host_name_string) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.born_host_name_string())
+        {
+            return born_host_name_string;
+        }
         self.born_host.as_ref().map(MessageHostAddress::host_name)
     }
     /// Java `MessageExt.getBornHostBytes()` in network byte order. The Java
@@ -2918,6 +2934,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Override Java's virtual `MessageExt.getBornHost()`.
     fn born_host(&self) -> Option<Option<&MessageHostAddress>> {
+        None
+    }
+
+    /// Override Java's virtual `MessageExt.getBornHostString()`.
+    fn born_host_string(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual `MessageExt.getBornHostNameString()`.
+    fn born_host_name_string(&self) -> Option<Option<&str>> {
         None
     }
 
