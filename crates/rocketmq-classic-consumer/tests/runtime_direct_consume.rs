@@ -44,6 +44,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
         "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
         "reconsumeTimes": message.reconsume_times(), "queueOffset": message.queue_offset(),
+        "flag": message.flag(),
         "bodyLength": message.body_nullable().map(|body| body.len()),
         "propertiesPresent": message.properties_nullable().is_some()});
     if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
@@ -60,6 +61,7 @@ struct CustomDirectMessageExt {
     reconsume_writes: std::sync::atomic::AtomicUsize,
     queue_offset_writes: std::sync::atomic::AtomicUsize,
     body_writes: std::sync::atomic::AtomicUsize,
+    flag_writes: std::sync::atomic::AtomicUsize,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
 
@@ -71,17 +73,19 @@ impl CustomDirectMessageExt {
             reconsume_writes: std::sync::atomic::AtomicUsize::new(0),
             queue_offset_writes: std::sync::atomic::AtomicUsize::new(0),
             body_writes: std::sync::atomic::AtomicUsize::new(0),
+            flag_writes: std::sync::atomic::AtomicUsize::new(0),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
-            self.body_writes.load(Ordering::SeqCst)
+            self.body_writes.load(Ordering::SeqCst),
+            self.flag_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -107,6 +111,15 @@ impl MessageExtSubtype for CustomDirectMessageExt {
     fn set_body(&self, body: Option<Vec<u8>>) -> bool {
         self.body_writes.fetch_add(1, Ordering::SeqCst);
         *self.custom_body.lock().unwrap() = body;
+        true
+    }
+
+    fn flag(&self) -> Option<i32> {
+        Some(71)
+    }
+
+    fn set_flag(&self, _flag: i32) -> bool {
+        self.flag_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -288,6 +301,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
                 .unwrap();
             message.set_reconsume_times(2);
             message.set_queue_offset(17);
+            message.set_flag(5);
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

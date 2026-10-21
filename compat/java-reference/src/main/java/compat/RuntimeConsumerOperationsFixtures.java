@@ -427,6 +427,7 @@ public final class RuntimeConsumerOperationsFixtures {
         String physicalId = clientMessage || name.contains("-plain-") ? "physical-id" : null;
         String uniqueId = name.endsWith("-unique") && !name.endsWith("-no-unique") ? "client-unique" : null;
         message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
+        if (customSubtype) message.setFlag(5);
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
         if (customSubtype) {
@@ -444,6 +445,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("queueTopic", queue.getTopic()); item.put("queueBroker", queue.getBrokerName());
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);
                 item.put("messageId", messages.get(0).getMsgId());
+                item.put("flag", messages.get(0).getFlag());
                 item.put("reconsumeTimes", messages.get(0).getReconsumeTimes());
                 item.put("queueOffset", messages.get(0).getQueueOffset());
                 item.put("bodyLength", messages.get(0).getBody() == null ? null : messages.get(0).getBody().length);
@@ -524,6 +526,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int reconsumeWrites;
         private int queueOffsetWrites;
         private int bodyWrites;
+        private int flagWrites;
         private byte[] customBody;
 
         @Override
@@ -597,9 +600,20 @@ public final class RuntimeConsumerOperationsFixtures {
             this.customBody = body;
         }
 
+        @Override
+        public int getFlag() {
+            return 71;
+        }
+
+        @Override
+        public void setFlag(int flag) {
+            this.flagWrites++;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
-                + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites;
+                + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
+                + ";flagWrites=" + flagWrites;
         }
 
         @Override

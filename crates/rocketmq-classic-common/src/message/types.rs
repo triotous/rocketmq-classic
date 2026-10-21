@@ -975,6 +975,7 @@ impl Message {
             storage: storage.clone(),
         })
     }
+
     pub fn flag(&self) -> i32 {
         self.flag
     }
@@ -1821,6 +1822,15 @@ impl MessageExt {
         })
     }
 
+    /// Java's virtual `Message.getFlag()` view, including caller-defined
+    /// `MessageExt` subtype overrides.
+    pub fn flag(&self) -> i32 {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.flag())
+            .unwrap_or(self.message.flag())
+    }
+
     /// Java's virtual `Message.setBody(byte[])` view.
     pub fn set_body(&mut self, body: impl Into<Vec<u8>>) {
         self.set_body_nullable(Some(body.into()));
@@ -1834,6 +1844,17 @@ impl MessageExt {
             .is_some_and(|subtype| subtype.set_body(body.clone()))
         {
             self.message.set_body_nullable(body);
+        }
+    }
+
+    /// Java's virtual `Message.setFlag(int)` view.
+    pub fn set_flag(&mut self, flag: i32) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_flag(flag))
+        {
+            self.message.set_flag(flag);
         }
     }
 
@@ -2205,6 +2226,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Handle Java's virtual `Message.setBody(byte[])`.
     fn set_body(&self, _body: Option<Vec<u8>>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `Message.getFlag()`.
+    fn flag(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `Message.setFlag(int)`.
+    fn set_flag(&self, _flag: i32) -> bool {
         false
     }
 
