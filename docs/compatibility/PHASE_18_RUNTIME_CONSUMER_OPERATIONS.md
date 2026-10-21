@@ -43,7 +43,7 @@ inspecting the message. `ConsumerOperationFuture` expresses the asynchronous
 Rust owner result, not a new client feature or setting.
 
 The Java oracle calls the actual runtime and concurrent/orderly consume
-services for 26 cases. `runtime_direct_consume` starts real Rust facades and
+services for 27 cases. `runtime_direct_consume` starts real Rust facades and
 checks the same result categories, order/auto-commit flags, callback counts,
 callback message/queue topics and broker names. It covers success, retry,
 commit, rollback, suspend, null listener result and listener failure; nullable
@@ -87,9 +87,22 @@ other built-in subclasses in the pinned source tree are broker-side
 `MessageExtBrokerInner` and `MessageExtBatch`; the client sources do not
 construct them. The standard client-produced subtype paths are covered by the
 marker and direct-consume fixture above. Rust `MessageExt` does not preserve
-arbitrary application-defined Java subclasses or their custom methods and
-fields; that cross-language extension boundary and the broader inherited/API
-audit remain open P18-V01 work.
+caller-defined subtype data at this checkpoint; the follow-up below records
+the later runtime adapter slice.
+
+Caller-defined subtype continuation (2026-10-21): Rust now exposes
+`MessageExtSubtype`, retained by `Arc` across the `MessageExt` direct-consume
+input. Applications can downcast custom fields in the callback and provide
+virtual overrides for topic, broker name, queue ID, message ID, setters, and
+display. The `concurrent-custom-subtype` case executes Java overrides during
+initial topic assignment, retry-topic restoration, namespace removal, broker
+assignment and callback formatting. Rust compares the same callback class
+name, queue/message values, custom field and display result. Fixture SHA-256:
+`4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`.
+The adapter is runtime-only and does not serialize custom subtype state. This
+closes the direct-consume custom-field and selected-override slice; inherited
+`Message`/`MessageExt` override coverage and the broader P18-V01 audit remain
+open.
 
 Callback message/queue topics retain null versus empty input. The retry-topic
 property is read for every message, preserving Java `getProperty`'s observable

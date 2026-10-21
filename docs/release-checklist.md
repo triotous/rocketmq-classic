@@ -6368,3 +6368,50 @@ owner-specific checks belong in the manual handoff.
   arbitrary Java `MessageExt` subclasses, current-revision Ubuntu/native
   Windows P18-V04 evidence, and Phase 19 Broker/Docker scenarios remain open.
   Protected Phase 19 working-tree paths remain untouched and unstaged.
+
+
+## P18-V01 caller-defined `MessageExt` subtype adapter — 2026-10-21
+
+- [x] Added public `MessageExtSubtype`, retained by shared `Arc` through
+  base-typed `MessageExt` APIs. Applications can downcast their custom fields;
+  selected virtual hooks cover topic, broker name, queue ID, message ID,
+  setters, and display. Clones share runtime subtype state. Serialization and
+  deserialization omit that runtime-only adapter.
+- [x] The invoked Java `concurrent-custom-subtype` case covers subtype topic,
+  retry restoration, namespace stripping, overridden queue/broker/message ID,
+  custom fields and `toString`. Rust direct-consume fixture comparison matches
+  those callback outcomes. Fixture SHA-256:
+  `4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`.
+- [x] Focused Rust Common and Consumer verification, Maven fixture verification,
+  formatting and strict Clippy passed; full workspace P18-V02 refresh is still
+  required after this code change. Full outcomes are recorded in the
+  [execution log](../rlogs/2026/09/phase-18-compatibility-release-gate__20261021T180738Z.rlog).
+- Broad P18-V01 remains open for inherited `Message`/`MessageExt` overrides
+  outside the selected hooks, source/settings/input/error/flow and reverse
+  export review. Current Ubuntu/native Windows P18-V04 evidence and Phase 19
+  Broker/Docker scenarios remain open; protected Phase 19 files remain
+  untouched and unstaged.
+
+## P18-V02 server-free refresh after subtype adapter — 2026-10-21 (`7fd89286`)
+
+- [x] Refreshed default and all-feature locked workspace tests, strict
+  all-target/all-feature Clippy, formatting and diff checks on the current
+  code revision.
+- [x] Pinned Maven `verify` passes all 37 scenarios, including the current
+  27-case direct-consume fixture, with 83 typed header frames and 16 typed body
+  frames. Differential self-test and 37-row manifest, 16-case × 3 stress
+  smoke, release fuzz smoke, release examples, workspace bench compilation,
+  and offline benchmark pass.
+- [x] Locked Cargo metadata reports 8 workspace members, 216 total packages
+  and 208 registry packages. The workspace metadata/dependency/license check,
+  all seven product package listings with `LICENSE`/`NOTICE`, and four Unique
+  ID tests under both UTC and Asia/Taipei pass. Benchmark observations and
+  detailed command outcomes are in the
+  [execution log](../rlogs/2026/09/phase-18-compatibility-release-gate__20261021T180738Z.rlog).
+- [x] Current local P18-V02 server-free gates and package-content checks pass.
+  No release or final compatibility claim is made.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+  reconciliation remains open. Current GitHub Ubuntu and native Windows
+  P18-V04 runtime evidence remains absent; Phase 19 live Broker/Docker
+  scenarios remain separate. Protected Phase 19 working-tree paths remain
+  untouched and unstaged.

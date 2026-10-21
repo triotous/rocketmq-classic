@@ -55,16 +55,26 @@ state for client decoding, pull results and admin-decoded messages. The invoked
 fixture records callback class and the Rust comparison checks all 26 direct
 consume cases. Fixture SHA-256:
 `d0b4e39ba340e509d1ddc2665da122a0cf161ed757cc1d9ac2cbd022edb7d83f`.
-Other public `MessageExt` subclasses and the full inherited/public/DTO/config
-and reverse-export audit remain open; this closes only the `MessageClientExt`
-direct-consume path.
+The full inherited/public/DTO/config and reverse-export audit remains open;
+this closes only the `MessageClientExt` direct-consume path.
+
+P18-V01 caller-defined `MessageExt` subtype adapter (2026-10-21): public Rust
+`MessageExtSubtype` retains application fields for typed callback downcasts and
+provides virtual hooks for topic, broker name, queue ID, message ID, their
+setters, and display. The invoked `concurrent-custom-subtype` Java fixture
+checks the runtime subclass, overridden retry-topic and namespace setters,
+broker assignment, message/queue values, custom field, and `toString`; the Rust
+direct-consume comparison matches all of them. Fixture SHA-256:
+`4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`. Subtype
+state is runtime-only and is omitted by serialization. This closes the
+direct-consume custom-field and selected-override slice; it does not inventory
+every inherited `Message`/`MessageExt` virtual method.
 
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
-reverse-export review, including nullable and other-subclass raw `MessageExt`
-inputs beyond the current direct-consume corpus, and the broader
-rebalance assignment/pull-expiry branches beyond the cases above. Native
-platform CI evidence is still outstanding. Historical checkpoints
+reverse-export review, subtype behavior beyond the adapter's selected hooks,
+and the broader rebalance assignment/pull-expiry branches beyond the cases
+above. Native platform CI evidence is still outstanding. Historical checkpoints
 below retain their original scope and results; none is a current full-phase
 acceptance claim.
 
@@ -1509,6 +1519,22 @@ public low-level `MQClientAPIImpl` operations. The Phase 17
 wrappers; it does not remove either client operation from the Phase 18
 source/API inventory.
 
+## P18-V01 caller-defined `MessageExt` subtype adapter — 2026-10-21
+
+Rust now provides `MessageExtSubtype` for caller-defined runtime message
+subtypes passed through base-typed APIs. The adapter retains custom fields for
+typed callback downcasts and dispatches selected Java-virtual topic, broker,
+queue ID, message ID, setter and display methods. The invoked Java fixture's
+`concurrent-custom-subtype` case checks topic assignment, retry-topic restore,
+namespace removal, broker assignment, callback-visible custom values and the
+subclass display string; the Rust direct-consume fixture matches those
+observations. Fixture SHA-256:
+`4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`.
+Subtype state is runtime-only and excluded from serialization. This closes
+the direct-consume custom-field and selected-override slice. The full inherited
+`Message`/`MessageExt` override inventory, broad P18-V01 audit and P18-V04
+platform evidence remain open.
+
 ## P18-V01 Push `ConsumeMessageService` replacement seam — 2026-10-21
 
 `DefaultMQPushConsumerImpl.get/setConsumeMessageService` now maps to public
@@ -1527,5 +1553,5 @@ owner-flow and in-flight-removal tests pass; fixture SHA-256 is
 
 This closes the named raw service-replacement seam only. Broad P18-V01
 source/API/settings/input/error/control-flow/reverse-export reconciliation,
-arbitrary Java `MessageExt` subclasses and P18-V04 platform evidence remain
-open.
+`MessageExt` virtual methods beyond the selected subtype adapter hooks, and
+P18-V04 platform evidence remain open.
