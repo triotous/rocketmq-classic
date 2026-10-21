@@ -142,3 +142,15 @@
   POP branches. Other POP assignment paths, public Rebalance/ProcessQueue API
   correspondence, broad P18-V01, final workspace gates and Phase 19 live
   evidence remain open.
+
+# Phase 18 continuation — workspace gates — 2026-10-21
+
+- Ran `cargo test --workspace --all-features --locked` and
+  `cargo test --workspace --locked`; both passed all unit, integration and
+  documentation tests. This includes the consumer/admin/facade tests, 231
+  consumer unit tests, protocol/remoting suites, fuzz mutation regressions and
+  compile-fail API boundaries.
+- Ran `cargo clippy --workspace --all-targets --all-features --locked -- -D
+  warnings`, `cargo fmt --all -- --check`, and `git diff --check`; all passed.
+  P18-V02 still needs final review of benchmark/fuzz/race evidence and the
+  complete API audit; no full-phase acceptance is inferred.
