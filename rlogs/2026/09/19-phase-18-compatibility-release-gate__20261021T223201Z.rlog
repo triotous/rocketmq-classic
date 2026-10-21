@@ -42,3 +42,29 @@ reverse-export reconciliation remains open. Current-revision GitHub Ubuntu
 and native Windows P18-V04 evidence remains open. No remote CI, Broker or
 Docker run was performed. The pre-existing protected Phase 19 worktree paths
 remain untouched and unstaged.
+
+## Producer usage and delivery guidance follow-up — 2026-10-21
+
+- Re-read the Phase 18 plan's P18-07 documentation requirements and found that
+  the README lacked a runnable producer send example and explicit timeout,
+  duplicate-delivery and shutdown guidance.
+- Updated `examples/producer.rs` to use the facade `Producer` lifecycle, send a
+  message and await shutdown. Updated README usage guidance: a timed-out send
+  can have been stored, retries can duplicate it, handlers should be
+  idempotent, and Push consumer shutdown may cancel work after the configured
+  termination wait.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  passed. `cargo build -p rocketmq-classic --example producer --locked` and
+  `cargo build -p rocketmq-classic --examples --release --locked` passed.
+  Formatting and diff checks passed.
+- During the package/provenance recheck, two initial custom script runs failed
+  on the verifier's artifact-name and source-JAR path assumptions. After
+  correcting the verifier, all nine documented Maven artifact SHA-256 values
+  matched, and four source-JAR files byte-matched the pinned Java tag. Offline
+  Maven dependency tree confirmed client 5.5.1 -> remoting 5.5.1 -> common
+  5.5.1. No repository source mismatch was found.
+- Local P18-V03 package/provenance review passes. Independent OpenPGP
+  verification remains unavailable because GPG is not installed; the tag
+  target and source-JAR byte identities are verified. Release version and
+  registry resolution remain post-Phase-19 tasks per the plan. Broad P18-V01
+  and current-revision GitHub Ubuntu/native Windows P18-V04 remain open.

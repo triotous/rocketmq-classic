@@ -10,6 +10,33 @@ Phase 5's `rocketmq-classic-core` provides the typed one-attempt RPC façade ove
 
 The lower-level workspace crates are `rocketmq-classic-common`, `rocketmq-classic-protocol`, and `rocketmq-classic-remoting` (bounded codecs and the locally verified TCP/TLS/SOCKS5 remoting transport; Broker/live validation is deferred to Phase 19). Construct a `RemotingClient` and call `start()` from an active Tokio runtime before invoking transport operations; `start()` is idempotent and constructors do not start background workers. The transport exposes async callbacks with configurable callback workers or a caller-supplied callback executor (`set_callback_executor`/`get_callback_executor`; disabled mode ignores custom executors and runs inline), sync futures, deadline-bound admission controls, request pipeline (legacy and context-aware; supports typed abort/error outcomes, Java-order stage composition via `pipe_request_pipeline`), backward-compatible fallible RPC hooks with typed abort/system-error mapping, optional Java-style equality keys for deduplication, and explicit `add_rpc_hook`/`get_rpc_hooks`/`remove_rpc_hook`/`clear_rpc_hooks` (snapshot inspection/removal without exposing a live mutable hook list), outbound hooks after successful connection establishment, Java-style pipeline/after-hook handling after a before-hook failure, and after-hook notification when a processor returns no response, exact-code/default request processors with optional per-registration executors (inbound one-way requests are processed without replies), bounded asynchronous channel/idle events, NameServer list/selection/availability scanning, reachability/writability/explicit-close helpers, configured TCP socket buffers, Java-shaped `socks_proxy_config` JSON CIDR routing, and one GO_AWAY retry that reconstructs a fresh request while preserving its code/ext fields/body. It does not claim Java 5.5.1 parity: callback context now carries the request, optional response/error, send status (Java default-true on timeout after channel establishment and false on established-channel close/shutdown/write failure), timeout flag and elapsed duration, and async response waiting includes Java's +1-second scan grace; the remaining Java/Netty differences are explicitly scoped: Java send-failure/error text taxonomy and executor/thread lifecycle are not reproduced exactly; processor rejection, channel-event ordering, and NameServer wrapper/scan scheduling use documented Tokio behavior; pooled allocator and worker-group controls have Rust-native implementations (bounded per-connection frame reuse and direct inbound dispatch); TLS Java-compatible property/config-file loading, reload at TLS context construction, and process-wide key-decryption strategy registration via `register_decryption_strategy` are implemented, with provider-supported encrypted-key limits. Existing clients retain their TLS context settings. These differences do not imply missing Phase 3 local features and do not claim full Java parity. Rust clears chosen/available NameServer state on socket close. TLS explicitly models Java's client `tls.test.mode.enable` (default `true`) and `tls.client.authServer` (default `false`) trust behavior, including trust-all when either Java condition disables verification; set `test_mode: false, auth_server: true` for verified CA and hostname checks. The scoped Java public remoting API/configuration inventory now covers the listed public/protected client declarations, settings, TLS controls, and Rust public surface in both directions; inventory closure does not mean semantic parity, and the remaining differences are enumerated in the Phase 3 inventory. Configured write watermarks track queued outbound bytes with high/low hysteresis; they do not represent Netty's event-loop write-buffer accounting. The Rust pooled mode reuses up to four frame buffers per connection, and `disable_netty_worker_group` switches inbound dispatch to the connection task; neither reproduces Netty's allocator caches or event-loop thread lifecycle. It is pinned to Rust 1.85.0 (MSRV 1.85) and uses edition 2024. Producer and consumer processing runtimes, namespace/security/trace/operational features, and admin/query surfaces have implementation work through Phase 17. Phase 18 server-free parity and release preparation is in progress; its open audit items and the Phase 19 live validation handoff are tracked in the compatibility matrices. See the [compatibility matrix](docs/compatibility/JAVA_5_5_1_COMPATIBILITY.md), [Phase 3 remoting inventory](docs/compatibility/PHASE_3_REMOTING_INVENTORY.md), and ADR-0001.
 
+## Producer usage and delivery lifecycle
+
+The facade follows the Java producer lifecycle: create a `ProducerConfig` and
+`Producer`, call `start()`, send a mutable `Message`, then await
+`shutdown()`. The [compiled producer example](examples/producer.rs) shows this
+flow; set `ROCKETMQ_NAMESRV_ADDR` and `ROCKETMQ_EXAMPLE_TOPIC` to run it against
+a configured cluster.
+
+Send timeouts and retries do not guarantee that a timed-out message was not
+stored: a Broker can accept the message before its response is lost, and a
+retry can store it again. Applications that retry after an ambiguous result
+should use stable business identifiers and idempotent handling. Consumer
+redelivery has the same practical requirement: message handlers should tolerate
+receiving a message again before its offset is durably advanced.
+
+Await producer and consumer `shutdown()` before exiting so owned tasks stop,
+clients unregister, and offsets can be persisted. Push consumer shutdown uses
+`awaitTerminationMillisWhenShutdown` to bound how long it waits for in-flight
+consume work; work still running when that wait expires can be cancelled and
+delivered again later. Check shutdown results because offset persistence,
+orderly unlock, or runtime unregistration can fail.
+
+The Java API reference remains RocketMQ client 5.5.1. RocketMQ Broker 5.3.4 is
+the Phase 19 interoperability baseline. Phase 18 source/API audit and live
+validation are still in progress; these usage notes do not claim full
+compatibility.
+
 Run workspace checks with:
 
 ```bash
