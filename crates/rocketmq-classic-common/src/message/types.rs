@@ -1435,23 +1435,11 @@ impl Message {
     }
 
     fn parse_i32_property(&self, property: &'static str) -> Result<i32, MessagePropertyParseError> {
-        let Some(value) = self.get_property(property) else {
-            return Ok(0);
-        };
-        parse_java_i32(&value).ok_or_else(|| MessagePropertyParseError {
-            property,
-            value: value.to_owned(),
-        })
+        parse_i32_property_value(property, self.get_property(property))
     }
 
     fn parse_i64_property(&self, property: &'static str) -> Result<i64, MessagePropertyParseError> {
-        let Some(value) = self.get_property(property) else {
-            return Ok(0);
-        };
-        parse_java_i64(&value).ok_or_else(|| MessagePropertyParseError {
-            property,
-            value: value.to_owned(),
-        })
+        parse_i64_property_value(property, self.get_property(property))
     }
 
     fn put_property_value(
@@ -1878,6 +1866,121 @@ impl MessageExt {
     /// `getProperty(String)` implementation.
     pub fn keys(&self) -> Option<String> {
         self.get_property(crate::message::constants::PROPERTY_KEYS)
+    }
+
+    /// Java `Message.isWaitStoreMsgOK()`, including subtype `getProperty`
+    /// overrides.
+    pub fn is_wait_store_msg_ok(&self) -> bool {
+        self.get_property(crate::message::constants::PROPERTY_WAIT_STORE_MSG_OK)
+            .is_none_or(|value| value.eq_ignore_ascii_case("true"))
+    }
+
+    /// Java `Message.getBuyerId()`, including subtype `getProperty` overrides.
+    pub fn buyer_id(&self) -> Option<String> {
+        self.get_property(crate::message::constants::PROPERTY_BUYER_ID)
+    }
+
+    pub fn delay_time_level(&self) -> Result<i32, MessagePropertyParseError> {
+        let property = crate::message::constants::PROPERTY_DELAY_TIME_LEVEL;
+        parse_i32_property_value(property, self.get_property(property))
+    }
+
+    pub fn delay_time_sec(&self) -> Result<i64, MessagePropertyParseError> {
+        let property = crate::message::constants::PROPERTY_TIMER_DELAY_SEC;
+        parse_i64_property_value(property, self.get_property(property))
+    }
+
+    pub fn delay_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
+        let property = crate::message::constants::PROPERTY_TIMER_DELAY_MS;
+        parse_i64_property_value(property, self.get_property(property))
+    }
+
+    pub fn deliver_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
+        let property = crate::message::constants::PROPERTY_TIMER_DELIVER_MS;
+        parse_i64_property_value(property, self.get_property(property))
+    }
+
+    pub fn set_wait_store_msg_ok(
+        &mut self,
+        wait: bool,
+    ) -> Result<Option<String>, MessagePropertyError> {
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_wait_store_msg_ok(wait))
+        {
+            Ok(None)
+        } else {
+            self.message.set_wait_store_msg_ok(wait)
+        }
+    }
+
+    pub fn set_buyer_id(&mut self, buyer_id: impl Into<String>) {
+        self.set_buyer_id_nullable(Some(buyer_id.into()));
+    }
+
+    pub fn set_buyer_id_nullable(&mut self, buyer_id: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_buyer_id(buyer_id.clone()))
+        {
+            self.message.set_buyer_id_nullable(buyer_id);
+        }
+    }
+
+    pub fn set_instance_id(&mut self, instance_id: impl Into<String>) {
+        self.set_instance_id_nullable(Some(instance_id.into()));
+    }
+
+    pub fn set_instance_id_nullable(&mut self, instance_id: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_instance_id(instance_id.clone()))
+        {
+            self.message.set_instance_id_nullable(instance_id);
+        }
+    }
+
+    pub fn set_delay_time_level(&mut self, level: i32) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_delay_time_level(level))
+        {
+            self.message.set_delay_time_level(level);
+        }
+    }
+
+    pub fn set_delay_time_sec(&mut self, seconds: i64) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_delay_time_sec(seconds))
+        {
+            self.message.set_delay_time_sec(seconds);
+        }
+    }
+
+    pub fn set_delay_time_ms(&mut self, milliseconds: i64) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_delay_time_ms(milliseconds))
+        {
+            self.message.set_delay_time_ms(milliseconds);
+        }
+    }
+
+    pub fn set_deliver_time_ms(&mut self, milliseconds: i64) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_deliver_time_ms(milliseconds))
+        {
+            self.message.set_deliver_time_ms(milliseconds);
+        }
     }
 
     /// Java's virtual `Message.getTopic()` view, including caller-defined
@@ -2461,6 +2564,41 @@ pub trait MessageExtSubtype: Any + Send + Sync {
         false
     }
 
+    /// Handle Java's virtual `Message.setWaitStoreMsgOK(boolean)`.
+    fn set_wait_store_msg_ok(&self, _wait: bool) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setBuyerId(String)`.
+    fn set_buyer_id(&self, _buyer_id: Option<String>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setInstanceId(String)`.
+    fn set_instance_id(&self, _instance_id: Option<String>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setDelayTimeLevel(int)`.
+    fn set_delay_time_level(&self, _level: i32) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setDelayTimeSec(long)`.
+    fn set_delay_time_sec(&self, _seconds: i64) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setDelayTimeMs(long)`.
+    fn set_delay_time_ms(&self, _milliseconds: i64) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setDeliverTimeMs(long)`.
+    fn set_deliver_time_ms(&self, _milliseconds: i64) -> bool {
+        false
+    }
+
     fn set_topic(&self, _topic: Option<String>) -> bool {
         false
     }
@@ -2788,6 +2926,26 @@ fn parse_transient_sys_flag(value: Option<&str>) -> Result<Option<i32>, MessageS
         .ok_or_else(|| MessageSysFlagParseError {
             value: value.to_owned(),
         })
+}
+
+fn parse_i32_property_value(
+    property: &'static str,
+    value: Option<String>,
+) -> Result<i32, MessagePropertyParseError> {
+    let Some(value) = value else {
+        return Ok(0);
+    };
+    parse_java_i32(&value).ok_or(MessagePropertyParseError { property, value })
+}
+
+fn parse_i64_property_value(
+    property: &'static str,
+    value: Option<String>,
+) -> Result<i64, MessagePropertyParseError> {
+    let Some(value) = value else {
+        return Ok(0);
+    };
+    parse_java_i64(&value).ok_or(MessagePropertyParseError { property, value })
 }
 
 fn set_transient_sys_flag(message: &mut Message, key: &str, value: Option<i32>) {

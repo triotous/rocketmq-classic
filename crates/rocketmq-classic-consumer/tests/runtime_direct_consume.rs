@@ -73,6 +73,12 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["storeHost"] = json!(message.store_host().map(ToString::to_string));
         record["topicSysFlag"] = json!(message.topic_sys_flag().unwrap());
         record["groupSysFlag"] = json!(message.group_sys_flag().unwrap());
+        record["waitStore"] = json!(message.is_wait_store_msg_ok());
+        record["buyerId"] = json!(message.buyer_id());
+        record["delayTimeLevel"] = json!(message.delay_time_level().unwrap());
+        record["delayTimeSec"] = json!(message.delay_time_sec().unwrap());
+        record["delayTimeMs"] = json!(message.delay_time_ms().unwrap());
+        record["deliverTimeMs"] = json!(message.deliver_time_ms().unwrap());
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -94,6 +100,7 @@ struct CustomDirectMessageExt {
     metadata_writes: std::sync::atomic::AtomicUsize,
     topic_sys_flag_writes: std::sync::atomic::AtomicUsize,
     group_sys_flag_writes: std::sync::atomic::AtomicUsize,
+    property_setter_writes: std::sync::atomic::AtomicUsize,
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
@@ -116,6 +123,7 @@ impl CustomDirectMessageExt {
             metadata_writes: std::sync::atomic::AtomicUsize::new(0),
             topic_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             group_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
+            property_setter_writes: std::sync::atomic::AtomicUsize::new(0),
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
@@ -124,7 +132,7 @@ impl CustomDirectMessageExt {
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -137,7 +145,8 @@ impl CustomDirectMessageExt {
             self.store_host_writes.load(Ordering::SeqCst),
             self.metadata_writes.load(Ordering::SeqCst),
             self.topic_sys_flag_writes.load(Ordering::SeqCst),
-            self.group_sys_flag_writes.load(Ordering::SeqCst)
+            self.group_sys_flag_writes.load(Ordering::SeqCst),
+            self.property_setter_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -176,6 +185,24 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             Some(rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG) => {
                 Some(Some("-19".to_owned()))
             }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_WAIT_STORE_MSG_OK) => {
+                Some(Some("false".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_BUYER_ID) => {
+                Some(Some("subtype-buyer".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_DELAY_TIME_LEVEL) => {
+                Some(Some("9".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TIMER_DELAY_SEC) => {
+                Some(Some("123".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TIMER_DELAY_MS) => {
+                Some(Some("456".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TIMER_DELIVER_MS) => {
+                Some(Some("789".to_owned()))
+            }
             _ => None,
         }
     }
@@ -195,6 +222,41 @@ impl MessageExtSubtype for CustomDirectMessageExt {
 
     fn set_group_sys_flag(&self, _group_sys_flag: Option<i32>) -> bool {
         self.group_sys_flag_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_wait_store_msg_ok(&self, _wait: bool) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_buyer_id(&self, _buyer_id: Option<String>) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_instance_id(&self, _instance_id: Option<String>) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_delay_time_level(&self, _level: i32) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_delay_time_sec(&self, _seconds: i64) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_delay_time_ms(&self, _milliseconds: i64) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_deliver_time_ms(&self, _milliseconds: i64) -> bool {
+        self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -488,6 +550,13 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_born_host(Some(MessageHostAddress::new("127.0.0.1", 10912)));
             message.set_topic_sys_flag(Some(5));
             message.set_group_sys_flag(Some(6));
+            message.set_wait_store_msg_ok(true).unwrap();
+            message.set_buyer_id("base-buyer");
+            message.set_instance_id("base-instance");
+            message.set_delay_time_level(4);
+            message.set_delay_time_sec(5);
+            message.set_delay_time_ms(6);
+            message.set_deliver_time_ms(7);
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

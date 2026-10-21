@@ -441,6 +441,13 @@ public final class RuntimeConsumerOperationsFixtures {
             message.setBornHost(new java.net.InetSocketAddress("127.0.0.1", 10912));
             message.setTopicSysFlag(5);
             message.setGroupSysFlag(6);
+            message.setWaitStoreMsgOK(true);
+            message.setBuyerId("base-buyer");
+            message.setInstanceId("base-instance");
+            message.setDelayTimeLevel(4);
+            message.setDelayTimeSec(5L);
+            message.setDelayTimeMs(6L);
+            message.setDeliverTimeMs(7L);
         }
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
@@ -489,6 +496,12 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("storeHost", messages.get(0).getStoreHost().toString());
                     item.put("topicSysFlag", messages.get(0).getTopicSysFlag());
                     item.put("groupSysFlag", messages.get(0).getGroupSysFlag());
+                    item.put("waitStore", messages.get(0).isWaitStoreMsgOK());
+                    item.put("buyerId", messages.get(0).getBuyerId());
+                    item.put("delayTimeLevel", messages.get(0).getDelayTimeLevel());
+                    item.put("delayTimeSec", messages.get(0).getDelayTimeSec());
+                    item.put("delayTimeMs", messages.get(0).getDelayTimeMs());
+                    item.put("deliverTimeMs", messages.get(0).getDeliverTimeMs());
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -569,6 +582,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int metadataWrites;
         private int topicSysFlagWrites;
         private int groupSysFlagWrites;
+        private int propertySetterWrites;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -672,6 +686,24 @@ public final class RuntimeConsumerOperationsFixtures {
             }
             if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG.equals(name)) {
                 return "-19";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_WAIT_STORE_MSG_OK.equals(name)) {
+                return "false";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_BUYER_ID.equals(name)) {
+                return "subtype-buyer";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_DELAY_TIME_LEVEL.equals(name)) {
+                return "9";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELAY_SEC.equals(name)) {
+                return "123";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELAY_MS.equals(name)) {
+                return "456";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELIVER_MS.equals(name)) {
+                return "789";
             }
             return super.getProperty(name);
         }
@@ -784,6 +816,41 @@ public final class RuntimeConsumerOperationsFixtures {
             groupSysFlagWrites++;
         }
 
+        @Override
+        public void setWaitStoreMsgOK(boolean waitStoreMsgOK) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setBuyerId(String buyerId) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setInstanceId(String instanceId) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setDelayTimeLevel(int level) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setDelayTimeSec(long sec) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setDelayTimeMs(long timeMs) {
+            propertySetterWrites++;
+        }
+
+        @Override
+        public void setDeliverTimeMs(long timeMs) {
+            propertySetterWrites++;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
@@ -791,7 +858,8 @@ public final class RuntimeConsumerOperationsFixtures {
                 + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
                 + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites
                 + ";metadataWrites=" + metadataWrites + ";topicSysFlagWrites=" + topicSysFlagWrites
-                + ";groupSysFlagWrites=" + groupSysFlagWrites;
+                + ";groupSysFlagWrites=" + groupSysFlagWrites
+                + ";propertySetterWrites=" + propertySetterWrites;
         }
 
         @Override
