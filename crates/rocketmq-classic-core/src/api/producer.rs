@@ -10,6 +10,7 @@ use rocketmq_classic_remoting::RemotingCommand;
 use tokio::time::Instant;
 
 use super::{MQClientApi, decode_header};
+use crate::config::read_shared_client_config;
 use crate::error::RpcError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +124,54 @@ pub struct SendResult {
 }
 
 impl MQClientApi {
+    /// Calls Java's synchronous `MQClientAPIImpl.resumeCheckHalfMessage` operation.
+    /// A non-success Broker response is reported as `false`, matching Java.
+    pub async fn resume_check_half_message(
+        &self,
+        addr: &str,
+        topic: &str,
+        msg_id: &str,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        self.resume_check_half_message_nullable(addr, Some(topic), Some(msg_id), deadline)
+            .await
+    }
+
+    /// Nullable form of `resume_check_half_message`; Java's custom header
+    /// accepts null values and omits them from the wire fields.
+    pub async fn resume_check_half_message_nullable(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        msg_id: Option<&str>,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        let mut fields = HeaderMap::new();
+        if let Some(topic) = topic {
+            fields.insert("topic".into(), topic.into());
+        }
+        if let Some(msg_id) = msg_id {
+            fields.insert("msgId".into(), msg_id.into());
+        }
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request_fields_with_mode(
+                &broker_addr,
+                request::RESUME_CHECK_HALF_MESSAGE,
+                fields,
+                None,
+                deadline,
+                true,
+            )
+            .await?;
+        Ok(reply.code == response::SUCCESS)
+    }
+
     /// Calls Java's synchronous `MQClientAPIImpl.recallMessage` operation.
     pub async fn recall_message(
         &self,
@@ -319,5 +368,120 @@ impl MQClientApi {
             deadline,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MQClientApi;
+    use crate::config::ClientConfig;
+    use bytes::BytesMut;
+    use rocketmq_classic_protocol::codes::{LanguageCode, request};
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame,
+    };
+    use serde_json::Value;
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::Instant,
+    };
+
+    #[tokio::test]
+    async fn resume_check_half_message_matches_java_fixture_and_vip_address() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let signatures = fixture["resumeCheckHalfMessageApi"].as_array().unwrap();
+        assert!(signatures.iter().any(|signature| signature
+            == "boolean org.apache.rocketmq.client.impl.MQClientAPIImpl.resumeCheckHalfMessage(java.lang.String,java.lang.String,java.lang.String,long)"));
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("resume-check-half-message");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        for case in fixture["resumeCheckHalfMessageOperations"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let actual_address = listener.local_addr().unwrap();
+            let actual_port = actual_address.port();
+            let advertised_port = actual_port.checked_add(2).unwrap();
+            let advertised_address = format!("127.0.0.1:{advertised_port}");
+            let expected_code = case["responseCode"].as_i64().unwrap() as i32;
+            let expected_remark = case["responseRemark"].as_str().map(str::to_owned);
+            let expected_fields: BTreeMap<String, String> = case["requestExtFields"]
+                .as_object()
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+
+                let mut reply = RemotingCommand {
+                    code: expected_code,
+                    opaque: request.opaque,
+                    remark: expected_remark,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+                request
+            });
+
+            let topic = case["topic"].as_str();
+            let msg_id = case["msgId"].as_str();
+            let actual = if topic.is_some() && msg_id.is_some() {
+                api.resume_check_half_message(
+                    &advertised_address,
+                    topic.unwrap(),
+                    msg_id.unwrap(),
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await
+            } else {
+                api.resume_check_half_message_nullable(
+                    &advertised_address,
+                    topic,
+                    msg_id,
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await
+            };
+            assert_eq!(actual.unwrap(), case["result"].as_bool().unwrap());
+
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, request::RESUME_CHECK_HALF_MESSAGE);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.body.is_none());
+            assert_eq!(request.ext_fields.unwrap_or_default(), expected_fields);
+            assert_eq!(
+                crate::route::broker_vip_channel(true, &advertised_address).unwrap(),
+                actual_address.to_string()
+            );
+        }
+        client.shutdown().await;
     }
 }

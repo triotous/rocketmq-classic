@@ -164,7 +164,8 @@ public final class ProducerCoreFixtures {
         provenance.put("entrypoints", List.of("DefaultMQProducer", "Validators", "TopicValidator",
             "DefaultMQProducerImpl.tryToCompressMessage", "MessageClientIDSetter.createUniqID",
             "MessageBatch.generateFromList", "MessageBatch.encode", "MQFaultStrategy",
-            "LatencyFaultToleranceImpl.detectByOneRound", "MQClientAPIImpl.getMaxOffset"));
+            "LatencyFaultToleranceImpl.detectByOneRound", "MQClientAPIImpl.getMaxOffset",
+            "MQClientAPIImpl.resumeCheckHalfMessage"));
         provenance.put("serverContacted", false);
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
@@ -266,6 +267,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("nameServerConfigOperations", nameServerConfigOperations());
+        result.put("resumeCheckHalfMessageApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("resumeCheckHalfMessage"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("resumeCheckHalfMessageOperations", resumeCheckHalfMessageOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -2462,6 +2470,81 @@ public final class ProducerCoreFixtures {
                 null, null))));
         gets.add(getNameServerConfigCase("no-configured-servers", null, List.of(), List.of()));
         result.put("get", gets);
+        return result;
+    }
+
+    private static Map<String, Object> resumeCheckHalfMessageOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(resumeCheckHalfMessageCase("success", "orders", "msg-1",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(resumeCheckHalfMessageCase("non-success", "orders", "msg-2",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "resume rejected"));
+        cases.add(resumeCheckHalfMessageCase("null-topic", null, "msg-3",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(resumeCheckHalfMessageCase("null-msg-id", "orders", null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(resumeCheckHalfMessageCase("both-fields-null", null, null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> resumeCheckHalfMessageCase(
+        String name,
+        String topic,
+        String msgId,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            responseCode, responseRemark));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("resume-check-half-message");
+        config.setVipChannelEnabled(true);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                request.makeCustomHeaderToNet();
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand reply = replies.removeFirst();
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFields", request.getExtFields());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                call.put("responseCode", reply.getCode());
+                                call.put("responseRemark", reply.getRemark());
+                                requests.add(call);
+                                return reply;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("topic", topic);
+        result.put("msgId", msgId);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            result.put("result", api.resumeCheckHalfMessage(
+                "127.0.0.1:10913", topic, msgId, 2345L));
+        } finally {
+            api.shutdown();
+        }
+        result.put("requestExtFields", requests.get(0).get("extFields"));
+        result.put("requests", requests);
         return result;
     }
 

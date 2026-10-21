@@ -1319,3 +1319,15 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   `4276123552ab57632da4a10177b1b529266707234e95785668cfcd12177e783c`.
   These two RPC mappings are closed; the broader P18-V01 inventory remains
   open.
+
+- P18-V01 `resumeCheckHalfMessage` (2026-10-21): the pinned public
+  `MQClientAPIImpl.resumeCheckHalfMessage(String,String,String,long)` sends
+  request 323 with nullable `topic` and `msgId` fields to the configured VIP
+  Broker address. It returns `true` only for `SUCCESS`; every other Broker
+  response returns `false`. Core now exposes required and nullable Rust
+  adapters with that behavior. Invoked Java fixtures and a Rust loopback
+  differential compare the signature, request fields, empty body, success and
+  non-success result, nullable fields and VIP address transform. Producer core
+  fixture SHA-256: `bbeea411ebb9a1cbf177a4f0efddbf85023a475288bd123764959acca248efc6`.
+  This closes the named RPC mapping only; the broader P18-V01 inventory remains
+  open.

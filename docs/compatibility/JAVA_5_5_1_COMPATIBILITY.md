@@ -578,3 +578,14 @@ Phase 18 TLS enable-selection continuation (`746c35bc`, 2026-10-15): Java's `tls
 Phase 18 `ResponseFuture.executeInvokeCallback` continuation (2026-10-16): the pinned Java 5.5.1 direct callback path retains the original cause in send, timeout, and generic failures, calls failure before completion, and dereferences a null request before invoking callbacks in the generic-failure branch. Rust now retains typed cause context for these three categories and preserves the null-request pre-callback failure. The Java fixture and `response_future_callback_failure_causes_and_null_request_match_java_fixture` cover those branches. This closes only the callback-failure context slice; `toString`, `waitResponse` interruption behavior, and the broader P18-V01 audit remain open.
 
 Phase 18 `ResponseFuture.toString` and wait-interruption disposition (2026-10-16): Rust `Display` now emits Java's stable state fields in the same order and tracks the response latch count; `responseFutureToStringBehavior` and `response_future_display_preserves_java_to_string_state_fields` compare response/cause/callback nullability, opaque, timeout, begin timestamp presence, and latch transition. Nested Rust command/error and callback rendering plus JVM latch identity are diagnostic-only representation differences. Java `waitResponse` propagates external JVM thread interruption as `InterruptedException` and clears the interrupt flag; Rust's standard Condvar has no external thread-interrupt facility. Response/timeout behavior and the separate future `interrupt()` operation remain mapped; the Java fixture and `wait_response_timeout_and_internal_interrupt_match_rust_mapping` document this runtime boundary. These dispositions close only the named `ResponseFuture` observations; broad P18-V01 remains open.
+
+Phase 18 `resumeCheckHalfMessage` RPC (2026-10-21): pinned
+`MQClientAPIImpl.resumeCheckHalfMessage(String,String,String,long)` sends
+request 323 with nullable `topic` and `msgId` header fields through the
+configured VIP address. Rust returns `true` only for `SUCCESS` and returns
+`false` for any other Broker response. The invoked Java fixture and Rust
+loopback differential cover success, non-success, each null field, both fields
+null, the empty body and the VIP port offset. Producer core fixture SHA-256:
+`bbeea411ebb9a1cbf177a4f0efddbf85023a475288bd123764959acca248efc6`. This
+closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh remain
+open.

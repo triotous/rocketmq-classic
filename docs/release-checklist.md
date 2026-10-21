@@ -5648,3 +5648,21 @@ owner-specific checks belong in the manual handoff.
   and `git diff --check` passed.
 - These two RPC mappings are closed. Broad P18-V01 and P18-V02/P18-V03/P18-V04
   gates remain open.
+
+## P18-V01 transaction resume-check RPC slice — 2026-10-21
+
+- [x] Added `resume_check_half_message` and its nullable adapter for pinned
+  Java `MQClientAPIImpl.resumeCheckHalfMessage(String,String,String,long)`,
+  request 323. Null header fields are omitted; the request uses the configured
+  VIP Broker address and returns `false` for every non-success response.
+- [x] Invoked Java fixture and Rust loopback differential compare the method
+  signature, request fields and empty body, success/non-success results,
+  individually nullable fields and both-null input, and the VIP port offset.
+- [x] Current producer core fixture SHA-256:
+  `bbeea411ebb9a1cbf177a4f0efddbf85023a475288bd123764959acca248efc6`.
+- [x] Core all-feature locked suite (182 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, Producer pinned
+  fixture comparison, pinned Java Maven `verify`, formatting and scoped
+  `git diff --check` passed.
+- The named RPC mapping is closed after validation. Broad P18-V01 and
+  P18-V02/P18-V03/P18-V04 gates remain open.
