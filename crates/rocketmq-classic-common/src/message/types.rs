@@ -1589,6 +1589,10 @@ pub struct MessageExt {
     message_id: Option<String>,
     #[serde(rename = "offsetMsgId", skip_serializing_if = "Option::is_none")]
     offset_message_id: Option<String>,
+    /// Retains Java's runtime `MessageClientExt` subtype when a client-decoded
+    /// or caller-supplied subclass crosses an API typed as `MessageExt`.
+    #[serde(skip)]
+    client_ext: bool,
     #[serde(rename = "commitLogOffset")]
     commit_log_offset: i64,
     #[serde(rename = "bodyCRC")]
@@ -1630,6 +1634,7 @@ impl std::fmt::Debug for MessageExt {
             .field("store_host", &self.store_host)
             .field("message_id", &self.message_id)
             .field("offset_message_id", &self.offset_message_id)
+            .field("client_ext", &self.client_ext)
             .field("commit_log_offset", &self.commit_log_offset)
             .field("body_crc", &self.body_crc)
             .field("reconsume_times", &self.reconsume_times)
@@ -1772,6 +1777,22 @@ impl MessageExt {
     pub fn message_id(&self) -> Option<&str> {
         self.message_id.as_deref()
     }
+    /// Returns the value Java exposes through virtual `MessageExt.getMsgId()`.
+    /// For a retained `MessageClientExt` subtype this reads `UNIQ_KEY` live,
+    /// then falls back to its physical offset ID.
+    pub fn message_id_for_runtime_type(&self) -> Option<String> {
+        if self.client_ext {
+            self.get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
+                .or_else(|| self.offset_message_id().map(str::to_owned))
+                .or_else(|| self.message_id().map(str::to_owned))
+        } else {
+            self.message_id().map(str::to_owned)
+        }
+    }
+    /// Whether this value retains Java's `MessageClientExt` runtime type.
+    pub const fn is_message_client_ext(&self) -> bool {
+        self.client_ext
+    }
     pub fn offset_message_id(&self) -> Option<&str> {
         self.offset_message_id.as_deref()
     }
@@ -1825,7 +1846,20 @@ impl MessageExt {
         self.store_host = value;
     }
     pub fn set_message_id(&mut self, value: Option<String>) {
-        self.message_id = value;
+        if !self.client_ext {
+            self.message_id = value;
+        }
+    }
+    /// Apply the ID state produced by Java `MessageDecoder.clientDecode` while
+    /// retaining its `MessageClientExt` runtime subtype.
+    pub fn apply_client_decode_ids(
+        &mut self,
+        offset_message_id: Option<String>,
+        client_message_id: Option<String>,
+    ) {
+        self.client_ext = true;
+        self.offset_message_id = offset_message_id;
+        self.message_id = client_message_id;
     }
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
         self.offset_message_id = value;
@@ -1920,21 +1954,40 @@ impl std::fmt::Display for MessageExt {
 /// let _by_default = MessageClientExt::default();
 /// ```
 ///
-/// Constructing this wrapper from an existing `MessageExt` is not a Java
-/// public API:
+/// Convert the subclass into the base type accepted by APIs such as direct
+/// consumption while retaining its runtime type and virtual ID behavior:
 ///
-/// ```compile_fail
+/// ```
 /// use rocketmq_classic_common::message::{MessageClientExt, MessageExt};
-/// let _ = MessageClientExt::new(MessageExt::default());
+/// let client_message = MessageClientExt::new();
+/// let base_message: MessageExt = client_message.into();
+/// assert!(base_message.is_message_client_ext());
 /// ```
 ///
 /// ```compile_fail
 /// use rocketmq_classic_common::message::{MessageClientExt, MessageExt};
 /// let _: MessageClientExt = MessageExt::default().into();
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct MessageClientExt(MessageExt);
+
+impl Default for MessageClientExt {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageClientExt {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut message = MessageExt::deserialize(deserializer)?;
+        message.client_ext = true;
+        Ok(Self(message))
+    }
+}
 
 impl Hash for MessageClientExt {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -1944,7 +1997,9 @@ impl Hash for MessageClientExt {
 
 impl MessageClientExt {
     pub fn new() -> Self {
-        Self(MessageExt::default())
+        let mut message = MessageExt::default();
+        message.client_ext = true;
+        Self(message)
     }
 
     pub fn message_id(&self) -> Option<String> {
@@ -1965,6 +2020,22 @@ impl MessageClientExt {
     /// Java `MessageClientExt.setOffsetMsgId` writes the inherited `msgId`.
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
         self.0.set_offset_message_id(value);
+    }
+
+    /// Convert to the base type accepted by Java APIs whose parameter is
+    /// `MessageExt`; the runtime subtype remains observable on the Rust value.
+    pub fn into_message_ext(mut self) -> MessageExt {
+        let offset_message_id = self.offset_message_id().map(str::to_owned);
+        let client_message_id = self.message_id();
+        self.0
+            .apply_client_decode_ids(offset_message_id, client_message_id);
+        self.0
+    }
+}
+
+impl From<MessageClientExt> for MessageExt {
+    fn from(message: MessageClientExt) -> Self {
+        message.into_message_ext()
     }
 }
 

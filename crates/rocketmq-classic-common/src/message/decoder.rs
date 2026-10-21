@@ -500,8 +500,7 @@ fn assign_client_message_ids(message: &mut MessageExt) {
         .get(super::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         .cloned()
         .or_else(|| offset_message_id.clone());
-    message.set_offset_message_id(offset_message_id);
-    message.set_message_id(client_message_id);
+    message.apply_client_decode_ids(offset_message_id, client_message_id);
 }
 
 fn decode_many_with_limits(

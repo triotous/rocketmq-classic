@@ -1,5 +1,5 @@
 use base64::Engine;
-use rocketmq_classic_common::message::{MessageExt, MessageQueue};
+use rocketmq_classic_common::message::{MessageClientExt, MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
     ConsumeOrderlyStatus, PullConsumerConfig, PushConsumer, PushConsumerConfig,
@@ -26,9 +26,10 @@ impl ConsumerRuntime for OtherConsumer {
 }
 
 fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
-    json!({"topic": message.topic_nullable(), "broker": message.broker_name(),
+    json!({"messageClass": if message.is_message_client_ext() { "MessageClientExt" } else { "MessageExt" },
+        "topic": message.topic_nullable(), "broker": message.broker_name(),
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
-        "messageId": message.message_id(), "offsetMessageId": message.offset_message_id(),
+        "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
         "propertiesPresent": message.properties_nullable().is_some()})
 }
 
@@ -137,23 +138,32 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             .put("selected", selected)
             .await
             .unwrap();
-        let mut message = MessageExt::default();
-        message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
-        message.set_queue_id(3);
-        message.set_body(vec![1]);
+        let client_message = case["inputClient"].as_bool().unwrap();
         let physical = case["inputMessageId"].as_str().map(str::to_owned);
         let unique = case["inputUniq"].as_str().map(str::to_owned);
-        if let Some(unique) = &unique {
-            message.set_system_property("UNIQ_KEY", unique).unwrap();
-        }
-        // Client-decoded Rust messages carry both effective and physical IDs;
-        // ordinary MessageExt inputs retain their own physical msgId field.
-        if case["inputClient"].as_bool().unwrap() {
-            message.set_message_id(unique.or_else(|| physical.clone()));
+        // Java accepts a MessageClientExt through its MessageExt parameter and
+        // preserves the runtime subclass for the listener callback.
+        let message: MessageExt = if client_message {
+            let mut message = MessageClientExt::new();
+            message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
+            message.set_queue_id(3);
+            message.set_body(vec![1]);
+            if let Some(unique) = unique.as_deref() {
+                message.set_system_property("UNIQ_KEY", unique).unwrap();
+            }
             message.set_offset_message_id(physical);
+            message.into_message_ext()
         } else {
+            let mut message = MessageExt::default();
+            message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
+            message.set_queue_id(3);
+            message.set_body(vec![1]);
+            if let Some(unique) = unique {
+                message.set_system_property("UNIQ_KEY", unique).unwrap();
+            }
             message.set_message_id(physical);
-        }
+            message
+        };
         let message = (!case["nullMessage"].as_bool().unwrap()).then_some(message);
         let result = runtime
             .consume_message_directly(message, case["group"].as_str(), case["broker"].as_str())

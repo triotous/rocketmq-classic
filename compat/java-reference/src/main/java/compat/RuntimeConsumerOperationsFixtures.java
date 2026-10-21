@@ -429,6 +429,7 @@ public final class RuntimeConsumerOperationsFixtures {
         java.util.function.BiConsumer<List<org.apache.rocketmq.common.message.MessageExt>,
             org.apache.rocketmq.common.message.MessageQueue> record = (messages, queue) -> {
                 Map<String, Object> item = new TreeMap<>();
+                item.put("messageClass", messages.get(0).getClass().getSimpleName());
                 item.put("topic", messages.get(0).getTopic()); item.put("broker", messages.get(0).getBrokerName());
                 item.put("queueTopic", queue.getTopic()); item.put("queueBroker", queue.getBrokerName());
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);

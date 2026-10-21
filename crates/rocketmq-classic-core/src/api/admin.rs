@@ -2263,8 +2263,7 @@ fn client_decode_message(message: &mut MessageExt) {
         .get(constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
         .cloned()
         .or_else(|| offset_message_id.clone());
-    message.set_offset_message_id(offset_message_id);
-    message.set_message_id(client_message_id);
+    message.apply_client_decode_ids(offset_message_id, client_message_id);
 }
 
 #[cfg(test)]

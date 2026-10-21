@@ -295,8 +295,7 @@ fn attach_client_message_ids(messages: &mut [MessageExt]) {
             )
             .cloned()
             .or_else(|| offset_message_id.clone());
-        message.set_offset_message_id(offset_message_id);
-        message.set_message_id(message_id);
+        message.apply_client_decode_ids(offset_message_id, message_id);
     }
 }
 

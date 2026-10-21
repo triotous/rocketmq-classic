@@ -59,7 +59,7 @@ fn message_ext_from(message: Message) -> MessageExt {
 
 fn decoded_snapshot(message: &MessageExt, consumed: usize) -> Value {
     let mut snapshot = json!({
-        "messageClass": if message.offset_message_id().is_some() {
+        "messageClass": if message.is_message_client_ext() {
             "MessageClientExt"
         } else {
             "MessageExt"
@@ -349,6 +349,7 @@ fn message_client_ext_api_matches_java_551_fixture() {
         ])
     );
     let mut message = MessageClientExt::new();
+    assert!(message.is_message_client_ext());
     assert_eq!(
         message.message_id().as_deref(),
         expected["defaultMessageId"].as_str()
@@ -442,6 +443,41 @@ fn message_client_ext_api_matches_java_551_fixture() {
     assert_eq!(
         message.store_timestamp(),
         expected["inheritedStoreTimestamp"].as_i64().unwrap()
+    );
+    message
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-before-conversion",
+        )
+        .unwrap();
+    let mut base_view = message.into_message_ext();
+    assert!(base_view.is_message_client_ext());
+    assert_eq!(
+        base_view.message_id_for_runtime_type().as_deref(),
+        Some("unique-before-conversion")
+    );
+    base_view.set_message_id(Some("ignored-after-conversion".into()));
+    base_view
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-after-conversion",
+        )
+        .unwrap();
+    assert_eq!(
+        base_view.message_id_for_runtime_type().as_deref(),
+        Some("unique-after-conversion")
+    );
+    base_view.clear_system_property(
+        rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+    );
+    assert_eq!(
+        base_view.message_id_for_runtime_type().as_deref(),
+        Some("offset-2")
+    );
+    base_view.set_message_id(Some("ignored-without-unique".into()));
+    assert_eq!(
+        base_view.message_id_for_runtime_type().as_deref(),
+        Some("offset-2")
     );
 }
 
@@ -3053,6 +3089,7 @@ fn message_object_identity_traits_match_java_551_fixture() {
     let deserialized_client_extended: MessageClientExt =
         serde_json::from_str(&serialized_client_extended).unwrap();
     assert_ne!(client_extended, deserialized_client_extended);
+    assert!(deserialized_client_extended.is_message_client_ext());
     let client_clone = client_extended.clone();
     assert_eq!(client_extended, client_clone);
 }
