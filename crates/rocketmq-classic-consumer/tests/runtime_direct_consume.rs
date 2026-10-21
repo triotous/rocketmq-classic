@@ -1,6 +1,6 @@
 use base64::Engine;
 use rocketmq_classic_common::message::{
-    MessageClientExt, MessageExt, MessageExtSubtype, MessageQueue,
+    MessageClientExt, MessageExt, MessageExtSubtype, MessageQueue, NullableMessageProperties,
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -51,6 +51,11 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["messageQueueId"] = json!(message.queue_id());
         record["tags"] = json!(message.tags());
         record["keys"] = json!(message.keys());
+        record["subtypeProperty"] = json!(
+            message
+                .get_properties()
+                .and_then(|properties| properties.get("subtype-only").cloned())
+        );
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -67,6 +72,7 @@ struct CustomDirectMessageExt {
     max_offset_reads: std::sync::atomic::AtomicUsize,
     tags_reads: std::sync::atomic::AtomicUsize,
     keys_reads: std::sync::atomic::AtomicUsize,
+    properties_reads: std::sync::atomic::AtomicUsize,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
 
@@ -82,13 +88,14 @@ impl CustomDirectMessageExt {
             max_offset_reads: std::sync::atomic::AtomicUsize::new(0),
             tags_reads: std::sync::atomic::AtomicUsize::new(0),
             keys_reads: std::sync::atomic::AtomicUsize::new(0),
+            properties_reads: std::sync::atomic::AtomicUsize::new(0),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -96,7 +103,8 @@ impl CustomDirectMessageExt {
             self.flag_writes.load(Ordering::SeqCst),
             self.max_offset_reads.load(Ordering::SeqCst),
             self.tags_reads.load(Ordering::SeqCst),
-            self.keys_reads.load(Ordering::SeqCst)
+            self.keys_reads.load(Ordering::SeqCst),
+            self.properties_reads.load(Ordering::SeqCst)
         )
     }
 }
@@ -131,6 +139,14 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             }
             _ => None,
         }
+    }
+
+    fn properties(&self) -> Option<Option<NullableMessageProperties>> {
+        self.properties_reads.fetch_add(1, Ordering::SeqCst);
+        Some(Some(NullableMessageProperties::from([(
+            Some("subtype-only".to_owned()),
+            Some("visible".to_owned()),
+        )])))
     }
 
     fn body(&self) -> Option<Option<Vec<u8>>> {

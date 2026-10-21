@@ -354,6 +354,7 @@ impl DerefMut for MessageBodyWriteView<'_> {
 
 enum MessagePropertiesReadSource<'a> {
     Shared(RwLockReadGuard<'a, MessagePropertyStorage>),
+    Runtime(MessageProperties),
     Empty,
 }
 
@@ -365,6 +366,7 @@ impl Deref for MessagePropertiesReadView<'_> {
     fn deref(&self) -> &Self::Target {
         match &self.0 {
             MessagePropertiesReadSource::Shared(properties) => &properties.values,
+            MessagePropertiesReadSource::Runtime(properties) => properties,
             MessagePropertiesReadSource::Empty => empty_message_properties(),
         }
     }
@@ -699,6 +701,13 @@ impl Default for Message {
 fn empty_message_properties() -> &'static MessageProperties {
     static EMPTY: OnceLock<MessageProperties> = OnceLock::new();
     EMPTY.get_or_init(MessageProperties::new)
+}
+
+fn string_properties(properties: NullableMessageProperties) -> MessageProperties {
+    properties
+        .into_iter()
+        .filter_map(|(key, value)| key.zip(value))
+        .collect()
 }
 
 impl Message {
@@ -1755,6 +1764,94 @@ impl MessageExt {
             .map(|subtype| subtype.runtime_type_name())
     }
 
+    /// Java's virtual `Message.getProperties()` view. Subtype maps are exposed
+    /// as owned snapshots; base messages retain their live read guard.
+    pub fn properties(
+        &self,
+    ) -> impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_ {
+        if let Some(properties) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.properties())
+        {
+            return MessagePropertiesReadView(MessagePropertiesReadSource::Runtime(
+                string_properties(properties.unwrap_or_default()),
+            ));
+        }
+        MessagePropertiesReadView(match self.message.properties.as_ref() {
+            Some(properties) => MessagePropertiesReadSource::Shared(read_message_state(properties)),
+            None => MessagePropertiesReadSource::Empty,
+        })
+    }
+
+    /// Nullable Java `Message.getProperties()` view, including subtype
+    /// overrides. A subtype map is an owned snapshot.
+    pub fn properties_nullable(
+        &self,
+    ) -> Option<impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_>
+    {
+        if let Some(properties) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.properties())
+        {
+            return properties.map(|properties| {
+                MessagePropertiesReadView(MessagePropertiesReadSource::Runtime(string_properties(
+                    properties,
+                )))
+            });
+        }
+        match self.message.properties.as_ref() {
+            Some(properties) => Some(MessagePropertiesReadView(
+                MessagePropertiesReadSource::Shared(read_message_state(properties)),
+            )),
+            None if self
+                .message
+                .properties_read_initialized
+                .load(AtomicOrdering::Relaxed) =>
+            {
+                Some(MessagePropertiesReadView(
+                    MessagePropertiesReadSource::Empty,
+                ))
+            }
+            None => None,
+        }
+    }
+
+    /// Java `Message.getProperties()` nullable alias.
+    pub fn get_properties(
+        &self,
+    ) -> Option<impl Deref<Target = MessageProperties> + Serialize + std::fmt::Debug + PartialEq + '_>
+    {
+        self.properties_nullable()
+    }
+
+    /// Java-style properties returned by a subtype's `getProperties()`;
+    /// base messages retain their stored null keys and values.
+    pub fn nullable_property_entries(
+        &self,
+    ) -> impl Iterator<Item = (Option<String>, Option<String>)> {
+        let mut entries = match self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.properties())
+        {
+            Some(properties) => properties
+                .unwrap_or_default()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            None => self.message.nullable_property_entries().collect::<Vec<_>>(),
+        };
+        entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        entries.into_iter()
+    }
+
+    /// String-keyed entries from Java's virtual `Message.getProperties()`.
+    pub fn property_entries(&self) -> impl Iterator<Item = (String, Option<String>)> {
+        self.nullable_property_entries()
+            .filter_map(|(key, value)| key.map(|key| (key, value)))
+    }
+
     /// Java's virtual `Message.getProperty(String)` view, including
     /// caller-defined `MessageExt` subtype overrides.
     pub fn get_property(&self, key: &str) -> Option<String> {
@@ -2245,6 +2342,12 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Override Java's virtual `Message.getProperty(String)`.
     fn property(&self, _key: Option<&str>) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getProperties()` with a nullable map.
+    /// Returned maps are snapshotted for Rust reads and retry-property copies.
+    fn properties(&self) -> Option<Option<NullableMessageProperties>> {
         None
     }
 

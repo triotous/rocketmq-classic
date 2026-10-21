@@ -7,6 +7,7 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -457,6 +458,8 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("messageQueueId", messages.get(0).getQueueId());
                     item.put("tags", messages.get(0).getTags());
                     item.put("keys", messages.get(0).getKeys());
+                    Map<String, String> properties = messages.get(0).getProperties();
+                    item.put("subtypeProperty", properties == null ? null : properties.get("subtype-only"));
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -532,6 +535,8 @@ public final class RuntimeConsumerOperationsFixtures {
         private int maxOffsetReads;
         private int tagsReads;
         private int keysReads;
+        private int propertiesReads;
+        private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
         @Override
@@ -632,11 +637,18 @@ public final class RuntimeConsumerOperationsFixtures {
             return super.getProperty(name);
         }
 
+        @Override
+        public Map<String, String> getProperties() {
+            this.propertiesReads++;
+            return customProperties;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
                 + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
-                + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads;
+                + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
+                + ";propertiesReads=" + propertiesReads;
         }
 
         @Override
