@@ -5866,3 +5866,25 @@ owner-specific checks belong in the manual handoff.
 - This closes the three direct RPC mappings only. Broad P18-V01, current
   Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker scenarios
   remain open.
+
+## P18-V01 direct subscription-group configuration lookup — 2026-10-21
+
+- [x] Added `MQClientApi::{get_subscription_group_config,
+  get_subscription_group_config_nullable}` for pinned Java request 352. The
+  typed header carries nullable `group` and inherited namespace, broker-name,
+  and oneway fields. Rust applies VIP conversion, decodes an optional
+  `SubscriptionGroupConfig`, and preserves Broker response errors.
+- [x] Java invoked fixtures and Rust differential compare populated/default
+  bodies, null and empty group values, absent body, response error, and request
+  fields. A configured-VIP loopback confirms address conversion. The typed
+  header has Java→Rust and Rust→Java fixtures; the inventory now covers 73
+  headers. Producer core fixture SHA-256:
+  `b689e56eaba8e03838703da3b83a8333d5ae59aeb88591d38e2ec032955974d9`.
+- [x] Focused Core differential and VIP tests pass; Protocol header inventory
+  tests pass (8 tests), as does `header_validation_matrix`. Strict locked
+  all-target/all-feature workspace Clippy, formatting, and diff checks pass.
+  Pinned Maven `verify` passes with 37 manifest scenarios, 73 typed headers,
+  and 15 typed bodies.
+- This closes this lookup and typed-header slice only. Broad P18-V01, current
+  Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker scenarios
+  remain open.

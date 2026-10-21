@@ -181,6 +181,7 @@ impl_rpc_request_header_semantics!(
     QuerySubscriptionByConsumerRequestHeader,
     QueryTopicConsumeByWhoRequestHeader,
     GetTopicStatsInfoRequestHeader,
+    GetSubscriptionGroupConfigRequestHeader,
     GetConsumerListByGroupRequestHeader,
     LockBatchMqRequestHeader,
     UnlockBatchMqRequestHeader,
@@ -710,6 +711,49 @@ impl CommandHeader for GetTopicsByClusterRequestHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             cluster: optional_string(fields, "cluster"),
+        })
+    }
+}
+
+/// Java `GetSubscriptionGroupConfigRequestHeader` carries a nullable group
+/// and inherits the namespace, broker-name, and oneway RPC fields.
+#[derive(Debug, Clone, Default)]
+pub struct GetSubscriptionGroupConfigRequestHeader {
+    pub(crate) group: Option<String>,
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+}
+
+impl GetSubscriptionGroupConfigRequestHeader {
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+}
+
+impl_rpc_request_header_accessors!(GetSubscriptionGroupConfigRequestHeader);
+
+impl CommandHeader for GetSubscriptionGroupConfigRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "group", self.group.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group: optional_string(fields, "group"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }

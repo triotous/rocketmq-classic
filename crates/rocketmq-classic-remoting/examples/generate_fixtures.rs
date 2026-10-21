@@ -25,7 +25,8 @@ use rocketmq_classic_protocol::{
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
         GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
-        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
+        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
         GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
         LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
         NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
@@ -135,6 +136,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-topics-by-cluster-request.bin",
         "header-topics-by-cluster-request",
         224,
+    );
+    write_oracle_header::<GetSubscriptionGroupConfigRequestHeader>(
+        output,
+        "typed-get-subscription-group-config-request.bin",
+        "header-get-subscription-group-config-request",
+        352,
     );
     write_oracle_header::<GetLiteTopicInfoRequestHeader>(
         output,

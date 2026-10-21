@@ -46,6 +46,7 @@ macro_rules! inventory {
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
+            GetSubscriptionGroupConfigRequestHeader => ("header-get-subscription-group-config-request", "typed-get-subscription-group-config-request.bin"),
             GetConsumeStatsRequestHeader => ("header-consume-stats-request", "typed-consume-stats-request.bin"),
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
@@ -305,6 +306,74 @@ fn get_topics_by_cluster_header_api_matches_java_inventory() {
         "GetTopicsByClusterRequestHeader",
         "check_fields"
     ));
+}
+
+#[test]
+fn get_subscription_group_config_header_api_matches_java_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let inventory = &fixture["apiInventories"]["GetSubscriptionGroupConfigRequestHeader"];
+    assert_eq!(inventory["publicFields"], serde_json::json!([]));
+    assert_eq!(
+        inventory["publicConstructors"],
+        serde_json::json!([
+            "org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader()"
+        ])
+    );
+    assert_eq!(
+        inventory["declaredPublicMethods"],
+        serde_json::json!([
+            "java.lang.String org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader.getGroup()",
+            "void org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader.checkFields()",
+            "void org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader.setGroup(java.lang.String)"
+        ])
+    );
+    let callable_methods = inventory["callablePublicMethods"].as_array().unwrap();
+    for java_method in [
+        "getNamespace",
+        "setNamespace",
+        "getNamespaced",
+        "setNamespaced",
+        "getBname",
+        "setBname",
+        "getBrokerName",
+        "setBrokerName",
+        "getOneway",
+        "setOneway",
+    ] {
+        assert!(callable_methods.iter().any(|method| {
+            method
+                .as_str()
+                .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+        }));
+    }
+
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for method in [
+        "get_group",
+        "set_group",
+        "check_fields",
+        "get_namespace",
+        "set_namespace",
+        "get_namespaced",
+        "set_namespaced",
+        "get_bname",
+        "set_bname",
+        "get_broker_name",
+        "set_broker_name",
+        "get_oneway",
+        "set_oneway",
+    ] {
+        assert!(rust_header_method_exists(
+            source,
+            trait_source,
+            "GetSubscriptionGroupConfigRequestHeader",
+            method
+        ));
+    }
 }
 
 #[test]

@@ -1384,3 +1384,14 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   per-slice validation are in the release checklist. The broader P18-V01
   source/API/settings/input/error/control-flow/reverse-export audit remains
   open.
+
+- P18-V01 direct subscription-group configuration lookup (2026-10-21): the
+  pinned `MQClientAPIImpl.getSubscriptionGroupConfig(String,String,long)` now
+  maps request 352 with nullable group input, inherited `RpcRequestHeader`
+  fields, configured VIP routing, nullable `SubscriptionGroupConfig` response
+  bodies, and Broker error mapping. Added the header model to the Java/Rust
+  header inventory and reverse-frame fixtures. Invoked Java cases and Rust
+  differentials cover populated/default body decoding, null/empty group, absent
+  body, request fields, and Broker rejection; a VIP loopback checks the address
+  transform. The current fixture digest and full gate evidence are recorded in
+  the release checklist. Broad P18-V01 remains open.

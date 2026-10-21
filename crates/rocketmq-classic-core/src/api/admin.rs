@@ -20,8 +20,9 @@ use rocketmq_classic_protocol::{
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
-        GetKvListByNamespaceRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        PutKvConfigRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
     },
@@ -923,6 +924,51 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Reads a Broker's subscription-group configuration through Java
+    /// `MQClientAPIImpl.getSubscriptionGroupConfig`.
+    pub async fn get_subscription_group_config(
+        &self,
+        addr: &str,
+        group: &str,
+        deadline: Instant,
+    ) -> Result<Option<SubscriptionGroupConfig>, RpcError> {
+        self.get_subscription_group_config_nullable(addr, Some(group), deadline)
+            .await
+    }
+
+    /// Nullable-input adapter for Java's `getSubscriptionGroupConfig`.
+    /// Java's no-op header validation accepts a null or empty group.
+    pub async fn get_subscription_group_config_nullable(
+        &self,
+        addr: &str,
+        group: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<SubscriptionGroupConfig>, RpcError> {
+        let code = request::GET_SUBSCRIPTIONGROUP_CONFIG;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = GetSubscriptionGroupConfigRequestHeader::default();
+        header.set_group(group.map(str::to_owned));
+        let reply = self
+            .request(&broker_addr, code, &header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        reply
+            .body
+            .as_deref()
+            .map(SubscriptionGroupConfig::java_decode)
+            .transpose()
+            .map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            })
     }
 
     /// Creates or updates one Broker's subscription group through Java
@@ -2000,6 +2046,82 @@ mod tests {
         )
         .await
         .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_subscription_group_config_applies_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request.code,
+                rocketmq_classic_protocol::codes::request::GET_SUBSCRIPTIONGROUP_CONFIG
+            );
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .and_then(|fields| fields.get("group"))
+                    .map(String::as_str),
+                Some("workers")
+            );
+            assert!(request.body.is_none());
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("get-subscription-group-config-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        assert!(
+            api.get_subscription_group_config(
+                &format!("127.0.0.1:{advertised_port}"),
+                "workers",
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
         peer.await.unwrap();
         remoting.shutdown().await;
     }

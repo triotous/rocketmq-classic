@@ -240,6 +240,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("brokerMaintenanceOperations", brokerMaintenanceOperations());
+        result.put("subscriptionGroupConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getSubscriptionGroupConfig"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("subscriptionGroupConfigOperations", subscriptionGroupConfigOperations());
         result.put("createSubscriptionGroupListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("createSubscriptionGroupList"))
@@ -2340,6 +2347,94 @@ public final class ProducerCoreFixtures {
             result.put("outcome", "returned");
             result.put("result", value);
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> subscriptionGroupConfigOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig populated =
+            new org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig();
+        populated.setGroupName("workers");
+        populated.setRetryQueueNums(3);
+        populated.setConsumeMessageOrderly(true);
+        cases.add(subscriptionGroupConfigCase("populated", "workers",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, populated));
+        cases.add(subscriptionGroupConfigCase("null-group", null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            new org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig()));
+        cases.add(subscriptionGroupConfigCase("empty-group", "",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(subscriptionGroupConfigCase("error", "missing-group",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "subscription group lookup rejected", null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> subscriptionGroupConfigCase(
+        String name,
+        String group,
+        int responseCode,
+        String responseRemark,
+        org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig responseConfig)
+        throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig =
+            new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("get-subscription-group-config-api");
+        clientConfig.setVipChannelEnabled(false);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseConfig != null) response.setBody(
+                                org.apache.rocketmq.remoting.protocol.RemotingSerializable
+                                    .encode(responseConfig));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("group", group);
+        result.put("address", "broker-a:10911");
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyBase64", responseConfig == null ? null
+            : java.util.Base64.getEncoder().encodeToString(
+                org.apache.rocketmq.remoting.protocol.RemotingSerializable.encode(responseConfig)));
+        try {
+            org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig received =
+                api.getSubscriptionGroupConfig("broker-a:10911", group, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", received == null);
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());
             result.put("errorMessage", error.getMessage());

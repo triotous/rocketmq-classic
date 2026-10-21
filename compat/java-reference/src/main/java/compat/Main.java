@@ -597,6 +597,16 @@ public final class Main {
         topicStatsInfo.setOneway(false);
         topicStatsInfo.setLo(true);
         writeTypedHeaderFixture(output, "topic-stats-info-request", 202, topicStatsInfo);
+        org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader
+            subscriptionGroupConfig =
+                new org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader();
+        subscriptionGroupConfig.setGroup("workers");
+        subscriptionGroupConfig.setNamespace("tenant");
+        subscriptionGroupConfig.setNamespaced(true);
+        subscriptionGroupConfig.setBrokerName("broker-a");
+        subscriptionGroupConfig.setOneway(false);
+        writeTypedHeaderFixture(output, "get-subscription-group-config-request", 352,
+            subscriptionGroupConfig);
         GetLiteTopicInfoRequestHeader liteTopicInfo = new GetLiteTopicInfoRequestHeader();
         liteTopicInfo.setParentTopic("lite-parent");
         liteTopicInfo.setLiteTopic("%LMQ%lite-parent%orders");
@@ -1040,7 +1050,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 72, "all Rust typed header fixtures were supplied");
+            require(count == 73, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1138,6 +1148,8 @@ public final class Main {
             assertExtField(byName, "typed-query-topic-consume-by-who-request.bin", 300, "topic", "orders");
             assertExtField(byName, "typed-topic-stats-info-request.bin", 202, "topic", "orders");
             assertExtField(byName, "typed-topics-by-cluster-request.bin", 224, "cluster", "cluster-a");
+            assertExtField(byName, "typed-get-subscription-group-config-request.bin", 352,
+                "group", "workers");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "parentTopic", "lite-parent");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "liteTopic", "%LMQ%lite-parent%orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "topic", "orders");
@@ -1242,6 +1254,7 @@ public final class Main {
             case "typed-query-topic-consume-by-who-request.bin": fixtureStem = "header-query-topic-consume-by-who-request"; break;
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
             case "typed-topics-by-cluster-request.bin": fixtureStem = "header-topics-by-cluster-request"; break;
+            case "typed-get-subscription-group-config-request.bin": fixtureStem = "header-get-subscription-group-config-request"; break;
             case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;

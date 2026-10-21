@@ -23,7 +23,8 @@ use rocketmq_classic_protocol::{
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
         GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
-        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
+        GetMinOffsetResponseHeader, GetRouteInfoRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
         GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
         LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
         NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
@@ -1855,6 +1856,15 @@ fn header_validation_matrix() {
             "",
             "cluster",
             ""
+        ),
+        row!(
+            GetSubscriptionGroupConfigRequestHeader,
+            "get-subscription-group-config-request",
+            "",
+            "",
+            "",
+            "group ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             DeleteTopicRequestHeader,

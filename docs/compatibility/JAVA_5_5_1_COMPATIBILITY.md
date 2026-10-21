@@ -1,5 +1,18 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 direct subscription-group configuration lookup (2026-10-21): Rust
+maps `MQClientAPIImpl.getSubscriptionGroupConfig(String,String,long)` to request
+352. The group header accepts null and empty values, preserves inherited
+namespace/broker/oneway fields, and carries its own Java header fixture. The
+RPC applies configured VIP conversion, decodes a nullable
+`SubscriptionGroupConfig` body, and returns Broker response errors. Invoked
+Java cases and Rust scripted peers cover populated/default bodies, null and
+empty groups, a missing body, Broker rejection, and the exact request fields;
+a VIP-enabled loopback verifies the configured address transform. Current
+Producer core fixture SHA-256 and validation details appear in the Phase 18
+release checklist. This closes this lookup and header slice only; broad P18-V01
+remains open.
+
 Phase 18 Broker maintenance RPCs (2026-10-21): Rust maps the pinned public
 `MQClientAPIImpl.cleanExpiredConsumeQueue`, `deleteExpiredCommitLog`, and
 `cleanUnusedTopicByAddr` methods to requests 306, 329, and 316. Each operation

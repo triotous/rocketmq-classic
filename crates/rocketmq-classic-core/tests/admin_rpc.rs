@@ -1538,6 +1538,80 @@ async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn subscription_group_config_lookup_matches_java_requests_and_results() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["subscriptionGroupConfigApi"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let cases = fixture["subscriptionGroupConfigOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+    for case in cases {
+        let expected = &case["requests"][0];
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let body = case["responseBodyBase64"].as_str().map(|encoded| {
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap()
+        });
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, body.clone())
+                .await;
+        let (client_api, client) = api().await;
+        let group = case["group"].as_str();
+        let result = client_api
+            .get_subscription_group_config_nullable(
+                &addr,
+                group,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let actual = result.unwrap();
+            assert_eq!(actual.is_none(), case["resultIsNull"]);
+            if let Some(actual) = actual {
+                let expected: Value = serde_json::from_slice(body.as_deref().unwrap()).unwrap();
+                let actual: Value =
+                    serde_json::from_str(&actual.java_to_json(false).unwrap()).unwrap();
+                assert_eq!(actual, expected, "{}", case["name"]);
+            }
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response { code, remark, .. })
+                    if code == response_code && remark == response_remark
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(
+            request.code,
+            expected["requestCode"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert_eq!(
+            request
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| fields.get("group"))
+                .map(String::as_str),
+            group
+        );
+        assert!(request.body.is_none());
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn create_topic_list_matches_java_requests_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
