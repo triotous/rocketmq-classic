@@ -275,3 +275,11 @@ read the subtype entries. The direct-consume fixture compares a custom map
 value and getter count with Java. Java live-map identity and mutation aliasing
 remain open. Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
 `348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
+
+P18-V01 caller-defined `MessageExt` store-host follow-up (2026-10-21): the
+subtype adapter dispatches `getStoreHost`/`setStoreHost`. Push send-back uses
+the subtype host for its broker-address fallback when the broker name is null;
+the Rust regression confirms its request target comes from the override. The
+invoked Java direct-consume fixture compares host presence and setter count.
+Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
+`3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.

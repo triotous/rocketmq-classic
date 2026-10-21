@@ -107,6 +107,8 @@ property-derived `getTags()` and `getKeys()` methods.
 The subtype may also provide a nullable `getProperties()` map snapshot; Rust
 uses its entries for Push retry-property copies. Java's mutable map identity is
 not retained by the snapshot.
+`getStoreHost`/`setStoreHost` are dispatched as well; Push send-back reads the
+custom host for broker-address fallback when no broker name is available.
 `ProcessQueue.putMessage` also uses the subtype's virtual `getQueueOffset` as
 its message-tree key. The
 `concurrent-custom-subtype` case executes Java overrides during initial topic
@@ -117,7 +119,7 @@ compares dispatch, count, body size, tree key and setter side effects against
 Rust. The callback records custom flag `71` and the setter count. Current
 fixture verifies the custom `MAX_OFFSET` getter and `msgAccCnt` value `12`.
 Current fixture SHA-256:
-`348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
+`3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader

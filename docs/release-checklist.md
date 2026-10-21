@@ -6548,3 +6548,21 @@ owner-specific checks belong in the manual handoff.
   P18-V02 gates remain open. Current Ubuntu/native Windows P18-V04 evidence and
   Phase 19 Broker/Docker scenarios remain separate; protected Phase 19 paths
   were not changed or staged.
+
+## P18-V01 custom `MessageExt` store-host hooks — 2026-10-21 (`ac565eea`)
+
+- [x] `MessageExtSubtype` now dispatches Java virtual `getStoreHost` and
+  `setStoreHost`. Push send-back uses the custom host when the broker name is
+  absent.
+- [x] The Rust send-back regression sets base host `127.0.0.1:10911` but reads
+  the subtype override `127.0.0.1:10912` as the request endpoint. The invoked
+  Java direct-consume fixture compares the host getter's presence and setter
+  count. Fixture SHA-256:
+  `3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.
+- [x] Focused Rust send-back and direct-consume tests, Java fixture generation,
+  formatting and diff checks pass on code revision `ac565eea`; full workspace
+  and Maven verification remain part of the current-tree gate refresh.
+- Other inherited methods, broad P18-V01 reconciliation and supplemental
+  P18-V02 gates remain open. Current Ubuntu/native Windows P18-V04 evidence and
+  Phase 19 Broker/Docker scenarios remain separate; protected Phase 19 paths
+  were not changed or staged.

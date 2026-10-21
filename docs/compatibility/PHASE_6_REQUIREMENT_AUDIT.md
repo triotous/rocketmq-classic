@@ -110,6 +110,14 @@ and getter count with Java. Java's live map identity and mutation aliasing are
 not preserved by the Rust snapshot. Fixture SHA-256:
 `348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
 
+P18-V01 caller-defined subtype store-host follow-up (2026-10-21):
+`MessageExtSubtype` now dispatches virtual `getStoreHost`/`setStoreHost`.
+Push send-back uses the custom store host when no broker name is available;
+the Rust send-back test confirms the endpoint comes from the override. The
+invoked Java direct-consume fixture compares the getter presence and setter
+count. Fixture SHA-256:
+`3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, subtype behavior beyond the adapter's selected hooks,
