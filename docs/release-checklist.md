@@ -6135,7 +6135,7 @@ owner-specific checks belong in the manual handoff.
   local validation used by `MQClientAPIImpl.createTopic`; the Java fixture and
   Rust scripted peer compare the request.
 - [x] Fixture SHA-256:
-  `670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+  `16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
   `cargo test -p rocketmq-classic-core --test admin_rpc --locked` passes all
   82 tests; strict Core Clippy passes; pinned Maven `verify` passes 37 scenarios,
   83 typed-header frames and 16 typed-body frames. Formatting and diff checks
@@ -6162,3 +6162,19 @@ owner-specific checks belong in the manual handoff.
   current-revision Ubuntu/native Windows evidence and Phase 19 live
   Broker/Docker scenarios remain open. Preserved Phase 19 paths remain
   untouched and unstaged.
+
+## P18-V01 `MqClientAdmin.queryMessage` key-filter inputs — 2026-10-21
+
+- [x] Matched pinned Java `StringUtils.isNotBlank` / `Character.isWhitespace`
+  behavior and `String.split(" ")` token handling for empty query keys,
+  NBSP, em-space, U+0085 and U+001C keys, internal empty tokens and trailing
+  empty tokens. Both the direct Broker result filter and cross-Broker merger
+  use the same Rust helper.
+- [x] Added invoked Java fixture outcomes and Rust checks
+  `mq_client_admin_query_message_matches_invoked_java_fixture` and
+  `query_message_keys_match_java_whitespace_and_split_semantics`. Current
+  `fixtures/admin/query-consume-time-span.json` SHA-256:
+  `16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
+- The bounded filter input cases are closed. Broad P18-V01, final
+  full-workspace P18-V02, current native platform evidence and Phase 19 live
+  Broker/Docker scenarios remain open.

@@ -2021,12 +2021,9 @@ impl MqClientAdmin {
             if unique_key_flag {
                 return message.message_id() == Some(key);
             }
-            message.keys().is_some_and(|keys| {
-                !keys.trim().is_empty()
-                    && keys
-                        .split(constants::KEY_SEPARATOR)
-                        .any(|message_key| !message_key.is_empty() && message_key == key)
-            })
+            message
+                .keys()
+                .is_some_and(|keys| java_query_message_keys_match(&keys, key))
         });
         Ok(messages)
     }
@@ -2214,13 +2211,46 @@ fn query_message_matches(message: &MessageExt, query: &AdminQueryRequest) -> boo
         return false;
     }
     match query.index_type.as_deref() {
-        Some(constants::INDEX_KEY_TYPE) => message.keys().is_some_and(|keys| {
-            keys.split(constants::KEY_SEPARATOR)
-                .any(|key| key == query.key)
-        }),
+        Some(constants::INDEX_KEY_TYPE) => message
+            .keys()
+            .is_some_and(|keys| java_query_message_keys_match(&keys, &query.key)),
         Some(constants::INDEX_TAG_TYPE) => message.tags().is_some_and(|tags| tags == query.key),
         _ => false,
     }
+}
+
+/// Matches Java `MqClientAdminImpl.filterMessages` key handling: Commons
+/// `StringUtils.isNotBlank` delegates to `Character.isWhitespace`, then Java's
+/// `String.split(" ")` drops trailing empty tokens but retains interior ones.
+fn java_query_message_keys_match(keys: &str, query_key: &str) -> bool {
+    if !keys
+        .chars()
+        .any(|character| !java_character_is_whitespace(character))
+    {
+        return false;
+    }
+
+    let mut tokens = keys.split(constants::KEY_SEPARATOR).collect::<Vec<_>>();
+    while tokens.last() == Some(&"") {
+        tokens.pop();
+    }
+    tokens
+        .into_iter()
+        .any(|message_key| message_key == query_key)
+}
+
+fn java_character_is_whitespace(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0009}'..='\u{000d}'
+            | '\u{001c}'..='\u{0020}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{2006}'
+            | '\u{2008}'..='\u{200a}'
+            | '\u{2028}'..='\u{2029}'
+            | '\u{205f}'
+            | '\u{3000}'
+    )
 }
 
 /// Applies the ID fields exposed by Java's `MessageDecoder.clientDecode`.
@@ -2239,7 +2269,29 @@ fn client_decode_message(message: &mut MessageExt) {
 
 #[cfg(test)]
 mod tests {
-    use super::{AdminQueryRequest, MessageExt, QueryResult, SharedValue};
+    use super::{
+        AdminQueryRequest, MessageExt, QueryResult, SharedValue, java_query_message_keys_match,
+        query_message_matches,
+    };
+
+    #[test]
+    fn query_message_keys_match_java_whitespace_and_split_semantics() {
+        assert!(java_query_message_keys_match("\u{00a0}", "\u{00a0}"));
+        assert!(!java_query_message_keys_match("\u{2003}", "\u{2003}"));
+        assert!(java_query_message_keys_match("\u{0085}", "\u{0085}"));
+        assert!(!java_query_message_keys_match("\u{001c}", "\u{001c}"));
+        assert!(java_query_message_keys_match("alpha  beta", ""));
+        assert!(!java_query_message_keys_match("alpha ", ""));
+        assert!(!java_query_message_keys_match("  ", ""));
+
+        let mut message = MessageExt::new();
+        message.set_topic_nullable(Some("orders".to_owned()));
+        message.set_keys_nullable(Some("alpha  beta".to_owned()));
+        assert!(query_message_matches(
+            &message,
+            &AdminQueryRequest::by_key("orders", "", 1, 0, 0)
+        ));
+    }
 
     #[test]
     fn broker_properties_parser_matches_java_fixture() {

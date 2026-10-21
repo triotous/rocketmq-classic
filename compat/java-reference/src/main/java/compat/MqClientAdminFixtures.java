@@ -1189,6 +1189,11 @@ public final class MqClientAdminFixtures {
             boolean.class, QueryMessageRequestHeader.class, long.class);
         QueryMessageRequestHeader keyHeader = queryHeader("green");
         QueryMessageRequestHeader uniqueHeader = queryHeader("unique-1");
+        QueryMessageRequestHeader emptyKeyHeader = queryHeader("");
+        QueryMessageRequestHeader nonBreakingSpaceHeader = queryHeader("\u00a0");
+        QueryMessageRequestHeader javaWhitespaceHeader = queryHeader("\u2003");
+        QueryMessageRequestHeader nextLineHeader = queryHeader("\u0085");
+        QueryMessageRequestHeader fileSeparatorHeader = queryHeader("\u001c");
 
         MessageExt compressedMatch = queryMessageRecord("orders", "compressed-body", 1,
             MessageSysFlag.COMPRESSED_FLAG | MessageSysFlag.COMPRESSION_ZLIB_TYPE,
@@ -1197,11 +1202,33 @@ public final class MqClientAdminFixtures {
             "greenish", "unique-2");
         MessageExt wrongTopic = queryMessageRecord("other", "wrong-topic-body", 3, 0,
             "green", "unique-3");
-        byte[] responseBody = encodeQueryMessages(List.of(compressedMatch, wrongKey, wrongTopic));
+        MessageExt internalEmptyKey = queryMessageRecord("orders", "internal-empty-key", 4, 0,
+            "alpha  beta", "unique-4");
+        MessageExt trailingEmptyKey = queryMessageRecord("orders", "trailing-empty-key", 5, 0,
+            "alpha ", "unique-5");
+        MessageExt nonBreakingSpaceKey = queryMessageRecord("orders", "nbsp-key", 6, 0,
+            "\u00a0", "unique-6");
+        MessageExt javaWhitespaceKey = queryMessageRecord("orders", "em-space-key", 7, 0,
+            "\u2003", "unique-7");
+        MessageExt nextLineKey = queryMessageRecord("orders", "next-line-key", 8, 0,
+            "\u0085", "unique-8");
+        MessageExt fileSeparatorKey = queryMessageRecord("orders", "file-separator-key", 9, 0,
+            "\u001c", "unique-9");
+        byte[] responseBody = encodeQueryMessages(List.of(compressedMatch, wrongKey, wrongTopic,
+            internalEmptyKey, trailingEmptyKey, nonBreakingSpaceKey, javaWhitespaceKey,
+            nextLineKey, fileSeparatorKey));
 
         Map<String, Object> keyQueryDecompressed = queryMessageCall(false, true, keyHeader, responseBody);
         Map<String, Object> keyQueryCompressed = queryMessageCall(false, false, keyHeader, responseBody);
         Map<String, Object> uniqueQuery = queryMessageCall(true, false, uniqueHeader, responseBody);
+        Map<String, Object> emptyKeyQuery = queryMessageCall(false, false, emptyKeyHeader, responseBody);
+        Map<String, Object> nonBreakingSpaceQuery = queryMessageCall(false, false,
+            nonBreakingSpaceHeader, responseBody);
+        Map<String, Object> javaWhitespaceQuery = queryMessageCall(false, false,
+            javaWhitespaceHeader, responseBody);
+        Map<String, Object> nextLineQuery = queryMessageCall(false, false, nextLineHeader, responseBody);
+        Map<String, Object> fileSeparatorQuery = queryMessageCall(false, false,
+            fileSeparatorHeader, responseBody);
 
         Capture notFoundCapture = new Capture();
         notFoundCapture.response = RemotingCommand.createResponseCommand(ResponseCode.QUERY_NOT_FOUND,
@@ -1238,6 +1265,11 @@ public final class MqClientAdminFixtures {
         result.put("keyQueryDecompressed", keyQueryDecompressed);
         result.put("keyQueryCompressed", keyQueryCompressed);
         result.put("uniqueQuery", uniqueQuery);
+        result.put("emptyKeyQuery", emptyKeyQuery);
+        result.put("nonBreakingSpaceQuery", nonBreakingSpaceQuery);
+        result.put("javaWhitespaceQuery", javaWhitespaceQuery);
+        result.put("nextLineQuery", nextLineQuery);
+        result.put("fileSeparatorQuery", fileSeparatorQuery);
         result.put("queryNotFound", notFound);
         result.put("brokerError", brokerError);
         return result;

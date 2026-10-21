@@ -1755,5 +1755,14 @@ Core surface test compile-calls all 19 Rust methods. These wrappers reuse the
 audited direct RPC implementations; `update_or_create_topic` sends the supplied
 header without the local permission check used by the separate
 `MQClientAPIImpl.createTopic` entrypoint. Fixture SHA-256:
-`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+`16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
 This closes the surfaced wrapper omission only; broad P18-V01 remains open.
+
+The same invoked fixture now covers `MqClientAdmin.queryMessage` key filtering
+for empty query keys, NBSP, em-space, U+0085 and U+001C. Rust reproduces
+Commons `StringUtils.isNotBlank`'s Java `Character.isWhitespace` predicate and
+`String.split(" ")`'s retained interior and discarded trailing empty tokens in
+the direct Broker wrapper and cross-Broker merger. The direct fixture test and
+`query_message_keys_match_java_whitespace_and_split_semantics` cover both
+paths; current fixture SHA-256 is
+`16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.

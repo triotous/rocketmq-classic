@@ -26,9 +26,17 @@ interface reflection inventory, and
 Rust call sites against it. The topic-update wrapper sends the supplied header
 directly, preserving Java's lack of local permission validation; a fixture
 case and Rust loopback guard that behavior. Fixture SHA-256:
-`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+`16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
 This closes the named wrapper-surface gap only; broader DTO/config/input/error/
 flow/reverse-export work and current platform CI evidence remain open.
+
+P18-V01 `MqClientAdmin.queryMessage` key filtering (2026-10-21): invoked Java
+cases pin empty query-key handling, NBSP, em-space, U+0085 and U+001C keys.
+Rust now follows `Character.isWhitespace` via the pinned Apache Commons
+`StringUtils.isNotBlank` path and Java `String.split(" ")` token handling in
+both direct Broker results and cross-Broker merge filtering. The direct
+fixture comparison and Rust unit test pass. This closes those filter inputs
+only; the broader message/API/input audit remains open.
 
 P18-V01 POP retry-assignment transition slice (2026-10-21): the invoked Java
 `RebalanceImpl.updateMessageQueueAssignment` fixture now covers push-to-pop,

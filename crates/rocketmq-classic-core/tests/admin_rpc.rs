@@ -3880,14 +3880,24 @@ async fn mq_client_admin_query_message_matches_invoked_java_fixture() {
         .decode(query["responseBodyBase64"].as_str().unwrap())
         .unwrap();
 
-    for case_name in ["keyQueryDecompressed", "keyQueryCompressed", "uniqueQuery"] {
+    for case_name in [
+        "keyQueryDecompressed",
+        "keyQueryCompressed",
+        "uniqueQuery",
+        "emptyKeyQuery",
+        "nonBreakingSpaceQuery",
+        "javaWhitespaceQuery",
+        "nextLineQuery",
+        "fileSeparatorQuery",
+    ] {
         let case = &query[case_name];
         let unique_key = case["uniqueKeyFlag"].as_bool().unwrap();
         let decompress_body = case["decompressBody"].as_bool().unwrap();
+        let query_key = case["requestExtFields"]["key"].as_str().unwrap();
         let header = {
             let mut __phase18_header_5 = QueryMessageRequestHeader::default();
             __phase18_header_5.set_topic(Some("orders".into()));
-            __phase18_header_5.set_key(Some(if unique_key { "unique-1" } else { "green" }.into()));
+            __phase18_header_5.set_key(Some(query_key.to_owned()));
             __phase18_header_5.set_max_num(Some(3));
             __phase18_header_5.set_begin_timestamp(Some(1_700_000_000_000));
             __phase18_header_5.set_end_timestamp(Some(1_700_000_300_000));

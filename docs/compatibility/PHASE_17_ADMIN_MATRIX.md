@@ -599,8 +599,18 @@ separate local permission validation. The Java fixture records the full
 interface method signatures and an invalid-permission request. The Core test
 checks the exact 19 Java method names and compile-calls every Rust wrapper; the
 scripted RPC test verifies topic-update request fields. Fixture SHA-256:
-`670a5ee121a41def537a4a97c806e5c6d25176917f945742495b5c2995217d62`.
+`16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
 All 82 Core `admin_rpc` tests and Core strict Clippy pass; Maven `verify`
 passes with 37 scenarios, 83 typed header frames and 16 typed body frames.
 This closes the wrapper surface; the broader P18-V01 source/input/error/flow
 and reverse-export audit remains open.
+
+P18-V01 query-key filter inputs: the invoked Java `MqClientAdmin.queryMessage`
+fixture now checks an empty query key against an internal empty token, NBSP,
+em-space, U+0085 and U+001C keys. Rust matches Apache Commons
+`StringUtils.isNotBlank` / Java `Character.isWhitespace` and Java
+`String.split(" ")` trailing-token behavior in both the direct wrapper and
+multi-Broker result merge. `mq_client_admin_query_message_matches_invoked_java_fixture`
+and `query_message_keys_match_java_whitespace_and_split_semantics` compare the
+same outcomes. Expanded fixture SHA-256:
+`16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
