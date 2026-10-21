@@ -202,3 +202,27 @@
   server-free commands pass locally. No remote CI/native Windows run was
   triggered. Broad P18-V01 remains open due to the direct nested implementation
   API mismatch; Phase 19 Broker/Docker checks remain separate.
+
+
+# Phase 18 continuation — nested POP API slice — 2026-10-21
+
+- Exposed `PopProcessQueue` and its Java public methods, including signed
+  `decFoundMsg(int)` behavior, `ack()` return value, Java-shaped text output,
+  queue-info filling and the environment-backed expiry check. Push and Pull
+  owners now expose their live subscription/topic tables; Push exposes its live
+  POP table. Both owners create the public POP queue. Added Java direct behavior
+  fixture plus Rust API and table-identity tests.
+- The Java fixture was regenerated twice with the pinned 5.5.1 source and its
+  focused Maven drift verifier passed both times. SHA-256:
+  `e9690f9738fb8ccbfe81b8187e4b92b4676deca106a29b2dced86774e88a97e4`.
+- `mvn -f compat/java-reference/pom.xml verify` passed on the changed worktree
+  (37 scenarios and all fixture/cross-decode checks). Default and all-feature
+  locked workspace tests and strict all-target/all-feature Clippy passed; the
+  Consumer all-feature suite passed (236 unit tests plus integration and
+  documentation targets), as did the focused five-test facade API suite.
+  `cargo fmt --all -- --check` and `git diff --check` passed.
+- P18-V01 remains open: public `ProcessQueue` and its direct API, both live
+  process-queue tables, Pull's POP table, and the remaining inherited rebalance
+  call correspondence are not yet reconciled. Full current-revision P18-V02
+  supplementary gates and P18-V03/V04 review remain outstanding. Phase 19
+  Broker/Docker work was not run.

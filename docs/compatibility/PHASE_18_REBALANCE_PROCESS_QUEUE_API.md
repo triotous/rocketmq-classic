@@ -13,7 +13,7 @@ declared method counts and callable method counts in
 | `RebalancePushImpl` | 2 | 12 / 32 | Push owner covers pull offsets, request dispatch, assignment callbacks and lifecycle. |
 | `RebalancePullImpl` | 2 | 11 / 32 | Pull owner covers assignment callbacks, offset cleanup and lifecycle. |
 | `ProcessQueue` | 1 | 32 / 32 | Internal `process_queue::ProcessQueue` owns message state, batching, offset completion and locks. |
-| `PopProcessQueue` | 1 | 11 / 11 | Internal `pop::PopProcessQueue` owns POP assignment, ACK counts and pull expiry. |
+| `PopProcessQueue` | 1 | 11 / 11 | Public `pop::PopProcessQueue` exposes the Java queue methods; assignment generation remains internal. |
 
 ## Reconciled behavior
 
@@ -22,21 +22,25 @@ declared method counts and callable method counts in
 | `RebalanceImpl.clientRebalance`, `doRebalance`, `removeProcessQueue`, `destroy`; `RebalancePushImpl` / `RebalancePullImpl` queue callbacks and cleanup | Push/Pull owner rebalance methods, `RebalanceService`, safe assignment removal, offset persistence and shutdown. Covered by Phase 11 and runtime reset/retention comparisons. | Flow behavior covered; direct nested API remains open below. |
 | `RebalanceImpl.lock`, `unlock`, `lockAll`, `unlockAll` | Push orderly lock RPCs, renewal, unlock-delay and assignment cleanup. Covered by Phase 12 and the Phase 11 owner lock tests. | Flow behavior covered; direct nested API remains open below. |
 | `RebalanceImpl` subscription/model/group/strategy accessors and `RebalancePushImpl.getConsumeInitMode` | Rust owner configuration, subscription APIs and `PushConsumer::consume_init_mode`; raw Push implementation fixture checks selected getter/setter identity and values. | Scoped behavior verified; full method correspondence remains part of P18-V01. |
+| `getSubscriptionInner`, `getTopicSubscribeInfoTable`, `getPopProcessQueueTable`, `createPopProcessQueue` | Push and Pull owners return their live subscription/topic tables; Push returns its live POP table; both owners create the public `PopProcessQueue`. `pop_process_queue_public_methods_match_pinned_java_behavior` compares signed counter updates, ACK return, queue-info fill and `toString` with the pinned Java fixture. | These Push/Pull accessors and `PopProcessQueue` methods are implemented. Process-queue table access remains open. |
 | `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Internal generation-fenced queue insertion, batch take/completion, orderly hold/rollback, retry and reset cleanup. | Flow behavior covered by consumer pipeline tests; no public `ProcessQueue` type is exported. |
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Push concurrent consume service now records `CONSUME_START_TIME` before listener invocation and runs Java's periodic expiry sweep. It examines the oldest message, retries send-back at delay level 3 up to `min(queue size, 16)`, removes only after successful send-back, and skips orderly consume. Java direct fixture and Rust comparisons cover success, repeated send-back failure, the 16-attempt cap, orderly skip, strict timeout boundary, in-flight callback completion and initial timer delay. | UNIT_VERIFIED for the expiration flow; direct Java method API remains open below. |
 | `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters | Internal `ProcessQueueSnapshot`, queue state, orderly consume gate and running-info DTOs represent the runtime data used by the client. | Read/runtime behavior is covered; direct mutable Java accessors are not exposed. |
-| `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Internal atomic POP queue state, `PopProcessQueueInfo`, ACK callbacks and Phase 13 assignment tests. | Flow behavior covered; no public `PopProcessQueue` type is exported. |
+| `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 
 ## Remaining public API gap
 
 The Java raw Push/Pull implementation accessors return a `RebalanceImpl`
 subclass whose public methods expose live mutable process-queue, POP-queue,
 subscription and topic-assignment tables, plus setters for the client factory,
-strategy, message model and group. Java also exports the `ProcessQueue` and
-`PopProcessQueue` concrete types and their public mutators. Rust's
-`get_rebalance_impl` aliases the consumer owner; it does not expose those live
-tables or public queue types. Current tests establish owner identity and
-runtime-flow behavior, not call-level compatibility for those nested APIs.
+strategy, message model and group. Rust now exposes live subscription/topic
+tables on both owners, the live POP table on Push, and the public
+`PopProcessQueue` type with direct method behavior checked against Java.
+Remaining gaps are the Java `ProcessQueue` type and its 32 callable methods,
+the live process-queue table on both owners, Pull's POP table, and complete
+call-level correspondence for the remaining inherited rebalance methods.
+Rust's `get_rebalance_impl` still aliases the consumer owner; the table methods
+are available through that handle.
 
 The complete pinned denominator is now recorded, but this direct API mismatch
 is unresolved. P18-V01 stays open until each callable signature has an
@@ -46,6 +50,6 @@ preserves the Phase 18 compatibility contract.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `e4266b7a84b005bd4bddb0b7c378e425bfa6d9b22a926d6d6d0d623ea7294e65`
+  `e9690f9738fb8ccbfe81b8187e4b92b4676deca106a29b2dced86774e88a97e4`
 - `fixtures/consumer/expired-messages.json` —
   `76b9bdfdd20d3f6cbc1b73f4b12055c484955f39cfde5884e0d6688e38fd6f79`

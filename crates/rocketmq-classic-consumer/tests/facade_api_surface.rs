@@ -1,3 +1,8 @@
+use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_consumer::{
+    PopProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig, pull::PullConsumer,
+};
+use rocketmq_classic_protocol::body::ConsumerPopProcessQueueInfo;
 use serde_json::Value;
 
 const JAVA_FACADE_API: &str = include_str!("../../../fixtures/consumer/facade-api.json");
@@ -114,6 +119,87 @@ fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() 
             "pinned Java {owner}.{method} is inventoried"
         );
     }
+}
+
+#[test]
+fn pop_process_queue_public_methods_match_pinned_java_behavior() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let expected = &fixture["implementationBehaviors"]["popProcessQueue"];
+
+    let queue = PopProcessQueue::new();
+    queue.inc_found_msg(4);
+    queue.dec_found_msg(-2);
+    let ack_result = queue.ack();
+    queue.set_last_pop_timestamp(123);
+    queue.set_dropped(true);
+
+    let mut info = ConsumerPopProcessQueueInfo::default();
+    queue.fill_pop_process_queue_info(&mut info);
+    let actual = serde_json::json!({
+        "ackResult": ack_result,
+        "waitAckCount": queue.get_wai_ack_msg_count(),
+        "lastPopTimestamp": queue.get_last_pop_timestamp(),
+        "dropped": queue.is_dropped(),
+        "info": {
+            "waitAckCount": info.get_wait_ack_count(),
+            "droped": info.is_droped(),
+            "lastPopTimestamp": info.get_last_pop_timestamp(),
+        },
+        "toString": queue.to_string(),
+    });
+    assert_eq!(&actual, expected);
+}
+
+#[test]
+fn rebalance_accessors_retain_live_topic_subscription_and_pop_tables() {
+    let push = PushConsumer::new(PushConsumerConfig::new("workers").unwrap());
+    let push_rebalance = push.get_rebalance_impl();
+    let pop_table = push_rebalance.get_pop_process_queue_table();
+    assert!(std::sync::Arc::ptr_eq(
+        &pop_table,
+        &push.get_rebalance_impl().get_pop_process_queue_table()
+    ));
+    let queue = MessageQueue::new("orders", "broker-a", 1);
+    pop_table.write().unwrap().insert(
+        queue.clone(),
+        std::sync::Arc::new(push_rebalance.create_pop_process_queue()),
+    );
+    let topic_table = push_rebalance.get_topic_subscribe_info_table();
+    topic_table.write().unwrap().insert(
+        "orders".into(),
+        std::collections::BTreeSet::from([queue.clone()]),
+    );
+    assert!(
+        push.get_rebalance_impl()
+            .get_pop_process_queue_table()
+            .read()
+            .unwrap()
+            .contains_key(&queue)
+    );
+    assert!(
+        push.get_rebalance_impl()
+            .get_topic_subscribe_info_table()
+            .read()
+            .unwrap()["orders"]
+            .contains(&queue)
+    );
+
+    let pull = PullConsumer::new(PullConsumerConfig::new("workers").unwrap());
+    let pull_rebalance = pull.get_rebalance_impl();
+    assert!(std::sync::Arc::ptr_eq(
+        &pull_rebalance.get_subscription_inner(),
+        &pull.get_rebalance_impl().get_subscription_inner()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        &pull_rebalance.get_topic_subscribe_info_table(),
+        &pull.get_rebalance_impl().get_topic_subscribe_info_table()
+    ));
+    assert_eq!(
+        pull_rebalance
+            .create_pop_process_queue()
+            .get_wai_ack_msg_count(),
+        0
+    );
 }
 
 #[test]

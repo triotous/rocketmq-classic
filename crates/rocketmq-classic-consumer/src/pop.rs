@@ -21,7 +21,8 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{BatchAck, BatchAckMessageRequestBody, BitSet},
 };
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
 
 pub use rocketmq_classic_core::api::extensions::PopStatus;
 
@@ -29,17 +30,24 @@ const PROPERTY_POP_CK: &str = rocketmq_classic_common::message::constants::PROPE
 const PROPERTY_FIRST_POP_TIME: &str =
     rocketmq_classic_common::message::constants::PROPERTY_FIRST_POP_TIME;
 
-/// Assignment-local state for one Push POP queue.
-pub(crate) struct PopProcessQueue {
+/// Public POP queue state exposed through the Push rebalance implementation.
+///
+/// `new()` matches Java's public no-argument constructor. Runtime assignments
+/// use the same state with their queue key and generation attached internally.
+pub struct PopProcessQueue {
     queue: rocketmq_classic_common::message::MessageQueue,
     generation: u64,
     dropped: AtomicBool,
-    wait_ack_count: AtomicI64,
+    wait_ack_count: AtomicI32,
     last_pop_timestamp: AtomicI64,
 }
 
 impl PopProcessQueue {
-    pub(crate) fn new(
+    pub fn new() -> Self {
+        Self::new_for_assignment(rocketmq_classic_common::message::MessageQueue::default(), 0)
+    }
+
+    pub(crate) fn new_for_assignment(
         queue: rocketmq_classic_common::message::MessageQueue,
         generation: u64,
     ) -> Self {
@@ -47,7 +55,7 @@ impl PopProcessQueue {
             queue,
             generation,
             dropped: AtomicBool::new(false),
-            wait_ack_count: AtomicI64::new(0),
+            wait_ack_count: AtomicI32::new(0),
             last_pop_timestamp: AtomicI64::new(epoch_millis()),
         }
     }
@@ -60,33 +68,68 @@ impl PopProcessQueue {
         self.generation
     }
 
-    pub(crate) fn is_dropped(&self) -> bool {
+    pub fn is_dropped(&self) -> bool {
         self.dropped.load(Ordering::Acquire)
     }
 
-    pub(crate) fn drop_assignment(&self) {
-        self.dropped.store(true, Ordering::Release);
+    pub fn set_dropped(&self, dropped: bool) {
+        self.dropped.store(dropped, Ordering::Release);
     }
 
-    pub(crate) fn set_last_pop_timestamp(&self, timestamp: i64) {
+    pub(crate) fn drop_assignment(&self) {
+        self.set_dropped(true);
+    }
+
+    pub fn get_last_pop_timestamp(&self) -> i64 {
+        self.last_pop_timestamp()
+    }
+
+    pub fn get_wai_ack_msg_count(&self) -> i32 {
+        self.wait_ack_count()
+    }
+
+    pub fn inc_found_msg(&self, count: i32) {
+        self.wait_ack_count.fetch_add(count, Ordering::AcqRel);
+    }
+
+    /// Applies Java `decFoundMsg(int)`, whose signed argument is added to the
+    /// current counter. The Push consume service passes a negative count.
+    pub fn dec_found_msg(&self, delta: i32) {
+        self.wait_ack_count.fetch_add(delta, Ordering::AcqRel);
+    }
+
+    pub fn fill_pop_process_queue_info(
+        &self,
+        info: &mut rocketmq_classic_protocol::body::ConsumerPopProcessQueueInfo,
+    ) {
+        info.set_wait_ack_count(self.get_wai_ack_msg_count());
+        info.set_droped(self.is_dropped());
+        info.set_last_pop_timestamp(self.get_last_pop_timestamp());
+    }
+
+    pub fn set_last_pop_timestamp(&self, timestamp: i64) {
         self.last_pop_timestamp.store(timestamp, Ordering::Release);
+    }
+
+    pub fn ack(&self) -> i32 {
+        self.wait_ack_count.fetch_sub(1, Ordering::AcqRel)
+    }
+
+    pub fn is_pull_expired(&self) -> bool {
+        self.is_pull_expired_with_timeout(java_pull_max_idle_time())
     }
 
     pub(crate) fn inc_found_messages(&self, count: usize) {
         self.wait_ack_count
-            .fetch_add(i64::try_from(count).unwrap_or(i64::MAX), Ordering::AcqRel);
-    }
-
-    pub(crate) fn ack(&self) -> i64 {
-        self.wait_ack_count.fetch_sub(1, Ordering::AcqRel)
+            .fetch_add(i32::try_from(count).unwrap_or(i32::MAX), Ordering::AcqRel);
     }
 
     pub(crate) fn dec_found_messages(&self, count: usize) {
         self.wait_ack_count
-            .fetch_sub(i64::try_from(count).unwrap_or(i64::MAX), Ordering::AcqRel);
+            .fetch_sub(i32::try_from(count).unwrap_or(i32::MAX), Ordering::AcqRel);
     }
 
-    pub(crate) fn wait_ack_count(&self) -> i64 {
+    pub(crate) fn wait_ack_count(&self) -> i32 {
         self.wait_ack_count.load(Ordering::Acquire)
     }
 
@@ -94,13 +137,39 @@ impl PopProcessQueue {
         self.last_pop_timestamp.load(Ordering::Acquire)
     }
 
-    pub(crate) fn is_pull_expired(&self, max_idle_time_millis: i64) -> bool {
+    pub(crate) fn is_pull_expired_with_timeout(&self, max_idle_time_millis: i64) -> bool {
         crate::process_queue::pull_idle_time_expired(
             epoch_millis(),
             self.last_pop_timestamp.load(Ordering::Acquire),
             max_idle_time_millis,
         )
     }
+}
+
+impl Default for PopProcessQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for PopProcessQueue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "PopProcessQueue[waitAckCounter:{}, lastPopTimestamp:{}, drop:{}]",
+            self.get_wai_ack_msg_count(),
+            self.get_last_pop_timestamp(),
+            self.is_dropped()
+        )
+    }
+}
+
+fn java_pull_max_idle_time() -> i64 {
+    static JAVA_PULL_MAX_IDLE_TIME: OnceLock<i64> = OnceLock::new();
+    *JAVA_PULL_MAX_IDLE_TIME.get_or_init(|| {
+        crate::process_queue::pull_max_idle_time_from_environment()
+            .unwrap_or_else(|error| panic!("{error}"))
+    })
 }
 
 fn epoch_millis() -> i64 {

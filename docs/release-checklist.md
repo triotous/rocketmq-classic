@@ -5276,3 +5276,24 @@ owner-specific checks belong in the manual handoff.
   triggered. Broad P18-V01 remains open because Rust still does not expose the
   pinned Java mutable nested rebalance tables and concrete process queue API;
   Phase 19 Broker/Docker validation remains separate.
+
+
+## P18-V01 nested POP API slice — 2026-10-21
+
+- Exposed the Java `PopProcessQueue` methods and added a pinned direct Java
+  behavior fixture for its signed counter updates, ACK return, queue-info fill
+  and text representation. Push/Pull owners expose live subscription/topic
+  tables; Push exposes the live POP table; both create the public POP queue.
+- The regenerated facade API fixture is stable across two generations and
+  passes its focused Java drift verifier. SHA-256:
+  `e9690f9738fb8ccbfe81b8187e4b92b4676deca106a29b2dced86774e88a97e4`.
+- Full pinned Maven `verify`, default and all-feature locked workspace tests,
+  strict workspace Clippy, Consumer all-feature tests (236 unit tests plus
+  integration/doctest targets), the focused facade API suite, rustfmt and
+  `git diff --check` pass on this worktree.
+- This closes only the exposed POP queue slice. P18-V01 remains open for the
+  public `ProcessQueue` API, live process-queue tables, Pull's POP table and
+  complete inherited rebalance method correspondence. Refresh the remaining
+  P18-V02 supplementary gates after implementation work. P18-V03 package and
+  provenance review and current Ubuntu/native Windows P18-V04 evidence remain
+  open; Phase 19 Broker/Docker validation was not run.

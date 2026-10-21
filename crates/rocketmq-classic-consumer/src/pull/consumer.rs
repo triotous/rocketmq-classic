@@ -45,6 +45,7 @@ use crate::{
     consume::{ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageHookRegistry},
     error::PullConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore},
+    pop::PopProcessQueue,
     pull::{
         FilterMessageHook, ProcessedPullResult, PullAPIWrapper, SharedFilterMessageHooks,
         resolve_pull_broker_address,
@@ -277,6 +278,24 @@ impl PullConsumer {
     /// compatibility handle aliases that owner.
     pub fn get_rebalance_impl(&self) -> &Self {
         self
+    }
+
+    /// Returns the live subscription table exposed by Java rebalance.
+    pub fn get_subscription_inner(&self) -> Arc<RwLock<HashMap<String, SubscriptionData>>> {
+        self.subscriptions.clone()
+    }
+
+    /// Returns the live topic-to-queue table exposed by Java rebalance.
+    pub fn get_topic_subscribe_info_table(
+        &self,
+    ) -> Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>> {
+        self.topic_queues.clone()
+    }
+
+    /// Creates the public queue type returned by Java's
+    /// `RebalancePullImpl.createPopProcessQueue()`.
+    pub fn create_pop_process_queue(&self) -> PopProcessQueue {
+        PopProcessQueue::new()
     }
 
     pub(crate) fn running_info_body(

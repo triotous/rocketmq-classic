@@ -20,8 +20,9 @@ queues. Concurrent `ProcessQueue.cleanExpiredMsg` now records the Java
 consume-start property and runs on the Java initial-delay/period schedule;
 success, send-back failure, orderly skip, late completion and cleanup timing
 are checked against an invoked Java fixture. Remaining POP assignment
-branches, direct Rebalance/ProcessQueue API correspondence and the full
-inherited/source audit remain under review; P18-V01 is open. See the
+branches, direct ProcessQueue API correspondence and the full inherited/source
+audit remain under review; P18-V01 is open. The public `PopProcessQueue` API
+and selected live rebalance tables now have direct Java/Rust checks. See the
 [scoped runtime operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md) and
 [nested implementation API audit](PHASE_18_REBALANCE_PROCESS_QUEUE_API.md).
 

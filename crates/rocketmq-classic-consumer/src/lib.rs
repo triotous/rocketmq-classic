@@ -33,7 +33,7 @@ pub use config::PullConsumerConfig;
 pub use consume::{ConsumeMessageContext, ConsumeMessageHook};
 pub use error::{LitePullConsumerError, PullConsumerError, PushConsumerError};
 pub use lite::{LitePullConsumer, LitePullConsumerConfig, TopicMessageQueueChangeListener};
-pub use pop::{PopReceipt, PopReceiptError, PopResult, PopStatus};
+pub use pop::{PopProcessQueue, PopReceipt, PopReceiptError, PopResult, PopStatus};
 pub use push::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
     ConsumeOrderlyContext, ConsumeOrderlyStatus, MessageListenerConcurrently,

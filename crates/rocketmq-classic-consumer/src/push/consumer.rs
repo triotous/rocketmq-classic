@@ -572,6 +572,12 @@ impl PushConsumer {
         self
     }
 
+    /// Creates the public queue type returned by Java's
+    /// `RebalancePushImpl.createPopProcessQueue()`.
+    pub fn create_pop_process_queue(&self) -> PopProcessQueue {
+        PopProcessQueue::new()
+    }
+
     /// Returns Java `RebalancePushImpl.getConsumeInitMode()` (`MIN = 0`,
     /// `MAX = 1`) for the configured consume origin.
     pub fn consume_init_mode(&self) -> i32 {
@@ -897,6 +903,20 @@ impl PushConsumer {
     /// Returns the live table used by the Java implementation accessor.
     pub fn get_subscription_inner(&self) -> Arc<RwLock<HashMap<String, SubscriptionData>>> {
         self.subscriptions.clone()
+    }
+
+    /// Returns the live POP process-queue table exposed by Java rebalance.
+    pub fn get_pop_process_queue_table(
+        &self,
+    ) -> Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>> {
+        self.pop_process_queues.clone()
+    }
+
+    /// Returns the live topic-to-queue table exposed by Java rebalance.
+    pub fn get_topic_subscribe_info_table(
+        &self,
+    ) -> Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>> {
+        self.topic_queues.clone()
     }
 
     /// Returns the legacy `topic -> tag expression` configuration map.
@@ -1818,13 +1838,7 @@ impl PushConsumer {
             .map(|(queue, process_queue)| {
                 let wait_ack_count = process_queue.wait_ack_count();
                 let mut info = ConsumerPopProcessQueueInfo::default();
-                info.set_wait_ack_count(i32::try_from(wait_ack_count).unwrap_or_else(|_| {
-                    if wait_ack_count.is_negative() {
-                        i32::MIN
-                    } else {
-                        i32::MAX
-                    }
-                }));
+                info.set_wait_ack_count(wait_ack_count);
                 info.set_droped(process_queue.is_dropped());
                 info.set_last_pop_timestamp(process_queue.last_pop_timestamp());
                 (queue, info)
@@ -4331,7 +4345,9 @@ impl PushConsumer {
                 .await;
                 continue;
             }
-            if process_queue.wait_ack_count() > i64::from(self.config.pop_threshold_for_queue()) {
+            if i64::from(process_queue.wait_ack_count())
+                > i64::from(self.config.pop_threshold_for_queue())
+            {
                 tokio::time::sleep(Duration::from_millis(
                     PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL as u64,
                 ))
@@ -5228,7 +5244,7 @@ impl PushConsumer {
             let should_remove = !subscribed_topics.contains(topic)
                 || (authoritative_topics.contains(topic)
                     && (!desired_pop_queues.contains(&queue)
-                        || process_queue.is_pull_expired(
+                        || process_queue.is_pull_expired_with_timeout(
                             self.pull_max_idle_time_millis.load(Ordering::Acquire),
                         )));
             if !should_remove {
@@ -5432,7 +5448,10 @@ impl PushConsumer {
                     continue;
                 }
             };
-            let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), generation));
+            let process_queue = Arc::new(PopProcessQueue::new_for_assignment(
+                queue.clone(),
+                generation,
+            ));
             {
                 let mut queues = write_lock(&self.pop_process_queues);
                 if queues.contains_key(&queue) {
@@ -8039,7 +8058,7 @@ mod tests {
             .await
             .unwrap();
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
+        let process_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 1));
         process_queue.inc_found_messages(1);
         let listener_called = Arc::new(AtomicBool::new(false));
         let listener = PushMessageListener::concurrently({
@@ -8082,7 +8101,7 @@ mod tests {
             .await
             .unwrap();
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), 2));
+        let process_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 2));
         process_queue.inc_found_messages(1);
         let receipt = format!("10 {} 60000 2 0 broker-a 0 10", epoch_millis());
         let listener = PushMessageListener::orderly(
@@ -8246,7 +8265,7 @@ mod tests {
         consumer.set_consumer_group(Some("pop-lifecycle-live-group".into()));
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let successful_queue = Arc::new(PopProcessQueue::new(queue.clone(), 1));
+        let successful_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 1));
         successful_queue.inc_found_messages(1);
         let listener_calls = Arc::new(AtomicUsize::new(0));
         let successful_listener = PushMessageListener::concurrently({
@@ -8284,7 +8303,7 @@ mod tests {
             "orders"
         ));
 
-        let retry_queue = Arc::new(PopProcessQueue::new(queue.clone(), 2));
+        let retry_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 2));
         retry_queue.inc_found_messages(1);
         let retry_listener = PushMessageListener::concurrently(|_messages, context| {
             std::future::ready((Some(ConsumeConcurrentlyStatus::ReconsumeLater), context))
@@ -11122,7 +11141,8 @@ mod tests {
         consumer.update_pull_thresholds_after_rebalance();
 
         let pop_queue = MessageQueue::new("orders", "broker-a", 2);
-        let pop_process_queue = Arc::new(PopProcessQueue::new(pop_queue.clone(), 23));
+        let pop_process_queue =
+            Arc::new(PopProcessQueue::new_for_assignment(pop_queue.clone(), 23));
         pop_process_queue.inc_found_messages(3);
         pop_process_queue.set_last_pop_timestamp(1_700_000_000_005);
         write_lock(&consumer.pop_process_queues).insert(pop_queue.clone(), pop_process_queue);

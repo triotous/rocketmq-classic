@@ -23,6 +23,7 @@ import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
 import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePullImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
+import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
 
 /** Pins the complete public Java consumer-facade and inherited API denominator. */
 public final class ConsumerFacadeApiFixtures {
@@ -61,6 +62,30 @@ public final class ConsumerFacadeApiFixtures {
         return result;
     }
 
+    private static Map<String, Object> popProcessQueueBehavior() {
+        PopProcessQueue queue = new PopProcessQueue();
+        queue.incFoundMsg(4);
+        queue.decFoundMsg(-2);
+        int ackResult = queue.ack();
+        queue.setLastPopTimestamp(123L);
+        queue.setDropped(true);
+
+        PopProcessQueueInfo info = new PopProcessQueueInfo();
+        queue.fillPopProcessQueueInfo(info);
+        Map<String, Object> infoResult = new TreeMap<>();
+        infoResult.put("waitAckCount", info.getWaitAckCount());
+        infoResult.put("droped", info.isDroped());
+        infoResult.put("lastPopTimestamp", info.getLastPopTimestamp());
+        Map<String, Object> result = new TreeMap<>();
+        result.put("ackResult", ackResult);
+        result.put("waitAckCount", queue.getWaiAckMsgCount());
+        result.put("lastPopTimestamp", queue.getLastPopTimestamp());
+        result.put("dropped", queue.isDropped());
+        result.put("info", infoResult);
+        result.put("toString", queue.toString());
+        return result;
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) throw new IllegalArgumentException("expected fixture path");
         Path output = Path.of(args[0]);
@@ -87,6 +112,8 @@ public final class ConsumerFacadeApiFixtures {
         implementationApis.put("ProcessQueue", publicApiSurface(ProcessQueue.class));
         implementationApis.put("PopProcessQueue", publicApiSurface(PopProcessQueue.class));
         fixture.put("implementationApis", implementationApis);
+        fixture.put("implementationBehaviors", Map.of(
+            "popProcessQueue", popProcessQueueBehavior()));
 
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {

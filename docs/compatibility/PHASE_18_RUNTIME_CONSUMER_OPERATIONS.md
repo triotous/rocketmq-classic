@@ -208,7 +208,10 @@ SHA-256:
 The pinned nested public API denominator and its current owner/queue mappings
 are recorded in the [Rebalance and ProcessQueue API audit](PHASE_18_REBALANCE_PROCESS_QUEUE_API.md).
 Direct access to Java's mutable nested tables and concrete queue types remains
-unresolved; broad P18-V01 remains open.
+partially implemented: Push/Pull subscription and topic tables, the Push POP
+table, and public `PopProcessQueue` methods now have Rust counterparts. The
+`ProcessQueue` type/process table, Pull POP table, and remaining direct
+rebalance method correspondence are unresolved; broad P18-V01 remains open.
 
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove
