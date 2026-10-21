@@ -157,15 +157,33 @@ available during the round and that a new pause survives finally's return.
 The real-resume fixture checkpoint SHA-256 is
 `ee07499b6b8eb58ea9cefc013592013a2c378e97709f4fd0096cd2ba81ec2eea`.
 
-The two `rebalanceRetention` cases keep the topic subscribed after a null-value
-reset. A missing route or an unchanged broadcast assignment retains the
-dropped queue and its in-memory offset, with no persist/remove events.
+The first two `rebalanceRetention` cases keep the topic subscribed after a
+null-value reset. A missing route or an unchanged broadcast assignment retains
+the dropped queue and its in-memory offset, with no persist/remove events.
 The Java probe explicitly installs its rebalance model and runtime to exercise
 those branches. The Rust comparison initially lost the retained offset on the
 missing-route case. Cleanup now requires an authoritative assignment excluding
 the queue; the dropped flag alone does not authorize removal. Fixture SHA-256:
 `0ed55128b1905a5d0c451ca93c0fbb33b6c5089f2a0a8c5e188770354293a04b`.
-Pull-idle expiry and POP assignment branches remain in the broader audit.
+
+The third retention case exercises Java's `ProcessQueue.isPullExpired` path
+with the topic subscribed and queue still assigned. Java removes the expired
+queue, clears its dirty offset before trying to read a replacement start
+offset, and leaves the table entry absent when the fixture offset-store read
+fails. Rust now applies the same strict `elapsed > pullMaxIdleTime` condition
+to push and POP process queues, using Java-compatible signed-millisecond
+subtraction. The shared Java property is
+`rocketmq.client.pull.pullMaxIdleTime`, default `120000`; Rust reads the same
+dotted property name from the process environment when a consumer starts and
+reports invalid Java-long values as a startup error. The Java fixture records
+the default and expired-assignment lifecycle; the runtime comparison checks
+queue presence, dropped state, offsets and callback order. Rust unit coverage
+also checks the strict boundary, signed wrapping and Java-long parsing.
+Fixture SHA-256:
+`73e2e0e8514bbdc904c89a8bde71cfe5fcf8eae431b4f507e7c189a4dc8e62a2`.
+
+The current differential exercises Push expiry; remaining POP assignment
+branches and the public Rebalance/ProcessQueue API audit remain open.
 
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove

@@ -8,6 +8,79 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+pub(crate) const PULL_MAX_IDLE_TIME_PROPERTY: &str = "rocketmq.client.pull.pullMaxIdleTime";
+pub(crate) const PULL_MAX_IDLE_TIME_MILLIS: i64 = 120_000;
+
+pub(crate) fn pull_idle_time_expired(
+    now_millis: i64,
+    last_pull_millis: i64,
+    max_idle_time_millis: i64,
+) -> bool {
+    now_millis.wrapping_sub(last_pull_millis) > max_idle_time_millis
+}
+
+pub(crate) fn pull_max_idle_time_from_environment() -> Result<i64, String> {
+    match std::env::var(PULL_MAX_IDLE_TIME_PROPERTY) {
+        Ok(value) => parse_pull_max_idle_time(Some(&value)),
+        Err(std::env::VarError::NotPresent) => parse_pull_max_idle_time(None),
+        Err(std::env::VarError::NotUnicode(value)) => Err(format!(
+            "non-Unicode Java-compatible long property {PULL_MAX_IDLE_TIME_PROPERTY}={value:?}"
+        )),
+    }
+}
+
+fn parse_pull_max_idle_time(value: Option<&str>) -> Result<i64, String> {
+    match value {
+        Some(value) => parse_java_long(value).ok_or_else(|| {
+            format!("invalid Java-compatible long property {PULL_MAX_IDLE_TIME_PROPERTY}={value:?}")
+        }),
+        None => Ok(PULL_MAX_IDLE_TIME_MILLIS),
+    }
+}
+
+fn parse_java_long(value: &str) -> Option<i64> {
+    let mut units = value.encode_utf16().peekable();
+    let negative = match units.peek().copied()? {
+        0x002d => {
+            units.next();
+            true
+        }
+        0x002b => {
+            units.next();
+            false
+        }
+        _ => false,
+    };
+    units.peek()?;
+    let limit = if negative { i64::MIN } else { -i64::MAX };
+    let multiply_limit = limit / 10;
+    let mut result = 0_i64;
+    for unit in units {
+        let digit = i64::from(java_decimal_digit(unit)?);
+        if result < multiply_limit {
+            return None;
+        }
+        result *= 10;
+        if result < limit + digit {
+            return None;
+        }
+        result -= digit;
+    }
+    Some(if negative { result } else { -result })
+}
+
+fn java_decimal_digit(unit: u16) -> Option<u16> {
+    const ZEROS: &[u16] = &[
+        0x0030, 0x0660, 0x06f0, 0x07c0, 0x0966, 0x09e6, 0x0a66, 0x0ae6, 0x0b66, 0x0be6, 0x0c66,
+        0x0ce6, 0x0d66, 0x0de6, 0x0e50, 0x0ed0, 0x0f20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946,
+        0x19d0, 0x1a80, 0x1a90, 0x1b50, 0x1bb0, 0x1c40, 0x1c50, 0xa620, 0xa8d0, 0xa900, 0xa9d0,
+        0xa9f0, 0xaa50, 0xabf0, 0xff10,
+    ];
+    ZEROS
+        .iter()
+        .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
+}
+
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use tokio::time::Instant;
 
@@ -172,6 +245,15 @@ impl ProcessQueue {
 
     pub(crate) fn queue(&self) -> &MessageQueue {
         &self.queue
+    }
+
+    pub(crate) fn is_pull_expired(&self, max_idle_time_millis: i64) -> bool {
+        let last_pull_timestamp_millis = self.lock_state().last_pull_timestamp_millis;
+        pull_idle_time_expired(
+            epoch_millis(),
+            last_pull_timestamp_millis,
+            max_idle_time_millis,
+        )
     }
 
     pub(crate) const fn generation(&self) -> u64 {
@@ -762,6 +844,25 @@ mod tests {
             crate::test_support::message_ext_from(Message::new("orders", vec![b'x'; body_size]));
         message.set_queue_offset(offset);
         message
+    }
+
+    #[test]
+    fn pull_idle_timeout_property_keeps_java_long_defaults_and_values() {
+        assert_eq!(parse_pull_max_idle_time(None).unwrap(), 120_000);
+        assert_eq!(parse_pull_max_idle_time(Some("+2500")).unwrap(), 2_500);
+        assert_eq!(parse_pull_max_idle_time(Some("-1")).unwrap(), -1);
+        assert_eq!(parse_pull_max_idle_time(Some("٢٠٢٤")).unwrap(), 2_024);
+        assert!(parse_pull_max_idle_time(Some(" 120000")).is_err());
+        assert!(parse_pull_max_idle_time(Some("9223372036854775808")).is_err());
+    }
+
+    #[test]
+    fn pull_idle_expiry_matches_java_long_subtraction_and_strict_boundary() {
+        assert!(!pull_idle_time_expired(120_000, 0, 120_000));
+        assert!(pull_idle_time_expired(120_001, 0, 120_000));
+        assert!(pull_idle_time_expired(0, 1, -2));
+        assert!(pull_idle_time_expired(i64::MIN, 1, 0));
+        assert!(!pull_idle_time_expired(i64::MIN, 1, i64::MAX));
     }
 
     #[test]

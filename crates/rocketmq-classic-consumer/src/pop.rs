@@ -94,8 +94,12 @@ impl PopProcessQueue {
         self.last_pop_timestamp.load(Ordering::Acquire)
     }
 
-    pub(crate) fn is_pull_expired(&self) -> bool {
-        epoch_millis().saturating_sub(self.last_pop_timestamp.load(Ordering::Acquire)) > 120_000
+    pub(crate) fn is_pull_expired(&self, max_idle_time_millis: i64) -> bool {
+        crate::process_queue::pull_idle_time_expired(
+            epoch_millis(),
+            self.last_pop_timestamp.load(Ordering::Acquire),
+            max_idle_time_millis,
+        )
     }
 }
 

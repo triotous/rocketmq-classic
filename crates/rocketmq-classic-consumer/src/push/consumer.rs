@@ -434,6 +434,7 @@ pub struct PushConsumer {
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
     pull_time_delay_millis_when_exception: AtomicI64,
+    pull_max_idle_time_millis: AtomicI64,
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
@@ -514,6 +515,9 @@ impl PushConsumer {
             paused: AtomicBool::new(false),
             pull_time_delay_millis_when_exception: AtomicI64::new(
                 pull_time_delay_millis_when_exception,
+            ),
+            pull_max_idle_time_millis: AtomicI64::new(
+                crate::process_queue::PULL_MAX_IDLE_TIME_MILLIS,
             ),
             consume_orderly: AtomicBool::new(false),
             consumer_start_timestamp: AtomicI64::new(0),
@@ -3881,6 +3885,10 @@ impl PushConsumer {
         self.config.set_consumer_group(consumer_group.clone());
         let consumer_group = consumer_group.ok_or(PushConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
+        let pull_max_idle_time_millis = crate::process_queue::pull_max_idle_time_from_environment()
+            .map_err(PushConsumerError::PullIdleTimeSettings)?;
+        self.pull_max_idle_time_millis
+            .store(pull_max_idle_time_millis, Ordering::Release);
         self.pull_api.set_unit_mode(self.config.unit_mode());
         let pop_consume_limit =
             usize::try_from(self.config.consume_thread_max().max(1)).unwrap_or(1);
@@ -5124,8 +5132,10 @@ impl PushConsumer {
                 }
                 continue;
             }
-            let should_remove =
-                authoritative_topics.contains(topic) && !desired_push_queues.contains(&queue);
+            let should_remove = authoritative_topics.contains(topic)
+                && (!desired_push_queues.contains(&queue)
+                    || process_queue
+                        .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire)));
             if !should_remove {
                 continue;
             }
@@ -5160,7 +5170,8 @@ impl PushConsumer {
                 continue;
             };
             let should_remove = process_queue.is_dropped()
-                || process_queue.is_pull_expired()
+                || process_queue
+                    .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
                 || !subscribed_topics.contains(topic)
                 || (authoritative_topics.contains(topic) && !desired_pop_queues.contains(&queue));
             if !should_remove {
@@ -5347,7 +5358,10 @@ impl PushConsumer {
             drop(workers);
 
             if let Some(existing) = read_lock(&self.pop_process_queues).get(&queue) {
-                if !existing.is_dropped() && !existing.is_pull_expired() {
+                if !existing.is_dropped()
+                    && !existing
+                        .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
+                {
                     balanced = false;
                     continue;
                 }
@@ -5366,10 +5380,11 @@ impl PushConsumer {
             let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), generation));
             {
                 let mut queues = write_lock(&self.pop_process_queues);
-                if queues
-                    .get(&queue)
-                    .is_some_and(|current| !current.is_dropped() && !current.is_pull_expired())
-                {
+                if queues.get(&queue).is_some_and(|current| {
+                    !current.is_dropped()
+                        && !current
+                            .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
+                }) {
                     balanced = false;
                     continue;
                 }
@@ -7629,6 +7644,7 @@ mod tests {
         remove_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
         reset_events: Mutex<BTreeMap<i32, Vec<String>>>,
         fail_persist_queues: Mutex<HashSet<MessageQueue>>,
+        fail_read_queues: Mutex<HashSet<MessageQueue>>,
         values: Mutex<HashMap<MessageQueue, i64>>,
         persisted: Mutex<HashMap<MessageQueue, i64>>,
         frozen: Mutex<HashSet<MessageQueue>>,
@@ -7705,6 +7721,11 @@ mod tests {
         ) -> OffsetStoreFuture<'a, OffsetRead> {
             Box::pin(async move {
                 self.reads.lock().unwrap().push((queue.clone(), mode));
+                if self.fail_read_queues.lock().unwrap().contains(queue) {
+                    return Err(OffsetStoreError::Runtime(
+                        "injected offset read failure".into(),
+                    ));
+                }
                 let memory = self.values.lock().unwrap().get(queue).copied();
                 let stored = self.persisted.lock().unwrap().get(queue).copied();
                 Ok(match mode {
@@ -9624,7 +9645,7 @@ mod tests {
         let cases = fixture["resetOffset"].as_array().unwrap();
         assert_eq!(cases.len(), 15);
         let retention_cases = fixture["rebalanceRetention"].as_array().unwrap();
-        assert_eq!(retention_cases.len(), 2);
+        assert_eq!(retention_cases.len(), 3);
         for case in cases.iter().chain(retention_cases) {
             let name = case["name"].as_str().unwrap();
             let mut config = PushConsumerConfig::new(format!("reset-{name}")).unwrap();
@@ -9660,12 +9681,12 @@ mod tests {
             };
             let queue0 = MessageQueue::new("orders", "broker-a", 0);
             let queue1 = MessageQueue::new("orders", "broker-a", 1);
-            if name.starts_with("subscribed-null-value-") {
+            if name.starts_with("subscribed-null-value-") || name == "subscribed-pull-expired" {
                 write_lock(&consumer.subscriptions).insert(
                     "orders".into(),
                     SubscriptionData::new(Some("orders".into()), Some("*".into())),
                 );
-                if name.ends_with("-assigned") {
+                if name.ends_with("-assigned") || name == "subscribed-pull-expired" {
                     write_lock(&consumer.topic_queues)
                         .insert("orders".into(), BTreeSet::from([queue0.clone()]));
                 }
@@ -9673,6 +9694,27 @@ mod tests {
             let mut queues = BTreeMap::new();
             if name != "empty-push-null-inputs" {
                 let process_queue = Arc::new(ProcessQueue::new(queue0.clone(), 100));
+                if name == "subscribed-pull-expired" {
+                    process_queue
+                        .set_last_pull_timestamp(100, epoch_millis() - 120_001)
+                        .unwrap();
+                    store
+                        .fail_read_queues
+                        .lock()
+                        .unwrap()
+                        .insert(queue0.clone());
+                    assert!(process_queue.is_pull_expired(120_000));
+                    assert!(read_lock(&consumer.subscriptions).contains_key("orders"));
+                    assert!(
+                        read_lock(&consumer.topic_queues)
+                            .get("orders")
+                            .is_some_and(|queues| queues.contains(&queue0))
+                    );
+                    assert_eq!(
+                        consumer.rebalance_service.message_model_for_test(),
+                        rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting
+                    );
+                }
                 write_lock(&consumer.process_queues).insert(queue0.clone(), process_queue.clone());
                 queues.insert(0, process_queue);
                 store.values.lock().unwrap().insert(queue0.clone(), 50);
@@ -9742,6 +9784,9 @@ mod tests {
             }
             tokio::time::advance(RESET_OFFSET_MAX_WAIT).await;
             let result = reset.await.unwrap();
+            if name == "subscribed-pull-expired" {
+                assert!(!consumer.is_pause());
+            }
             assert_eq!(
                 result.is_err(),
                 !case["error"].is_null(),

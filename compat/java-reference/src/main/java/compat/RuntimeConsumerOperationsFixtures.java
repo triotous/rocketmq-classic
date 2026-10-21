@@ -58,8 +58,10 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resetStoreHandoff", reset("store-handoff"));
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resume", resume());
+        fixture.put("pullMaxIdleTimeMillis", Long.parseLong(
+            System.getProperty("rocketmq.client.pull.pullMaxIdleTime", "120000")));
         fixture.put("rebalanceRetention", List.of(reset("subscribed-null-value-missing-route"),
-            reset("subscribed-null-value-assigned")));
+            reset("subscribed-null-value-assigned"), reset("subscribed-pull-expired")));
         fixture.put("resetOffsetSynchronized", java.lang.reflect.Modifier.isSynchronized(
             MQClientInstance.class.getMethod("resetOffset", String.class, String.class, Map.class).getModifiers()));
         String json = JSON.toJSONString(fixture, JSONWriter.Feature.WriteMapNullValue) + "\n";
@@ -147,7 +149,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 }
             });
         consumer.setOffsetStore(store);
-        boolean orderly = name.equals("orderly-success");
+        boolean orderly = name.equals("orderly-success") || name.startsWith("subscribed-");
         var orderlyField = org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl.class.getDeclaredField("consumeOrderly");
         orderlyField.setAccessible(true); orderlyField.set(consumer, orderly);
         var table = consumer.getRebalanceImpl().getProcessQueueTable();
@@ -155,17 +157,22 @@ public final class RuntimeConsumerOperationsFixtures {
         var cleared = new java.util.concurrent.CountDownLatch(1);
         var queue0 = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
         var queue1 = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1);
-        if (name.startsWith("subscribed-null-value-")) {
+        if (name.startsWith("subscribed-null-value-") || name.equals("subscribed-pull-expired")) {
             consumer.getRebalanceImpl().setMessageModel(facade.getMessageModel());
-            consumer.getRebalanceImpl().setmQClientFactory(runtime);
             consumer.getRebalanceImpl().getSubscriptionInner().put("orders",
                 new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData("orders", "*"));
             if (name.endsWith("-assigned")) consumer.getRebalanceImpl().getTopicSubscribeInfoTable().put("orders", java.util.Set.of(queue0));
+            if (name.equals("subscribed-pull-expired")) {
+                consumer.getRebalanceImpl().getTopicSubscribeInfoTable().put("orders", java.util.Set.of(queue0));
+            }
         }
         if (!name.equals("empty-push-null-inputs")) {
             var processQueue = new org.apache.rocketmq.client.impl.consumer.ProcessQueue() {
                 @Override public void clear() { super.clear(); cleared.countDown(); }
             };
+            if (name.equals("subscribed-pull-expired")) {
+                processQueue.setLastPullTimestamp(System.currentTimeMillis() - 120_001L);
+            }
             table.put(queue0, processQueue); queues.put(0, processQueue); values.put(0, 50L);
         }
         if (name.equals("per-queue-failure")) {
@@ -178,7 +185,8 @@ public final class RuntimeConsumerOperationsFixtures {
         if (name.equals("per-queue-failure") || name.equals("live-new-queue")) offsets.put(queue1, 9L);
         if (name.equals("null-key-only")) { offsets.clear(); offsets.put(null, 8L); }
         if (name.equals("unassigned-offset")) { offsets.clear(); offsets.put(new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 9), 99L); }
-        String topic = name.equals("empty-push-null-inputs") || name.equals("null-topic-active") ? null
+        String topic = name.equals("subscribed-pull-expired") ? "other"
+            : name.equals("empty-push-null-inputs") || name.equals("null-topic-active") ? null
             : name.equals("null-map-other-topic") ? "other" : "orders";
         if (name.startsWith("null-map") || name.equals("empty-push-null-inputs")) offsets = null;
         final var input = offsets;
@@ -212,12 +220,30 @@ public final class RuntimeConsumerOperationsFixtures {
                 if (failure.get() != null) throw new IllegalStateException("live reset failed", failure.get());
                 item.put("error", null);
             } else {
-                // Java explicitly ignores interrupted drain sleeps. Avoid a
-                // 10-second wall-clock wait while still invoking its real path.
-                if (!orderly) Thread.currentThread().interrupt();
-                try { runtime.resetOffset(topic, group, input); item.put("error", null); }
-                catch (Exception error) { item.put("error", error.getClass().getSimpleName()); }
-                finally { Thread.interrupted(); }
+                if (!orderly) {
+                    // Interrupt only after the worker reaches Java's drain
+                    // sleep. suspend() may consume an interrupt delivered
+                    // before resetOffset starts.
+                    var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+                    Thread worker = new Thread(() -> {
+                        try { runtime.resetOffset(topic, group, input); }
+                        catch (Throwable error) { failure.set(error); }
+                    }, "reset-fixture-" + name);
+                    worker.start();
+                    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+                    while (worker.isAlive() && java.util.Arrays.stream(worker.getStackTrace()).noneMatch(frame ->
+                        frame.getClassName().equals("java.util.concurrent.TimeUnit") && frame.getMethodName().equals("sleep"))) {
+                        if (System.nanoTime() > deadline) { worker.interrupt(); throw new IllegalStateException("reset did not reach drain sleep: " + name); }
+                        Thread.yield();
+                    }
+                    worker.interrupt(); worker.join(5000);
+                    if (worker.isAlive()) throw new IllegalStateException("reset worker did not finish: " + name);
+                    item.put("error", failure.get() == null ? null : failure.get().getClass().getSimpleName());
+                } else {
+                    try { runtime.resetOffset(topic, group, input); item.put("error", null); }
+                    catch (Exception error) { item.put("error", error.getClass().getSimpleName()); }
+                    finally { Thread.interrupted(); }
+                }
             }
             if (name.equals("rebalance-unsubscribed")) { lifecycle.add("rebalance"); consumer.doRebalance(); }
             List<Object> rows = new ArrayList<>();
@@ -234,6 +260,8 @@ public final class RuntimeConsumerOperationsFixtures {
             return item;
         } finally {
             Thread.interrupted(); runtime.getConsumerTable().clear();
+            runtime.getScheduledExecutorService().shutdownNow();
+            runtime.getMQClientAPIImpl().shutdown();
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
         }

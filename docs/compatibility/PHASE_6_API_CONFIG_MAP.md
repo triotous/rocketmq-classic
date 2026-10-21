@@ -1589,3 +1589,16 @@ neither is a new setting or independent feature. The exact Java methods, inputs,
 fixtures and regression IDs are recorded in
 [the direct runtime consumer-operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md).
 These scoped rows do not close the complete P18-V01 bidirectional audit.
+
+## Push/POP process-queue idle timeout — 2026-10-21
+
+Java 5.5.1 `ProcessQueue` and `PopProcessQueue` read the shared
+`rocketmq.client.pull.pullMaxIdleTime` system property (default `120000`) and
+expire only when signed `currentTimeMillis - lastPullTimestamp` is greater than
+that value. Rust maps the same dotted name through its process environment,
+parses Java-compatible signed decimal longs during Push startup, and uses
+wrapping `i64` subtraction and the strict boundary for both queue types. Invalid
+values return the typed `PushConsumerError::PullIdleTimeSettings`. The
+`subscribed-pull-expired` Java/Rust runtime comparison checks Push queue
+removal; parser and boundary tests cover the timeout arithmetic. POP assignment
+branches and the broader P18-V01 audit remain open.

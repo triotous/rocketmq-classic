@@ -9,15 +9,16 @@ published Java client strategies directly; no Broker was contacted.
 The historical method rows below describe their listed tests, not exhaustive
 branch coverage. The runtime operation continuation corrects unsubscribed
 truncation (`98fb3feb`) and awaits the target rebalance on resume (`ee7e6d7f`).
-Two additional Java reset/resume cases retain a dropped queue and its offset
-when its topic remains subscribed, both with a missing route and an unchanged
-broadcast assignment. Rust must not run persistence/removal solely because a
-queue is dropped. Their values and store events are checked in
+Three additional Java reset/resume cases exercise dropped queue retention
+when its topic remains subscribed: a missing route, an unchanged broadcast
+assignment, and a stale pull timestamp. Rust must not run persistence/removal
+solely because a queue is dropped. Their values and store events are checked in
 `runtime_reset_matches_java_live_maps_nulls_and_per_queue_failures` using
 `rebalanceRetention` in `fixtures/runtime/consumer-operations.json`.
-Pull-idle expiry, POP assignment branches, public Rebalance/ProcessQueue API
-correspondence and the full inherited/source audit remain under review;
-P18-V01 is open. See the
+The Java pull-idle property and strict expiry path now match for Push queues;
+Rust also shares that timeout with POP queues. Remaining POP assignment
+branches, public Rebalance/ProcessQueue API correspondence and the full
+inherited/source audit remain under review; P18-V01 is open. See the
 [scoped runtime operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md).
 
 ## Java method to Rust implementation and check

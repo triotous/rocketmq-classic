@@ -81,3 +81,34 @@
   checks, 16 race/leak cases x3, fuzz smoke (121/11 seeds, 2112 mutations,
   170/109 decodes), release example build, and Asia/Taipei Unique ID test pass.
   Offline benchmark remains running at this commit boundary.
+
+# Phase 18 continuation — 2026-10-21
+
+- Continued pinned Java 5.5.1 `ProcessQueue`/`PopProcessQueue` review. Both use
+  `rocketmq.client.pull.pullMaxIdleTime`, default `120000`, and strict signed
+  `currentTimeMillis - lastPullTimestamp > timeout` semantics. Rust now parses
+  the dotted process-environment property as a Java-compatible long at Push
+  startup, uses one shared expiry helper for Push and POP queues, and reports
+  invalid values through `PullIdleTimeSettings`.
+- Added a third invoked Java `rebalanceRetention` case with a subscribed,
+  assigned, expired queue. The first Rust comparison revealed both queue
+  expiry and fixture behavior: the Java rebalance removes the expired queue,
+  attempts to clear the dirty offset, then the fixture's unsupported offset
+  read prevents replacement. The Rust test recording store now injects that
+  read failure for this case, preserving the actual remove-then-add attempt;
+  production rebalance was not changed to suppress additions. The corrected
+  comparison matches table presence, dropped state, retained/persisted offset
+  and exact per-queue event order.
+- Added parser and exact-threshold/wrapping tests. An initial negative-timeout
+  assertion used an elapsed value equal to the timeout and failed; corrected
+  the test input to exercise the intended strict inequality. Final all-feature
+  Consumer tests pass (231 unit tests plus all targets/doctests), strict
+  all-target/all-feature Consumer Clippy passes, formatting and diff checks
+  pass. Pinned `mvn -f compat/java-reference/pom.xml verify` passes, including
+  consumer-operation fixture drift verification and the complete 37-scenario
+  Java compatibility suite. Fixture SHA-256:
+  `73e2e0e8514bbdc904c89a8bde71cfe5fcf8eae431b4f507e7c189a4dc8e62a2`.
+- Updated Phase 6 configuration mapping, Phase 11 method matrix, and the
+  Phase 18 runtime operation audit to document the property, expiry semantics,
+  evidence, and remaining POP assignment/public API audit. Broad P18-V01,
+  final workspace gate, and Phase 19 live evidence remain open.

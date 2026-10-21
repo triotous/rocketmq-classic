@@ -151,6 +151,8 @@ pub enum PushConsumerError {
     PullScheduler(String),
     #[error("invalid orderly queue-lock settings: {0}")]
     OrderlyLockSettings(String),
+    #[error("invalid pull idle-time setting: {0}")]
+    PullIdleTimeSettings(String),
     #[error(transparent)]
     PullProcessing(#[from] ProcessPullError),
     #[error(transparent)]
