@@ -201,6 +201,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("topicListFromNameServerOperations", topicListFromNameServerOperations());
+        result.put("systemTopicListFromBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getSystemTopicListFromBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("systemTopicListFromBrokerOperations", systemTopicListFromBrokerOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -1717,6 +1724,82 @@ public final class ProducerCoreFixtures {
                 result.put("errorOutcome", error.getClass().getSimpleName());
                 result.put("errorCode", error.getResponseCode());
                 result.put("errorMessage", error.getMessage());
+            }
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> systemTopicListFromBrokerOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        org.apache.rocketmq.remoting.protocol.body.TopicList topicList =
+            new org.apache.rocketmq.remoting.protocol.body.TopicList();
+        topicList.setTopicList(new java.util.HashSet<>(List.of("rmq_sys_TRACE_DATA", "rmq_sys_TRANS_HALF_TOPIC")));
+        org.apache.rocketmq.remoting.protocol.RemotingCommand success =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null);
+        success.setBody(topicList.encode());
+        replies.add(success);
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "system topics unavailable"));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("system-topic-list-api");
+        config.setVipChannelEnabled(false);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    replies.removeFirst();
+                                call.put("responseCode", response.getCode());
+                                call.put("responseRemark", response.getRemark());
+                                call.put("responseBodyBase64", response.getBody() == null ? null
+                                    : java.util.Base64.getEncoder().encodeToString(response.getBody()));
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.TopicList received =
+                api.getSystemTopicListFromBroker("broker-a:10911", 2345L);
+            result.put("topics", new TreeSet<>(received.getTopicList()));
+            try {
+                api.getSystemTopicListFromBroker("broker-a:10911", 3456L);
+                result.put("errorOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+                result.put("errorOutcome", error.getClass().getSimpleName());
+                result.put("errorCode", error.getResponseCode());
+                result.put("errorMessage", error.getMessage());
+            }
+            try {
+                api.getSystemTopicListFromBroker("broker-a:10911", 4567L);
+                result.put("missingBodyOutcome", "returned");
+            } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+                result.put("missingBodyOutcome", error.getClass().getSimpleName());
+                result.put("missingBodyCode", error.getResponseCode());
             }
         } finally {
             api.shutdown();

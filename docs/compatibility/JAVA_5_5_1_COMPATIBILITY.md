@@ -73,10 +73,26 @@ NameServer selection, with no header or body, and decodes the returned
 case compare the signature, request envelope, topic set, Broker address,
 response code and remark. Rust maps a successful reply without a body to a
 structured `MalformedResponse`; Java throws `MQClientException` with response
-code 0. Current producer core fixture SHA-256:
-`6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`. This
-closes that direct RPC only; the composite `getSystemTopicList` operation and
-broad P18-V01 remain open, as do the final P18-V02 refresh and later gates.
+code 0. At that slice checkpoint, producer core fixture SHA-256 was
+`6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`. The
+Broker system-topic-list additions advanced that
+checkpoint to `c81645968935a1bb317952c0ea32c7bbf4a029e62fa879af1863a06a40d70f28`;
+the added missing-body outcome below advances the current producer core fixture
+SHA-256 to `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
+This closes the direct NameServer RPC only; the composite
+`getSystemTopicList` operation and broad P18-V01 remain open, as do the final
+P18-V02 refresh and later gates.
+
+Phase 18 Broker system-topic-list RPC (2026-10-21): Rust now maps the pinned
+`MQClientAPIImpl.getSystemTopicListFromBroker(String,long)` request code 305,
+including the configured VIP address transform, no-header/no-body envelope,
+`TopicList` decoding and Broker response errors. The direct Java invocation
+fixture and Rust scripted RPC compare the exact signature, request fields,
+topic set, Broker error and `SUCCESS` without a body. Java reports
+`MQClientException` with response code 0 for the missing body; Rust returns a
+structured `MalformedResponse`. Current producer core fixture SHA-256:
+`fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`. The
+composite `getSystemTopicList` operation remains open.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

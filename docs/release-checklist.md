@@ -5476,8 +5476,8 @@ owner-specific checks belong in the manual handoff.
   Broker address and error result.
 - [x] Rust NameServer differential checks success, error, code, Java language,
   empty ext fields and missing request body. The protocol `TopicList` now has
-  Java `RemotingSerializable` encode/decode adapters. Current producer core
-  fixture SHA-256:
+  Java `RemotingSerializable` encode/decode adapters. Fixture SHA-256 at this
+  slice checkpoint:
   `6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`.
 - [x] Core all-feature locked suite (177 unit tests, all integration targets,
   and 16 doctests), Producer fixture comparison, strict all-target/all-feature
@@ -5487,3 +5487,25 @@ owner-specific checks belong in the manual handoff.
 - The composite `getSystemTopicList` operation remains open. This closes the
   direct topic-list RPC only; broad P18-V01, current-worktree P18-V02, P18-V03
   and P18-V04 remain open.
+
+## P18-V01 Broker system-topic-list RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::get_system_topic_list_from_broker` for pinned Java
+  `MQClientAPIImpl.getSystemTopicListFromBroker(String,long)`: request 305,
+  VIP address transform, empty header/body, Java `TopicList` decode, and Broker
+  errors. The direct Java invocation fixture and Rust scripted RPC compare the
+  exact signature, address, timeout, response topic set, Broker error and
+  `SUCCESS` without a body (Java `MQClientException` code 0).
+- [x] Core VIP-enabled loopback confirms this operation connects through the
+  configured two-port address offset.
+- [x] Current producer core fixture SHA-256:
+  `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
+- [x] Core all-feature locked suite (178 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures, and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- The composite `getSystemTopicList` call remains open. This closes the direct
+  Broker operation only; broad P18-V01 and P18-V02/P18-V03/P18-V04 gates remain
+  open.

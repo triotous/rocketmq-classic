@@ -722,6 +722,100 @@ async fn topic_list_from_nameserver_matches_java_request_and_response() {
 }
 
 #[tokio::test]
+async fn system_topic_list_from_broker_matches_java_request_and_response() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["systemTopicListFromBrokerApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getSystemTopicListFromBroker(java.lang.String,long)"));
+    let cases = fixture["systemTopicListFromBrokerOperations"]
+        .as_object()
+        .unwrap();
+    assert_eq!(
+        cases["topics"],
+        json!(["rmq_sys_TRACE_DATA", "rmq_sys_TRANS_HALF_TOPIC"])
+    );
+    assert_eq!(cases["errorOutcome"], "MQClientException");
+    assert_eq!(cases["errorCode"], response::SYSTEM_ERROR);
+    assert_eq!(cases["missingBodyOutcome"], "MQClientException");
+    assert_eq!(cases["missingBodyCode"], response::SUCCESS);
+    let requests = cases["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 3);
+
+    let (client_api, client) = api().await;
+    for case in requests {
+        assert_eq!(case["address"], "broker-a:10911");
+        assert_eq!(
+            case["requestCode"],
+            request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER
+        );
+        assert_eq!(case["extFieldsPresent"], false);
+        assert_eq!(case["requestBodyPresent"], false);
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let body_present = response_body.is_some();
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            response_body,
+        )
+        .await;
+        let result = client_api
+            .get_system_topic_list_from_broker(&addr, Instant::now() + Duration::from_secs(2))
+            .await;
+        if response_code == response::SUCCESS && body_present {
+            assert_eq!(
+                result.unwrap().get_topic_list().unwrap().snapshot(),
+                HashSet::from([
+                    "rmq_sys_TRACE_DATA".to_owned(),
+                    "rmq_sys_TRANS_HALF_TOPIC".to_owned(),
+                ])
+            );
+        } else if response_code == response::SUCCESS {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER,
+                    peer: error_peer,
+                    ..
+                }) if error_peer == addr
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && remark == "system topics unavailable"
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER);
+        assert!(request.body.is_none());
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(
