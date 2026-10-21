@@ -57,6 +57,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("directConsumeEntrypoint", "MQClientInstance.consumeMessageDirectly(MessageExt,String,String)");
         fixture.put("directConsume", direct);
         fixture.put("customSubtypeProcessQueue", customSubtypeProcessQueue());
+        fixture.put("priorityPropertySubtype", priorityPropertySubtype());
         fixture.put("resetOffsetEntrypoint", "MQClientInstance.resetOffset(String,String,Map<MessageQueue,Long>)");
         fixture.put("resetOffset", reset);
         fixture.put("resetStoreHandoff", reset("store-handoff"));
@@ -444,6 +445,7 @@ public final class RuntimeConsumerOperationsFixtures {
             message.setBornHost(new java.net.InetSocketAddress("127.0.0.1", 10912));
             message.setTopicSysFlag(5);
             message.setGroupSysFlag(6);
+            message.setPriority(-7);
             message.setWaitStoreMsgOK(true);
             message.setBuyerId("base-buyer");
             message.setInstanceId("base-instance");
@@ -521,6 +523,9 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("storeHost", messages.get(0).getStoreHost().toString());
                     item.put("topicSysFlag", messages.get(0).getTopicSysFlag());
                     item.put("groupSysFlag", messages.get(0).getGroupSysFlag());
+                    item.put("priority", messages.get(0).getPriority());
+                    item.put("priorityProperty", messages.get(0).getProperty(
+                        org.apache.rocketmq.common.message.MessageConst.PROPERTY_PRIORITY));
                     item.put("waitStore", messages.get(0).isWaitStoreMsgOK());
                     item.put("buyerId", messages.get(0).getBuyerId());
                     item.put("delayTimeLevel", messages.get(0).getDelayTimeLevel());
@@ -616,6 +621,9 @@ public final class RuntimeConsumerOperationsFixtures {
         private int hasPropertyReads;
         private int transactionIdReads;
         private int userApiWrites;
+        private int priorityReads;
+        private int priorityWrites;
+        private int customPriority = 37;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -698,6 +706,18 @@ public final class RuntimeConsumerOperationsFixtures {
         @Override
         public void setFlag(int flag) {
             this.flagWrites++;
+        }
+
+        @Override
+        public int getPriority() {
+            priorityReads++;
+            return customPriority;
+        }
+
+        @Override
+        public void setPriority(int priority) {
+            priorityWrites++;
+            customPriority = priority;
         }
 
         @Override
@@ -979,7 +999,9 @@ public final class RuntimeConsumerOperationsFixtures {
                 + ";userPropertyReads=" + userPropertyReads
                 + ";hasPropertyReads=" + hasPropertyReads
                 + ";transactionIdReads=" + transactionIdReads
-                + ";userApiWrites=" + userApiWrites;
+                + ";userApiWrites=" + userApiWrites
+                + ";priorityWrites=" + priorityWrites
+                + ";priorityReads=" + priorityReads;
         }
 
         @Override
@@ -1016,6 +1038,36 @@ public final class RuntimeConsumerOperationsFixtures {
         result.put("offsets", new ArrayList<>(processQueue.getMsgTreeMap().keySet()));
         result.put("customField", message.getCustomField());
         return result;
+    }
+
+    private static Map<String, Object> priorityPropertySubtype() {
+        var message = new PriorityPropertyMessageExt();
+        message.setPriority(17);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("priority", message.getPriority());
+        result.put("priorityProperty", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_PRIORITY));
+        result.put("storedPriorityProperty", message.getProperties().get(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_PRIORITY));
+        boolean negativeRejected;
+        try {
+            message.setPriority(-1);
+            negativeRejected = false;
+        } catch (IllegalArgumentException expected) {
+            negativeRejected = true;
+        }
+        result.put("negativePriorityRejected", negativeRejected);
+        return result;
+    }
+
+    private static final class PriorityPropertyMessageExt extends org.apache.rocketmq.common.message.MessageExt {
+        @Override
+        public String getProperty(String name) {
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_PRIORITY.equals(name)) {
+                return "23";
+            }
+            return super.getProperty(name);
+        }
     }
 
     private static Map<String, Object> runningInfo(String name) throws Exception {

@@ -2338,6 +2338,28 @@ impl MessageExt {
             .and_then(|subtype| subtype.broker_name())
             .unwrap_or(self.broker_name.as_deref())
     }
+    /// Java's virtual `Message.getPriority()`, including subtype overrides.
+    pub fn priority(&self) -> i32 {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.priority())
+            .unwrap_or_else(|| {
+                self.get_property(crate::message::constants::PROPERTY_PRIORITY)
+                    .and_then(|value| parse_java_i32(&value))
+                    .unwrap_or(-1)
+            })
+    }
+    /// Java's virtual `Message.setPriority(int)`, including subtype overrides.
+    pub fn set_priority(&mut self, priority: i32) -> Result<(), MessagePropertyError> {
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_priority(priority))
+        {
+            return Ok(());
+        }
+        self.message.set_priority(priority)
+    }
     pub fn queue_id(&self) -> i32 {
         self.runtime_subtype
             .as_ref()
@@ -2816,6 +2838,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     /// Override Java's virtual `Message.getProperty(String)`.
     fn property(&self, _key: Option<&str>) -> Option<Option<String>> {
         None
+    }
+
+    /// Override Java's virtual `Message.getPriority()`.
+    fn priority(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `Message.setPriority(int)`.
+    fn set_priority(&self, _priority: i32) -> bool {
+        false
     }
 
     /// Override Java's virtual `Message.getUserProperty(String)`.

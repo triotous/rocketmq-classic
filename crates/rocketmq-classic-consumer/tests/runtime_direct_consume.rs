@@ -31,6 +31,19 @@ impl ConsumerRuntime for OtherConsumer {
     }
 }
 
+struct PriorityPropertyOnlySubtype;
+
+impl MessageExtSubtype for PriorityPropertyOnlySubtype {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn property(&self, key: Option<&str>) -> Option<Option<String>> {
+        (key == Some(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY))
+            .then(|| Some("23".to_owned()))
+    }
+}
+
 fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
     let message_class = message
         .runtime_subtype_name()
@@ -102,6 +115,10 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["storeHost"] = json!(message.store_host().map(ToString::to_string));
         record["topicSysFlag"] = json!(message.topic_sys_flag().unwrap());
         record["groupSysFlag"] = json!(message.group_sys_flag().unwrap());
+        record["priority"] = json!(message.priority());
+        record["priorityProperty"] = json!(
+            message.get_property(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY)
+        );
         record["waitStore"] = json!(message.is_wait_store_msg_ok());
         record["buyerId"] = json!(message.buyer_id());
         record["delayTimeLevel"] = json!(message.delay_time_level().unwrap());
@@ -138,6 +155,9 @@ struct CustomDirectMessageExt {
     has_property_reads: std::sync::atomic::AtomicUsize,
     transaction_id_reads: std::sync::atomic::AtomicUsize,
     user_api_writes: std::sync::atomic::AtomicUsize,
+    priority_reads: std::sync::atomic::AtomicUsize,
+    priority_writes: std::sync::atomic::AtomicUsize,
+    custom_priority: std::sync::atomic::AtomicI32,
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
@@ -167,6 +187,9 @@ impl CustomDirectMessageExt {
             has_property_reads: std::sync::atomic::AtomicUsize::new(0),
             transaction_id_reads: std::sync::atomic::AtomicUsize::new(0),
             user_api_writes: std::sync::atomic::AtomicUsize::new(0),
+            priority_reads: std::sync::atomic::AtomicUsize::new(0),
+            priority_writes: std::sync::atomic::AtomicUsize::new(0),
+            custom_priority: std::sync::atomic::AtomicI32::new(37),
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
@@ -181,7 +204,7 @@ impl CustomDirectMessageExt {
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};hostFlagWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={};userPropertyReads={};hasPropertyReads={};transactionIdReads={};userApiWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};hostFlagWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={};userPropertyReads={};hasPropertyReads={};transactionIdReads={};userApiWrites={};priorityWrites={};priorityReads={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -200,7 +223,9 @@ impl CustomDirectMessageExt {
             self.user_property_reads.load(Ordering::SeqCst),
             self.has_property_reads.load(Ordering::SeqCst),
             self.transaction_id_reads.load(Ordering::SeqCst),
-            self.user_api_writes.load(Ordering::SeqCst)
+            self.user_api_writes.load(Ordering::SeqCst),
+            self.priority_writes.load(Ordering::SeqCst),
+            self.priority_reads.load(Ordering::SeqCst)
         )
     }
 }
@@ -259,6 +284,17 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             }
             _ => None,
         }
+    }
+
+    fn priority(&self) -> Option<i32> {
+        self.priority_reads.fetch_add(1, Ordering::SeqCst);
+        Some(self.custom_priority.load(Ordering::SeqCst))
+    }
+
+    fn set_priority(&self, priority: i32) -> bool {
+        self.priority_writes.fetch_add(1, Ordering::SeqCst);
+        self.custom_priority.store(priority, Ordering::SeqCst);
+        true
     }
 
     fn user_property(&self, key: Option<&str>) -> Option<Option<String>> {
@@ -700,6 +736,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_born_host(Some(MessageHostAddress::new("127.0.0.1", 10912)));
             message.set_topic_sys_flag(Some(5));
             message.set_group_sys_flag(Some(6));
+            message.set_priority(-7).unwrap();
             message.set_wait_store_msg_ok(true).unwrap();
             message.set_buyer_id("base-buyer");
             message.set_instance_id("base-instance");
@@ -796,6 +833,40 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
         push.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
+}
+
+#[test]
+fn inherited_priority_methods_use_subtype_property_and_base_setter_semantics() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/runtime/consumer-operations.json"
+    ))
+    .unwrap();
+    let expected = &fixture["priorityPropertySubtype"];
+    let mut message = MessageExt::default();
+    message.set_runtime_subtype(Arc::new(PriorityPropertyOnlySubtype));
+
+    assert_eq!(message.set_priority(17), Ok(()));
+    assert_eq!(
+        message.priority(),
+        expected["priority"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY),
+        expected["priorityProperty"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message.get_properties().and_then(|properties| properties
+            .get(rocketmq_classic_common::message::constants::PROPERTY_PRIORITY)
+            .cloned()),
+        expected["storedPriorityProperty"]
+            .as_str()
+            .map(str::to_owned)
+    );
+    assert_eq!(
+        message.set_priority(-1),
+        Err(rocketmq_classic_common::message::MessagePropertyError::NegativePriority)
+    );
+    assert_eq!(expected["negativePriorityRejected"], true);
 }
 
 #[test]
