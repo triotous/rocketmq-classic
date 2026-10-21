@@ -1,5 +1,16 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 `exportRocksDBConfigToJson` (2026-10-21): Rust maps pinned
+`MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` request 355 and
+the `ExportRocksDBConfigToJsonRequestHeader`/`ConfigType` APIs. Enum parsing
+preserves Java's case-insensitive trimmed names and semicolon serialization,
+including the trailing delimiter. The direct Broker address and caller timeout
+are retained; empty lists send an empty `configType`, and null lists fail
+locally before transport. Invoked Java and Rust fixtures cover request fields,
+typed header encoding, parsing, success, and Broker rejection. Fixture digest
+and gate results are in the Phase 18 release checklist. This closes this
+operation/header slice only; broad P18-V01 remains open.
+
 Phase 18 `resetMasterFlushOffset` (2026-10-21): the pinned direct
 `MQClientAPIImpl.resetMasterFlushOffset(String,long)` operation maps request
 908 with `masterFlushOffset`, uses the Broker address unchanged even with VIP

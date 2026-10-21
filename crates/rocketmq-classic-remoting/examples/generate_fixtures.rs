@@ -19,6 +19,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
+        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
@@ -625,6 +626,15 @@ fn generate_p4_headers(output: &std::path::Path) {
     write_typed(output, "typed-reset-master-flush-offset.bin", 908, &{
         let mut header = ResetMasterFlushOffsetHeader::default();
         header.set_master_flush_offset(Some(9_876_543_210));
+        header
+    });
+    write_typed(output, "typed-export-rocksdb-config-request.bin", 355, &{
+        let mut header = ExportRocksDBConfigToJsonRequestHeader::default();
+        header.update_config_type(&[
+            ExportRocksDBConfigType::Topics,
+            ExportRocksDBConfigType::SubscriptionGroups,
+            ExportRocksDBConfigType::ConsumerOffsets,
+        ]);
         header
     });
     write_typed(output, "typed-pop.bin", 200050, &{

@@ -5908,6 +5908,28 @@ owner-specific checks belong in the manual handoff.
   live Broker scenarios remain open. Four preserved Phase 19 worktree paths
   remain unstaged and untouched.
 
+## P18-V01 `exportRocksDBConfigToJson` Broker API — 2026-10-21
+
+- [x] Mapped pinned Java request 355 and the
+  `ExportRocksDBConfigToJsonRequestHeader`/`ConfigType` public API. The Core
+  call preserves the supplied Broker address and caller deadline, serializes
+  the Java enum type names with a trailing semicolon, returns on `SUCCESS`, and
+  reports Broker rejection. A nullable-list adapter rejects null before RPC.
+- [x] Java invoked fixtures cover the method and enum API inventories, valid,
+  empty, case/whitespace parsing, unknown type, all/empty/null lists, exact
+  request fields, success, and Broker rejection. The typed header fixture and
+  decode-mode fixture cover Java↔Rust fields including empty and missing
+  `configType`. Producer core fixture SHA-256:
+  `a7188f46b4dae2f2a509e4caf5f96aaba00f74964afabc1454e5ca92b23bd344`.
+- [x] Protocol `header_inventory` passes (10 tests), Protocol `headers` passes
+  (21 tests, including `header_validation_matrix`), and the focused Core RPC
+  differential passes. Strict locked workspace Clippy, formatting, and diff
+  checks pass. Pinned Maven `verify` passes with 37 manifest scenarios, 75
+  typed headers, and 15 typed bodies.
+- Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04,
+  and Phase 19 live Broker scenarios remain open. Four preserved Phase 19
+  worktree paths remain unstaged and untouched.
+
 ## P18-V01 `resetMasterFlushOffset` Broker API — 2026-10-21
 
 - [x] Added `MQClientApi::reset_master_flush_offset` for pinned Java request

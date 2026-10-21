@@ -1417,3 +1417,16 @@ decoding. Java fixtures and Rust tests compare a maximum signed-long value, a
 negative value, the typed frame, timeout, address, and both outcomes. This
 closes the direct API/header slice only; broad P18-V01 reconciliation and
 platform evidence gates remain open.
+
+## Direct `exportRocksDBConfigToJson` API — 2026-10-21
+
+Pinned `MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` sends
+request 355 to the supplied address with the supplied timeout. The Rust header
+and enum map Java's nullable `configType`, type-name conversion, case-insensitive
+trimmed parsing, and trailing-semicolon serialization. `SUCCESS` returns;
+other Broker response codes preserve the response error. The Rust nullable-list
+adapter rejects a null list before any transport request. Invoked Java fixtures,
+typed header frames, Protocol tests, and the Core loopback comparison cover the
+API signature, parser results, request envelope, empty/null lists, and both
+response outcomes. This closes the named API/header slice only; broad P18-V01,
+P18-V02 and platform evidence gates remain open.

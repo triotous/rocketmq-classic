@@ -850,6 +850,14 @@ public final class Main {
         resetMasterFlushOffset.setMasterFlushOffset(9_876_543_210L);
         writeTypedHeaderFixture(output, "reset-master-flush-offset", 908, resetMasterFlushOffset);
 
+        org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader exportRocksDB =
+            new org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader();
+        exportRocksDB.updateConfigType(java.util.Arrays.asList(
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.TOPICS,
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.SUBSCRIPTION_GROUPS,
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.CONSUMER_OFFSETS));
+        writeTypedHeaderFixture(output, "export-rocksdb-config-request", 355, exportRocksDB);
+
         NotificationResponseHeader notificationResponse = new NotificationResponseHeader();
         notificationResponse.setHasMsg(true); notificationResponse.setPollingFull(false);
         writeTypedHeaderFixture(output, "notification-response", RemotingCommand.createResponseCommandWithHeader(0, notificationResponse));
@@ -1055,7 +1063,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 74, "all Rust typed header fixtures were supplied");
+            require(count == 75, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1103,6 +1111,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-notification-response.bin", 0);
             assertAllExtFields(byName, "typed-reset-offset.bin", 211);
             assertAllExtFields(byName, "typed-reset-master-flush-offset.bin", 908);
+            assertAllExtFields(byName, "typed-export-rocksdb-config-request.bin", 355);
             assertAllExtFields(byName, "typed-pop.bin", 200050);
             assertAllExtFields(byName, "typed-pop-response.bin", 0);
             assertAllExtFields(byName, "typed-pop-lite-response.bin", 0);
@@ -1202,6 +1211,8 @@ public final class Main {
             assertExtField(byName, "typed-reset-offset.bin", 211, "timestamp", "1712345678901");
             assertExtField(byName, "typed-reset-master-flush-offset.bin", 908,
                 "masterFlushOffset", "9876543210");
+            assertExtField(byName, "typed-export-rocksdb-config-request.bin", 355,
+                "configType", "topics;subscriptionGroups;consumerOffsets;");
             assertExtField(byName, "typed-pop.bin", 200050, "maxMsgNums", "16");
             assertExtField(byName, "typed-ack.bin", 200051, "extraInfo", "startOffset popTime invisibleTime queueId");
             assertExtField(byName, "typed-change-invisible.bin", 200053, "invisibleTime", "60000");
@@ -1287,6 +1298,7 @@ public final class Main {
             case "typed-notification-response.bin": fixtureStem = "header-notification-response"; break;
             case "typed-reset-offset.bin": fixtureStem = "header-reset-offset-request"; break;
             case "typed-reset-master-flush-offset.bin": fixtureStem = "header-reset-master-flush-offset"; break;
+            case "typed-export-rocksdb-config-request.bin": fixtureStem = "header-export-rocksdb-config-request"; break;
             case "typed-pop.bin": fixtureStem = "header-pop-request"; break;
             case "typed-pop-lite-response.bin": fixtureStem = "header-pop-lite-response"; break;
             case "typed-ack.bin": fixtureStem = "header-ack-request"; break;

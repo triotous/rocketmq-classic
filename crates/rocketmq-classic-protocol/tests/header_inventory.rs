@@ -72,6 +72,7 @@ macro_rules! inventory {
             GetLiteTopicInfoRequestHeader => ("header-lite-topic-info-request", "typed-lite-topic-info-request.bin"),
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
             ResetMasterFlushOffsetHeader => ("header-reset-master-flush-offset", "typed-reset-master-flush-offset.bin"),
+            ExportRocksDBConfigToJsonRequestHeader => ("header-export-rocksdb-config-request", "typed-export-rocksdb-config-request.bin"),
             GetConsumerStatusRequestHeader => ("header-consumer-status-request", "typed-consumer-status-request.bin"),
             GetConsumerConnectionListRequestHeader => ("header-consumer-connection-list-request", "typed-consumer-connection-list-request.bin"),
             PopMessageRequestHeader => ("header-pop-request", "typed-pop.bin"),
@@ -414,6 +415,78 @@ fn reset_master_flush_offset_header_api_matches_java_inventory() {
             method
         ));
     }
+}
+
+#[test]
+fn export_rocksdb_config_header_and_enum_api_match_java_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let header = &fixture["apiInventories"]["ExportRocksDBConfigToJsonRequestHeader"];
+    assert_eq!(header["publicFields"], serde_json::json!([]));
+    let header_methods = header["declaredPublicMethods"].as_array().unwrap();
+    for java_method in [
+        "fetchConfigType",
+        "checkFields",
+        "getConfigType",
+        "updateConfigType",
+        "setConfigType",
+    ] {
+        assert!(header_methods.iter().any(|method| {
+            method
+                .as_str()
+                .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+        }));
+    }
+
+    let enum_api = &fixture["apiInventories"]["ExportRocksDBConfigType"];
+    let enum_methods = enum_api["declaredPublicMethods"].as_array().unwrap();
+    for java_method in [
+        "getConfigTypeByName",
+        "fromString",
+        "toString",
+        "getTypeName",
+    ] {
+        assert!(enum_methods.iter().any(|method| {
+            method
+                .as_str()
+                .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+        }));
+    }
+
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for method in [
+        "fetch_config_type",
+        "update_config_type",
+        "get_config_type",
+        "set_config_type",
+        "check_fields",
+    ] {
+        assert!(rust_header_method_exists(
+            source,
+            trait_source,
+            "ExportRocksDBConfigToJsonRequestHeader",
+            method
+        ));
+    }
+    for method in [
+        "get_config_type_by_name",
+        "from_string",
+        "to_string",
+        "get_type_name",
+        "value_of",
+        "name",
+        "java_to_string",
+    ] {
+        assert!(
+            rust_header_method_exists(source, trait_source, "ExportRocksDBConfigType", method),
+            "missing Rust enum API method {method}"
+        );
+    }
+    assert!(source.contains("pub const fn values()"));
+    assert!(source.contains("pub const fn ordinal(self)"));
 }
 
 #[test]

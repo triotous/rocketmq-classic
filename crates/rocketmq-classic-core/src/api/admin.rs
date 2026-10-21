@@ -18,6 +18,7 @@ use rocketmq_classic_protocol::{
         CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
+        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
         GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
@@ -541,6 +542,60 @@ impl MQClientApi {
                     ..RemotingCommand::default()
                 },
                 Instant::now() + Duration::from_millis(3000),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        Ok(())
+    }
+
+    /// Exports the selected RocksDB configuration through Java
+    /// `MQClientAPIImpl.exportRocksDBConfigToJson`.
+    pub async fn export_rocksdb_config_to_json(
+        &self,
+        addr: &str,
+        config_types: &[ExportRocksDBConfigType],
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        self.export_rocksdb_config_to_json_nullable(addr, Some(config_types), deadline)
+            .await
+    }
+
+    /// Nullable-list adapter for Java's `List<ConfigType>` input. A null list
+    /// fails before sending any request, matching Java's header update path.
+    pub async fn export_rocksdb_config_to_json_nullable(
+        &self,
+        addr: &str,
+        config_types: Option<&[ExportRocksDBConfigType]>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let config_types = config_types.ok_or_else(|| {
+            RpcError::Header(
+                rocketmq_classic_protocol::header::ProtocolError::MissingField("configType"),
+            )
+        })?;
+        let mut header = ExportRocksDBConfigToJsonRequestHeader::default();
+        header.update_config_type(config_types);
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let code = request::EXPORT_ROCKSDB_CONFIG_TO_JSON;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
             )
             .await?;
         if reply.code != response::SUCCESS {

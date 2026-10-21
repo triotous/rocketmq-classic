@@ -3778,6 +3778,138 @@ impl CommandHeader for ResetMasterFlushOffsetHeader {
     }
 }
 
+/// The three configuration families accepted by Java's
+/// `ExportRocksDBConfigToJsonRequestHeader.ConfigType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExportRocksDBConfigType {
+    Topics,
+    SubscriptionGroups,
+    ConsumerOffsets,
+}
+
+impl ExportRocksDBConfigType {
+    pub const fn values() -> &'static [Self] {
+        &[
+            Self::Topics,
+            Self::SubscriptionGroups,
+            Self::ConsumerOffsets,
+        ]
+    }
+
+    pub fn value_of(name: &str) -> Result<Self, ProtocolError> {
+        match name {
+            "TOPICS" => Ok(Self::Topics),
+            "SUBSCRIPTION_GROUPS" => Ok(Self::SubscriptionGroups),
+            "CONSUMER_OFFSETS" => Ok(Self::ConsumerOffsets),
+            _ => Err(ProtocolError::InvalidField {
+                field: "configType",
+                reason: format!("Unknown enum name: {name}"),
+            }),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Topics => "TOPICS",
+            Self::SubscriptionGroups => "SUBSCRIPTION_GROUPS",
+            Self::ConsumerOffsets => "CONSUMER_OFFSETS",
+        }
+    }
+
+    pub const fn ordinal(self) -> usize {
+        match self {
+            Self::Topics => 0,
+            Self::SubscriptionGroups => 1,
+            Self::ConsumerOffsets => 2,
+        }
+    }
+
+    /// Java `Enum.toString()` returns the enum constant name.
+    pub fn java_to_string(self) -> &'static str {
+        self.name()
+    }
+
+    pub fn get_config_type_by_name(name: &str) -> Result<Self, ProtocolError> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "topics" => Ok(Self::Topics),
+            "subscriptiongroups" => Ok(Self::SubscriptionGroups),
+            "consumeroffsets" => Ok(Self::ConsumerOffsets),
+            _ => Err(ProtocolError::InvalidField {
+                field: "configType",
+                reason: format!("Unknown config type: {name}"),
+            }),
+        }
+    }
+
+    pub fn from_string(value: &str) -> Result<Vec<Self>, ProtocolError> {
+        value
+            .split(';')
+            .filter(|name| !name.is_empty())
+            .map(Self::get_config_type_by_name)
+            .collect()
+    }
+
+    /// Formats Java's semicolon-separated list, including its trailing
+    /// separator after every enum value.
+    pub fn to_string(config_types: &[Self]) -> String {
+        let mut result = String::new();
+        for config_type in config_types {
+            result.push_str(config_type.get_type_name());
+            result.push(';');
+        }
+        result
+    }
+
+    pub fn get_type_name(self) -> &'static str {
+        match self {
+            Self::Topics => "topics",
+            Self::SubscriptionGroups => "subscriptionGroups",
+            Self::ConsumerOffsets => "consumerOffsets",
+        }
+    }
+}
+
+/// Java `ExportRocksDBConfigToJsonRequestHeader`, whose nullable config field
+/// is serialized without validation by `checkFields()`.
+#[derive(Debug, Clone, Default)]
+pub struct ExportRocksDBConfigToJsonRequestHeader {
+    pub(crate) config_type: Option<String>,
+}
+
+impl ExportRocksDBConfigToJsonRequestHeader {
+    pub fn fetch_config_type(&self) -> Result<Vec<ExportRocksDBConfigType>, ProtocolError> {
+        let value = self
+            .config_type
+            .as_deref()
+            .ok_or(ProtocolError::MissingField("configType"))?;
+        ExportRocksDBConfigType::from_string(value)
+    }
+
+    pub fn update_config_type(&mut self, config_types: &[ExportRocksDBConfigType]) {
+        self.config_type = Some(ExportRocksDBConfigType::to_string(config_types));
+    }
+
+    pub fn get_config_type(&self) -> Option<&str> {
+        self.config_type.as_deref()
+    }
+
+    pub fn set_config_type(&mut self, value: Option<String>) {
+        self.config_type = value;
+    }
+}
+
+impl CommandHeader for ExportRocksDBConfigToJsonRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "configType", self.config_type.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            config_type: optional_string(fields, "configType"),
+        })
+    }
+}
+
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.
 ///
 /// ```compile_fail

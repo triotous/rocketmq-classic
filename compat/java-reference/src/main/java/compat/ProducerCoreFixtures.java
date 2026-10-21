@@ -296,6 +296,21 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("resetMasterFlushOffsetOperations", resetMasterFlushOffsetOperations());
+        result.put("exportRocksDBConfigToJsonApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("exportRocksDBConfigToJson"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("exportRocksDBConfigTypeApi", Arrays.stream(
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.class
+                .getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("exportRocksDBConfigTypeParsing", exportRocksDBConfigTypeParsing());
+        result.put("exportRocksDBConfigToJsonOperations", exportRocksDBConfigToJsonOperations());
         result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
@@ -2880,6 +2895,119 @@ public final class ProducerCoreFixtures {
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> exportRocksDBConfigTypeParsing() {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        for (String input : List.of("topics;subscriptionGroups;consumerOffsets;", "", "toPics; subScriptiongroups")) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("input", input);
+            List<org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType>
+                parsed = org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType
+                    .fromString(input);
+            row.put("outcome", "returned");
+            row.put("enumNames", parsed.stream().map(Enum::name).collect(java.util.stream.Collectors.toList()));
+            row.put("typeNames", parsed.stream()
+                .map(org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType::getTypeName)
+                .collect(java.util.stream.Collectors.toList()));
+            row.put("serialized", org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType
+                .toString(parsed));
+            cases.add(row);
+        }
+        Map<String, Object> unknown = new TreeMap<>();
+        unknown.put("input", "topics; subscription");
+        try {
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType
+                .fromString("topics; subscription");
+            unknown.put("outcome", "returned");
+        } catch (IllegalArgumentException error) {
+            unknown.put("outcome", error.getClass().getSimpleName());
+            unknown.put("errorMessage", error.getMessage());
+        }
+        cases.add(unknown);
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> exportRocksDBConfigToJsonOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType
+            types = org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.TOPICS;
+        cases.add(exportRocksDBConfigToJsonCase("all-success", Arrays.asList(
+            types,
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.SUBSCRIPTION_GROUPS,
+            org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.CONSUMER_OFFSETS),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(exportRocksDBConfigToJsonCase("empty-success", List.of(),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(exportRocksDBConfigToJsonCase("broker-error", List.of(types),
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "RocksDB export rejected"));
+        cases.add(exportRocksDBConfigToJsonCase("null-list", null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> exportRocksDBConfigToJsonCase(
+        String name,
+        List<org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType> configTypes,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("export-rocksdb-config-api");
+        clientConfig.setVipChannelEnabled(true);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            return org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("configTypeNames", configTypes == null ? null
+            : configTypes.stream().map(Enum::name).collect(java.util.stream.Collectors.toList()));
+        result.put("configType", configTypes == null ? null
+            : org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType
+                .toString(configTypes));
+        try {
+            api.exportRocksDBConfigToJson("broker-a:10911", configTypes, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
             result.put("errorMessage", error.getMessage());
         } finally {
             api.shutdown();

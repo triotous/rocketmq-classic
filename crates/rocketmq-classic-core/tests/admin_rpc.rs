@@ -18,7 +18,7 @@ use rocketmq_classic_protocol::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, GetConsumeStatsRequestHeader,
+        DeleteTopicRequestHeader, ExportRocksDBConfigType, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetEarliestMsgStoretimeRequestHeader, GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader,
         GetTopicStatsInfoRequestHeader, HeaderMap, QueryConsumeTimeSpanRequestHeader,
@@ -1825,6 +1825,111 @@ async fn reset_master_flush_offset_matches_java_header_timeout_and_outcomes() {
             java_request["extFields"]["masterFlushOffset"],
             offset.to_string()
         );
+        assert!(java_request["requestBodyBase64"].is_null());
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn export_rocksdb_config_to_json_matches_java_request_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["exportRocksDBConfigToJsonApi"],
+        json!([
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.exportRocksDBConfigToJson(java.lang.String,java.util.List,long)"
+        ])
+    );
+    let cases = fixture["exportRocksDBConfigToJsonOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+    let (client_api, client) = api().await;
+    for case in cases {
+        if case["name"] == "null-list" {
+            assert_eq!(case["outcome"], "NullPointerException");
+            assert!(case["requests"].as_array().unwrap().is_empty());
+
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            assert!(matches!(
+                client_api
+                    .export_rocksdb_config_to_json_nullable(
+                        &addr,
+                        None,
+                        Instant::now() + Duration::from_millis(2345),
+                    )
+                    .await,
+                Err(RpcError::Header(
+                    rocketmq_classic_protocol::header::ProtocolError::MissingField("configType")
+                ))
+            ));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                    .await
+                    .is_err()
+            );
+            continue;
+        }
+
+        let config_types = case["configTypeNames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| ExportRocksDBConfigType::value_of(name.as_str().unwrap()).unwrap())
+            .collect::<Vec<_>>();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, None).await;
+        let result = client_api
+            .export_rocksdb_config_to_json(
+                &addr,
+                &config_types,
+                Instant::now() + Duration::from_millis(2345),
+            )
+            .await;
+        if response_code == response::SUCCESS {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::EXPORT_ROCKSDB_CONFIG_TO_JSON,
+                    peer: error_peer,
+                    code,
+                    remark: Some(error_remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && Some(error_remark.as_str()) == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::EXPORT_ROCKSDB_CONFIG_TO_JSON);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert_eq!(request.body, None);
+        assert_eq!(request.ext_fields.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            request.ext_fields.as_ref().unwrap()["configType"],
+            case["configType"]
+        );
+        assert_eq!(
+            ExportRocksDBConfigType::to_string(&config_types),
+            case["configType"]
+        );
+
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["address"], "broker-a:10911");
+        assert_eq!(
+            java_request["requestCode"],
+            request::EXPORT_ROCKSDB_CONFIG_TO_JSON
+        );
+        assert_eq!(java_request["timeoutMillis"], 2345);
+        assert_eq!(java_request["extFields"]["configType"], case["configType"]);
         assert!(java_request["requestBodyBase64"].is_null());
     }
     client.shutdown().await;

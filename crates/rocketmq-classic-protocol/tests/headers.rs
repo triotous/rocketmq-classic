@@ -17,7 +17,8 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
-        FastCodesHeader, GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
+        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, FastCodesHeader,
+        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
@@ -403,6 +404,124 @@ fn reset_master_flush_offset_header_matches_java_nullable_long_and_reflection_de
             let expected_fields: HeaderMap =
                 serde_json::from_value(expected["encodedFields"].clone()).unwrap();
             assert_eq!(encoded, expected_fields, "{case_name} {mode_name}");
+        }
+    }
+}
+
+#[test]
+fn export_rocksdb_config_header_and_enum_match_java_contract() {
+    let raw = java_ext_fields("header-export-rocksdb-config-request");
+    let header = ExportRocksDBConfigToJsonRequestHeader::decode_fields(&raw).unwrap();
+    let expected = [
+        ExportRocksDBConfigType::Topics,
+        ExportRocksDBConfigType::SubscriptionGroups,
+        ExportRocksDBConfigType::ConsumerOffsets,
+    ];
+    assert_eq!(
+        header.get_config_type(),
+        Some("topics;subscriptionGroups;consumerOffsets;")
+    );
+    assert_eq!(header.fetch_config_type().unwrap(), expected);
+
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, raw);
+    let mut updated = ExportRocksDBConfigToJsonRequestHeader::default();
+    updated.update_config_type(&expected);
+    assert_eq!(updated.get_config_type(), header.get_config_type());
+    updated.set_config_type(None);
+    assert_eq!(updated.get_config_type(), None);
+    assert!(matches!(
+        updated.fetch_config_type(),
+        Err(rocketmq_classic_protocol::header::ProtocolError::MissingField("configType"))
+    ));
+
+    assert_eq!(
+        ExportRocksDBConfigType::from_string(" topics ; SUBSCRIPTIONGROUPS;consumerOffsets;")
+            .unwrap(),
+        expected
+    );
+    assert!(ExportRocksDBConfigType::from_string("topics;unknown").is_err());
+    assert_eq!(
+        ExportRocksDBConfigType::to_string(&expected),
+        "topics;subscriptionGroups;consumerOffsets;"
+    );
+    assert_eq!(ExportRocksDBConfigType::values(), &expected);
+    assert_eq!(
+        ExportRocksDBConfigType::SubscriptionGroups.name(),
+        "SUBSCRIPTION_GROUPS"
+    );
+    assert_eq!(ExportRocksDBConfigType::ConsumerOffsets.ordinal(), 2);
+    assert_eq!(ExportRocksDBConfigType::value_of("TOPICS"), Ok(expected[0]));
+
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    for case_name in [
+        "export-rocksdb-config-valid",
+        "export-rocksdb-config-empty",
+        "export-rocksdb-config-missing",
+    ] {
+        let case = &fixture["cases"][case_name];
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for mode in ["fast", "reflection"] {
+            let expected_fields: HeaderMap =
+                serde_json::from_value(case[mode]["encodedFields"].clone()).unwrap();
+            let decoded = ExportRocksDBConfigToJsonRequestHeader::decode_fields_with_mode(
+                &fields,
+                mode == "fast",
+            )
+            .unwrap();
+            let mut actual_fields = HeaderMap::new();
+            decoded.encode_fields(&mut actual_fields);
+            assert_eq!(actual_fields, expected_fields, "{case_name} {mode}");
+        }
+    }
+
+    let producer_fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    for case in producer_fixture["exportRocksDBConfigTypeParsing"]["cases"]
+        .as_array()
+        .unwrap()
+    {
+        let input = case["input"].as_str().unwrap();
+        if case["outcome"] == "returned" {
+            let parsed = ExportRocksDBConfigType::from_string(input).unwrap();
+            assert_eq!(
+                parsed.iter().map(|value| value.name()).collect::<Vec<_>>(),
+                case["enumNames"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                parsed
+                    .iter()
+                    .map(|value| value.get_type_name())
+                    .collect::<Vec<_>>(),
+                case["typeNames"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_str().unwrap())
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                ExportRocksDBConfigType::to_string(&parsed),
+                case["serialized"]
+            );
+        } else {
+            match ExportRocksDBConfigType::from_string(input).unwrap_err() {
+                rocketmq_classic_protocol::header::ProtocolError::InvalidField {
+                    reason, ..
+                } => {
+                    assert_eq!(reason, case["errorMessage"]);
+                }
+                error => panic!("unexpected error: {error}"),
+            }
         }
     }
 }
@@ -2277,6 +2396,15 @@ fn header_validation_matrix() {
             "",
             "masterFlushOffset",
             "",
+            ""
+        ),
+        row!(
+            ExportRocksDBConfigToJsonRequestHeader,
+            "export-rocksdb-config-request",
+            "",
+            "",
+            "",
+            "configType",
             ""
         ),
         row!(

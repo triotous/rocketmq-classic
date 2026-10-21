@@ -1,0 +1,30 @@
+# Phase 18 compatibility release gate — 2026-10-21 10:25:37 UTC
+
+## Bounded slice
+
+Mapped pinned Java 5.5.1 `MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` and request header 355. Java source comparison used the local pinned source at RocketMQ commit `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+
+The Rust Protocol layer now exposes `ExportRocksDBConfigToJsonRequestHeader` and `ExportRocksDBConfigType`; Core sends the Java semicolon-encoded `configType` to the supplied address with the caller deadline and maps Broker outcomes. Java/Rust fixtures cover enum API and parser behavior, valid and empty lists, null list before RPC, request fields, and success/error responses.
+
+## Actions and checks
+
+- Compiled the pinned Java reference and refreshed the typed header, admin header decode-mode, and producer Core fixtures.
+- The first Protocol header inventory run failed because its source-inspection helper did not recognize the Rust enum's `const fn` declarations. Updated the inventory assertion to check those const APIs explicitly; rerun passed (10 tests).
+- `cargo test -p rocketmq-classic-protocol --test headers` passed (21 tests, including the validation matrix).
+- `cargo test -p rocketmq-classic-core --test admin_rpc export_rocksdb_config_to_json_matches_java_request_and_outcomes` passed (1 focused test).
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed after applying rustfmt to the Rust edits. The initial fmt check reported only formatting differences, which were fixed.
+- `mvn -f compat/java-reference/pom.xml verify` passed: 37 scenario-manifest cases, 75 Java-decoded Rust typed headers, and 15 typed bodies.
+- Producer Core fixture SHA-256: `a7188f46b4dae2f2a509e4caf5f96aaba00f74964afabc1454e5ca92b23bd344`.
+- Updated Java compatibility evidence, Phase 6 API map, Phase 6 requirement audit, and release checklist. The Phase 18 plan was not modified.
+
+## Commit and remaining scope
+
+The code/documentation slice is validated and ready for its bounded commit. Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04, and Phase 19 work remain open.
+
+Pre-existing Phase 19 worktree paths preserved without staging or edits:
+
+- `integration-tests/README.md`
+- `tests/differential/run.sh`
+- `integration-tests/run-local.sh`
+- `rlogs/2026/09/20-phase-19-docker-local-validation__20261017T224455Z.rlog`

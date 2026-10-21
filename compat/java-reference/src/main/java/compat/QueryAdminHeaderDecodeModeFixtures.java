@@ -34,6 +34,7 @@ import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader;
@@ -85,6 +86,11 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("reset-master-flush-offset-missing", decodeModes("reset-master-flush-offset", fields()));
         cases.put("reset-master-flush-offset-invalid", decodeModes("reset-master-flush-offset",
             fields("masterFlushOffset", "not-a-long")));
+        cases.put("export-rocksdb-config-valid", decodeModes("export-rocksdb-config",
+            fields("configType", "topics;subscriptionGroups;consumerOffsets;")));
+        cases.put("export-rocksdb-config-empty", decodeModes("export-rocksdb-config",
+            fields("configType", "")));
+        cases.put("export-rocksdb-config-missing", decodeModes("export-rocksdb-config", fields()));
 
         cases.put("view-request-valid", decodeModes("view-request", fields(
             "topic", "orders", "offset", "9876")));
@@ -136,6 +142,10 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(GetSubscriptionGroupConfigRequestHeader.class));
         apiInventories.put("ResetMasterFlushOffsetHeader",
             apiInventory(ResetMasterFlushOffsetHeader.class));
+        apiInventories.put("ExportRocksDBConfigToJsonRequestHeader",
+            apiInventory(ExportRocksDBConfigToJsonRequestHeader.class));
+        apiInventories.put("ExportRocksDBConfigType",
+            apiInventory(ExportRocksDBConfigToJsonRequestHeader.ConfigType.class));
         apiInventories.put("DeleteTopicRequestHeader",
             apiInventory(DeleteTopicRequestHeader.class));
         apiInventories.put("DeleteTopicFromNamesrvRequestHeader",
@@ -188,6 +198,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 102;
         } else if ("reset-master-flush-offset".equals(type)) {
             code = 908;
+        } else if ("export-rocksdb-config".equals(type)) {
+            code = 355;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -223,6 +235,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "reset-master-flush-offset":
                     headerClass = ResetMasterFlushOffsetHeader.class;
+                    break;
+                case "export-rocksdb-config":
+                    headerClass = ExportRocksDBConfigToJsonRequestHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

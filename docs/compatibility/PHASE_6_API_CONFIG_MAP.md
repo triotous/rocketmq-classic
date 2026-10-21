@@ -1664,3 +1664,17 @@ reflection decoding maps missing and malformed values to null. The invoked
 Java fixture, typed Java↔Rust frame, and Rust differential cover the signed
 boundary, negative input, exact request, and success/error outcomes. This
 closes the named API/header rows only; broad P18-V01 remains open.
+
+## Direct `exportRocksDBConfigToJson` Broker API — 2026-10-21
+
+Pinned `MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` maps
+request 355 with the supplied address and caller timeout. The nullable
+`ExportRocksDBConfigToJsonRequestHeader.configType` field serializes
+`TOPICS`, `SUBSCRIPTION_GROUPS` and `CONSUMER_OFFSETS` as their Java type names
+with a trailing semicolon; an empty list serializes to an empty string. Rust
+exposes the header and `ExportRocksDBConfigType` parsing/accessor behavior, and
+`MQClientApi::export_rocksdb_config_to_json` returns on `SUCCESS` or preserves
+Broker response errors. A nullable-list adapter rejects null before transport.
+Java and Rust fixtures cover type parsing, frame fields, success, empty-list,
+null-list, and Broker-error cases. This closes the direct API/header slice
+only; broad P18-V01 reconciliation remains open.
