@@ -1997,9 +1997,10 @@ impl Hash for MessageClientExt {
 
 impl MessageClientExt {
     pub fn new() -> Self {
-        let mut message = MessageExt::default();
-        message.client_ext = true;
-        Self(message)
+        Self(MessageExt {
+            client_ext: true,
+            ..MessageExt::default()
+        })
     }
 
     pub fn message_id(&self) -> Option<String> {
