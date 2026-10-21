@@ -1675,16 +1675,19 @@ These scoped rows do not close the complete P18-V01 bidirectional audit.
 
 ## Push/POP process-queue idle timeout — 2026-10-21
 
-Java 5.5.1 `ProcessQueue` and `PopProcessQueue` read the shared
-`rocketmq.client.pull.pullMaxIdleTime` system property (default `120000`) and
-expire only when signed `currentTimeMillis - lastPullTimestamp` is greater than
-that value. Rust maps the same dotted name through its process environment,
-parses Java-compatible signed decimal longs during Push startup, and uses
-wrapping `i64` subtraction and the strict boundary for both queue types. Invalid
-values return the typed `PushConsumerError::PullIdleTimeSettings`. The
+Java 5.5.1 `ProcessQueue` and `PopProcessQueue` each capture the shared
+`rocketmq.client.pull.pullMaxIdleTime` system property (default `120000`) in a
+separate static field and expire only when signed
+`currentTimeMillis - lastPullTimestamp` is greater than that value. Rust maps
+the same dotted name through its process environment, parses Java-compatible
+signed decimal longs, and caches the ProcessQueue value on first Push startup or
+direct expiry use; the POP owner keeps its separate cache. Later environment
+changes do not replace either captured value. Both queue types use wrapping
+`i64` subtraction and the strict boundary. Invalid Push-start values return the
+typed `PushConsumerError::PullIdleTimeSettings`. The
 `subscribed-pull-expired` Java/Rust runtime comparison checks Push queue
-removal; parser and boundary tests cover the timeout arithmetic. POP assignment
-branches and the broader P18-V01 audit remain open.
+removal; parser, cache-lifetime, and boundary tests cover the timeout
+arithmetic. POP assignment branches and the broader P18-V01 audit remain open.
 
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 

@@ -32,6 +32,21 @@ pub(crate) fn pull_max_idle_time_from_environment() -> Result<i64, String> {
     }
 }
 
+fn cached_java_property<T: Clone, E: Clone>(
+    cache: &OnceLock<Result<T, E>>,
+    read_property: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    cache.get_or_init(read_property).clone()
+}
+
+pub(crate) fn process_queue_pull_max_idle_time() -> Result<i64, String> {
+    static JAVA_PULL_MAX_IDLE_TIME: OnceLock<Result<i64, String>> = OnceLock::new();
+    cached_java_property(
+        &JAVA_PULL_MAX_IDLE_TIME,
+        pull_max_idle_time_from_environment,
+    )
+}
+
 fn rebalance_lock_max_live_time_from_environment() -> i64 {
     static MAX_LIVE_TIME_MILLIS: OnceLock<i64> = OnceLock::new();
     *MAX_LIVE_TIME_MILLIS.get_or_init(|| {
@@ -511,6 +526,7 @@ impl ProcessQueue {
     }
 
     pub(crate) fn new_for_assignment(queue: MessageQueue, generation: u64) -> Self {
+        process_queue_pull_max_idle_time().unwrap_or_else(|error| panic!("{error}"));
         let now = epoch_millis();
         Self {
             queue,
@@ -563,7 +579,7 @@ impl ProcessQueue {
 
     pub fn is_pull_expired(&self) -> bool {
         self.is_pull_expired_with_timeout(
-            pull_max_idle_time_from_environment().unwrap_or_else(|error| panic!("{error}")),
+            process_queue_pull_max_idle_time().unwrap_or_else(|error| panic!("{error}")),
         )
     }
 
@@ -1662,6 +1678,19 @@ mod tests {
         assert_eq!(parse_pull_max_idle_time(Some("٢٠٢٤")).unwrap(), 2_024);
         assert!(parse_pull_max_idle_time(Some(" 120000")).is_err());
         assert!(parse_pull_max_idle_time(Some("9223372036854775808")).is_err());
+    }
+
+    #[test]
+    fn process_queue_pull_idle_property_keeps_its_first_java_class_value() {
+        let property = OnceLock::new();
+        assert_eq!(
+            cached_java_property(&property, || Ok::<_, String>(120_000)),
+            Ok(120_000)
+        );
+        assert_eq!(
+            cached_java_property(&property, || Ok::<_, String>(5)),
+            Ok(120_000)
+        );
     }
 
     #[test]

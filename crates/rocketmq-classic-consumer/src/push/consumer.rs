@@ -4384,7 +4384,7 @@ impl PushConsumer {
         self.config.set_consumer_group(consumer_group.clone());
         let consumer_group = consumer_group.ok_or(PushConsumerError::InvalidConsumerGroup)?;
         self.config.validate(&consumer_group)?;
-        let pull_max_idle_time_millis = crate::process_queue::pull_max_idle_time_from_environment()
+        let pull_max_idle_time_millis = crate::process_queue::process_queue_pull_max_idle_time()
             .map_err(PushConsumerError::PullIdleTimeSettings)?;
         self.pull_max_idle_time_millis
             .store(pull_max_idle_time_millis, Ordering::Release);
