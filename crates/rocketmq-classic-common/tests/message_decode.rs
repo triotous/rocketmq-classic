@@ -452,6 +452,14 @@ fn message_client_ext_api_matches_java_551_fixture() {
         message.message_id().as_deref(),
         expected["setMessageIdDoesNotReplaceOffsetFallback"].as_str()
     );
+    message.set_offset_message_id(None);
+    assert_eq!(message.offset_message_id(), None);
+    assert_eq!(message.message_id(), None);
+    assert_eq!(expected["offsetMessageIdCleared"].as_bool(), Some(true));
+    assert_eq!(
+        expected["messageIdAfterOffsetCleared"].as_bool(),
+        Some(true)
+    );
 
     // MessageClientExt inherits these setters and getters from MessageExt
     // and Message in Java. Exercise method resolution through the Rust wrapper.
@@ -496,15 +504,9 @@ fn message_client_ext_api_matches_java_551_fixture() {
     base_view.clear_system_property(
         rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
     );
-    assert_eq!(
-        base_view.message_id_for_runtime_type().as_deref(),
-        Some("offset-2")
-    );
+    assert_eq!(base_view.message_id_for_runtime_type().as_deref(), None);
     base_view.set_message_id(Some("ignored-without-unique".into()));
-    assert_eq!(
-        base_view.message_id_for_runtime_type().as_deref(),
-        Some("offset-2")
-    );
+    assert_eq!(base_view.message_id_for_runtime_type().as_deref(), None);
 }
 
 #[test]

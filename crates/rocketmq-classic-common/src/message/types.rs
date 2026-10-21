@@ -2740,12 +2740,16 @@ impl MessageExt {
         self.message_id = client_message_id;
     }
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
-        if !self
+        if self
             .runtime_subtype
             .as_ref()
             .is_some_and(|subtype| subtype.set_offset_message_id(value.clone()))
         {
-            self.offset_message_id = value;
+            return;
+        }
+        self.offset_message_id = value.clone();
+        if self.client_ext {
+            self.message_id = value;
         }
     }
     pub fn set_prepared_transaction_offset(&mut self, value: i64) {
@@ -3281,11 +3285,7 @@ impl MessageClientExt {
 
     /// Convert to the base type accepted by Java APIs whose parameter is
     /// `MessageExt`; the runtime subtype remains observable on the Rust value.
-    pub fn into_message_ext(mut self) -> MessageExt {
-        let offset_message_id = self.offset_message_id();
-        let client_message_id = self.message_id();
-        self.0
-            .apply_client_decode_ids(offset_message_id, client_message_id);
+    pub fn into_message_ext(self) -> MessageExt {
         self.0
     }
 }
