@@ -6361,8 +6361,9 @@ owner-specific checks belong in the manual handoff.
   compilation and offline benchmark; formatting and diff checks.
 - Fixture SHA-256:
   `2ceab3283085fa8335cd3e7a965c1698e10960ae720c76b148af4cb52a196b4b`.
-  Full command outcomes and benchmark observations are recorded in the
-  follow-up execution log. This closes the named replacement seam only. Broad
+  Full command outcomes and benchmark observations are recorded in
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T174315Z.rlog`.
+  This closes the named replacement seam only. Broad
   P18-V01 source/API/settings/input/error/control-flow/reverse-export review,
   arbitrary Java `MessageExt` subclasses, current-revision Ubuntu/native
   Windows P18-V04 evidence, and Phase 19 Broker/Docker scenarios remain open.
