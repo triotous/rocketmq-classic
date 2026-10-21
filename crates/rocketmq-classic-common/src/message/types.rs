@@ -2495,11 +2495,23 @@ impl MessageExt {
     }
     /// Set the Java `BORNHOST_V6_FLAG` bit without changing other system flags.
     pub fn set_born_host_v6_flag(&mut self) {
-        self.sys_flag |= crate::sysflag::message::BORNHOST_V6_FLAG;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_born_host_v6_flag())
+        {
+            self.sys_flag |= crate::sysflag::message::BORNHOST_V6_FLAG;
+        }
     }
     /// Set the Java `STOREHOSTADDRESS_V6_FLAG` bit without changing other flags.
     pub fn set_store_host_address_v6_flag(&mut self) {
-        self.sys_flag |= crate::sysflag::message::STOREHOSTADDRESS_V6_FLAG;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_store_host_address_v6_flag())
+        {
+            self.sys_flag |= crate::sysflag::message::STOREHOSTADDRESS_V6_FLAG;
+        }
     }
     pub fn set_born_timestamp(&mut self, value: i64) {
         if !self
@@ -2874,6 +2886,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Handle Java's virtual `MessageExt.setSysFlag(int)`.
     fn set_sys_flag(&self, _sys_flag: i32) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `MessageExt.setBornHostV6Flag()`.
+    fn set_born_host_v6_flag(&self) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `MessageExt.setStoreHostAddressV6Flag()`.
+    fn set_store_host_address_v6_flag(&self) -> bool {
         false
     }
 

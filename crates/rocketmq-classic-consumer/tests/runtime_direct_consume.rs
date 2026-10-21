@@ -101,6 +101,7 @@ struct CustomDirectMessageExt {
     properties_reads: std::sync::atomic::AtomicUsize,
     store_host_writes: std::sync::atomic::AtomicUsize,
     metadata_writes: std::sync::atomic::AtomicUsize,
+    host_flag_writes: std::sync::atomic::AtomicUsize,
     topic_sys_flag_writes: std::sync::atomic::AtomicUsize,
     group_sys_flag_writes: std::sync::atomic::AtomicUsize,
     property_setter_writes: std::sync::atomic::AtomicUsize,
@@ -128,6 +129,7 @@ impl CustomDirectMessageExt {
             properties_reads: std::sync::atomic::AtomicUsize::new(0),
             store_host_writes: std::sync::atomic::AtomicUsize::new(0),
             metadata_writes: std::sync::atomic::AtomicUsize::new(0),
+            host_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             topic_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             group_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             property_setter_writes: std::sync::atomic::AtomicUsize::new(0),
@@ -143,7 +145,7 @@ impl CustomDirectMessageExt {
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={};userPropertyReads={};hasPropertyReads={};transactionIdReads={};userApiWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};hostFlagWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={};userPropertyReads={};hasPropertyReads={};transactionIdReads={};userApiWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -155,6 +157,7 @@ impl CustomDirectMessageExt {
             self.properties_reads.load(Ordering::SeqCst),
             self.store_host_writes.load(Ordering::SeqCst),
             self.metadata_writes.load(Ordering::SeqCst),
+            self.host_flag_writes.load(Ordering::SeqCst),
             self.topic_sys_flag_writes.load(Ordering::SeqCst),
             self.group_sys_flag_writes.load(Ordering::SeqCst),
             self.property_setter_writes.load(Ordering::SeqCst),
@@ -360,6 +363,16 @@ impl MessageExtSubtype for CustomDirectMessageExt {
 
     fn set_sys_flag(&self, _sys_flag: i32) -> bool {
         self.metadata_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_born_host_v6_flag(&self) -> bool {
+        self.host_flag_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_store_host_address_v6_flag(&self) -> bool {
+        self.host_flag_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -601,6 +614,8 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_born_timestamp(1);
             message.set_store_timestamp(2);
             message.set_sys_flag(3);
+            message.set_born_host_v6_flag();
+            message.set_store_host_address_v6_flag();
             message.set_body_crc(4);
             message.set_commit_log_offset(5);
             message.set_store_size(6);

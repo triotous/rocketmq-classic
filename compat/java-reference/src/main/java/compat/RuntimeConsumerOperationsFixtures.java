@@ -434,6 +434,8 @@ public final class RuntimeConsumerOperationsFixtures {
             message.setBornTimestamp(1L);
             message.setStoreTimestamp(2L);
             message.setSysFlag(3);
+            message.setBornHostV6Flag();
+            message.setStoreHostAddressV6Flag();
             message.setBodyCRC(4);
             message.setCommitLogOffset(5L);
             message.setStoreSize(6);
@@ -590,6 +592,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int propertiesReads;
         private int storeHostWrites;
         private int metadataWrites;
+        private int hostFlagWrites;
         private int topicSysFlagWrites;
         private int groupSysFlagWrites;
         private int propertySetterWrites;
@@ -781,6 +784,16 @@ public final class RuntimeConsumerOperationsFixtures {
         }
 
         @Override
+        public void setBornHostV6Flag() {
+            hostFlagWrites++;
+        }
+
+        @Override
+        public void setStoreHostAddressV6Flag() {
+            hostFlagWrites++;
+        }
+
+        @Override
         public int getBodyCRC() {
             return 0x4567;
         }
@@ -909,7 +922,8 @@ public final class RuntimeConsumerOperationsFixtures {
                 + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
                 + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
                 + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites
-                + ";metadataWrites=" + metadataWrites + ";topicSysFlagWrites=" + topicSysFlagWrites
+                + ";metadataWrites=" + metadataWrites + ";hostFlagWrites=" + hostFlagWrites
+                + ";topicSysFlagWrites=" + topicSysFlagWrites
                 + ";groupSysFlagWrites=" + groupSysFlagWrites
                 + ";propertySetterWrites=" + propertySetterWrites
                 + ";userPropertyReads=" + userPropertyReads
