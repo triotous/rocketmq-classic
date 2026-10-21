@@ -29,6 +29,36 @@ declared method counts and callable method counts in
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
+## Local rebalance route selection and lookup order
+
+Pinned `RebalanceImpl.doRebalance(isOrder)` selects broker or local assignment
+through `clientRebalance(topic)`. For Push, that method reads the consumer's
+client-rebalance setting, orderly-consume state and message model; the
+`isOrder` argument does not select the assignment source. It controls whether
+new pull assignments request a Broker lock; Java still marks each newly
+created `ProcessQueue` locked and initializes its lock timestamp before
+computing the starting offset. In the clustering path Java checks for a missing
+or empty route before querying consumer membership. Either case leaves current
+assignments intact, notifies empty sets for non-retry topics and leaves the
+balance result unchanged. A non-empty route proceeds to membership lookup.
+Broadcasting with a missing route also notifies empty sets and leaves the
+balance result unchanged when the callback succeeds.
+
+Rust now selects through `client_rebalance(topic)` for clustering and
+LiteSelective, handles missing and empty clustering routes before membership
+lookup, and preserves these callback and balance outcomes. New Push process
+queues begin locked and carry the captured initialization timestamp across
+offset lookup. Evidence:
+`missing_clustering_route_notifies_empty_and_keeps_assignment_without_membership_lookup`,
+`empty_clustering_route_notifies_empty_and_keeps_assignment_without_membership_lookup`,
+`missing_broadcasting_route_notifies_empty_and_returns_balanced`, and the
+explicit `isOrder=true` broker-assignment assertion in
+`client_rebalance_false_uses_broker_assignment_unless_orderly_forces_local`;
+the LiteSelective broker branch is covered by
+`lite_selective_rebalance_leaves_assignments_for_pop_handling`, and the
+unconditional initial lock flag is checked by the client-rebalance test above.
+The broader P18-V01 source and reverse API audit remains open.
+
 ## Pinned inherited-method crosswalk
 
 The fixture records 32 callable methods on each rebalance implementation. This

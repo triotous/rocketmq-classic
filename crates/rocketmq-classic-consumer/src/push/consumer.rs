@@ -2456,7 +2456,7 @@ impl PushConsumer {
         &self,
         input_queue: &MessageQueue,
         initial_offset: i64,
-        orderly_lock_instant: Option<Instant>,
+        initialization_time: Option<(i64, Instant)>,
     ) -> Result<Arc<ProcessQueue>, PushConsumerError> {
         if initial_offset < 0 {
             return Err(PushConsumerError::InvalidOffset);
@@ -2508,6 +2508,15 @@ impl PushConsumer {
             })
             .map_err(|_| PushConsumerError::GenerationExhausted)?;
         let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), generation));
+        process_queue.set_locked(true);
+        if let Some((timestamp_millis, initialized_at)) = initialization_time {
+            let _ = process_queue.set_lock_state_at(
+                generation,
+                true,
+                timestamp_millis,
+                Some(initialized_at),
+            );
+        }
         {
             let mut queues = write_lock(&self.process_queues);
             if let Some(existing) = queues.get(&queue) {
@@ -2522,14 +2531,6 @@ impl PushConsumer {
                 ));
             }
             queues.insert(queue.clone(), process_queue.clone());
-        }
-        if let Some(lock_instant) = orderly_lock_instant {
-            let _ = process_queue.set_lock_state_at(
-                generation,
-                true,
-                epoch_millis(),
-                Some(lock_instant),
-            );
         }
         offset_store.update_offset(&queue, initial_offset, false);
         let request = Arc::new(PullRequest::new(
@@ -5374,7 +5375,7 @@ impl PushConsumer {
                 return true;
             }
             if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::LiteSelective
-                && (self.config.client_rebalance() || is_order)
+                && self.client_rebalance(topic)
             {
                 // Java's LiteSelective rebalance uses the default no-local-allocation branch;
                 // broker assignment is used when client-side rebalance is disabled.
@@ -5384,7 +5385,6 @@ impl PushConsumer {
             if message_model == rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting {
                 let Some(queue_snapshot) = topic_queues.get(topic) else {
                     missing_route_notifications.push(topic.clone());
-                    balanced = false;
                     continue;
                 };
                 let mut all_queues = queue_snapshot.iter().cloned().collect::<Vec<_>>();
@@ -5402,17 +5402,17 @@ impl PushConsumer {
                 continue;
             }
 
-            if self.config.client_rebalance() || is_order {
-                // Java RebalanceImpl checks the local route table before it
-                // queries membership. A missing or empty route notifies with
-                // empty sets and leaves the previous assignment untouched.
+            if self.client_rebalance(topic) {
+                // Java selects local assignment from clientRebalance(topic);
+                // `is_order` controls the Broker lock request, not selection.
+                // The pinned client handles missing and empty routes before
+                // querying membership, notifying empty sets for non-retry topics.
                 let Some(queue_snapshot) =
                     topic_queues.get(topic).filter(|queues| !queues.is_empty())
                 else {
                     if !topic.starts_with("%RETRY%") {
                         missing_route_notifications.push(topic.clone());
                     }
-                    balanced = false;
                     continue;
                 };
                 let consumer_ids = self
@@ -5647,9 +5647,8 @@ impl PushConsumer {
 
         let mut additions = desired_push_queues.into_iter().collect::<Vec<_>>();
         additions.sort();
-        let orderly_clustering = self.current_orderly_lock_settings().await.is_some()
-            && self.config.message_model()
-                == rocketmq_classic_protocol::heartbeat::MessageModel::Clustering;
+        let lock_new_queues = is_order
+            && message_model != rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting;
         for queue in additions {
             if !self.rebalance_is_started().await {
                 return true;
@@ -5677,7 +5676,7 @@ impl PushConsumer {
                 balanced = false;
                 continue;
             }
-            let orderly_lock_instant = if orderly_clustering {
+            let orderly_locked = if lock_new_queues {
                 let lock_result = self
                     .lock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue))
                     .await;
@@ -5692,7 +5691,7 @@ impl PushConsumer {
                     balanced = false;
                     continue;
                 }
-                let Some((_, lock_instant)) = lock_result.lock_times.get(&queue).copied() else {
+                let Some(_) = lock_result.lock_times.get(&queue) else {
                     balanced = false;
                     continue;
                 };
@@ -5704,12 +5703,12 @@ impl PushConsumer {
                     .await;
                     return true;
                 }
-                Some(lock_instant)
+                true
             } else {
-                None
+                false
             };
-            let orderly_locked = orderly_lock_instant.is_some();
             context.offset_store.remove_offset(&queue);
+            let queue_initialization_time = (epoch_millis(), Instant::now());
             let initial_offset = match self
                 .compute_initial_offset(&context.runtime, &context.offset_store, &queue)
                 .await
@@ -5729,7 +5728,11 @@ impl PushConsumer {
                 }
             };
             match self
-                .activate_process_queue_with_lock(&queue, initial_offset, orderly_lock_instant)
+                .activate_process_queue_with_lock(
+                    &queue,
+                    initial_offset,
+                    Some(queue_initialization_time),
+                )
                 .await
             {
                 Ok(_) => {
@@ -9642,7 +9645,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_clustering_route_queries_membership_notifies_empty_and_keeps_assignment() {
+    async fn missing_clustering_route_notifies_empty_and_keeps_assignment_without_membership_lookup()
+     {
         let changes = Arc::new(Mutex::new(Vec::new()));
         let recorded_changes = changes.clone();
         let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
@@ -9678,7 +9682,7 @@ mod tests {
         script_rebalance_membership(&consumer, "orders", [Some(vec!["peer-a".to_owned()])]);
         consumer.paused.store(true, Ordering::Release);
 
-        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
         assert!(
             read_lock(&consumer.process_queues)
                 .get(&queue)
@@ -9695,7 +9699,7 @@ mod tests {
                 .unwrap()
                 .len(),
             1,
-            "missing route data is handled before membership lookup"
+            "the pinned Java client handles a missing route before membership lookup"
         );
         {
             let changes = changes.lock().unwrap();
@@ -9708,7 +9712,51 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_clustering_route_notifies_without_querying_membership_or_dropping_assignment() {
+    async fn missing_broadcasting_route_notifies_empty_and_returns_balanced() {
+        let changes = Arc::new(Mutex::new(Vec::new()));
+        let recorded_changes = changes.clone();
+        let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
+            recorded_changes.lock().unwrap().push((
+                topic.to_owned(),
+                all.cloned(),
+                assigned.clone(),
+            ));
+        });
+        let mut config = PushConsumerConfig::new("rebalance-broadcast-route-missing").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        config.set_message_queue_listener(Some(queue_listener));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        consumer.paused.store(true, Ordering::Release);
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        {
+            let changes = changes.lock().unwrap();
+            assert_eq!(changes.len(), 1);
+            assert_eq!(changes[0].0, "orders");
+            assert_eq!(changes[0].1, Some(HashSet::new()));
+            assert!(changes[0].2.is_empty());
+        }
+        consumer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_clustering_route_notifies_empty_and_keeps_assignment_without_membership_lookup()
+    {
         let changes = Arc::new(Mutex::new(Vec::new()));
         let recorded_changes = changes.clone();
         let queue_listener: MessageQueueListener = Arc::new(move |topic, all, assigned| {
@@ -9745,7 +9793,7 @@ mod tests {
         script_rebalance_membership(&consumer, "orders", [Some(vec!["peer-a".to_owned()])]);
         consumer.paused.store(true, Ordering::Release);
 
-        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
         assert!(
             read_lock(&consumer.process_queues)
                 .get(&queue)
@@ -9762,7 +9810,7 @@ mod tests {
                 .unwrap()
                 .len(),
             1,
-            "an empty route does not query membership"
+            "the pinned Java client handles an empty route before membership lookup"
         );
         {
             let changes = changes.lock().unwrap();
@@ -9952,6 +10000,25 @@ mod tests {
             "LiteSelective must not enter the clustering allocator"
         );
         assert!(changes.lock().unwrap().is_empty());
+
+        consumer.config().set_client_rebalance(false);
+        assert!(
+            !consumer
+                .rebalance_service
+                .rebalance_with_order(&consumer, Some(true))
+                .await
+        );
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            1,
+            "isOrder does not turn off broker assignment for LiteSelective"
+        );
         consumer.shutdown().await.unwrap();
     }
 
@@ -10040,9 +10107,31 @@ mod tests {
             "broker assignment mode must not request the local membership list"
         );
 
+        assert!(
+            !consumer
+                .rebalance_service
+                .rebalance_with_order(&consumer, Some(true))
+                .await
+        );
+        assert_eq!(
+            consumer
+                .rebalance_membership
+                .lock()
+                .unwrap()
+                .get("orders")
+                .unwrap()
+                .len(),
+            2,
+            "the doRebalance isOrder argument does not select local assignment"
+        );
+
         consumer.config().set_client_rebalance(true);
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
-        assert!(read_lock(&consumer.process_queues).contains_key(&queue));
+        let process_queue = read_lock(&consumer.process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("local assignment creates the process queue");
+        assert!(process_queue.is_locked());
 
         consumer.config().set_client_rebalance(false);
         consumer.consume_orderly.store(true, Ordering::Release);
