@@ -62,6 +62,7 @@ struct CustomDirectMessageExt {
     queue_offset_writes: std::sync::atomic::AtomicUsize,
     body_writes: std::sync::atomic::AtomicUsize,
     flag_writes: std::sync::atomic::AtomicUsize,
+    max_offset_reads: std::sync::atomic::AtomicUsize,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
 
@@ -74,18 +75,20 @@ impl CustomDirectMessageExt {
             queue_offset_writes: std::sync::atomic::AtomicUsize::new(0),
             body_writes: std::sync::atomic::AtomicUsize::new(0),
             flag_writes: std::sync::atomic::AtomicUsize::new(0),
+            max_offset_reads: std::sync::atomic::AtomicUsize::new(0),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
             self.body_writes.load(Ordering::SeqCst),
-            self.flag_writes.load(Ordering::SeqCst)
+            self.flag_writes.load(Ordering::SeqCst),
+            self.max_offset_reads.load(Ordering::SeqCst)
         )
     }
 }
@@ -102,6 +105,15 @@ impl MessageExtSubtype for CustomDirectMessageExt {
     fn set_topic(&self, _topic: Option<String>) -> bool {
         self.topic_writes.fetch_add(1, Ordering::SeqCst);
         true
+    }
+
+    fn property(&self, key: Option<&str>) -> Option<Option<String>> {
+        if key == Some(rocketmq_classic_common::message::constants::PROPERTY_MAX_OFFSET) {
+            self.max_offset_reads.fetch_add(1, Ordering::SeqCst);
+            Some(Some("987654333".to_owned()))
+        } else {
+            None
+        }
     }
 
     fn body(&self) -> Option<Option<Vec<u8>>> {
@@ -411,6 +423,7 @@ fn custom_subtype_queue_offset_matches_java_process_queue() {
             "dispatch": dispatch,
             "count": process_queue.get_msg_count().get(),
             "size": process_queue.get_msg_size().get(),
+            "msgAccCnt": process_queue.get_msg_acc_cnt(),
             "offsets": offsets,
             "customField": subtype.custom_field(),
         }),

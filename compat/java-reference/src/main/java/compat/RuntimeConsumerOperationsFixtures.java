@@ -527,6 +527,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private int queueOffsetWrites;
         private int bodyWrites;
         private int flagWrites;
+        private int maxOffsetReads;
         private byte[] customBody;
 
         @Override
@@ -610,10 +611,19 @@ public final class RuntimeConsumerOperationsFixtures {
             this.flagWrites++;
         }
 
+        @Override
+        public String getProperty(String name) {
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_MAX_OFFSET.equals(name)) {
+                this.maxOffsetReads++;
+                return "987654333";
+            }
+            return super.getProperty(name);
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
-                + ";flagWrites=" + flagWrites;
+                + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads;
         }
 
         @Override
@@ -633,6 +643,7 @@ public final class RuntimeConsumerOperationsFixtures {
         result.put("dispatch", dispatch);
         result.put("count", processQueue.getMsgCount().get());
         result.put("size", processQueue.getMsgSize().get());
+        result.put("msgAccCnt", processQueue.getMsgAccCnt());
         result.put("offsets", new ArrayList<>(processQueue.getMsgTreeMap().keySet()));
         result.put("customField", message.getCustomField());
         return result;

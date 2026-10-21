@@ -1755,6 +1755,22 @@ impl MessageExt {
             .map(|subtype| subtype.runtime_type_name())
     }
 
+    /// Java's virtual `Message.getProperty(String)` view, including
+    /// caller-defined `MessageExt` subtype overrides.
+    pub fn get_property(&self, key: &str) -> Option<String> {
+        self.get_nullable_property(Some(key))
+    }
+
+    /// Nullable Java `Message.getProperty(String)` view. `None` from the
+    /// subtype hook falls back to the stored message; `Some(None)` represents
+    /// an explicit Java null result.
+    pub fn get_nullable_property(&self, key: Option<&str>) -> Option<String> {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.property(key))
+            .unwrap_or_else(|| self.message.get_nullable_property(key))
+    }
+
     /// Java's virtual `Message.getTopic()` view, including caller-defined
     /// `MessageExt` subtype overrides.
     pub fn topic(&self) -> &str {
@@ -2212,6 +2228,11 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn topic(&self) -> Option<Option<&str>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getProperty(String)`.
+    fn property(&self, _key: Option<&str>) -> Option<Option<String>> {
         None
     }
 
