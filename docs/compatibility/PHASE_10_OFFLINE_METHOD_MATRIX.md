@@ -377,3 +377,11 @@ the base-typed view remains null after conversion. The `records.json` fixture
 SHA-256 is `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`;
 the runtime-operation fixture SHA-256 is
 `403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
+
+P18-V01 caller-defined `MessageClientExt.getMsgId`/`setMsgId` dispatch
+(test revision `5e12a174`, 2026-10-21): the invoked Java subclass fixture
+confirms an overridden getter bypasses the base `UNIQ_KEY` lookup, and the
+overridden setter handles both a value and null without changing the offset
+ID. Rust matches through the existing `MessageExtSubtype` hooks. The Common
+message API test file passes all 26 cases. Fixture SHA-256:
+`d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.

@@ -1718,3 +1718,13 @@ consumer fixture SHA-256:
 `403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
 The default/all-feature workspace suites, strict workspace Clippy, and pinned
 Maven verify pass on code revision `f7d7e8f1`; broader P18-V01 remains open.
+
+P18-V01 custom `MessageClientExt.getMsgId`/`setMsgId` overrides (test revision
+`5e12a174`, 2026-10-21): invoked Java confirms a subclass getter bypasses the
+base live `UNIQ_KEY` lookup and its setter owns custom state, including a null
+result, without changing the physical offset ID. The Common differential
+compares `MessageExtSubtype::message_id` and `set_message_id` with those calls;
+all 26 tests in the Common message API test file pass. Current `records.json`
+SHA-256: `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+Strict all-target/all-feature Clippy, formatting, diff checks, and pinned Maven
+verify pass; broad P18-V01 remains open.

@@ -834,3 +834,6 @@ validation details are in the Phase 18 release checklist. This closes the
 selected `MessageClientExt` subtype path only; broad P18-V01 remains open.
 The Java fixture records `setOffsetMsgId(null)` clearing both the offset ID
 and the effective client ID, including after conversion to the base type.
+The follow-up fixture also overrides `getMsgId` and `setMsgId` on a custom
+`MessageClientExt`: the override bypasses the base unique-key fallback, setter
+dispatch updates only subtype state, and a null setter result remains null.

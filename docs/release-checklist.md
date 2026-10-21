@@ -6871,3 +6871,20 @@ owner-specific checks belong in the manual handoff.
   current-revision P18-V02 stress/fuzz/benchmark/package refresh and GitHub
   Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
   Broker or Docker run was performed; protected Phase 19 paths remain untouched.
+
+## P18-V01 custom `MessageClientExt` message-ID overrides — 2026-10-21 (`5e12a174`)
+
+- [x] Invoked Java and Rust fixtures cover custom `getMsgId` and `setMsgId`
+  overrides. The getter bypasses base `UNIQ_KEY` lookup; the setter handles a
+  replacement and null without mutating the physical offset ID. The Common
+  message API test file passes all 26 cases. `records.json` SHA-256:
+  `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+- [x] Strict all-target/all-feature Clippy, formatting/diff checks, and pinned
+  Maven `verify` pass. Maven verified 37 scenarios, 9 Running Info, 29 direct-
+  consume cases, 15 reset cases, 85 typed headers, 16 typed bodies, and
+  Java/Rust cross-decodes. Existing JDK/Netty `Unsafe` and reflective-final-
+  field warnings were emitted.
+- Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+  reconciliation remains open. The current-revision P18-V02 full refresh and
+  P18-V04 platform evidence remain open; no remote CI, Broker, or Docker run
+  was performed.

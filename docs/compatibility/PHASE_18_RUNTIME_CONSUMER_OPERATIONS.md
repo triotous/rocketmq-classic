@@ -428,3 +428,8 @@ Follow-up code revision `f7d7e8f1` also pins `setOffsetMsgId(null)`: it clears
 the offset ID and effective fallback, and conversion to a base-typed
 `MessageExt` preserves the cleared state. The Common message fixture SHA-256
 is `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`.
+The Common `messageClientExtApi` fixture additionally covers a custom
+`getMsgId`/`setMsgId` override: the custom getter wins over `UNIQ_KEY`, and the
+custom setter handles null without changing the offset. Test revision
+`5e12a174`; current Common fixture SHA-256:
+`d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
