@@ -95,6 +95,13 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "lite-client-info-error",
         "lite-client-info-unknown",
         "lite-client-info-invalid-body",
+        "lite-group-info-success",
+        "lite-group-info-defaults",
+        "lite-group-info-null-body",
+        "lite-group-info-null-inputs",
+        "lite-group-info-error",
+        "lite-group-info-unknown",
+        "lite-group-info-invalid-body",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len() + 35);
     for name in names {
@@ -127,6 +134,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 "MQClientAPIImpl.getParentTopicInfo"
             } else if name.starts_with("lite-client-info-") {
                 "MQClientAPIImpl.getLiteClientInfo"
+            } else if name.starts_with("lite-group-info-") {
+                "MQClientAPIImpl.getLiteGroupInfo"
             } else {
                 "MQClientAPIImpl"
             }
@@ -257,6 +266,63 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             assert_eq!(api["responseBodyDefaults"]["liteTopicSetNull"], true);
             assert_eq!(api["topicSetGetterReturnsAssignedSet"], true);
             assert_eq!(api["topicSetGetterMutationVisible"], true);
+        }
+        if name.starts_with("lite-group-info-") {
+            let api = &fixture["liteGroupInfoApi"];
+            assert_eq!(api["rpcMethods"].as_array().unwrap().len(), 1);
+            assert!(
+                api["rpcMethods"][0]
+                    .as_str()
+                    .unwrap()
+                    .contains("getLiteGroupInfo")
+            );
+            assert_eq!(
+                api["requestHeaderConstructors"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(api["requestHeaderPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["requestHeaderPublicMethods"].as_array().unwrap().len(),
+                7
+            );
+            assert_eq!(api["responseBodyConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["responseBodyPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["responseBodyPublicMethods"].as_array().unwrap().len(),
+                16
+            );
+            assert_eq!(
+                api["offsetWrapperConstructors"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(api["offsetWrapperPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["offsetWrapperPublicMethods"].as_array().unwrap().len(),
+                8
+            );
+            assert_eq!(api["liteLagInfoConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["liteLagInfoPublicFields"], serde_json::json!([]));
+            assert_eq!(api["liteLagInfoPublicMethods"].as_array().unwrap().len(), 8);
+            assert_eq!(
+                api["responseBodyDefaults"]["earliestUnconsumedTimestamp"],
+                -1
+            );
+            assert_eq!(api["responseBodyDefaults"]["totalLagCount"], 0);
+            assert_eq!(api["responseBodyDefaults"]["offsetWrapperNull"], true);
+            assert_eq!(api["responseBodyDefaults"]["lagCountTopKNull"], true);
+            assert_eq!(api["responseBodyDefaults"]["lagTimestampTopKNull"], true);
+            assert_eq!(
+                api["liteLagInfoDefaults"]["earliestUnconsumedTimestamp"],
+                -1
+            );
+            assert_eq!(api["liteLagInfoDefaults"]["consumerOffset"], -1);
+            assert_eq!(api["consumerOffsetSerialized"], false);
+            assert_eq!(api["lagCountGetterReturnsAssignedList"], true);
+            assert_eq!(api["lagCountGetterMutationVisible"], true);
+            assert_eq!(api["lagTimestampGetterReturnsAssignedList"], true);
+            assert_eq!(api["lagTimestampGetterMutationVisible"], true);
+            assert_eq!(api["offsetGetterReturnsAssignedObject"], true);
+            assert_eq!(api["offsetMutationVisible"], true);
         }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
@@ -492,6 +558,66 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 }
                 Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
                 other => panic!("unexpected Lite client info result: {other:?}"),
+            }
+        } else if name.starts_with("lite-group-info-") {
+            let (group, lite_topic, top_k) = if name == "lite-group-info-null-inputs" {
+                (None, None, -3)
+            } else {
+                (Some("workers"), Some("%LMQ%lite-parent%orders"), 5)
+            };
+            match api
+                .get_lite_group_info(&addr, group, lite_topic, top_k, deadline)
+                .await
+            {
+                Ok(None) => "null".to_owned(),
+                Ok(Some(result)) if name == "lite-group-info-success" => {
+                    let wrapper = result.get_lite_topic_offset_wrapper().unwrap();
+                    let count_top_k = result.get_lag_count_top_k().unwrap();
+                    let first = count_top_k.with(|items| items[0].clone().unwrap());
+                    let first_values = first.with(|lag| {
+                        (
+                            lag.get_lite_topic().unwrap_or("null").to_owned(),
+                            lag.get_lag_count(),
+                            lag.get_earliest_unconsumed_timestamp(),
+                            lag.get_consumer_offset(),
+                        )
+                    });
+                    format!(
+                        "group={};parent={};lite={};earliest={};totalLag={};brokerOffset={};consumerOffset={};pullOffset={};lastTimestamp={};countTopK={};timestampTopK={};countNull={};firstTopic={};firstLag={};firstEarliest={};firstConsumerOffset={}",
+                        result.get_group().unwrap_or("null"),
+                        result.get_parent_topic().unwrap_or("null"),
+                        result.get_lite_topic().unwrap_or("null"),
+                        result.get_earliest_unconsumed_timestamp(),
+                        result.get_total_lag_count(),
+                        wrapper.with(|offset| offset.get_broker_offset()),
+                        wrapper.with(|offset| offset.get_consumer_offset()),
+                        wrapper.with(|offset| offset.get_pull_offset()),
+                        wrapper.with(|offset| offset.get_last_timestamp()),
+                        count_top_k.with(Vec::len),
+                        result.get_lag_timestamp_top_k().unwrap().with(Vec::len),
+                        count_top_k.with(|items| items[1].is_none()),
+                        first_values.0,
+                        first_values.1,
+                        first_values.2,
+                        first_values.3,
+                    )
+                }
+                Ok(Some(result)) => format!(
+                    "group={};parent={};lite={};earliest={};totalLag={};offsetNull={};countTopKNull={};timestampTopKNull={}",
+                    result.get_group().unwrap_or("null"),
+                    result.get_parent_topic().unwrap_or("null"),
+                    result.get_lite_topic().unwrap_or("null"),
+                    result.get_earliest_unconsumed_timestamp(),
+                    result.get_total_lag_count(),
+                    result.get_lite_topic_offset_wrapper().is_none(),
+                    result.get_lag_count_top_k().is_none(),
+                    result.get_lag_timestamp_top_k().is_none(),
+                ),
+                Err(RpcError::Response { code, .. }) => {
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
+                other => panic!("unexpected Lite group info result: {other:?}"),
             }
         } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {

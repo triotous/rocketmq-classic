@@ -5,10 +5,11 @@ use rocketmq_classic_protocol::{
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
         ConsumeStats, ConsumerListByGroupResponseBody, GetConsumerStatusBody,
-        LiteSubscriptionAction, LiteSubscriptionCtlRequestBody, LiteSubscriptionDto,
-        LockBatchRequestBody, LockBatchResponseBody, MessageRequestMode, OffsetOption,
-        OffsetOptionType, OffsetWrapper, QueryAssignmentRequestBody, ResetOffsetBody,
-        SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
+        GetLiteGroupInfoResponseBody, LiteLagInfo, LiteSubscriptionAction,
+        LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
+        LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType, OffsetWrapper,
+        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
+        UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
@@ -26,15 +27,16 @@ use rocketmq_classic_protocol::{
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
         GetKvListByNamespaceRequestHeader, GetLiteClientInfoRequestHeader,
-        GetLiteTopicInfoRequestHeader, GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader,
-        GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader,
-        GetRouteInfoRequestHeader, GetSubscriptionGroupConfigRequestHeader,
-        GetTopicStatsInfoRequestHeader, GetTopicsByClusterRequestHeader, HeartbeatRequestHeader,
-        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
-        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        GetLiteGroupInfoRequestHeader, GetLiteTopicInfoRequestHeader, GetMaxOffsetRequestHeader,
+        GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
+        GetParentTopicInfoRequestHeader, GetRouteInfoRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
+        GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
+        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
@@ -157,6 +159,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-lite-client-info-request.bin",
         "header-lite-client-info-request",
         200077,
+    );
+    write_oracle_header::<GetLiteGroupInfoRequestHeader>(
+        output,
+        "typed-lite-group-info-request.bin",
+        "header-lite-group-info-request",
+        200078,
     );
     write_oracle_header::<GetParentTopicInfoRequestHeader>(
         output,
@@ -930,6 +938,45 @@ fn generate_p4_bodies(output: &std::path::Path) {
         consume_stats
             .java_encode()
             .expect("encode Java-compatible consume stats body"),
+    );
+    let mut lite_group_info = GetLiteGroupInfoResponseBody::default();
+    lite_group_info.set_group(Some("workers".into()));
+    lite_group_info.set_parent_topic(Some("lite-parent".into()));
+    lite_group_info.set_lite_topic(Some("%LMQ%lite-parent%orders".into()));
+    lite_group_info.set_earliest_unconsumed_timestamp(1400);
+    lite_group_info.set_total_lag_count(40);
+    let mut lite_offset = OffsetWrapper::default();
+    lite_offset.set_broker_offset(100);
+    lite_offset.set_consumer_offset(80);
+    lite_offset.set_pull_offset(85);
+    lite_offset.set_last_timestamp(1700);
+    lite_group_info.set_lite_topic_offset_wrapper(Some(SharedValue::new(lite_offset)));
+    let mut orders_lag = LiteLagInfo::default();
+    orders_lag.set_lite_topic(Some("%LMQ%lite-parent%orders".into()));
+    orders_lag.set_lag_count(30);
+    orders_lag.set_earliest_unconsumed_timestamp(1600);
+    orders_lag.set_consumer_offset(70);
+    let mut payments_lag = LiteLagInfo::default();
+    payments_lag.set_lite_topic(Some("%LMQ%lite-parent%payments".into()));
+    payments_lag.set_lag_count(10);
+    payments_lag.set_earliest_unconsumed_timestamp(1500);
+    payments_lag.set_consumer_offset(90);
+    lite_group_info.set_lag_count_top_k(Some(SharedValue::new(vec![
+        Some(SharedValue::new(orders_lag.clone())),
+        None,
+        Some(SharedValue::new(payments_lag.clone())),
+    ])));
+    lite_group_info.set_lag_timestamp_top_k(Some(SharedValue::new(vec![
+        Some(SharedValue::new(payments_lag)),
+        Some(SharedValue::new(orders_lag)),
+    ])));
+    write_body_bytes(
+        output,
+        "body-lite-group-info.bin",
+        200078,
+        lite_group_info
+            .java_encode()
+            .expect("encode Java-compatible Lite group info body"),
     );
     let mut consume_directly = ConsumeMessageDirectlyResult::default();
     consume_directly.set_order(false);

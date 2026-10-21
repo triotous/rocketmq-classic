@@ -24,17 +24,18 @@ use rocketmq_classic_protocol::{
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
         GetKvListByNamespaceRequestHeader, GetLiteClientInfoRequestHeader,
-        GetLiteTopicInfoRequestHeader, GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader,
-        GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader,
-        GetRouteInfoRequestHeader, GetSubscriptionGroupConfigRequestHeader,
-        GetTopicStatsInfoRequestHeader, GetTopicsByClusterRequestHeader, HeaderMap,
-        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
-        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
-        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, PutKvConfigRequestHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
-        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetLiteGroupInfoRequestHeader, GetLiteTopicInfoRequestHeader, GetMaxOffsetRequestHeader,
+        GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader, GetMinOffsetResponseHeader,
+        GetParentTopicInfoRequestHeader, GetRouteInfoRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
+        GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
+        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
+        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
@@ -769,6 +770,38 @@ fn lite_client_info_request_header_matches_java_defaults_and_validation() {
 
     header.set_max_count(0);
     assert!(header.check_fields().is_err());
+}
+
+#[test]
+fn lite_group_info_request_header_matches_java_defaults_and_nullable_inputs() {
+    let mut header = GetLiteGroupInfoRequestHeader::default();
+    assert_eq!(header.get_group(), None);
+    assert_eq!(header.get_lite_topic(), None);
+    assert_eq!(header.get_top_k(), 0);
+    header.check_fields().unwrap();
+
+    let mut default_fields = HeaderMap::new();
+    header.encode_fields(&mut default_fields);
+    assert_eq!(
+        default_fields,
+        HeaderMap::from([("topK".into(), "0".into())])
+    );
+
+    header.set_group(Some("workers".into()));
+    header.set_lite_topic(Some("%LMQ%lite-parent%orders".into()));
+    header.set_top_k(5);
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, java_ext_fields("header-lite-group-info-request"));
+    let decoded = GetLiteGroupInfoRequestHeader::decode_fields_checked(&encoded).unwrap();
+    assert_eq!(decoded.get_group(), Some("workers"));
+    assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
+    assert_eq!(decoded.get_top_k(), 5);
+
+    header.set_group(None);
+    header.set_lite_topic(None);
+    header.set_top_k(-3);
+    header.check_fields().unwrap();
 }
 
 #[test]
@@ -2842,6 +2875,15 @@ fn header_validation_matrix() {
             "maxCount",
             "",
             "parentTopic group clientId",
+            ""
+        ),
+        row!(
+            GetLiteGroupInfoRequestHeader,
+            "lite-group-info-request",
+            "",
+            "topK",
+            "",
+            "group liteTopic",
             ""
         ),
         row!(

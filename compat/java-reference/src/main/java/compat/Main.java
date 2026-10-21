@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,6 +21,7 @@ import org.apache.rocketmq.remoting.protocol.SerializeType;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteClientInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetLiteGroupInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetParentTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader;
@@ -93,6 +95,7 @@ import org.apache.rocketmq.remoting.protocol.body.BatchAck;
 import org.apache.rocketmq.remoting.protocol.body.BatchAckMessageRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.ResetOffsetBody;
 import org.apache.rocketmq.remoting.protocol.body.GetConsumerStatusBody;
+import org.apache.rocketmq.remoting.protocol.body.GetLiteGroupInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.ConsumeMessageDirectlyResult;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
@@ -102,6 +105,7 @@ import org.apache.rocketmq.remoting.protocol.body.CMResult;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.common.BoundaryType;
 import org.apache.rocketmq.common.lite.LiteSubscriptionDTO;
+import org.apache.rocketmq.common.lite.LiteLagInfo;
 import org.apache.rocketmq.common.lite.LiteSubscriptionAction;
 import org.apache.rocketmq.common.lite.OffsetOption;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader;
@@ -622,6 +626,11 @@ public final class Main {
         liteClientInfo.setGroup("workers");
         liteClientInfo.setClientId("client-a");
         writeTypedHeaderFixture(output, "lite-client-info-request", 200077, liteClientInfo);
+        GetLiteGroupInfoRequestHeader liteGroupInfo = new GetLiteGroupInfoRequestHeader();
+        liteGroupInfo.setGroup("workers");
+        liteGroupInfo.setLiteTopic("%LMQ%lite-parent%orders");
+        liteGroupInfo.setTopK(5);
+        writeTypedHeaderFixture(output, "lite-group-info-request", 200078, liteGroupInfo);
         GetParentTopicInfoRequestHeader parentTopicInfo = new GetParentTopicInfoRequestHeader();
         parentTopicInfo.setTopic("lite-parent");
         writeTypedHeaderFixture(output, "parent-topic-info-request", 200075, parentTopicInfo);
@@ -1033,6 +1042,29 @@ public final class Main {
         populated.setConsumerIdList(java.util.List.of("client-a", "client-b"));
         writeJsonBodyFixture(output, "body-consumer-list-populated", 38, populated.encode());
 
+        GetLiteGroupInfoResponseBody liteGroupInfo = new GetLiteGroupInfoResponseBody();
+        liteGroupInfo.setGroup("workers");
+        liteGroupInfo.setParentTopic("lite-parent");
+        liteGroupInfo.setLiteTopic("%LMQ%lite-parent%orders");
+        liteGroupInfo.setEarliestUnconsumedTimestamp(1400);
+        liteGroupInfo.setTotalLagCount(40);
+        org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper liteOffset =
+            new org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper();
+        liteOffset.setBrokerOffset(100); liteOffset.setConsumerOffset(80);
+        liteOffset.setPullOffset(85); liteOffset.setLastTimestamp(1700);
+        liteGroupInfo.setLiteTopicOffsetWrapper(liteOffset);
+        LiteLagInfo ordersLag = new LiteLagInfo();
+        ordersLag.setLiteTopic("%LMQ%lite-parent%orders");
+        ordersLag.setLagCount(30); ordersLag.setEarliestUnconsumedTimestamp(1600);
+        ordersLag.setConsumerOffset(70);
+        LiteLagInfo paymentsLag = new LiteLagInfo();
+        paymentsLag.setLiteTopic("%LMQ%lite-parent%payments");
+        paymentsLag.setLagCount(10); paymentsLag.setEarliestUnconsumedTimestamp(1500);
+        paymentsLag.setConsumerOffset(90);
+        liteGroupInfo.setLagCountTopK(new ArrayList<>(Arrays.asList(ordersLag, null, paymentsLag)));
+        liteGroupInfo.setLagTimestampTopK(new ArrayList<>(Arrays.asList(paymentsLag, ordersLag)));
+        writeJsonBodyFixture(output, "body-lite-group-info", 200078, liteGroupInfo.encode());
+
         org.apache.rocketmq.common.message.MessageQueue mq =
             new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 1);
         LockBatchRequestBody lock = new LockBatchRequestBody();
@@ -1101,7 +1133,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 82, "all Rust typed header fixtures were supplied");
+            require(count == 83, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1127,6 +1159,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-topics-by-cluster-request.bin", 224);
             assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
             assertAllExtFields(byName, "typed-lite-client-info-request.bin", 200077);
+            assertAllExtFields(byName, "typed-lite-group-info-request.bin", 200078);
             assertAllExtFields(byName, "typed-parent-topic-info-request.bin", 200075);
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
@@ -1216,6 +1249,9 @@ public final class Main {
             assertExtField(byName, "typed-lite-client-info-request.bin", 200077, "group", "workers");
             assertExtField(byName, "typed-lite-client-info-request.bin", 200077, "clientId", "client-a");
             assertExtField(byName, "typed-lite-client-info-request.bin", 200077, "maxCount", "1000");
+            assertExtField(byName, "typed-lite-group-info-request.bin", 200078, "group", "workers");
+            assertExtField(byName, "typed-lite-group-info-request.bin", 200078, "liteTopic", "%LMQ%lite-parent%orders");
+            assertExtField(byName, "typed-lite-group-info-request.bin", 200078, "topK", "5");
             assertExtField(byName, "typed-parent-topic-info-request.bin", 200075, "topic", "lite-parent");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "topic", "orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "lo", "true");
@@ -1338,6 +1374,7 @@ public final class Main {
             case "typed-get-subscription-group-config-request.bin": fixtureStem = "header-get-subscription-group-config-request"; break;
             case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
             case "typed-lite-client-info-request.bin": fixtureStem = "header-lite-client-info-request"; break;
+            case "typed-lite-group-info-request.bin": fixtureStem = "header-lite-group-info-request"; break;
             case "typed-parent-topic-info-request.bin": fixtureStem = "header-parent-topic-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;
@@ -1418,7 +1455,7 @@ public final class Main {
                 decoded.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
             }
         }
-        require(decoded.size() == 15, "all Rust typed JSON body frames decoded");
+        require(decoded.size() == 16, "all Rust typed JSON body frames decoded");
         for (String name : decoded.keySet()) {
             String stem = name.replace(".bin", "");
             byte[] rustFrame = Files.readAllBytes(directory.resolve(name));
@@ -1442,6 +1479,7 @@ public final class Main {
         verifyJavaBodyAtPath("body-consumer-list-absent");
         verifyJavaBodyAtPath("body-consumer-list-empty");
         verifyJavaBodyAtPath("body-consumer-list-populated");
+        verifyJavaBodyAtPath("body-lite-group-info");
         verifyJavaBodyAtPath("body-lock-request");
         verifyJavaBodyAtPath("body-unlock-request");
         verifyJavaBodyAtPath("body-lock-response");
@@ -1449,6 +1487,7 @@ public final class Main {
         verifyRustBodyAgainstJava(directory, "body-consumer-list-absent.bin");
         verifyRustBodyAgainstJava(directory, "body-consumer-list-empty.bin");
         verifyRustBodyAgainstJava(directory, "body-consumer-list-populated.bin");
+        verifyRustBodyAgainstJava(directory, "body-lite-group-info.bin");
         verifyRustBodyAgainstJava(directory, "body-lock-request.bin");
         verifyRustBodyAgainstJava(directory, "body-unlock-request.bin");
         verifyRustBodyAgainstJava(directory, "body-lock-response.bin");
@@ -1460,6 +1499,8 @@ public final class Main {
         assertBodyField(directory, decoded, "body-reset-offset.bin", 212, "offsetTable", null);
         assertBodyField(directory, decoded, "body-consumer-status.bin", 223, "messageQueueTable", null);
         assertBodyField(directory, decoded, "body-consume-stats.bin", 208, "offsetTable", null);
+        assertBodyField(directory, decoded, "body-lite-group-info.bin", 200078, "group", "workers");
+        assertBodyField(directory, decoded, "body-lite-group-info.bin", 200078, "totalLagCount", "40");
         assertBodyField(directory, decoded, "body-consume-directly.bin", 309, "consumeResult", "CR_SUCCESS");
         assertBodyField(directory, decoded, "body-consumer-list-empty.bin", 38, "consumerIdList", null);
         assertBodyField(directory, decoded, "body-consumer-list-populated.bin", 38, "consumerIdList", null);
@@ -1492,6 +1533,16 @@ public final class Main {
             if (stem.endsWith("absent")) require(decoded.getConsumerIdList() == null, "absent consumer list preserved");
             if (stem.endsWith("empty")) require(decoded.getConsumerIdList() != null && decoded.getConsumerIdList().isEmpty(), "empty consumer list preserved");
             if (stem.endsWith("populated")) require(decoded.getConsumerIdList().size() == 2, "populated consumer list preserved");
+        } else if (stem.equals("body-lite-group-info")) {
+            GetLiteGroupInfoResponseBody decoded = com.alibaba.fastjson2.JSON.parseObject(
+                frameBody(frame), GetLiteGroupInfoResponseBody.class);
+            require(decoded.getEarliestUnconsumedTimestamp() == 1400, "Lite group earliest timestamp decoded");
+            require(decoded.getLagCountTopK().size() == 3 && decoded.getLagCountTopK().get(1) == null,
+                "Lite lag list null element preserved");
+            require(decoded.getLagCountTopK().get(0).getConsumerOffset() == -1,
+                "serialized-false Lite consumer offset uses Java default");
+            require(!((Map<?, ?>) body).containsKey("consumerOffset"),
+                "Lite consumerOffset excluded from body JSON");
         } else if (stem.endsWith("response")) {
             LockBatchResponseBody decoded = com.alibaba.fastjson2.JSON.parseObject(frameBody(frame), LockBatchResponseBody.class);
             require(!decoded.getLockOKMQSet().isEmpty(), "lock/unlock response queue set decoded");

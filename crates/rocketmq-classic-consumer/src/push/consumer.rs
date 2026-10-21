@@ -12586,7 +12586,9 @@ mod tests {
                 101,
                 vec![
                     make_message(10, 2, direct_clean_now - 60_001),
-                    make_message(11, 3, direct_clean_now - 60_000),
+                    // Keep this entry within the timeout window with margin;
+                    // cleanup reads the wall clock again after its async send.
+                    make_message(11, 3, direct_clean_now - 59_000),
                 ],
             )
             .unwrap();

@@ -2,7 +2,7 @@
 use rocketmq_classic_protocol::{
     body::{
         BatchAckMessageRequestBody, GetBrokerLiteInfoResponseBody, GetLiteClientInfoResponseBody,
-        GetLiteTopicInfoResponseBody, GetParentTopicInfoResponseBody,
+        GetLiteGroupInfoResponseBody, GetLiteTopicInfoResponseBody, GetParentTopicInfoResponseBody,
         LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody, QueryAssignmentResponseBody,
         SetMessageRequestModeRequestBody,
     },
@@ -10,11 +10,11 @@ use rocketmq_classic_protocol::{
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, GetLiteClientInfoRequestHeader,
-        GetLiteTopicInfoRequestHeader, GetParentTopicInfoRequestHeader, HeaderMap,
-        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, ProtocolError,
-        UnregisterClientRequestHeader,
+        GetLiteGroupInfoRequestHeader, GetLiteTopicInfoRequestHeader,
+        GetParentTopicInfoRequestHeader, HeaderMap, HeartbeatRequestHeader,
+        LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -395,6 +395,41 @@ impl MQClientApi {
                 reason: error.to_string(),
             },
         )
+    }
+
+    /// Queries Lite consumer-group lag details through Java's synchronous
+    /// `MQClientAPIImpl.getLiteGroupInfo` operation. Java accepts nullable
+    /// group/topic values and sends the supplied primitive `top_k` unchanged.
+    pub async fn get_lite_group_info(
+        &self,
+        addr: &str,
+        group: Option<&str>,
+        lite_topic: Option<&str>,
+        top_k: i32,
+        deadline: Instant,
+    ) -> Result<Option<GetLiteGroupInfoResponseBody>, RpcError> {
+        let code = request::GET_LITE_GROUP_INFO;
+        let mut header = GetLiteGroupInfoRequestHeader::default();
+        header.set_group(group.map(str::to_owned));
+        header.set_lite_topic(lite_topic.map(str::to_owned));
+        header.set_top_k(top_k);
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| crate::config::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request(&broker_addr, code, &header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        GetLiteGroupInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
     }
 
     /// Queries Lite topic details through Java's asynchronous
@@ -1438,6 +1473,65 @@ mod parent_topic_info_tests {
                 .with(|topics| topics.len()),
             1
         );
+        peer.await.unwrap();
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_lite_group_info_accepts_null_inputs_and_negative_top_k() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("get-lite-group-info");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let address = format!("127.0.0.1:{}", server_addr.port() + 2);
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::GET_LITE_GROUP_INFO);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request.ext_fields,
+                Some(BTreeMap::from([("topK".into(), "-3".into())]).into())
+            );
+            assert!(request.body.is_none());
+
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(br#"{"earliestUnconsumedTimestamp":-1,"totalLagCount":0}"#.to_vec()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let result = api
+            .get_lite_group_info(
+                &address,
+                None,
+                None,
+                -3,
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.get_group(), None);
+        assert_eq!(result.get_earliest_unconsumed_timestamp(), -1);
+        assert_eq!(result.get_total_lag_count(), 0);
+        assert!(result.get_lag_count_top_k().is_none());
         peer.await.unwrap();
         client.shutdown().await;
     }

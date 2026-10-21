@@ -4208,6 +4208,294 @@ impl GetLiteClientInfoResponseBody {
     }
 }
 
+/// Java `LiteLagInfo`; `consumerOffset` remains readable but Fastjson omits it
+/// from JSON output.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::LiteLagInfo;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// requires_java_identity::<LiteLagInfo>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiteLagInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lite_topic: Option<String>,
+    lag_count: i64,
+    earliest_unconsumed_timestamp: i64,
+    #[serde(skip_serializing)]
+    consumer_offset: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct LiteLagInfoFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    lite_topic: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    lag_count: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    earliest_unconsumed_timestamp: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    consumer_offset: i64,
+}
+
+impl Default for LiteLagInfoFields {
+    fn default() -> Self {
+        Self {
+            lite_topic: None,
+            lag_count: 0,
+            earliest_unconsumed_timestamp: -1,
+            consumer_offset: -1,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LiteLagInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: LiteLagInfoFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            lite_topic: fields.lite_topic,
+            lag_count: fields.lag_count,
+            earliest_unconsumed_timestamp: fields.earliest_unconsumed_timestamp,
+            consumer_offset: fields.consumer_offset,
+        })
+    }
+}
+
+impl Default for LiteLagInfo {
+    fn default() -> Self {
+        Self {
+            lite_topic: None,
+            lag_count: 0,
+            earliest_unconsumed_timestamp: -1,
+            consumer_offset: -1,
+        }
+    }
+}
+
+impl LiteLagInfo {
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+
+    pub fn get_lag_count(&self) -> i64 {
+        self.lag_count
+    }
+
+    pub fn set_lag_count(&mut self, value: i64) {
+        self.lag_count = value;
+    }
+
+    pub fn get_earliest_unconsumed_timestamp(&self) -> i64 {
+        self.earliest_unconsumed_timestamp
+    }
+
+    pub fn set_earliest_unconsumed_timestamp(&mut self, value: i64) {
+        self.earliest_unconsumed_timestamp = value;
+    }
+
+    pub fn get_consumer_offset(&self) -> i64 {
+        self.consumer_offset
+    }
+
+    pub fn set_consumer_offset(&mut self, value: i64) {
+        self.consumer_offset = value;
+    }
+}
+
+/// A nullable Java List with nullable elements and shared handles for its
+/// mutable `LiteLagInfo` entries.
+pub type LiteLagInfoList = SharedValue<Vec<Option<SharedValue<LiteLagInfo>>>>;
+
+/// Java `GetLiteGroupInfoResponseBody`, including the mutable nested DTO and
+/// list aliases exposed by its getters.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::GetLiteGroupInfoResponseBody;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// requires_java_identity::<GetLiteGroupInfoResponseBody>();
+/// ```
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLiteGroupInfoResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lite_topic: Option<String>,
+    earliest_unconsumed_timestamp: i64,
+    total_lag_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lite_topic_offset_wrapper: Option<SharedValue<OffsetWrapper>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lag_count_top_k: Option<LiteLagInfoList>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lag_timestamp_top_k: Option<LiteLagInfoList>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct GetLiteGroupInfoResponseBodyFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    group: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    parent_topic: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    lite_topic: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    earliest_unconsumed_timestamp: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    total_lag_count: i64,
+    lite_topic_offset_wrapper: Option<OffsetWrapper>,
+    lag_count_top_k: Option<Vec<Option<LiteLagInfo>>>,
+    lag_timestamp_top_k: Option<Vec<Option<LiteLagInfo>>>,
+}
+
+impl Default for GetLiteGroupInfoResponseBodyFields {
+    fn default() -> Self {
+        Self {
+            group: None,
+            parent_topic: None,
+            lite_topic: None,
+            earliest_unconsumed_timestamp: -1,
+            total_lag_count: 0,
+            lite_topic_offset_wrapper: None,
+            lag_count_top_k: None,
+            lag_timestamp_top_k: None,
+        }
+    }
+}
+
+impl Default for GetLiteGroupInfoResponseBody {
+    fn default() -> Self {
+        Self {
+            group: None,
+            parent_topic: None,
+            lite_topic: None,
+            earliest_unconsumed_timestamp: -1,
+            total_lag_count: 0,
+            lite_topic_offset_wrapper: None,
+            lag_count_top_k: None,
+            lag_timestamp_top_k: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for GetLiteGroupInfoResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GetLiteGroupInfoResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        let map_list = |value: Option<Vec<Option<LiteLagInfo>>>| {
+            value.map(|items| {
+                SharedValue::new(
+                    items
+                        .into_iter()
+                        .map(|item| item.map(SharedValue::new))
+                        .collect(),
+                )
+            })
+        };
+        Ok(Self {
+            group: fields.group,
+            parent_topic: fields.parent_topic,
+            lite_topic: fields.lite_topic,
+            earliest_unconsumed_timestamp: fields.earliest_unconsumed_timestamp,
+            total_lag_count: fields.total_lag_count,
+            lite_topic_offset_wrapper: fields.lite_topic_offset_wrapper.map(SharedValue::new),
+            lag_count_top_k: map_list(fields.lag_count_top_k),
+            lag_timestamp_top_k: map_list(fields.lag_timestamp_top_k),
+        })
+    }
+}
+
+impl GetLiteGroupInfoResponseBody {
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_parent_topic(&self) -> Option<&str> {
+        self.parent_topic.as_deref()
+    }
+
+    pub fn set_parent_topic(&mut self, value: Option<String>) {
+        self.parent_topic = value;
+    }
+
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+
+    pub fn get_earliest_unconsumed_timestamp(&self) -> i64 {
+        self.earliest_unconsumed_timestamp
+    }
+
+    pub fn set_earliest_unconsumed_timestamp(&mut self, value: i64) {
+        self.earliest_unconsumed_timestamp = value;
+    }
+
+    pub fn get_total_lag_count(&self) -> i64 {
+        self.total_lag_count
+    }
+
+    pub fn set_total_lag_count(&mut self, value: i64) {
+        self.total_lag_count = value;
+    }
+
+    pub fn get_lite_topic_offset_wrapper(&self) -> Option<SharedValue<OffsetWrapper>> {
+        self.lite_topic_offset_wrapper.clone()
+    }
+
+    pub fn set_lite_topic_offset_wrapper(&mut self, value: Option<SharedValue<OffsetWrapper>>) {
+        self.lite_topic_offset_wrapper = value;
+    }
+
+    pub fn get_lag_count_top_k(&self) -> Option<LiteLagInfoList> {
+        self.lag_count_top_k.clone()
+    }
+
+    pub fn set_lag_count_top_k(&mut self, value: Option<LiteLagInfoList>) {
+        self.lag_count_top_k = value;
+    }
+
+    pub fn get_lag_timestamp_top_k(&self) -> Option<LiteLagInfoList> {
+        self.lag_timestamp_top_k.clone()
+    }
+
+    pub fn set_lag_timestamp_top_k(&mut self, value: Option<LiteLagInfoList>) {
+        self.lag_timestamp_top_k = value;
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        java_fastjson_remoting_body_json(self, false).map(String::into_bytes)
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
 /// retain Java nullability and the map handle returned by the getter.
 ///
@@ -8155,6 +8443,7 @@ impl_java_remoting_serializable_body_adapters!(
     GetBrokerLiteInfoResponseBody,
     GetParentTopicInfoResponseBody,
     GetLiteClientInfoResponseBody,
+    GetLiteGroupInfoResponseBody,
     GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
@@ -8955,6 +9244,103 @@ mod tests {
             set.insert(Some("%LMQ%lite-parent%orders".into()));
         });
         assert_eq!(value.get_lite_topic_set().unwrap().with(HashSet::len), 1);
+    }
+
+    #[test]
+    fn get_lite_group_info_body_preserves_nested_defaults_lists_and_aliases() {
+        let defaults = GetLiteGroupInfoResponseBody::default();
+        assert_eq!(defaults.get_group(), None);
+        assert_eq!(defaults.get_parent_topic(), None);
+        assert_eq!(defaults.get_lite_topic(), None);
+        assert_eq!(defaults.get_earliest_unconsumed_timestamp(), -1);
+        assert_eq!(defaults.get_total_lag_count(), 0);
+        assert!(defaults.get_lite_topic_offset_wrapper().is_none());
+        assert!(defaults.get_lag_count_top_k().is_none());
+        assert!(defaults.get_lag_timestamp_top_k().is_none());
+
+        let lag_defaults = LiteLagInfo::default();
+        assert_eq!(lag_defaults.get_lite_topic(), None);
+        assert_eq!(lag_defaults.get_lag_count(), 0);
+        assert_eq!(lag_defaults.get_earliest_unconsumed_timestamp(), -1);
+        assert_eq!(lag_defaults.get_consumer_offset(), -1);
+        let lag_json = serde_json::to_value(&lag_defaults).unwrap();
+        assert_eq!(lag_json["lagCount"], 0);
+        assert_eq!(lag_json["earliestUnconsumedTimestamp"], -1);
+        assert!(lag_json.get("consumerOffset").is_none());
+
+        let decoded = GetLiteGroupInfoResponseBody::java_decode(
+            br#"{"group":"workers","parentTopic":"lite-parent","liteTopic":"%LMQ%lite-parent%orders","earliestUnconsumedTimestamp":1400,"totalLagCount":40,"liteTopicOffsetWrapper":{"brokerOffset":100,"consumerOffset":80,"pullOffset":85,"lastTimestamp":1700},"lagCountTopK":[{"liteTopic":"%LMQ%lite-parent%orders","lagCount":30,"earliestUnconsumedTimestamp":1600,"consumerOffset":70},null],"lagTimestampTopK":[{"liteTopic":"%LMQ%lite-parent%payments","lagCount":10,"earliestUnconsumedTimestamp":1500,"consumerOffset":90}]}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_group(), Some("workers"));
+        assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
+        assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
+        assert_eq!(decoded.get_earliest_unconsumed_timestamp(), 1400);
+        assert_eq!(decoded.get_total_lag_count(), 40);
+        let wrapper = decoded.get_lite_topic_offset_wrapper().unwrap();
+        assert_eq!(wrapper.with(OffsetWrapper::get_broker_offset), 100);
+        assert_eq!(wrapper.with(OffsetWrapper::get_consumer_offset), 80);
+        assert_eq!(wrapper.with(OffsetWrapper::get_pull_offset), 85);
+        assert_eq!(wrapper.with(OffsetWrapper::get_last_timestamp), 1700);
+
+        let count_top_k = decoded.get_lag_count_top_k().unwrap();
+        assert_eq!(count_top_k.with(Vec::len), 2);
+        let first = count_top_k.with(|items| items[0].clone().unwrap());
+        assert_eq!(first.with(LiteLagInfo::get_lag_count), 30);
+        assert_eq!(
+            first.with(LiteLagInfo::get_earliest_unconsumed_timestamp),
+            1600
+        );
+        assert_eq!(first.with(LiteLagInfo::get_consumer_offset), 70);
+        assert!(count_top_k.with(|items| items[1].is_none()));
+        let timestamp_top_k = decoded.get_lag_timestamp_top_k().unwrap();
+        assert_eq!(timestamp_top_k.with(Vec::len), 1);
+        assert_eq!(
+            timestamp_top_k.with(|items| {
+                items[0]
+                    .as_ref()
+                    .unwrap()
+                    .with(|lag| lag.get_lite_topic().map(str::to_owned))
+            }),
+            Some("%LMQ%lite-parent%payments".to_owned())
+        );
+
+        let encoded: serde_json::Value =
+            serde_json::from_slice(&decoded.java_encode().unwrap()).unwrap();
+        assert_eq!(encoded["earliestUnconsumedTimestamp"], 1400);
+        assert_eq!(encoded["liteTopicOffsetWrapper"]["brokerOffset"], 100);
+        assert!(encoded["lagCountTopK"][0].get("consumerOffset").is_none());
+        assert!(encoded["lagCountTopK"][1].is_null());
+
+        let mut value = GetLiteGroupInfoResponseBody::default();
+        let assigned_wrapper = SharedValue::new(OffsetWrapper::default());
+        value.set_lite_topic_offset_wrapper(Some(assigned_wrapper.clone()));
+        assert!(
+            value
+                .get_lite_topic_offset_wrapper()
+                .unwrap()
+                .ptr_eq(&assigned_wrapper)
+        );
+        assigned_wrapper.with_mut(|offset| offset.set_broker_offset(12));
+        assert_eq!(
+            value
+                .get_lite_topic_offset_wrapper()
+                .unwrap()
+                .with(OffsetWrapper::get_broker_offset),
+            12
+        );
+
+        let assigned_lag = SharedValue::new(LiteLagInfo::default());
+        let assigned_list = SharedValue::new(vec![Some(assigned_lag.clone()), None]);
+        value.set_lag_count_top_k(Some(assigned_list.clone()));
+        assert!(value.get_lag_count_top_k().unwrap().ptr_eq(&assigned_list));
+        assigned_lag.with_mut(|lag| lag.set_lag_count(7));
+        assigned_list.with_mut(|items| items.push(None));
+        assert_eq!(value.get_lag_count_top_k().unwrap().with(Vec::len), 3);
+        assert_eq!(
+            assigned_list.with(|items| items[0].as_ref().unwrap().with(LiteLagInfo::get_lag_count)),
+            7
+        );
     }
 
     #[test]

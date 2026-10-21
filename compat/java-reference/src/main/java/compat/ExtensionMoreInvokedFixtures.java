@@ -22,6 +22,7 @@ import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.mqclient.MQClientAPIExt;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.entity.ClientGroup;
+import org.apache.rocketmq.common.lite.LiteLagInfo;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageQueueAssignment;
@@ -33,8 +34,10 @@ import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
+import org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper;
 import org.apache.rocketmq.remoting.protocol.body.GetBrokerLiteInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetLiteClientInfoResponseBody;
+import org.apache.rocketmq.remoting.protocol.body.GetLiteGroupInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetParentTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
@@ -42,6 +45,7 @@ import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteClientInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetLiteGroupInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetParentTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
@@ -117,7 +121,8 @@ public final class ExtensionMoreInvokedFixtures {
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         provenance.put("entrypoint", name.startsWith("parent-topic-info-")
             ? "MQClientAPIImpl.getParentTopicInfo"
-            : name.startsWith("lite-client-info-") ? "MQClientAPIImpl.getLiteClientInfo" : "MQClientAPIImpl");
+            : name.startsWith("lite-client-info-") ? "MQClientAPIImpl.getLiteClientInfo"
+            : name.startsWith("lite-group-info-") ? "MQClientAPIImpl.getLiteGroupInfo" : "MQClientAPIImpl");
         provenance.put("transport", "mock RemotingClient");
         provenance.put("serverBaselineContacted", false);
         fixture.put("provenance", provenance);
@@ -137,6 +142,9 @@ public final class ExtensionMoreInvokedFixtures {
         }
         if (name.startsWith("lite-client-info-")) {
             fixture.put("liteClientInfoApi", liteClientInfoApi());
+        }
+        if (name.startsWith("lite-group-info-")) {
+            fixture.put("liteGroupInfoApi", liteGroupInfoApi());
         }
         Path file = dir.resolve(name + ".json");
         String json = JSON.toJSONString(fixture) + "\n";
@@ -354,6 +362,74 @@ public final class ExtensionMoreInvokedFixtures {
         api.put("topicSetGetterReturnsAssignedSet", defaults.getLiteTopicSet() == assigned);
         defaults.getLiteTopicSet().add("%LMQ%lite-parent%orders");
         api.put("topicSetGetterMutationVisible", assigned.size() == 1);
+        return api;
+    }
+
+    private static Map<String, Object> liteGroupInfoApi() {
+        Map<String, Object> api = new TreeMap<>();
+        api.put("rpcMethods", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getLiteGroupInfo"))
+            .map(java.lang.reflect.Method::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderConstructors", Arrays.stream(GetLiteGroupInfoRequestHeader.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderPublicFields", publicFields(GetLiteGroupInfoRequestHeader.class));
+        api.put("requestHeaderPublicMethods", publicMethods(GetLiteGroupInfoRequestHeader.class));
+        api.put("responseBodyConstructors", Arrays.stream(GetLiteGroupInfoResponseBody.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("responseBodyPublicFields", publicFields(GetLiteGroupInfoResponseBody.class));
+        api.put("responseBodyPublicMethods", publicMethods(GetLiteGroupInfoResponseBody.class));
+        api.put("offsetWrapperConstructors", Arrays.stream(OffsetWrapper.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("offsetWrapperPublicFields", publicFields(OffsetWrapper.class));
+        api.put("offsetWrapperPublicMethods", publicMethods(OffsetWrapper.class));
+        api.put("liteLagInfoConstructors", Arrays.stream(LiteLagInfo.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("liteLagInfoPublicFields", publicFields(LiteLagInfo.class));
+        api.put("liteLagInfoPublicMethods", publicMethods(LiteLagInfo.class));
+
+        GetLiteGroupInfoResponseBody defaults = new GetLiteGroupInfoResponseBody();
+        Map<String, Object> responseDefaults = new TreeMap<>();
+        responseDefaults.put("group", defaults.getGroup());
+        responseDefaults.put("parentTopic", defaults.getParentTopic());
+        responseDefaults.put("liteTopic", defaults.getLiteTopic());
+        responseDefaults.put("earliestUnconsumedTimestamp", defaults.getEarliestUnconsumedTimestamp());
+        responseDefaults.put("totalLagCount", defaults.getTotalLagCount());
+        responseDefaults.put("offsetWrapperNull", defaults.getLiteTopicOffsetWrapper() == null);
+        responseDefaults.put("lagCountTopKNull", defaults.getLagCountTopK() == null);
+        responseDefaults.put("lagTimestampTopKNull", defaults.getLagTimestampTopK() == null);
+        api.put("responseBodyDefaults", responseDefaults);
+        LiteLagInfo lagDefaults = new LiteLagInfo();
+        Map<String, Object> lagInfoDefaults = new TreeMap<>();
+        lagInfoDefaults.put("liteTopic", lagDefaults.getLiteTopic());
+        lagInfoDefaults.put("lagCount", lagDefaults.getLagCount());
+        lagInfoDefaults.put("earliestUnconsumedTimestamp", lagDefaults.getEarliestUnconsumedTimestamp());
+        lagInfoDefaults.put("consumerOffset", lagDefaults.getConsumerOffset());
+        api.put("liteLagInfoDefaults", lagInfoDefaults);
+        lagDefaults.setConsumerOffset(23);
+        api.put("consumerOffsetSerialized",
+            JSON.parseObject(JSON.toJSONString(lagDefaults)).containsKey("consumerOffset"));
+
+        List<LiteLagInfo> assignedCount = new ArrayList<>();
+        defaults.setLagCountTopK(assignedCount);
+        api.put("lagCountGetterReturnsAssignedList", defaults.getLagCountTopK() == assignedCount);
+        defaults.getLagCountTopK().add(new LiteLagInfo());
+        api.put("lagCountGetterMutationVisible", assignedCount.size() == 1);
+        List<LiteLagInfo> assignedTimestamp = new ArrayList<>();
+        defaults.setLagTimestampTopK(assignedTimestamp);
+        api.put("lagTimestampGetterReturnsAssignedList", defaults.getLagTimestampTopK() == assignedTimestamp);
+        defaults.getLagTimestampTopK().add(null);
+        api.put("lagTimestampGetterMutationVisible", assignedTimestamp.size() == 1);
+        OffsetWrapper assignedOffset = new OffsetWrapper();
+        defaults.setLiteTopicOffsetWrapper(assignedOffset);
+        api.put("offsetGetterReturnsAssignedObject", defaults.getLiteTopicOffsetWrapper() == assignedOffset);
+        assignedOffset.setBrokerOffset(12);
+        api.put("offsetMutationVisible", defaults.getLiteTopicOffsetWrapper().getBrokerOffset() == 12);
         return api;
     }
 
@@ -878,6 +954,100 @@ public final class ExtensionMoreInvokedFixtures {
                 liteApi.shutdown();
             }
             record(dir, verify, lite, name, RequestCode.GET_LITE_CLIENT_INFO, outcome);
+        }
+
+        for (String name : new String[] {"lite-group-info-success", "lite-group-info-defaults",
+            "lite-group-info-null-body", "lite-group-info-null-inputs", "lite-group-info-error",
+            "lite-group-info-unknown", "lite-group-info-invalid-body"}) {
+            Capture lite = new Capture();
+            ClientConfig liteConfig = new ClientConfig();
+            liteConfig.setVipChannelEnabled(false);
+            MQClientAPIImpl liteApi = new MQClientAPIImpl(new NettyClientConfig(), null, null, liteConfig,
+                null, nettyConfig -> lite.proxy());
+            if (name.equals("lite-group-info-success")) {
+                GetLiteGroupInfoResponseBody body = new GetLiteGroupInfoResponseBody();
+                body.setGroup("workers");
+                body.setParentTopic("lite-parent");
+                body.setLiteTopic("%LMQ%lite-parent%orders");
+                body.setEarliestUnconsumedTimestamp(1400);
+                body.setTotalLagCount(40);
+                OffsetWrapper wrapper = new OffsetWrapper();
+                wrapper.setBrokerOffset(100);
+                wrapper.setConsumerOffset(80);
+                wrapper.setPullOffset(85);
+                wrapper.setLastTimestamp(1700);
+                body.setLiteTopicOffsetWrapper(wrapper);
+                LiteLagInfo orders = new LiteLagInfo();
+                orders.setLiteTopic("%LMQ%lite-parent%orders");
+                orders.setLagCount(30);
+                orders.setEarliestUnconsumedTimestamp(1600);
+                orders.setConsumerOffset(70);
+                LiteLagInfo payments = new LiteLagInfo();
+                payments.setLiteTopic("%LMQ%lite-parent%payments");
+                payments.setLagCount(10);
+                payments.setEarliestUnconsumedTimestamp(1500);
+                payments.setConsumerOffset(90);
+                body.setLagCountTopK(new ArrayList<>(Arrays.asList(orders, null, payments)));
+                body.setLagTimestampTopK(new ArrayList<>(Arrays.asList(payments, orders)));
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(body.encode());
+            } else if (name.equals("lite-group-info-defaults")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new GetLiteGroupInfoResponseBody().encode());
+            } else if (name.equals("lite-group-info-null-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+            } else if (name.equals("lite-group-info-error")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+            } else if (name.equals("lite-group-info-unknown")) {
+                lite.response = RemotingCommand.createResponseCommand(987654, "offline");
+            } else if (name.equals("lite-group-info-invalid-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new byte[] {'{'});
+            } else {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new GetLiteGroupInfoResponseBody().encode());
+            }
+            String group = name.equals("lite-group-info-null-inputs") ? null : "workers";
+            String liteTopic = name.equals("lite-group-info-null-inputs") ? null :
+                "%LMQ%lite-parent%orders";
+            int topK = name.equals("lite-group-info-null-inputs") ? -3 : 5;
+            String outcome;
+            try {
+                GetLiteGroupInfoResponseBody result = liteApi.getLiteGroupInfo(
+                    "broker:10911", group, liteTopic, topK, 10000);
+                if (result == null) {
+                    outcome = "null";
+                } else if (name.equals("lite-group-info-success")) {
+                    OffsetWrapper wrapper = result.getLiteTopicOffsetWrapper();
+                    List<LiteLagInfo> countTopK = result.getLagCountTopK();
+                    LiteLagInfo first = countTopK.get(0);
+                    outcome = "group=" + result.getGroup() + ";parent=" + result.getParentTopic() +
+                        ";lite=" + result.getLiteTopic() + ";earliest=" +
+                        result.getEarliestUnconsumedTimestamp() + ";totalLag=" + result.getTotalLagCount() +
+                        ";brokerOffset=" + wrapper.getBrokerOffset() + ";consumerOffset=" +
+                        wrapper.getConsumerOffset() + ";pullOffset=" + wrapper.getPullOffset() +
+                        ";lastTimestamp=" + wrapper.getLastTimestamp() + ";countTopK=" + countTopK.size() +
+                        ";timestampTopK=" + result.getLagTimestampTopK().size() +
+                        ";countNull=" + (countTopK.get(1) == null) + ";firstTopic=" + first.getLiteTopic() +
+                        ";firstLag=" + first.getLagCount() + ";firstEarliest=" +
+                        first.getEarliestUnconsumedTimestamp() + ";firstConsumerOffset=" +
+                        first.getConsumerOffset();
+                } else {
+                    outcome = "group=" + result.getGroup() + ";parent=" + result.getParentTopic() +
+                        ";lite=" + result.getLiteTopic() + ";earliest=" +
+                        result.getEarliestUnconsumedTimestamp() + ";totalLag=" + result.getTotalLagCount() +
+                        ";offsetNull=" + (result.getLiteTopicOffsetWrapper() == null) +
+                        ";countTopKNull=" + (result.getLagCountTopK() == null) +
+                        ";timestampTopKNull=" + (result.getLagTimestampTopK() == null);
+                }
+            } catch (MQBrokerException failure) {
+                outcome = "MQBrokerException;code=" + failure.getResponseCode();
+            } catch (com.alibaba.fastjson2.JSONException failure) {
+                outcome = "JSONException;malformed";
+            } finally {
+                liteApi.shutdown();
+            }
+            record(dir, verify, lite, name, RequestCode.GET_LITE_GROUP_INFO, outcome);
         }
 
         HeartbeatData extHeartbeat = new HeartbeatData();

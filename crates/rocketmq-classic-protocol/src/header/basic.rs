@@ -5109,6 +5109,73 @@ impl GetLiteClientInfoRequestHeader {
     }
 }
 
+/// Java `GetLiteGroupInfoRequestHeader`. The annotated `group` value remains
+/// nullable because Java's `checkFields()` is a no-op; primitive `topK`
+/// defaults to zero and is always encoded.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetLiteGroupInfoRequestHeader;
+/// let _ = GetLiteGroupInfoRequestHeader::default().top_k;
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct GetLiteGroupInfoRequestHeader {
+    group: Option<String>,
+    lite_topic: Option<String>,
+    top_k: i32,
+}
+
+impl CommandHeader for GetLiteGroupInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "group", self.group.clone());
+        put_optional(fields, "liteTopic", self.lite_topic.clone());
+        fields.insert("topK".into(), self.top_k.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        let top_k = fields
+            .get("topK")
+            .map(|value| {
+                parse_java_i32(value).ok_or_else(|| ProtocolError::InvalidField {
+                    field: "topK",
+                    reason: format!("not a Java int: {value}"),
+                })
+            })
+            .transpose()?
+            .unwrap_or_default();
+        Ok(Self {
+            group: fields.get("group").cloned(),
+            lite_topic: fields.get("liteTopic").cloned(),
+            top_k,
+        })
+    }
+}
+
+impl GetLiteGroupInfoRequestHeader {
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_lite_topic(&self) -> Option<&str> {
+        self.lite_topic.as_deref()
+    }
+
+    pub fn set_lite_topic(&mut self, value: Option<String>) {
+        self.lite_topic = value;
+    }
+
+    pub fn get_top_k(&self) -> i32 {
+        self.top_k
+    }
+
+    pub fn set_top_k(&mut self, value: i32) {
+        self.top_k = value;
+    }
+}
+
 /// Java 5.5.1's client heartbeat RPC header. The Java class declares no
 /// payload fields and inherits its namespace and routing fields from
 /// `RpcRequestHeader`.
