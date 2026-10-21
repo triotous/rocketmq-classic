@@ -130,6 +130,91 @@ impl MQClientApi {
         })
     }
 
+    /// Retrieves the unit-topic list through Java
+    /// `MQClientAPIImpl.getUnitTopicList`.
+    pub async fn get_unit_topic_list(
+        &self,
+        is_unit_mode: bool,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        self.get_unit_topic_list_with_code(request::GET_UNIT_TOPIC_LIST, is_unit_mode, deadline)
+            .await
+    }
+
+    /// Retrieves the topics with unit subscriptions through Java
+    /// `MQClientAPIImpl.getHasUnitSubTopicList`.
+    pub async fn get_has_unit_sub_topic_list(
+        &self,
+        is_unit_mode: bool,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        self.get_unit_topic_list_with_code(
+            request::GET_HAS_UNIT_SUB_TOPIC_LIST,
+            is_unit_mode,
+            deadline,
+        )
+        .await
+    }
+
+    /// Retrieves the topics with and without unit subscriptions through Java
+    /// `MQClientAPIImpl.getHasUnitSubUnUnitTopicList`.
+    pub async fn get_has_unit_sub_ununit_topic_list(
+        &self,
+        is_unit_mode: bool,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        self.get_unit_topic_list_with_code(
+            request::GET_HAS_UNIT_SUB_UNUNIT_TOPIC_LIST,
+            is_unit_mode,
+            deadline,
+        )
+        .await
+    }
+
+    async fn get_unit_topic_list_with_code(
+        &self,
+        code: i32,
+        is_unit_mode: bool,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer,
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body = reply.body.ok_or_else(|| RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.clone(),
+            reason: "successful unit-topic-list reply has no body".into(),
+        })?;
+        let topic_list =
+            TopicList::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer,
+                reason: error.to_string(),
+            })?;
+        if !is_unit_mode {
+            if let Some(topics) = topic_list.get_topic_list() {
+                topics.with_mut(|topics| topics.retain(|topic| !topic.starts_with("%RETRY%")));
+            }
+        }
+        Ok(topic_list)
+    }
+
     /// Retrieves and merges the NameServer and Broker system-topic lists like
     /// Java `MQClientAPIImpl.getSystemTopicList`.
     pub async fn get_system_topic_list(&self, deadline: Instant) -> Result<TopicList, RpcError> {

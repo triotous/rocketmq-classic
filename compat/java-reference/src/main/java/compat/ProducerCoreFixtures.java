@@ -250,6 +250,14 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("getTopicsByClusterOperations", getTopicsByClusterOperations());
+        result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
+                "getHasUnitSubUnUnitTopicList").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("unitTopicListsOperations", unitTopicListsOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -2282,6 +2290,101 @@ public final class ProducerCoreFixtures {
             ? java.util.Base64.getEncoder().encodeToString(topicList.encode()) : null);
         try {
             org.apache.rocketmq.remoting.protocol.body.TopicList received = api.getTopicsByCluster(cluster, 2345L);
+            result.put("outcome", "returned");
+            result.put("topics", new TreeSet<>(received.getTopicList()));
+            result.put("brokerAddr", received.getBrokerAddr());
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> unitTopicListsOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.body.TopicList topics =
+            new org.apache.rocketmq.remoting.protocol.body.TopicList();
+        topics.setTopicList(new java.util.HashSet<>(List.of(
+            "orders", "%RETRY%workers", "payments")));
+        topics.setBrokerAddr("broker-a:10911");
+        for (String methodName : List.of(
+            "getUnitTopicList", "getHasUnitSubTopicList", "getHasUnitSubUnUnitTopicList")) {
+            cases.add(unitTopicListCase(methodName, true,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, topics, true));
+            cases.add(unitTopicListCase(methodName, false,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, topics, true));
+            cases.add(unitTopicListCase(methodName, false,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                "unit topic lookup rejected", null, false));
+            cases.add(unitTopicListCase(methodName, false,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null, false));
+        }
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> unitTopicListCase(
+        String methodName,
+        boolean unitMode,
+        int responseCode,
+        String responseRemark,
+        org.apache.rocketmq.remoting.protocol.body.TopicList topicList,
+        boolean bodyPresent) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("unit-topic-list-api");
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("addressWasNull", values[0] == null);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                        responseCode, responseRemark);
+                                if (bodyPresent) response.setBody(topicList.encode());
+                                call.put("responseCode", response.getCode());
+                                call.put("responseRemark", response.getRemark());
+                                call.put("responseBodyBase64", response.getBody() == null ? null
+                                    : java.util.Base64.getEncoder().encodeToString(response.getBody()));
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("method", methodName);
+        result.put("unitMode", unitMode);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyBase64", bodyPresent
+            ? java.util.Base64.getEncoder().encodeToString(topicList.encode()) : null);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.TopicList received;
+            switch (methodName) {
+                case "getUnitTopicList": received = api.getUnitTopicList(unitMode, 2345L); break;
+                case "getHasUnitSubTopicList": received = api.getHasUnitSubTopicList(unitMode, 2345L); break;
+                case "getHasUnitSubUnUnitTopicList":
+                    received = api.getHasUnitSubUnUnitTopicList(unitMode, 2345L); break;
+                default: throw new IllegalArgumentException("unknown unit topic-list method: " + methodName);
+            }
             result.put("outcome", "returned");
             result.put("topics", new TreeSet<>(received.getTopicList()));
             result.put("brokerAddr", received.getBrokerAddr());

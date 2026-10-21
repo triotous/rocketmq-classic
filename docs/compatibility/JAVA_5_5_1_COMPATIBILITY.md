@@ -149,6 +149,20 @@ Producer core fixture SHA-256 at this slice checkpoint:
 `33b7788c15092caaeb2e5cc42ac69eb7bcda5baf5ebc27c2caf01aac9c5e9ff3`. These
 RPC methods are closed; broader P18-V01 and later gates remain open.
 
+Phase 18 unit topic-list RPCs (2026-10-21): Rust now maps pinned
+`MQClientAPIImpl.getUnitTopicList(boolean,long)`,
+`getHasUnitSubTopicList(boolean,long)`, and
+`getHasUnitSubUnUnitTopicList(boolean,long)`, using NameServer requests 311,
+312 and 313 with no header or body. The boolean is evaluated locally after
+decoding: Java preserves `%RETRY%` topics when `isUnitMode` is true and removes
+them when false. The invoked Java fixture and Rust differential compare all
+three signatures and request envelopes, both filtering modes, response errors
+and missing bodies. Java throws `MQClientException` code 0 for a successful
+reply without a body; Rust returns structured `MalformedResponse`. Producer
+core fixture SHA-256 at this slice checkpoint:
+`bb5a19cb131f922828ff5effb8eb52ac4a0d95e8bae2863775214da4d6664e5b`. These
+RPCs are closed; broader P18-V01 and later gates remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

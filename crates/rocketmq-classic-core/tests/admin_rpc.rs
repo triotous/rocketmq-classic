@@ -1325,6 +1325,130 @@ async fn get_topics_by_cluster_matches_java_nameserver_request_and_outcomes() {
 }
 
 #[tokio::test]
+async fn unit_topic_lists_match_java_nameserver_requests_and_filtering() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["unitTopicListsApi"].as_array().unwrap();
+    assert_eq!(signatures.len(), 3);
+    let signatures: HashSet<&str> = signatures
+        .iter()
+        .map(|signature| signature.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        signatures,
+        HashSet::from([
+            "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getUnitTopicList(boolean,long)",
+            "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getHasUnitSubTopicList(boolean,long)",
+            "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getHasUnitSubUnUnitTopicList(boolean,long)",
+        ])
+    );
+    let cases = fixture["unitTopicListsOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 12);
+
+    let (client_api, client) = api().await;
+    for case in cases {
+        let method = case["method"].as_str().unwrap();
+        let request_code = match method {
+            "getUnitTopicList" => request::GET_UNIT_TOPIC_LIST,
+            "getHasUnitSubTopicList" => request::GET_HAS_UNIT_SUB_TOPIC_LIST,
+            "getHasUnitSubUnUnitTopicList" => request::GET_HAS_UNIT_SUB_UNUNIT_TOPIC_LIST,
+            other => panic!("unexpected Java unit-topic-list method: {other}"),
+        };
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["addressWasNull"], true);
+        assert_eq!(java_request["requestCode"], request_code);
+        assert_eq!(java_request["timeoutMillis"], 2345);
+        assert_eq!(java_request["extFieldsPresent"], false);
+        assert_eq!(java_request["requestBodyPresent"], false);
+
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            body,
+        )
+        .await;
+        client.update_name_server_address_list(vec![addr.clone()]);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let unit_mode = case["unitMode"].as_bool().unwrap();
+        let result = match method {
+            "getUnitTopicList" => client_api.get_unit_topic_list(unit_mode, deadline).await,
+            "getHasUnitSubTopicList" => {
+                client_api
+                    .get_has_unit_sub_topic_list(unit_mode, deadline)
+                    .await
+            }
+            "getHasUnitSubUnUnitTopicList" => {
+                client_api
+                    .get_has_unit_sub_ununit_topic_list(unit_mode, deadline)
+                    .await
+            }
+            _ => unreachable!(),
+        };
+
+        if case["outcome"] == "returned" {
+            let topic_list = result.unwrap();
+            let expected_topics: HashSet<String> = case["topics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|topic| topic.as_str().unwrap().to_owned())
+                .collect();
+            assert_eq!(
+                topic_list.get_topic_list().unwrap().snapshot(),
+                expected_topics
+            );
+            assert_eq!(topic_list.get_broker_addr(), Some("broker-a:10911"));
+        } else if response_code == response::SUCCESS {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: error_peer,
+                    ..
+                }) if code == request_code && error_peer == addr
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: code,
+                    peer: error_peer,
+                    code: response_code,
+                    remark: Some(remark),
+                }) if code == request_code
+                    && error_peer == addr
+                    && response_code == 1
+                    && remark == "unit topic lookup rejected"
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request_code);
+        assert!(request.body.is_none());
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(

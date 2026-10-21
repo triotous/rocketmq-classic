@@ -5613,3 +5613,22 @@ owner-specific checks belong in the manual handoff.
   `git diff --check` passed.
 - The batch deletion RPCs are closed. Broader P18-V01 and P18-V02/P18-V03/
   P18-V04 gates remain open.
+
+## P18-V01 unit topic-list RPC slice — 2026-10-21
+
+- [x] Added the three pinned Java methods `getUnitTopicList`,
+  `getHasUnitSubTopicList`, and `getHasUnitSubUnUnitTopicList` as NameServer
+  requests 311, 312 and 313. Rust filters `%RETRY%` topics only when
+  `isUnitMode` is false.
+- [x] Invoked Java fixtures and Rust differential compare all three request
+  envelopes, both filtering modes, response errors and missing-body behavior.
+- [x] Current producer core fixture SHA-256:
+  `bb5a19cb131f922828ff5effb8eb52ac4a0d95e8bae2863775214da4d6664e5b`.
+- [x] Core all-feature locked suite (181 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- These three RPC mappings are closed. Broad P18-V01 and P18-V02/P18-V03/
+  P18-V04 gates remain open.

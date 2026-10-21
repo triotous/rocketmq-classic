@@ -1287,3 +1287,18 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   inputs; a VIP-enabled loopback checks both port transforms. Current producer
   core fixture SHA-256: `33b7788c15092caaeb2e5cc42ac69eb7bcda5baf5ebc27c2caf01aac9c5e9ff3`.
   The broader P18-V01 public API inventory remains open.
+
+- P18-V01 unit topic-list RPCs (2026-10-21): the pinned public
+  `MQClientAPIImpl.getUnitTopicList(boolean,long)`,
+  `getHasUnitSubTopicList(boolean,long)`, and
+  `getHasUnitSubUnUnitTopicList(boolean,long)` methods send requests 311, 312
+  and 313 through NameServer selection without headers or bodies. Core maps all
+  three methods and preserves Java's local filtering rule: false `isUnitMode`
+  removes `%RETRY%` topics; true leaves them in the returned `TopicList`. The
+  invoked Java fixture and Rust differential cover both boolean values for all
+  three methods, response errors, and missing-body behavior. Java reports
+  `MQClientException` code 0 for a missing successful response body; Rust
+  reports structured `MalformedResponse`. Producer core fixture SHA-256:
+  `bb5a19cb131f922828ff5effb8eb52ac4a0d95e8bae2863775214da4d6664e5b`.
+  This closes these three RPC mappings only; the broad P18-V01 inventory
+  remains open.
