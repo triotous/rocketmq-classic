@@ -614,19 +614,26 @@ fn broker_management_headers_match_java_public_api_inventory() {
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
     let source = include_str!("../src/header/basic.rs");
     let trait_source = include_str!("../src/header/mod.rs");
-    let cases: &[(&str, &str, &str, &[&str], &[&str])] = &[
-        (
-            "addBrokerRequestHeaderApi",
-            "AddBrokerRequestHeader",
-            "AddBrokerRequestHeader",
-            &["get_config_path", "set_config_path", "check_fields"],
-            &["getConfigPath", "setConfigPath", "checkFields"],
-        ),
-        (
-            "removeBrokerRequestHeaderApi",
-            "RemoveBrokerRequestHeader",
-            "RemoveBrokerRequestHeader",
-            &[
+    struct Case {
+        fixture_key: &'static str,
+        java_type: &'static str,
+        rust_type: &'static str,
+        methods: &'static [&'static str],
+        java_methods: &'static [&'static str],
+    }
+    let cases = [
+        Case {
+            fixture_key: "addBrokerRequestHeaderApi",
+            java_type: "AddBrokerRequestHeader",
+            rust_type: "AddBrokerRequestHeader",
+            methods: &["get_config_path", "set_config_path", "check_fields"],
+            java_methods: &["getConfigPath", "setConfigPath", "checkFields"],
+        },
+        Case {
+            fixture_key: "removeBrokerRequestHeaderApi",
+            java_type: "RemoveBrokerRequestHeader",
+            rust_type: "RemoveBrokerRequestHeader",
+            methods: &[
                 "get_broker_cluster_name",
                 "set_broker_cluster_name",
                 "get_broker_name",
@@ -635,7 +642,7 @@ fn broker_management_headers_match_java_public_api_inventory() {
                 "set_broker_id",
                 "check_fields",
             ],
-            &[
+            java_methods: &[
                 "getBrokerClusterName",
                 "setBrokerClusterName",
                 "getBrokerName",
@@ -644,31 +651,32 @@ fn broker_management_headers_match_java_public_api_inventory() {
                 "setBrokerId",
                 "checkFields",
             ],
-        ),
+        },
     ];
-    for (fixture_key, java_type, rust_type, methods, java_methods) in cases {
-        let declared = fixture[fixture_key]["declaredPublicMethods"]
+    for case in &cases {
+        let declared = fixture[case.fixture_key]["declaredPublicMethods"]
             .as_array()
             .unwrap();
-        for java_method in *java_methods {
+        for java_method in case.java_methods {
             assert!(
                 declared.iter().any(|method| {
                     method
                         .as_str()
                         .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
                 }),
-                "missing Java API {java_type}.{java_method}"
+                "missing Java API {}.{java_method}",
+                case.java_type
             );
         }
-        for method in *methods {
+        for method in case.methods {
             assert!(rust_header_method_exists(
                 source,
                 trait_source,
-                rust_type,
+                case.rust_type,
                 method
             ));
         }
-        assert!(source.contains(&format!("impl CommandHeader for {rust_type}")));
+        assert!(source.contains(&format!("impl CommandHeader for {}", case.rust_type)));
     }
 }
 
