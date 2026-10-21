@@ -15,7 +15,8 @@ use rocketmq_classic_protocol::{
     },
     codes::{request, response},
     header::{
-        CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
+        AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader, CommandHeader,
+        ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
@@ -26,7 +27,8 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader,
-        ViewMessageRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -443,6 +445,88 @@ impl MQClientApi {
                 reason: error.to_string(),
             }
         })
+    }
+
+    /// Wipes write permission from every topic on a Broker through Java
+    /// `MQClientAPIImpl.wipeWritePermOfBroker`'s direct NameServer RPC.
+    pub async fn wipe_write_perm_of_broker(
+        &self,
+        addr: &str,
+        broker_name: Option<&str>,
+        deadline: Instant,
+    ) -> Result<i32, RpcError> {
+        let code = request::WIPE_WRITE_PERM_OF_BROKER;
+        let mut header = WipeWritePermOfBrokerRequestHeader::default();
+        header.set_broker_name(broker_name.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        let response_header =
+            decode_header::<WipeWritePermOfBrokerResponseHeader>(&reply, code, addr)?;
+        response_header
+            .get_wipe_topic_count()
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: rocketmq_classic_protocol::header::ProtocolError::MissingField(
+                    "wipeTopicCount",
+                )
+                .to_string(),
+            })
+    }
+
+    /// Adds write permission to every topic on a Broker through Java
+    /// `MQClientAPIImpl.addWritePermOfBroker`'s direct NameServer RPC.
+    pub async fn add_write_perm_of_broker(
+        &self,
+        addr: &str,
+        broker_name: Option<&str>,
+        deadline: Instant,
+    ) -> Result<i32, RpcError> {
+        let code = request::ADD_WRITE_PERM_OF_BROKER;
+        let mut header = AddWritePermOfBrokerRequestHeader::default();
+        header.set_broker_name(broker_name.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        let response_header =
+            decode_header::<AddWritePermOfBrokerResponseHeader>(&reply, code, addr)?;
+        response_header
+            .get_add_topic_count()
+            .ok_or_else(|| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: rocketmq_classic_protocol::header::ProtocolError::MissingField(
+                    "addTopicCount",
+                )
+                .to_string(),
+            })
     }
 
     async fn broadcast_name_server_kv_request(

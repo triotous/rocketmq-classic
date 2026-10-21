@@ -10,7 +10,8 @@ use rocketmq_classic_protocol::{
         SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
     header::{
-        AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
+        AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
+        AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
         CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
@@ -41,6 +42,7 @@ use rocketmq_classic_protocol::{
         SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
         UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
 };
 
@@ -522,6 +524,130 @@ fn export_rocksdb_config_header_and_enum_match_java_contract() {
                 }
                 error => panic!("unexpected error: {error}"),
             }
+        }
+    }
+}
+
+#[test]
+fn write_permission_headers_match_java_nullable_and_boxed_fields() {
+    let wipe_request_fields = java_ext_fields("header-wipe-write-perm-request");
+    let wipe_request =
+        WipeWritePermOfBrokerRequestHeader::decode_fields(&wipe_request_fields).unwrap();
+    assert_eq!(wipe_request.get_broker_name(), Some("broker-a"));
+    let mut encoded = HeaderMap::new();
+    wipe_request.encode_fields(&mut encoded);
+    assert_eq!(encoded, wipe_request_fields);
+
+    let add_request_fields = java_ext_fields("header-add-write-perm-request");
+    let add_request =
+        AddWritePermOfBrokerRequestHeader::decode_fields(&add_request_fields).unwrap();
+    assert_eq!(add_request.get_broker_name(), Some("broker-a"));
+    let mut encoded = HeaderMap::new();
+    add_request.encode_fields(&mut encoded);
+    assert_eq!(encoded, add_request_fields);
+
+    let mut missing_request = WipeWritePermOfBrokerRequestHeader::default();
+    assert!(missing_request.get_broker_name().is_none());
+    assert!(missing_request.check_fields().is_ok());
+    missing_request.set_broker_name(None);
+    let mut encoded = HeaderMap::new();
+    missing_request.encode_fields(&mut encoded);
+    assert!(encoded.is_empty());
+
+    let wipe_response_fields = java_ext_fields("header-wipe-write-perm-response");
+    let wipe_response =
+        WipeWritePermOfBrokerResponseHeader::decode_fields(&wipe_response_fields).unwrap();
+    assert_eq!(wipe_response.get_wipe_topic_count(), Some(17));
+    let mut encoded = HeaderMap::new();
+    wipe_response.encode_fields(&mut encoded);
+    assert_eq!(encoded, wipe_response_fields);
+
+    let add_response_fields = java_ext_fields("header-add-write-perm-response");
+    let add_response =
+        AddWritePermOfBrokerResponseHeader::decode_fields(&add_response_fields).unwrap();
+    assert_eq!(add_response.get_add_topic_count(), Some(-3));
+    let mut encoded = HeaderMap::new();
+    add_response.encode_fields(&mut encoded);
+    assert_eq!(encoded, add_response_fields);
+
+    for (header_name, field_name) in [
+        ("wipe-write-perm-response", "wipeTopicCount"),
+        ("add-write-perm-response", "addTopicCount"),
+    ] {
+        let mut malformed = HeaderMap::new();
+        malformed.insert(field_name.into(), "not-an-int".into());
+        let mut decoded = HeaderMap::new();
+        if header_name.starts_with("wipe") {
+            let header = WipeWritePermOfBrokerResponseHeader::decode_fields(&malformed).unwrap();
+            assert!(header.get_wipe_topic_count().is_none());
+            header.encode_fields(&mut decoded);
+        } else {
+            let header = AddWritePermOfBrokerResponseHeader::decode_fields(&malformed).unwrap();
+            assert!(header.get_add_topic_count().is_none());
+            header.encode_fields(&mut decoded);
+        }
+        assert!(decoded.is_empty());
+    }
+
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    for case_name in [
+        "wipe-write-perm-request-valid",
+        "wipe-write-perm-request-missing",
+        "add-write-perm-request-valid",
+        "add-write-perm-request-missing",
+        "wipe-write-perm-response-valid",
+        "wipe-write-perm-response-missing",
+        "wipe-write-perm-response-invalid",
+        "add-write-perm-response-valid",
+        "add-write-perm-response-missing",
+        "add-write-perm-response-invalid",
+    ] {
+        let case = &fixture["cases"][case_name];
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for mode in ["fast", "reflection"] {
+            assert_eq!(case[mode]["outcome"], "OK", "{case_name} {mode}");
+            let mut actual = HeaderMap::new();
+            match case["headerType"].as_str().unwrap() {
+                "wipe-write-perm-request" => {
+                    WipeWritePermOfBrokerRequestHeader::decode_fields_with_mode(
+                        &fields,
+                        mode == "fast",
+                    )
+                    .unwrap()
+                    .encode_fields(&mut actual)
+                }
+                "add-write-perm-request" => {
+                    AddWritePermOfBrokerRequestHeader::decode_fields_with_mode(
+                        &fields,
+                        mode == "fast",
+                    )
+                    .unwrap()
+                    .encode_fields(&mut actual)
+                }
+                "wipe-write-perm-response" => {
+                    WipeWritePermOfBrokerResponseHeader::decode_fields_with_mode(
+                        &fields,
+                        mode == "fast",
+                    )
+                    .unwrap()
+                    .encode_fields(&mut actual)
+                }
+                "add-write-perm-response" => {
+                    AddWritePermOfBrokerResponseHeader::decode_fields_with_mode(
+                        &fields,
+                        mode == "fast",
+                    )
+                    .unwrap()
+                    .encode_fields(&mut actual)
+                }
+                other => panic!("unexpected write-permission header type {other}"),
+            }
+            let expected: HeaderMap =
+                serde_json::from_value(case[mode]["encodedFields"].clone()).unwrap();
+            assert_eq!(actual, expected, "{case_name} {mode}");
         }
     }
 }
@@ -2102,6 +2228,42 @@ fn header_validation_matrix() {
             ""
         ),
         row!(
+            WipeWritePermOfBrokerRequestHeader,
+            "wipe-write-perm-request",
+            "",
+            "",
+            "",
+            "brokerName",
+            ""
+        ),
+        row!(
+            AddWritePermOfBrokerRequestHeader,
+            "add-write-perm-request",
+            "",
+            "",
+            "",
+            "brokerName",
+            ""
+        ),
+        row!(
+            WipeWritePermOfBrokerResponseHeader,
+            "wipe-write-perm-response",
+            "",
+            "wipeTopicCount",
+            "",
+            "",
+            ""
+        ),
+        row!(
+            AddWritePermOfBrokerResponseHeader,
+            "add-write-perm-response",
+            "",
+            "addTopicCount",
+            "",
+            "",
+            ""
+        ),
+        row!(
             DeleteSubscriptionGroupRequestHeader,
             "delete-subscription-group-request",
             "",
@@ -2791,6 +2953,8 @@ fn header_validation_matrix() {
                             | "QueryMessageResponseHeader"
                             | "ViewMessageRequestHeader"
                             | "ResetMasterFlushOffsetHeader"
+                            | "WipeWritePermOfBrokerResponseHeader"
+                            | "AddWritePermOfBrokerResponseHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

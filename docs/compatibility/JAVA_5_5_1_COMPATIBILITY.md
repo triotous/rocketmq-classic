@@ -11,6 +11,18 @@ typed header encoding, parsing, success, and Broker rejection. Fixture digest
 and gate results are in the Phase 18 release checklist. This closes this
 operation/header slice only; broad P18-V01 remains open.
 
+Phase 18 NameServer write-permission APIs (2026-10-21): Rust maps pinned
+`MQClientAPIImpl.wipeWritePermOfBroker(String,String,long)` request 205 and
+`addWritePermOfBroker(String,String,long)` request 327. Both send the nullable
+`brokerName` header to the supplied NameServer address with the caller timeout,
+return the boxed topic count on success, and preserve non-success response
+errors. Missing or malformed success counts are nullable during header decode
+and fail at the Rust RPC result boundary, matching Java's unboxing failure.
+Java and Rust fixtures cover request/response headers, nullable and empty names,
+signed counts, errors and missing/malformed response fields. Fixture digest and
+validation results are in the Phase 18 release checklist. This closes these
+direct APIs and header rows only; broad P18-V01 remains open.
+
 Phase 18 `resetMasterFlushOffset` (2026-10-21): the pinned direct
 `MQClientAPIImpl.resetMasterFlushOffset(String,long)` operation maps request
 908 with `masterFlushOffset`, uses the Broker address unchanged even with VIP

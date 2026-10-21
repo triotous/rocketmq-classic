@@ -24,6 +24,25 @@ The code/documentation slice is validated and ready for its bounded commit. Broa
 
 Post-validation: committed the bounded slice as `ea7a7818` (`fix(compat): map RocksDB config export RPC`). The post-commit worktree check shows only the four listed Phase 19 paths; they remain unstaged.
 
+## Bounded slice: NameServer write-permission RPCs — 2026-10-21
+
+Mapped pinned Java 5.5.1 `MQClientAPIImpl.wipeWritePermOfBroker(String,String,long)` request 205 and `addWritePermOfBroker(String,String,long)` request 327. Added nullable request headers, nullable boxed response headers, Core operations, invoked Java cases, Java decode-mode fixtures, and Java↔Rust typed frames. Success counts are unboxed at the Rust RPC boundary; Broker errors remain response errors.
+
+Actions and checks:
+
+- The first Maven compile failed because `RemotingCommand.setExtFields` requires `HashMap<String,String>`; changed the fixture response variable to that declared type and recompiled successfully.
+- Refreshed typed headers, admin header decode-mode fixtures and producer Core fixture from the compiled Java reference.
+- `cargo test -p rocketmq-classic-protocol --test header_inventory` passed (11 tests).
+- `cargo test -p rocketmq-classic-protocol --test headers` passed (22 tests, including the validation matrix and nullable boxed-count cases).
+- `cargo test -p rocketmq-classic-core --test admin_rpc write_permission_name_server_rpcs_match_java_fixture` passed (1 focused test covering 12 Java cases).
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `mvn -f compat/java-reference/pom.xml verify` passed: 37 manifest scenarios, 79 Java-decoded Rust typed headers, and 15 typed bodies.
+- Producer Core fixture SHA-256: `4ee0b364d81e1d886e040b895a12ae46c676b8bd4a9648580f710e36627caec0`.
+- Updated the compatibility evidence, Phase 6 API map, Phase 6 requirement audit, and release checklist. Clarified that the Phase 17 tools-wrapper boundary does not remove the low-level client method from the Phase 18 inventory. The Phase 18 plan was not modified.
+
+The bounded code/documentation slice is validated and ready for its commit. Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04, and Phase 19 work remain open. Four pre-existing Phase 19 worktree paths remain unstaged and untouched.
+
 Pre-existing Phase 19 worktree paths preserved without staging or edits:
 
 - `integration-tests/README.md`

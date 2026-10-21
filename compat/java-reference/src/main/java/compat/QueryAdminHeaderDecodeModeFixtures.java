@@ -48,6 +48,10 @@ import org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoReques
 import org.apache.rocketmq.remoting.protocol.header.QueryTopicsByConsumerRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ViewMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteTopicFromNamesrvRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerResponseHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader;
 
 /** Invokes Java 5.5.1 admin-query header reflection decoding through both mode hints. */
 public final class QueryAdminHeaderDecodeModeFixtures {
@@ -91,6 +95,22 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("export-rocksdb-config-empty", decodeModes("export-rocksdb-config",
             fields("configType", "")));
         cases.put("export-rocksdb-config-missing", decodeModes("export-rocksdb-config", fields()));
+        cases.put("wipe-write-perm-request-valid", decodeModes("wipe-write-perm-request",
+            fields("brokerName", "broker-a")));
+        cases.put("wipe-write-perm-request-missing", decodeModes("wipe-write-perm-request", fields()));
+        cases.put("add-write-perm-request-valid", decodeModes("add-write-perm-request",
+            fields("brokerName", "broker-a")));
+        cases.put("add-write-perm-request-missing", decodeModes("add-write-perm-request", fields()));
+        cases.put("wipe-write-perm-response-valid", decodeModes("wipe-write-perm-response",
+            fields("wipeTopicCount", "17")));
+        cases.put("wipe-write-perm-response-missing", decodeModes("wipe-write-perm-response", fields()));
+        cases.put("wipe-write-perm-response-invalid", decodeModes("wipe-write-perm-response",
+            fields("wipeTopicCount", "not-an-int")));
+        cases.put("add-write-perm-response-valid", decodeModes("add-write-perm-response",
+            fields("addTopicCount", "-3")));
+        cases.put("add-write-perm-response-missing", decodeModes("add-write-perm-response", fields()));
+        cases.put("add-write-perm-response-invalid", decodeModes("add-write-perm-response",
+            fields("addTopicCount", "not-an-int")));
 
         cases.put("view-request-valid", decodeModes("view-request", fields(
             "topic", "orders", "offset", "9876")));
@@ -146,6 +166,14 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(ExportRocksDBConfigToJsonRequestHeader.class));
         apiInventories.put("ExportRocksDBConfigType",
             apiInventory(ExportRocksDBConfigToJsonRequestHeader.ConfigType.class));
+        apiInventories.put("WipeWritePermOfBrokerRequestHeader",
+            apiInventory(WipeWritePermOfBrokerRequestHeader.class));
+        apiInventories.put("AddWritePermOfBrokerRequestHeader",
+            apiInventory(AddWritePermOfBrokerRequestHeader.class));
+        apiInventories.put("WipeWritePermOfBrokerResponseHeader",
+            apiInventory(WipeWritePermOfBrokerResponseHeader.class));
+        apiInventories.put("AddWritePermOfBrokerResponseHeader",
+            apiInventory(AddWritePermOfBrokerResponseHeader.class));
         apiInventories.put("DeleteTopicRequestHeader",
             apiInventory(DeleteTopicRequestHeader.class));
         apiInventories.put("DeleteTopicFromNamesrvRequestHeader",
@@ -200,6 +228,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 908;
         } else if ("export-rocksdb-config".equals(type)) {
             code = 355;
+        } else if ("wipe-write-perm-request".equals(type)
+            || "wipe-write-perm-response".equals(type)) {
+            code = 205;
+        } else if ("add-write-perm-request".equals(type)
+            || "add-write-perm-response".equals(type)) {
+            code = 327;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -238,6 +272,18 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "export-rocksdb-config":
                     headerClass = ExportRocksDBConfigToJsonRequestHeader.class;
+                    break;
+                case "wipe-write-perm-request":
+                    headerClass = WipeWritePermOfBrokerRequestHeader.class;
+                    break;
+                case "add-write-perm-request":
+                    headerClass = AddWritePermOfBrokerRequestHeader.class;
+                    break;
+                case "wipe-write-perm-response":
+                    headerClass = WipeWritePermOfBrokerResponseHeader.class;
+                    break;
+                case "add-write-perm-response":
+                    headerClass = AddWritePermOfBrokerResponseHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

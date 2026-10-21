@@ -311,6 +311,19 @@ public final class ProducerCoreFixtures {
             .collect(java.util.stream.Collectors.toList()));
         result.put("exportRocksDBConfigTypeParsing", exportRocksDBConfigTypeParsing());
         result.put("exportRocksDBConfigToJsonOperations", exportRocksDBConfigToJsonOperations());
+        result.put("wipeWritePermOfBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("wipeWritePermOfBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("addWritePermOfBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("addWritePermOfBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("writePermissionOperations", writePermissionOperations());
         result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
@@ -3001,6 +3014,102 @@ public final class ProducerCoreFixtures {
                 .toString(configTypes));
         try {
             api.exportRocksDBConfigToJson("broker-a:10911", configTypes, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> writePermissionOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        for (String operation : List.of("wipe", "add")) {
+            cases.add(writePermissionCase(operation, "success", "broker-a",
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+                operation.equals("wipe") ? "17" : "-3"));
+            cases.add(writePermissionCase(operation, "null-broker-name", null,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "0"));
+            cases.add(writePermissionCase(operation, "empty-broker-name", "",
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "0"));
+            cases.add(writePermissionCase(operation, "missing-response-header", "broker-a",
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+            cases.add(writePermissionCase(operation, "malformed-response-count", "broker-a",
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "not-an-int"));
+            cases.add(writePermissionCase(operation, "broker-error", "broker-a",
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                "write permission update rejected", null));
+        }
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> writePermissionCase(
+        String operation,
+        String name,
+        String brokerName,
+        int responseCode,
+        String responseRemark,
+        String responseCount) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("write-permission-api");
+        clientConfig.setVipChannelEnabled(true);
+        String responseField = "wipe".equals(operation) ? "wipeTopicCount" : "addTopicCount";
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseCount != null) {
+                                HashMap<String, String> responseFields = new HashMap<>();
+                                responseFields.put(responseField, responseCount);
+                                response.setExtFields(responseFields);
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("operation", operation);
+        result.put("name", name);
+        result.put("address", "namesrv-a:9876");
+        result.put("brokerName", brokerName);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseField", responseField);
+        result.put("responseCount", responseCount);
+        try {
+            if ("wipe".equals(operation)) {
+                result.put("result", api.wipeWritePermOfBroker("namesrv-a:9876", brokerName, 2345L));
+            } else {
+                result.put("result", api.addWritePermOfBroker("namesrv-a:9876", brokerName, 2345L));
+            }
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());

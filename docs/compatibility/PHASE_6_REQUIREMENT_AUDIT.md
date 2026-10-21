@@ -1430,3 +1430,22 @@ typed header frames, Protocol tests, and the Core loopback comparison cover the
 API signature, parser results, request envelope, empty/null lists, and both
 response outcomes. This closes the named API/header slice only; broad P18-V01,
 P18-V02 and platform evidence gates remain open.
+
+## Direct NameServer write-permission APIs — 2026-10-21
+
+Pinned `MQClientAPIImpl.wipeWritePermOfBroker(String,String,long)` and
+`addWritePermOfBroker(String,String,long)` map requests 205 and 327. Both send
+the nullable `brokerName` header to the supplied NameServer address with the
+caller timeout, then unbox `wipeTopicCount` or `addTopicCount` on `SUCCESS`.
+Rust preserves nullable and empty input, returns the signed `i32`, and reports
+missing/malformed success counts as malformed responses. Invoked Java
+operations, four typed header frames, decode-mode comparisons and a Core
+loopback test cover the signature, request envelope, result, and failure
+branches. This closes the named direct method/header slices only; broad
+P18-V01, P18-V02 and platform evidence gates remain open.
+
+P18 follow-up to the Phase 17 tools boundary note: `exportRocksDBConfigToJson`
+is now mapped as a public low-level `MQClientAPIImpl` operation. The Phase 17
+`TOOLS_OUT_OF_SCOPE` disposition still applies to the `MQAdminExt` wrapper and
+`checkRocksdbCqWriteProgress` path; it does not remove this public client
+operation from the Phase 18 source/API inventory.

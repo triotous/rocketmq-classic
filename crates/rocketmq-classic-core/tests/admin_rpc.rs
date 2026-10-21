@@ -1936,6 +1936,117 @@ async fn export_rocksdb_config_to_json_matches_java_request_and_outcomes() {
 }
 
 #[tokio::test]
+async fn write_permission_name_server_rpcs_match_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["wipeWritePermOfBrokerApi"],
+        json!([
+            "int org.apache.rocketmq.client.impl.MQClientAPIImpl.wipeWritePermOfBroker(java.lang.String,java.lang.String,long)"
+        ])
+    );
+    assert_eq!(
+        fixture["addWritePermOfBrokerApi"],
+        json!([
+            "int org.apache.rocketmq.client.impl.MQClientAPIImpl.addWritePermOfBroker(java.lang.String,java.lang.String,long)"
+        ])
+    );
+    let cases = fixture["writePermissionOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 12);
+    let (client_api, client) = api().await;
+    for case in cases {
+        let operation = case["operation"].as_str().unwrap();
+        let request_code = if operation == "wipe" {
+            request::WIPE_WRITE_PERM_OF_BROKER
+        } else {
+            request::ADD_WRITE_PERM_OF_BROKER
+        };
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let mut response_fields = HeaderMap::new();
+        if let Some(response_count) = case["responseCount"].as_str() {
+            response_fields.insert(
+                case["responseField"].as_str().unwrap().to_owned(),
+                response_count.to_owned(),
+            );
+        }
+        let response_header = (!response_fields.is_empty()).then_some(response_fields);
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            response_remark.clone(),
+            response_header,
+            None,
+        )
+        .await;
+        let broker_name = case["brokerName"].as_str();
+        let deadline = Instant::now() + Duration::from_millis(2345);
+        let result = if operation == "wipe" {
+            client_api
+                .wipe_write_perm_of_broker(&addr, broker_name, deadline)
+                .await
+        } else {
+            client_api
+                .add_write_perm_of_broker(&addr, broker_name, deadline)
+                .await
+        };
+
+        match case["outcome"].as_str().unwrap() {
+            "returned" => assert_eq!(result.unwrap(), case["result"].as_i64().unwrap() as i32),
+            "MQClientException" => assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: actual_code,
+                    peer: error_peer,
+                    code,
+                    remark: Some(error_remark),
+                }) if actual_code == request_code
+                    && error_peer == addr
+                    && code == response_code
+                    && Some(error_remark.as_str()) == case["responseRemark"].as_str()
+            )),
+            "NullPointerException" => assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: actual_code,
+                    peer: error_peer,
+                    ..
+                }) if actual_code == request_code && error_peer == addr
+            )),
+            outcome => panic!("unexpected Java result {outcome}"),
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request_code);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert_eq!(request.body, None);
+        let fields = request.ext_fields.as_ref().unwrap();
+        if let Some(broker_name) = broker_name {
+            assert_eq!(fields.len(), 1);
+            assert_eq!(fields["brokerName"], broker_name);
+        } else {
+            assert!(fields.is_empty());
+        }
+
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["address"], "namesrv-a:9876");
+        assert_eq!(java_request["requestCode"], request_code);
+        assert_eq!(java_request["timeoutMillis"], 2345);
+        assert!(java_request["requestBodyBase64"].is_null());
+        if let Some(broker_name) = broker_name {
+            assert_eq!(java_request["extFields"]["brokerName"], broker_name);
+        } else {
+            assert!(java_request["extFields"].as_object().unwrap().is_empty());
+        }
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn get_topics_by_cluster_matches_java_nameserver_request_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

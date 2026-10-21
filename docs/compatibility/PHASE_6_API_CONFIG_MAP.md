@@ -1678,3 +1678,17 @@ Broker response errors. A nullable-list adapter rejects null before transport.
 Java and Rust fixtures cover type parsing, frame fields, success, empty-list,
 null-list, and Broker-error cases. This closes the direct API/header slice
 only; broad P18-V01 reconciliation remains open.
+
+## Direct NameServer write-permission APIs — 2026-10-21
+
+Pinned `MQClientAPIImpl.wipeWritePermOfBroker(String,String,long)` sends
+request 205 and `addWritePermOfBroker(String,String,long)` sends request 327.
+Both use the supplied NameServer address and caller timeout, retain nullable or
+empty `brokerName`, and return the respective boxed topic-count response field
+as an `i32`. A `SUCCESS` reply with a missing or malformed count fails while
+Rust unwraps the nullable response field, matching Java's `Integer` unboxing
+failure. Other response codes preserve the Broker/NameServer error. Rust maps
+the four request/response header models and both Core calls. Invoked Java and
+Rust fixtures cover the direct address, request codes, fields, signed result,
+null/empty name, malformed/missing count, and Broker rejection. This closes
+these direct API/header rows only; broad P18-V01 remains open.

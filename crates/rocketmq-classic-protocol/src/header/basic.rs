@@ -1098,6 +1098,122 @@ impl CommandHeader for GetKvConfigResponseHeader {
     }
 }
 
+/// Pinned Java NameServer `WipeWritePermOfBrokerRequestHeader`. Its annotated
+/// broker name stays nullable because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct WipeWritePermOfBrokerRequestHeader {
+    pub(crate) broker_name: Option<String>,
+}
+
+impl WipeWritePermOfBrokerRequestHeader {
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+}
+
+impl CommandHeader for WipeWritePermOfBrokerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            broker_name: optional_string(fields, "brokerName"),
+        })
+    }
+}
+
+/// Pinned Java NameServer `AddWritePermOfBrokerRequestHeader`. Its annotated
+/// broker name stays nullable because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct AddWritePermOfBrokerRequestHeader {
+    pub(crate) broker_name: Option<String>,
+}
+
+impl AddWritePermOfBrokerRequestHeader {
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+}
+
+impl CommandHeader for AddWritePermOfBrokerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            broker_name: optional_string(fields, "brokerName"),
+        })
+    }
+}
+
+/// Pinned Java NameServer `WipeWritePermOfBrokerResponseHeader`. The boxed
+/// topic count stays nullable until the owning RPC performs Java's unboxing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WipeWritePermOfBrokerResponseHeader {
+    pub(crate) wipe_topic_count: Option<i32>,
+}
+
+impl WipeWritePermOfBrokerResponseHeader {
+    pub fn get_wipe_topic_count(&self) -> Option<i32> {
+        self.wipe_topic_count
+    }
+
+    pub fn set_wipe_topic_count(&mut self, value: Option<i32>) {
+        self.wipe_topic_count = value;
+    }
+}
+
+impl CommandHeader for WipeWritePermOfBrokerResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "wipeTopicCount", self.wipe_topic_count);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            wipe_topic_count: optional_i32_with_mode(fields, "wipeTopicCount", false)?,
+        })
+    }
+}
+
+/// Pinned Java NameServer `AddWritePermOfBrokerResponseHeader`. The boxed
+/// topic count stays nullable until the owning RPC performs Java's unboxing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AddWritePermOfBrokerResponseHeader {
+    pub(crate) add_topic_count: Option<i32>,
+}
+
+impl AddWritePermOfBrokerResponseHeader {
+    pub fn get_add_topic_count(&self) -> Option<i32> {
+        self.add_topic_count
+    }
+
+    pub fn set_add_topic_count(&mut self, value: Option<i32>) {
+        self.add_topic_count = value;
+    }
+}
+
+impl CommandHeader for AddWritePermOfBrokerResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "addTopicCount", self.add_topic_count);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            add_topic_count: optional_i32_with_mode(fields, "addTopicCount", false)?,
+        })
+    }
+}
+
 /// Pinned Java `DeleteSubscriptionGroupRequestHeader`. Its annotated group
 /// name remains nullable because Java's `checkFields()` is a no-op; the
 /// primitive `cleanOffset` field defaults to and encodes `false`.

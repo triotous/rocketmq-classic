@@ -650,6 +650,24 @@ public final class Main {
         getKvConfigResponse.setValue("config-value");
         writeTypedHeaderFixture(output, "get-kv-config-response",
             RemotingCommand.createResponseCommandWithHeader(0, getKvConfigResponse));
+        org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerRequestHeader wipeWritePerm =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerRequestHeader();
+        wipeWritePerm.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "wipe-write-perm-request", 205, wipeWritePerm);
+        org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerRequestHeader addWritePerm =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerRequestHeader();
+        addWritePerm.setBrokerName("broker-a");
+        writeTypedHeaderFixture(output, "add-write-perm-request", 327, addWritePerm);
+        org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader wipeWritePermResponse =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader();
+        wipeWritePermResponse.setWipeTopicCount(17);
+        writeTypedHeaderFixture(output, "wipe-write-perm-response",
+            RemotingCommand.createResponseCommandWithHeader(0, wipeWritePermResponse));
+        org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerResponseHeader addWritePermResponse =
+            new org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerResponseHeader();
+        addWritePermResponse.setAddTopicCount(-3);
+        writeTypedHeaderFixture(output, "add-write-perm-response",
+            RemotingCommand.createResponseCommandWithHeader(0, addWritePermResponse));
         DeleteSubscriptionGroupRequestHeader deleteSubscriptionGroup =
             new DeleteSubscriptionGroupRequestHeader();
         deleteSubscriptionGroup.setGroupName("workers");
@@ -1063,7 +1081,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 75, "all Rust typed header fixtures were supplied");
+            require(count == 79, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1095,6 +1113,10 @@ public final class Main {
             assertAllExtFields(byName, "typed-put-kv-config-request.bin", 100);
             assertAllExtFields(byName, "typed-get-kv-list-by-namespace-request.bin", 219);
             assertAllExtFields(byName, "typed-get-kv-config-response.bin", 0);
+            assertAllExtFields(byName, "typed-wipe-write-perm-request.bin", 205);
+            assertAllExtFields(byName, "typed-add-write-perm-request.bin", 327);
+            assertAllExtFields(byName, "typed-wipe-write-perm-response.bin", 0);
+            assertAllExtFields(byName, "typed-add-write-perm-response.bin", 0);
             assertAllExtFields(byName, "typed-delete-subscription-group-request.bin", 207);
             assertAllExtFields(byName, "typed-update-offset.bin", 15);
             assertAllExtFields(byName, "typed-end-transaction.bin", 37);
@@ -1189,6 +1211,14 @@ public final class Main {
                 "namespace", "config-namespace");
             assertExtField(byName, "typed-get-kv-config-response.bin", 0,
                 "value", "config-value");
+            assertExtField(byName, "typed-wipe-write-perm-request.bin", 205,
+                "brokerName", "broker-a");
+            assertExtField(byName, "typed-add-write-perm-request.bin", 327,
+                "brokerName", "broker-a");
+            assertExtField(byName, "typed-wipe-write-perm-response.bin", 0,
+                "wipeTopicCount", "17");
+            assertExtField(byName, "typed-add-write-perm-response.bin", 0,
+                "addTopicCount", "-3");
             assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
                 "groupName", "workers");
             assertExtField(byName, "typed-delete-subscription-group-request.bin", 207,
@@ -1282,6 +1312,10 @@ public final class Main {
             case "typed-put-kv-config-request.bin": fixtureStem = "header-put-kv-config-request"; break;
             case "typed-get-kv-list-by-namespace-request.bin": fixtureStem = "header-get-kv-list-by-namespace-request"; break;
             case "typed-get-kv-config-response.bin": fixtureStem = "header-get-kv-config-response"; break;
+            case "typed-wipe-write-perm-request.bin": fixtureStem = "header-wipe-write-perm-request"; break;
+            case "typed-add-write-perm-request.bin": fixtureStem = "header-add-write-perm-request"; break;
+            case "typed-wipe-write-perm-response.bin": fixtureStem = "header-wipe-write-perm-response"; break;
+            case "typed-add-write-perm-response.bin": fixtureStem = "header-add-write-perm-response"; break;
             case "typed-delete-subscription-group-request.bin": fixtureStem = "header-delete-subscription-group-request"; break;
             case "typed-update-offset.bin": fixtureStem = "header-update-offset-request"; break;
             case "typed-end-transaction.bin": fixtureStem = "header-end-transaction-request"; break;

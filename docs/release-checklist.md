@@ -5952,3 +5952,26 @@ owner-specific checks belong in the manual handoff.
 - Broad P18-V01, current Ubuntu/native Windows P18-V04 evidence, and Phase 19
   live Broker scenarios remain open. Four preserved Phase 19 worktree paths
   remain unstaged and untouched.
+
+## P18-V01 NameServer write-permission APIs — 2026-10-21
+
+- [x] Added `MQClientApi::wipe_write_perm_of_broker` for request 205 and
+  `MQClientApi::add_write_perm_of_broker` for request 327. Both use the supplied
+  NameServer address and caller deadline, preserve nullable/empty broker names,
+  return the boxed topic count, and report non-success replies. Missing or
+  malformed success counts fail at the result boundary.
+- [x] Added Java-mapped request/response header models, Java→Rust and
+  Rust→Java typed frame fixtures, and fast/reflection decode comparisons for
+  nullable broker names and boxed counts. Invoked Java cases and the Rust Core
+  differential cover both operations, null/empty input, positive/negative
+  counts, success, Broker error, and missing/malformed response counts.
+  Producer core fixture SHA-256:
+  `4ee0b364d81e1d886e040b895a12ae46c676b8bd4a9648580f710e36627caec0`.
+- [x] Protocol `header_inventory` passes (11 tests), Protocol `headers` passes
+  (22 tests, including `header_validation_matrix`), and the focused Core RPC
+  differential passes. Strict locked workspace Clippy, formatting, and diff
+  checks pass. Pinned Maven `verify` passes with 37 manifest scenarios, 79
+  typed headers, and 15 typed bodies.
+- Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04,
+  and Phase 19 live Broker scenarios remain open. Four preserved Phase 19
+  worktree paths remain unstaged and untouched.

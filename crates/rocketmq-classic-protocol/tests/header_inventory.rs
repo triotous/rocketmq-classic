@@ -53,6 +53,10 @@ macro_rules! inventory {
             DeleteKvConfigRequestHeader => ("header-delete-kv-config-request", "typed-delete-kv-config-request.bin"),
             GetKvConfigRequestHeader => ("header-get-kv-config-request", "typed-get-kv-config-request.bin"),
             GetKvConfigResponseHeader => ("header-get-kv-config-response", "typed-get-kv-config-response.bin"),
+            WipeWritePermOfBrokerRequestHeader => ("header-wipe-write-perm-request", "typed-wipe-write-perm-request.bin"),
+            AddWritePermOfBrokerRequestHeader => ("header-add-write-perm-request", "typed-add-write-perm-request.bin"),
+            WipeWritePermOfBrokerResponseHeader => ("header-wipe-write-perm-response", "typed-wipe-write-perm-response.bin"),
+            AddWritePermOfBrokerResponseHeader => ("header-add-write-perm-response", "typed-add-write-perm-response.bin"),
             GetKvListByNamespaceRequestHeader => ("header-get-kv-list-by-namespace-request", "typed-get-kv-list-by-namespace-request.bin"),
             PutKvConfigRequestHeader => ("header-put-kv-config-request", "typed-put-kv-config-request.bin"),
             DeleteSubscriptionGroupRequestHeader => ("header-delete-subscription-group-request", "typed-delete-subscription-group-request.bin"),
@@ -487,6 +491,71 @@ fn export_rocksdb_config_header_and_enum_api_match_java_inventory() {
     }
     assert!(source.contains("pub const fn values()"));
     assert!(source.contains("pub const fn ordinal(self)"));
+}
+
+#[test]
+fn write_permission_headers_match_java_public_api_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for (java_type, rust_type, methods) in [
+        (
+            "WipeWritePermOfBrokerRequestHeader",
+            "WipeWritePermOfBrokerRequestHeader",
+            ["get_broker_name", "set_broker_name", "check_fields"],
+        ),
+        (
+            "AddWritePermOfBrokerRequestHeader",
+            "AddWritePermOfBrokerRequestHeader",
+            ["get_broker_name", "set_broker_name", "check_fields"],
+        ),
+        (
+            "WipeWritePermOfBrokerResponseHeader",
+            "WipeWritePermOfBrokerResponseHeader",
+            [
+                "get_wipe_topic_count",
+                "set_wipe_topic_count",
+                "check_fields",
+            ],
+        ),
+        (
+            "AddWritePermOfBrokerResponseHeader",
+            "AddWritePermOfBrokerResponseHeader",
+            ["get_add_topic_count", "set_add_topic_count", "check_fields"],
+        ),
+    ] {
+        let api = &fixture["apiInventories"][java_type];
+        assert_eq!(api["publicFields"], serde_json::json!([]), "{java_type}");
+        let declared = api["declaredPublicMethods"].as_array().unwrap();
+        let java_method_names = if java_type.ends_with("RequestHeader") {
+            ["getBrokerName", "setBrokerName", "checkFields"]
+        } else if java_type.starts_with("Wipe") {
+            ["getWipeTopicCount", "setWipeTopicCount", "checkFields"]
+        } else {
+            ["getAddTopicCount", "setAddTopicCount", "checkFields"]
+        };
+        for java_method in java_method_names {
+            assert!(
+                declared.iter().any(|method| {
+                    method
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+                }),
+                "missing Java API {java_type}.{java_method}"
+            );
+        }
+        for method in methods {
+            assert!(rust_header_method_exists(
+                source,
+                trait_source,
+                rust_type,
+                method
+            ));
+        }
+    }
 }
 
 #[test]

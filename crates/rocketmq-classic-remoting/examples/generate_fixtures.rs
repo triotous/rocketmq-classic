@@ -12,7 +12,8 @@ use rocketmq_classic_protocol::{
     },
     codes::{LanguageCode, SerializeType},
     header::{
-        AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
+        AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
+        AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
         CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
@@ -43,6 +44,7 @@ use rocketmq_classic_protocol::{
         SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
         UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -190,6 +192,30 @@ fn generate_p4_headers(output: &std::path::Path) {
         output,
         "typed-get-kv-config-response.bin",
         "header-get-kv-config-response",
+        0,
+    );
+    write_oracle_header::<WipeWritePermOfBrokerRequestHeader>(
+        output,
+        "typed-wipe-write-perm-request.bin",
+        "header-wipe-write-perm-request",
+        205,
+    );
+    write_oracle_header::<AddWritePermOfBrokerRequestHeader>(
+        output,
+        "typed-add-write-perm-request.bin",
+        "header-add-write-perm-request",
+        327,
+    );
+    write_oracle_header::<WipeWritePermOfBrokerResponseHeader>(
+        output,
+        "typed-wipe-write-perm-response.bin",
+        "header-wipe-write-perm-response",
+        0,
+    );
+    write_oracle_header::<AddWritePermOfBrokerResponseHeader>(
+        output,
+        "typed-add-write-perm-response.bin",
+        "header-add-write-perm-response",
         0,
     );
     write_oracle_header::<DeleteSubscriptionGroupRequestHeader>(
