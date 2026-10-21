@@ -51,3 +51,24 @@ Pre-existing Phase 19 worktree paths preserved without staging or edits:
 - `tests/differential/run.sh`
 - `integration-tests/run-local.sh`
 - `rlogs/2026/09/20-phase-19-docker-local-validation__20261017T224455Z.rlog`
+
+## Bounded slice: `checkRocksdbCqWriteProgress` — 2026-10-21
+
+Mapped pinned Java 5.5.1 `MQClientAPIImpl.checkRocksdbCqWriteProgress(String,String,long,long)`, request 354, and its nullable result DTO and `CheckStatus` enum. Core uses the supplied address and caller deadline, serializes nullable `topic` and primitive `checkStoreTime`, and parses success bodies with Java-compatible null/default handling. Java fixtures cover the direct address with VIP enabled, typed request fields, populated/missing DTO properties, JSON null, absent/empty/malformed bodies, and Broker rejection.
+
+Actions and checks:
+
+- The first Protocol compile used the response-only body adapter for a DTO that had no `encode_java_json` implementation. Switched to the generic Java-compatible adapter, which supplies the nullable parser and matching JSON writer.
+- The first header inventory run needed the generated Java header fixture; generated it. The validation matrix then exposed that the new primitive timestamp needed to be classified with primitive reflection defaults; updated the matrix.
+- The first full Maven verify stopped on expected header decode-fixture drift; regenerated it from the pinned Java class. A later producer fixture verify exposed nondeterministic key ordering in new `Map.of` enum rows; changed those rows to `TreeMap`, regenerated, and confirmed byte-for-byte stable output.
+- Protocol `header_inventory` passed (12 tests); Protocol `headers` passed (23 tests, including the validation matrix); focused Core test `check_rocksdb_cq_write_progress_matches_java_fixture` passed (1 test).
+- Strict locked all-target/all-feature workspace Clippy, `cargo fmt --all -- --check`, and `git diff --check` passed.
+- Final pinned Maven `verify` passed with 37 scenario-manifest cases, 80 Java-decoded Rust typed headers, and 15 typed bodies.
+- Producer Core fixture SHA-256: `6f853c6e49ad04a2fe2d1d7d202c992d1088e17da1fc248330bef7de968603a0`.
+- Updated Java compatibility evidence, Phase 6 API map, Phase 6 requirement audit, and release checklist. Clarified that Phase 17 excludes the `MQAdminExt` wrappers while both low-level methods belong in the Phase 18 client inventory. The Phase 18 plan was not modified.
+
+The bounded code/documentation slice is validated and ready for its commit. Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04, and Phase 19 live Broker scenarios remain open. Four preserved Phase 19 paths remain unstaged and untouched.
+
+Final slice test extension: `cargo test --locked -p rocketmq-classic-protocol --doc` passed (151 doctests), including both new DTO compile-fail visibility/identity checks. `cargo test --locked -p rocketmq-classic-core --test admin_rpc` passed all 80 tests, including the new check-RocksDB progress differential. These supplement the already-recorded focused Protocol/Core tests, strict Clippy, and Maven verify.
+
+Post-validation: committed the `checkRocksdbCqWriteProgress` slice as `c163605a` (`fix(compat): map RocksDB CQ progress RPC`). The post-commit worktree check shows only the four preserved Phase 19 paths and this append-only execution log; the four Phase 19 paths remain unstaged and untouched.
