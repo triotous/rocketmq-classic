@@ -6528,3 +6528,23 @@ owner-specific checks belong in the manual handoff.
   supplemental P18-V02 gates remain open. Current Ubuntu/native Windows
   P18-V04 evidence and Phase 19 Broker/Docker scenarios remain separate;
   protected Phase 19 paths were not changed or staged.
+
+## P18-V01 custom `MessageExt.getProperties` map — 2026-10-21 (`13a68d1d`)
+
+- [x] `MessageExtSubtype` now provides a nullable `getProperties()` map
+  snapshot. `MessageExt::properties`, nullable getters and
+  `nullable_property_entries()` dispatch to it; Push retry-property copies use
+  those entries.
+- [x] The invoked Java custom subtype returns a map with `subtype-only=visible`.
+  Direct-consume callbacks compare the value and getter count; the ProcessQueue
+  `MAX_OFFSET` case still matches `msgAccCnt=12`. Fixture SHA-256:
+  `348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
+- [x] Focused `runtime_direct_consume` integration tests and Java fixture
+  generation pass on code revision `13a68d1d`; full workspace and Maven
+  verification remain part of the current-tree gate refresh.
+- Java returns the mutable map reference from `getProperties`; Rust exposes an
+  owned subtype snapshot, so map identity and mutation aliasing remain open.
+  Other inherited behavior, broad P18-V01 reconciliation and supplemental
+  P18-V02 gates remain open. Current Ubuntu/native Windows P18-V04 evidence and
+  Phase 19 Broker/Docker scenarios remain separate; protected Phase 19 paths
+  were not changed or staged.

@@ -102,6 +102,14 @@ direct-consume callback compares `subtype-tag` and `subtype-key` and both read
 counts. Fixture SHA-256:
 `7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.
 
+P18-V01 caller-defined subtype property-map follow-up (2026-10-21):
+`MessageExtSubtype` now maps nullable `getProperties()` snapshots, and
+`MessageExt::nullable_property_entries()` uses that override for Push retry
+property copies. The invoked direct-consume fixture compares a custom map value
+and getter count with Java. Java's live map identity and mutation aliasing are
+not preserved by the Rust snapshot. Fixture SHA-256:
+`348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, subtype behavior beyond the adapter's selected hooks,

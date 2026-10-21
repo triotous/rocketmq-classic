@@ -267,3 +267,11 @@ P18-V01 caller-defined `MessageExt` tag/key follow-up (2026-10-21): Rust
 the custom values and read counts with Java. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.
+
+P18-V01 caller-defined `MessageExt.getProperties` follow-up (2026-10-21):
+Rust maps nullable subtype property-map snapshots and dispatches them through
+`get_properties` and `nullable_property_entries`; Push retry property copies
+read the subtype entries. The direct-consume fixture compares a custom map
+value and getter count with Java. Java live-map identity and mutation aliasing
+remain open. Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
+`348f65888fbce4d8d36fec26ac88c9279deacb6bbbcaf3514646e2efa3f460e5`.
