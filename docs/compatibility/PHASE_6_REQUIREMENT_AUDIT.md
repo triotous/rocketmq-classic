@@ -1238,6 +1238,16 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   while merging nonempty Broker topics. The Java fixture and Rust differential
   compare both request envelopes, call order, timeout, merge, short-circuit
   cases, NameServer/Broker errors and missing-body handling. Current producer
-  core fixture SHA-256:
+  core fixture SHA-256 at this slice checkpoint was
   `38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`.
+  The broader P18-V01 public API inventory remains open.
+
+- P18-V01 `createSubscriptionGroupList` (2026-10-21): the pinned public
+  `MQClientAPIImpl.createSubscriptionGroupList(String,List,long)` sends request
+  225 with a `SubscriptionGroupList` body to the configured VIP Broker address.
+  Core now serializes the Java body and preserves Broker response errors. The
+  invoked Java fixture and Rust differential compare populated/empty bodies,
+  the exact request bytes and success/error outcomes; a VIP-enabled Core
+  loopback confirms the address transform. Current producer core fixture
+  SHA-256: `2479e9af49895298bf807b04775db0e3acef6ad2b6a0a6e2cf59a830ca89169e`.
   The broader P18-V01 public API inventory remains open.

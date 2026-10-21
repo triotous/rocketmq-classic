@@ -77,8 +77,8 @@ code 0. At that slice checkpoint, producer core fixture SHA-256 was
 `6e0a6f94f934f9e173aa76a5e4e3ab18c70ee1121f41f1dfbb52fbbac303a2ef`. The
 Broker system-topic-list additions advanced that
 checkpoint to `c81645968935a1bb317952c0ea32c7bbf4a029e62fa879af1863a06a40d70f28`;
-the added missing-body outcome below advances the current producer core fixture
-SHA-256 to `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
+the added missing-body outcome advanced that RPC slice checkpoint to
+`fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
 This closes the direct NameServer RPC only; the composite
 `getSystemTopicList` operation and broad P18-V01 remain open, as do the final
 P18-V02 refresh and later gates.
@@ -99,11 +99,21 @@ NameServer selector and conditionally querying request 305 from the Broker.
 It preserves the NameServer topic set, merges nonempty Broker topics, and
 skips the Broker call for empty/null sets or blank addresses. The invoked Java
 fixture and Rust differential compare the exact method signature, request
-sequence, success/error bodies, merged set and short-circuit behavior. Current
-producer core fixture SHA-256:
-`38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`. This
-closes the composite system-topic-list method; broad P18-V01 and later gates
+sequence, success/error bodies, merged set and short-circuit behavior. Producer
+core fixture SHA-256 at this composite slice checkpoint:
+`38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`. The
+composite system-topic-list method is closed; broad P18-V01 and later gates
 remain open.
+
+Phase 18 batched subscription-group creation (2026-10-21): Rust now maps
+pinned `MQClientAPIImpl.createSubscriptionGroupList(String,List,long)`,
+sending request 225 with a Java `SubscriptionGroupList` body through the
+configured VIP address. The invoked Java fixture and Rust scripted RPC compare
+the exact serialized body, timeout, success/error results and empty-list case;
+a VIP-enabled loopback verifies the port transform. Current producer core
+fixture SHA-256:
+`2479e9af49895298bf807b04775db0e3acef6ad2b6a0a6e2cf59a830ca89169e`. The
+composite method is closed; broader P18-V01 and later gates remain open.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

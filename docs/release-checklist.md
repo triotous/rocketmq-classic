@@ -5484,9 +5484,9 @@ owner-specific checks belong in the manual handoff.
   Clippy for Common/Core/Producer/facade, pinned Java Maven `verify` (37
   scenarios, fixture drift, 67 typed-header frames, 15 typed-body fixtures
   and Java/Rust cross-decodes), formatting, and scoped whitespace checks pass.
-- The composite `getSystemTopicList` operation remains open. This closes the
-  direct topic-list RPC only; broad P18-V01, current-worktree P18-V02, P18-V03
-  and P18-V04 remain open.
+- At this NameServer-only checkpoint, the composite `getSystemTopicList`
+  operation remained open. This closes the direct topic-list RPC only; broad
+  P18-V01, current-worktree P18-V02, P18-V03 and P18-V04 remain open.
 
 ## P18-V01 Broker system-topic-list RPC slice — 2026-10-21
 
@@ -5498,7 +5498,7 @@ owner-specific checks belong in the manual handoff.
   `SUCCESS` without a body (Java `MQClientException` code 0).
 - [x] Core VIP-enabled loopback confirms this operation connects through the
   configured two-port address offset.
-- [x] Current producer core fixture SHA-256:
+- [x] Fixture SHA-256 at this Broker-only slice checkpoint:
   `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
 - [x] Core all-feature locked suite (178 unit tests, all integration targets,
   and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
@@ -5519,7 +5519,7 @@ owner-specific checks belong in the manual handoff.
 - [x] The Java invocation fixture and Rust differential cover both request
   codes and envelopes, timeout and call order, merge, empty/null topic sets,
   blank Broker address, NameServer/Broker errors and missing NameServer body.
-- [x] Current producer core fixture SHA-256:
+- [x] Fixture SHA-256 at this composite slice checkpoint:
   `38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`.
 - [x] Core all-feature locked suite (178 unit tests, all integration targets,
   and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
@@ -5529,3 +5529,24 @@ owner-specific checks belong in the manual handoff.
   `git diff --check` passed.
 - The composite system-topic-list operation is closed. Broad P18-V01 remains
   open, as do P18-V02/P18-V03/P18-V04 gates.
+
+## P18-V01 batched subscription-group creation RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::create_subscription_group_list` for pinned Java
+  `MQClientAPIImpl.createSubscriptionGroupList(String,List,long)`: request 225,
+  Java `SubscriptionGroupList` body, configured VIP transform, and Broker
+  error handling.
+- [x] Invoked Java fixture and Rust differential compare the exact encoded
+  body for populated and empty lists, timeout, success and Broker-error
+  outcomes; a VIP-enabled loopback verifies the two-port address offset.
+- [x] Current producer core fixture SHA-256:
+  `2479e9af49895298bf807b04775db0e3acef6ad2b6a0a6e2cf59a830ca89169e`.
+- [x] Core all-feature locked suite (179 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures, and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- The batch subscription-group method is closed. The sibling batch topic
+  method and broader P18-V01 API inventory remain open; P18-V02/P18-V03/P18-V04
+  gates remain open.

@@ -4,6 +4,7 @@ use crate::{
     codes::{JavaEnumLookupError, LanguageCode},
     heartbeat::{ConsumeFromWhere, ConsumeType, MessageModel, SubscriptionData},
     serde_fastjson,
+    subscription::SubscriptionGroupConfig,
 };
 use rocketmq_classic_common::message::MessageQueue;
 use serde::{
@@ -1997,6 +1998,23 @@ pub struct TopicList {
     topic_list: Option<SharedValue<std::collections::HashSet<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     broker_addr: Option<String>,
+}
+
+/// Java `SubscriptionGroupList`, the request body for batched group creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionGroupList {
+    group_config_list: Vec<SubscriptionGroupConfig>,
+}
+
+impl SubscriptionGroupList {
+    pub fn new(group_config_list: Vec<SubscriptionGroupConfig>) -> Self {
+        Self { group_config_list }
+    }
+
+    pub fn get_group_config_list(&self) -> &[SubscriptionGroupConfig] {
+        &self.group_config_list
+    }
 }
 
 fn default_topic_list() -> Option<std::collections::HashSet<String>> {
@@ -7039,6 +7057,7 @@ impl_java_remoting_serializable_adapters!(
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
     TopicList,
+    SubscriptionGroupList,
 );
 
 macro_rules! impl_java_remoting_serializable_body_adapters {
