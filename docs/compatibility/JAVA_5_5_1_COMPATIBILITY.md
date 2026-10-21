@@ -59,6 +59,22 @@ Producer core fixture SHA-256 and validation details appear in the Phase 18
 release checklist. This closes this lookup and header slice only; broad P18-V01
 remains open.
 
+Phase 18 `getLiteGroupInfo` RPC and response DTO (2026-10-21): pinned
+`MQClientAPIImpl.getLiteGroupInfo(String,String,String,int,long)` sends request
+200078 with nullable `group` and `liteTopic`; `topK` defaults to 0 and
+`checkFields()` accepts negative values. Rust invokes it synchronously with
+the configured VIP transform and caller deadline. The nullable
+`GetLiteGroupInfoResponseBody` preserves nullable strings, an aliased
+`OffsetWrapper`, nullable lag lists and nullable list elements, and Java's
+primitive defaults. `LiteLagInfo.consumerOffset` defaults to -1 when decoded
+but Fastjson omits it when serialized. Seven invoked Java cases pin the
+RPC/header/DTO surface and cover populated/default data, nullable inputs and
+list elements, null/malformed bodies, and Broker errors. The Rust differential
+checks the request and decoded results; a VIP loopback verifies address
+conversion. Success fixture SHA-256:
+`da245ed2dece655a09e8f05ab70fec33c513dbc194b35aab12eb35ed74ef608d`. This
+closes this RPC/DTO slice only; broad P18-V01 remains open.
+
 Phase 18 Broker maintenance RPCs (2026-10-21): Rust maps the pinned public
 `MQClientAPIImpl.cleanExpiredConsumeQueue`, `deleteExpiredCommitLog`, and
 `cleanUnusedTopicByAddr` methods to requests 306, 329, and 316. Each operation

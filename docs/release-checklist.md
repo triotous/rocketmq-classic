@@ -6102,3 +6102,24 @@ owner-specific checks belong in the manual handoff.
   strict Clippy will be recorded with the remaining Lite discovery slice.
 - The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
   evidence and Phase 19 live Broker scenarios remain open.
+
+## P18-V01 RPC slice: `getLiteGroupInfo` — 2026-10-21
+
+- [x] Added `MQClientApi::get_lite_group_info` for request 200078 with nullable
+  group/liteTopic inputs, primitive `topK` defaulting to 0, synchronous
+  invocation, configured VIP conversion, caller deadline and nullable response
+  body decoding. The header accepts negative `topK`; the response preserves
+  nested offset/list aliases and null list elements. `LiteLagInfo.consumerOffset`
+  defaults to -1 on decode and is omitted from JSON serialization.
+- [x] Seven invoked Java cases pin the RPC/header/DTO API surface and cover
+  populated/default responses, nullable inputs/list elements, null/malformed
+  bodies and Broker errors. The Rust fixture differential checks request and
+  response values; a VIP loopback verifies address conversion. Success fixture
+  SHA-256: `da245ed2dece655a09e8f05ab70fec33c513dbc194b35aab12eb35ed74ef608d`.
+- [x] Pinned Maven `verify` passes with 37 scenario cases, 83 Java-decoded Rust
+  typed header frames and 16 typed body frames. The locked default and
+  all-features workspace suites, strict Clippy, formatting and diff checks pass.
+  Full evidence is in the Phase 18 execution log.
+- The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
+  evidence and Phase 19 live Broker scenarios remain open. The four preserved
+  Phase 19 worktree paths remain untouched and unstaged.

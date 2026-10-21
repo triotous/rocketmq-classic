@@ -1367,6 +1367,20 @@ populated/default responses, null inputs/body, malformed JSON and Broker
 errors; the Rust differential compares request fields and decoded values, and
 a VIP loopback verifies the transformed destination.
 
+`MQClientAPIImpl.getLiteGroupInfo` is exposed as
+`MQClientApi::get_lite_group_info`. It sends request 200078 synchronously with
+nullable `group` and `liteTopic` plus primitive `topK` (default 0); Java's
+no-op `checkFields()` accepts negative values. Rust applies the configured VIP
+address transform and caller deadline, maps an absent success body to `None`,
+and decodes `GetLiteGroupInfoResponseBody` with nullable strings, aliased
+`OffsetWrapper`, nullable lag lists and list elements, and Java primitive
+defaults. `LiteLagInfo.consumerOffset` defaults to -1 on decode and is omitted
+when Fastjson serializes the DTO. Seven invoked Java cases pin the method,
+header and DTO inventories and cover populated/default responses, nullable
+inputs and list items, absent/malformed bodies, and Broker errors; the Rust
+differential checks request fields and decoded values, and a VIP loopback
+verifies the transformed destination.
+
 `ClientGroup.clientId` and `ClientGroup.group` are public final Java fields.
 Rust keeps both fields private and exposes read-only `client_id()`/`group()`
 accessors, so callers retain value access without gaining Java-absent mutation.
