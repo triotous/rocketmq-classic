@@ -43,6 +43,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         "topic": message.topic_nullable(), "broker": message.broker_name(),
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
         "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
+        "reconsumeTimes": message.reconsume_times(),
         "propertiesPresent": message.properties_nullable().is_some()});
     if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
         record["messageQueueId"] = json!(message.queue_id());
@@ -55,6 +56,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
 struct CustomDirectMessageExt {
     broker_was_set: AtomicBool,
     topic_writes: std::sync::atomic::AtomicUsize,
+    reconsume_writes: std::sync::atomic::AtomicUsize,
 }
 
 impl CustomDirectMessageExt {
@@ -62,11 +64,16 @@ impl CustomDirectMessageExt {
         Self {
             broker_was_set: AtomicBool::new(false),
             topic_writes: std::sync::atomic::AtomicUsize::new(0),
+            reconsume_writes: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
     fn custom_field(&self) -> String {
-        format!("topicWrites={}", self.topic_writes.load(Ordering::SeqCst))
+        format!(
+            "topicWrites={};reconsumeWrites={}",
+            self.topic_writes.load(Ordering::SeqCst),
+            self.reconsume_writes.load(Ordering::SeqCst)
+        )
     }
 }
 
@@ -114,8 +121,20 @@ impl MessageExtSubtype for CustomDirectMessageExt {
         true
     }
 
+    fn reconsume_times(&self) -> Option<i32> {
+        Some(13)
+    }
+
+    fn set_reconsume_times(&self, _reconsume_times: i32) -> bool {
+        self.reconsume_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
     fn display_value(&self) -> Option<String> {
-        Some(format!("CustomDirectMessageExt[{}]", self.custom_field()))
+        Some(format!(
+            "CustomDirectMessageExt[topicWrites={}]",
+            self.topic_writes.load(Ordering::SeqCst)
+        ))
     }
 }
 
@@ -239,6 +258,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message
                 .set_system_property("RETRY_TOPIC", "subtype-retry-target")
                 .unwrap();
+            message.set_reconsume_times(2);
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

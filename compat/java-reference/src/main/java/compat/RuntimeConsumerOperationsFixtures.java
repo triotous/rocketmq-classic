@@ -430,6 +430,7 @@ public final class RuntimeConsumerOperationsFixtures {
         else message.setMsgId(physicalId);
         if (customSubtype) {
             org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "RETRY_TOPIC", "subtype-retry-target");
+            message.setReconsumeTimes(2);
         }
         if (uniqueId != null) org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "UNIQ_KEY", uniqueId);
         List<Object> callbacks = new ArrayList<>();
@@ -441,6 +442,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("queueTopic", queue.getTopic()); item.put("queueBroker", queue.getBrokerName());
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);
                 item.put("messageId", messages.get(0).getMsgId());
+                item.put("reconsumeTimes", messages.get(0).getReconsumeTimes());
                 item.put("offsetMessageId", messages.get(0) instanceof org.apache.rocketmq.common.message.MessageClientExt
                     ? ((org.apache.rocketmq.common.message.MessageClientExt) messages.get(0)).getOffsetMsgId() : null);
                 item.put("propertiesPresent", messages.get(0).getProperties() != null);
@@ -515,6 +517,7 @@ public final class RuntimeConsumerOperationsFixtures {
     private static final class CustomDirectMessageExt extends org.apache.rocketmq.common.message.MessageExt {
         private String customBrokerName;
         private int topicWrites;
+        private int reconsumeWrites;
 
         @Override
         public String getTopic() {
@@ -556,8 +559,18 @@ public final class RuntimeConsumerOperationsFixtures {
             // This fixture keeps a subtype-defined ID independent of the base field.
         }
 
+        @Override
+        public int getReconsumeTimes() {
+            return 13;
+        }
+
+        @Override
+        public void setReconsumeTimes(int reconsumeTimes) {
+            this.reconsumeWrites++;
+        }
+
         public String getCustomField() {
-            return "topicWrites=" + topicWrites;
+            return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites;
         }
 
         @Override

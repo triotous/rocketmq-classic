@@ -1806,7 +1806,10 @@ impl MessageExt {
         self.store_timestamp
     }
     pub fn reconsume_times(&self) -> i32 {
-        self.reconsume_times
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.reconsume_times())
+            .unwrap_or(self.reconsume_times)
     }
     pub fn store_size(&self) -> i32 {
         self.store_size
@@ -1943,7 +1946,13 @@ impl MessageExt {
         self.store_timestamp = value;
     }
     pub fn set_reconsume_times(&mut self, value: i32) {
-        self.reconsume_times = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_reconsume_times(value))
+        {
+            self.reconsume_times = value;
+        }
     }
     pub fn set_store_size(&mut self, value: i32) {
         self.store_size = value;
@@ -2106,6 +2115,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn set_message_id(&self, _message_id: Option<String>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getReconsumeTimes()`.
+    fn reconsume_times(&self) -> Option<i32> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setReconsumeTimes(int)`.
+    fn set_reconsume_times(&self, _reconsume_times: i32) -> bool {
         false
     }
 
