@@ -440,6 +440,7 @@ pub struct PushConsumer {
     paused: AtomicBool,
     pull_time_delay_millis_when_exception: AtomicI64,
     pull_max_idle_time_millis: AtomicI64,
+    pop_pull_max_idle_time_millis: AtomicI64,
     consume_orderly: AtomicBool,
     consumer_start_timestamp: AtomicI64,
     consume_core_pool_size: AtomicI32,
@@ -524,6 +525,9 @@ impl PushConsumer {
                 pull_time_delay_millis_when_exception,
             ),
             pull_max_idle_time_millis: AtomicI64::new(
+                crate::process_queue::PULL_MAX_IDLE_TIME_MILLIS,
+            ),
+            pop_pull_max_idle_time_millis: AtomicI64::new(
                 crate::process_queue::PULL_MAX_IDLE_TIME_MILLIS,
             ),
             consume_orderly: AtomicBool::new(false),
@@ -4388,6 +4392,10 @@ impl PushConsumer {
             .map_err(PushConsumerError::PullIdleTimeSettings)?;
         self.pull_max_idle_time_millis
             .store(pull_max_idle_time_millis, Ordering::Release);
+        let pop_pull_max_idle_time_millis = crate::pop::pop_process_queue_pull_max_idle_time()
+            .map_err(PushConsumerError::PullIdleTimeSettings)?;
+        self.pop_pull_max_idle_time_millis
+            .store(pop_pull_max_idle_time_millis, Ordering::Release);
         self.pull_api.set_unit_mode(self.config.unit_mode());
         let pop_consume_limit =
             usize::try_from(self.config.consume_thread_max().max(1)).unwrap_or(1);
@@ -5703,7 +5711,7 @@ impl PushConsumer {
                 || (authoritative_topics.contains(topic)
                     && (!desired_pop_queues.contains(&queue)
                         || process_queue.is_pull_expired_with_timeout(
-                            self.pull_max_idle_time_millis.load(Ordering::Acquire),
+                            self.pop_pull_max_idle_time_millis.load(Ordering::Acquire),
                         )));
             if !should_remove {
                 continue;
@@ -9122,6 +9130,9 @@ mod tests {
         process_queue.set_last_pop_timestamp(epoch_millis() - 120_001);
         consumer
             .pull_max_idle_time_millis
+            .store(i64::MAX, Ordering::Release);
+        consumer
+            .pop_pull_max_idle_time_millis
             .store(-1, Ordering::Release);
         let requests_before_replacement = pop_request_count.load(Ordering::SeqCst);
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
@@ -9159,7 +9170,7 @@ mod tests {
         );
 
         consumer
-            .pull_max_idle_time_millis
+            .pop_pull_max_idle_time_millis
             .store(-1, Ordering::Release);
         assert!(!consumer.rebalance_service.rebalance(&consumer).await);
         assert!(!replacement.is_dropped());
@@ -9177,7 +9188,7 @@ mod tests {
         );
 
         consumer
-            .pull_max_idle_time_millis
+            .pop_pull_max_idle_time_millis
             .store(120_000, Ordering::Release);
         replacement.set_last_pop_timestamp(epoch_millis());
         replacement.drop_assignment();

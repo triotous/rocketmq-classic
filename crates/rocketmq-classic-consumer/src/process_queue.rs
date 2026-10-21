@@ -32,7 +32,7 @@ pub(crate) fn pull_max_idle_time_from_environment() -> Result<i64, String> {
     }
 }
 
-fn cached_java_property<T: Clone, E: Clone>(
+pub(crate) fn cached_java_property<T: Clone, E: Clone>(
     cache: &OnceLock<Result<T, E>>,
     read_property: impl FnOnce() -> Result<T, E>,
 ) -> Result<T, E> {

@@ -1681,10 +1681,11 @@ separate static field and expire only when signed
 `currentTimeMillis - lastPullTimestamp` is greater than that value. Rust maps
 the same dotted name through its process environment, parses Java-compatible
 signed decimal longs, and caches the ProcessQueue value on first Push startup or
-direct expiry use; the POP owner keeps its separate cache. Later environment
-changes do not replace either captured value. Both queue types use wrapping
-`i64` subtraction and the strict boundary. Invalid Push-start values return the
-typed `PushConsumerError::PullIdleTimeSettings`. The
+direct expiry use; the POP owner keeps its separate cache, which Push rebalance
+uses for POP assignment expiry. Later environment changes do not replace
+either captured value. Both queue types use wrapping `i64` subtraction and the
+strict boundary. Invalid Push-start values return the typed
+`PushConsumerError::PullIdleTimeSettings`. The
 `subscribed-pull-expired` Java/Rust runtime comparison checks Push queue
 removal; parser, cache-lifetime, and boundary tests cover the timeout
 arithmetic. POP assignment branches and the broader P18-V01 audit remain open.

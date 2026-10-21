@@ -51,6 +51,7 @@ impl PopProcessQueue {
         queue: rocketmq_classic_common::message::MessageQueue,
         generation: u64,
     ) -> Self {
+        pop_process_queue_pull_max_idle_time().unwrap_or_else(|error| panic!("{error}"));
         Self {
             queue,
             generation,
@@ -165,11 +166,15 @@ impl std::fmt::Display for PopProcessQueue {
 }
 
 fn java_pull_max_idle_time() -> i64 {
-    static JAVA_PULL_MAX_IDLE_TIME: OnceLock<i64> = OnceLock::new();
-    *JAVA_PULL_MAX_IDLE_TIME.get_or_init(|| {
-        crate::process_queue::pull_max_idle_time_from_environment()
-            .unwrap_or_else(|error| panic!("{error}"))
-    })
+    pop_process_queue_pull_max_idle_time().unwrap_or_else(|error| panic!("{error}"))
+}
+
+pub(crate) fn pop_process_queue_pull_max_idle_time() -> Result<i64, String> {
+    static JAVA_PULL_MAX_IDLE_TIME: OnceLock<Result<i64, String>> = OnceLock::new();
+    crate::process_queue::cached_java_property(
+        &JAVA_PULL_MAX_IDLE_TIME,
+        crate::process_queue::pull_max_idle_time_from_environment,
+    )
 }
 
 fn epoch_millis() -> i64 {
@@ -710,6 +715,19 @@ mod tests {
         message.set_queue_id(queue_id);
         message.set_queue_offset(queue_offset);
         message
+    }
+
+    #[test]
+    fn pop_process_queue_pull_idle_property_keeps_its_first_java_class_value() {
+        let property = OnceLock::new();
+        assert_eq!(
+            crate::process_queue::cached_java_property(&property, || Ok::<_, String>(120_000)),
+            Ok(120_000)
+        );
+        assert_eq!(
+            crate::process_queue::cached_java_property(&property, || Ok::<_, String>(5)),
+            Ok(120_000)
+        );
     }
 
     #[test]

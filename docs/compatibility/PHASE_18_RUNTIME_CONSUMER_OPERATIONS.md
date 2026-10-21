@@ -202,11 +202,14 @@ dotted property name from the process environment when the ProcessQueue cache
 is first initialized, normally during Push startup, and reports invalid
 Java-long values as a startup error. Java has separate static fields on
 `ProcessQueue` and `PopProcessQueue`; Rust likewise caches each owner path
-independently. The Java fixture records the default and expired-assignment
+independently and uses the matching cache when expiring Push versus POP
+assignments. The Java fixture records the default and expired-assignment
 lifecycle; the runtime comparison checks queue presence, dropped state, offsets
 and callback order. Rust unit coverage also checks the strict boundary, signed
 wrapping, Java-long parsing, and that later environment reads do not replace
-the ProcessQueue's cached value.
+either queue owner's cached value. A POP rebalance regression also sets
+different ProcessQueue and POP timeout slots to check that queue cleanup uses
+the POP value.
 Fixture SHA-256:
 `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
 
