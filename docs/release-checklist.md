@@ -6295,3 +6295,32 @@ owner-specific checks belong in the manual handoff.
   boundary and reverse API coverage. Current Ubuntu/native Windows P18-V04
   evidence and Phase 19 live Broker scenarios remain pending. Protected Phase
   19 worktree paths remain untouched and unstaged.
+
+## P18-V01 ProcessQueue expiry error and retry slice — 2026-10-21 (`9147a902`)
+
+- [x] Matched pinned Java `ProcessQueue.cleanExpiredMsg`: malformed non-empty
+  `CONSUME_START_TIME` fails before send-back and keeps the head queued; the
+  scheduled wrapper logs the error and aborts that sweep. Rust preserves the
+  malformed value, returns `ExpiredMessageCleanupError` from direct cleanup,
+  and logs the scheduled error. Direct send-back failures retry the same head
+  through the original queue-size loop, capped at 16.
+- [x] Extended the pinned Java expiry fixture and Rust comparison for malformed
+  timestamps, unchanged count/bytes, no send-back attempt, direct repeated
+  send-back failure, and the scheduled error path. Updated the Phase 10 and
+  Phase 18 compatibility matrices.
+- [x] Current-revision server-free P18-V02 gates pass: default/all-feature
+  locked workspace tests, strict workspace Clippy, pinned Maven verify (37
+  scenarios, 83 typed headers and 16 typed bodies), differential self-test and
+  37-row manifest, stress smoke (16 cases × 3), release fuzz smoke, release
+  examples, workspace benchmark compilation, offline benchmark, metadata and
+  seven package-content checks, and UTC/Asia/Taipei Unique ID checks.
+- Benchmark sample and full outcomes are recorded in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md` and
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T162010Z.rlog`.
+  No benchmark threshold is asserted.
+- Broad P18-V01 remains open, including raw Push consume-service replacement,
+  the shared mutable stats-manager accessor, arbitrary Java `MessageExt`
+  subclasses, and the remaining source/settings/input/error/control-flow and
+  reverse-export audit. Current Ubuntu/native Windows P18-V04 evidence and
+  Phase 19 live Broker/Docker scenarios remain pending. Protected Phase 19
+  worktree paths were left untouched and unstaged.
