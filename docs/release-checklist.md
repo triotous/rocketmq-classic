@@ -6252,3 +6252,23 @@ owner-specific checks belong in the manual handoff.
   open; current Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker
   scenarios remain pending. The preserved Phase 19 worktree paths were not
   changed.
+
+## P18-V02 current-revision refresh — 2026-10-21
+
+- [x] Refreshed the server-free verification gate on code revision `659ec260`
+  after the Push implementation factory setter. Default and all-feature
+  locked workspace tests, strict all-target/all-feature Clippy, formatting and
+  diff checks pass. Pinned Maven `verify` passes all 37 scenarios and
+  Rust/Java fixture cross-decodes.
+- [x] Differential self-test and 37-row manifest, 16-case × 3 offline stress
+  smoke, release fuzz smoke, release examples, offline benchmark, locked
+  metadata, workspace license/dependency checks, seven package listings with
+  `LICENSE`/`NOTICE`, and four Unique ID tests in both UTC and Asia/Taipei pass.
+- Benchmark observations and command outcomes are recorded in
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T154619Z.rlog`.
+  No benchmark threshold is asserted.
+- Broad P18-V01 remains open, including arbitrary raw consume-service
+  replacement and the shared mutable stats-manager accessor. Current-revision
+  GitHub Ubuntu and native Windows P18-V04 evidence and Phase 19 live Broker
+  scenarios remain pending; protected Phase 19 worktree paths remain untouched
+  and unstaged.
