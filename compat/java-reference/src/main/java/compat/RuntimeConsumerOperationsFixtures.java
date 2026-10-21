@@ -133,6 +133,13 @@ public final class RuntimeConsumerOperationsFixtures {
             expiredRow.put("present", replacement != null); expiredRow.put("replaced", replacement != expired);
 
             replacement.setLastPopTimestamp(System.currentTimeMillis());
+            update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
+            Map<String, Object> retainedRow = new TreeMap<>();
+            retainedRow.put("case", "active-assigned");
+            retainedRow.put("dropped", replacement.isDropped());
+            retainedRow.put("present", table.containsKey(queue));
+            retainedRow.put("same", table.get(queue) == replacement);
+
             replacement.setDropped(true);
             update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
             Map<String, Object> droppedRow = new TreeMap<>();
@@ -143,7 +150,7 @@ public final class RuntimeConsumerOperationsFixtures {
             Map<String, Object> emptyRow = new TreeMap<>();
             emptyRow.put("case", "empty-assignment"); emptyRow.put("dropped", replacement.isDropped());
             emptyRow.put("present", table.containsKey(queue));
-            return List.of(expiredRow, droppedRow, emptyRow);
+            return List.of(expiredRow, retainedRow, droppedRow, emptyRow);
         } finally {
             runtime.getPullMessageService().shutdown(true);
             runtime.getScheduledExecutorService().shutdownNow();

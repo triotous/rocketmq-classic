@@ -9284,7 +9284,7 @@ mod tests {
         ))
         .unwrap();
         let pop_rebalance = fixture["popRebalance"].as_array().unwrap();
-        assert_eq!(pop_rebalance.len(), 3);
+        assert_eq!(pop_rebalance.len(), 4);
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let nameserver_address = nameserver.local_addr().unwrap().to_string();
         let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -9533,6 +9533,21 @@ mod tests {
             &replacement,
             &read_lock(&consumer.pop_process_queues)[&queue]
         ));
+        assert_eq!(
+            replacement.is_dropped(),
+            pop_rebalance[1]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            pop_rebalance[1]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            Arc::ptr_eq(
+                &replacement,
+                &read_lock(&consumer.pop_process_queues)[&queue]
+            ),
+            pop_rebalance[1]["same"].as_bool().unwrap()
+        );
         assert!(
             consumer
                 .pop_workers
@@ -9550,28 +9565,28 @@ mod tests {
         consumer.rebalance_service.rebalance(&consumer).await;
         assert_eq!(
             replacement.is_dropped(),
-            pop_rebalance[1]["dropped"].as_bool().unwrap()
+            pop_rebalance[2]["dropped"].as_bool().unwrap()
         );
         assert_eq!(
             read_lock(&consumer.pop_process_queues).contains_key(&queue),
-            pop_rebalance[1]["present"].as_bool().unwrap()
+            pop_rebalance[2]["present"].as_bool().unwrap()
         );
         assert_eq!(
             Arc::ptr_eq(
                 &replacement,
                 &read_lock(&consumer.pop_process_queues)[&queue]
             ),
-            pop_rebalance[1]["same"].as_bool().unwrap()
+            pop_rebalance[2]["same"].as_bool().unwrap()
         );
 
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
         assert_eq!(
             replacement.is_dropped(),
-            pop_rebalance[2]["dropped"].as_bool().unwrap()
+            pop_rebalance[3]["dropped"].as_bool().unwrap()
         );
         assert_eq!(
             read_lock(&consumer.pop_process_queues).contains_key(&queue),
-            pop_rebalance[2]["present"].as_bool().unwrap()
+            pop_rebalance[3]["present"].as_bool().unwrap()
         );
         assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
         let pop_count_after_removal = pop_request_count.load(Ordering::SeqCst);
