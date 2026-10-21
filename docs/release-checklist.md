@@ -5550,3 +5550,21 @@ owner-specific checks belong in the manual handoff.
 - The batch subscription-group method is closed. The sibling batch topic
   method and broader P18-V01 API inventory remain open; P18-V02/P18-V03/P18-V04
   gates remain open.
+
+## P18-V01 cluster topic-list RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::get_topics_by_cluster` for pinned Java
+  `MQClientAPIImpl.getTopicsByCluster(String,long)`: request 224 through
+  NameServer selection with the `cluster` header field. The nullable adapter
+  preserves Java's accepted null cluster and omits the null wire field.
+- [x] The invoked Java fixture and Rust differential compare the signature,
+  request envelope, cluster field, decoded topic list, response error and
+  successful reply without a body, including null cluster behavior.
+- [x] Fixture SHA-256 at this slice checkpoint:
+  `ac3462b7351f327839c4a79db5a8a499f6fdbbd56f667f74b2ac5f18fb368fee`.
+- [x] Core all-feature locked suite, strict all-target/all-feature Clippy,
+  Producer pinned fixture comparison, pinned Java Maven `verify` (37 scenarios,
+  67 typed-header frames, 15 typed-body fixtures and Java/Rust cross-decodes),
+  formatting and scoped `git diff --check` passed.
+- The cluster topic-list RPC is closed. Broader P18-V01 and P18-V02/P18-V03/
+  P18-V04 gates remain open.

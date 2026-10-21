@@ -115,6 +115,18 @@ fixture SHA-256:
 `2479e9af49895298bf807b04775db0e3acef6ad2b6a0a6e2cf59a830ca89169e`. The
 composite method is closed; broader P18-V01 and later gates remain open.
 
+Phase 18 cluster topic-list RPC (2026-10-21): Rust now maps pinned
+`MQClientAPIImpl.getTopicsByCluster(String,long)`, sending request 224 through
+NameServer selection with the cluster request-header field and decoding
+`TopicList`. The invoked Java fixture and Rust differential compare the method
+signature, request envelope, returned topics, response error and missing-body
+branch. Java raises `MQClientException` with response code 0 for a successful
+reply without a body; Rust returns structured `MalformedResponse`. The Java
+header's no-op validation accepts a null cluster, which the nullable Rust API
+omits from the wire fields. Producer core fixture SHA-256 at this slice
+checkpoint: `ac3462b7351f327839c4a79db5a8a499f6fdbbd56f667f74b2ac5f18fb368fee`.
+This closes that RPC method only; broader P18-V01 and later gates remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

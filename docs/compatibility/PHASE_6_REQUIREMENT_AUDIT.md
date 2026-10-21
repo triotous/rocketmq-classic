@@ -1251,3 +1251,17 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   loopback confirms the address transform. Current producer core fixture
   SHA-256: `2479e9af49895298bf807b04775db0e3acef6ad2b6a0a6e2cf59a830ca89169e`.
   The broader P18-V01 public API inventory remains open.
+
+- P18-V01 `getTopicsByCluster` (2026-10-21): the pinned public
+  `MQClientAPIImpl.getTopicsByCluster(String,long)` sends request 224 through
+  NameServer selection with the cluster in its request header. Its no-op
+  `checkFields()` accepts a null cluster, which Java omits from the wire
+  ext-fields map; Rust exposes `get_topics_by_cluster_nullable` for that case.
+  Core decodes `TopicList` and preserves response errors. The invoked Java
+  fixture and Rust differential compare the signature, NameServer request,
+  nonnull/null cluster values, success, response error and missing-body
+  outcomes; Java raises
+  `MQClientException` with code 0 for `SUCCESS` without a body, while Rust
+  returns structured `MalformedResponse`. Current producer core fixture
+  SHA-256: `ac3462b7351f327839c4a79db5a8a499f6fdbbd56f667f74b2ac5f18fb368fee`.
+  The broader P18-V01 public API inventory remains open.

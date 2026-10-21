@@ -222,6 +222,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("createSubscriptionGroupListOperations", createSubscriptionGroupListOperations());
+        result.put("getTopicsByClusterApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getTopicsByCluster"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("getTopicsByClusterOperations", getTopicsByClusterOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -1998,6 +2005,88 @@ public final class ProducerCoreFixtures {
         try {
             api.createSubscriptionGroupList("broker-a:10911", configs, 2345L);
             result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> getTopicsByClusterOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.remoting.protocol.body.TopicList topics =
+            new org.apache.rocketmq.remoting.protocol.body.TopicList();
+        topics.setTopicList(new java.util.HashSet<>(List.of("orders", "payments")));
+        topics.setBrokerAddr("broker-a:10911");
+        cases.add(getTopicsByClusterCase("success", "cluster-a",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, topics, true));
+        cases.add(getTopicsByClusterCase("null-cluster", null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, topics, true));
+        cases.add(getTopicsByClusterCase("error", "cluster-b",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "cluster lookup rejected", null, false));
+        cases.add(getTopicsByClusterCase("missing-body", "cluster-c",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null, false));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> getTopicsByClusterCase(
+        String name,
+        String cluster,
+        int responseCode,
+        String responseRemark,
+        org.apache.rocketmq.remoting.protocol.body.TopicList topicList,
+        boolean bodyPresent) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("get-topics-by-cluster-api");
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("addressWasNull", values[0] == null);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFields", request.getExtFields());
+                                org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader header =
+                                    (org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader)
+                                        request.readCustomHeader();
+                                call.put("headerCluster", header == null ? null : header.getCluster());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                requests.add(call);
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+                                        responseCode, responseRemark);
+                                if (bodyPresent) response.setBody(topicList.encode());
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("cluster", cluster);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyBase64", bodyPresent
+            ? java.util.Base64.getEncoder().encodeToString(topicList.encode()) : null);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.TopicList received = api.getTopicsByCluster(cluster, 2345L);
+            result.put("outcome", "returned");
+            result.put("topics", new TreeSet<>(received.getTopicList()));
+            result.put("brokerAddr", received.getBrokerAddr());
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());

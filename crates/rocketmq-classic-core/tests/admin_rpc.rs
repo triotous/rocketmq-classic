@@ -1040,6 +1040,95 @@ async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn get_topics_by_cluster_matches_java_nameserver_request_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["getTopicsByClusterApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getTopicsByCluster(java.lang.String,long)"));
+    let cases = fixture["getTopicsByClusterOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+
+    let (client_api, client) = api().await;
+    for case in cases {
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["addressWasNull"], true);
+        assert_eq!(java_request["requestCode"], request::GET_TOPICS_BY_CLUSTER);
+        assert_eq!(java_request["requestBodyPresent"], false);
+        assert_eq!(java_request["headerCluster"], case["cluster"]);
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            body,
+        )
+        .await;
+        client.update_name_server_address_list(vec![addr.clone()]);
+        let result = client_api
+            .get_topics_by_cluster_nullable(
+                case["cluster"].as_str(),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let topic_list = result.unwrap();
+            assert_eq!(
+                topic_list.get_topic_list().unwrap().snapshot(),
+                HashSet::from(["orders".to_owned(), "payments".to_owned()])
+            );
+            assert_eq!(topic_list.get_broker_addr(), Some("broker-a:10911"));
+        } else if case["name"] == "missing-body" {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::GET_TOPICS_BY_CLUSTER,
+                    peer: error_peer,
+                    ..
+                }) if error_peer == addr
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::GET_TOPICS_BY_CLUSTER,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && remark == "cluster lookup rejected"
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::GET_TOPICS_BY_CLUSTER);
+        assert!(request.body.is_none());
+        if let Some(cluster) = java_request["headerCluster"].as_str() {
+            assert_eq!(request.ext_fields.as_ref().unwrap()["cluster"], cluster);
+        } else {
+            assert!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .is_none_or(|fields| !fields.contains_key("cluster"))
+            );
+        }
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(

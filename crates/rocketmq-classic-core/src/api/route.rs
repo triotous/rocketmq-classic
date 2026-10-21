@@ -1,7 +1,9 @@
 use rocketmq_classic_protocol::{
     body::TopicList,
     codes::{request, response},
-    header::{CommandHeader, GetRouteInfoRequestHeader, HeaderMap},
+    header::{
+        CommandHeader, GetRouteInfoRequestHeader, GetTopicsByClusterRequestHeader, HeaderMap,
+    },
     route::TopicRouteData,
 };
 use rocketmq_classic_remoting::RemotingCommand;
@@ -65,6 +67,61 @@ impl MQClientApi {
             request_code: code,
             peer: peer.clone(),
             reason: "successful topic-list reply has no body".into(),
+        })?;
+        TopicList::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer,
+            reason: error.to_string(),
+        })
+    }
+
+    /// Retrieves every topic assigned to a cluster through Java
+    /// `MQClientAPIImpl.getTopicsByCluster`.
+    pub async fn get_topics_by_cluster(
+        &self,
+        cluster: &str,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        self.get_topics_by_cluster_nullable(Some(cluster), deadline)
+            .await
+    }
+
+    /// Nullable adapter for Java `getTopicsByCluster(String,long)`. A null
+    /// cluster is accepted by Java's request header and omitted from the wire.
+    pub async fn get_topics_by_cluster_nullable(
+        &self,
+        cluster: Option<&str>,
+        deadline: Instant,
+    ) -> Result<TopicList, RpcError> {
+        let code = request::GET_TOPICS_BY_CLUSTER;
+        let mut header = GetTopicsByClusterRequestHeader::default();
+        header.set_cluster(cluster.map(str::to_owned));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer,
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body = reply.body.ok_or_else(|| RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.clone(),
+            reason: "successful cluster-topic-list reply has no body".into(),
         })?;
         TopicList::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
             request_code: code,

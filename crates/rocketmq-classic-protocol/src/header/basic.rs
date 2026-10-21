@@ -686,6 +686,34 @@ pub struct GetTopicStatsInfoRequestHeader {
     pub(crate) logical: Option<bool>,
 }
 
+/// Java `GetTopicsByClusterRequestHeader` carries the target cluster name.
+#[derive(Debug, Clone, Default)]
+pub struct GetTopicsByClusterRequestHeader {
+    pub(crate) cluster: Option<String>,
+}
+
+impl GetTopicsByClusterRequestHeader {
+    pub fn get_cluster(&self) -> Option<&str> {
+        self.cluster.as_deref()
+    }
+
+    pub fn set_cluster(&mut self, value: Option<String>) {
+        self.cluster = value;
+    }
+}
+
+impl CommandHeader for GetTopicsByClusterRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "cluster", self.cluster.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            cluster: optional_string(fields, "cluster"),
+        })
+    }
+}
+
 impl GetTopicStatsInfoRequestHeader {
     pub fn get_topic(&self) -> Option<&str> {
         self.topic.as_deref()
