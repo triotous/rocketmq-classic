@@ -336,3 +336,13 @@ subsequent getter read. Snapshot-only subtype property hooks remain supported.
 Fixture SHA-256:
 `8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
 Other inherited-method and broad P18-V01 reconciliation remains open.
+
+P18-V01 `MessageExt` born-host string getters (code revision `7473872c`,
+2026-10-21): Rust dispatches `getBornHostString()` and
+`getBornHostNameString()` through independent `MessageExtSubtype` hooks. The
+invoked Java direct-consume fixture overrides both and matches the Rust custom
+values; inherited behavior still reads the stored born-host field. Fixture
+SHA-256:
+`dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
+Host-byte getter overrides, the ByteBuffer overloads and remaining inherited
+methods need further reconciliation.

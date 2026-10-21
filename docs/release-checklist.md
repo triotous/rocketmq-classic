@@ -6723,3 +6723,31 @@ owner-specific checks belong in the manual handoff.
   and current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain
   open. No push, remote CI, Broker or Docker run was performed; protected
   Phase 19 paths were untouched.
+
+## P18-V01 born-host string getter overrides and current-revision P18-V02 — 2026-10-21 (`7473872c`)
+
+- [x] Added independent subtype dispatch for Java
+  `MessageExt.getBornHostString()` and `getBornHostNameString()`. The invoked
+  Java/Rust direct-consume fixture overrides both and compares the custom
+  values; the base path keeps reading the stored born-host field. Fixture
+  SHA-256: `dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
+- [x] Focused direct-consume comparison, serial default and all-feature
+  workspace tests, strict all-target/all-feature Clippy, format/diff checks,
+  and pinned Maven `verify` pass on `7473872c`. Maven verified 37 scenarios,
+  9 Running Info, 27 direct-consume, 15 reset cases, 83 typed headers, 16
+  typed bodies and Java/Rust cross-decodes.
+- [x] Current-revision server-free P18-V02 passes: differential self-test
+  and 37-scenario manifest; offline stress (16 cases × 3); release fuzz
+  (137 frame seeds, 11 message seeds, 2,368 bounded mutations); release
+  examples and workspace benches; metadata/package/license checks; and four
+  Unique ID tests under UTC and Asia/Taipei. Full record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T203358Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,477.7 ns/iteration; zstd decode 1,194.2 ns; producer
+  request construction 1,367.4 ns; route lookup 15.4 ns; loopback completion
+  72,055.8 ns. Measurements are observations, not thresholds.
+- Overrides of the host-byte getters and ByteBuffer overloads, broad P18-V01
+  API/settings/input/error/control-flow/reverse-export audit, and
+  current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
+  No push, remote CI, Broker or Docker run was performed; protected Phase 19
+  paths were untouched.

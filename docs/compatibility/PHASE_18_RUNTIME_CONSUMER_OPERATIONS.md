@@ -385,3 +385,12 @@ and subtype-owned map share identity, mutations are visible in both
 directions, and a later `getProperties()` read sees prior changes. Fixture
 SHA-256: `8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
 The broad inherited-method/API audit and P18-V04 platform evidence remain open.
+
+P18-V01 born-host string getter override follow-up (code revision `7473872c`,
+2026-10-21): the Java fixture overrides `getBornHostString()` and
+`getBornHostNameString()` on its custom `MessageExt`; Rust dispatches both
+through subtype hooks and matches the returned strings. The base fallback
+continues to derive values from the stored host address. Fixture SHA-256:
+`dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
+Host-byte helper overrides, other inherited methods, broad P18-V01 and
+P18-V04 platform evidence remain open.

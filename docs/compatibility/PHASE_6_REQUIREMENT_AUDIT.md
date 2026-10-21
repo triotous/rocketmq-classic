@@ -1664,3 +1664,14 @@ not expose a live map. Fixture SHA-256:
 `8782177ecb34305bc00642fffa09420c1fd12ecfe4c8744d450bd4a290ff0d01`.
 Other inherited methods, broad P18-V01 reconciliation and P18-V04 platform
 evidence remain open.
+
+P18-V01 `MessageExt` born-host string getter override follow-up (code revision
+`7473872c`, 2026-10-21): `MessageExtSubtype` now dispatches virtual
+`getBornHostString()` and `getBornHostNameString()` overrides, while the base
+path continues to derive both results from its stored born-host address. The
+Java/Rust direct-consume fixture overrides both getters and compares their
+custom values. Fixture SHA-256:
+`dec0f7c46539bec116f6430c7b02fdde406a289929fc093d5694dd4c9369bd54`.
+Overrides of `getBornHostBytes()` and its ByteBuffer overloads,
+`getStoreHostBytes()` and its overloads, other inherited methods, broad
+P18-V01 reconciliation and P18-V04 platform evidence remain open.
