@@ -455,6 +455,8 @@ public final class RuntimeConsumerOperationsFixtures {
                 if (messages.get(0) instanceof CustomDirectMessageExt) {
                     CustomDirectMessageExt custom = (CustomDirectMessageExt) messages.get(0);
                     item.put("messageQueueId", messages.get(0).getQueueId());
+                    item.put("tags", messages.get(0).getTags());
+                    item.put("keys", messages.get(0).getKeys());
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -528,6 +530,8 @@ public final class RuntimeConsumerOperationsFixtures {
         private int bodyWrites;
         private int flagWrites;
         private int maxOffsetReads;
+        private int tagsReads;
+        private int keysReads;
         private byte[] customBody;
 
         @Override
@@ -617,13 +621,22 @@ public final class RuntimeConsumerOperationsFixtures {
                 this.maxOffsetReads++;
                 return "987654333";
             }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TAGS.equals(name)) {
+                this.tagsReads++;
+                return "subtype-tag";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS.equals(name)) {
+                this.keysReads++;
+                return "subtype-key";
+            }
             return super.getProperty(name);
         }
 
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
-                + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads;
+                + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
+                + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads;
         }
 
         @Override

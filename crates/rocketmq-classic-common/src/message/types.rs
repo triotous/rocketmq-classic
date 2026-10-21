@@ -1771,6 +1771,18 @@ impl MessageExt {
             .unwrap_or_else(|| self.message.get_nullable_property(key))
     }
 
+    /// Java's virtual `Message.getTags()` view, routed through the virtual
+    /// `getProperty(String)` implementation.
+    pub fn tags(&self) -> Option<String> {
+        self.get_property(crate::message::constants::PROPERTY_TAGS)
+    }
+
+    /// Java's virtual `Message.getKeys()` view, routed through the virtual
+    /// `getProperty(String)` implementation.
+    pub fn keys(&self) -> Option<String> {
+        self.get_property(crate::message::constants::PROPERTY_KEYS)
+    }
+
     /// Java's virtual `Message.getTopic()` view, including caller-defined
     /// `MessageExt` subtype overrides.
     pub fn topic(&self) -> &str {

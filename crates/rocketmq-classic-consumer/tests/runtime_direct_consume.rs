@@ -49,6 +49,8 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         "propertiesPresent": message.properties_nullable().is_some()});
     if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
         record["messageQueueId"] = json!(message.queue_id());
+        record["tags"] = json!(message.tags());
+        record["keys"] = json!(message.keys());
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -63,6 +65,8 @@ struct CustomDirectMessageExt {
     body_writes: std::sync::atomic::AtomicUsize,
     flag_writes: std::sync::atomic::AtomicUsize,
     max_offset_reads: std::sync::atomic::AtomicUsize,
+    tags_reads: std::sync::atomic::AtomicUsize,
+    keys_reads: std::sync::atomic::AtomicUsize,
     custom_body: Mutex<Option<Vec<u8>>>,
 }
 
@@ -76,19 +80,23 @@ impl CustomDirectMessageExt {
             body_writes: std::sync::atomic::AtomicUsize::new(0),
             flag_writes: std::sync::atomic::AtomicUsize::new(0),
             max_offset_reads: std::sync::atomic::AtomicUsize::new(0),
+            tags_reads: std::sync::atomic::AtomicUsize::new(0),
+            keys_reads: std::sync::atomic::AtomicUsize::new(0),
             custom_body: Mutex::new(None),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
             self.body_writes.load(Ordering::SeqCst),
             self.flag_writes.load(Ordering::SeqCst),
-            self.max_offset_reads.load(Ordering::SeqCst)
+            self.max_offset_reads.load(Ordering::SeqCst),
+            self.tags_reads.load(Ordering::SeqCst),
+            self.keys_reads.load(Ordering::SeqCst)
         )
     }
 }
@@ -108,11 +116,20 @@ impl MessageExtSubtype for CustomDirectMessageExt {
     }
 
     fn property(&self, key: Option<&str>) -> Option<Option<String>> {
-        if key == Some(rocketmq_classic_common::message::constants::PROPERTY_MAX_OFFSET) {
-            self.max_offset_reads.fetch_add(1, Ordering::SeqCst);
-            Some(Some("987654333".to_owned()))
-        } else {
-            None
+        match key {
+            Some(rocketmq_classic_common::message::constants::PROPERTY_MAX_OFFSET) => {
+                self.max_offset_reads.fetch_add(1, Ordering::SeqCst);
+                Some(Some("987654333".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TAGS) => {
+                self.tags_reads.fetch_add(1, Ordering::SeqCst);
+                Some(Some("subtype-tag".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_KEYS) => {
+                self.keys_reads.fetch_add(1, Ordering::SeqCst);
+                Some(Some("subtype-key".to_owned()))
+            }
+            _ => None,
         }
     }
 
