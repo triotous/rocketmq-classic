@@ -2442,8 +2442,16 @@ impl MessageExt {
         self.born_host.as_ref().map(MessageHostAddress::host_name)
     }
     /// Java `MessageExt.getBornHostBytes()` in network byte order. The Java
-    /// implementation reads its stored field directly.
+    /// base implementation reads its stored field directly; a retained
+    /// subtype may override it with `MessageExtSubtype::born_host_bytes`.
     pub fn born_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
+        if let Some(bytes) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.born_host_bytes())
+        {
+            return Ok(bytes);
+        }
         self.born_host
             .as_ref()
             .ok_or(MessageHostAddressBytesError::MissingAddress)?
@@ -2451,8 +2459,16 @@ impl MessageExt {
             .ok_or(MessageHostAddressBytesError::UnresolvedAddress)
     }
     /// Java `MessageExt.getStoreHostBytes()` in network byte order. The Java
-    /// implementation reads its stored field directly.
+    /// base implementation reads its stored field directly; a retained
+    /// subtype may override it with `MessageExtSubtype::store_host_bytes`.
     pub fn store_host_bytes(&self) -> Result<Vec<u8>, MessageHostAddressBytesError> {
+        if let Some(bytes) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.store_host_bytes())
+        {
+            return Ok(bytes);
+        }
         self.store_host
             .as_ref()
             .ok_or(MessageHostAddressBytesError::MissingAddress)?
@@ -2460,20 +2476,36 @@ impl MessageExt {
             .ok_or(MessageHostAddressBytesError::UnresolvedAddress)
     }
     /// Fill a Rust byte slice with the Java `getBornHostBytes(ByteBuffer)` layout.
+    /// Subtypes may override the write with their `MessageExtSubtype` hook.
     pub fn write_born_host_bytes(
         &self,
         output: &mut [u8],
     ) -> Result<usize, MessageHostAddressBytesError> {
+        if let Some(result) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.write_born_host_bytes(output))
+        {
+            return result;
+        }
         self.born_host
             .as_ref()
             .ok_or(MessageHostAddressBytesError::MissingAddress)?
             .write_network_bytes(output)
     }
     /// Fill a Rust byte slice with the Java `getStoreHostBytes(ByteBuffer)` layout.
+    /// Subtypes may override the write with their `MessageExtSubtype` hook.
     pub fn write_store_host_bytes(
         &self,
         output: &mut [u8],
     ) -> Result<usize, MessageHostAddressBytesError> {
+        if let Some(result) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.write_store_host_bytes(output))
+        {
+            return result;
+        }
         self.store_host
             .as_ref()
             .ok_or(MessageHostAddressBytesError::MissingAddress)?
@@ -2944,6 +2976,34 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Override Java's virtual `MessageExt.getBornHostNameString()`.
     fn born_host_name_string(&self) -> Option<Option<&str>> {
+        None
+    }
+
+    /// Override Java's virtual no-argument `MessageExt.getBornHostBytes()`.
+    fn born_host_bytes(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Override Java's virtual no-argument `MessageExt.getStoreHostBytes()`.
+    fn store_host_bytes(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.getBornHostBytes(ByteBuffer)` using
+    /// the caller-provided Rust output slice.
+    fn write_born_host_bytes(
+        &self,
+        _output: &mut [u8],
+    ) -> Option<Result<usize, MessageHostAddressBytesError>> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.getStoreHostBytes(ByteBuffer)` using
+    /// the caller-provided Rust output slice.
+    fn write_store_host_bytes(
+        &self,
+        _output: &mut [u8],
+    ) -> Option<Result<usize, MessageHostAddressBytesError>> {
         None
     }
 

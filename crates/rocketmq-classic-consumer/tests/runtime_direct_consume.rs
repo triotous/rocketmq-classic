@@ -1,7 +1,7 @@
 use base64::Engine;
 use rocketmq_classic_common::message::{
-    MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress, MessageQueue,
-    NullableMessageProperties, SharedMessageProperties,
+    MessageClientExt, MessageExt, MessageExtSubtype, MessageHostAddress,
+    MessageHostAddressBytesError, MessageQueue, NullableMessageProperties, SharedMessageProperties,
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
@@ -88,6 +88,16 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["bornHostNameString"] = json!(message.born_host_name_string());
         record["bornHostBytes"] = json!(message.born_host_bytes().unwrap());
         record["storeHostBytes"] = json!(message.store_host_bytes().unwrap());
+        let mut born_host_buffer = [0_u8; 8];
+        let born_host_buffer_len = message
+            .write_born_host_bytes(&mut born_host_buffer)
+            .unwrap();
+        record["bornHostBytesBuffer"] = json!(&born_host_buffer[..born_host_buffer_len]);
+        let mut store_host_buffer = [0_u8; 8];
+        let store_host_buffer_len = message
+            .write_store_host_bytes(&mut store_host_buffer)
+            .unwrap();
+        record["storeHostBytesBuffer"] = json!(&store_host_buffer[..store_host_buffer_len]);
         record["bornHost"] = json!(message.born_host().map(ToString::to_string));
         record["storeHost"] = json!(message.store_host().map(ToString::to_string));
         record["topicSysFlag"] = json!(message.topic_sys_flag().unwrap());
@@ -374,6 +384,28 @@ impl MessageExtSubtype for CustomDirectMessageExt {
         Some(Some("custom-born-host-name"))
     }
 
+    fn born_host_bytes(&self) -> Option<Vec<u8>> {
+        Some(vec![10, 11, 12])
+    }
+
+    fn store_host_bytes(&self) -> Option<Vec<u8>> {
+        Some(vec![13, 14, 15])
+    }
+
+    fn write_born_host_bytes(
+        &self,
+        output: &mut [u8],
+    ) -> Option<Result<usize, MessageHostAddressBytesError>> {
+        Some(write_custom_host_bytes(&[1, 2, 3, 4], output))
+    }
+
+    fn write_store_host_bytes(
+        &self,
+        output: &mut [u8],
+    ) -> Option<Result<usize, MessageHostAddressBytesError>> {
+        Some(write_custom_host_bytes(&[5, 6, 7, 8], output))
+    }
+
     fn set_born_host(&self, _born_host: Option<MessageHostAddress>) -> bool {
         self.metadata_writes.fetch_add(1, Ordering::SeqCst);
         false
@@ -516,6 +548,20 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             self.topic_writes.load(Ordering::SeqCst)
         ))
     }
+}
+
+fn write_custom_host_bytes(
+    bytes: &[u8],
+    output: &mut [u8],
+) -> Result<usize, MessageHostAddressBytesError> {
+    if output.len() < bytes.len() {
+        return Err(MessageHostAddressBytesError::BufferTooSmall {
+            needed: bytes.len(),
+            actual: output.len(),
+        });
+    }
+    output[..bytes.len()].copy_from_slice(bytes);
+    Ok(bytes.len())
 }
 
 #[tokio::test]

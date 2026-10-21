@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -512,6 +513,10 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("bornHostNameString", messages.get(0).getBornHostNameString());
                     item.put("bornHostBytes", unsignedBytes(messages.get(0).getBornHostBytes().array()));
                     item.put("storeHostBytes", unsignedBytes(messages.get(0).getStoreHostBytes().array()));
+                    item.put("bornHostBytesBuffer",
+                        unsignedBytes(messages.get(0).getBornHostBytes(ByteBuffer.allocate(8))));
+                    item.put("storeHostBytesBuffer",
+                        unsignedBytes(messages.get(0).getStoreHostBytes(ByteBuffer.allocate(8))));
                     item.put("bornHost", messages.get(0).getBornHost().toString());
                     item.put("storeHost", messages.get(0).getStoreHost().toString());
                     item.put("topicSysFlag", messages.get(0).getTopicSysFlag());
@@ -779,6 +784,30 @@ public final class RuntimeConsumerOperationsFixtures {
         }
 
         @Override
+        public ByteBuffer getBornHostBytes() {
+            return ByteBuffer.wrap(new byte[] {10, 11, 12});
+        }
+
+        @Override
+        public ByteBuffer getBornHostBytes(ByteBuffer byteBuffer) {
+            byteBuffer.put(new byte[] {1, 2, 3, 4});
+            byteBuffer.flip();
+            return byteBuffer;
+        }
+
+        @Override
+        public ByteBuffer getStoreHostBytes() {
+            return ByteBuffer.wrap(new byte[] {13, 14, 15});
+        }
+
+        @Override
+        public ByteBuffer getStoreHostBytes(ByteBuffer byteBuffer) {
+            byteBuffer.put(new byte[] {5, 6, 7, 8});
+            byteBuffer.flip();
+            return byteBuffer;
+        }
+
+        @Override
         public void setBornHost(java.net.SocketAddress bornHost) {
             metadataWrites++;
             super.setBornHost(bornHost);
@@ -962,6 +991,13 @@ public final class RuntimeConsumerOperationsFixtures {
     private static List<Integer> unsignedBytes(byte[] bytes) {
         List<Integer> result = new ArrayList<>();
         for (byte value : bytes) result.add(value & 0xff);
+        return result;
+    }
+
+    private static List<Integer> unsignedBytes(ByteBuffer bytes) {
+        ByteBuffer remaining = bytes.asReadOnlyBuffer();
+        List<Integer> result = new ArrayList<>();
+        while (remaining.hasRemaining()) result.add(remaining.get() & 0xff);
         return result;
     }
 
