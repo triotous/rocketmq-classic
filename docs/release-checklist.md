@@ -6030,3 +6030,20 @@ owner-specific checks belong in the manual handoff.
   `phase/18-phase-18-compatibility-closure`, and the latest listed workflow
   runs are for earlier revisions. The 37-row Phase 19 handoff inventory
   validates, but live Broker/Docker work stays in Phase 19.
+
+## P18-V01 RPC slice: `triggerLiteDispatch` — 2026-10-21
+
+- [x] Added `MQClientApi::trigger_lite_dispatch` for request 200079. It sends
+  nullable `group` and `clientId` header fields, no body, applies the configured
+  VIP address transform, uses the caller deadline, and reports Broker errors.
+- [x] Pinned Java invoked cases and the Rust loopback differential cover the
+  API signature, populated/null inputs, decoded header fields, address, request
+  code, empty body, success, and Broker rejection. Producer core fixture
+  SHA-256: `7846aa7100a8f2339917fc71ad0018e32786692e4b3cff3c1bfafe1c6621372f`.
+- [x] `cargo fmt --all -- --check`, strict all-target/all-feature workspace
+  Clippy, both locked workspace test suites (default and all-features), and
+  pinned Java Maven `verify` pass for this RPC addition.
+- The broad bidirectional P18-V01 audit and current Ubuntu/native Windows
+  P18-V04 evidence remain open. Phase 19 live Broker scenarios remain in
+  Phase 19. The four preserved Phase 19 worktree paths remain untouched and
+  unstaged.

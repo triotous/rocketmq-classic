@@ -744,3 +744,14 @@ cover fast/reflection decoding. Producer core fixture SHA-256:
 `6f853c6e49ad04a2fe2d1d7d202c992d1088e17da1fc248330bef7de968603a0`. This
 closes this RPC/header slice only; broad P18-V01 and the final P18-V02 refresh
 remain open.
+
+Phase 18 `triggerLiteDispatch` RPC (2026-10-21): pinned
+`MQClientAPIImpl.triggerLiteDispatch(String,String,String,long)` sends request
+200079 with nullable `group` and `clientId` fields and an empty body. Its
+request header has a no-op `checkFields()`. Rust applies the configured VIP
+address transform, uses the caller deadline, and reports non-success Broker
+responses. Invoked Java cases cover populated and null inputs, request code,
+target address, timeout and response outcomes; the Rust loopback differential
+checks the decoded extension fields and empty body. Producer core fixture
+SHA-256: `7846aa7100a8f2339917fc71ad0018e32786692e4b3cff3c1bfafe1c6621372f`.
+This closes this RPC mapping only; broad P18-V01 remains open.
