@@ -15,11 +15,15 @@ assignment, and a stale pull timestamp. Rust must not run persistence/removal
 solely because a queue is dropped. Their values and store events are checked in
 `runtime_reset_matches_java_live_maps_nulls_and_per_queue_failures` using
 `rebalanceRetention` in `fixtures/runtime/consumer-operations.json`.
-The Java pull-idle property and strict expiry path now match for Push queues;
-Rust also shares that timeout with POP queues. Remaining POP assignment
-branches, public Rebalance/ProcessQueue API correspondence and the full
+The Java pull-idle property and strict expiry path now match for Push and POP
+queues. Concurrent `ProcessQueue.cleanExpiredMsg` now records the Java
+consume-start property and runs on the Java initial-delay/period schedule;
+success, send-back failure, orderly skip, late completion and cleanup timing
+are checked against an invoked Java fixture. Remaining POP assignment
+branches, direct Rebalance/ProcessQueue API correspondence and the full
 inherited/source audit remain under review; P18-V01 is open. See the
-[scoped runtime operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md).
+[scoped runtime operation audit](PHASE_18_RUNTIME_CONSUMER_OPERATIONS.md) and
+[nested implementation API audit](PHASE_18_REBALANCE_PROCESS_QUEUE_API.md).
 
 ## Java method to Rust implementation and check
 
@@ -34,6 +38,7 @@ inherited/source audit remain under review; P18-V01 is open. See the
 | `DefaultMQPullConsumer.get/setAllocateMessageQueueStrategy`, `isEnableRebalance/setEnableRebalance`, queue-listener and registration methods | `PullConsumerConfig` plus `PullConsumer::{register_message_queue_listener, set_message_queue_listener, register_topics, set_register_topics, add_register_subscriptions, clear_register_subscriptions, enable_rebalance}`; P11-U02 default, namespace, selector and runtime tests | UNIT_VERIFIED — average allocation and enabled rebalance are defaults; listeners, registered topics/subscriptions and runtime enablement are wired |
 | `MQPullConsumer.registerMessageQueueListener`; `DefaultMQPullConsumerImpl.fetchMessageQueuesInBalance` | `PullConsumer::{register_message_queue_listener, fetch_message_queues_in_balance}`; P11-U02 lifecycle and namespace tests | UNIT_VERIFIED — callbacks carry the all/assigned sets; the in-balance query requires a running consumer and removes the configured namespace from returned queues |
 | `RebalanceImpl.doRebalance/rebalanceByTopic/updateProcessQueueTableInRebalance` | Push and Pull `ConsumerRuntime::try_rebalance`; P11-U01/P11-U02 membership, empty-route, broadcast, listener, persistence and generation-fencing tests | UNIT_VERIFIED — route absence/emptiness is handled before membership lookup, unavailable membership preserves assignments, and LiteSelective follows Java's no-op default branch |
+| `ProcessQueue.isPullExpired/cleanExpiredMsg`; `ConsumeMessageConcurrentlyService.cleanExpireMsg` | Push `ProcessQueue::expired_head_message/remove_head_message`; concurrent-service owned periodic sweep and `PushConsumer::clean_expired_process_queue_messages_at`; `expired_concurrent_messages_match_java_process_queue_cleanup`, `concurrent_consume_start_timestamp_allows_expiry_while_listener_is_running`, `concurrent_consume_service_runs_expiry_sweep_after_java_initial_delay` | UNIT_VERIFIED — strict timeout, consume-start property, oldest-message order, delay level 3, send-back failure retention/retry, orderly skip, 16-attempt cap and late listener completion match the invoked Java cleanup cases. Direct nested public API access remains open per the Phase 18 API audit. |
 | `RebalancePushImpl.computePullFromWhereWithException/removeUnnecessaryMessageQueue/messageQueueChanged` | Push initial offset and assignment lifecycle; P11-V02/P11-U01 | UNIT_VERIFIED — Java initial-offset fixtures match, query failures do not fall back to zero, failed removal persistence retains the dropped generation, and assignment changes notify the listener |
 | `RebalancePullImpl.removeUnnecessaryMessageQueue/messageQueueChanged` | Pull assignment table reconciliation; P11-U02 broadcast/clustering lifecycle tests | UNIT_VERIFIED — removed offsets persist before removal, newly assigned queues clear stale offsets, callback failures are isolated, and unavailable membership keeps the old assignment |
 | `RebalanceService.run` | Runtime-owned coalesced rebalance worker and Push/Pull `try_rebalance`; P11-U01/P11-U02 serialization, membership-transition, race and shutdown tests | UNIT_VERIFIED — startup, topic updates and membership notifications reach serialized reconciliation; retries retain safe queue state and owned workers stop on shutdown |

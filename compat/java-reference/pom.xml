@@ -636,6 +636,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-consumer-expired-message-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.ConsumerExpiredMessageFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/consumer/expired-messages.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-invoked-producer-more-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

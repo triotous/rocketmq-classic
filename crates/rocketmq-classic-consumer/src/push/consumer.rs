@@ -2684,6 +2684,48 @@ impl PushConsumer {
         }
     }
 
+    pub(crate) async fn clean_expired_process_queue_messages_at(&self, now_millis: i64) {
+        if self.is_consume_orderly() {
+            return;
+        }
+        let timeout_millis = self
+            .config
+            .consume_timeout_minutes()
+            .wrapping_mul(60)
+            .wrapping_mul(1_000);
+        let process_queues = read_lock(&self.process_queues)
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for process_queue in process_queues {
+            let generation = process_queue.generation();
+            let attempts = process_queue
+                .snapshot(generation)
+                .map_or(0, |snapshot| snapshot.cached_count.min(16));
+            for _ in 0..attempts {
+                let Ok(Some((offset, message))) =
+                    process_queue.expired_head_message(generation, now_millis, timeout_millis)
+                else {
+                    break;
+                };
+                match self.send_message_back(&message, 3).await {
+                    Ok(()) => {
+                        let _ = process_queue.remove_head_message(generation, offset, now_millis);
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            queue = %process_queue.queue(),
+                            offset,
+                            error = %error,
+                            "failed to send expired concurrent-consume message back"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn submit_ready_messages(
         self: &Arc<Self>,
         context: &PullContext,
@@ -2810,6 +2852,20 @@ impl PushConsumer {
             self.new_consume_message_context(messages, request.batch.queue().clone());
         self.consume_message_hooks
             .execute_before(&mut consume_context);
+        let consume_start_timestamp_millis = epoch_millis();
+        let _ = request.process_queue.mark_batch_started(
+            generation,
+            request.batch.id(),
+            consume_start_timestamp_millis,
+        );
+        if let Some(messages) = consume_context.messages.as_mut() {
+            for message in messages {
+                let _ = message.set_system_property(
+                    PROPERTY_CONSUME_START_TIMESTAMP,
+                    consume_start_timestamp_millis.to_string(),
+                );
+            }
+        }
         let callback_context = ConsumeConcurrentlyContext::new(request.batch.queue().clone());
         let fallback_context = callback_context.clone();
         let listener_messages = consume_context.messages.clone().unwrap_or_default();
@@ -12088,6 +12144,345 @@ mod tests {
             offset_store.updates.lock().unwrap().as_slice(),
             &[(queue, 12, true)]
         );
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn expired_concurrent_messages_match_java_process_queue_cleanup() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/expired-messages.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            fixture["provenance"]["sourceCommit"],
+            "efa1be59d6fc747ad220f036c86030f05f0419f9"
+        );
+
+        let config = PushConsumerConfig::new("expired-message-cleanup").unwrap();
+        config.set_consume_timeout_minutes(1);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let make_message = |offset: i64, body_size: usize, started_at: i64| {
+            let mut message = Message::new("orders", vec![b'x'; body_size]);
+            message
+                .set_system_property(PROPERTY_CONSUME_START_TIMESTAMP, started_at.to_string())
+                .unwrap();
+            let mut message = crate::test_support::message_ext_from(message);
+            message.set_queue_offset(offset);
+            message.set_broker_name(Some("broker-a".to_owned()));
+            message.set_commit_log_offset(offset);
+            message
+        };
+        let now_millis = 106_001;
+
+        let expired_queue = MessageQueue::new("orders", "broker-a", 0);
+        let expired_process_queue = Arc::new(ProcessQueue::new(expired_queue.clone(), 101));
+        expired_process_queue
+            .insert_messages(
+                101,
+                vec![make_message(10, 2, 46_000), make_message(11, 3, 46_002)],
+            )
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(expired_queue, expired_process_queue.clone());
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+        consumer
+            .clean_expired_process_queue_messages_at(now_millis)
+            .await;
+        let expired_snapshot = expired_process_queue.snapshot(101).unwrap();
+        assert_eq!(
+            expired_snapshot.cached_count,
+            fixture["expiredHead"]["cachedCount"]
+        );
+        assert_eq!(
+            expired_snapshot.cached_bytes,
+            fixture["expiredHead"]["cachedBytes"]
+        );
+        assert_eq!(expired_snapshot.minimum_offset, Some(11));
+        assert_eq!(expired_snapshot.maximum_offset, Some(11));
+
+        let failed_queue = MessageQueue::new("orders", "broker-a", 1);
+        let failed_process_queue = Arc::new(ProcessQueue::new(failed_queue.clone(), 102));
+        failed_process_queue
+            .insert_messages(
+                102,
+                vec![make_message(20, 2, 46_000), make_message(21, 3, 46_001)],
+            )
+            .unwrap();
+        write_lock(&consumer.process_queues)
+            .insert(failed_queue.clone(), failed_process_queue.clone());
+        {
+            let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
+            scripted.broker_results.extend(
+                std::iter::repeat_with(|| Err("scripted send-back failure".into())).take(2),
+            );
+            scripted
+                .retry_results
+                .extend(std::iter::repeat_with(|| Err("scripted retry failure".into())).take(2));
+        }
+        consumer
+            .clean_expired_process_queue_messages_at(now_millis)
+            .await;
+        let failed_snapshot = failed_process_queue.snapshot(102).unwrap();
+        assert_eq!(
+            failed_snapshot.cached_count,
+            fixture["sendBackFailure"]["cachedCount"]
+        );
+        assert_eq!(
+            failed_snapshot.cached_bytes,
+            fixture["sendBackFailure"]["cachedBytes"]
+        );
+        assert_eq!(failed_snapshot.minimum_offset, Some(20));
+        assert_eq!(failed_snapshot.maximum_offset, Some(21));
+        write_lock(&consumer.process_queues).remove(&failed_queue);
+
+        let limit_queue = MessageQueue::new("orders", "broker-a", 2);
+        let limit_process_queue = Arc::new(ProcessQueue::new(limit_queue.clone(), 103));
+        let limit_messages = (0..18)
+            .map(|index| make_message(60 + index, 2 + index as usize, 46_000))
+            .collect();
+        limit_process_queue
+            .insert_messages(103, limit_messages)
+            .unwrap();
+        write_lock(&consumer.process_queues)
+            .insert(limit_queue.clone(), limit_process_queue.clone());
+        {
+            let mut scripted = consumer.scripted_retry_transport.lock().unwrap();
+            scripted.broker_results.extend(
+                std::iter::repeat_with(|| Err("scripted send-back failure".into())).take(16),
+            );
+            scripted
+                .retry_results
+                .extend(std::iter::repeat_with(|| Err("scripted retry failure".into())).take(16));
+        }
+        consumer
+            .clean_expired_process_queue_messages_at(now_millis)
+            .await;
+        let limit_snapshot = limit_process_queue.snapshot(103).unwrap();
+        assert_eq!(
+            limit_snapshot.cached_count,
+            fixture["attemptLimit"]["cachedCount"]
+        );
+        assert_eq!(
+            limit_snapshot.cached_bytes,
+            fixture["attemptLimit"]["cachedBytes"]
+        );
+        assert_eq!(limit_snapshot.minimum_offset, Some(60));
+        assert_eq!(limit_snapshot.maximum_offset, Some(77));
+        write_lock(&consumer.process_queues).remove(&limit_queue);
+
+        let orderly_queue = MessageQueue::new("orders", "broker-a", 3);
+        let orderly_process_queue = Arc::new(ProcessQueue::new(orderly_queue.clone(), 104));
+        orderly_process_queue
+            .insert_messages(104, vec![make_message(30, 2, 46_000)])
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(orderly_queue, orderly_process_queue.clone());
+        consumer.set_consume_orderly(true);
+        consumer
+            .clean_expired_process_queue_messages_at(now_millis)
+            .await;
+        consumer.set_consume_orderly(false);
+        let orderly_snapshot = orderly_process_queue.snapshot(104).unwrap();
+        assert_eq!(
+            orderly_snapshot.cached_count,
+            fixture["orderlySkipped"]["cachedCount"]
+        );
+        assert_eq!(
+            orderly_snapshot.cached_bytes,
+            fixture["orderlySkipped"]["cachedBytes"]
+        );
+        assert_eq!(orderly_snapshot.minimum_offset, Some(30));
+
+        {
+            let scripted = consumer.scripted_retry_transport.lock().unwrap();
+            let attempts = scripted
+                .broker_headers
+                .iter()
+                .map(|header| format!("{}:{}", header.get_offset(), header.get_delay_level()))
+                .collect::<Vec<_>>();
+            assert_eq!(attempts.len(), 19);
+            assert_eq!(attempts[0], "10:3");
+            assert_eq!(attempts[1..3], ["20:3", "20:3"]);
+            assert!(attempts[3..19].iter().all(|attempt| attempt == "60:3"));
+            for (name, range) in [
+                ("expiredHead", 0..1),
+                ("sendBackFailure", 1..3),
+                ("attemptLimit", 3..19),
+                ("orderlySkipped", 19..19),
+            ] {
+                let fixture_attempts = fixture[name]["attempts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|attempt| attempt.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>();
+                let rust_attempts = attempts[range].to_vec();
+                assert_eq!(rust_attempts, fixture_attempts, "{name}");
+            }
+        }
+        consumer.shutdown().await.unwrap();
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_consume_start_timestamp_allows_expiry_while_listener_is_running() {
+        let config = PushConsumerConfig::new("expired-message-in-flight").unwrap();
+        config.set_consume_timeout_minutes(1);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let offset_store = Arc::new(RecordingOffsetStore::default());
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            offset_store.clone(),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 104));
+        process_queue
+            .insert_messages(104, vec![retry_test_message(40)])
+            .unwrap();
+        let batch = process_queue.take_batch(104, 1).unwrap().unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let request = ConsumeRequest {
+            process_queue: process_queue.clone(),
+            batch,
+        };
+
+        let listener_started = Arc::new(tokio::sync::Notify::new());
+        let continue_listener = Arc::new(tokio::sync::Notify::new());
+        let observed_start = Arc::new(Mutex::new(None::<String>));
+        let listener: Arc<dyn MessageListenerConcurrently> = {
+            let listener_started = listener_started.clone();
+            let continue_listener = continue_listener.clone();
+            let observed_start = observed_start.clone();
+            Arc::new(
+                move |messages: Vec<MessageExt>, context: ConsumeConcurrentlyContext| {
+                    let listener_started = listener_started.clone();
+                    let continue_listener = continue_listener.clone();
+                    let observed_start = observed_start.clone();
+                    async move {
+                        *observed_start.lock().unwrap() = messages.first().and_then(|message| {
+                            message.get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+                        });
+                        listener_started.notify_one();
+                        continue_listener.notified().await;
+                        (Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context)
+                    }
+                },
+            )
+        };
+
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+        let consume = {
+            let consumer = consumer.clone();
+            tokio::spawn(async move { consumer.run_consume_request(request, listener).await })
+        };
+        listener_started.notified().await;
+        let timestamp = observed_start
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .parse::<i64>()
+            .unwrap();
+        assert_eq!(
+            process_queue
+                .expired_head_message(104, timestamp + 60_001, 60_000)
+                .unwrap()
+                .map(|(offset, _)| offset),
+            Some(40)
+        );
+        consumer
+            .clean_expired_process_queue_messages_at(timestamp + 60_001)
+            .await;
+        assert_eq!(process_queue.snapshot(104).unwrap().cached_count, 0);
+
+        continue_listener.notify_one();
+        consume.await.unwrap();
+        assert!(offset_store.updates.lock().unwrap().is_empty());
+        assert_eq!(process_queue.snapshot(104).unwrap().cached_count, 0);
+
+        consumer.shutdown().await.unwrap();
+        let _ = runtime.shutdown().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_consume_service_runs_expiry_sweep_after_java_initial_delay() {
+        let config = PushConsumerConfig::new("expired-message-schedule").unwrap();
+        config.set_consume_timeout_minutes(1);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 105));
+        let mut expired = retry_test_message(50);
+        expired
+            .set_system_property(
+                PROPERTY_CONSUME_START_TIMESTAMP,
+                (epoch_millis() - 61_000).to_string(),
+            )
+            .unwrap();
+        process_queue.insert_messages(105, vec![expired]).unwrap();
+        write_lock(&consumer.process_queues).insert(queue, process_queue.clone());
+        consumer
+            .scripted_retry_transport
+            .lock()
+            .unwrap()
+            .broker_results
+            .push_back(Ok(()));
+
+        tokio::time::advance(Duration::from_secs(60)).await;
+        for _ in 0..32 {
+            if process_queue.snapshot(105).unwrap().cached_count == 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(process_queue.snapshot(105).unwrap().cached_count, 0);
+        assert_eq!(
+            consumer
+                .scripted_retry_transport
+                .lock()
+                .unwrap()
+                .broker_headers
+                .len(),
+            1
+        );
+
+        consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }
 

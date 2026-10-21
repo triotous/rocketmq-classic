@@ -3,7 +3,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use tokio::{
@@ -35,6 +35,8 @@ struct ConsumeWorkerSet {
     consumer: std::sync::Weak<crate::push::PushConsumer>,
     workers: Vec<ConsumeWorker>,
     retiring: Vec<JoinHandle<()>>,
+    cleaner_stop: Option<oneshot::Sender<()>>,
+    cleaner: Option<JoinHandle<()>>,
 }
 
 struct ConsumeWorker {
@@ -85,6 +87,34 @@ impl ConcurrentConsumeService {
                 self.listener.clone(),
             ));
         }
+        let timeout_minutes = consumer
+            .upgrade()
+            .map_or(15, |consumer| consumer.config().consume_timeout_minutes());
+        let period_seconds = u64::try_from(timeout_minutes.max(1))
+            .unwrap_or(u64::MAX)
+            .saturating_mul(60);
+        let period = Duration::from_secs(period_seconds);
+        let first_tick = Instant::now() + period;
+        let (cleaner_stop, mut cleaner_stop_receiver) = oneshot::channel();
+        let cleaner_consumer = consumer.clone();
+        let cleaner = tokio::spawn(async move {
+            let mut interval = tokio::time::interval_at(first_tick, period);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut cleaner_stop_receiver => break,
+                    _ = interval.tick() => {
+                        let Some(consumer) = cleaner_consumer.upgrade() else {
+                            break;
+                        };
+                        consumer
+                            .clean_expired_process_queue_messages_at(current_epoch_millis())
+                            .await;
+                    }
+                }
+            }
+        });
         *self
             .workers
             .lock()
@@ -94,6 +124,8 @@ impl ConcurrentConsumeService {
             consumer,
             workers,
             retiring: Vec::new(),
+            cleaner_stop: Some(cleaner_stop),
+            cleaner: Some(cleaner),
         });
     }
 
@@ -166,6 +198,9 @@ impl ConcurrentConsumeService {
             return;
         };
         workers.sender.take();
+        if let Some(stop) = workers.cleaner_stop.take() {
+            let _ = stop.send(());
+        }
         let deadline =
             Instant::now() + Duration::from_millis(await_termination_millis.max(0) as u64);
         let mut handles = workers
@@ -174,6 +209,9 @@ impl ConcurrentConsumeService {
             .map(|worker| worker.handle)
             .chain(workers.retiring.drain(..))
             .collect::<Vec<_>>();
+        if let Some(cleaner) = workers.cleaner.take() {
+            handles.push(cleaner);
+        }
         for mut worker in handles.drain(..) {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() || tokio::time::timeout(remaining, &mut worker).await.is_err() {
@@ -202,6 +240,12 @@ impl Drop for ConcurrentConsumeService {
             .take()
         {
             workers.sender.take();
+            if let Some(stop) = workers.cleaner_stop.take() {
+                let _ = stop.send(());
+            }
+            if let Some(cleaner) = workers.cleaner.take() {
+                cleaner.abort();
+            }
             for worker in workers.workers.drain(..) {
                 worker.handle.abort();
             }
@@ -243,6 +287,14 @@ fn spawn_worker(
         stop: Some(stop),
         handle,
     }
+}
+
+fn current_epoch_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            duration.as_millis().min(i64::MAX as u128) as i64
+        })
 }
 
 #[cfg(test)]

@@ -81,7 +81,9 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
         .find_map(|zero| unit.checked_sub(*zero).filter(|digit| *digit < 10))
 }
 
-use rocketmq_classic_common::message::{MessageExt, MessageQueue};
+use rocketmq_classic_common::message::{
+    MessageExt, MessageQueue, constants::PROPERTY_CONSUME_START_TIMESTAMP,
+};
 use tokio::time::Instant;
 
 /// A single queue assignment's retained messages and in-flight consume work.
@@ -115,6 +117,7 @@ struct QueueMessage {
     message: Arc<MessageExt>,
     body_bytes: u64,
     state: MessageState,
+    consume_start_timestamp_millis: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -290,9 +293,13 @@ impl ProcessQueue {
                 .map(|entry| (entry.state, entry.body_bytes))
             {
                 Some((MessageState::Ready, previous_body_bytes)) => {
+                    let consume_start_timestamp_millis = message
+                        .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+                        .and_then(|value| parse_java_long(&value));
                     if let Some(existing) = state.messages.get_mut(&offset) {
                         existing.message = Arc::new(message);
                         existing.body_bytes = body_bytes;
+                        existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
                     }
                     state.cached_bytes = state
                         .cached_bytes
@@ -304,6 +311,9 @@ impl ProcessQueue {
                     state.messages.insert(
                         offset,
                         QueueMessage {
+                            consume_start_timestamp_millis: message
+                                .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+                                .and_then(|value| parse_java_long(&value)),
                             message: Arc::new(message),
                             body_bytes,
                             state: MessageState::Ready,
@@ -376,6 +386,78 @@ impl ProcessQueue {
         }))
     }
 
+    pub(crate) fn mark_batch_started(
+        &self,
+        generation: u64,
+        batch_id: u64,
+        timestamp_millis: i64,
+    ) -> Result<(), ProcessQueueError> {
+        let mut state = self.lock_state();
+        self.ensure_active(generation, &state)?;
+        let Some(offsets) = state.in_flight_batches.get(&batch_id).cloned() else {
+            return Err(ProcessQueueError::UnknownBatch);
+        };
+        for offset in offsets {
+            let Some(message) = state.messages.get_mut(&offset) else {
+                return Err(ProcessQueueError::BatchOwnershipLost);
+            };
+            if message.state != MessageState::InFlight(batch_id) {
+                return Err(ProcessQueueError::BatchOwnershipLost);
+            }
+            message.consume_start_timestamp_millis = Some(timestamp_millis);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn expired_head_message(
+        &self,
+        generation: u64,
+        now_millis: i64,
+        timeout_millis: i64,
+    ) -> Result<Option<(i64, Arc<MessageExt>)>, ProcessQueueError> {
+        self.ensure_generation(generation)?;
+        let state = self.lock_state();
+        let Some((offset, message)) = state.messages.first_key_value() else {
+            return Ok(None);
+        };
+        let Some(started_at) = message.consume_start_timestamp_millis else {
+            return Ok(None);
+        };
+        if now_millis.wrapping_sub(started_at) > timeout_millis {
+            Ok(Some((*offset, message.message.clone())))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub(crate) fn remove_head_message(
+        &self,
+        generation: u64,
+        offset: i64,
+        now_millis: i64,
+    ) -> Result<bool, ProcessQueueError> {
+        self.ensure_generation(generation)?;
+        let mut state = self.lock_state();
+        if state
+            .messages
+            .first_key_value()
+            .is_none_or(|(head, _)| *head != offset)
+        {
+            return Ok(false);
+        }
+        let Some(removed) = state.messages.remove(&offset) else {
+            return Ok(false);
+        };
+        state.cached_count = state.cached_count.saturating_sub(1);
+        state.cached_bytes = state.cached_bytes.saturating_sub(removed.body_bytes);
+        for offsets in state.in_flight_batches.values_mut() {
+            offsets.retain(|in_flight_offset| *in_flight_offset != offset);
+        }
+        state.last_consume_timestamp_millis = now_millis;
+        state.consuming = !state.messages.is_empty();
+        Ok(true)
+    }
+
     /// Remove only terminally handled offsets. Every other message in the
     /// batch returns to the ready map, so retries stay accounted until success.
     pub(crate) fn complete_batch(
@@ -398,6 +480,7 @@ impl ProcessQueue {
             return Err(ProcessQueueError::BatchOwnershipLost);
         }
 
+        let had_owned_messages = !offsets.is_empty();
         let terminal_offsets = terminal_offsets.iter().copied().collect::<BTreeSet<_>>();
         state.in_flight_batches.remove(&batch_id);
         let mut completed_offsets = Vec::new();
@@ -420,7 +503,11 @@ impl ProcessQueue {
             .any(|message| message.state == MessageState::Ready);
         state.consuming = !state.messages.is_empty();
         state.last_consume_timestamp_millis = epoch_millis();
-        let next_commit_offset = next_commit_offset(&state);
+        let next_commit_offset = if had_owned_messages {
+            next_commit_offset(&state)
+        } else {
+            state.messages.first_key_value().map(|(offset, _)| *offset)
+        };
         Ok(CompletionOutcome {
             completed_offsets,
             requeued_offsets,
@@ -863,6 +950,56 @@ mod tests {
         assert!(pull_idle_time_expired(0, 1, -2));
         assert!(pull_idle_time_expired(i64::MIN, 1, 0));
         assert!(!pull_idle_time_expired(i64::MIN, 1, i64::MAX));
+    }
+
+    #[test]
+    fn expired_head_uses_java_timestamp_boundary_and_fences_late_batch_completion() {
+        let process_queue = process_queue(29);
+        process_queue
+            .insert_messages(29, vec![message(10, 2), message(11, 3)])
+            .unwrap();
+        let batch = process_queue.take_batch(29, 2).unwrap().unwrap();
+        process_queue
+            .mark_batch_started(29, batch.id(), 1_000)
+            .unwrap();
+
+        assert!(
+            process_queue
+                .expired_head_message(29, 61_000, 60_000)
+                .unwrap()
+                .is_none()
+        );
+        let expired = process_queue
+            .expired_head_message(29, 61_001, 60_000)
+            .unwrap()
+            .unwrap();
+        assert_eq!(expired.0, 10);
+        assert!(process_queue.remove_head_message(29, 10, 61_001).unwrap());
+        assert_eq!(process_queue.snapshot(29).unwrap().cached_count, 1);
+
+        let completed = process_queue
+            .complete_batch(29, batch.id(), &[10, 11])
+            .unwrap();
+        assert_eq!(completed.completed_offsets, [11]);
+        assert_eq!(completed.next_commit_offset, Some(12));
+        assert_eq!(process_queue.snapshot(29).unwrap().cached_count, 0);
+    }
+
+    #[test]
+    fn expired_only_in_flight_batch_does_not_persist_a_second_offset() {
+        let process_queue = process_queue(30);
+        process_queue
+            .insert_messages(30, vec![message(12, 2)])
+            .unwrap();
+        let batch = process_queue.take_batch(30, 1).unwrap().unwrap();
+        process_queue
+            .mark_batch_started(30, batch.id(), 2_000)
+            .unwrap();
+        assert!(process_queue.remove_head_message(30, 12, 62_001).unwrap());
+
+        let completed = process_queue.complete_batch(30, batch.id(), &[12]).unwrap();
+        assert!(completed.completed_offsets.is_empty());
+        assert_eq!(completed.next_commit_offset, None);
     }
 
     #[test]

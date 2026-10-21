@@ -61,6 +61,62 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
 }
 
 #[test]
+fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    assert_eq!(
+        fixture["provenance"]["sourceCommit"],
+        "efa1be59d6fc747ad220f036c86030f05f0419f9"
+    );
+
+    for (name, constructors, declared, callable) in [
+        ("RebalanceImpl", 1, 32, 32),
+        ("RebalancePushImpl", 2, 12, 32),
+        ("RebalancePullImpl", 2, 11, 32),
+        ("ProcessQueue", 1, 32, 32),
+        ("PopProcessQueue", 1, 11, 11),
+    ] {
+        let api = &fixture["implementationApis"][name];
+        assert_eq!(
+            api["publicConstructors"].as_array().unwrap().len(),
+            constructors,
+            "{name} constructors"
+        );
+        assert_eq!(
+            api["declaredPublicMethodCount"].as_u64(),
+            Some(declared),
+            "{name} declared methods"
+        );
+        assert_eq!(
+            api["publicMethodCount"].as_u64(),
+            Some(callable),
+            "{name} callable methods"
+        );
+    }
+
+    let implementations = &fixture["implementationApis"];
+    for (owner, method) in [
+        ("RebalanceImpl", "getProcessQueueTable"),
+        ("RebalanceImpl", "getPopProcessQueueTable"),
+        ("ProcessQueue", "cleanExpiredMsg"),
+        ("ProcessQueue", "getMsgTreeMap"),
+        ("PopProcessQueue", "ack"),
+    ] {
+        let methods = implementations[owner]["publicMethods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        assert!(
+            methods
+                .iter()
+                .any(|signature| signature.contains(&format!(".{method}("))),
+            "pinned Java {owner}.{method} is inventoried"
+        );
+    }
+}
+
+#[test]
 fn pinned_java_consumer_callable_method_names_have_phase_crosswalks() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     let apis = &fixture["apis"];

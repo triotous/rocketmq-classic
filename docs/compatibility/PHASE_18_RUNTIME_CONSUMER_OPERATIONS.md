@@ -191,6 +191,25 @@ the recorded POP expiry/retention branches; other POP assignment branches and
 the public Rebalance/ProcessQueue API audit remain open. Fixture SHA-256 is the
 same `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
 
+The nested ProcessQueue review found a missing concurrent-consume expiry flow.
+Java `ConsumeMessageConcurrentlyService` records `CONSUME_START_TIME`, then
+runs `cleanExpiredMsg` after one `consumeTimeout` period and at that interval.
+Rust now records the same property for listener messages, tracks it on the
+queue-owned entry, and runs an owned concurrent-service timer. The sweep checks
+only the oldest cached message, uses Java's strict signed-millisecond timeout,
+sends back at delay level 3, removes the head only after successful send-back,
+caps attempts at 16 per queue, and skips orderly consume. Java invokes the
+actual `ProcessQueue.cleanExpiredMsg` with scripted outcomes; Rust compares
+success, repeated send-back failure and orderly skip, plus the 16-attempt cap,
+strict boundary, late listener completion and initial timer delay. Fixture
+SHA-256:
+`76b9bdfdd20d3f6cbc1b73f4b12055c484955f39cfde5884e0d6688e38fd6f79`.
+
+The pinned nested public API denominator and its current owner/queue mappings
+are recorded in the [Rebalance and ProcessQueue API audit](PHASE_18_REBALANCE_PROCESS_QUEUE_API.md).
+Direct access to Java's mutable nested tables and concrete queue types remains
+unresolved; broad P18-V01 remains open.
+
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove
 completion of the complete Java/Rust public API/settings/control-flow audit.

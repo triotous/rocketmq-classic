@@ -143,6 +143,10 @@ public final class Main {
             ConsumerFacadeApiFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "consumer-expired-message-fixture".equals(args[0])) {
+            ConsumerExpiredMessageFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "transaction-fixture".equals(args[0])) {
             TransactionFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;

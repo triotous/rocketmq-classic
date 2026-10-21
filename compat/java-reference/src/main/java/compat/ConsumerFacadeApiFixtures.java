@@ -18,6 +18,11 @@ import org.apache.rocketmq.client.consumer.MQPushConsumer;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.LitePullConsumer;
 import org.apache.rocketmq.client.MQAdmin;
+import org.apache.rocketmq.client.impl.consumer.PopProcessQueue;
+import org.apache.rocketmq.client.impl.consumer.ProcessQueue;
+import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
+import org.apache.rocketmq.client.impl.consumer.RebalancePullImpl;
+import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 
 /** Pins the complete public Java consumer-facade and inherited API denominator. */
 public final class ConsumerFacadeApiFixtures {
@@ -75,6 +80,13 @@ public final class ConsumerFacadeApiFixtures {
         apis.put("LitePullConsumer", publicApiSurface(LitePullConsumer.class));
         apis.put("MQAdmin", publicApiSurface(MQAdmin.class));
         fixture.put("apis", apis);
+        Map<String, Object> implementationApis = new TreeMap<>();
+        implementationApis.put("RebalanceImpl", publicApiSurface(RebalanceImpl.class));
+        implementationApis.put("RebalancePushImpl", publicApiSurface(RebalancePushImpl.class));
+        implementationApis.put("RebalancePullImpl", publicApiSurface(RebalancePullImpl.class));
+        implementationApis.put("ProcessQueue", publicApiSurface(ProcessQueue.class));
+        implementationApis.put("PopProcessQueue", publicApiSurface(PopProcessQueue.class));
+        fixture.put("implementationApis", implementationApis);
 
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {

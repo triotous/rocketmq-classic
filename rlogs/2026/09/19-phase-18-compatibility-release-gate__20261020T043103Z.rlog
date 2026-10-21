@@ -154,3 +154,31 @@
   warnings`, `cargo fmt --all -- --check`, and `git diff --check`; all passed.
   P18-V02 still needs final review of benchmark/fuzz/race evidence and the
   complete API audit; no full-phase acceptance is inferred.
+
+# Phase 18 continuation — concurrent expired-message cleanup — 2026-10-21
+
+- Pinned Java 5.5.1 `ConsumeMessageConcurrentlyService` marks each listener
+  message with `CONSUME_START_TIME` and schedules `ProcessQueue.cleanExpiredMsg`
+  after one consume-timeout interval, repeating at that interval. Added the
+  same start marker, queue-owned timestamp tracking and service-owned cleaner
+  timer to Rust. Cleanup uses Java's strict signed-millisecond comparison,
+  delay level 3, successful-send-back removal, the 16-attempt queue cap and
+  orderly-consume skip. In-flight batch completion remains safe when cleanup
+  removes an expired message.
+- Added pinned Java direct `ProcessQueue.cleanExpiredMsg` fixtures for
+  successful expiry, repeated send-back failure, orderly skip and retry cap.
+  Rust comparisons also cover strict timeout boundary, expiry during a blocked
+  listener callback, late completion and initial timer delay. Fixture SHA-256:
+  `76b9bdfdd20d3f6cbc1b73f4b12055c484955f39cfde5884e0d6688e38fd6f79`.
+- Expanded and drift-checked the nested Java API denominator for `RebalanceImpl`,
+  `RebalancePushImpl`, `RebalancePullImpl`, `ProcessQueue` and
+  `PopProcessQueue`; fixture SHA-256:
+  `e4266b7a84b005bd4bddb0b7c378e425bfa6d9b22a926d6d6d0d623ea7294e65`.
+  The audit records existing flow mappings and the unresolved direct API gap:
+  Rust does not yet expose Java's live mutable nested tables or concrete queue
+  types. P18-V01 remains open.
+- `mvn -f compat/java-reference/pom.xml verify` passes (37-scenario manifest,
+  Java fixture drift checks and cross-decodes). `cargo test --workspace
+  --all-features --locked` and strict workspace/all-target/all-feature Clippy
+  pass; formatting and `git diff --check` pass. No full-phase acceptance or
+  Phase 19 live evidence is inferred.
