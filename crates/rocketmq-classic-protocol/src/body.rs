@@ -4084,6 +4084,130 @@ impl GetParentTopicInfoResponseBody {
     }
 }
 
+/// Java `GetLiteClientInfoResponseBody`, preserving the nullable topic Set
+/// and the mutable collection alias returned by its getter.
+pub type LiteClientInfoTopicSet = SharedValue<HashSet<Option<String>>>;
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLiteClientInfoResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    last_access_time: i64,
+    last_consume_time: i64,
+    lite_topic_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lite_topic_set: Option<LiteClientInfoTopicSet>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct GetLiteClientInfoResponseBodyFields {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    parent_topic: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    group: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    client_id: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    last_access_time: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    last_consume_time: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    lite_topic_count: i32,
+    lite_topic_set: Option<HashSet<Option<String>>>,
+}
+
+impl<'de> Deserialize<'de> for GetLiteClientInfoResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: GetLiteClientInfoResponseBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            parent_topic: fields.parent_topic,
+            group: fields.group,
+            client_id: fields.client_id,
+            last_access_time: fields.last_access_time,
+            last_consume_time: fields.last_consume_time,
+            lite_topic_count: fields.lite_topic_count,
+            lite_topic_set: fields.lite_topic_set.map(SharedValue::new),
+        })
+    }
+}
+
+impl GetLiteClientInfoResponseBody {
+    pub fn get_parent_topic(&self) -> Option<&str> {
+        self.parent_topic.as_deref()
+    }
+
+    pub fn set_parent_topic(&mut self, value: Option<String>) {
+        self.parent_topic = value;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, value: Option<String>) {
+        self.client_id = value;
+    }
+
+    pub fn get_last_access_time(&self) -> i64 {
+        self.last_access_time
+    }
+
+    pub fn set_last_access_time(&mut self, value: i64) {
+        self.last_access_time = value;
+    }
+
+    pub fn get_last_consume_time(&self) -> i64 {
+        self.last_consume_time
+    }
+
+    pub fn set_last_consume_time(&mut self, value: i64) {
+        self.last_consume_time = value;
+    }
+
+    pub fn get_lite_topic_count(&self) -> i32 {
+        self.lite_topic_count
+    }
+
+    pub fn set_lite_topic_count(&mut self, value: i32) {
+        self.lite_topic_count = value;
+    }
+
+    pub fn get_lite_topic_set(&self) -> Option<LiteClientInfoTopicSet> {
+        self.lite_topic_set.clone()
+    }
+
+    pub fn set_lite_topic_set(&mut self, value: Option<LiteClientInfoTopicSet>) {
+        self.lite_topic_set = value;
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        java_fastjson_remoting_body_json(self, false).map(String::into_bytes)
+    }
+
+    fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        serde_json::from_str(&normalized)
+    }
+}
+
 /// Java `TopicStatsTable` response DTO. Its map and nested TopicOffset values
 /// retain Java nullability and the map handle returned by the getter.
 ///
@@ -8030,6 +8154,7 @@ macro_rules! impl_java_remoting_serializable_body_adapters {
 impl_java_remoting_serializable_body_adapters!(
     GetBrokerLiteInfoResponseBody,
     GetParentTopicInfoResponseBody,
+    GetLiteClientInfoResponseBody,
     GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
@@ -8794,6 +8919,42 @@ mod tests {
             set.insert(Some("workers".into()));
         });
         assert_eq!(value.get_groups().unwrap().with(HashSet::len), 1);
+    }
+
+    #[test]
+    fn get_lite_client_info_response_body_preserves_defaults_and_topic_set_aliases() {
+        let defaults = GetLiteClientInfoResponseBody::default();
+        assert_eq!(defaults.get_parent_topic(), None);
+        assert_eq!(defaults.get_group(), None);
+        assert_eq!(defaults.get_client_id(), None);
+        assert_eq!(defaults.get_last_access_time(), 0);
+        assert_eq!(defaults.get_last_consume_time(), 0);
+        assert_eq!(defaults.get_lite_topic_count(), 0);
+        assert!(defaults.get_lite_topic_set().is_none());
+
+        let decoded = GetLiteClientInfoResponseBody::java_decode(
+            br#"{"parentTopic":"lite-parent","group":"workers","clientId":"client-a","lastAccessTime":1000,"lastConsumeTime":500,"liteTopicCount":2,"liteTopicSet":["%LMQ%lite-parent%orders",null]}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
+        assert_eq!(decoded.get_group(), Some("workers"));
+        assert_eq!(decoded.get_client_id(), Some("client-a"));
+        assert_eq!(decoded.get_last_access_time(), 1000);
+        assert_eq!(decoded.get_last_consume_time(), 500);
+        assert_eq!(decoded.get_lite_topic_count(), 2);
+        let topics = decoded.get_lite_topic_set().unwrap();
+        assert_eq!(topics.with(HashSet::len), 2);
+        assert!(topics.with(|set| set.contains(&None)));
+        assert!(topics.with(|set| set.contains(&Some("%LMQ%lite-parent%orders".into()))));
+
+        let assigned = SharedValue::new(HashSet::new());
+        let mut value = GetLiteClientInfoResponseBody::default();
+        value.set_lite_topic_set(Some(assigned.clone()));
+        assert!(value.get_lite_topic_set().unwrap().ptr_eq(&assigned));
+        assigned.with_mut(|set| {
+            set.insert(Some("%LMQ%lite-parent%orders".into()));
+        });
+        assert_eq!(value.get_lite_topic_set().unwrap().with(HashSet::len), 1);
     }
 
     #[test]

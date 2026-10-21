@@ -23,18 +23,18 @@ use rocketmq_classic_protocol::{
         GetConsumerListByGroupRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetConsumerStatusRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetEarliestMsgStoretimeResponseHeader, GetKvConfigRequestHeader, GetKvConfigResponseHeader,
-        GetKvListByNamespaceRequestHeader, GetLiteTopicInfoRequestHeader,
-        GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
-        GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader, GetRouteInfoRequestHeader,
-        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader,
-        GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
-        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
-        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
-        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
-        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetKvListByNamespaceRequestHeader, GetLiteClientInfoRequestHeader,
+        GetLiteTopicInfoRequestHeader, GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader,
+        GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader,
+        GetRouteInfoRequestHeader, GetSubscriptionGroupConfigRequestHeader,
+        GetTopicStatsInfoRequestHeader, GetTopicsByClusterRequestHeader, HeaderMap,
+        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
+        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
+        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
+        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
+        PullMessageRequestHeader, PullMessageResponseHeader, PutKvConfigRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
@@ -743,6 +743,32 @@ fn lite_topic_info_request_header_matches_java_public_api_and_nullable_fields() 
     let decoded = GetLiteTopicInfoRequestHeader::decode_fields(&encoded).unwrap();
     assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
     assert_eq!(decoded.get_lite_topic(), Some("%LMQ%lite-parent%orders"));
+}
+
+#[test]
+fn lite_client_info_request_header_matches_java_defaults_and_validation() {
+    let mut header = GetLiteClientInfoRequestHeader::default();
+    assert_eq!(header.get_parent_topic(), None);
+    assert_eq!(header.get_group(), None);
+    assert_eq!(header.get_client_id(), None);
+    assert_eq!(header.get_max_count(), 1000);
+    header.check_fields().unwrap();
+
+    header.set_parent_topic(Some("lite-parent".into()));
+    header.set_group(Some("workers".into()));
+    header.set_client_id(Some("client-a".into()));
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, java_ext_fields("header-lite-client-info-request"));
+    assert_eq!(encoded.get("maxCount").map(String::as_str), Some("1000"));
+    let decoded = GetLiteClientInfoRequestHeader::decode_fields_checked(&encoded).unwrap();
+    assert_eq!(decoded.get_parent_topic(), Some("lite-parent"));
+    assert_eq!(decoded.get_group(), Some("workers"));
+    assert_eq!(decoded.get_client_id(), Some("client-a"));
+    assert_eq!(decoded.get_max_count(), 1000);
+
+    header.set_max_count(0);
+    assert!(header.check_fields().is_err());
 }
 
 #[test]
@@ -2807,6 +2833,15 @@ fn header_validation_matrix() {
             "",
             "",
             "",
+            ""
+        ),
+        row!(
+            GetLiteClientInfoRequestHeader,
+            "lite-client-info-request",
+            "",
+            "maxCount",
+            "",
+            "parentTopic group clientId",
             ""
         ),
         row!(

@@ -5010,6 +5010,105 @@ impl GetParentTopicInfoRequestHeader {
     }
 }
 
+/// Java `GetLiteClientInfoRequestHeader`. Java validates only `maxCount`,
+/// which defaults to 1000; annotated `parentTopic` and `group` fields remain
+/// nullable at this header boundary.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::GetLiteClientInfoRequestHeader;
+/// let _ = GetLiteClientInfoRequestHeader::default().max_count;
+/// ```
+#[derive(Debug, Clone)]
+pub struct GetLiteClientInfoRequestHeader {
+    parent_topic: Option<String>,
+    group: Option<String>,
+    client_id: Option<String>,
+    max_count: i32,
+}
+
+impl Default for GetLiteClientInfoRequestHeader {
+    fn default() -> Self {
+        Self {
+            parent_topic: None,
+            group: None,
+            client_id: None,
+            max_count: 1000,
+        }
+    }
+}
+
+impl CommandHeader for GetLiteClientInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "parentTopic", self.parent_topic.clone());
+        put_optional(fields, "group", self.group.clone());
+        put_optional(fields, "clientId", self.client_id.clone());
+        fields.insert("maxCount".into(), self.max_count.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        let max_count = fields
+            .get("maxCount")
+            .map(|value| {
+                parse_java_i32(value).ok_or_else(|| ProtocolError::InvalidField {
+                    field: "maxCount",
+                    reason: format!("not a Java int: {value}"),
+                })
+            })
+            .transpose()?
+            .unwrap_or(1000);
+        Ok(Self {
+            parent_topic: fields.get("parentTopic").cloned(),
+            group: fields.get("group").cloned(),
+            client_id: fields.get("clientId").cloned(),
+            max_count,
+        })
+    }
+
+    fn check_fields(&self) -> Result<(), ProtocolError> {
+        if self.max_count <= 0 {
+            return Err(ProtocolError::InvalidField {
+                field: "maxCount",
+                reason: "[maxCount] field invalid".into(),
+            });
+        }
+        Ok(())
+    }
+}
+
+impl GetLiteClientInfoRequestHeader {
+    pub fn get_parent_topic(&self) -> Option<&str> {
+        self.parent_topic.as_deref()
+    }
+
+    pub fn set_parent_topic(&mut self, value: Option<String>) {
+        self.parent_topic = value;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, value: Option<String>) {
+        self.client_id = value;
+    }
+
+    pub fn get_max_count(&self) -> i32 {
+        self.max_count
+    }
+
+    pub fn set_max_count(&mut self, value: i32) {
+        self.max_count = value;
+    }
+}
+
 /// Java 5.5.1's client heartbeat RPC header. The Java class declares no
 /// payload fields and inherits its namespace and routing fields from
 /// `RpcRequestHeader`.

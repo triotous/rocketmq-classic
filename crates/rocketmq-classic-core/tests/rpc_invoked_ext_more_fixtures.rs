@@ -88,6 +88,13 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
         "parent-topic-info-error",
         "parent-topic-info-unknown",
         "parent-topic-info-invalid-body",
+        "lite-client-info-success",
+        "lite-client-info-defaults",
+        "lite-client-info-null-body",
+        "lite-client-info-null-inputs",
+        "lite-client-info-error",
+        "lite-client-info-unknown",
+        "lite-client-info-invalid-body",
     ];
     assert_eq!(fs::read_dir(&dir).unwrap().count(), names.len() + 35);
     for name in names {
@@ -118,6 +125,8 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 "MQClientAPIExt.getLiteTopicInfoAsync"
             } else if name.starts_with("parent-topic-info-") {
                 "MQClientAPIImpl.getParentTopicInfo"
+            } else if name.starts_with("lite-client-info-") {
+                "MQClientAPIImpl.getLiteClientInfo"
             } else {
                 "MQClientAPIImpl"
             }
@@ -215,6 +224,39 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
             assert_eq!(api["responseBodyDefaults"]["groupsNull"], true);
             assert_eq!(api["groupsGetterReturnsAssignedSet"], true);
             assert_eq!(api["groupsGetterMutationVisible"], true);
+        }
+        if name.starts_with("lite-client-info-") {
+            let api = &fixture["liteClientInfoApi"];
+            assert_eq!(api["rpcMethods"].as_array().unwrap().len(), 1);
+            assert!(
+                api["rpcMethods"][0]
+                    .as_str()
+                    .unwrap()
+                    .contains("getLiteClientInfo")
+            );
+            assert_eq!(
+                api["requestHeaderConstructors"].as_array().unwrap().len(),
+                1
+            );
+            assert_eq!(api["requestHeaderPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["requestHeaderPublicMethods"].as_array().unwrap().len(),
+                9
+            );
+            assert_eq!(api["requestHeaderDefaultMaxCount"], 1000);
+            assert_eq!(api["nonpositiveMaxCountRejected"], true);
+            assert_eq!(api["responseBodyConstructors"].as_array().unwrap().len(), 1);
+            assert_eq!(api["responseBodyPublicFields"], serde_json::json!([]));
+            assert_eq!(
+                api["responseBodyPublicMethods"].as_array().unwrap().len(),
+                14
+            );
+            assert_eq!(api["responseBodyDefaults"]["lastAccessTime"], 0);
+            assert_eq!(api["responseBodyDefaults"]["lastConsumeTime"], 0);
+            assert_eq!(api["responseBodyDefaults"]["liteTopicCount"], 0);
+            assert_eq!(api["responseBodyDefaults"]["liteTopicSetNull"], true);
+            assert_eq!(api["topicSetGetterReturnsAssignedSet"], true);
+            assert_eq!(api["topicSetGetterMutationVisible"], true);
         }
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
@@ -409,6 +451,47 @@ async fn invoked_lifecycle_extension_cases_match_rust() {
                 }
                 Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
                 other => panic!("unexpected parent topic info result: {other:?}"),
+            }
+        } else if name.starts_with("lite-client-info-") {
+            let (parent_topic, group, client_id) = if name == "lite-client-info-null-inputs" {
+                (None, None, None)
+            } else {
+                (Some("lite-parent"), Some("workers"), Some("client-a"))
+            };
+            match api
+                .get_lite_client_info(&addr, parent_topic, group, client_id, deadline)
+                .await
+            {
+                Ok(None) => "null".to_owned(),
+                Ok(Some(result)) if name == "lite-client-info-success" => format!(
+                    "parent={};group={};client={};lastAccess={};lastConsume={};liteTopics={};topicSet={};containsNull={}",
+                    result.get_parent_topic().unwrap_or("null"),
+                    result.get_group().unwrap_or("null"),
+                    result.get_client_id().unwrap_or("null"),
+                    result.get_last_access_time(),
+                    result.get_last_consume_time(),
+                    result.get_lite_topic_count(),
+                    result.get_lite_topic_set().unwrap().with(|set| set.len()),
+                    result
+                        .get_lite_topic_set()
+                        .unwrap()
+                        .with(|set| set.contains(&None)),
+                ),
+                Ok(Some(result)) => format!(
+                    "parent={};group={};client={};lastAccess={};lastConsume={};liteTopics={};topicSetNull={}",
+                    result.get_parent_topic().unwrap_or("null"),
+                    result.get_group().unwrap_or("null"),
+                    result.get_client_id().unwrap_or("null"),
+                    result.get_last_access_time(),
+                    result.get_last_consume_time(),
+                    result.get_lite_topic_count(),
+                    result.get_lite_topic_set().is_none(),
+                ),
+                Err(RpcError::Response { code, .. }) => {
+                    format!("MQBrokerException;code={code}")
+                }
+                Err(RpcError::MalformedResponse { .. }) => "JSONException;malformed".to_owned(),
+                other => panic!("unexpected Lite client info result: {other:?}"),
             }
         } else if name.starts_with("heartbeat-v2-") {
             let data = HeartbeatData {

@@ -1,18 +1,20 @@
 //! One-attempt lifecycle and extension requests. Message decoding belongs to the consumer layer.
 use rocketmq_classic_protocol::{
     body::{
-        BatchAckMessageRequestBody, GetBrokerLiteInfoResponseBody, GetLiteTopicInfoResponseBody,
-        GetParentTopicInfoResponseBody, LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody,
-        QueryAssignmentResponseBody, SetMessageRequestModeRequestBody,
+        BatchAckMessageRequestBody, GetBrokerLiteInfoResponseBody, GetLiteClientInfoResponseBody,
+        GetLiteTopicInfoResponseBody, GetParentTopicInfoResponseBody,
+        LiteSubscriptionCtlRequestBody, QueryAssignmentRequestBody, QueryAssignmentResponseBody,
+        SetMessageRequestModeRequestBody,
     },
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader,
-        GetParentTopicInfoRequestHeader, HeaderMap, HeartbeatRequestHeader,
-        LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
+        ChangeInvisibleTimeResponseHeader, GetLiteClientInfoRequestHeader,
+        GetLiteTopicInfoRequestHeader, GetParentTopicInfoRequestHeader, HeaderMap,
+        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, ProtocolError,
+        UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -352,6 +354,41 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         GetParentTopicInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
+            |error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            },
+        )
+    }
+
+    /// Queries a Lite client's metadata through Java's synchronous
+    /// `MQClientAPIImpl.getLiteClientInfo` operation. Java sends the request
+    /// header's default `maxCount` of 1000; an absent response body is null.
+    pub async fn get_lite_client_info(
+        &self,
+        addr: &str,
+        parent_topic: Option<&str>,
+        group: Option<&str>,
+        client_id: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<GetLiteClientInfoResponseBody>, RpcError> {
+        let code = request::GET_LITE_CLIENT_INFO;
+        let mut header = GetLiteClientInfoRequestHeader::default();
+        header.set_parent_topic(parent_topic.map(str::to_owned));
+        header.set_group(group.map(str::to_owned));
+        header.set_client_id(client_id.map(str::to_owned));
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| crate::config::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request(&broker_addr, code, &header, None, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        GetLiteClientInfoResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
             |error| RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -1323,6 +1360,84 @@ mod parent_topic_info_tests {
         assert_eq!(result.get_groups().unwrap().with(|groups| groups.len()), 1);
         assert_eq!(result.get_lmq_num(), 3);
         assert_eq!(result.get_lite_topic_count(), 12);
+        peer.await.unwrap();
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_lite_client_info_uses_vip_address_and_default_max_count() {
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("get-lite-client-info");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server_addr = listener.local_addr().unwrap();
+        let address = format!("127.0.0.1:{}", server_addr.port() + 2);
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request.code, request::GET_LITE_CLIENT_INFO);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request.ext_fields,
+                Some(
+                    BTreeMap::from([
+                        ("parentTopic".into(), "lite-parent".into()),
+                        ("group".into(), "workers".into()),
+                        ("clientId".into(), "client-a".into()),
+                        ("maxCount".into(), "1000".into()),
+                    ])
+                    .into()
+                )
+            );
+            assert!(request.body.is_none());
+
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: request.opaque,
+                body: Some(
+                    br#"{"parentTopic":"lite-parent","group":"workers","clientId":"client-a","lastAccessTime":1000,"lastConsumeTime":500,"liteTopicCount":2,"liteTopicSet":["%LMQ%lite-parent%orders"]}"#.to_vec(),
+                ),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let result = api
+            .get_lite_client_info(
+                &address,
+                Some("lite-parent"),
+                Some("workers"),
+                Some("client-a"),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.get_parent_topic(), Some("lite-parent"));
+        assert_eq!(result.get_group(), Some("workers"));
+        assert_eq!(result.get_client_id(), Some("client-a"));
+        assert_eq!(result.get_last_access_time(), 1000);
+        assert_eq!(result.get_last_consume_time(), 500);
+        assert_eq!(result.get_lite_topic_count(), 2);
+        assert_eq!(
+            result
+                .get_lite_topic_set()
+                .unwrap()
+                .with(|topics| topics.len()),
+            1
+        );
         peer.await.unwrap();
         client.shutdown().await;
     }

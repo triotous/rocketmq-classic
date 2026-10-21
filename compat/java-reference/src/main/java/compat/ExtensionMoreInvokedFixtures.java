@@ -34,12 +34,14 @@ import org.apache.rocketmq.remoting.protocol.RequestCode;
 import org.apache.rocketmq.remoting.protocol.ResponseCode;
 import org.apache.rocketmq.remoting.protocol.admin.TopicOffset;
 import org.apache.rocketmq.remoting.protocol.body.GetBrokerLiteInfoResponseBody;
+import org.apache.rocketmq.remoting.protocol.body.GetLiteClientInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetLiteTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.GetParentTopicInfoResponseBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.UnlockBatchRequestBody;
 import org.apache.rocketmq.remoting.protocol.body.LockBatchResponseBody;
 import org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetLiteClientInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetLiteTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetParentTopicInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetConsumerListByGroupRequestHeader;
@@ -114,7 +116,8 @@ public final class ExtensionMoreInvokedFixtures {
         Map<String, Object> provenance = new TreeMap<>();
         provenance.put("client", "org.apache.rocketmq:rocketmq-client:5.5.1");
         provenance.put("entrypoint", name.startsWith("parent-topic-info-")
-            ? "MQClientAPIImpl.getParentTopicInfo" : "MQClientAPIImpl");
+            ? "MQClientAPIImpl.getParentTopicInfo"
+            : name.startsWith("lite-client-info-") ? "MQClientAPIImpl.getLiteClientInfo" : "MQClientAPIImpl");
         provenance.put("transport", "mock RemotingClient");
         provenance.put("serverBaselineContacted", false);
         fixture.put("provenance", provenance);
@@ -131,6 +134,9 @@ public final class ExtensionMoreInvokedFixtures {
         }
         if (name.startsWith("parent-topic-info-")) {
             fixture.put("parentTopicInfoApi", parentTopicInfoApi());
+        }
+        if (name.startsWith("lite-client-info-")) {
+            fixture.put("liteClientInfoApi", liteClientInfoApi());
         }
         Path file = dir.resolve(name + ".json");
         String json = JSON.toJSONString(fixture) + "\n";
@@ -304,6 +310,50 @@ public final class ExtensionMoreInvokedFixtures {
         api.put("groupsGetterReturnsAssignedSet", defaults.getGroups() == assigned);
         defaults.getGroups().add("workers");
         api.put("groupsGetterMutationVisible", assigned.size() == 1);
+        return api;
+    }
+
+    private static Map<String, Object> liteClientInfoApi() {
+        Map<String, Object> api = new TreeMap<>();
+        api.put("rpcMethods", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getLiteClientInfo"))
+            .map(java.lang.reflect.Method::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderConstructors", Arrays.stream(GetLiteClientInfoRequestHeader.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("requestHeaderPublicFields", publicFields(GetLiteClientInfoRequestHeader.class));
+        api.put("requestHeaderPublicMethods", publicMethods(GetLiteClientInfoRequestHeader.class));
+        GetLiteClientInfoRequestHeader defaultHeader = new GetLiteClientInfoRequestHeader();
+        api.put("requestHeaderDefaultMaxCount", defaultHeader.getMaxCount());
+        defaultHeader.setMaxCount(0);
+        try {
+            defaultHeader.checkFields();
+            api.put("nonpositiveMaxCountRejected", false);
+        } catch (org.apache.rocketmq.remoting.exception.RemotingCommandException expected) {
+            api.put("nonpositiveMaxCountRejected", true);
+        }
+        api.put("responseBodyConstructors", Arrays.stream(GetLiteClientInfoResponseBody.class.getConstructors())
+            .map(java.lang.reflect.Constructor::toGenericString).sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        api.put("responseBodyPublicFields", publicFields(GetLiteClientInfoResponseBody.class));
+        api.put("responseBodyPublicMethods", publicMethods(GetLiteClientInfoResponseBody.class));
+        GetLiteClientInfoResponseBody defaults = new GetLiteClientInfoResponseBody();
+        Map<String, Object> values = new TreeMap<>();
+        values.put("parentTopic", defaults.getParentTopic());
+        values.put("group", defaults.getGroup());
+        values.put("clientId", defaults.getClientId());
+        values.put("lastAccessTime", defaults.getLastAccessTime());
+        values.put("lastConsumeTime", defaults.getLastConsumeTime());
+        values.put("liteTopicCount", defaults.getLiteTopicCount());
+        values.put("liteTopicSetNull", defaults.getLiteTopicSet() == null);
+        api.put("responseBodyDefaults", values);
+        Set<String> assigned = new HashSet<>();
+        defaults.setLiteTopicSet(assigned);
+        api.put("topicSetGetterReturnsAssignedSet", defaults.getLiteTopicSet() == assigned);
+        defaults.getLiteTopicSet().add("%LMQ%lite-parent%orders");
+        api.put("topicSetGetterMutationVisible", assigned.size() == 1);
         return api;
     }
 
@@ -761,6 +811,73 @@ public final class ExtensionMoreInvokedFixtures {
                 parentApi.shutdown();
             }
             record(dir, verify, parent, name, RequestCode.GET_PARENT_TOPIC_INFO, outcome);
+        }
+
+        for (String name : new String[] {"lite-client-info-success", "lite-client-info-defaults",
+            "lite-client-info-null-body", "lite-client-info-null-inputs", "lite-client-info-error",
+            "lite-client-info-unknown", "lite-client-info-invalid-body"}) {
+            Capture lite = new Capture();
+            ClientConfig liteConfig = new ClientConfig();
+            liteConfig.setVipChannelEnabled(false);
+            MQClientAPIImpl liteApi = new MQClientAPIImpl(new NettyClientConfig(), null, null, liteConfig,
+                null, nettyConfig -> lite.proxy());
+            if (name.equals("lite-client-info-success")) {
+                GetLiteClientInfoResponseBody body = new GetLiteClientInfoResponseBody();
+                body.setParentTopic("lite-parent");
+                body.setGroup("workers");
+                body.setClientId("client-a");
+                body.setLastAccessTime(1000);
+                body.setLastConsumeTime(500);
+                body.setLiteTopicCount(3);
+                body.setLiteTopicSet(new java.util.LinkedHashSet<>(Arrays.asList(
+                    "%LMQ%lite-parent%orders", null, "%LMQ%lite-parent%payments")));
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(body.encode());
+            } else if (name.equals("lite-client-info-defaults")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new GetLiteClientInfoResponseBody().encode());
+            } else if (name.equals("lite-client-info-null-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+            } else if (name.equals("lite-client-info-error")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SYSTEM_ERROR, "offline");
+            } else if (name.equals("lite-client-info-unknown")) {
+                lite.response = RemotingCommand.createResponseCommand(987654, "offline");
+            } else if (name.equals("lite-client-info-invalid-body")) {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new byte[] {'{'});
+            } else {
+                lite.response = RemotingCommand.createResponseCommand(ResponseCode.SUCCESS, null);
+                lite.response.setBody(new GetLiteClientInfoResponseBody().encode());
+            }
+            String parentTopic = name.equals("lite-client-info-null-inputs") ? null : "lite-parent";
+            String group = name.equals("lite-client-info-null-inputs") ? null : "workers";
+            String clientId = name.equals("lite-client-info-null-inputs") ? null : "client-a";
+            String outcome;
+            try {
+                GetLiteClientInfoResponseBody result = liteApi.getLiteClientInfo(
+                    "broker:10911", parentTopic, group, clientId, 10000);
+                if (result == null) {
+                    outcome = "null";
+                } else if (name.equals("lite-client-info-success")) {
+                    outcome = "parent=" + result.getParentTopic() + ";group=" + result.getGroup() +
+                        ";client=" + result.getClientId() + ";lastAccess=" + result.getLastAccessTime() +
+                        ";lastConsume=" + result.getLastConsumeTime() + ";liteTopics=" +
+                        result.getLiteTopicCount() + ";topicSet=" + result.getLiteTopicSet().size() +
+                        ";containsNull=" + result.getLiteTopicSet().contains(null);
+                } else {
+                    outcome = "parent=" + result.getParentTopic() + ";group=" + result.getGroup() +
+                        ";client=" + result.getClientId() + ";lastAccess=" + result.getLastAccessTime() +
+                        ";lastConsume=" + result.getLastConsumeTime() + ";liteTopics=" +
+                        result.getLiteTopicCount() + ";topicSetNull=" + (result.getLiteTopicSet() == null);
+                }
+            } catch (MQBrokerException failure) {
+                outcome = "MQBrokerException;code=" + failure.getResponseCode();
+            } catch (com.alibaba.fastjson2.JSONException failure) {
+                outcome = "JSONException;malformed";
+            } finally {
+                liteApi.shutdown();
+            }
+            record(dir, verify, lite, name, RequestCode.GET_LITE_CLIENT_INFO, outcome);
         }
 
         HeartbeatData extHeartbeat = new HeartbeatData();
