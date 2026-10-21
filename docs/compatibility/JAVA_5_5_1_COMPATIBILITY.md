@@ -1,5 +1,12 @@
 # Java 5.5.1 compatibility evidence
 
+The pinned `Message`, `MessageExt`, and `MessageClientExt` public-method and
+virtual-subtype crosswalk is recorded in
+[PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md](PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md).
+It inventories 79 declared public instance methods against the Rust API and
+the invoked Java/Rust direct-consume evidence; the broader P18-V01 inventory
+remains in progress.
+
 Phase 18 `exportRocksDBConfigToJson` (2026-10-21): Rust maps pinned
 `MQClientAPIImpl.exportRocksDBConfigToJson(String,List,long)` request 355 and
 the `ExportRocksDBConfigToJsonRequestHeader`/`ConfigType` APIs. Enum parsing

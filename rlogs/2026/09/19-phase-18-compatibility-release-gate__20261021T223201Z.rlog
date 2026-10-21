@@ -88,3 +88,27 @@ remain untouched and unstaged.
   release version selection and publication remain post-Phase-19 work.
 - Broad P18-V01 and current-revision GitHub Ubuntu/native Windows P18-V04
   evidence remain open. Protected Phase 19 paths remain unstaged.
+
+## P18-V01 message-family method crosswalk — 2026-10-21
+
+- The first method inventory was read from the separate Java working tree,
+  which is 5.3.3. It was discarded as evidence. Re-ran the inventory directly
+  from pinned Java tag commit `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- Crosswalked all 34 `Message`, 41 `MessageExt`, and 4 `MessageClientExt`
+  declared public non-static instance methods, with constructors documented
+  separately. Added the detailed mapping at
+  `docs/compatibility/PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md` and linked it
+  from the Java compatibility evidence and release checklist.
+- Pinned runtime fixture SHA-256 values: `consumer-operations.json`
+  `a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`;
+  `records.json`
+  `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+- `cargo test -p rocketmq-classic-common --test message_decode --locked`
+  passed (26 tests); `cargo test -p rocketmq-classic-consumer --test
+  runtime_direct_consume --locked` passed (4 tests); pinned Maven `verify`
+  passed, including 29 direct-consume cases and typed Java/Rust cross-decodes.
+- This supersedes prior open notes for remaining message-family override
+  methods and subtype live-map identity. Broad P18-V01 reconciliation and
+  current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
+- The protected Phase 19 paths remain untouched and unstaged. No push, remote
+  CI, Broker, or Docker run was performed.

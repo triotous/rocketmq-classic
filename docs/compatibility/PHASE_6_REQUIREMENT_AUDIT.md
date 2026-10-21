@@ -1734,3 +1734,27 @@ all 26 tests in the Common message API test file pass. Current `records.json`
 SHA-256: `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
 Strict all-target/all-feature Clippy, formatting, diff checks, and pinned Maven
 verify pass; broad P18-V01 remains open.
+
+## P18-V01 complete declared message-family method crosswalk — 2026-10-21
+
+Audited the pinned 5.5.1 source at
+`efa1be59d6fc747ad220f036c86030f05f0419f9`, not the separate 5.3.3 Java
+working tree. The 34 `Message`, 41 `MessageExt`, and 4 `MessageClientExt`
+declared public non-static instance methods are mapped to Rust APIs and
+`MessageExtSubtype` hooks in
+`PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md`. The source's constructors are
+crosswalked separately. This confirms there are no unreviewed declared
+message-family methods; it supersedes earlier notes leaving other inherited
+message methods and custom live properties-map identity open.
+
+The invoked direct-consume fixture exercises custom `MessageExt` metadata and
+property overrides plus custom `MessageClientExt` offset/effective-ID
+overrides. `consumer-operations.json` SHA-256 is
+`a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d` and
+`records.json` SHA-256 is
+`d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+Common message tests pass (26), direct-consume tests pass (4), and pinned Maven
+`verify` passes with 29 direct-consume cases and Java/Rust cross-decodes. This
+closes the declared message-family method and selected virtual-override slice;
+the broader P18-V01 settings/API/flow/input/error/reverse-export audit and
+current GitHub Ubuntu/native Windows P18-V04 evidence remain open.

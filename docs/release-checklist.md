@@ -6953,3 +6953,19 @@ owner-specific checks belong in the manual handoff.
   dependency resolution remain post-Phase-19 tasks; no publication or release
   claim is made. Broad P18-V01 and current-revision GitHub Ubuntu/native
   Windows P18-V04 evidence remain open.
+
+## P18-V01 message-family method crosswalk — 2026-10-21
+
+- [x] Crosswalk all pinned 5.5.1 public instance methods declared by `Message`
+  (34), `MessageExt` (41), and `MessageClientExt` (4), with constructors and
+  virtual subtype hooks mapped separately:
+  [message-family crosswalk](compatibility/PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md).
+- [x] Pinned Java consumer-operation fixture hash:
+  `a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`;
+  Common message tests 26/26, direct-consume tests 4/4, and offline Maven
+  `verify` passed (29 direct-consume cases and bidirectional fixture
+  cross-decodes).
+- This closes the declared message-family method slice and supersedes its
+  stale inherited-method/live-map open notes. Other P18-V01 public API,
+  settings, control-flow, input/error and reverse-export reconciliation, plus
+  current-revision GitHub Ubuntu/native Windows P18-V04 evidence, remain open.
