@@ -482,6 +482,27 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Exports Broker POP records through Java's `MQClientAPIImpl.exportPopRecord`.
+    /// This operation sends code 200056 without a header or body and uses the
+    /// supplied address unchanged, including when VIP mode is enabled.
+    pub async fn export_pop_record(&self, addr: &str, deadline: Instant) -> Result<(), RpcError> {
+        let code = request::POP_ROLLBACK;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     pub async fn lite_subscription_ctl(
         &self,
         addr: &str,
@@ -728,5 +749,101 @@ mod change_invisible_tests {
                 format!("17 123 456 2 {retry} broker 2 17")
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod export_pop_record_tests {
+    use super::MQClientApi;
+    use crate::config::ClientConfig;
+    use bytes::BytesMut;
+    use rocketmq_classic_protocol::codes::{LanguageCode, request};
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame,
+    };
+    use serde_json::Value;
+    use std::{
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::Instant,
+    };
+
+    #[tokio::test]
+    async fn export_pop_record_matches_java_fixture_and_keeps_supplied_address_with_vip_enabled() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let signatures = fixture["exportPopRecordApi"].as_array().unwrap();
+        assert!(signatures.iter().any(|signature| signature
+            == "void org.apache.rocketmq.client.impl.MQClientAPIImpl.exportPopRecord(java.lang.String,long)"));
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("export-pop-record");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        for case in fixture["exportPopRecordOperations"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let expected_code = case["responseCode"].as_i64().unwrap() as i32;
+            let expected_remark = case["responseRemark"].as_str().map(str::to_owned);
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+
+                let mut reply = RemotingCommand {
+                    code: expected_code,
+                    opaque: request.opaque,
+                    remark: expected_remark,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+                request
+            });
+
+            let result = api
+                .export_pop_record(&address, Instant::now() + Duration::from_secs(2))
+                .await;
+            if case["outcome"] == "returned" {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(crate::error::RpcError::Response {
+                        request_code: request::POP_ROLLBACK,
+                        peer,
+                        code,
+                        remark,
+                    }) if peer == address
+                        && code == expected_code
+                        && remark.as_deref() == case["errorRemark"].as_str()
+                ));
+            }
+
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, request::POP_ROLLBACK);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.ext_fields.is_none());
+            assert!(request.body.is_none());
+        }
+        client.shutdown().await;
     }
 }

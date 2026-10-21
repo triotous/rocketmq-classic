@@ -274,6 +274,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("resumeCheckHalfMessageOperations", resumeCheckHalfMessageOperations());
+        result.put("exportPopRecordApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("exportPopRecord"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("exportPopRecordOperations", exportPopRecordOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -2544,6 +2551,74 @@ public final class ProducerCoreFixtures {
             api.shutdown();
         }
         result.put("requestExtFields", requests.get(0).get("extFields"));
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> exportPopRecordOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(exportPopRecordCase("success",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(exportPopRecordCase("non-success",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> exportPopRecordCase(
+        String name,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            responseCode, responseRemark));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("export-pop-record");
+        config.setVipChannelEnabled(true);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand reply = replies.removeFirst();
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                call.put("responseCode", reply.getCode());
+                                call.put("responseRemark", reply.getRemark());
+                                requests.add(call);
+                                return reply;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.exportPopRecord("127.0.0.1:10913", 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorRemark", error.getErrorMessage());
+        } finally {
+            api.shutdown();
+        }
         result.put("requests", requests);
         return result;
     }

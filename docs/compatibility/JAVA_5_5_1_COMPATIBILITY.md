@@ -589,3 +589,14 @@ null, the empty body and the VIP port offset. Producer core fixture SHA-256:
 `bbeea411ebb9a1cbf177a4f0efddbf85023a475288bd123764959acca248efc6`. This
 closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh remain
 open.
+
+Phase 18 `exportPopRecord` RPC (2026-10-21): pinned
+`MQClientAPIImpl.exportPopRecord(String,long)` sends request 200056 (registry
+name `POP_ROLLBACK`) with no header/body and uses the supplied address unchanged,
+including when VIP is enabled. Rust returns success for `SUCCESS` and preserves
+non-success responses as RPC errors. The invoked Java fixture and Rust
+VIP-enabled loopback compare the signature, address, request envelope and both
+response outcomes. Producer core fixture SHA-256:
+`d94fd1f95eba2caf6ce77e312cd53a4109be74048b23db5ad694a2c5b7109242`. This
+closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh remain
+open.

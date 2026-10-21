@@ -1331,3 +1331,15 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   fixture SHA-256: `bbeea411ebb9a1cbf177a4f0efddbf85023a475288bd123764959acca248efc6`.
   This closes the named RPC mapping only; the broader P18-V01 inventory remains
   open.
+
+- P18-V01 `exportPopRecord` (2026-10-21): the pinned public
+  `MQClientAPIImpl.exportPopRecord(String,long)` sends request 200056 (the
+  registry's `POP_ROLLBACK` name) with no header or body, passes the supplied
+  Broker address unchanged even when VIP mode is enabled, and reports non-
+  success response codes as Broker errors. Core now exposes `export_pop_record`
+  with those semantics. Invoked Java fixtures and a VIP-enabled Rust loopback
+  compare the signature, exact address behavior, request envelope, success and
+  Broker rejection. Producer core fixture SHA-256:
+  `d94fd1f95eba2caf6ce77e312cd53a4109be74048b23db5ad694a2c5b7109242`.
+  This closes the named RPC mapping only; the broader P18-V01 inventory remains
+  open.

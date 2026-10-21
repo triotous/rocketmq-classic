@@ -5666,3 +5666,21 @@ owner-specific checks belong in the manual handoff.
   `git diff --check` passed.
 - The named RPC mapping is closed after validation. Broad P18-V01 and
   P18-V02/P18-V03/P18-V04 gates remain open.
+
+## P18-V01 POP record export RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::export_pop_record` for pinned Java
+  `MQClientAPIImpl.exportPopRecord(String,long)`, request 200056
+  (`POP_ROLLBACK`). The request has no header or body, uses the supplied
+  address unchanged even when VIP is enabled, and reports non-success replies.
+- [x] Invoked Java fixture and Rust VIP-enabled loopback compare the exact
+  signature, request envelope, address behavior, success and Broker rejection.
+- [x] Current producer core fixture SHA-256:
+  `d94fd1f95eba2caf6ce77e312cd53a4109be74048b23db5ad694a2c5b7109242`.
+- [x] Core all-feature locked suite (183 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, Producer pinned
+  fixture comparison, pinned Java Maven `verify` (37 scenarios, 67 typed-header
+  frames, 15 typed-body fixtures and Java/Rust cross-decodes), formatting and
+  scoped `git diff --check` passed.
+- The named RPC mapping is closed after validation. Broad P18-V01 and
+  P18-V02/P18-V03/P18-V04 gates remain open.
