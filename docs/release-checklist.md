@@ -6193,9 +6193,16 @@ owner-specific checks belong in the manual handoff.
 - [x] Focused Common tests, the full Common suite, direct-consume fixture
   comparison and Maven `verify` pass. Code commits: `40a02244` and
   `6e2e3d09`.
-- The broader inherited/public/DTO/config and reverse-export audit, other raw
-  `MessageExt` subclass inputs, and remaining rebalance assignment branches
-  remain open P18-V01 work.
+- [x] Pinned subtype inventory follow-up: client decoding with
+  `MessageDecoder.decode(..., isClient=true)` and `decodeMessage` produces
+  `MessageClientExt`; the client PullAPIWrapper invokes `decodeMessage`. The
+  only other built-in subclasses in the pinned tree are broker-side
+  `MessageExtBrokerInner` and `MessageExtBatch`, not constructed by client
+  sources. Standard client-produced subtype paths are covered above.
+- Rust does not preserve arbitrary application-defined Java `MessageExt`
+  subclasses or custom virtual methods/fields. That adaptation boundary, the
+  broader inherited/public/DTO/config and reverse-export audit, and remaining
+  rebalance assignment branches remain open P18-V01 work.
 
 ## Current Phase 18 local gate — 2026-10-21
 

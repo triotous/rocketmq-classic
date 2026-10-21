@@ -77,8 +77,19 @@ message decoding apply the same subtype state. The invoked Java fixture records
 the callback class; the 26-case Rust comparison checks class, effective ID,
 offset ID and offset isolation. Fixture SHA-256:
 `d0b4e39ba340e509d1ddc2665da122a0cf161ed757cc1d9ac2cbd022edb7d83f`.
-Other public `MessageExt` subclasses and the broader inherited/API audit
-remain open P18-V01 work.
+
+Pinned subtype inventory follow-up (2026-10-21): at source commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`, client decoding with
+`MessageDecoder.decode(..., isClient=true)` creates `MessageClientExt`, and
+`MessageDecoder.decodeMessage(MessageExt, List)` creates a `MessageClientExt`
+for each inner batch message; `PullAPIWrapper` invokes the latter. The only
+other built-in subclasses in the pinned source tree are broker-side
+`MessageExtBrokerInner` and `MessageExtBatch`; the client sources do not
+construct them. The standard client-produced subtype paths are covered by the
+marker and direct-consume fixture above. Rust `MessageExt` does not preserve
+arbitrary application-defined Java subclasses or their custom methods and
+fields; that cross-language extension boundary and the broader inherited/API
+audit remain open P18-V01 work.
 
 Callback message/queue topics retain null versus empty input. The retry-topic
 property is read for every message, preserving Java `getProperty`'s observable
