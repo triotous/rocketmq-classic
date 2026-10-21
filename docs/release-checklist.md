@@ -6814,3 +6814,32 @@ owner-specific checks belong in the manual handoff.
   reconciliation and current-revision GitHub Ubuntu/native Windows P18-V04
   evidence remain open. No push, remote CI, Broker or Docker run was performed;
   protected Phase 19 paths were left untouched.
+
+## P18-V01 Broker registration APIs and current-revision workspace gates — 2026-10-21 (`ada87ea9`)
+
+- [x] Added `MQClientApi::add_broker` and `remove_broker` for pinned Java
+  requests 902/903, including nullable public typed headers, signed broker ID,
+  direct address handling, caller timeout, and success/error handling.
+  Invoked Java fixtures cover header fields, nulls, ID boundaries, and
+  operation results; Rust loopbacks verify requests, outcomes, and timeout
+  enforcement. Producer core fixture SHA-256:
+  `9510b46415e7f00c7932c95d9e33dbb02e9b9cc56d1afecec01dfede60ae5e6a`.
+- [x] `cargo test --workspace --locked --quiet` and
+  `cargo test --workspace --all-features --locked --quiet` pass on
+  `ada87ea9`. Pinned `mvn -q -f compat/java-reference/pom.xml verify` passes
+  with 37 scenarios, 85 typed headers, 16 typed bodies, and Java/Rust
+  cross-decodes. Existing JDK/Netty `Unsafe` and reflective-final-field
+  warnings were emitted.
+- [x] Strict all-target/all-feature Clippy passed on `ada87ea9`; comparator
+  self-test and manifest validation passed on the current P18 test inventory.
+  Documentation whitespace checks are recorded in the slice log.
+- [x] Pinned-source review classifies the seven controller administration
+  facade workflows (`getControllerMetaData`, `getInSyncStateData`,
+  `getBrokerEpochCache`, `getControllerConfig`, `updateControllerConfig`,
+  `electMaster`, `cleanControllerBrokerData`) as
+  `TOOLS_OUT_OF_SCOPE`, consistent with Phase 17's separate
+  `rocketmq-tools` exclusion.
+- Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+  reconciliation and current-revision GitHub Ubuntu/native Windows P18-V04
+  evidence remain open. No push, remote CI, Broker, or Docker run was
+  performed; protected Phase 19 paths remain untouched.

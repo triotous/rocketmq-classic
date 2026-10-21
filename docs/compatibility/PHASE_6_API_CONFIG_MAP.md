@@ -1798,3 +1798,21 @@ the direct Broker wrapper and cross-Broker merger. The direct fixture test and
 `query_message_keys_match_java_whitespace_and_split_semantics` cover both
 paths; current fixture SHA-256 is
 `16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
+
+## Direct Broker registration APIs — 2026-10-21
+
+Pinned `MQClientAPIImpl.addBroker(String,String,long)` sends request 902 with
+nullable `configPath`; `removeBroker(String,String,String,long,long)` sends
+request 903 with nullable `brokerClusterName` and `brokerName`, plus the
+signed 64-bit `brokerId`. Core exposes `MQClientApi::add_broker` and
+`remove_broker`, preserves the supplied Broker address without VIP rewriting,
+uses each caller-provided timeout, returns on `SUCCESS`, and classifies other
+response codes as Broker errors. Public typed
+`AddBrokerRequestHeader`/`RemoveBrokerRequestHeader` models preserve Java's
+nullable fields and boxed-`Long` header surface. Invoked Java fixtures and Rust
+loopback cases cover exact signatures and request fields, null values, both
+signed broker-ID boundaries, success/rejection, and address/timeout behavior;
+a delayed peer checks that `add_broker` enforces its timeout. Typed Java↔Rust
+header fixtures are checked in. Producer core fixture SHA-256:
+`9510b46415e7f00c7932c95d9e33dbb02e9b9cc56d1afecec01dfede60ae5e6a`.
+This closes these direct API/header rows only; broad P18-V01 remains open.

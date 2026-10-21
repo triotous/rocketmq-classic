@@ -615,3 +615,28 @@ multi-Broker result merge. `mq_client_admin_query_message_matches_invoked_java_f
 and `query_message_keys_match_java_whitespace_and_split_semantics` compare the
 same outcomes. Expanded fixture SHA-256:
 `16f61c5e859f44062a2ec732e2603ad97b38719b9a0f8fa23fc09ffa5112dfd3`.
+
+## Tools-only controller administration scope
+
+The pinned Java `MQClientAPIImpl` also has public methods
+`getControllerMetaData`, `getInSyncStateData`, `getBrokerEpochCache`,
+`getControllerConfig`, `updateControllerConfig`, `electMaster`, and
+`cleanControllerBrokerData`. The pinned-source call-site scan finds these
+operations are exposed through `tools/.../MQAdminExt` and
+`DefaultMQAdminExt`, and invoked by `tools/.../DefaultMQAdminExtImpl` and
+controller/HA administration commands. `getInSyncStateData`, `electMaster`,
+and `cleanControllerBrokerData` also compose `getControllerMetaData` inside
+`MQClientAPIImpl`. These are not `rocketmq-client` `MQAdmin` methods or
+Producer/Push/Pull runtime operations. Following the Phase 17 contract to
+exclude the separate `rocketmq-tools` suite, the seven controller admin
+facade workflows are `TOOLS_OUT_OF_SCOPE`. The earlier
+`getInSyncStateData` classification is unchanged. The operation-specific
+call-site evidence was checked at pinned source commit `efa1be59d6fc747ad220f036c86030f05f0419f9` with:
+
+```bash
+git -C /Users/bruce.tsai/Projects/3rd/rocketmq grep -n -E 'getControllerMetaData|getInSyncStateData|getBrokerEpochCache|getControllerConfig|updateControllerConfig|electMaster|cleanControllerBrokerData' efa1be59d6fc747ad220f036c86030f05f0419f9 -- client/src/main/java tools/src/main/java common/src/main/java remoting/src/main/java
+```
+
+This narrows the tools-only disposition to these admin facade workflows; the
+broader P18-V01 client source/API/settings/input/error/reverse-export audit
+remains open.

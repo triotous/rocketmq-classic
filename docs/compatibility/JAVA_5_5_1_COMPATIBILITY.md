@@ -811,3 +811,15 @@ null/malformed bodies, and Broker errors. The Rust fixture differential and
 VIP loopback verify the request and decoded response. Success fixture
 SHA-256: `9e4e1ad1abd344d58ba5939b2fd204a4237c4e60570ceba9c878790aee85ae8b`. This closes this RPC/DTO slice only; broad P18-V01
 remains open.
+
+Phase 18 Broker registration RPCs (2026-10-21): Rust maps the pinned
+`MQClientAPIImpl.addBroker(String,String,long)` and
+`removeBroker(String,String,String,long,long)` calls to requests 902 and 903.
+Their typed headers preserve nullable Java values and the signed boxed-`Long`
+broker ID. Both operations use the supplied Broker address unchanged, honor
+the caller timeout, return on success, and preserve Broker rejection errors.
+Invoked Java and Rust fixtures cover exact signatures, null fields,
+`Long.MIN_VALUE`/`Long.MAX_VALUE`, address and timeout values, and outcomes;
+a delayed scripted peer checks timeout enforcement. Producer core fixture
+SHA-256 and gate details are in the Phase 18 release checklist. This closes
+these direct RPC/header rows only; broad P18-V01 remains open.

@@ -1686,3 +1686,17 @@ represented. Fixture SHA-256:
 `30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
 Other inherited methods, broad P18-V01 reconciliation and P18-V04 platform
 evidence remain open.
+
+## Direct Broker registration APIs — 2026-10-21
+
+The pinned Java `MQClientAPIImpl.addBroker` and `removeBroker` methods map to
+requests 902 and 903. Rust's Core API preserves their nullable request-header
+fields, signed 64-bit broker ID, supplied-address behavior, caller timeout,
+success result, and Broker error boundary. Invoked Java fixtures, typed
+header cross-decodes, loopback request checks, and delayed-peer timeout
+coverage exercise the operations. Producer core fixture SHA-256:
+`9510b46415e7f00c7932c95d9e33dbb02e9b9cc56d1afecec01dfede60ae5e6a`.
+Default and all-feature workspace tests pass on the current code revision;
+pinned Maven `verify` passes with 37 scenarios, 85 typed headers, and 16 typed
+bodies. This closes the direct Broker registration slice; broad P18-V01
+remains open.
