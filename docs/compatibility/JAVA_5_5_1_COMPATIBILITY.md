@@ -600,3 +600,13 @@ response outcomes. Producer core fixture SHA-256:
 `d94fd1f95eba2caf6ce77e312cd53a4109be74048b23db5ad694a2c5b7109242`. This
 closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh remain
 open.
+
+Phase 18 `switchTimerEngine` RPC (2026-10-21): pinned
+`MQClientAPIImpl.switchTimerEngine(String,String,long)` sends request 5001 with
+the engine type in the `E_T` ext field, preserves empty strings, uses the
+supplied address unchanged when VIP is enabled, and raises on non-success
+responses. The invoked Java fixture and Rust loopback compare the signature,
+field, empty body, address and success/error results. Producer core fixture
+SHA-256: `bb28b038fdd66160007d8c757e53ed4cb78ebcad0a91b4ff9d950fa04eccee6c`.
+This closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh
+remain open.

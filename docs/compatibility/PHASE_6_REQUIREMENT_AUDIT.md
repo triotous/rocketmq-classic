@@ -1343,3 +1343,15 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   `d94fd1f95eba2caf6ce77e312cd53a4109be74048b23db5ad694a2c5b7109242`.
   This closes the named RPC mapping only; the broader P18-V01 inventory remains
   open.
+
+- P18-V01 `switchTimerEngine` (2026-10-21): the pinned public
+  `MQClientAPIImpl.switchTimerEngine(String,String,long)` sends request 5001
+  with `E_T` in the ext-fields map, including an empty string, uses the supplied
+  Broker address unchanged with VIP enabled, and reports non-success replies as
+  Broker errors. Core now exposes `switch_timer_engine` with those semantics.
+  Invoked Java fixtures and a VIP-enabled Rust loopback compare the signature,
+  field value, request body, address and response outcomes. Producer core
+  fixture SHA-256:
+  `bb28b038fdd66160007d8c757e53ed4cb78ebcad0a91b4ff9d950fa04eccee6c`.
+  This closes the named RPC mapping only; the broader P18-V01 inventory remains
+  open.

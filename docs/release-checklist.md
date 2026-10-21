@@ -5667,6 +5667,24 @@ owner-specific checks belong in the manual handoff.
 - The named RPC mapping is closed after validation. Broad P18-V01 and
   P18-V02/P18-V03/P18-V04 gates remain open.
 
+## P18-V01 timer-engine switch RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::switch_timer_engine` for pinned Java
+  `MQClientAPIImpl.switchTimerEngine(String,String,long)`, request 5001. It
+  sends `E_T` including an empty string, uses the supplied address unchanged
+  when VIP is enabled, and preserves Broker errors.
+- [x] Invoked Java fixture and Rust VIP-enabled loopback compare signature,
+  field value, empty body, address behavior, success and Broker rejection.
+- [x] Current producer core fixture SHA-256:
+  `bb28b038fdd66160007d8c757e53ed4cb78ebcad0a91b4ff9d950fa04eccee6c`.
+- [x] Core all-feature locked suite (184 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, Producer pinned
+  fixture comparison, pinned Java Maven `verify` (37 scenarios, 67 typed-header
+  frames, 15 typed-body fixtures and Java/Rust cross-decodes), formatting and
+  scoped `git diff --check` passed.
+- The named RPC mapping is closed after validation. Broad P18-V01 and
+  P18-V02/P18-V03/P18-V04 gates remain open.
+
 ## P18-V01 POP record export RPC slice — 2026-10-21
 
 - [x] Added `MQClientApi::export_pop_record` for pinned Java

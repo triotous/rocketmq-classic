@@ -503,6 +503,35 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Switches the Broker timer engine through Java's
+    /// `MQClientAPIImpl.switchTimerEngine`. The `E_T` value is sent as a
+    /// command extension field; the supplied address is used unchanged.
+    pub async fn switch_timer_engine(
+        &self,
+        addr: &str,
+        engine_type: &str,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::SWITCH_TIMER_ENGINE;
+        let mut fields = rocketmq_classic_protocol::header::HeaderMap::new();
+        fields.insert("E_T".into(), engine_type.into());
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     pub async fn lite_subscription_ctl(
         &self,
         addr: &str,
@@ -765,6 +794,7 @@ mod export_pop_record_tests {
     };
     use serde_json::Value;
     use std::{
+        collections::BTreeMap,
         sync::{Arc, RwLock},
         time::Duration,
     };
@@ -843,6 +873,90 @@ mod export_pop_record_tests {
             assert_eq!(request.language, Some(LanguageCode::Java));
             assert!(request.ext_fields.is_none());
             assert!(request.body.is_none());
+        }
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn switch_timer_engine_matches_java_fixture_and_keeps_supplied_address_with_vip_enabled()
+    {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let signatures = fixture["switchTimerEngineApi"].as_array().unwrap();
+        assert!(signatures.iter().any(|signature| signature
+            == "void org.apache.rocketmq.client.impl.MQClientAPIImpl.switchTimerEngine(java.lang.String,java.lang.String,long)"));
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("switch-timer-engine");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        for case in fixture["switchTimerEngineOperations"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let expected_code = case["responseCode"].as_i64().unwrap() as i32;
+            let expected_remark = case["responseRemark"].as_str().map(str::to_owned);
+            let expected_fields: BTreeMap<String, String> = case["requests"][0]["extFields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                .collect();
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+
+                let mut reply = RemotingCommand {
+                    code: expected_code,
+                    opaque: request.opaque,
+                    remark: expected_remark,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+                request
+            });
+
+            let result = api
+                .switch_timer_engine(
+                    &address,
+                    case["engineType"].as_str().unwrap(),
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await;
+            if case["outcome"] == "returned" {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(crate::error::RpcError::Response {
+                        request_code: request::SWITCH_TIMER_ENGINE,
+                        peer,
+                        code,
+                        remark,
+                    }) if peer == address
+                        && code == expected_code
+                        && remark.as_deref() == case["errorRemark"].as_str()
+                ));
+            }
+
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, request::SWITCH_TIMER_ENGINE);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.body.is_none());
+            assert_eq!(request.ext_fields.unwrap_or_default(), expected_fields);
         }
         client.shutdown().await;
     }
