@@ -6324,3 +6324,22 @@ owner-specific checks belong in the manual handoff.
   reverse-export audit. Current Ubuntu/native Windows P18-V04 evidence and
   Phase 19 live Broker/Docker scenarios remain pending. Protected Phase 19
   worktree paths were left untouched and unstaged.
+
+## P18-V01 ProcessQueue timestamp input branches — 2026-10-21 (`e7dd0a9b`)
+
+- [x] Added pinned Java and Rust comparisons for absent and empty
+  `CONSUME_START_TIME`, Unicode decimal digits accepted by `Long.parseLong`,
+  and orderly-mode early return before malformed timestamp parsing. Fixture
+  SHA-256: `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`.
+- [x] Default/all-feature workspace tests, strict workspace Clippy, pinned
+  Maven verify (37 scenarios, 83 typed headers, 16 typed bodies), differential
+  self-test/manifest, stress smoke, fuzz smoke, release examples, workspace
+  bench compilation, package/metadata checks, and UTC/Asia/Taipei Unique ID
+  checks pass on this follow-up tree. The earlier current-code offline benchmark
+  remains applicable because this commit changes only fixtures, assertions,
+  and documentation.
+- Full outcomes are recorded in
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T163042Z.rlog`.
+  Broad P18-V01, GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19
+  live Broker/Docker scenarios remain open. Protected Phase 19 worktree paths
+  were left untouched and unstaged.
