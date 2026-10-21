@@ -6511,3 +6511,20 @@ owner-specific checks belong in the manual handoff.
   supplemental P18-V02 gates remain open. Current Ubuntu/native Windows
   P18-V04 evidence and Phase 19 Broker/Docker scenarios remain separate.
   Protected Phase 19 paths were not changed or staged.
+
+## P18-V01 property-derived `MessageExt` tag/key getters — 2026-10-21 (`3230a7c2`)
+
+- [x] Rust `MessageExt::tags()` and `keys()` now call the subtype's virtual
+  property hook, matching Java `getTags()`/`getKeys()` delegation to
+  `getProperty(String)`.
+- [x] The invoked Java custom subtype returns `subtype-tag` and `subtype-key`;
+  direct-consume callbacks compare both values and read counts. The ProcessQueue
+  `MAX_OFFSET` override still compares `msgAccCnt=12`. Fixture SHA-256:
+  `7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.
+- [x] Focused `runtime_direct_consume` integration tests and Java fixture
+  generation pass on code revision `3230a7c2`; full workspace and Maven
+  verification remain part of the next current-tree gate refresh.
+- Other inherited getter/setter behavior, broad P18-V01 reconciliation and
+  supplemental P18-V02 gates remain open. Current Ubuntu/native Windows
+  P18-V04 evidence and Phase 19 Broker/Docker scenarios remain separate;
+  protected Phase 19 paths were not changed or staged.

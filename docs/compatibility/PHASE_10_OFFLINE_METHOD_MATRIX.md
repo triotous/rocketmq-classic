@@ -260,3 +260,10 @@ subtype adapter now dispatches virtual `getProperty(String)`. The invoked Java
 `msgAccCnt` as `12`; Rust matches the value and getter count. Other inherited
 virtual methods remain open. Fixture: `fixtures/runtime/consumer-operations.json`,
 SHA-256 `2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.
+
+P18-V01 caller-defined `MessageExt` tag/key follow-up (2026-10-21): Rust
+`tags()` and `keys()` now use the subtype's virtual property hook, as Java
+`getTags()` and `getKeys()` do. The invoked direct-consume callback compares
+the custom values and read counts with Java. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.

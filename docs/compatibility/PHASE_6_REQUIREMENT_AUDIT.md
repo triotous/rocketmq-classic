@@ -95,6 +95,13 @@ Java and Rust compute `msgAccCnt` as `12`; the fixture also compares the getter
 call count. Fixture SHA-256:
 `2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.
 
+P18-V01 subtype property-derived getter follow-up (2026-10-21): Rust
+`MessageExt::tags` and `keys` now route through the subtype's virtual property
+hook, matching Java `getTags`/`getKeys` calls to `getProperty`. The invoked
+direct-consume callback compares `subtype-tag` and `subtype-key` and both read
+counts. Fixture SHA-256:
+`7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, subtype behavior beyond the adapter's selected hooks,

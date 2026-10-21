@@ -102,6 +102,8 @@ maps `getFlag`/`setFlag`, so Push retry/send-back message copies read the
 subtype's virtual flag value.
 It also maps `getProperty`; ProcessQueue uses an overridden `MAX_OFFSET` value
 to update its accumulated-message count.
+Rust `tags()` and `keys()` route through this same hook, matching Java's
+property-derived `getTags()` and `getKeys()` methods.
 `ProcessQueue.putMessage` also uses the subtype's virtual `getQueueOffset` as
 its message-tree key. The
 `concurrent-custom-subtype` case executes Java overrides during initial topic
@@ -112,7 +114,7 @@ compares dispatch, count, body size, tree key and setter side effects against
 Rust. The callback records custom flag `71` and the setter count. Current
 fixture verifies the custom `MAX_OFFSET` getter and `msgAccCnt` value `12`.
 Current fixture SHA-256:
-`2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.
+`7a5fb470b3e3ad32f55b02d9ac77894b7a98439aff695f4c2a635c4f5515e9d4`.
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader
