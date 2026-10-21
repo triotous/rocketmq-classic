@@ -7,10 +7,11 @@ use rocketmq_classic_protocol::{
     codes::{request, response},
     header::{
         AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader, HeartbeatRequestHeader,
-        LiteSubscriptionCtlRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, ProtocolError, UnregisterClientRequestHeader,
+        ChangeInvisibleTimeResponseHeader, GetLiteTopicInfoRequestHeader, HeaderMap,
+        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, ProtocolError,
+        UnregisterClientRequestHeader,
     },
     heartbeat::HeartbeatData,
 };
@@ -532,6 +533,39 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Triggers dispatch of a Lite consumer group through Java's
+    /// `MQClientAPIImpl.triggerLiteDispatch`. The Broker address uses the
+    /// configured VIP port transform. Java's request header has a no-op
+    /// `checkFields()`, so nullable group and client ID values are preserved
+    /// as omitted extension fields instead of being rejected locally.
+    pub async fn trigger_lite_dispatch(
+        &self,
+        addr: &str,
+        group: Option<&str>,
+        client_id: Option<&str>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::TRIGGER_LITE_DISPATCH;
+        let mut fields = HeaderMap::new();
+        if let Some(group) = group {
+            fields.insert("group".into(), group.into());
+        }
+        if let Some(client_id) = client_id {
+            fields.insert("clientId".into(), client_id.into());
+        }
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| crate::config::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request_fields_with_mode(&broker_addr, code, fields, None, deadline, true)
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     pub async fn lite_subscription_ctl(
         &self,
         addr: &str,
@@ -954,6 +988,115 @@ mod export_pop_record_tests {
 
             let request = peer.await.unwrap();
             assert_eq!(request.code, request::SWITCH_TIMER_ENGINE);
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.body.is_none());
+            assert_eq!(request.ext_fields.unwrap_or_default(), expected_fields);
+        }
+        client.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod trigger_lite_dispatch_tests {
+    use super::MQClientApi;
+    use crate::config::ClientConfig;
+    use bytes::BytesMut;
+    use rocketmq_classic_protocol::codes::{LanguageCode, request};
+    use rocketmq_classic_remoting::{
+        RemotingCommand,
+        client::{RemotingClient, TransportMode},
+        codec::frame,
+    };
+    use serde_json::Value;
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::Instant,
+    };
+
+    #[tokio::test]
+    async fn trigger_lite_dispatch_matches_java_fixture_vip_and_nullable_header_fields() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let signatures = fixture["triggerLiteDispatchApi"].as_array().unwrap();
+        assert!(signatures.iter().any(|signature| signature
+            == "void org.apache.rocketmq.client.impl.MQClientAPIImpl.triggerLiteDispatch(java.lang.String,java.lang.String,java.lang.String,long)"));
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let mut config = ClientConfig::new("trigger-lite-dispatch");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(client.clone(), Arc::new(RwLock::new(config)));
+
+        for case in fixture["triggerLiteDispatchOperations"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let server_addr = listener.local_addr().unwrap();
+            let address = format!("127.0.0.1:{}", server_addr.port() + 2);
+            let expected_code = case["responseCode"].as_i64().unwrap() as i32;
+            let expected_remark = case["responseRemark"].as_str().map(str::to_owned);
+            let expected_fields: BTreeMap<String, String> = case["expectedExtFields"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                .collect();
+            let peer = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+
+                let mut reply = RemotingCommand {
+                    code: expected_code,
+                    opaque: request.opaque,
+                    remark: expected_remark,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+                request
+            });
+
+            let result = api
+                .trigger_lite_dispatch(
+                    &address,
+                    case["group"].as_str(),
+                    case["clientId"].as_str(),
+                    Instant::now() + Duration::from_secs(2),
+                )
+                .await;
+            if case["outcome"] == "returned" {
+                result.unwrap();
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(crate::error::RpcError::Response {
+                        request_code: request::TRIGGER_LITE_DISPATCH,
+                        peer,
+                        code,
+                        remark,
+                    }) if peer == address
+                        && code == expected_code
+                        && remark.as_deref() == case["errorRemark"].as_str()
+                ));
+            }
+
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, request::TRIGGER_LITE_DISPATCH);
             assert_eq!(request.language, Some(LanguageCode::Java));
             assert!(request.body.is_none());
             assert_eq!(request.ext_fields.unwrap_or_default(), expected_fields);

@@ -384,6 +384,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("switchTimerEngineOperations", switchTimerEngineOperations());
+        result.put("triggerLiteDispatchApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("triggerLiteDispatch"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("triggerLiteDispatchOperations", triggerLiteDispatchOperations());
         result.put("producerDiagnosticsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getProducerConnectionList", "getAllProducerInfo",
@@ -3598,6 +3605,83 @@ public final class ProducerCoreFixtures {
         result.put("responseRemark", responseRemark);
         try {
             api.switchTimerEngine("127.0.0.1:10913", engineType, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorRemark", error.getErrorMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> triggerLiteDispatchOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(triggerLiteDispatchCase("success", "lite-group", "lite-client",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(triggerLiteDispatchCase("nullable-fields", null, null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(triggerLiteDispatchCase("non-success", "rejected-group", "rejected-client",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "dispatch rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> triggerLiteDispatchCase(
+        String name,
+        String group,
+        String clientId,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            responseCode, responseRemark));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("trigger-lite-dispatch");
+        config.setVipChannelEnabled(true);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                request.makeCustomHeaderToNet();
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand reply = replies.removeFirst();
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                call.put("responseCode", reply.getCode());
+                                call.put("responseRemark", reply.getRemark());
+                                requests.add(call);
+                                return reply;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("name", name);
+        result.put("group", group);
+        result.put("clientId", clientId);
+        Map<String, String> expectedExtFields = new TreeMap<>();
+        if (group != null) expectedExtFields.put("group", group);
+        if (clientId != null) expectedExtFields.put("clientId", clientId);
+        result.put("expectedExtFields", expectedExtFields);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.triggerLiteDispatch("127.0.0.1:10913", group, clientId, 2345L);
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());
