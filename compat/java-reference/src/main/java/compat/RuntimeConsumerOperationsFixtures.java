@@ -448,6 +448,13 @@ public final class RuntimeConsumerOperationsFixtures {
             message.setDelayTimeSec(5L);
             message.setDelayTimeMs(6L);
             message.setDeliverTimeMs(7L);
+            message.putUserProperty("base-user", "base-value");
+            message.putUserProperty("", "");
+            message.putUserProperty(null, null);
+            message.setTags("base-tags");
+            message.setKeys("base-key");
+            message.setKeys(List.of("first", "second"));
+            message.setTransactionId("base-transaction");
         }
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
@@ -502,6 +509,9 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("delayTimeSec", messages.get(0).getDelayTimeSec());
                     item.put("delayTimeMs", messages.get(0).getDelayTimeMs());
                     item.put("deliverTimeMs", messages.get(0).getDeliverTimeMs());
+                    item.put("userProperty", messages.get(0).getUserProperty("user-probe"));
+                    item.put("hasProperty", messages.get(0).hasProperty("subtype-only"));
+                    item.put("transactionId", messages.get(0).getTransactionId());
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -583,6 +593,10 @@ public final class RuntimeConsumerOperationsFixtures {
         private int topicSysFlagWrites;
         private int groupSysFlagWrites;
         private int propertySetterWrites;
+        private int userPropertyReads;
+        private int hasPropertyReads;
+        private int transactionIdReads;
+        private int userApiWrites;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -851,6 +865,44 @@ public final class RuntimeConsumerOperationsFixtures {
             propertySetterWrites++;
         }
 
+        @Override
+        public String getUserProperty(String name) {
+            userPropertyReads++;
+            return "subtype-user-value";
+        }
+
+        @Override
+        public boolean hasProperty(String name) {
+            hasPropertyReads++;
+            return false;
+        }
+
+        @Override
+        public String getTransactionId() {
+            transactionIdReads++;
+            return "subtype-transaction";
+        }
+
+        @Override
+        public void putUserProperty(String name, String value) {
+            userApiWrites++;
+        }
+
+        @Override
+        public void setTags(String tags) {
+            userApiWrites++;
+        }
+
+        @Override
+        public void setKeys(String keys) {
+            userApiWrites++;
+        }
+
+        @Override
+        public void setTransactionId(String transactionId) {
+            userApiWrites++;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
@@ -859,7 +911,11 @@ public final class RuntimeConsumerOperationsFixtures {
                 + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites
                 + ";metadataWrites=" + metadataWrites + ";topicSysFlagWrites=" + topicSysFlagWrites
                 + ";groupSysFlagWrites=" + groupSysFlagWrites
-                + ";propertySetterWrites=" + propertySetterWrites;
+                + ";propertySetterWrites=" + propertySetterWrites
+                + ";userPropertyReads=" + userPropertyReads
+                + ";hasPropertyReads=" + hasPropertyReads
+                + ";transactionIdReads=" + transactionIdReads
+                + ";userApiWrites=" + userApiWrites;
         }
 
         @Override

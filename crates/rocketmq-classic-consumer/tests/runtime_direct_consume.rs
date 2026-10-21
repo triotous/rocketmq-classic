@@ -79,6 +79,9 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["delayTimeSec"] = json!(message.delay_time_sec().unwrap());
         record["delayTimeMs"] = json!(message.delay_time_ms().unwrap());
         record["deliverTimeMs"] = json!(message.deliver_time_ms().unwrap());
+        record["userProperty"] = json!(message.get_user_property("user-probe"));
+        record["hasProperty"] = json!(message.has_property("subtype-only"));
+        record["transactionId"] = json!(message.transaction_id());
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -101,6 +104,10 @@ struct CustomDirectMessageExt {
     topic_sys_flag_writes: std::sync::atomic::AtomicUsize,
     group_sys_flag_writes: std::sync::atomic::AtomicUsize,
     property_setter_writes: std::sync::atomic::AtomicUsize,
+    user_property_reads: std::sync::atomic::AtomicUsize,
+    has_property_reads: std::sync::atomic::AtomicUsize,
+    transaction_id_reads: std::sync::atomic::AtomicUsize,
+    user_api_writes: std::sync::atomic::AtomicUsize,
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
@@ -124,6 +131,10 @@ impl CustomDirectMessageExt {
             topic_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             group_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             property_setter_writes: std::sync::atomic::AtomicUsize::new(0),
+            user_property_reads: std::sync::atomic::AtomicUsize::new(0),
+            has_property_reads: std::sync::atomic::AtomicUsize::new(0),
+            transaction_id_reads: std::sync::atomic::AtomicUsize::new(0),
+            user_api_writes: std::sync::atomic::AtomicUsize::new(0),
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
@@ -132,7 +143,7 @@ impl CustomDirectMessageExt {
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={};propertySetterWrites={};userPropertyReads={};hasPropertyReads={};transactionIdReads={};userApiWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -146,7 +157,11 @@ impl CustomDirectMessageExt {
             self.metadata_writes.load(Ordering::SeqCst),
             self.topic_sys_flag_writes.load(Ordering::SeqCst),
             self.group_sys_flag_writes.load(Ordering::SeqCst),
-            self.property_setter_writes.load(Ordering::SeqCst)
+            self.property_setter_writes.load(Ordering::SeqCst),
+            self.user_property_reads.load(Ordering::SeqCst),
+            self.has_property_reads.load(Ordering::SeqCst),
+            self.transaction_id_reads.load(Ordering::SeqCst),
+            self.user_api_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -207,6 +222,29 @@ impl MessageExtSubtype for CustomDirectMessageExt {
         }
     }
 
+    fn user_property(&self, key: Option<&str>) -> Option<Option<String>> {
+        if key == Some("user-probe") {
+            self.user_property_reads.fetch_add(1, Ordering::SeqCst);
+            Some(Some("subtype-user-value".to_owned()))
+        } else {
+            None
+        }
+    }
+
+    fn has_property(&self, key: Option<&str>) -> Option<bool> {
+        if key == Some("subtype-only") {
+            self.has_property_reads.fetch_add(1, Ordering::SeqCst);
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    fn transaction_id(&self) -> Option<Option<&str>> {
+        self.transaction_id_reads.fetch_add(1, Ordering::SeqCst);
+        Some(Some("subtype-transaction"))
+    }
+
     fn properties(&self) -> Option<Option<NullableMessageProperties>> {
         self.properties_reads.fetch_add(1, Ordering::SeqCst);
         Some(Some(NullableMessageProperties::from([(
@@ -257,6 +295,26 @@ impl MessageExtSubtype for CustomDirectMessageExt {
 
     fn set_deliver_time_ms(&self, _milliseconds: i64) -> bool {
         self.property_setter_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn put_user_property(&self, _key: Option<String>, _value: Option<String>) -> bool {
+        self.user_api_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_tags(&self, _tags: Option<String>) -> bool {
+        self.user_api_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_keys(&self, _keys: Option<String>) -> bool {
+        self.user_api_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_transaction_id(&self, _transaction_id: Option<String>) -> bool {
+        self.user_api_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -557,6 +615,15 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_delay_time_sec(5);
             message.set_delay_time_ms(6);
             message.set_deliver_time_ms(7);
+            message
+                .put_user_property("base-user", "base-value")
+                .unwrap();
+            message.put_user_property("", "").unwrap();
+            message.put_user_property_nullable(None, None).unwrap();
+            message.set_tags("base-tags").unwrap();
+            message.set_keys("base-key").unwrap();
+            message.set_keys_from(["first", "second"]);
+            message.set_transaction_id(Some("base-transaction".to_owned()));
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

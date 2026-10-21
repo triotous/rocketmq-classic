@@ -1856,6 +1856,34 @@ impl MessageExt {
             .unwrap_or_else(|| self.message.get_nullable_property(key))
     }
 
+    /// Java's virtual `Message.getUserProperty(String)` view. The default
+    /// implementation delegates to `getProperty`, while subtypes may override
+    /// this method independently.
+    pub fn get_user_property(&self, key: &str) -> Option<String> {
+        self.get_nullable_user_property(Some(key))
+    }
+
+    pub fn get_nullable_user_property(&self, key: Option<&str>) -> Option<String> {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.user_property(key))
+            .unwrap_or_else(|| self.get_nullable_property(key))
+    }
+
+    /// Java's virtual `Message.hasProperty(String)` view. Its base
+    /// implementation checks the stored map directly rather than calling
+    /// `getProperty`.
+    pub fn has_property(&self, key: &str) -> bool {
+        self.has_nullable_property(Some(key))
+    }
+
+    pub fn has_nullable_property(&self, key: Option<&str>) -> bool {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.has_property(key))
+            .unwrap_or_else(|| self.message.has_nullable_property(key))
+    }
+
     /// Java's virtual `Message.getTags()` view, routed through the virtual
     /// `getProperty(String)` implementation.
     pub fn tags(&self) -> Option<String> {
@@ -1898,6 +1926,139 @@ impl MessageExt {
     pub fn deliver_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
         let property = crate::message::constants::PROPERTY_TIMER_DELIVER_MS;
         parse_i64_property_value(property, self.get_property(property))
+    }
+
+    /// Java's virtual `Message.getTransactionId()` field view.
+    pub fn transaction_id(&self) -> Option<&str> {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.transaction_id())
+            .unwrap_or_else(|| self.message.transaction_id())
+    }
+
+    /// Java's virtual `Message.setTransactionId(String)` view.
+    pub fn set_transaction_id(&mut self, transaction_id: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_transaction_id(transaction_id.clone()))
+        {
+            self.message.set_transaction_id(transaction_id);
+        }
+    }
+
+    pub fn put_user_property_nullable(
+        &mut self,
+        key: Option<String>,
+        value: Option<String>,
+    ) -> Result<Option<String>, MessagePropertyError> {
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.put_user_property(key.clone(), value.clone()))
+        {
+            Ok(None)
+        } else {
+            self.message.put_user_property_nullable(key, value)
+        }
+    }
+
+    pub fn put_user_property(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Option<String>, MessagePropertyError> {
+        let key = key.into();
+        let value = value.into();
+        self.put_user_property_nullable(Some(key), Some(value))
+    }
+
+    pub fn set_tags(
+        &mut self,
+        tags: impl Into<String>,
+    ) -> Result<Option<String>, MessagePropertyError> {
+        let tags = tags.into();
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_tags(Some(tags.clone())))
+        {
+            Ok(None)
+        } else {
+            self.message.set_tags(tags)
+        }
+    }
+
+    pub fn set_tags_nullable(&mut self, tags: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_tags(tags.clone()))
+        {
+            self.message.set_tags_nullable(tags);
+        }
+    }
+
+    pub fn set_keys(
+        &mut self,
+        keys: impl Into<String>,
+    ) -> Result<Option<String>, MessagePropertyError> {
+        let keys = keys.into();
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_keys(Some(keys.clone())))
+        {
+            Ok(None)
+        } else {
+            self.message.set_keys(keys)
+        }
+    }
+
+    pub fn set_keys_nullable(&mut self, keys: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_keys(keys.clone()))
+        {
+            self.message.set_keys_nullable(keys);
+        }
+    }
+
+    /// Java's `setKeys(Collection<String>)` overload joins the collection and
+    /// then dynamically calls `setKeys(String)`.
+    pub fn set_keys_from<I, S>(&mut self, keys: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let joined = keys
+            .into_iter()
+            .map(|key| key.as_ref().to_owned())
+            .collect::<Vec<_>>()
+            .join(crate::message::constants::KEY_SEPARATOR);
+        self.set_keys_nullable(Some(joined));
+    }
+
+    pub fn set_keys_from_nullable<I, S>(
+        &mut self,
+        keys: Option<I>,
+    ) -> Result<(), MessageKeyCollectionError>
+    where
+        I: IntoIterator<Item = Option<S>>,
+        S: AsRef<str>,
+    {
+        let keys = keys.ok_or(MessageKeyCollectionError::NullCollection)?;
+        let joined = keys
+            .into_iter()
+            .map(|key| {
+                key.map(|key| key.as_ref().to_owned())
+                    .unwrap_or_else(|| "null".to_owned())
+            })
+            .collect::<Vec<_>>()
+            .join(crate::message::constants::KEY_SEPARATOR);
+        self.set_keys_nullable(Some(joined));
+        Ok(())
     }
 
     pub fn set_wait_store_msg_ok(
@@ -2548,6 +2709,21 @@ pub trait MessageExtSubtype: Any + Send + Sync {
         None
     }
 
+    /// Override Java's virtual `Message.getUserProperty(String)`.
+    fn user_property(&self, _key: Option<&str>) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.hasProperty(String)`.
+    fn has_property(&self, _key: Option<&str>) -> Option<bool> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getTransactionId()`.
+    fn transaction_id(&self) -> Option<Option<&str>> {
+        None
+    }
+
     /// Override Java's virtual `Message.getProperties()` with a nullable map.
     /// Returned maps are snapshotted for Rust reads and retry-property copies.
     fn properties(&self) -> Option<Option<NullableMessageProperties>> {
@@ -2596,6 +2772,26 @@ pub trait MessageExtSubtype: Any + Send + Sync {
 
     /// Handle Java's virtual `Message.setDeliverTimeMs(long)`.
     fn set_deliver_time_ms(&self, _milliseconds: i64) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.putUserProperty(String, String)`.
+    fn put_user_property(&self, _key: Option<String>, _value: Option<String>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setTags(String)`.
+    fn set_tags(&self, _tags: Option<String>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setKeys(String)`.
+    fn set_keys(&self, _keys: Option<String>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `Message.setTransactionId(String)`.
+    fn set_transaction_id(&self, _transaction_id: Option<String>) -> bool {
         false
     }
 
