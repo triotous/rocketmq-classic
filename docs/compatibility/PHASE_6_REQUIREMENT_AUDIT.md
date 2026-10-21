@@ -71,12 +71,13 @@ state is runtime-only and is omitted by serialization. This closes the
 direct-consume custom-field and selected-override slice; it does not inventory
 every inherited `Message`/`MessageExt` virtual method.
 
-P18-V01 caller-defined subtype queue-offset follow-up (2026-10-21):
-`MessageExtSubtype` now maps `getQueueOffset` and `setQueueOffset`. The invoked
-Java fixture compares the custom getter's value through direct consumption and
-through `ProcessQueue.putMessage`; Rust matches the message-tree key, dispatch
-state, message count, byte size and setter count. Fixture SHA-256:
-`00a09f96bb75f96f2ae81111e83c916af4dc47999b7462efdb82163ab8e1fe54`. Other
+P18-V01 caller-defined subtype queue/body follow-up (2026-10-21):
+`MessageExtSubtype` now maps `getQueueOffset`/`setQueueOffset` and
+`getBody`/`setBody`. The invoked Java fixture compares the custom values through
+direct consumption and `ProcessQueue.putMessage`; Rust matches the callback
+values, message-tree key, dispatch state, message count, byte size and setter
+counts. Fixture SHA-256:
+`9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`. Other
 inherited `Message`/`MessageExt` virtual methods remain open.
 
 These operation-presence and tested-flow slices do not close broad P18-V01.

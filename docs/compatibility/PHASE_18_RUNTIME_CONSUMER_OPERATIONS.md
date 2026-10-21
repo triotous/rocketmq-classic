@@ -93,18 +93,19 @@ the later runtime adapter slice.
 Caller-defined subtype continuation (2026-10-21): Rust now exposes
 `MessageExtSubtype`, retained by `Arc` across the `MessageExt` direct-consume
 input. Applications can downcast custom fields in the callback and provide
-virtual overrides for topic, broker name, queue ID, queue offset, message ID,
-reconsume-times getters/setters, and display. The direct-consume path dispatches
-virtual `getReconsumeTimes`/`setReconsumeTimes` hooks used by Push retry and
-send-back logic. `ProcessQueue.putMessage` now also uses the subtype's virtual
-`getQueueOffset` as its message-tree key. The
+virtual overrides for topic, broker name, queue ID, queue offset, body, message
+ID, reconsume-times getters/setters, and display. The adapter dispatches
+virtual `getBody`/`setBody` and `getReconsumeTimes`/`setReconsumeTimes` calls
+used by ProcessQueue byte accounting and Push retry/send-back logic.
+`ProcessQueue.putMessage` also uses the subtype's virtual `getQueueOffset` as
+its message-tree key. The
 `concurrent-custom-subtype` case executes Java overrides during initial topic
 assignment, retry-topic restoration, namespace removal, broker assignment and
-callback formatting; it checks the custom reconsume value `13` and queue offset
-`987654321`. A Java `ProcessQueue.putMessage` case compares dispatch, count,
-body size, tree key and setter side effect against Rust. Current fixture
-SHA-256:
-`00a09f96bb75f96f2ae81111e83c916af4dc47999b7462efdb82163ab8e1fe54`.
+callback formatting; it checks the custom reconsume value `13`, queue offset
+`987654321`, and overridden body length. A Java `ProcessQueue.putMessage` case
+compares dispatch, count, body size, tree key and setter side effects against
+Rust. Current fixture SHA-256:
+`9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`.
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader

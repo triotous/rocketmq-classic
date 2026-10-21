@@ -6453,3 +6453,22 @@ owner-specific checks belong in the manual handoff.
   code revision. Current Ubuntu/native Windows P18-V04 evidence and Phase 19
   Broker/Docker scenarios remain separate. Protected Phase 19 paths were not
   changed or staged.
+
+## P18-V01 custom `MessageExt` body hooks — 2026-10-21 (`81d67a5e`)
+
+- [x] `MessageExtSubtype` now dispatches Java's virtual `getBody` and
+  `setBody` calls. `ProcessQueue.putMessage` reads the subtype body when
+  calculating retained message bytes.
+- [x] The invoked Java custom-subtype fixture compares body length in the
+  callback and byte-size accounting during a real `ProcessQueue.putMessage`.
+  Rust matches the setter count and queue byte size. Fixture SHA-256:
+  `9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`.
+- [x] Default and all-feature locked workspace tests, Common and Consumer
+  package tests, strict all-target/all-feature Clippy, format/diff checks, and
+  pinned Maven `verify` pass on code revision `81d67a5e`.
+- This closes body getter/setter dispatch for the audited flows. Mutable
+  custom body-array aliasing, other inherited `Message`/`MessageExt` overrides
+  and broad P18-V01 reconciliation remain open. Supplemental P18-V02 release
+  gates must still be refreshed after this code revision. Current
+  Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker/Docker scenarios
+  remain separate. Protected Phase 19 paths were not changed or staged.

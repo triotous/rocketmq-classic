@@ -235,3 +235,13 @@ setter side effect with Rust. This covers the queue-index flow for custom
 subtypes; other inherited virtual methods remain in the broad audit. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `00a09f96bb75f96f2ae81111e83c916af4dc47999b7462efdb82163ab8e1fe54`.
+
+P18-V01 caller-defined `MessageExt` body follow-up (2026-10-21): the subtype
+adapter now dispatches virtual `getBody`/`setBody`, including reads made by
+`ProcessQueue.putMessage` for its cached byte count. The invoked Java direct
+consume and queue insertion cases compare the callback body length, process
+queue size and custom setter count with Rust. This covers the body read/write
+path used in the audited consumer flow; mutable body-array aliasing and other
+inherited virtual methods remain open. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`.
