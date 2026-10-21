@@ -6843,3 +6843,31 @@ owner-specific checks belong in the manual handoff.
   reconciliation and current-revision GitHub Ubuntu/native Windows P18-V04
   evidence remain open. No push, remote CI, Broker, or Docker run was
   performed; protected Phase 19 paths remain untouched.
+
+## P18-V01 `MessageClientExt` offset-ID subtype overrides — 2026-10-21 (`f7d7e8f1`)
+
+- [x] `MessageExtSubtype` now dispatches `MessageClientExt.getOffsetMsgId()`
+  and `setOffsetMsgId(String)` for caller-defined subtypes. The inherited
+  `getMsgId()` path retains Java's live `UNIQ_KEY` precedence and virtual
+  offset-ID fallback. Rust's `MessageClientExt` wrapper now routes these
+  getters/setters through the retained runtime subtype while the base
+  `setMsgId` remains a no-op.
+- [x] Invoked Java direct-consume fixtures add offset-only custom subclasses
+  with and without `UNIQ_KEY`; the Rust wrapper test also covers setter
+  dispatch, unique-ID mutation/precedence, and conversion to `MessageExt`.
+  The direct runtime fixture now has 29 cases. SHA-256:
+  `403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
+- [x] `setOffsetMsgId(null)` clears the offset value and effective fallback;
+  the base-typed `MessageExt` view keeps both cleared. `records.json` SHA-256:
+  `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`.
+- [x] Default and all-feature locked workspace tests; strict all-target,
+  all-feature Clippy; formatting/diff checks; and pinned Maven `verify` pass
+  on `f7d7e8f1`. Maven verified 37 scenarios, 9 Running Info, 29 direct-consume,
+  15 reset cases, 85 typed headers, 16 typed bodies, and Java/Rust
+  cross-decodes. Existing JDK/Netty `Unsafe` and reflective-final-field
+  warnings were emitted.
+- P18-V01 inherited-method, public API, settings/input/error/control-flow and
+  reverse-export reconciliation remains open. The complete supplemental
+  current-revision P18-V02 stress/fuzz/benchmark/package refresh and GitHub
+  Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
+  Broker or Docker run was performed; protected Phase 19 paths remain untouched.

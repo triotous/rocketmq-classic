@@ -1700,3 +1700,21 @@ Default and all-feature workspace tests pass on the current code revision;
 pinned Maven `verify` passes with 37 scenarios, 85 typed headers, and 16 typed
 bodies. This closes the direct Broker registration slice; broad P18-V01
 remains open.
+
+## P18-V01 `MessageClientExt` inherited offset-ID overrides — 2026-10-21
+
+Rust now dispatches Java `MessageClientExt` subclasses' virtual
+`getOffsetMsgId()` and `setOffsetMsgId(String)` methods through
+`MessageExtSubtype`. The inherited `getMsgId()` path first reads `UNIQ_KEY`
+and then calls the virtual offset getter, matching Java when only the offset
+method is overridden. The invoked 29-case direct-consume fixture checks the
+custom offset-only subtype both with and without `UNIQ_KEY`; a Common test also
+checks wrapper setters, no-op base `setMsgId`, live unique-ID precedence, and
+conversion to `MessageExt`. A follow-up `setOffsetMsgId(null)` check confirms
+that the offset and effective ID clear and the base-typed conversion preserves
+that state. `records.json` SHA-256:
+`1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`; runtime
+consumer fixture SHA-256:
+`403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
+The default/all-feature workspace suites, strict workspace Clippy, and pinned
+Maven verify pass on code revision `f7d7e8f1`; broader P18-V01 remains open.

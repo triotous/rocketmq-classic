@@ -365,3 +365,15 @@ confirms the inherited getter reads `23`, while the base setter stores `17`
 and rejects a negative value. Fixture SHA-256:
 `44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
 Other inherited methods and broad P18-V01 reconciliation remain open.
+
+P18-V01 caller-defined `MessageClientExt` offset-ID follow-up (code revision
+`f7d7e8f1`, 2026-10-21): `MessageExtSubtype` now dispatches overridden
+`getOffsetMsgId()`/`setOffsetMsgId(String)` calls. Rust's inherited client
+message-ID path preserves the virtual fallback after `UNIQ_KEY` lookup. The
+Java direct-consume fixture compares custom offset-only subclasses with and
+without `UNIQ_KEY`; the Rust wrapper test checks setter dispatch and base
+`setMsgId` no-op behavior. A null offset setter clears the effective ID, and
+the base-typed view remains null after conversion. The `records.json` fixture
+SHA-256 is `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`;
+the runtime-operation fixture SHA-256 is
+`403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.

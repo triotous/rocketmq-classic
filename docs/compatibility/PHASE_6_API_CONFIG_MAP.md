@@ -1472,7 +1472,7 @@ The invoked Java fixture confirms non-breaking-space keys and em-space values ar
 | --- | --- |
 | `MessageConst.STRING_HASH_SET` is a public mutable `HashSet<String>` that may contain null and is consulted before `Message.putUserProperty` validates blank names | `message::constants::STRING_HASH_SET` is a process-wide `LazyLock<RwLock<HashSet<Option<String>>>>`; each insertion checks current membership before Java-compatible blank validation |
 
-The invoked Java fixture adds a custom reserved name, null, and the empty string, then removes `KEYS`; it verifies live membership and that null/empty members reject matching input with the base `RuntimeException` before blank-name validation. Rust represents null membership as `None`, restores each mutation after the differential, and checks membership before validating nullable and non-null keys. Current `fixtures/messages/records.json` SHA-256: `2118277b7aad68e1077d92371d5ec14bd8cb77535e272dca406bc3e716d85792`. This closes the mutable-set null/blank membership and precedence slice only; the remaining Common public API and P18-V01 audit stay open.
+The invoked Java fixture adds a custom reserved name, null, and the empty string, then removes `KEYS`; it verifies live membership and that null/empty members reject matching input with the base `RuntimeException` before blank-name validation. Rust represents null membership as `None`, restores each mutation after the differential, and checks membership before validating nullable and non-null keys. Current `fixtures/messages/records.json` SHA-256: `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`. This closes the mutable-set null/blank membership and precedence slice only; the remaining Common public API and P18-V01 audit stay open.
 
 ## Common public API: Message priority
 
@@ -1513,7 +1513,7 @@ The invoked `RuntimeConfigFixtures` records every declared public field/method a
 | --- | --- |
 | `Message.getBody()` returns the live mutable `byte[]`; `Message.setBody(byte[])` and all four body-bearing constructors retain the supplied array reference | `Message::body` and `body_mut` expose borrowed read/write views. `SharedMessageBody` with `set_body_shared` and `shared_body` preserves setter caller/message identity across owned boundaries. `new_shared`, `new_nullable_shared`, `with_tags_shared`, `with_tags_and_keys_shared`, `with_fields_shared`, and `with_nullable_fields_shared` preserve constructor caller/message identity. `with_bytes` and `with_bytes_mut` provide synchronized live access. Owned `set_body` and `set_body_nullable` replace the message's body storage. |
 
-The invoked `messagePublicApi` fixture checks identity for the two-argument, tags, tags-and-keys, and six-argument constructors; caller mutation after construction; setter identity and bidirectional mutation; and detachment after replacement. `message_public_api_matches_java_551_fixture` compares those behaviors with Rust's shared handle and owned replacement setters. Fixture SHA-256: `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`. This closes the body-array alias slice; the broader `MessageExt` inherited API and workspace-wide source, input, error, control-flow, and reverse-export audit remain open.
+The invoked `messagePublicApi` fixture checks identity for the two-argument, tags, tags-and-keys, and six-argument constructors; caller mutation after construction; setter identity and bidirectional mutation; and detachment after replacement. `message_public_api_matches_java_551_fixture` compares those behaviors with Rust's shared handle and owned replacement setters. Current `records.json` SHA-256: `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`. This closes the body-array alias slice; the broader `MessageExt` inherited API and workspace-wide source, input, error, control-flow, and reverse-export audit remain open.
 
 ## Common public API: Message constructors and declared methods
 
@@ -1541,7 +1541,7 @@ aliasing, property side effects, error branches, numeric boundaries, and text
 formatting. Validation on code revision `f5a924fa`: the focused Common test
 passed; offline Maven `verify` passed with 37 scenarios, 11 Java message decode
 fixtures, fixture drift checks, and Java/Rust cross-decodes. The fixture SHA-256
-is `0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`; the
+is `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`; the
 pinned `Message.java` SHA-256 is
 `c58de775771666448168eb959a1d6ebb98959bb42855a4fadaabb5f8f1d158d7`.
 This closes the declared `Message` API slice; `MessageExt` inherited method
@@ -1564,7 +1564,7 @@ above.
 | `getBornHostBytes()` / `(ByteBuffer)`; `getStoreHostBytes()` / `(ByteBuffer)`; static `socketAddress2ByteBuffer(SocketAddress)` / `(SocketAddress, ByteBuffer)` | `MessageHostAddress::network_bytes`, `MessageHostAddress::write_network_bytes`, `MessageExt::born_host_bytes`/`write_born_host_bytes`, and `store_host_bytes`/`write_store_host_bytes` map returned bytes and caller-buffer overloads; `MessageExtSubtype` hooks preserve virtual subtype results and writes. Resolved IPv4/IPv6 output, null/unresolved-host failures, short-buffer prefix writes before port overflow, and custom subtype returns/writes are fixture-tested. |
 | `parseTopicFilterType(int)`; `get/setTopicSysFlag`; `get/setGroupSysFlag` | `parse_topic_filter_type`, `topic_sys_flag`/`set_topic_sys_flag`, and `group_sys_flag`/`set_group_sys_flag`; absent/empty/null values, malformed and Unicode decimal inputs, and single/multi-tag flags are compared. |
 | `setBornHostV6Flag`; `setStoreHostAddressV6Flag`; `toString` | `set_born_host_v6_flag`, `set_store_host_address_v6_flag`, and `Display` preserve the Java flag bits and observed message text. Identity-based equality/hash behavior is recorded in [Message equality semantics](#common-public-api-message-equality-semantics). |
-| `MessageClientExt()`; `getMsgId` / `setMsgId`; `getOffsetMsgId` / `setOffsetMsgId` | `MessageClientExt::new`/`Default`, `message_id`/`set_message_id`, and `offset_message_id`/`set_offset_message_id`. Message ID fallback to offset ID, preference for the unique-message property, ignored setters under those conditions, and inherited Message/MessageExt accessors are fixture-tested. |
+| `MessageClientExt()`; `getMsgId` / `setMsgId`; `getOffsetMsgId` / `setOffsetMsgId` | `MessageClientExt::new`/`Default`, `message_id`/`set_message_id`, and `offset_message_id`/`set_offset_message_id`. Message ID fallback to offset ID, preference for the unique-message property, ignored setters under those conditions, and inherited Message/MessageExt accessors are fixture-tested. `MessageExtSubtype` also dispatches overridden `getOffsetMsgId`/`setOffsetMsgId` methods, including the inherited `getMsgId` call to the virtual offset getter; setting the offset ID to null clears the effective fallback. |
 
 `messageExtPublicApi` and `messageClientExtApi` pin all constructor and
 declared-method signatures. Rust differentials cover scalar defaults and
@@ -1575,7 +1575,7 @@ and identity behavior. On code revision `f5a924fa`, the four
 passed; the current-revision offline Maven `verify` passed with 37 scenarios,
 11 Java message decode fixtures, fixture drift checks, and Java/Rust
 cross-decodes. `fixtures/messages/records.json` SHA-256 is
-`0346a246d0f22440ed71773ac1854ad510acf857954d85f7ee9b8a451afc6471`;
+`1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`;
 pinned `MessageExt.java` SHA-256 is
 `19a256b417a68daac6b1da6fe3b48a9bfa1fef7a9c09a6c8a29fdfb56ae34382`, and
 `MessageClientExt.java` SHA-256 is
@@ -1816,3 +1816,21 @@ a delayed peer checks that `add_broker` enforces its timeout. Typed Java↔Rust
 header fixtures are checked in. Producer core fixture SHA-256:
 `9510b46415e7f00c7932c95d9e33dbb02e9b9cc56d1afecec01dfede60ae5e6a`.
 This closes these direct API/header rows only; broad P18-V01 remains open.
+
+## `MessageClientExt` subtype offset-ID dispatch — 2026-10-21
+
+A caller-defined Java subclass of `MessageClientExt` can override
+`getOffsetMsgId()` and `setOffsetMsgId(String)`. The base
+`MessageClientExt.getMsgId()` prefers the live `UNIQ_KEY` property, then calls
+`getOffsetMsgId()` virtually. `MessageExtSubtype` now exposes owned offset-ID
+getter and setter hooks; `MessageClientExt` uses them directly, and its
+inherited client-ID path preserves unique-ID precedence and the dynamic
+fallback. The invoked Java direct-consume fixture includes offset-only custom
+subclasses with and without a unique ID. Rust's wrapper test also checks
+setter dispatch, no-op base `setMsgId`, live unique-ID changes, and conversion
+to a base-typed `MessageExt`. Fixture SHA-256:
+`403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
+Code revision `f7d7e8f1` also verifies `setOffsetMsgId(null)` clears the
+offset and effective ID and that conversion to a base-typed `MessageExt`
+preserves that cleared state. Current `fixtures/messages/records.json`
+SHA-256: `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`.

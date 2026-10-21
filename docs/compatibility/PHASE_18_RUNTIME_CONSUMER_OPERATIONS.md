@@ -43,7 +43,7 @@ inspecting the message. `ConsumerOperationFuture` expresses the asynchronous
 Rust owner result, not a new client feature or setting.
 
 The Java oracle calls the actual runtime and concurrent/orderly consume
-services for 27 cases. `runtime_direct_consume` starts real Rust facades and
+services for 29 cases. `runtime_direct_consume` starts real Rust facades and
 checks the same result categories, order/auto-commit flags, callback counts,
 callback message/queue topics and broker names. It covers success, retry,
 commit, rollback, suspend, null listener result and listener failure; nullable
@@ -53,7 +53,7 @@ original topic. Concurrent consumption writes the message broker; orderly
 consumption retains its original broker. Every case checks offset isolation.
 
 The extended fixture checkpoint SHA-256 is
-`ac828e506ea02848e9cacbe0e3ae02608dd1d189500a45d51b41e8d3a4208b22`.
+`403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
 Only elapsed duration and runtime-specific exception rendering are excluded
 from equality: Java/Rust both assert nonnegative duration, identical failure
 result category and presence of a diagnostic remark. Broker/offset/callback
@@ -414,3 +414,17 @@ in the base map and rejects negative input. Rust matches both paths. Fixture
 SHA-256: `44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
 This closes priority override behavior only; the broader inherited-method and
 P18-V01 source/API/input/error/flow/reverse-export audits remain open.
+
+`MessageClientExt` subtype offset-ID continuation (2026-10-21): a custom Java
+`MessageClientExt` can override `getOffsetMsgId` and `setOffsetMsgId`. Rust now
+dispatches both through `MessageExtSubtype`; inherited `getMsgId` reads the
+live `UNIQ_KEY` first and falls back through the virtual offset getter. The
+invoked fixture adds two direct-consume cases, with and without `UNIQ_KEY`, and
+the Rust Common test checks wrapper dispatch, base no-op `setMsgId`, live
+unique-ID precedence, and conversion to `MessageExt`. The current direct
+runtime fixture has 29 cases and SHA-256
+`403b79b69f30957ae2f935be37ec0b8537696909d91066d2126f216eff31996d`.
+Follow-up code revision `f7d7e8f1` also pins `setOffsetMsgId(null)`: it clears
+the offset ID and effective fallback, and conversion to a base-typed
+`MessageExt` preserves the cleared state. The Common message fixture SHA-256
+is `1adc11e14bf1af0d39966ecda166a3ddb8a24c0e7d13bbf2d5a9830bdaac64dc`.

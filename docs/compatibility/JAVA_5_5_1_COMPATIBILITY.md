@@ -823,3 +823,14 @@ Invoked Java and Rust fixtures cover exact signatures, null fields,
 a delayed scripted peer checks timeout enforcement. Producer core fixture
 SHA-256 and gate details are in the Phase 18 release checklist. This closes
 these direct RPC/header rows only; broad P18-V01 remains open.
+
+Phase 18 caller-defined `MessageClientExt` offset-ID overrides (2026-10-21):
+Rust now dispatches Java subclasses' virtual `getOffsetMsgId()` and
+`setOffsetMsgId(String)` hooks. Inherited `getMsgId()` still prefers `UNIQ_KEY`
+and then observes the overridden offset getter. Invoked Java and Rust cases
+cover custom offset-only subclasses, unique-ID precedence, setter dispatch,
+base `setMsgId` no-op, and conversion to `MessageExt`. Fixture SHA-256 and
+validation details are in the Phase 18 release checklist. This closes the
+selected `MessageClientExt` subtype path only; broad P18-V01 remains open.
+The Java fixture records `setOffsetMsgId(null)` clearing both the offset ID
+and the effective client ID, including after conversion to the base type.
