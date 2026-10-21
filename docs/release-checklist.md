@@ -6667,3 +6667,30 @@ owner-specific checks belong in the manual handoff.
   mutable custom `getProperties()` map identity, and current-revision GitHub
   Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
   Broker or Docker run was performed; protected Phase 19 paths were untouched.
+
+## P18-V01 IPv6 host-flag setters and current-revision P18-V02 — 2026-10-21 (`c7354649`)
+
+- [x] Added subtype dispatch for Java `setBornHostV6Flag()` and
+  `setStoreHostAddressV6Flag()`. The invoked direct-consume fixture overrides
+  both and compares their call count; the base path continues to set the
+  corresponding sysFlag bits. Fixture SHA-256:
+  `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
+- [x] Focused direct-consume tests, serial default/all-feature workspace
+  tests, strict all-target/all-feature Clippy, format/diff checks and pinned
+  Maven `verify` pass on `c7354649`. Maven verified 37 scenarios, 9 Running
+  Info, 27 direct-consume, 15 reset cases, 83 typed headers, 16 typed bodies
+  and Java/Rust cross-decodes.
+- [x] Refreshed current-revision P18-V02 gates on `c7354649`: differential
+  self-test and 37 manifest scenarios; offline stress (16 cases × 3); release
+  fuzz (137 frame seeds, 11 message seeds, 2,368 mutations); release examples,
+  workspace benches, metadata/package/license/dependency checks, and four
+  Unique ID tests under UTC and Asia/Taipei. Full record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261021T201000Z.rlog`.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0: frame
+  encode/decode 2,392.3 ns/iteration; zstd decode 1,211.7 ns; producer
+  request construction 1,294.3 ns; route lookup 14.8 ns; loopback completion
+  63,931.1 ns. Measurements are observations, not thresholds.
+- Broad P18-V01 API/settings/input/error/control-flow/reverse-export audit,
+  mutable custom `getProperties()` map identity, and current-revision GitHub
+  Ubuntu/native Windows P18-V04 evidence remain open. No push, remote CI,
+  Broker or Docker run was performed; protected Phase 19 paths were untouched.

@@ -319,3 +319,10 @@ compare values and writes, including blank/null `putUserProperty` inputs.
 Fixture SHA-256:
 `33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
 The broad inherited-method reconciliation remains open.
+
+P18-V01 IPv6 host-flag setter follow-up (code revision `c7354649`,
+2026-10-21): both Java `MessageExt` virtual setters dispatch through
+`MessageExtSubtype`, and the direct-consume fixture compares the two custom
+calls. Without an override, Rust keeps the original base sysFlag bit updates.
+Fixture SHA-256:
+`7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.

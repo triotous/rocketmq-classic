@@ -1643,3 +1643,11 @@ Fixture SHA-256:
 `33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
 Other inherited methods, custom live property-map identity, broad P18-V01 and
 P18-V04 platform evidence remain open.
+
+P18-V01 MessageExt IPv6 host-flag setters (code revision `c7354649`,
+2026-10-21): `setBornHostV6Flag` and `setStoreHostAddressV6Flag` now dispatch
+to subtype hooks. The Java/Rust direct-consume fixture confirms both virtual
+calls; base messages still set their corresponding sysFlag bits. Fixture
+SHA-256: `7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
+Other inherited methods, custom live property-map identity, broad P18-V01 and
+P18-V04 platform evidence remain open.

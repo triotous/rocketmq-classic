@@ -367,3 +367,12 @@ user-property inputs accepted by the custom override. Fixture SHA-256:
 `33de50fa577340aa50df1637f1d2f6aa32ae8d23e5e03ba21a2a012630e37542`.
 The remaining inherited methods, Java live property-map identity, broad
 P18-V01 audit and P18-V04 platform evidence remain open.
+
+P18-V01 caller-defined IPv6 host-flag setter follow-up (code revision
+`c7354649`, 2026-10-21): Rust routes `setBornHostV6Flag` and
+`setStoreHostAddressV6Flag` through subtype hooks. The Java fixture overrides
+both methods and compares the custom write count with Rust. The base path still
+sets each Java sysFlag bit. Fixture SHA-256:
+`7cf4e8040b8e040117207c8819d67f1dd7bf7f9f0daa6374ce0f7c345bf9171c`.
+The remaining inherited methods, Java live property-map identity, broad
+P18-V01 audit and P18-V04 platform evidence remain open.
