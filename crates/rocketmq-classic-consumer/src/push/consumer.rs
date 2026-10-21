@@ -59,10 +59,11 @@ use crate::{
     admin::{first_query_message, unique_key_lookup_begin_timestamp},
     consume::{
         ConcurrentConsumeService, ConsumeMessageContext, ConsumeMessageHook,
-        ConsumeMessageHookRegistry, ConsumeRequest, ConsumeService, ConsumeSubmitError,
-        ConsumeTraceHook, ORDERLY_LOCK_RETRY_DELAY_MILLIS, ORDERLY_LOCK_RPC_TIMEOUT_MILLIS,
-        OrderlyConsumeRequest, OrderlyConsumeService, OrderlyDisposition, OrderlyLockSettings,
-        OrderlySubmitError, orderly_disposition, suspend_delay_millis,
+        ConsumeMessageHookRegistry, ConsumeMessageService, ConsumeMessageServiceFuture,
+        ConsumeRequest, ConsumeService, ConsumeSubmitError, ConsumeTraceHook,
+        ORDERLY_LOCK_RETRY_DELAY_MILLIS, ORDERLY_LOCK_RPC_TIMEOUT_MILLIS, OrderlyConsumeRequest,
+        OrderlyConsumeService, OrderlyDisposition, OrderlyLockSettings, OrderlySubmitError,
+        orderly_disposition, suspend_delay_millis,
     },
     error::PushConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, OffsetStoreError, RemoteBrokerOffsetStore},
@@ -357,6 +358,122 @@ enum StatsManagerBinding {
     Null,
 }
 
+#[derive(Clone)]
+enum ConsumeMessageServiceBinding {
+    Unbound,
+    Builtin(Arc<dyn ConsumeMessageService>),
+    Custom(Arc<dyn ConsumeMessageService>),
+    Null,
+}
+
+struct BuiltinConsumeMessageService {
+    owner: Weak<PushConsumer>,
+    service: ConsumeService,
+    orderly_lock_settings: Option<OrderlyLockSettings>,
+}
+
+impl ConsumeMessageService for BuiltinConsumeMessageService {
+    fn start(&self) -> ConsumeMessageServiceFuture<'_, ()> {
+        let owner = self.owner.clone();
+        let service = self.service.clone();
+        let orderly_lock_settings = self.orderly_lock_settings;
+        Box::pin(async move {
+            if let Some(owner) = owner.upgrade() {
+                let renew_orderly_locks = orderly_lock_settings.is_some()
+                    && owner.config.message_model()
+                        == rocketmq_classic_protocol::heartbeat::MessageModel::Clustering;
+                service
+                    .start(
+                        Arc::downgrade(&owner),
+                        orderly_lock_settings,
+                        renew_orderly_locks,
+                    )
+                    .await;
+            }
+        })
+    }
+
+    fn shutdown(&self, await_termination_millis: i64) -> ConsumeMessageServiceFuture<'_, ()> {
+        let service = self.service.clone();
+        Box::pin(async move {
+            service.shutdown(await_termination_millis).await;
+        })
+    }
+
+    fn update_core_pool_size(&self, core_pool_size: i32) {
+        if self.service.update_core_pool_size(core_pool_size) {
+            if let Some(owner) = self.owner.upgrade() {
+                owner
+                    .consume_core_pool_size
+                    .store(core_pool_size, Ordering::Release);
+            }
+        }
+    }
+
+    fn inc_core_pool_size(&self) {}
+
+    fn dec_core_pool_size(&self) {}
+
+    fn core_pool_size(&self) -> i32 {
+        self.owner.upgrade().map_or(0, |owner| {
+            owner.consume_core_pool_size.load(Ordering::Acquire)
+        })
+    }
+
+    fn consume_message_directly(
+        &self,
+        message: MessageExt,
+        broker_name: Option<String>,
+    ) -> ConsumeMessageServiceFuture<'_, ConsumeMessageDirectlyResult> {
+        let owner = self.owner.clone();
+        let service = self.service.clone();
+        Box::pin(async move {
+            match owner.upgrade() {
+                Some(owner) => owner
+                    .consume_message_directly_with_service(message, broker_name, service)
+                    .await
+                    .unwrap_or_default(),
+                None => ConsumeMessageDirectlyResult::default(),
+            }
+        })
+    }
+
+    fn submit_consume_request(
+        &self,
+        messages: Vec<Arc<MessageExt>>,
+        process_queue: Arc<ProcessQueue>,
+        _message_queue: MessageQueue,
+        dispatch_to_consume: bool,
+    ) {
+        if !dispatch_to_consume && matches!(&self.service, ConsumeService::Orderly(_)) {
+            return;
+        }
+        let Some(owner) = self.owner.upgrade() else {
+            return;
+        };
+        let message_snapshots = messages
+            .iter()
+            .map(|message| message.as_ref().clone())
+            .collect::<Vec<_>>();
+        let _ = process_queue.put_message(&message_snapshots);
+        let process_queue_generation = process_queue.generation();
+        tokio::spawn(async move {
+            if let Some(context) = owner.pull_context().await {
+                owner.submit_ready_messages(&context, process_queue, process_queue_generation);
+            }
+        });
+    }
+
+    fn submit_pop_consume_request(
+        &self,
+        _messages: Vec<MessageExt>,
+        _process_queue: Arc<PopProcessQueue>,
+        _message_queue: MessageQueue,
+    ) {
+        panic!("the primary consume-message service does not accept POP requests");
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StartupStage {
     RuntimeCreated,
@@ -424,6 +541,7 @@ pub struct PushConsumer {
     consume_message_hooks: ConsumeMessageHookRegistry,
     stats: Arc<ConsumerStatsManager>,
     runtime_stats: RwLock<StatsManagerBinding>,
+    consume_message_service: RwLock<ConsumeMessageServiceBinding>,
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
@@ -508,6 +626,7 @@ impl PushConsumer {
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             stats: Arc::new(ConsumerStatsManager::default()),
             runtime_stats: RwLock::new(StatsManagerBinding::Unbound),
+            consume_message_service: RwLock::new(ConsumeMessageServiceBinding::Unbound),
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
@@ -605,6 +724,46 @@ impl PushConsumer {
             StatsManagerBinding::Runtime(manager) => Some(manager.clone()),
             StatsManagerBinding::Unbound | StatsManagerBinding::Null => None,
         }
+    }
+
+    /// Returns the Java implementation's current consume-message service.
+    pub fn get_consume_message_service(&self) -> Option<Arc<dyn ConsumeMessageService>> {
+        match read_lock(&self.consume_message_service).clone() {
+            ConsumeMessageServiceBinding::Builtin(service)
+            | ConsumeMessageServiceBinding::Custom(service) => Some(service),
+            ConsumeMessageServiceBinding::Unbound | ConsumeMessageServiceBinding::Null => None,
+        }
+    }
+
+    /// Replaces the consume-message service, matching Java's direct nullable
+    /// implementation-field setter. A custom service receives subsequently
+    /// submitted normal Pull work and direct-consume calls; POP has its own
+    /// service in the Java implementation.
+    pub fn set_consume_message_service(&self, service: Option<Arc<dyn ConsumeMessageService>>) {
+        let binding = service.map_or(ConsumeMessageServiceBinding::Null, |service| {
+            ConsumeMessageServiceBinding::Custom(service)
+        });
+        *write_lock(&self.consume_message_service) = binding;
+    }
+
+    fn custom_consume_message_service(&self) -> Option<Arc<dyn ConsumeMessageService>> {
+        match read_lock(&self.consume_message_service).clone() {
+            ConsumeMessageServiceBinding::Custom(service) => Some(service),
+            ConsumeMessageServiceBinding::Unbound
+            | ConsumeMessageServiceBinding::Builtin(_)
+            | ConsumeMessageServiceBinding::Null => None,
+        }
+    }
+
+    fn consume_message_service_is_null(&self) -> bool {
+        matches!(
+            &*read_lock(&self.consume_message_service),
+            ConsumeMessageServiceBinding::Null
+        )
+    }
+
+    fn bind_builtin_consume_message_service(&self, service: Arc<dyn ConsumeMessageService>) {
+        *write_lock(&self.consume_message_service) = ConsumeMessageServiceBinding::Builtin(service);
     }
 
     /// Returns the retained implementation handle exposed by Java's
@@ -2187,12 +2346,16 @@ impl PushConsumer {
         jstack: Option<String>,
         offset_store: Option<Arc<dyn OffsetStore>>,
     ) -> ConsumerRunningInfoBody {
+        let consume_core_pool_size = self
+            .get_consume_message_service()
+            .expect("consume-message service is unavailable")
+            .core_pool_size();
         let mut properties = crate::admin::push_running_info_properties(
             &self.config,
             &runtime_snapshot.nameserver_address,
             self.consumer_start_timestamp.load(Ordering::Acquire),
             self.consume_orderly.load(Ordering::Acquire),
-            self.consume_core_pool_size.load(Ordering::Acquire),
+            consume_core_pool_size,
         );
         properties.insert(
             "pullThresholdForQueue".into(),
@@ -2299,12 +2462,39 @@ impl PushConsumer {
 
     pub(crate) async fn consume_message_directly(
         &self,
-        mut message: MessageExt,
+        message: MessageExt,
         broker_name: Option<String>,
     ) -> Option<ConsumeMessageDirectlyResult> {
         let context = self.pull_context().await?;
+        if let Some(service) = self.custom_consume_message_service() {
+            return Some(service.consume_message_directly(message, broker_name).await);
+        }
+        if self.consume_message_service_is_null() {
+            return None;
+        }
+        self.consume_message_directly_using_service(message, broker_name, context.consume_service)
+            .await
+    }
+
+    async fn consume_message_directly_with_service(
+        &self,
+        message: MessageExt,
+        broker_name: Option<String>,
+        service: ConsumeService,
+    ) -> Option<ConsumeMessageDirectlyResult> {
+        self.pull_context().await?;
+        self.consume_message_directly_using_service(message, broker_name, service)
+            .await
+    }
+
+    async fn consume_message_directly_using_service(
+        &self,
+        mut message: MessageExt,
+        broker_name: Option<String>,
+        service: ConsumeService,
+    ) -> Option<ConsumeMessageDirectlyResult> {
         let started = std::time::Instant::now();
-        let orderly = matches!(&context.consume_service, ConsumeService::Orderly(_));
+        let orderly = matches!(&service, ConsumeService::Orderly(_));
         let queue = MessageQueue::new_nullable(
             message.topic_nullable().map(str::to_owned),
             broker_name.clone(),
@@ -2317,7 +2507,7 @@ impl PushConsumer {
         self.reset_retry_and_namespace_for_group(&mut messages, &self.consume_stats_group());
 
         let mut result = ConsumeMessageDirectlyResult::default();
-        match context.consume_service.listener() {
+        match service.listener() {
             PushMessageListener::Concurrently(listener) if !orderly => {
                 result.set_order(false);
                 result.set_auto_commit(true);
@@ -2412,6 +2602,18 @@ impl PushConsumer {
         &self,
         core_pool_size: i32,
     ) -> Result<(), PushConsumerError> {
+        if let Some(service) = self.custom_consume_message_service() {
+            if core_pool_size > 0
+                && core_pool_size <= i16::MAX as i32
+                && core_pool_size < self.config.consume_thread_max()
+            {
+                service.update_core_pool_size(core_pool_size);
+            }
+            return Ok(());
+        }
+        if self.consume_message_service_is_null() {
+            return Err(PushConsumerError::ConsumeMessageServiceUnavailable);
+        }
         let state = self.state.lock().await;
         match &*state {
             State::Created if !self.consume_service_initialized.load(Ordering::Acquire) => {
@@ -2464,11 +2666,26 @@ impl PushConsumer {
         }
     }
 
-    /// Mirrors `DefaultMQPushConsumerImpl.adjustThreadPool` for the pinned
-    /// Java client's built-in consume services. Their `incCorePoolSize` and
-    /// `decCorePoolSize` methods are no-ops; explicit resizing remains
-    /// available through [`Self::update_core_pool_size`].
-    pub fn adjust_thread_pool(&self) {}
+    /// Mirrors `DefaultMQPushConsumerImpl.adjustThreadPool` using current queue
+    /// accumulation and the installed service's grow/shrink hooks.
+    pub fn adjust_thread_pool(&self) {
+        let service = self
+            .get_consume_message_service()
+            .expect("consume-message service is unavailable");
+        let accumulation = read_lock(&self.process_queues)
+            .values()
+            .fold(0_i64, |sum, process_queue| {
+                sum.wrapping_add(process_queue.get_msg_acc_cnt())
+            });
+        let threshold = self.config.adjust_thread_pool_nums_threshold();
+        let decrease_threshold = (threshold as f64 * 0.8) as i64;
+        if accumulation >= threshold {
+            service.inc_core_pool_size();
+        }
+        if accumulation < decrease_threshold {
+            service.dec_core_pool_size();
+        }
+    }
 
     /// Sends a consumed message back to its originating Broker and uses the
     /// Java-compatible retry-topic fallback if the Broker rejects the request.
@@ -3118,6 +3335,25 @@ impl PushConsumer {
         process_queue: Arc<ProcessQueue>,
         generation: u64,
     ) {
+        if let Some(service) = self.custom_consume_message_service() {
+            let batch = match process_queue.take_batch(
+                generation,
+                self.config.consume_message_batch_max_size().max(1) as usize,
+            ) {
+                Ok(Some(batch)) => batch,
+                Ok(None) | Err(_) => return,
+            };
+            service.submit_consume_request(
+                batch.messages().to_vec(),
+                process_queue,
+                batch.queue().clone(),
+                true,
+            );
+            return;
+        }
+        if self.consume_message_service_is_null() {
+            return;
+        }
         let ConsumeService::Concurrent(consume_service) = &context.consume_service else {
             return;
         };
@@ -3211,6 +3447,23 @@ impl PushConsumer {
         process_queue: Arc<ProcessQueue>,
         generation: u64,
     ) {
+        if matches!(&context.consume_service, ConsumeService::Orderly(_)) {
+            if let Some(service) = self.custom_consume_message_service() {
+                let messages = process_queue.take_messages(i32::MAX);
+                if !messages.is_empty() {
+                    service.submit_consume_request(
+                        messages,
+                        process_queue.clone(),
+                        process_queue.queue().clone(),
+                        true,
+                    );
+                }
+                return;
+            }
+            if self.consume_message_service_is_null() {
+                return;
+            }
+        }
         match &context.consume_service {
             ConsumeService::Concurrent(_) => {
                 self.submit_consume_batch(context, process_queue, generation);
@@ -4477,6 +4730,11 @@ impl PushConsumer {
                 )))
             }
         };
+        self.bind_builtin_consume_message_service(Arc::new(BuiltinConsumeMessageService {
+            owner: Arc::downgrade(self),
+            service: consume_service.clone(),
+            orderly_lock_settings,
+        }));
         self.consume_service_max_threads
             .store(service_max_threads.max(1), Ordering::Release);
         self.consume_service_initialized
@@ -6815,6 +7073,9 @@ impl PushConsumer {
         }
         pull_scheduler.stop().await;
         pull_rpc_workers.stop(await_termination_millis).await;
+        if let Some(service) = self.custom_consume_message_service() {
+            service.shutdown(await_termination_millis).await;
+        }
         consume_service.shutdown(await_termination_millis).await;
         let queues = process_queues
             .iter()
@@ -7505,8 +7766,8 @@ mod tests {
         assert_eq!(fixture["pushQueueThresholdHeartbeatCalls"], 5);
     }
 
-    #[test]
-    fn push_adjust_thread_pool_matches_java_default_service_noop() {
+    #[tokio::test]
+    async fn push_adjust_thread_pool_matches_java_default_service_noop() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/consumer/push-implementation-accessor.json"
         ))
@@ -7515,10 +7776,31 @@ mod tests {
         assert_eq!(fixture["adjustThreadPoolCorePoolSizeBefore"], 7);
         assert_eq!(fixture["adjustThreadPoolCorePoolSizeAfter"], 7);
 
-        let consumer = PushConsumer::new(PushConsumerConfig::new("phase18-adjust-pool").unwrap());
+        let mut config = PushConsumerConfig::new("phase18-adjust-pool").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        config.set_adjust_thread_pool_nums_threshold(10);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
         consumer.consume_core_pool_size.store(7, Ordering::Release);
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 1));
+        process_queue.set_msg_acc_cnt(10);
+        write_lock(&consumer.process_queues).insert(queue, process_queue.clone());
         consumer.adjust_thread_pool();
         assert_eq!(consumer.consume_core_pool_size.load(Ordering::Acquire), 7);
+        process_queue.set_msg_acc_cnt(0);
+        consumer.adjust_thread_pool();
+        assert_eq!(consumer.consume_core_pool_size.load(Ordering::Acquire), 7);
+        consumer.shutdown().await.unwrap();
     }
 
     #[test]
@@ -9393,6 +9675,131 @@ mod tests {
         ))
     }
 
+    #[derive(Default)]
+    struct RecordingConsumeMessageService {
+        direct_calls: AtomicUsize,
+        pull_submissions: AtomicUsize,
+        pop_submissions: AtomicUsize,
+        shutdown_calls: AtomicUsize,
+        submitted_offsets: Mutex<Vec<i64>>,
+    }
+
+    impl ConsumeMessageService for RecordingConsumeMessageService {
+        fn start(&self) -> ConsumeMessageServiceFuture<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn shutdown(&self, _await_termination_millis: i64) -> ConsumeMessageServiceFuture<'_, ()> {
+            self.shutdown_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        }
+
+        fn update_core_pool_size(&self, _core_pool_size: i32) {}
+
+        fn inc_core_pool_size(&self) {}
+
+        fn dec_core_pool_size(&self) {}
+
+        fn core_pool_size(&self) -> i32 {
+            1
+        }
+
+        fn consume_message_directly(
+            &self,
+            _message: MessageExt,
+            _broker_name: Option<String>,
+        ) -> ConsumeMessageServiceFuture<'_, ConsumeMessageDirectlyResult> {
+            self.direct_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { ConsumeMessageDirectlyResult::default() })
+        }
+
+        fn submit_consume_request(
+            &self,
+            messages: Vec<Arc<MessageExt>>,
+            _process_queue: Arc<ProcessQueue>,
+            _message_queue: MessageQueue,
+            _dispatch_to_consume: bool,
+        ) {
+            self.pull_submissions.fetch_add(1, Ordering::SeqCst);
+            self.submitted_offsets
+                .lock()
+                .unwrap()
+                .extend(messages.iter().map(|message| message.queue_offset()));
+        }
+
+        fn submit_pop_consume_request(
+            &self,
+            _messages: Vec<MessageExt>,
+            _process_queue: Arc<PopProcessQueue>,
+            _message_queue: MessageQueue,
+        ) {
+            self.pop_submissions.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn replacement_consume_service_receives_push_work_but_not_pop_work() {
+        let mut config = PushConsumerConfig::new("replacement-consume-message-service").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let _runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let replacement = Arc::new(RecordingConsumeMessageService::default());
+        let replacement_api: Arc<dyn ConsumeMessageService> = replacement.clone();
+        consumer.set_consume_message_service(Some(replacement_api));
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 40));
+        process_queue
+            .insert_messages(40, vec![retry_test_message(50)])
+            .unwrap();
+        write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
+        let context = consumer.pull_context().await.unwrap();
+        consumer.submit_consume_batch(&context, process_queue.clone(), 40);
+
+        assert_eq!(replacement.pull_submissions.load(Ordering::SeqCst), 1);
+        assert_eq!(*replacement.submitted_offsets.lock().unwrap(), [50]);
+        assert_eq!(process_queue.snapshot(40).unwrap().in_flight_count, 1);
+
+        consumer
+            .consume_message_directly(retry_test_message(51), Some("broker-a".into()))
+            .await
+            .unwrap();
+        assert_eq!(replacement.direct_calls.load(Ordering::SeqCst), 1);
+
+        let pop_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 1));
+        pop_queue.inc_found_messages(1);
+        consumer
+            .dispatch_pop_messages(
+                pop_queue.clone(),
+                context.runtime,
+                queue,
+                "orders".into(),
+                "replacement-consume-message-service".into(),
+                vec![retry_test_message(52)],
+            )
+            .await;
+        assert_eq!(replacement.pop_submissions.load(Ordering::SeqCst), 0);
+        assert_eq!(pop_queue.wait_ack_count(), 0);
+
+        consumer.shutdown().await.unwrap();
+        assert_eq!(replacement.shutdown_calls.load(Ordering::SeqCst), 1);
+        consumer.set_consume_message_service(None);
+        assert!(matches!(
+            consumer.update_core_pool_size(2).await,
+            Err(PushConsumerError::ConsumeMessageServiceUnavailable)
+        ));
+    }
+
     async fn install_started_consumer(
         consumer: &Arc<PushConsumer>,
         manager: &ClientRuntimeManager,
@@ -9423,6 +9830,11 @@ mod tests {
         pull_rpc_workers: Arc<PullRpcWorkers>,
     ) -> Arc<ClientRuntime> {
         *consumer.owner.lock().unwrap() = Arc::downgrade(consumer);
+        consumer.bind_builtin_consume_message_service(Arc::new(BuiltinConsumeMessageService {
+            owner: Arc::downgrade(consumer),
+            service: consume_service.clone(),
+            orderly_lock_settings,
+        }));
         consumer.consume_orderly.store(
             matches!(&consume_service, ConsumeService::Orderly(_)),
             Ordering::Release,

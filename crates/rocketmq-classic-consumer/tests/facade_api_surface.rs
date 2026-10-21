@@ -1,15 +1,91 @@
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
-    ConsumerStatsManager, MqHelper, PopProcessQueue, ProcessQueue, PullConsumerConfig,
-    PushConsumer, PushConsumerConfig, pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
+    ConsumeMessageService, ConsumeMessageServiceFuture, ConsumerStatsManager, MqHelper,
+    PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
+    pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
-use rocketmq_classic_protocol::body::{ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo};
+use rocketmq_classic_protocol::body::{
+    ConsumeMessageDirectlyResult, ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo,
+};
 use rocketmq_classic_protocol::heartbeat::ConsumeType;
 use rocketmq_classic_protocol::heartbeat::MessageModel;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicI32, AtomicUsize, Ordering},
+};
 
 const JAVA_FACADE_API: &str = include_str!("../../../fixtures/consumer/facade-api.json");
+
+#[derive(Default)]
+struct RecordingConsumeMessageService {
+    core_pool_size: AtomicI32,
+    start_calls: AtomicUsize,
+    shutdown_calls: AtomicUsize,
+    update_calls: AtomicUsize,
+    increase_calls: AtomicUsize,
+    decrease_calls: AtomicUsize,
+    direct_calls: AtomicUsize,
+    pull_submissions: AtomicUsize,
+    pop_submissions: AtomicUsize,
+}
+
+impl ConsumeMessageService for RecordingConsumeMessageService {
+    fn start(&self) -> ConsumeMessageServiceFuture<'_, ()> {
+        self.start_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+
+    fn shutdown(&self, _await_termination_millis: i64) -> ConsumeMessageServiceFuture<'_, ()> {
+        self.shutdown_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {})
+    }
+
+    fn update_core_pool_size(&self, core_pool_size: i32) {
+        self.update_calls.fetch_add(1, Ordering::SeqCst);
+        self.core_pool_size.store(core_pool_size, Ordering::SeqCst);
+    }
+
+    fn inc_core_pool_size(&self) {
+        self.increase_calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn dec_core_pool_size(&self) {
+        self.decrease_calls.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn core_pool_size(&self) -> i32 {
+        self.core_pool_size.load(Ordering::SeqCst)
+    }
+
+    fn consume_message_directly(
+        &self,
+        _message: MessageExt,
+        _broker_name: Option<String>,
+    ) -> ConsumeMessageServiceFuture<'_, ConsumeMessageDirectlyResult> {
+        self.direct_calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { ConsumeMessageDirectlyResult::default() })
+    }
+
+    fn submit_consume_request(
+        &self,
+        _messages: Vec<Arc<MessageExt>>,
+        _process_queue: Arc<ProcessQueue>,
+        _message_queue: MessageQueue,
+        _dispatch_to_consume: bool,
+    ) {
+        self.pull_submissions.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn submit_pop_consume_request(
+        &self,
+        _messages: Vec<MessageExt>,
+        _process_queue: Arc<PopProcessQueue>,
+        _message_queue: MessageQueue,
+    ) {
+        self.pop_submissions.fetch_add(1, Ordering::SeqCst);
+    }
+}
 
 fn method_named(api: &Value, method: &str) -> bool {
     api["declaredPublicMethods"]
@@ -140,6 +216,75 @@ fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     assert!(status.get_consume_ok_tps() > 0.0);
     assert!(status.get_consume_failed_tps() > 0.0);
     stats.shutdown();
+}
+
+#[tokio::test]
+async fn consume_message_service_accessor_and_extension_methods_match_java() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/consumer/push-implementation-accessor.json"
+    ))
+    .unwrap();
+    let expected_methods = serde_json::json!([
+        "consumeMessageDirectly(MessageExt,String)",
+        "decCorePoolSize()",
+        "getCorePoolSize()",
+        "incCorePoolSize()",
+        "shutdown(long)",
+        "start()",
+        "submitConsumeRequest(List,ProcessQueue,MessageQueue,boolean)",
+        "submitPopConsumeRequest(List,PopProcessQueue,MessageQueue)",
+        "updateCorePoolSize(int)"
+    ]);
+    assert_eq!(
+        fixture["consumeMessageServicePublicMethods"],
+        expected_methods
+    );
+
+    let config = PushConsumerConfig::new("consume-service-accessor").unwrap();
+    let consumer = PushConsumer::new(config);
+    assert!(consumer.get_consume_message_service().is_none());
+
+    let service = Arc::new(RecordingConsumeMessageService::default());
+    let service_api: Arc<dyn ConsumeMessageService> = service.clone();
+    consumer.set_consume_message_service(Some(service_api.clone()));
+    assert!(Arc::ptr_eq(
+        &consumer.get_consume_message_service().unwrap(),
+        &service_api
+    ));
+
+    consumer.update_core_pool_size(5).await.unwrap();
+    assert_eq!(service.update_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.core_pool_size(), 5);
+    consumer.update_core_pool_size(20).await.unwrap();
+    assert_eq!(service.update_calls.load(Ordering::SeqCst), 1);
+    consumer.adjust_thread_pool();
+    assert_eq!(service.decrease_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.increase_calls.load(Ordering::SeqCst), 0);
+
+    service.start().await;
+    let _ = service
+        .consume_message_directly(MessageExt::default(), None)
+        .await;
+    service.submit_consume_request(
+        vec![],
+        Arc::new(ProcessQueue::new()),
+        MessageQueue::new("orders", "broker-a", 0),
+        true,
+    );
+    service.submit_pop_consume_request(
+        vec![],
+        Arc::new(PopProcessQueue::new()),
+        MessageQueue::new("orders", "broker-a", 0),
+    );
+    service.shutdown(0).await;
+    assert_eq!(service.start_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.direct_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.pull_submissions.load(Ordering::SeqCst), 1);
+    assert_eq!(service.pop_submissions.load(Ordering::SeqCst), 1);
+    assert_eq!(service.shutdown_calls.load(Ordering::SeqCst), 1);
+
+    consumer.set_consume_message_service(None);
+    assert!(consumer.get_consume_message_service().is_none());
 }
 
 #[test]

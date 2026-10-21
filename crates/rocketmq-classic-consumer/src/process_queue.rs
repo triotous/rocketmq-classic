@@ -719,37 +719,35 @@ impl ProcessQueue {
         let now = epoch_millis();
         let mut state = self.lock_state();
         state.last_consume_timestamp_millis = now;
-        if !state
-            .messages
-            .values()
-            .any(|entry| entry.state == MessageState::Ready)
-        {
+        if state.messages.is_empty() {
             return -1;
         }
         let mut result = state.queue_offset_max.wrapping_add(1);
         for message in messages {
             let offset = message.queue_offset();
-            if state
-                .messages
-                .get(&offset)
-                .is_some_and(|entry| entry.state == MessageState::Ready)
-            {
-                if let Some(removed) = state.messages.remove(&offset) {
-                    state.cached_count = state.cached_count.wrapping_sub(1);
-                    state.cached_bytes = state.cached_bytes.wrapping_sub(removed.body_bytes as i64);
-                }
+            if state.messages.remove(&offset).is_some() {
+                state.cached_count = state.cached_count.wrapping_sub(1);
+                let body_bytes = message.body().len();
+                state.cached_bytes = state.cached_bytes.wrapping_sub(body_bytes as i64);
             }
         }
-        if let Some((offset, _)) = state
-            .messages
-            .iter()
-            .find(|(_, message)| message.state == MessageState::Ready)
-        {
+        for offsets in state.in_flight_batches.values_mut() {
+            offsets.retain(|offset| {
+                !messages
+                    .iter()
+                    .any(|message| message.queue_offset() == *offset)
+            });
+        }
+        state
+            .in_flight_batches
+            .retain(|_, offsets| !offsets.is_empty());
+        if let Some((offset, _)) = state.messages.first_key_value() {
             result = *offset;
         }
         if state.cached_count == 0 {
             state.cached_bytes = 0;
         }
+        state.consuming = !state.messages.is_empty();
         result
     }
 
@@ -1668,6 +1666,25 @@ mod tests {
             crate::test_support::message_ext_from(Message::new("orders", vec![b'x'; body_size]));
         message.set_queue_offset(offset);
         message
+    }
+
+    #[test]
+    fn remove_message_matches_java_for_in_flight_entries() {
+        let process_queue = process_queue(16);
+        process_queue
+            .insert_messages(16, vec![message(10, 2), message(11, 3)])
+            .unwrap();
+        let batch = process_queue.take_batch(16, 1).unwrap().unwrap();
+        assert_eq!(process_queue.snapshot(16).unwrap().in_flight_count, 1);
+
+        let next_offset = process_queue.remove_message(batch.messages());
+
+        assert_eq!(next_offset, 11);
+        let snapshot = process_queue.snapshot(16).unwrap();
+        assert_eq!(snapshot.cached_count, 1);
+        assert_eq!(snapshot.cached_bytes, 3);
+        assert_eq!(snapshot.in_flight_count, 0);
+        assert_eq!(process_queue.commit(), -1);
     }
 
     #[test]

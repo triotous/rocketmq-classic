@@ -98,6 +98,16 @@ cases compare IDs, property-map presence, callback fields and offset isolation.
 Fixture checkpoint SHA-256:
 `c7cda96e0bf61f51c9e848c7290859382964c01cd2c4db52b34e8fed2eb00c76`.
 
+The raw `get/setConsumeMessageService` seam now maps to a public Rust
+`ConsumeMessageService` trait and nullable Push owner accessors. A replacement
+service receives direct-consume calls and normal Pull submissions; explicit
+pool updates, adjustment hooks and shutdown also target that service. Java
+routes POP work through a separate private service, so Rust keeps POP dispatch
+on its own listener path after primary-service replacement. The fixture records
+all nine Java service methods, and Rust owner tests check direct/Pull routing,
+POP separation and null replacement behavior. Fixture SHA-256:
+`2ceab3283085fa8335cd3e7a965c1698e10960ae720c76b148af4cb52a196b4b`.
+
 ## Offset reset
 
 Java `resetOffset(String, String, Map<MessageQueue, Long>)` maps to async

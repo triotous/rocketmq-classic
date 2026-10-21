@@ -1508,3 +1508,24 @@ public low-level `MQClientAPIImpl` operations. The Phase 17
 `TOOLS_OUT_OF_SCOPE` disposition continues to apply to their `MQAdminExt`
 wrappers; it does not remove either client operation from the Phase 18
 source/API inventory.
+
+## P18-V01 Push `ConsumeMessageService` replacement seam — 2026-10-21
+
+`DefaultMQPushConsumerImpl.get/setConsumeMessageService` now maps to public
+Rust `PushConsumer` accessors and a public `ConsumeMessageService` trait with
+the nine methods inventoried from pinned Java 5.5.1. Replacements receive
+direct-consume requests, normal Pull submissions, accepted pool updates,
+thread-adjustment hooks and shutdown. POP dispatch remains on the separate
+internal POP service, matching Java's `consumeMessagePopService`; replacing the
+primary service does not intercept POP submissions. The Java fixture records
+all service method signatures, and Rust API/owner tests cover identity/null
+access, replacement routing, POP separation and shutdown. `ProcessQueue` removal
+also now removes in-flight entries and updates cached bytes using the supplied
+message body, matching Java's `removeMessage` map behavior. Focused accessor,
+owner-flow and in-flight-removal tests pass; fixture SHA-256 is
+`2ceab3283085fa8335cd3e7a965c1698e10960ae720c76b148af4cb52a196b4b`.
+
+This closes the named raw service-replacement seam only. Broad P18-V01
+source/API/settings/input/error/control-flow/reverse-export reconciliation,
+arbitrary Java `MessageExt` subclasses and P18-V04 platform evidence remain
+open.

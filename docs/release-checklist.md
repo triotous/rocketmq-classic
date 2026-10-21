@@ -6343,3 +6343,27 @@ owner-specific checks belong in the manual handoff.
   Broad P18-V01, GitHub Ubuntu/native Windows P18-V04 evidence, and Phase 19
   live Broker/Docker scenarios remain open. Protected Phase 19 worktree paths
   were left untouched and unstaged.
+
+## P18-V01 Push `ConsumeMessageService` replacement seam — 2026-10-21
+
+- [x] Added the public Rust `ConsumeMessageService` trait and nullable raw
+  Push-owner accessors. Custom services receive direct-consume and normal Pull
+  work, pool updates and adjustment hooks, and shutdown. POP remains routed to
+  the separate internal POP service as in Java 5.5.1. The Java fixture now
+  inventories all nine public service methods.
+- [x] Matched `ProcessQueue.removeMessage` for in-flight entries, including
+  cached count/bytes and offset return behavior.
+- [x] Slice verification passes: default and all-feature locked workspace
+  tests; strict all-target/all-feature Clippy; Maven verify (37 scenarios, 83
+  typed headers, 16 typed bodies); differential self-test and 37-row manifest;
+  deterministic stress smoke (16 cases × 3); release fuzz smoke (137 frame
+  seeds, 11 message seeds, 2,368 mutations); release examples; workspace bench
+  compilation and offline benchmark; formatting and diff checks.
+- Fixture SHA-256:
+  `2ceab3283085fa8335cd3e7a965c1698e10960ae720c76b148af4cb52a196b4b`.
+  Full command outcomes and benchmark observations are recorded in the
+  follow-up execution log. This closes the named replacement seam only. Broad
+  P18-V01 source/API/settings/input/error/control-flow/reverse-export review,
+  arbitrary Java `MessageExt` subclasses, current-revision Ubuntu/native
+  Windows P18-V04 evidence, and Phase 19 Broker/Docker scenarios remain open.
+  Protected Phase 19 working-tree paths remain untouched and unstaged.

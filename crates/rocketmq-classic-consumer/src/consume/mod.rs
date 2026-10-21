@@ -1,6 +1,7 @@
 mod concurrent;
 mod hooks;
 mod orderly;
+mod service;
 mod trace;
 
 pub(crate) use concurrent::{ConcurrentConsumeService, ConsumeRequest, ConsumeSubmitError};
@@ -11,6 +12,7 @@ pub(crate) use orderly::{
     OrderlyConsumeService, OrderlyDisposition, OrderlyLockSettings, OrderlySubmitError,
     orderly_disposition, suspend_delay_millis,
 };
+pub use service::{ConsumeMessageService, ConsumeMessageServiceFuture};
 pub(crate) use trace::ConsumeTraceHook;
 
 use std::sync::Arc;

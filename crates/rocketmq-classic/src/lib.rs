@@ -8,12 +8,12 @@ pub use rocketmq_classic_consumer::config::DEFAULT_CONSUMER_GROUP;
 pub use rocketmq_classic_consumer::pull::{BoundaryType, MessageSelector, PullConsumer};
 pub use rocketmq_classic_consumer::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
-    ConsumeMessageContext, ConsumeMessageHook, ConsumeOrderlyContext, ConsumeOrderlyStatus,
-    ConsumerServiceState, ConsumerStatsManager, LitePullConsumer, LitePullConsumerConfig,
-    LitePullConsumerError, MessageListenerConcurrently, MessageListenerOrderly,
-    MessageQueueListener, MqHelper, OrderlyListenerFuture, PopResult, PopStatus,
-    PullConsumerConfig, PullConsumerError, PushConsumer, PushConsumerConfig, PushConsumerError,
-    PushMessageListener, TopicMessageQueueChangeListener, offset, pull,
+    ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageService, ConsumeMessageServiceFuture,
+    ConsumeOrderlyContext, ConsumeOrderlyStatus, ConsumerServiceState, ConsumerStatsManager,
+    LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError, MessageListenerConcurrently,
+    MessageListenerOrderly, MessageQueueListener, MqHelper, OrderlyListenerFuture, PopResult,
+    PopStatus, PullConsumerConfig, PullConsumerError, PushConsumer, PushConsumerConfig,
+    PushConsumerError, PushMessageListener, TopicMessageQueueChangeListener, offset, pull,
 };
 pub use rocketmq_classic_core::api::extensions::NotifyResult;
 pub use rocketmq_classic_core::auth::{

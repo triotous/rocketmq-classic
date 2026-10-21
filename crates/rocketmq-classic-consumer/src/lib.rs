@@ -30,7 +30,9 @@ mod stack;
 mod test_support;
 
 pub use config::PullConsumerConfig;
-pub use consume::{ConsumeMessageContext, ConsumeMessageHook};
+pub use consume::{
+    ConsumeMessageContext, ConsumeMessageHook, ConsumeMessageService, ConsumeMessageServiceFuture,
+};
 pub use error::{LitePullConsumerError, PullConsumerError, PushConsumerError};
 pub use lite::{LitePullConsumer, LitePullConsumerConfig, TopicMessageQueueChangeListener};
 pub use mq_helper::MqHelper;

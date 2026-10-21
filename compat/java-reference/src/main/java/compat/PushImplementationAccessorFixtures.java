@@ -322,6 +322,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("executeTaskLaterDelayMillis", resetFactory.pullMessageService.delayedTaskMillis);
         fixture.put("consumeMessageServiceInitiallyNull", consumeMessageServiceInitiallyNull);
         fixture.put("consumeMessageServiceSetterPreservesIdentity", consumeMessageServiceSetterPreservesIdentity);
+        fixture.put("consumeMessageServicePublicMethods", consumeMessageServicePublicMethods());
         fixture.put("messageQueueListenerInitiallyNull", messageQueueListenerInitiallyNull);
         fixture.put("rawMessageListenerInitiallyNull", rawMessageListenerInitiallyNull);
         fixture.put("rawMessageListenerGetterPreservesIdentity", rawMessageListenerGetterPreservesIdentity);
@@ -507,6 +508,15 @@ public final class PushImplementationAccessorFixtures {
                 .sorted()
                 .collect(Collectors.toList()));
         return result;
+    }
+
+    private static List<String> consumeMessageServicePublicMethods() {
+        return Arrays.stream(ConsumeMessageService.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> !method.isBridge() && !method.isSynthetic())
+            .map(PushImplementationAccessorFixtures::signature)
+            .sorted()
+            .collect(Collectors.toList());
     }
 
     private static String signature(Method method) {
