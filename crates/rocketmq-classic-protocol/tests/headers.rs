@@ -10,7 +10,7 @@ use rocketmq_classic_protocol::{
         SetMessageRequestModeRequestBody, UnlockBatchRequestBody,
     },
     header::{
-        AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
+        AckMessageRequestHeader, AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
@@ -38,12 +38,13 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
-        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+        RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
+        ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
 };
 
@@ -2371,6 +2372,24 @@ fn header_validation_matrix() {
             "",
             "",
             "brokerName",
+            ""
+        ),
+        row!(
+            AddBrokerRequestHeader,
+            "add-broker-request",
+            "",
+            "",
+            "",
+            "configPath",
+            ""
+        ),
+        row!(
+            RemoveBrokerRequestHeader,
+            "remove-broker-request",
+            "",
+            "",
+            "brokerId",
+            "brokerClusterName brokerName",
             ""
         ),
         row!(
