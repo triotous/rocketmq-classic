@@ -150,3 +150,22 @@ Timing and allocation observations are recorded without an acceptance
 threshold. Allocation totals are aggregate allocator calls and requested bytes
 divided by sampled operations; loopback timing includes local TCP and Tokio
 scheduling.
+
+## Concurrent expiry cleanup and nested API inventory revision
+
+Captured with the same command on 2026-10-21 at code revision
+`bbcc88ae89c7fb4cf73f59f6abf7290458e217ad`. Environment and fixed inputs match
+the native macOS samples above. This is a machine-specific observation, not a
+performance threshold or cross-machine comparison.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 3,545.8 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 2,408.3 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 2,837.6 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 34.7 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 88,039.0 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+The latest timing sample varies from earlier runs; allocation observations are
+stable. The benchmark does not exercise concurrent consume expiry and sets no
+acceptance threshold.

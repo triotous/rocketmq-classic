@@ -5255,3 +5255,24 @@ owner-specific checks belong in the manual handoff.
   GitHub Ubuntu and native Windows P18-V04 evidence is not available from this
   local run; no CI was triggered. Phase 19 live Broker/Docker validation was
   not run. See the execution log for command and environment details.
+
+## P18-V02 current-revision refresh — 2026-10-21 (`bbcc88ae`)
+
+- [x] Default and all-feature locked workspace tests, strict workspace Clippy,
+  formatting, Maven `verify` (37-scenario manifest and fixture drift checks),
+  differential comparator self-test, 37-scenario manifest validation, and
+  the Asia/Taipei Unique ID fixture pass on the current revision.
+- [x] Offline deterministic race/leak smoke passes all 16 cases three times.
+  Bounded fuzz smoke passes with 121 frame seeds, 11 message seeds, 2,112
+  mutations, 170 frame decodes and 109 message decodes. Release facade examples
+  build; the fixed-input offline benchmark runs. Current sample is recorded in
+  [PHASE_18_OFFLINE_BENCHMARK_BASELINE.md](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [x] Locked Cargo metadata, workspace license/dependency-direction checks and
+  all seven product package listings pass; each listing contains `LICENSE`,
+  `NOTICE`, and library source. The package graph remains unpublished at
+  version `0.1.0`; no registry or release check is claimed.
+- The 37 live handoff rows validate and the checked-in CI workflow defines
+  server-free Linux gates. No remote workflow or native Windows run was
+  triggered. Broad P18-V01 remains open because Rust still does not expose the
+  pinned Java mutable nested rebalance tables and concrete process queue API;
+  Phase 19 Broker/Docker validation remains separate.

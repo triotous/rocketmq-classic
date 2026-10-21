@@ -182,3 +182,23 @@
   --all-features --locked` and strict workspace/all-target/all-feature Clippy
   pass; formatting and `git diff --check` pass. No full-phase acceptance or
   Phase 19 live evidence is inferred.
+
+# Phase 18 continuation — current-revision offline gates — 2026-10-21
+
+- On code revision `bbcc88ae89c7fb4cf73f59f6abf7290458e217ad`, default and
+  all-feature locked workspace tests, strict workspace Clippy, rustfmt and
+  `git diff --check` pass. Pinned Maven `verify` passes all 37 scenario and
+  fixture checks. Differential comparator self-test and all 37 manifest rows
+  validate; the Asia/Taipei Unique ID case passes.
+- `bash tests/stress/run-offline-smoke.sh` passes all 16 named race/leak cases
+  three times each. The fixed-seed fuzz smoke reports 121 frame seeds, 11
+  message seeds, 2,112 bounded mutations, 170 frame decodes and 109 message
+  decodes. Release facade examples build. The current offline benchmark ran on
+  macOS AArch64, Apple M5 Max, 18 logical CPUs, Rust 1.85.0; its machine-specific
+  observations are recorded in the benchmark baseline document.
+- Locked workspace metadata, license/dependency-direction checks and all seven
+  product `cargo package --list` checks pass with `LICENSE` and `NOTICE`.
+  All 37 live handoff IDs validate, and the checked-in Linux CI workflow's
+  server-free commands pass locally. No remote CI/native Windows run was
+  triggered. Broad P18-V01 remains open due to the direct nested implementation
+  API mismatch; Phase 19 Broker/Docker checks remain separate.
