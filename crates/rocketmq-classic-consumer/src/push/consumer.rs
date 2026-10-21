@@ -5493,7 +5493,9 @@ impl PushConsumer {
                 let consumer_ids = match consumer_ids {
                     Ok(Some(consumer_ids)) if !consumer_ids.is_empty() => consumer_ids,
                     Ok(Some(_)) | Ok(None) => {
-                        balanced = false;
+                        // Java's rebalanceByTopic leaves its default `true`
+                        // result unchanged when membership is null or empty.
+                        // It also leaves the current assignments untouched.
                         continue;
                     }
                     Err(error) => {
@@ -10353,6 +10355,7 @@ mod tests {
                     current_id.clone(),
                 ]),
                 None,
+                Some(Vec::new()),
                 Some(vec![peer.to_owned()]),
                 Some(vec![current_id.clone()]),
             ],
@@ -10362,16 +10365,16 @@ mod tests {
             expected(&[&current_id]),
             expected(&["client-a", "client-b", &current_id]),
             expected(&["client-a", "client-b", &current_id]),
+            expected(&["client-a", "client-b", &current_id]),
             HashSet::new(),
             expected(&[&current_id]),
         ];
         for (round, expected) in expected_sets.iter().enumerate() {
             let balanced = consumer.rebalance_service.rebalance(&consumer).await;
-            if round == 3 {
-                assert!(!balanced, "unavailable membership must request a retry");
-            } else {
-                assert!(balanced, "membership round {round} should converge");
-            }
+            assert!(
+                balanced,
+                "membership round {round} should match Java result"
+            );
             let working = read_lock(&consumer.process_queues)
                 .iter()
                 .filter(|(queue, process_queue)| {

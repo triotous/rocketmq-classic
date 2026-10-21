@@ -57,6 +57,12 @@ explicit `isOrder=true` broker-assignment assertion in
 the LiteSelective broker branch is covered by
 `lite_selective_rebalance_leaves_assignments_for_pop_handling`, and the
 unconditional initial lock flag is checked by the client-rebalance test above.
+When local membership lookup returns null or an empty list, Java leaves its
+default `balanced=true` result and current assignments unchanged; a thrown
+lookup error instead marks the pass unbalanced. Rust preserves this
+distinction, covered by
+`clustering_membership_join_leave_and_unavailable_cycles_converge` and
+`unavailable_membership_keeps_the_previous_queue_assignment`.
 The broader P18-V01 source and reverse API audit remains open.
 
 ## Pinned inherited-method crosswalk
