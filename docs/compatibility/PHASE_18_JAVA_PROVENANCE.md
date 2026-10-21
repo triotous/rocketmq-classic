@@ -1,6 +1,6 @@
 # Phase 18 Java 5.5.1 provenance and package review
 
-Rechecked 2026-10-18 on code revision 43a7cebb.
+Rechecked 2026-10-21 on code revision 6441ca56.
 
 ## Maven reference artifacts
 
@@ -52,11 +52,16 @@ assert verification of the tag signer.
 
 ## Rust package graph
 
-Locked offline Cargo metadata reports 216 packages, including 208 registry
-packages. All eight workspace packages are version 0.1.0 and have
-publish = false; no registry availability or publication is claimed. The
-seven product-crate package listings include LICENSE and NOTICE, and the
-workspace metadata/license/dependency-direction checker passes.
+Locked Cargo metadata on code revision 6441ca56 resolves 216 packages,
+including 208 registry packages and all eight workspace packages. Each
+workspace package is version 0.1.0 with publication disabled (`publish =
+false`; Cargo metadata represents this as an empty registry allowlist). The
+workspace package-content command lists eight packages: seven product crates
+and the development-only `rocketmq-classic-integration` crate. Each product
+crate listing includes LICENSE and NOTICE; the integration crate is not a
+product artifact and is excluded from that check. The workspace
+metadata/license/dependency-direction checker passes. These checks do not
+claim that unpublished path dependencies resolve from a future registry.
 
 The dependency graph's leaf-to-facade order for a future publication is:
 

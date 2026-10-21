@@ -5770,10 +5770,12 @@ owner-specific checks belong in the manual handoff.
   and the offline benchmark runs. Its macOS AArch64, Apple M5 Max, 18 logical
   CPU, Rust 1.85.0 observations are recorded in
   `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
-- [x] Locked Cargo metadata, workspace metadata/license/dependency checks, and
-  all seven package-content listings pass; every listing contains `LICENSE`
-  and `NOTICE`. The Unique ID differential passes under UTC and
-  `TZ=Asia/Taipei`; formatting and diff checks pass.
+- [x] Locked Cargo metadata and the workspace metadata/license/dependency
+  checker pass. The Cargo workspace listing has eight entries: seven product
+  crates, each containing `LICENSE` and `NOTICE`, plus the unpublished
+  `rocketmq-classic-integration` helper, which is excluded from product package
+  checks. The Unique ID differential passes under UTC and `TZ=Asia/Taipei`;
+  formatting and diff checks pass.
 - This closes the current-revision local P18-V02 server-free gate. Broad
   P18-V01 remains open; current Ubuntu/native Windows evidence and the
   remaining Phase 19 Broker/Docker scenarios remain open.
@@ -5782,3 +5784,28 @@ owner-specific checks belong in the manual handoff.
 
 - [x] Reconciled the Phase 6 API map and Rust source documentation with the current 48/48 Fastjson writer-feature implementation. Removed stale statements that 13 features remain unmapped and repaired the malformed `RemotingSerializable` table row. This documentation-only follow-up does not close the broader P18-V01 API/source/settings/input/error/control-flow/reverse-export audit.
 - [x] Protocol all-feature tests, strict all-target/all-feature Protocol Clippy, `cargo fmt --all -- --check`, and `git diff --check` pass on code revision `6441ca56`; the current-revision full-workspace and Maven evidence is recorded in the P18-V02 section above.
+
+
+## P18-V03 current revision package and provenance recheck — 2026-10-21 (`6441ca56`)
+
+- [x] Rechecked the nine cached Java 5.5.1 binary/source JAR and POM artifacts:
+  their SHA-256 and published SHA-1 values match the provenance record. Four
+  selected source-JAR entries match their recorded SHA-256 and the exact
+  `rocketmq-all-5.5.1` tag target (`efa1be59d6fc747ad220f036c86030f05f0419f9`).
+  The tag contains an OpenPGP signature, but this environment still lacks GPG
+  for independent signature verification.
+- [x] Locked Cargo metadata resolves 216 packages (208 registry packages) and
+  all eight workspace packages have publication disabled at version `0.1.0`.
+  The workspace metadata/license/dependency-direction checker passes. Cargo
+  lists eight workspace packages: seven product crates with `LICENSE` and
+  `NOTICE`, plus the development-only integration crate without product
+  package metadata.
+- [x] The current-revision facade example build and package-content checks are
+  recorded in the P18-V02 gate above. The documentation keeps Java client
+  5.5.1 separate from the Phase 19 Broker 5.3.4 baseline and makes no release
+  compatibility claim.
+- P18-V03 preparation review is current for code revision `6441ca56`. Release
+  version selection and checking published registry dependency resolution
+  remain post-Phase-19 work, as specified by the Phase 18 plan. Broad P18-V01,
+  current Ubuntu/native Windows P18-V04 evidence, and Phase 19 live scenarios
+  remain open.

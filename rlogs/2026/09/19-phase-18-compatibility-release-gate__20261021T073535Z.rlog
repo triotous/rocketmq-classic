@@ -23,3 +23,17 @@ Validation passed:
 The current-revision full-workspace and Java Maven P18-V02 results remain
 recorded for code revision `6441ca56`. The four Phase 19 worktree paths were
 left unchanged and unstaged.
+
+P18-V03 package/provenance refresh on code revision `6441ca56`:
+- Rechecked nine cached Maven 5.5.1 artifacts against recorded SHA-256 and
+  published SHA-1 values; four source-JAR files match their pinned tag bytes
+  and the tag target is `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- `cargo metadata --locked --format-version 1` resolves 216 packages (208
+  registry packages), including eight workspace packages; all eight remain
+  version 0.1.0 with publication disabled. Workspace metadata/license/
+  dependency-direction checks pass. Cargo lists eight workspace packages:
+  seven product crates with LICENSE/NOTICE and the unpublished integration
+  helper.
+- P18-V03 preparation review is current. Release-version selection and
+  published-registry dependency resolution remain post-Phase-19 work per plan;
+  no release claim is made.
