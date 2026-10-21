@@ -1,5 +1,7 @@
 use base64::Engine;
-use rocketmq_classic_common::message::{MessageClientExt, MessageExt, MessageQueue};
+use rocketmq_classic_common::message::{
+    MessageClientExt, MessageExt, MessageExtSubtype, MessageQueue,
+};
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
     ConsumeOrderlyStatus, PullConsumerConfig, PushConsumer, PushConsumerConfig,
@@ -15,7 +17,10 @@ use rocketmq_classic_protocol::heartbeat::ConsumerData;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 struct OtherConsumer;
@@ -26,11 +31,92 @@ impl ConsumerRuntime for OtherConsumer {
 }
 
 fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
-    json!({"messageClass": if message.is_message_client_ext() { "MessageClientExt" } else { "MessageExt" },
+    let message_class = message
+        .runtime_subtype_name()
+        .map(|name| name.rsplit("::").next().unwrap_or(name))
+        .unwrap_or(if message.is_message_client_ext() {
+            "MessageClientExt"
+        } else {
+            "MessageExt"
+        });
+    let mut record = json!({"messageClass": message_class,
         "topic": message.topic_nullable(), "broker": message.broker_name(),
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
         "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
-        "propertiesPresent": message.properties_nullable().is_some()})
+        "propertiesPresent": message.properties_nullable().is_some()});
+    if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
+        record["messageQueueId"] = json!(message.queue_id());
+        record["customField"] = json!(subtype.custom_field());
+        record["messageDisplay"] = json!(message.to_string());
+    }
+    record
+}
+
+struct CustomDirectMessageExt {
+    broker_was_set: AtomicBool,
+    topic_writes: std::sync::atomic::AtomicUsize,
+}
+
+impl CustomDirectMessageExt {
+    fn new() -> Self {
+        Self {
+            broker_was_set: AtomicBool::new(false),
+            topic_writes: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn custom_field(&self) -> String {
+        format!("topicWrites={}", self.topic_writes.load(Ordering::SeqCst))
+    }
+}
+
+impl MessageExtSubtype for CustomDirectMessageExt {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn topic(&self) -> Option<Option<&str>> {
+        Some(Some("%RETRY%tenant%direct"))
+    }
+
+    fn set_topic(&self, _topic: Option<String>) -> bool {
+        self.topic_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn broker_name(&self) -> Option<Option<&str>> {
+        Some(
+            self.broker_was_set
+                .load(Ordering::SeqCst)
+                .then_some("broker-a"),
+        )
+    }
+
+    fn set_broker_name(&self, broker_name: Option<String>) -> bool {
+        self.broker_was_set
+            .store(broker_name.is_some(), Ordering::SeqCst);
+        true
+    }
+
+    fn queue_id(&self) -> Option<i32> {
+        Some(37)
+    }
+
+    fn set_queue_id(&self, _queue_id: i32) -> bool {
+        true
+    }
+
+    fn message_id(&self) -> Option<Option<String>> {
+        Some(Some("subtype-message-id".to_owned()))
+    }
+
+    fn set_message_id(&self, _message_id: Option<String>) -> bool {
+        true
+    }
+
+    fn display_value(&self) -> Option<String> {
+        Some(format!("CustomDirectMessageExt[{}]", self.custom_field()))
+    }
 }
 
 #[tokio::test]
@@ -40,7 +126,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
     ))
     .unwrap();
     let cases = fixture["directConsume"].as_array().unwrap();
-    assert_eq!(cases.len(), 26);
+    assert_eq!(cases.len(), 27);
     for case in cases {
         let name = case["name"].as_str().unwrap().to_owned();
         let manager = ClientRuntimeManager::shared_default();
@@ -143,7 +229,18 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
         let unique = case["inputUniq"].as_str().map(str::to_owned);
         // Java accepts a MessageClientExt through its MessageExt parameter and
         // preserves the runtime subclass for the listener callback.
-        let message: MessageExt = if client_message {
+        let message: MessageExt = if name == "concurrent-custom-subtype" {
+            let mut message = MessageExt::default();
+            message.set_runtime_subtype(Arc::new(CustomDirectMessageExt::new()));
+            message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
+            message.set_queue_id(3);
+            message.set_body(vec![1]);
+            message.set_message_id(physical);
+            message
+                .set_system_property("RETRY_TOPIC", "subtype-retry-target")
+                .unwrap();
+            message
+        } else if client_message {
             let mut message = MessageClientExt::new();
             message.set_topic_nullable(case["inputTopic"].as_str().map(str::to_owned));
             message.set_queue_id(3);

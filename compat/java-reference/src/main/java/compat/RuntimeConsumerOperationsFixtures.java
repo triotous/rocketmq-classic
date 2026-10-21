@@ -36,7 +36,8 @@ public final class RuntimeConsumerOperationsFixtures {
             "concurrent-success", "concurrent-later", "concurrent-null-status",
             "concurrent-throws", "concurrent-null-broker", "orderly-success", "orderly-commit",
             "orderly-rollback", "orderly-later", "orderly-null-status", "push-null-message",
-            "push-null-service", "missing-group", "pull-group", "other-group", "null-group"}) {
+            "push-null-service", "missing-group", "pull-group", "other-group", "null-group",
+            "concurrent-custom-subtype"}) {
             direct.add(direct(name));
         }
         List<Object> reset = new ArrayList<>();
@@ -415,15 +416,21 @@ public final class RuntimeConsumerOperationsFixtures {
         var push = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("tenant%direct");
         push.setNamespace("tenant");
         var implementation = push.getDefaultMQPushConsumerImpl();
+        boolean customSubtype = name.equals("concurrent-custom-subtype");
         boolean clientMessage = name.contains("-client-");
-        org.apache.rocketmq.common.message.MessageExt message = clientMessage
-            ? new org.apache.rocketmq.common.message.MessageClientExt() : new org.apache.rocketmq.common.message.MessageExt();
+        org.apache.rocketmq.common.message.MessageExt message = customSubtype
+            ? new CustomDirectMessageExt() : clientMessage
+                ? new org.apache.rocketmq.common.message.MessageClientExt()
+                : new org.apache.rocketmq.common.message.MessageExt();
         String topic = name.endsWith("null-topic") ? null : name.endsWith("empty-topic") ? "" : "tenant%orders";
         String physicalId = clientMessage || name.contains("-plain-") ? "physical-id" : null;
         String uniqueId = name.endsWith("-unique") && !name.endsWith("-no-unique") ? "client-unique" : null;
         message.setTopic(topic); message.setQueueId(3); message.setBody(new byte[] {1});
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
+        if (customSubtype) {
+            org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "RETRY_TOPIC", "subtype-retry-target");
+        }
         if (uniqueId != null) org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "UNIQ_KEY", uniqueId);
         List<Object> callbacks = new ArrayList<>();
         java.util.function.BiConsumer<List<org.apache.rocketmq.common.message.MessageExt>,
@@ -437,6 +444,12 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("offsetMessageId", messages.get(0) instanceof org.apache.rocketmq.common.message.MessageClientExt
                     ? ((org.apache.rocketmq.common.message.MessageClientExt) messages.get(0)).getOffsetMsgId() : null);
                 item.put("propertiesPresent", messages.get(0).getProperties() != null);
+                if (messages.get(0) instanceof CustomDirectMessageExt) {
+                    CustomDirectMessageExt custom = (CustomDirectMessageExt) messages.get(0);
+                    item.put("messageQueueId", messages.get(0).getQueueId());
+                    item.put("customField", custom.getCustomField());
+                    item.put("messageDisplay", messages.get(0).toString());
+                }
             };
         org.apache.rocketmq.client.impl.consumer.ConsumeMessageService service;
         if (name.startsWith("orderly")) {
@@ -496,6 +509,60 @@ public final class RuntimeConsumerOperationsFixtures {
             runtime.getConsumerTable().clear();
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("fixture teardown"));
+        }
+    }
+
+    private static final class CustomDirectMessageExt extends org.apache.rocketmq.common.message.MessageExt {
+        private String customBrokerName;
+        private int topicWrites;
+
+        @Override
+        public String getTopic() {
+            return "%RETRY%tenant%direct";
+        }
+
+        @Override
+        public void setTopic(String topic) {
+            topicWrites++;
+        }
+
+        @Override
+        public int getQueueId() {
+            return 37;
+        }
+
+        @Override
+        public void setQueueId(int queueId) {
+            // This fixture keeps a subtype-defined queue ID independent of the base field.
+        }
+
+        @Override
+        public String getBrokerName() {
+            return customBrokerName;
+        }
+
+        @Override
+        public void setBrokerName(String brokerName) {
+            customBrokerName = brokerName;
+        }
+
+        @Override
+        public String getMsgId() {
+            return "subtype-message-id";
+        }
+
+        @Override
+        public void setMsgId(String msgId) {
+            // This fixture keeps a subtype-defined ID independent of the base field.
+        }
+
+        public String getCustomField() {
+            return "topicWrites=" + topicWrites;
+        }
+
+        @Override
+        public String toString() {
+            return "CustomDirectMessageExt[topicWrites=" + topicWrites + "]";
         }
     }
 

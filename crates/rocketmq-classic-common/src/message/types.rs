@@ -1,3 +1,4 @@
+use std::any::{Any, type_name};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -1563,6 +1564,28 @@ impl DerefMut for MessageExt {
 /// assert_eq!(message, message.clone());
 /// assert_ne!(message, MessageExt::default());
 /// ```
+///
+/// Caller-defined subtypes retain shared fields and selected Java-virtual
+/// method overrides when passed through an API typed as `MessageExt`:
+///
+/// ```
+/// use std::{any::Any, sync::Arc};
+/// use rocketmq_classic_common::message::{MessageExt, MessageExtSubtype};
+///
+/// struct CustomMessage { id: String }
+/// impl MessageExtSubtype for CustomMessage {
+///     fn as_any(&self) -> &dyn Any { self }
+///     fn message_id(&self) -> Option<Option<String>> {
+///         Some(Some(self.id.clone()))
+///     }
+/// }
+/// let subtype = Arc::new(CustomMessage { id: "custom-id".into() });
+/// let mut message = MessageExt::default();
+/// message.set_runtime_subtype(subtype.clone());
+/// assert_eq!(message.message_id_for_runtime_type().as_deref(), Some("custom-id"));
+/// assert_eq!(message.runtime_subtype::<CustomMessage>().unwrap().id, "custom-id");
+/// assert_eq!(message.clone().runtime_subtype::<CustomMessage>().unwrap().id, "custom-id");
+/// ```
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct MessageExt {
     #[serde(flatten)]
@@ -1589,10 +1612,14 @@ pub struct MessageExt {
     message_id: Option<String>,
     #[serde(rename = "offsetMsgId", skip_serializing_if = "Option::is_none")]
     offset_message_id: Option<String>,
-    /// Retains Java's runtime `MessageClientExt` subtype when a client-decoded
-    /// or caller-supplied subclass crosses an API typed as `MessageExt`.
+    /// Retains Java's runtime `MessageClientExt` subtype when client-decoded
+    /// values cross an API typed as `MessageExt`.
     #[serde(skip)]
     client_ext: bool,
+    /// Retains caller-defined subtype data and its overrides for Java-virtual
+    /// `MessageExt` methods when a value crosses a base-typed API.
+    #[serde(skip)]
+    runtime_subtype: Option<Arc<dyn MessageExtSubtype>>,
     #[serde(rename = "commitLogOffset")]
     commit_log_offset: i64,
     #[serde(rename = "bodyCRC")]
@@ -1635,6 +1662,13 @@ impl std::fmt::Debug for MessageExt {
             .field("message_id", &self.message_id)
             .field("offset_message_id", &self.offset_message_id)
             .field("client_ext", &self.client_ext)
+            .field(
+                "runtime_subtype",
+                &self
+                    .runtime_subtype
+                    .as_ref()
+                    .map(|subtype| subtype.runtime_type_name()),
+            )
             .field("commit_log_offset", &self.commit_log_offset)
             .field("body_crc", &self.body_crc)
             .field("reconsume_times", &self.reconsume_times)
@@ -1650,6 +1684,62 @@ impl MessageExt {
     /// Java's public no-argument `MessageExt` constructor.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Attach a caller-defined runtime subtype to this base-typed message.
+    /// The shared subtype value survives `MessageExt::clone`, matching the
+    /// aliasing observed when Java passes a subclass through a `MessageExt`
+    /// parameter.
+    pub fn set_runtime_subtype<T>(&mut self, subtype: Arc<T>)
+    where
+        T: MessageExtSubtype + 'static,
+    {
+        self.runtime_subtype = Some(subtype);
+    }
+
+    /// Return the retained caller-defined subtype value, if it has type `T`.
+    pub fn runtime_subtype<T>(&self) -> Option<&T>
+    where
+        T: MessageExtSubtype + 'static,
+    {
+        self.runtime_subtype.as_ref()?.as_any().downcast_ref::<T>()
+    }
+
+    /// The Rust type name of an attached caller-defined runtime subtype.
+    pub fn runtime_subtype_name(&self) -> Option<&'static str> {
+        self.runtime_subtype
+            .as_ref()
+            .map(|subtype| subtype.runtime_type_name())
+    }
+
+    /// Java's virtual `Message.getTopic()` view, including caller-defined
+    /// `MessageExt` subtype overrides.
+    pub fn topic(&self) -> &str {
+        self.topic_nullable().unwrap_or_default()
+    }
+
+    /// Java's virtual nullable `Message.getTopic()` view.
+    pub fn topic_nullable(&self) -> Option<&str> {
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.topic())
+            .unwrap_or(self.message.topic_nullable())
+    }
+
+    /// Java's virtual `Message.setTopic(String)` view.
+    pub fn set_topic(&mut self, topic: impl Into<String>) {
+        self.set_topic_nullable(Some(topic.into()));
+    }
+
+    /// Java's virtual nullable `Message.setTopic(String)` view.
+    pub fn set_topic_nullable(&mut self, topic: Option<String>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_topic(topic.clone()))
+        {
+            self.message.set_topic_nullable(topic);
+        }
     }
 
     pub(crate) fn from_message(message: Message) -> Self {
@@ -1689,10 +1779,16 @@ impl MessageExt {
         }
     }
     pub fn broker_name(&self) -> Option<&str> {
-        self.broker_name.as_deref()
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.broker_name())
+            .unwrap_or(self.broker_name.as_deref())
     }
     pub fn queue_id(&self) -> i32 {
-        self.queue_id
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.queue_id())
+            .unwrap_or(self.queue_id)
     }
     pub fn queue_offset(&self) -> i64 {
         self.queue_offset
@@ -1781,7 +1877,13 @@ impl MessageExt {
     /// For a retained `MessageClientExt` subtype this reads `UNIQ_KEY` live,
     /// then falls back to its physical offset ID.
     pub fn message_id_for_runtime_type(&self) -> Option<String> {
-        if self.client_ext {
+        if let Some(message_id) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.message_id())
+        {
+            message_id
+        } else if self.client_ext {
             self.get_property(crate::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
                 .or_else(|| self.offset_message_id().map(str::to_owned))
                 .or_else(|| self.message_id().map(str::to_owned))
@@ -1800,10 +1902,22 @@ impl MessageExt {
         self.prepared_transaction_offset
     }
     pub fn set_broker_name(&mut self, value: Option<String>) {
-        self.broker_name = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_broker_name(value.clone()))
+        {
+            self.broker_name = value;
+        }
     }
     pub fn set_queue_id(&mut self, value: i32) {
-        self.queue_id = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_queue_id(value))
+        {
+            self.queue_id = value;
+        }
     }
     pub fn set_queue_offset(&mut self, value: i64) {
         self.queue_offset = value;
@@ -1846,6 +1960,13 @@ impl MessageExt {
         self.store_host = value;
     }
     pub fn set_message_id(&mut self, value: Option<String>) {
+        if self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_message_id(value.clone()))
+        {
+            return;
+        }
         if !self.client_ext {
             self.message_id = value;
         }
@@ -1906,6 +2027,13 @@ impl MessageExt {
     /// deterministic map order; Java's backing `HashMap` does not promise an
     /// iteration order when multiple properties are present.
     fn java_to_string(&self) -> String {
+        if let Some(value) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.display_value())
+        {
+            return value;
+        }
         let born_host = self
             .born_host
             .as_ref()
@@ -1932,6 +2060,57 @@ impl MessageExt {
             self.prepared_transaction_offset,
             self.message.java_to_string(),
         )
+    }
+}
+
+/// Dynamic Rust adapter for application-defined `MessageExt` subtypes.
+/// Implement `as_any` to retain custom fields for typed downcasts; override
+/// the base methods whose Java implementations are virtual overrides.
+/// A hook returns `None` to inherit the stored `MessageExt` value. For nullable
+/// getters, `Some(None)` explicitly overrides the value with Java `null`. The
+/// adapter is runtime-only: cloning shares it, while serialization and
+/// deserialization omit it.
+pub trait MessageExtSubtype: Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+
+    fn runtime_type_name(&self) -> &'static str {
+        type_name::<Self>()
+    }
+
+    fn topic(&self) -> Option<Option<&str>> {
+        None
+    }
+
+    fn set_topic(&self, _topic: Option<String>) -> bool {
+        false
+    }
+
+    fn broker_name(&self) -> Option<Option<&str>> {
+        None
+    }
+
+    fn set_broker_name(&self, _broker_name: Option<String>) -> bool {
+        false
+    }
+
+    fn queue_id(&self) -> Option<i32> {
+        None
+    }
+
+    fn set_queue_id(&self, _queue_id: i32) -> bool {
+        false
+    }
+
+    fn message_id(&self) -> Option<Option<String>> {
+        None
+    }
+
+    fn set_message_id(&self, _message_id: Option<String>) -> bool {
+        false
+    }
+
+    fn display_value(&self) -> Option<String> {
+        None
     }
 }
 

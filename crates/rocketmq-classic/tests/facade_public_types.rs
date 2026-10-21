@@ -1,10 +1,10 @@
 use rocketmq_classic::{
     ConsumerServiceState, ConsumerStatsManager, DEFAULT_CONSUMER_GROUP, DEFAULT_PRODUCER_GROUP,
-    EndTransactionContext, EndTransactionHook, Message, MessageBatch, MqHelper, NotifyResult,
-    NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName, PermissionParseError,
-    PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex,
-    ProducerServiceState, PublishInfoQueueFilter, QueryResult, SharedMessageBody,
-    SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    EndTransactionContext, EndTransactionHook, Message, MessageBatch, MessageExtSubtype, MqHelper,
+    NotifyResult, NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName,
+    PermissionParseError, PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList,
+    ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter, QueryResult,
+    SharedMessageBody, SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
     TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
     TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
@@ -35,6 +35,7 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     shared_properties.insert(Some("key".to_owned()), Some("value".to_owned()));
     assert_eq!(message.get_property("key").as_deref(), Some("value"));
     assert_public_type::<SharedMessageProperties>();
+    assert_public_type::<dyn MessageExtSubtype>();
 
     let shared_body = SharedMessageBody::new(b"body".to_vec());
     let shared_body_message = Message::new_shared("shared-body-constructor", shared_body.clone());
