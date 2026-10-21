@@ -5169,11 +5169,12 @@ impl PushConsumer {
                 balanced = false;
                 continue;
             };
-            let should_remove = process_queue.is_dropped()
-                || process_queue
-                    .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
-                || !subscribed_topics.contains(topic)
-                || (authoritative_topics.contains(topic) && !desired_pop_queues.contains(&queue));
+            let should_remove = !subscribed_topics.contains(topic)
+                || (authoritative_topics.contains(topic)
+                    && (!desired_pop_queues.contains(&queue)
+                        || process_queue.is_pull_expired(
+                            self.pull_max_idle_time_millis.load(Ordering::Acquire),
+                        )));
             if !should_remove {
                 continue;
             }
@@ -5357,14 +5358,12 @@ impl PushConsumer {
             }
             drop(workers);
 
-            if let Some(existing) = read_lock(&self.pop_process_queues).get(&queue) {
-                if !existing.is_dropped()
-                    && !existing
-                        .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
-                {
-                    balanced = false;
-                    continue;
-                }
+            if read_lock(&self.pop_process_queues).contains_key(&queue) {
+                // Java's putIfAbsent does not replace a registered POP queue
+                // just because its dropped flag is set. Removal is authorized
+                // only by an authoritative assignment update above.
+                balanced = false;
+                continue;
             }
             let generation = match self.next_generation.fetch_update(
                 Ordering::AcqRel,
@@ -5380,11 +5379,7 @@ impl PushConsumer {
             let process_queue = Arc::new(PopProcessQueue::new(queue.clone(), generation));
             {
                 let mut queues = write_lock(&self.pop_process_queues);
-                if queues.get(&queue).is_some_and(|current| {
-                    !current.is_dropped()
-                        && !current
-                            .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire))
-                }) {
+                if queues.contains_key(&queue) {
                     balanced = false;
                     continue;
                 }
@@ -8297,6 +8292,12 @@ mod tests {
 
     #[tokio::test]
     async fn broker_assignment_error_preserves_worker_until_empty_assignment() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let pop_rebalance = fixture["popRebalance"].as_array().unwrap();
+        assert_eq!(pop_rebalance.len(), 3);
         let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let nameserver_address = nameserver.local_addr().unwrap().to_string();
         let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -8335,7 +8336,7 @@ mod tests {
                         assert_eq!(body["topic"], "orders");
                         assert_eq!(body["consumerGroup"], "pop-assignment-flow");
                         assignment_calls += 1;
-                        if assignment_calls == 2 {
+                        if assignment_calls == 3 {
                             write_remoting_reply(
                                 stream.as_mut().unwrap(),
                                 &incoming,
@@ -8345,7 +8346,7 @@ mod tests {
                             .await;
                             continue;
                         }
-                        let assignments = if assignment_calls == 1 {
+                        let assignments = if assignment_calls <= 4 {
                             serde_json::json!([{
                                 "messageQueue": {
                                     "topic": "orders",
@@ -8494,11 +8495,36 @@ mod tests {
                 .is_some_and(|worker| !worker.is_finished())
         );
 
-        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
-        assert!(
-            !process_queue.is_dropped(),
-            "an unavailable Broker assignment is not an authoritative empty assignment"
+        process_queue.set_last_pop_timestamp(epoch_millis() - 120_001);
+        consumer
+            .pull_max_idle_time_millis
+            .store(-1, Ordering::Release);
+        let requests_before_replacement = pop_request_count.load(Ordering::SeqCst);
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert_eq!(
+            process_queue.is_dropped(),
+            pop_rebalance[0]["oldDropped"].as_bool().unwrap()
         );
+        let replacement = read_lock(&consumer.pop_process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("authoritative POP assignment must replace an expired queue");
+        assert_eq!(
+            !Arc::ptr_eq(&process_queue, &replacement),
+            pop_rebalance[0]["replaced"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            pop_rebalance[0]["present"].as_bool().unwrap()
+        );
+        timeout(Duration::from_secs(3), async {
+            while pop_request_count.load(Ordering::SeqCst) <= requests_before_replacement {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("replacement POP worker did not start");
+
         assert!(
             consumer
                 .pop_workers
@@ -8508,9 +8534,55 @@ mod tests {
                 .is_some_and(|worker| !worker.is_finished())
         );
 
+        consumer
+            .pull_max_idle_time_millis
+            .store(-1, Ordering::Release);
+        assert!(!consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(!replacement.is_dropped());
+        assert!(Arc::ptr_eq(
+            &replacement,
+            &read_lock(&consumer.pop_process_queues)[&queue]
+        ));
+        assert!(
+            consumer
+                .pop_workers
+                .lock()
+                .unwrap()
+                .get(&queue)
+                .is_some_and(|worker| !worker.is_finished())
+        );
+
+        consumer
+            .pull_max_idle_time_millis
+            .store(120_000, Ordering::Release);
+        replacement.set_last_pop_timestamp(epoch_millis());
+        replacement.drop_assignment();
+        consumer.rebalance_service.rebalance(&consumer).await;
+        assert_eq!(
+            replacement.is_dropped(),
+            pop_rebalance[1]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            pop_rebalance[1]["present"].as_bool().unwrap()
+        );
+        assert_eq!(
+            Arc::ptr_eq(
+                &replacement,
+                &read_lock(&consumer.pop_process_queues)[&queue]
+            ),
+            pop_rebalance[1]["same"].as_bool().unwrap()
+        );
+
         assert!(consumer.rebalance_service.rebalance(&consumer).await);
-        assert!(process_queue.is_dropped());
-        assert!(!read_lock(&consumer.pop_process_queues).contains_key(&queue));
+        assert_eq!(
+            replacement.is_dropped(),
+            pop_rebalance[2]["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            pop_rebalance[2]["present"].as_bool().unwrap()
+        );
         assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
         let pop_count_after_removal = pop_request_count.load(Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(150)).await;

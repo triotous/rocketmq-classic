@@ -112,3 +112,33 @@
   Phase 18 runtime operation audit to document the property, expiry semantics,
   evidence, and remaining POP assignment/public API audit. Broad P18-V01,
   final workspace gate, and Phase 19 live evidence remain open.
+
+# Phase 18 continuation — POP assignment retention — 2026-10-21
+
+- Continued the RebalanceImpl assignment-source review for POP queues. Java
+  removes an expired POP queue only during an authoritative assignment update;
+  a dropped flag alone does not remove an assigned table entry. Rust previously
+  removed expired/dropped queues even when assignment lookup failed, and its
+  addition pass replaced a dropped-but-still-registered queue. Scoped cleanup
+  to unsubscribed truncation or authoritative assignment exclusion/expiry, and
+  kept Java's putIfAbsent behavior for already registered POP queues.
+- Added `popRebalance` to the pinned Java runtime fixture. It reflectively
+  invokes the actual `RebalanceImpl.updateMessageQueueAssignment` branch for
+  expired-assigned replacement, dropped-assigned retention, and empty
+  assignment removal. Rust's `broker_assignment_error_preserves_worker_until_empty_assignment`
+  compares the fixture rows and scripts an unavailable assignment while the
+  live replacement is expired, then verifies dropped-but-assigned retention
+  until a later authoritative empty result. Fixture SHA-256:
+  `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
+- The first full Maven pass reached the consumer fixture but the new reflected
+  branch had started a non-daemon `PullMessageServiceScheduledThread1`. A live
+  `jcmd Thread.print` confirmed Maven was joining that worker. Fixture teardown
+  now shuts down the pull message service explicitly; focused generation exits
+  normally and the complete pinned `mvn -f compat/java-reference/pom.xml verify`
+  passes (37-scenario manifest, Java fixture drift checks and cross-decodes).
+- Consumer all-feature tests pass (231 unit tests plus all crate integration
+  and documentation targets), strict all-target/all-feature Consumer Clippy,
+  formatting and diff checks pass. Phase 13 evidence now records the chosen
+  POP branches. Other POP assignment paths, public Rebalance/ProcessQueue API
+  correspondence, broad P18-V01, final workspace gates and Phase 19 live
+  evidence remain open.

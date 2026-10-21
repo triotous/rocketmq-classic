@@ -180,10 +180,16 @@ the default and expired-assignment lifecycle; the runtime comparison checks
 queue presence, dropped state, offsets and callback order. Rust unit coverage
 also checks the strict boundary, signed wrapping and Java-long parsing.
 Fixture SHA-256:
-`73e2e0e8514bbdc904c89a8bde71cfe5fcf8eae431b4f507e7c189a4dc8e62a2`.
+`3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
 
-The current differential exercises Push expiry; remaining POP assignment
-branches and the public Rebalance/ProcessQueue API audit remain open.
+The `popRebalance` fixture invokes the Java assignment update for an expired
+assigned POP queue, a dropped queue that remains assigned, and an authoritative
+empty assignment. Rust compares table presence, old-generation dropped state
+and identity replacement, then also scripts a failed assignment lookup to
+verify the current queue and worker are retained without authority. This covers
+the recorded POP expiry/retention branches; other POP assignment branches and
+the public Rebalance/ProcessQueue API audit remain open. Fixture SHA-256 is the
+same `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
 
 The direct Running Info, direct-consume and reset runtime rows above are now
 implemented with scoped offline evidence. Their existence does not prove
