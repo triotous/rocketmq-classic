@@ -21,7 +21,7 @@ declared method counts and callable method counts in
 | --- | --- | --- |
 | `RebalanceImpl.clientRebalance`, `doRebalance`, `removeProcessQueue`, `destroy`; subclass queue callbacks and cleanup | Push/Pull owner methods expose client selection, an ordered rebalance pass, generation-safe removal, destruction and queue-change notification. The Push direct behavior fixture checks selection, settings, factories, POP cleanup and destroy; runtime comparisons cover assigned queue flow. | Direct observable controls and lifecycle are checked with the pinned Java fixture and Rust tests. |
 | `RebalanceImpl.lock`, `unlock`, `lockAll`, `unlockAll` | Push and Pull owners expose direct single/all queue lock operations. Push uses the same orderly lock transport and state application as assignment; Pull uses the shared runtime consumer RPC. | Push order-lock regression and owner-surface tests pass; Pull methods preserve Java's broker batching and one-way unlock option. |
-| `RebalanceImpl` subscription/model/group/strategy accessors and factory getter; `RebalancePushImpl.getConsumeInitMode` | Push/Pull owner settings and tables map to their runtime state; Pull model and strategy setters update the shared registration and wake rebalance. `get_client_runtime` exposes the started shared runtime corresponding to Java's factory getter. Pinned direct fixtures check Push/Pull group/model/strategy values; Push also checks consume type and init mode. | Direct settings and mapped runtime identity are checked; factory ownership is managed by `ClientRuntimeManager`. |
+| `RebalanceImpl` subscription/model/group/strategy accessors and factory getter/setter; `RebalancePushImpl.getConsumeInitMode` | Push/Pull owner settings and tables map to their runtime state; Pull model and strategy setters update the shared registration and wake rebalance. `get_client_runtime` and `set_client_runtime` expose the nullable rebalance-factory reference while owner registration and lifecycle remain managed by `ClientRuntimeManager`. Pinned direct fixtures check Push/Pull group/model/strategy values; Push also checks consume type and init mode. | Direct settings and mapped runtime identity are checked; Push/Pull setter tests cover runtime replacement and explicit null. |
 | `getSubscriptionInner`, `getTopicSubscribeInfoTable`, `getProcessQueueTable`, `getPopProcessQueueTable`, `createProcessQueue`, `createPopProcessQueue` | Push and Pull owners expose live subscription/topic/process-queue tables and queue factories. Push creates both queue types. Pull creates ProcessQueue and returns no POP queue, matching Java; assignment reconciliation updates its process table. | Table identity and direct factory behavior are checked with the pinned fixture and Rust tests. |
 | `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Public `ProcessQueue` operations map to retained queue state and in-flight batches. `getMsgTreeMap()` returns a lock-backed live view whose edits preserve Java's separate count/size counters; `getMsgCount()` and `getMsgSize()` return mutable, linearizable AtomicLong-style handles. | Direct behavior and tree/counter mutation are compared with the pinned Java fixture. |
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Public direct expiry methods use the pinned Java pull-idle property and async Broker send-back adapter. The runtime concurrent consume service records `CONSUME_START_TIME` and runs its owned expiry sweep. It checks the oldest message, retries send-back at delay level 3 up to the bounded queue attempt count, removes only after successful send-back, and skips orderly consume. Java direct fixtures and Rust tests cover success, failure, retry cap, orderly skip, strict timeout boundary, in-flight completion and initial timer delay. | UNIT_VERIFIED for the direct methods and runtime expiry flow. |
@@ -83,8 +83,8 @@ owner mappings unless the disposition says otherwise.
 | `getSubscriptionInner()`, `getTopicSubscribeInfoTable()` | `get_subscription_inner()` and `get_topic_subscribe_info_table()` return the live owner tables. |
 | `getProcessQueueTable()`, `getPopProcessQueueTable()` | `get_process_queue_table()` and `get_pop_process_queue_table()` return the live owner tables. |
 | `createProcessQueue()`, `createPopProcessQueue()` | `create_process_queue()` and `create_pop_process_queue()`; Pull returns no POP queue. |
-| `getmQClientFactory()` | `get_client_runtime()` exposes the current shared runtime, when started. |
-| `setmQClientFactory(MQClientInstance)` | No replaceable raw factory is exposed. Runtime identity remains owned by `ClientRuntimeManager`; a started runtime cannot be swapped independently of its registrations. |
+| `getmQClientFactory()` | `get_client_runtime()` returns the factory reference held by the rebalance owner, including explicit null and the retained reference after shutdown. |
+| `setmQClientFactory(MQClientInstance)` | `set_client_runtime(Option<Arc<ClientRuntime>>)` replaces the nullable factory reference used by rebalance operations. It does not move the consumer's registration or lifecycle away from its `ClientRuntimeManager`. |
 | `consumeType()` | `consume_type()` returns the owner-specific Pull or Push consume type. |
 | `destroy()` | `destroy()` drops assignment state and cancels owner work. |
 | `dispatchPullRequest(List, long)`, `dispatchPopPullRequest(List, long)` | Java Pull implementations are no-ops. Push scheduling is owned by the Rust assignment scheduler and POP workers, so mutable internal request lists are not a public Rust input. |
@@ -104,10 +104,8 @@ Pull's model and strategy are shared with its active registration, so these
 settings remain callable through the started owner and request an immediate
 rebalance when changed.
 
-Two implementation call shapes remain internal to Rust. Java's `setmQClientFactory`
-replaces a raw `MQClientInstance`; Rust owns that identity through
-`ClientRuntimeManager` and does not permit replacing a started runtime. Java's
-dispatch hooks accept mutable internal `PullRequest`/`PopRequest` lists; Rust
+One implementation call shape remains internal to Rust. Java's dispatch hooks
+accept mutable internal `PullRequest`/`PopRequest` lists; Rust
 creates requests through assignment activation and routes them through its
 owned pull scheduler/POP workers. These differences do not remove a consumer
 setting, queue operation or message-delivery flow from the public Rust facade.

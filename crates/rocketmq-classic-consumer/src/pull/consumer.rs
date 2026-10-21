@@ -134,6 +134,7 @@ pub struct PullConsumer {
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
     state: tokio::sync::Mutex<State>,
+    rebalance_client_factory: Mutex<Option<Option<Arc<ClientRuntime>>>>,
     service_state: RwLock<Option<ConsumerServiceState>>,
     pull_api: RwLock<Option<Arc<PullAPIWrapper>>>,
     pull_api_hooks: SharedFilterMessageHooks,
@@ -192,6 +193,7 @@ impl PullConsumer {
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
             state: tokio::sync::Mutex::new(State::Created),
+            rebalance_client_factory: Mutex::new(None),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
             pull_api: RwLock::new(None),
             pull_api_hooks: Arc::new(RwLock::new(Vec::new())),
@@ -860,14 +862,30 @@ impl PullConsumer {
             .clone()
     }
 
-    /// Returns the live shared client runtime corresponding to Java's
-    /// `RebalanceImpl.getmQClientFactory`; it is absent before startup and
-    /// after runtime teardown.
+    /// Returns the factory currently stored by the rebalance implementation.
     pub async fn get_client_runtime(&self) -> Option<Arc<ClientRuntime>> {
+        if let Some(runtime) = self
+            .rebalance_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            return runtime;
+        }
         match &*self.state.lock().await {
             State::Started { runtime, .. } => runtime.upgrade(),
             State::Created | State::Shutdown => None,
         }
+    }
+
+    /// Replaces the runtime held by the rebalance implementation, matching
+    /// `RebalanceImpl.setmQClientFactory`. The consumer's own runtime and
+    /// registrations remain managed by `ClientRuntimeManager`.
+    pub fn set_client_runtime(&self, runtime: Option<Arc<ClientRuntime>>) {
+        *self
+            .rebalance_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(runtime);
     }
 
     /// Select a user-supplied OffsetStore before startup. `None` restores the
@@ -1215,6 +1233,7 @@ impl PullConsumer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.set_client_runtime(Some(runtime.clone()));
         self.initialize_pull_api_wrapper();
         let offset_store = self.select_offset_store(&runtime, &consumer_group)?;
         offset_store.load().await?;
@@ -2510,7 +2529,18 @@ impl PullConsumerRegistration {
         {
             return true;
         }
-        let Some(runtime) = self.runtime.upgrade() else {
+        let rebalance_factory = self.consumer.upgrade().map(|consumer| {
+            consumer
+                .rebalance_client_factory
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        });
+        let runtime = match rebalance_factory {
+            Some(Some(runtime)) => runtime,
+            Some(None) | None => self.runtime.upgrade(),
+        };
+        let Some(runtime) = runtime else {
             return true;
         };
         let _execution = self.rebalance_execution.lock().await;
@@ -2941,6 +2971,29 @@ mod tests {
     use rocketmq_classic_core::route::TopicSnapshot;
     use rocketmq_classic_remoting::{RemotingCommand, client::RequestProcessor};
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[tokio::test]
+    async fn rebalance_client_factory_setter_replaces_nullable_runtime_reference() {
+        let mut config = PullConsumerConfig::new("pull-rebalance-factory-setter").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = PullConsumer::with_manager(config, manager.clone());
+        assert!(consumer.get_client_runtime().await.is_none());
+
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        consumer.set_client_runtime(Some(runtime.clone()));
+        assert!(Arc::ptr_eq(
+            &consumer.get_client_runtime().await.unwrap(),
+            &runtime
+        ));
+
+        consumer.set_client_runtime(None);
+        assert!(consumer.get_client_runtime().await.is_none());
+        runtime.shutdown().await.unwrap();
+    }
 
     #[test]
     #[allow(deprecated)]

@@ -412,6 +412,7 @@ pub struct PushConsumer {
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
+    rebalance_client_factory: std::sync::Mutex<Option<Option<Arc<ClientRuntime>>>>,
     owner: std::sync::Mutex<Weak<Self>>,
     service_state: RwLock<Option<ConsumerServiceState>>,
     running_info_runtime_snapshot: RwLock<Option<RunningInfoRuntimeSnapshot>>,
@@ -492,6 +493,7 @@ impl PushConsumer {
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
+            rebalance_client_factory: std::sync::Mutex::new(None),
             owner: std::sync::Mutex::new(Weak::new()),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
             running_info_runtime_snapshot: RwLock::new(None),
@@ -780,14 +782,30 @@ impl PushConsumer {
             .clone()
     }
 
-    /// Returns the live shared client runtime corresponding to Java's
-    /// `RebalanceImpl.getmQClientFactory`; it is absent before startup and
-    /// after runtime teardown.
+    /// Returns the factory currently stored by the rebalance implementation.
     pub async fn get_client_runtime(&self) -> Option<Arc<ClientRuntime>> {
+        if let Some(runtime) = self
+            .rebalance_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            return runtime;
+        }
         match &*self.state.lock().await {
             State::Started { runtime, .. } => runtime.upgrade(),
             State::Created | State::Shutdown => None,
         }
+    }
+
+    /// Replaces the runtime held by the rebalance implementation, matching
+    /// `RebalanceImpl.setmQClientFactory`. The consumer's own runtime and
+    /// registrations remain managed by `ClientRuntimeManager`.
+    pub fn set_client_runtime(&self, runtime: Option<Arc<ClientRuntime>>) {
+        *self
+            .rebalance_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(runtime);
     }
 
     pub async fn set_offset_store(
@@ -1114,7 +1132,7 @@ impl PushConsumer {
     /// Matches Java's single-queue rebalance lock operation. The returned
     /// response updates local lock state only for queues the Broker confirms.
     pub async fn lock(&self, input_queue: &MessageQueue) -> bool {
-        let Some(context) = self.pull_context().await else {
+        let Some(runtime) = self.get_client_runtime().await else {
             return false;
         };
         let Ok(queue) = self
@@ -1126,7 +1144,7 @@ impl PushConsumer {
             return false;
         };
         let result = self
-            .lock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue))
+            .lock_orderly_queues_raw(&runtime, std::slice::from_ref(&queue))
             .await;
         for (locked_queue, (timestamp, _)) in &result.lock_times {
             if let Some(process_queue) = read_lock(&self.process_queues).get(locked_queue) {
@@ -1140,7 +1158,7 @@ impl PushConsumer {
     /// Locks every live process queue and applies only Broker-confirmed
     /// responses, matching Java's rebalance `lockAll` behavior.
     pub async fn lock_all(&self) {
-        let Some(context) = self.pull_context().await else {
+        let Some(runtime) = self.get_client_runtime().await else {
             return;
         };
         let queues = read_lock(&self.process_queues)
@@ -1149,9 +1167,7 @@ impl PushConsumer {
                 (!process_queue.is_dropped()).then_some(queue.clone())
             })
             .collect::<Vec<_>>();
-        let result = self
-            .lock_orderly_queues_raw(&context.runtime, &queues)
-            .await;
+        let result = self.lock_orderly_queues_raw(&runtime, &queues).await;
         for queue in result.responded {
             if let Some(process_queue) = read_lock(&self.process_queues).get(&queue) {
                 let locked = result.locked.contains(&queue);
@@ -1166,7 +1182,7 @@ impl PushConsumer {
     /// Unlocks one queue using Java's `oneway` request option and clears local
     /// lock state only after the request is accepted.
     pub async fn unlock(&self, input_queue: &MessageQueue, oneway: bool) {
-        let Some(context) = self.pull_context().await else {
+        let Some(runtime) = self.get_client_runtime().await else {
             return;
         };
         let Ok(queue) = self
@@ -1179,7 +1195,7 @@ impl PushConsumer {
         };
         write_lock(&self.pending_orderly_unlocks).insert(queue.clone());
         let unlocked = self
-            .unlock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue), oneway)
+            .unlock_orderly_queues_raw(&runtime, std::slice::from_ref(&queue), oneway)
             .await;
         if unlocked.contains(&queue) {
             write_lock(&self.pending_orderly_unlocks).remove(&queue);
@@ -1192,7 +1208,7 @@ impl PushConsumer {
     /// Unlocks all live queues and updates their local state for confirmed
     /// Broker responses.
     pub async fn unlock_all(&self, oneway: bool) {
-        let Some(context) = self.pull_context().await else {
+        let Some(runtime) = self.get_client_runtime().await else {
             return;
         };
         let queues = read_lock(&self.process_queues)
@@ -1203,7 +1219,7 @@ impl PushConsumer {
             .collect::<Vec<_>>();
         write_lock(&self.pending_orderly_unlocks).extend(queues.iter().cloned());
         let unlocked = self
-            .unlock_orderly_queues_raw(&context.runtime, &queues, oneway)
+            .unlock_orderly_queues_raw(&runtime, &queues, oneway)
             .await;
         for queue in &unlocked {
             write_lock(&self.pending_orderly_unlocks).remove(queue);
@@ -1221,8 +1237,8 @@ impl PushConsumer {
         all_queues: Option<&HashSet<MessageQueue>>,
         divided_queues: &HashSet<MessageQueue>,
     ) -> Result<bool, PushConsumerError> {
-        let context = self
-            .pull_context()
+        let runtime = self
+            .get_client_runtime()
             .await
             .ok_or(PushConsumerError::NotStarted)?;
         let assignment = DesiredAssignment {
@@ -1233,7 +1249,7 @@ impl PushConsumer {
             pop_queues: HashSet::new(),
         };
         Ok(self
-            .notify_assignment_changed(&context.runtime, &assignment)
+            .notify_assignment_changed(Some(&runtime), &assignment)
             .await)
     }
 
@@ -4375,6 +4391,7 @@ impl PushConsumer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.set_client_runtime(Some(runtime.clone()));
         if let Err(error) = self.checkpoint(StartupStage::RuntimeCreated) {
             let _ = runtime.shutdown().await;
             return Err(error);
@@ -5353,6 +5370,7 @@ impl PushConsumer {
         let Some(context) = self.pull_context().await else {
             return true;
         };
+        let rebalance_runtime = self.get_client_runtime().await;
         let mut balanced = true;
         let mut subscriptions = read_lock(&self.subscriptions)
             .keys()
@@ -5415,8 +5433,12 @@ impl PushConsumer {
                     }
                     continue;
                 };
+                let Some(rebalance_runtime) = rebalance_runtime.as_ref() else {
+                    balanced = false;
+                    continue;
+                };
                 let consumer_ids = self
-                    .find_consumer_id_list_for_rebalance(&context.runtime, topic, &consumer_group)
+                    .find_consumer_id_list_for_rebalance(rebalance_runtime, topic, &consumer_group)
                     .await;
                 let mut all_queues = queue_snapshot.iter().cloned().collect::<Vec<_>>();
                 all_queues.sort();
@@ -5444,7 +5466,7 @@ impl PushConsumer {
                 let allocation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     strategy.allocate(
                         &consumer_group,
-                        context.runtime.client_id(),
+                        rebalance_runtime.client_id(),
                         &all_queues,
                         &consumer_ids,
                     )
@@ -5484,8 +5506,11 @@ impl PushConsumer {
                 continue;
             } else {
                 // Broker assignment does not depend on the local route table.
-                let result = context
-                    .runtime
+                let Some(rebalance_runtime) = rebalance_runtime.as_ref() else {
+                    balanced = false;
+                    continue;
+                };
+                let result = rebalance_runtime
                     .query_assignment(
                         topic,
                         &consumer_group,
@@ -5677,12 +5702,16 @@ impl PushConsumer {
                 continue;
             }
             let orderly_locked = if lock_new_queues {
+                let Some(rebalance_runtime) = rebalance_runtime.as_ref() else {
+                    balanced = false;
+                    continue;
+                };
                 let lock_result = self
-                    .lock_orderly_queues_raw(&context.runtime, std::slice::from_ref(&queue))
+                    .lock_orderly_queues_raw(rebalance_runtime, std::slice::from_ref(&queue))
                     .await;
                 if lock_result.uncertain.contains(&queue) {
                     self.unlock_orderly_queues_tracking(
-                        &context.runtime,
+                        rebalance_runtime,
                         std::slice::from_ref(&queue),
                     )
                     .await;
@@ -5697,7 +5726,7 @@ impl PushConsumer {
                 };
                 if !self.rebalance_is_started().await {
                     self.unlock_orderly_queues_tracking(
-                        &context.runtime,
+                        rebalance_runtime,
                         std::slice::from_ref(&queue),
                     )
                     .await;
@@ -5709,8 +5738,12 @@ impl PushConsumer {
             };
             context.offset_store.remove_offset(&queue);
             let queue_initialization_time = (epoch_millis(), Instant::now());
+            let Some(rebalance_runtime) = rebalance_runtime.as_ref() else {
+                balanced = false;
+                continue;
+            };
             let initial_offset = match self
-                .compute_initial_offset(&context.runtime, &context.offset_store, &queue)
+                .compute_initial_offset(rebalance_runtime, &context.offset_store, &queue)
                 .await
             {
                 Ok(offset) => offset,
@@ -5718,7 +5751,7 @@ impl PushConsumer {
                     tracing::warn!(queue = %queue, error = %error, "push start offset lookup failed");
                     if orderly_locked {
                         self.unlock_orderly_queues_tracking(
-                            &context.runtime,
+                            rebalance_runtime,
                             std::slice::from_ref(&queue),
                         )
                         .await;
@@ -5742,7 +5775,7 @@ impl PushConsumer {
                     tracing::warn!(queue = %queue, error = %error, "push queue activation failed");
                     if orderly_locked {
                         self.unlock_orderly_queues_tracking(
-                            &context.runtime,
+                            rebalance_runtime,
                             std::slice::from_ref(&queue),
                         )
                         .await;
@@ -5885,7 +5918,7 @@ impl PushConsumer {
             });
             if queue_changed
                 && !self
-                    .notify_assignment_changed(&context.runtime, assignment)
+                    .notify_assignment_changed(rebalance_runtime.as_ref(), assignment)
                     .await
             {
                 balanced = false;
@@ -5904,7 +5937,7 @@ impl PushConsumer {
                 pop_queues: HashSet::new(),
             };
             if !self
-                .notify_assignment_changed(&context.runtime, &assignment)
+                .notify_assignment_changed(rebalance_runtime.as_ref(), &assignment)
                 .await
             {
                 balanced = false;
@@ -6528,13 +6561,16 @@ impl PushConsumer {
 
     async fn notify_assignment_changed(
         &self,
-        runtime: &Arc<ClientRuntime>,
+        runtime: Option<&Arc<ClientRuntime>>,
         assignment: &DesiredAssignment,
     ) -> bool {
         if let Some(subscription) = write_lock(&self.subscriptions).get_mut(&assignment.topic) {
             subscription.set_sub_version(epoch_millis());
         }
         self.update_pull_thresholds_after_rebalance();
+        let Some(runtime) = runtime else {
+            return false;
+        };
         let mut successful = true;
         if let Err(error) = runtime.send_heartbeat_to_all_brokers().await {
             tracing::warn!(topic = %assignment.topic, error = %error, "push subscription heartbeat after rebalance failed");
@@ -7132,6 +7168,30 @@ mod tests {
         let custom_consumer = PushConsumer::new(custom_config);
         assert_eq!(fixture["effectiveMaxReconsumeTimesCustom"], 7);
         assert_eq!(custom_consumer.get_max_reconsume_times(), 7);
+    }
+
+    #[tokio::test]
+    async fn rebalance_client_factory_setter_replaces_nullable_runtime_reference() {
+        let mut config = PushConsumerConfig::new("rebalance-factory-setter").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let manager = ClientRuntimeManager::new();
+        let consumer = PushConsumer::with_manager(config, manager.clone());
+        assert!(consumer.get_client_runtime().await.is_none());
+
+        let runtime = manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        consumer.set_client_runtime(Some(runtime.clone()));
+        assert!(Arc::ptr_eq(
+            &consumer.get_client_runtime().await.unwrap(),
+            &runtime
+        ));
+
+        consumer.set_client_runtime(None);
+        assert!(consumer.get_client_runtime().await.is_none());
+        assert!(!runtime.client_id().is_empty());
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
