@@ -5907,3 +5907,26 @@ owner-specific checks belong in the manual handoff.
 - Broad P18-V01, current Ubuntu/native Windows P18-V04 evidence, and Phase 19
   live Broker scenarios remain open. Four preserved Phase 19 worktree paths
   remain unstaged and untouched.
+
+## P18-V01 `resetMasterFlushOffset` Broker API — 2026-10-21
+
+- [x] Added `MQClientApi::reset_master_flush_offset` for pinned Java request
+  908. It sends `masterFlushOffset` to the supplied address without VIP
+  conversion, uses Java's fixed 3000 ms timeout, returns on `SUCCESS`, and
+  preserves non-success Broker response errors.
+- [x] Added the public `ResetMasterFlushOffsetHeader` getter/setter surface and
+  nullable boxed-`Long` decoding. Java→Rust and Rust→Java typed-frame fixtures
+  cover the header; the inventory now covers 74 typed headers. Java invoked
+  fixture cases and Rust differential tests cover `Long.MAX_VALUE`, a negative
+  offset, request fields, fixed timeout, address, and success/error outcomes.
+  Producer core fixture SHA-256:
+  `b5104de29ba8a8870269174ad866ae1277daae60aca3439f4af67aa62d11ee8e`.
+- [x] Protocol header inventory passes (9 tests), the Java nullable-long
+  decode comparison and `header_validation_matrix` pass, and the focused Core
+  RPC differential passes. Strict locked all-target/all-feature workspace
+  Clippy, `cargo fmt --all -- --check`, and `git diff --check` pass. Pinned
+  Maven `verify` passes with 37 manifest scenarios, 74 typed headers, and 15
+  typed bodies.
+- Broad P18-V01, current Ubuntu/native Windows P18-V04 evidence, and Phase 19
+  live Broker scenarios remain open. Four preserved Phase 19 worktree paths
+  remain unstaged and untouched.

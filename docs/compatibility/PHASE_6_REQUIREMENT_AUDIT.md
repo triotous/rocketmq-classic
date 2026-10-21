@@ -1405,3 +1405,15 @@ Rust fixture-backed regression compare the empty result, singleton behavior,
 mutation rejection, and absence of RPCs. This closes the named stub only.
 Broad P18-V01 source/API/settings/input/error/flow/reverse-export review and
 the platform evidence gates remain open.
+
+## Direct `resetMasterFlushOffset` API — 2026-10-21
+
+The pinned public `MQClientAPIImpl.resetMasterFlushOffset(String,long)` maps
+request 908 with the supplied address unchanged, `masterFlushOffset` as a
+signed decimal field, and Java's fixed 3000 ms timeout. `SUCCESS` returns;
+other Broker responses preserve the response error. Rust includes the
+`ResetMasterFlushOffsetHeader` public accessor surface and nullable reflection
+decoding. Java fixtures and Rust tests compare a maximum signed-long value, a
+negative value, the typed frame, timeout, address, and both outcomes. This
+closes the direct API/header slice only; broad P18-V01 reconciliation and
+platform evidence gates remain open.

@@ -3736,6 +3736,48 @@ impl CommandHeader for ResetOffsetRequestHeader {
     }
 }
 
+/// Java 5.5.1's `ResetMasterFlushOffsetHeader` carries a nullable boxed `Long`.
+/// Reflection decoding leaves a missing or malformed value unset, and the
+/// pinned `checkFields()` method performs no validation.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::header::ResetMasterFlushOffsetHeader;
+/// let _ = ResetMasterFlushOffsetHeader::default().master_flush_offset;
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ResetMasterFlushOffsetHeader {
+    pub(crate) master_flush_offset: Option<i64>,
+}
+
+impl ResetMasterFlushOffsetHeader {
+    pub fn get_master_flush_offset(&self) -> Option<i64> {
+        self.master_flush_offset
+    }
+
+    pub fn set_master_flush_offset(&mut self, value: Option<i64>) {
+        self.master_flush_offset = value;
+    }
+}
+
+impl CommandHeader for ResetMasterFlushOffsetHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "masterFlushOffset", self.master_flush_offset);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, false)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            master_flush_offset: optional_i64_with_mode(fields, "masterFlushOffset", false)?,
+        })
+    }
+}
+
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.
 ///
 /// ```compile_fail

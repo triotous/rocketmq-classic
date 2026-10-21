@@ -37,6 +37,7 @@ import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupReque
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
@@ -78,6 +79,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("query-response-missing", decodeModes("query-response", fields()));
         cases.put("query-response-invalid-numbers", decodeModes("query-response", fields(
             "indexLastUpdateTimestamp", "not-a-long", "indexLastUpdatePhyoffset", "9223372036854775808")));
+
+        cases.put("reset-master-flush-offset-valid", decodeModes("reset-master-flush-offset",
+            fields("masterFlushOffset", "9876543210")));
+        cases.put("reset-master-flush-offset-missing", decodeModes("reset-master-flush-offset", fields()));
+        cases.put("reset-master-flush-offset-invalid", decodeModes("reset-master-flush-offset",
+            fields("masterFlushOffset", "not-a-long")));
 
         cases.put("view-request-valid", decodeModes("view-request", fields(
             "topic", "orders", "offset", "9876")));
@@ -127,6 +134,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(GetTopicsByClusterRequestHeader.class));
         apiInventories.put("GetSubscriptionGroupConfigRequestHeader",
             apiInventory(GetSubscriptionGroupConfigRequestHeader.class));
+        apiInventories.put("ResetMasterFlushOffsetHeader",
+            apiInventory(ResetMasterFlushOffsetHeader.class));
         apiInventories.put("DeleteTopicRequestHeader",
             apiInventory(DeleteTopicRequestHeader.class));
         apiInventories.put("DeleteTopicFromNamesrvRequestHeader",
@@ -177,6 +186,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 202;
         } else if ("delete-kv-config".equals(type)) {
             code = 102;
+        } else if ("reset-master-flush-offset".equals(type)) {
+            code = 908;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -209,6 +220,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "delete-kv-config":
                     headerClass = DeleteKVConfigRequestHeader.class;
+                    break;
+                case "reset-master-flush-offset":
+                    headerClass = ResetMasterFlushOffsetHeader.class;
                     break;
                 default:
                     throw new IllegalArgumentException("unknown header type: " + type);

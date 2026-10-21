@@ -289,6 +289,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("getClusterListOperations", getClusterListOperations());
+        result.put("resetMasterFlushOffsetApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("resetMasterFlushOffset"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("resetMasterFlushOffsetOperations", resetMasterFlushOffsetOperations());
         result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
@@ -2409,7 +2416,6 @@ public final class ProducerCoreFixtures {
                         if ("invokeSync".equals(method.getName())) {
                             org.apache.rocketmq.remoting.protocol.RemotingCommand request =
                                 (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
-                            request.makeCustomHeaderToNet();
                             Map<String, Object> call = new TreeMap<>();
                             call.put("address", values[0]);
                             call.put("requestCode", request.getCode());
@@ -2813,6 +2819,68 @@ public final class ProducerCoreFixtures {
             } catch (UnsupportedOperationException error) {
                 result.put("mutationThrows", true);
             }
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> resetMasterFlushOffsetOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(resetMasterFlushOffsetCase("success", Long.MAX_VALUE,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(resetMasterFlushOffsetCase("broker-error", -7L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "flush offset rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> resetMasterFlushOffsetCase(
+        String name, long masterFlushOffset, int responseCode, String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig =
+            new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("reset-master-flush-offset-api");
+        clientConfig.setVipChannelEnabled(true);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            return org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("masterFlushOffset", masterFlushOffset);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.resetMasterFlushOffset("broker-a:10911", masterFlushOffset);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
         } finally {
             api.shutdown();
         }

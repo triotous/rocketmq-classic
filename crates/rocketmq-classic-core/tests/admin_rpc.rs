@@ -1767,6 +1767,70 @@ fn get_cluster_list_matches_java_immutable_empty_singleton_without_rpc() {
 }
 
 #[tokio::test]
+async fn reset_master_flush_offset_matches_java_header_timeout_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["resetMasterFlushOffsetApi"],
+        json!([
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.resetMasterFlushOffset(java.lang.String,long)"
+        ])
+    );
+    let cases = fixture["resetMasterFlushOffsetOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 2);
+    let (client_api, client) = api().await;
+    for case in cases {
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) = scripted_peer_with_remark(response_code, remark, None, None).await;
+        let offset = case["masterFlushOffset"].as_i64().unwrap();
+        let result = client_api.reset_master_flush_offset(&addr, offset).await;
+        if case["outcome"] == "returned" {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::RESET_MASTER_FLUSH_OFFSET,
+                    peer: error_peer,
+                    code,
+                    remark: Some(error_remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && Some(error_remark.as_str()) == case["responseRemark"].as_str()
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::RESET_MASTER_FLUSH_OFFSET);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert_eq!(request.body, None);
+        assert_eq!(request.ext_fields.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            request.ext_fields.as_ref().unwrap()["masterFlushOffset"],
+            offset.to_string()
+        );
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["address"], "broker-a:10911");
+        assert_eq!(
+            java_request["requestCode"],
+            request::RESET_MASTER_FLUSH_OFFSET
+        );
+        assert_eq!(java_request["timeoutMillis"], 3000);
+        assert_eq!(
+            java_request["extFields"]["masterFlushOffset"],
+            offset.to_string()
+        );
+        assert!(java_request["requestBodyBase64"].is_null());
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn get_topics_by_cluster_matches_java_nameserver_request_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

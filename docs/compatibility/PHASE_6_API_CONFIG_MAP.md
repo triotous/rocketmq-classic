@@ -1650,3 +1650,17 @@ fixture covers nonempty, null, and empty topics, singleton identity, rejected
 mutation, and an empty request list; the Rust regression consumes those cases
 and verifies the same result identity and no-request behavior. This closes the
 named stub only; the broad P18-V01 inventory remains open.
+
+## Direct `resetMasterFlushOffset` Broker API — 2026-10-21
+
+Pinned `MQClientAPIImpl.resetMasterFlushOffset(String,long)` sends request 908
+to the supplied Broker address unchanged, with `masterFlushOffset` encoded as
+a signed decimal header field. Java fixes the timeout at 3000 ms, returns on
+`SUCCESS`, and throws `MQBrokerException` for other response codes. Core maps
+the operation to `MQClientApi::reset_master_flush_offset` and preserves those
+request and result semantics. Rust also exposes
+`ResetMasterFlushOffsetHeader` with Java's nullable boxed-`Long` getter/setter;
+reflection decoding maps missing and malformed values to null. The invoked
+Java fixture, typed Java↔Rust frame, and Rust differential cover the signed
+boundary, negative input, exact request, and success/error outcomes. This
+closes the named API/header rows only; broad P18-V01 remains open.

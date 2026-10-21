@@ -31,10 +31,10 @@ pub use basic::{
     QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
     QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
     RecallMessageRequestHeader, RecallMessageResponseHeader, ReplyMessageRequestHeader,
-    ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-    SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-    UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+    ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+    SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+    SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+    UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -71,6 +71,7 @@ macro_rules! inventory {
             NotificationResponseHeader => ("header-notification-response", "typed-notification-response.bin"),
             GetLiteTopicInfoRequestHeader => ("header-lite-topic-info-request", "typed-lite-topic-info-request.bin"),
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
+            ResetMasterFlushOffsetHeader => ("header-reset-master-flush-offset", "typed-reset-master-flush-offset.bin"),
             GetConsumerStatusRequestHeader => ("header-consumer-status-request", "typed-consumer-status-request.bin"),
             GetConsumerConnectionListRequestHeader => ("header-consumer-connection-list-request", "typed-consumer-connection-list-request.bin"),
             PopMessageRequestHeader => ("header-pop-request", "typed-pop.bin"),
@@ -371,6 +372,45 @@ fn get_subscription_group_config_header_api_matches_java_inventory() {
             source,
             trait_source,
             "GetSubscriptionGroupConfigRequestHeader",
+            method
+        ));
+    }
+}
+
+#[test]
+fn reset_master_flush_offset_header_api_matches_java_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let inventory = &fixture["apiInventories"]["ResetMasterFlushOffsetHeader"];
+    assert_eq!(inventory["publicFields"], serde_json::json!([]));
+    assert_eq!(
+        inventory["publicConstructors"],
+        serde_json::json!([
+            "org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader()"
+        ])
+    );
+    assert_eq!(
+        inventory["declaredPublicMethods"],
+        serde_json::json!([
+            "java.lang.Long org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader.getMasterFlushOffset()",
+            "void org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader.checkFields()",
+            "void org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader.setMasterFlushOffset(java.lang.Long)"
+        ])
+    );
+
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for method in [
+        "get_master_flush_offset",
+        "set_master_flush_offset",
+        "check_fields",
+    ] {
+        assert!(rust_header_method_exists(
+            source,
+            trait_source,
+            "ResetMasterFlushOffsetHeader",
             method
         ));
     }

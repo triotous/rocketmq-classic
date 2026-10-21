@@ -35,10 +35,10 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -350,6 +350,59 @@ fn java_request_and_response_header_fixtures_decode() {
             "invisibleTime" => assert_eq!(decoded.get_invisible_time(), 0),
             "reviveQid" => assert_eq!(decoded.get_revive_qid(), 0),
             _ => unreachable!("test field list is exhaustive"),
+        }
+    }
+}
+
+#[test]
+fn reset_master_flush_offset_header_matches_java_nullable_long_and_reflection_decode() {
+    let raw = java_ext_fields("header-reset-master-flush-offset");
+    let decoded = ResetMasterFlushOffsetHeader::decode_fields(&raw).unwrap();
+    assert_eq!(decoded.get_master_flush_offset(), Some(9_876_543_210));
+    let mut encoded = HeaderMap::new();
+    decoded.encode_fields(&mut encoded);
+    assert_eq!(encoded, raw);
+
+    let malformed = HeaderMap::from([("masterFlushOffset".into(), "not-a-long".into())]);
+    assert_eq!(
+        ResetMasterFlushOffsetHeader::decode_fields(&malformed)
+            .unwrap()
+            .get_master_flush_offset(),
+        None
+    );
+    assert_eq!(
+        ResetMasterFlushOffsetHeader::decode_fields(&HeaderMap::new())
+            .unwrap()
+            .get_master_flush_offset(),
+        None
+    );
+
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    for case_name in [
+        "reset-master-flush-offset-valid",
+        "reset-master-flush-offset-missing",
+        "reset-master-flush-offset-invalid",
+    ] {
+        let case = &fixture["cases"][case_name];
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for (mode_name, use_fast_encode) in [("fast", true), ("reflection", false)] {
+            let expected = &case[mode_name];
+            let decoded =
+                ResetMasterFlushOffsetHeader::decode_fields_with_mode(&fields, use_fast_encode)
+                    .unwrap();
+            assert_eq!(
+                decoded.get_master_flush_offset(),
+                expected["decodedFields"]["masterFlushOffset"].as_i64(),
+                "{case_name} {mode_name}"
+            );
+            let mut encoded = HeaderMap::new();
+            decoded.encode_fields(&mut encoded);
+            let expected_fields: HeaderMap =
+                serde_json::from_value(expected["encodedFields"].clone()).unwrap();
+            assert_eq!(encoded, expected_fields, "{case_name} {mode_name}");
         }
     }
 }
@@ -2218,6 +2271,15 @@ fn header_validation_matrix() {
             "isForce nsd oway"
         ),
         row!(
+            ResetMasterFlushOffsetHeader,
+            "reset-master-flush-offset",
+            "",
+            "",
+            "masterFlushOffset",
+            "",
+            ""
+        ),
+        row!(
             GetConsumerStatusRequestHeader,
             "consumer-status-request",
             "topic group",
@@ -2600,6 +2662,7 @@ fn header_validation_matrix() {
                             | "QueryMessageRequestHeader"
                             | "QueryMessageResponseHeader"
                             | "ViewMessageRequestHeader"
+                            | "ResetMasterFlushOffsetHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

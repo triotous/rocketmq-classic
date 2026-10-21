@@ -24,7 +24,8 @@ use rocketmq_classic_protocol::{
         GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
+        QueryTopicsByConsumerRequestHeader, ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -33,7 +34,7 @@ use rocketmq_classic_protocol::{
 use rocketmq_classic_remoting::RemotingCommand;
 use tokio::{
     task::JoinSet,
-    time::{Instant, timeout_at},
+    time::{Duration, Instant, timeout_at},
 };
 
 use super::{MQClientApi, classify, decode_body, decode_header};
@@ -514,6 +515,43 @@ impl MQClientApi {
     ) -> Result<bool, RpcError> {
         self.clean_broker_data(addr, request::CLEAN_UNUSED_TOPIC, deadline)
             .await
+    }
+
+    /// Resets a Broker's master flush offset through Java
+    /// `MQClientAPIImpl.resetMasterFlushOffset`. Java uses the supplied
+    /// address unchanged and a fixed 3000 ms timeout.
+    pub async fn reset_master_flush_offset(
+        &self,
+        addr: &str,
+        master_flush_offset: i64,
+    ) -> Result<(), RpcError> {
+        let mut header = ResetMasterFlushOffsetHeader::default();
+        header.set_master_flush_offset(Some(master_flush_offset));
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        let code = request::RESET_MASTER_FLUSH_OFFSET;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..RemotingCommand::default()
+                },
+                Instant::now() + Duration::from_millis(3000),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        Ok(())
     }
 
     async fn clean_broker_data(

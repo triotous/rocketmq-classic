@@ -1,5 +1,17 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 `resetMasterFlushOffset` (2026-10-21): the pinned direct
+`MQClientAPIImpl.resetMasterFlushOffset(String,long)` operation maps request
+908 with `masterFlushOffset`, uses the Broker address unchanged even with VIP
+mode enabled, and uses a fixed 3000 ms timeout. Rust exposes
+`MQClientApi::reset_master_flush_offset` with the nullable
+`ResetMasterFlushOffsetHeader` model; missing and malformed boxed `Long`
+fields decode to null, matching Java reflection. Invoked Java and Rust cases
+cover `Long.MAX_VALUE`, a negative offset, exact request fields, the fixed
+timeout, success, and Broker rejection. The fixture digest and complete
+validation record appear in the Phase 18 release checklist. This closes these
+direct API/header rows only; broad P18-V01 remains open.
+
 Phase 18 `getClusterList` stub (2026-10-21): pinned
 `MQClientAPIImpl.getClusterList(String,long)` ignores its topic and timeout,
 issues no RPC, and always returns Java's shared immutable

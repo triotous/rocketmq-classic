@@ -37,10 +37,10 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
-        SearchOffsetRequestHeader, SearchOffsetResponseHeader, SendMessageRequestHeaderV1,
-        SendMessageRequestHeaderV2, SendMessageResponseHeader, UnlockBatchMqRequestHeader,
-        UnregisterClientRequestHeader, UnregisterClientResponseHeader,
+        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
+        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
+        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
+        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
         UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
     },
 };
@@ -621,6 +621,11 @@ fn generate_p4_headers(output: &std::path::Path) {
         __phase18_header_11.set_timestamp(1_712_345_678_901);
         __phase18_header_11.set_force(true);
         __phase18_header_11
+    });
+    write_typed(output, "typed-reset-master-flush-offset.bin", 908, &{
+        let mut header = ResetMasterFlushOffsetHeader::default();
+        header.set_master_flush_offset(Some(9_876_543_210));
+        header
     });
     write_typed(output, "typed-pop.bin", 200050, &{
         let mut __phase18_header_12 = PopMessageRequestHeader::default();
