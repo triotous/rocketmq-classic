@@ -347,6 +347,23 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("writePermissionOperations", writePermissionOperations());
+        result.put("addBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("addBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("removeBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("removeBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("addBrokerRequestHeaderApi",
+            publicApiSurface(org.apache.rocketmq.remoting.protocol.header.AddBrokerRequestHeader.class));
+        result.put("removeBrokerRequestHeaderApi",
+            publicApiSurface(org.apache.rocketmq.remoting.protocol.header.RemoveBrokerRequestHeader.class));
+        result.put("addRemoveBrokerOperations", addRemoveBrokerOperations());
         result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
@@ -2837,6 +2854,83 @@ public final class ProducerCoreFixtures {
         cases.add(getClusterListCase("null-topic", null, -1L));
         cases.add(getClusterListCase("empty-topic", "", 0L));
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> addRemoveBrokerOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(addRemoveBrokerCase("add-success", "add", "/etc/rocketmq/broker.conf",
+            null, null, null, 0, null));
+        cases.add(addRemoveBrokerCase("add-null-path-error", "add", null,
+            null, null, null, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "broker registration rejected"));
+        cases.add(addRemoveBrokerCase("remove-success", "remove", null,
+            "cluster-a", "broker-a", Long.MIN_VALUE, 0, null));
+        cases.add(addRemoveBrokerCase("remove-null-names-error", "remove", null,
+            null, null, Long.MAX_VALUE, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "broker removal rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> addRemoveBrokerCase(
+        String name, String operation, String configPath, String clusterName, String brokerName,
+        Long brokerId, int responseCode, String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("broker-admin-api");
+        clientConfig.setVipChannelEnabled(true);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            return org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("operation", operation);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("configPath", configPath);
+        result.put("clusterName", clusterName);
+        result.put("brokerName", brokerName);
+        result.put("brokerId", brokerId);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            if ("add".equals(operation)) {
+                api.addBroker("broker-a:10911", configPath, 2345L);
+            } else {
+                api.removeBroker("broker-a:10911", clusterName, brokerName, brokerId, 2345L);
+            }
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

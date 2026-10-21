@@ -55,6 +55,8 @@ macro_rules! inventory {
             GetKvConfigResponseHeader => ("header-get-kv-config-response", "typed-get-kv-config-response.bin"),
             WipeWritePermOfBrokerRequestHeader => ("header-wipe-write-perm-request", "typed-wipe-write-perm-request.bin"),
             AddWritePermOfBrokerRequestHeader => ("header-add-write-perm-request", "typed-add-write-perm-request.bin"),
+            AddBrokerRequestHeader => ("header-add-broker-request", "typed-add-broker-request.bin"),
+            RemoveBrokerRequestHeader => ("header-remove-broker-request", "typed-remove-broker-request.bin"),
             WipeWritePermOfBrokerResponseHeader => ("header-wipe-write-perm-response", "typed-wipe-write-perm-response.bin"),
             AddWritePermOfBrokerResponseHeader => ("header-add-write-perm-response", "typed-add-write-perm-response.bin"),
             GetKvListByNamespaceRequestHeader => ("header-get-kv-list-by-namespace-request", "typed-get-kv-list-by-namespace-request.bin"),
@@ -603,6 +605,70 @@ fn write_permission_headers_match_java_public_api_inventory() {
                 method
             ));
         }
+    }
+}
+
+#[test]
+fn broker_management_headers_match_java_public_api_inventory() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    let cases: &[(&str, &str, &str, &[&str], &[&str])] = &[
+        (
+            "addBrokerRequestHeaderApi",
+            "AddBrokerRequestHeader",
+            "AddBrokerRequestHeader",
+            &["get_config_path", "set_config_path", "check_fields"],
+            &["getConfigPath", "setConfigPath", "checkFields"],
+        ),
+        (
+            "removeBrokerRequestHeaderApi",
+            "RemoveBrokerRequestHeader",
+            "RemoveBrokerRequestHeader",
+            &[
+                "get_broker_cluster_name",
+                "set_broker_cluster_name",
+                "get_broker_name",
+                "set_broker_name",
+                "get_broker_id",
+                "set_broker_id",
+                "check_fields",
+            ],
+            &[
+                "getBrokerClusterName",
+                "setBrokerClusterName",
+                "getBrokerName",
+                "setBrokerName",
+                "getBrokerId",
+                "setBrokerId",
+                "checkFields",
+            ],
+        ),
+    ];
+    for (fixture_key, java_type, rust_type, methods, java_methods) in cases {
+        let declared = fixture[fixture_key]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for java_method in *java_methods {
+            assert!(
+                declared.iter().any(|method| {
+                    method
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+                }),
+                "missing Java API {java_type}.{java_method}"
+            );
+        }
+        for method in *methods {
+            assert!(rust_header_method_exists(
+                source,
+                trait_source,
+                rust_type,
+                method
+            ));
+        }
+        assert!(source.contains(&format!("impl CommandHeader for {rust_type}")));
     }
 }
 

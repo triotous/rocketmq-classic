@@ -1156,6 +1156,90 @@ impl CommandHeader for AddWritePermOfBrokerRequestHeader {
     }
 }
 
+/// Java's `AddBrokerRequestHeader` carries a nullable broker configuration
+/// path. Its pinned `checkFields()` implementation does not validate it.
+#[derive(Debug, Clone, Default)]
+pub struct AddBrokerRequestHeader {
+    pub(crate) config_path: Option<String>,
+}
+
+impl AddBrokerRequestHeader {
+    pub fn get_config_path(&self) -> Option<&str> {
+        self.config_path.as_deref()
+    }
+
+    pub fn set_config_path(&mut self, value: Option<String>) {
+        self.config_path = value;
+    }
+}
+
+impl CommandHeader for AddBrokerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "configPath", self.config_path.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            config_path: optional_string(fields, "configPath"),
+        })
+    }
+}
+
+/// Java's `RemoveBrokerRequestHeader` keeps all fields nullable, including its
+/// boxed broker ID. The Broker implementation performs validation later.
+#[derive(Debug, Clone, Default)]
+pub struct RemoveBrokerRequestHeader {
+    pub(crate) broker_cluster_name: Option<String>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) broker_id: Option<i64>,
+}
+
+impl RemoveBrokerRequestHeader {
+    pub fn get_broker_cluster_name(&self) -> Option<&str> {
+        self.broker_cluster_name.as_deref()
+    }
+
+    pub fn set_broker_cluster_name(&mut self, value: Option<String>) {
+        self.broker_cluster_name = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    pub fn get_broker_id(&self) -> Option<i64> {
+        self.broker_id
+    }
+
+    pub fn set_broker_id(&mut self, value: Option<i64>) {
+        self.broker_id = value;
+    }
+}
+
+impl CommandHeader for RemoveBrokerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(
+            fields,
+            "brokerClusterName",
+            self.broker_cluster_name.as_deref(),
+        );
+        put_optional(fields, "brokerName", self.broker_name.as_deref());
+        put_optional(fields, "brokerId", self.broker_id);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            broker_cluster_name: optional_string(fields, "brokerClusterName"),
+            broker_name: optional_string(fields, "brokerName"),
+            broker_id: optional_i64(fields, "brokerId")?,
+        })
+    }
+}
+
 /// Pinned Java NameServer `WipeWritePermOfBrokerResponseHeader`. The boxed
 /// topic count stays nullable until the owning RPC performs Java's unboxing.
 #[derive(Debug, Clone, Copy, Default)]

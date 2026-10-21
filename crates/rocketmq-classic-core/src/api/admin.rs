@@ -16,9 +16,9 @@ use rocketmq_classic_protocol::{
     },
     codes::{request, response},
     header::{
-        AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader,
-        CheckRocksdbCqWriteProgressRequestHeader, CommandHeader,
-        ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
+        AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
+        AddWritePermOfBrokerResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
+        CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
@@ -28,9 +28,9 @@ use rocketmq_classic_protocol::{
         GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
         QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
-        QueryTopicsByConsumerRequestHeader, ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
+        ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -49,6 +49,15 @@ use crate::error::RpcError;
 /// Java `getNameServerConfig` results keyed by NameServer address. Each value
 /// is optional because Java returns a null `Properties` for malformed content.
 pub type NameServerConfigs = HashMap<String, Option<HashMap<String, String>>>;
+
+fn deadline_after_timeout_millis(timeout_millis: i64) -> Instant {
+    let now = Instant::now();
+    if timeout_millis <= 0 {
+        return now;
+    }
+    now.checked_add(Duration::from_millis(timeout_millis as u64))
+        .unwrap_or(now)
+}
 
 /// The index watermark and matching messages returned by a Broker query.
 /// Its read-only result fields match Java's constructor/getter surface; the
@@ -529,6 +538,59 @@ impl MQClientApi {
                 )
                 .to_string(),
             })
+    }
+
+    /// Registers a Broker through Java `MQClientAPIImpl.addBroker`. The
+    /// supplied address and timeout are used directly, without VIP rewriting.
+    pub async fn add_broker(
+        &self,
+        addr: &str,
+        config_path: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<(), RpcError> {
+        let code = request::ADD_BROKER;
+        let mut header = AddBrokerRequestHeader::default();
+        header.set_config_path(config_path.map(str::to_owned));
+        let reply = self
+            .request(
+                addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Removes a Broker through Java `MQClientAPIImpl.removeBroker`. The
+    /// nullable header values are preserved and the supplied address is used
+    /// directly, without VIP rewriting.
+    pub async fn remove_broker(
+        &self,
+        addr: &str,
+        cluster_name: Option<&str>,
+        broker_name: Option<&str>,
+        broker_id: i64,
+        timeout_millis: i64,
+    ) -> Result<(), RpcError> {
+        let code = request::REMOVE_BROKER;
+        let mut header = RemoveBrokerRequestHeader::default();
+        header.set_broker_cluster_name(cluster_name.map(str::to_owned));
+        header.set_broker_name(broker_name.map(str::to_owned));
+        header.set_broker_id(Some(broker_id));
+        let reply = self
+            .request(
+                addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
     }
 
     async fn broadcast_name_server_kv_request(

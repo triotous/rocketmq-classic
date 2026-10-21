@@ -13,7 +13,7 @@ use rocketmq_classic_protocol::{
     },
     codes::{LanguageCode, SerializeType},
     header::{
-        AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
+        AckMessageRequestHeader, AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
@@ -41,12 +41,13 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
-        RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
-        ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
-        SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
-        UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-        UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
-        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+        RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
+        ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
+        SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
+        SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
+        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -225,6 +226,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-add-write-perm-request.bin",
         "header-add-write-perm-request",
         327,
+    );
+    write_oracle_header::<AddBrokerRequestHeader>(
+        output,
+        "typed-add-broker-request.bin",
+        "header-add-broker-request",
+        902,
+    );
+    write_oracle_header::<RemoveBrokerRequestHeader>(
+        output,
+        "typed-remove-broker-request.bin",
+        "header-remove-broker-request",
+        903,
     );
     write_oracle_header::<WipeWritePermOfBrokerResponseHeader>(
         output,
