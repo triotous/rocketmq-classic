@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,8 @@ import org.apache.rocketmq.client.impl.consumer.RebalanceImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePullImpl;
 import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
+import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
+import org.apache.rocketmq.common.message.MessageExt;
 
 /** Pins the complete public Java consumer-facade and inherited API denominator. */
 public final class ConsumerFacadeApiFixtures {
@@ -86,6 +89,121 @@ public final class ConsumerFacadeApiFixtures {
         return result;
     }
 
+    private static MessageExt processQueueMessage(long offset, byte[] body) {
+        MessageExt message = new MessageExt();
+        message.setTopic("orders");
+        message.setQueueId(0);
+        message.setQueueOffset(offset);
+        message.setBody(body);
+        return message;
+    }
+
+    private static Map<String, Object> processQueueBehavior() {
+        ProcessQueue queue = new ProcessQueue();
+        MessageExt first = processQueueMessage(10L, new byte[] {1, 2});
+        MessageExt second = processQueueMessage(11L, new byte[] {3});
+        boolean dispatch = queue.putMessage(Arrays.asList(first, second));
+        List<Long> initialTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
+        long initialCount = queue.getMsgCount().get();
+        long initialSize = queue.getMsgSize().get();
+        long initialSpan = queue.getMaxSpan();
+        boolean containsFirst = queue.containsMessage(first);
+        boolean hasMessages = queue.hasTempMessage();
+        long firstTaken = queue.takeMessages(1).get(0).getQueueOffset();
+        List<Long> afterTakeTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
+        queue.rollback();
+        List<Long> afterRollbackTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
+        queue.takeMessages(1);
+        long committedOffset = queue.commit();
+        List<Long> afterCommitTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
+        long nextOffset = queue.removeMessage(Arrays.asList(second));
+        List<Long> finalTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
+
+        queue.setDropped(true);
+        queue.setLocked(true);
+        queue.setLastLockTimestamp(123L);
+        queue.setLastPullTimestamp(124L);
+        queue.setLastConsumeTimestamp(150L);
+        queue.setMsgAccCnt(17L);
+        queue.incTryUnlockTimes();
+        queue.incTryUnlockTimes();
+        ProcessQueueInfo info = new ProcessQueueInfo();
+        queue.fillProcessQueueInfo(info);
+
+        Map<String, Object> infoResult = new TreeMap<>();
+        infoResult.put("cachedMsgCount", info.getCachedMsgCount());
+        infoResult.put("cachedMsgSizeInMiB", info.getCachedMsgSizeInMiB());
+        infoResult.put("locked", info.isLocked());
+        infoResult.put("tryUnlockTimes", info.getTryUnlockTimes());
+        infoResult.put("lastLockTimestamp", info.getLastLockTimestamp());
+        infoResult.put("droped", info.isDroped());
+        infoResult.put("lastPullTimestamp", info.getLastPullTimestamp());
+        infoResult.put("lastConsumeTimestamp", info.getLastConsumeTimestamp());
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("dispatch", dispatch);
+        result.put("initialTreeKeys", initialTreeKeys);
+        result.put("initialCount", initialCount);
+        result.put("initialSize", initialSize);
+        result.put("initialSpan", initialSpan);
+        result.put("containsFirst", containsFirst);
+        result.put("hasMessages", hasMessages);
+        result.put("firstTaken", firstTaken);
+        result.put("afterTakeTreeKeys", afterTakeTreeKeys);
+        result.put("afterRollbackTreeKeys", afterRollbackTreeKeys);
+        result.put("committedOffset", committedOffset);
+        result.put("afterCommitTreeKeys", afterCommitTreeKeys);
+        result.put("nextOffset", nextOffset);
+        result.put("finalTreeKeys", finalTreeKeys);
+        result.put("finalCount", queue.getMsgCount().get());
+        result.put("finalSize", queue.getMsgSize().get());
+        result.put("lastLockTimestamp", queue.getLastLockTimestamp());
+        result.put("lastPullTimestamp", queue.getLastPullTimestamp());
+        result.put("lockExpired", queue.isLockExpired());
+        result.put("pullExpired", queue.isPullExpired());
+        result.put("lastConsumeTimestamp", queue.getLastConsumeTimestamp());
+        result.put("msgAccCnt", queue.getMsgAccCnt());
+        result.put("tryUnlockTimes", queue.getTryUnlockTimes());
+        result.put("dropped", queue.isDropped());
+        result.put("locked", queue.isLocked());
+        result.put("consumeLockPresent", queue.getConsumeLock() != null);
+        result.put("info", infoResult);
+        queue.clear();
+
+        ProcessQueue duplicateQueue = new ProcessQueue();
+        MessageExt originalDuplicate = processQueueMessage(30L, new byte[] {7, 8});
+        MessageExt replacementDuplicate = processQueueMessage(30L, new byte[] {9, 10, 11, 12});
+        duplicateQueue.putMessage(Arrays.asList(originalDuplicate));
+        boolean duplicateDispatch = duplicateQueue.putMessage(Arrays.asList(replacementDuplicate));
+        result.put("duplicateDispatch", duplicateDispatch);
+        result.put("duplicateCount", duplicateQueue.getMsgCount().get());
+        result.put("duplicateSize", duplicateQueue.getMsgSize().get());
+        result.put("duplicateBodySize", duplicateQueue.getMsgTreeMap().get(30L).getBody().length);
+
+        ProcessQueue droppedQueue = new ProcessQueue();
+        droppedQueue.setDropped(true);
+        boolean droppedDispatch = droppedQueue.putMessage(
+            Arrays.asList(processQueueMessage(40L, new byte[] {1})));
+        result.put("droppedDispatch", droppedDispatch);
+        result.put("droppedQueueCount", droppedQueue.getMsgCount().get());
+
+        ProcessQueue mapQueue = new ProcessQueue();
+        MessageExt original = processQueueMessage(20L, new byte[] {4});
+        MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});
+        mapQueue.putMessage(Arrays.asList(original));
+        long counterPrevious = mapQueue.getMsgCount().getAndAdd(4L);
+        long counterSizeAfterAdd = mapQueue.getMsgSize().addAndGet(3L);
+        mapQueue.getMsgTreeMap().put(21L, direct);
+        mapQueue.getMsgTreeMap().remove(20L);
+        result.put("directMapKeys", new ArrayList<>(mapQueue.getMsgTreeMap().keySet()));
+        result.put("counterPrevious", counterPrevious);
+        result.put("counterSizeAfterAdd", counterSizeAfterAdd);
+        result.put("directMapCount", mapQueue.getMsgCount().get());
+        result.put("directMapSize", mapQueue.getMsgSize().get());
+        mapQueue.clear();
+        return result;
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) throw new IllegalArgumentException("expected fixture path");
         Path output = Path.of(args[0]);
@@ -112,8 +230,10 @@ public final class ConsumerFacadeApiFixtures {
         implementationApis.put("ProcessQueue", publicApiSurface(ProcessQueue.class));
         implementationApis.put("PopProcessQueue", publicApiSurface(PopProcessQueue.class));
         fixture.put("implementationApis", implementationApis);
-        fixture.put("implementationBehaviors", Map.of(
-            "popProcessQueue", popProcessQueueBehavior()));
+        Map<String, Object> implementationBehaviors = new TreeMap<>();
+        implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
+        implementationBehaviors.put("processQueue", processQueueBehavior());
+        fixture.put("implementationBehaviors", implementationBehaviors);
 
         String json = JSON.toJSONString(fixture) + "\n";
         if (verify) {

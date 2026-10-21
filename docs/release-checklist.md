@@ -5297,3 +5297,20 @@ owner-specific checks belong in the manual handoff.
   P18-V02 supplementary gates after implementation work. P18-V03 package and
   provenance review and current Ubuntu/native Windows P18-V04 evidence remain
   open; Phase 19 Broker/Docker validation was not run.
+
+## P18 ProcessQueue API slice — 2026-10-21
+
+- [x] Exposed Java-shaped `ProcessQueue` methods, live message-tree and atomic
+  counter handles, and the same consume lock used by orderly processing. Push
+  and Pull owners expose live process-queue tables; Pull assignment updates its
+  process table as queues are added and removed. Added direct Java behavior and
+  Rust facade tests. The regenerated fixture SHA-256 is
+  `d2a38d2f6f18436517520b28213e81f8d7b267895b0b6ba194f31fa4a4b4b3b6`.
+- [x] Consumer all-feature tests (236 unit tests plus integration and doctest
+  targets), strict all-target/all-feature Consumer Clippy, focused Java fixture
+  drift verification, pinned Maven `verify` (37 scenarios and fixture checks),
+  formatting and `git diff --check` pass on this worktree.
+- P18-V01 remains open for inherited rebalance call correspondence and Pull POP
+  assignment flow. Refresh the full current-revision P18-V02 supplementary
+  gates after implementation; P18-V03 review and current Ubuntu/native Windows
+  P18-V04 evidence remain open. Phase 19 Broker/Docker validation was not run.

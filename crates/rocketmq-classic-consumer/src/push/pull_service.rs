@@ -26,7 +26,7 @@ pub(crate) const PULL_TIME_DELAY_MILLIS_WHEN_CACHE_FLOW_CONTROL: i64 = 50;
 pub(crate) const PULL_TIME_DELAY_MILLIS_WHEN_BROKER_FLOW_CONTROL: i64 = 20;
 pub(crate) const PULL_TIME_DELAY_MILLIS_WHEN_SUSPEND: i64 = 1_000;
 
-const MEBIBYTE: u64 = 1024 * 1024;
+const MEBIBYTE: i64 = 1024 * 1024;
 
 /// One logical fetch request tied to a queue assignment. The cursor is mutable
 /// because Java reuses its PullRequest after each completed response.
@@ -850,10 +850,10 @@ pub(crate) fn flow_control_reason(
     queue: &ProcessQueueSnapshot,
     thresholds: EffectiveQueueThresholds,
 ) -> Option<PullFlowControlReason> {
-    if queue.cached_count > thresholds.message_count as usize {
+    if queue.cached_count > thresholds.message_count as i64 {
         return Some(PullFlowControlReason::MessageCount);
     }
-    if queue.cached_bytes / MEBIBYTE > thresholds.size_mib as u64 {
+    if queue.cached_bytes / MEBIBYTE > thresholds.size_mib as i64 {
         return Some(PullFlowControlReason::MessageBytes);
     }
     if queue.max_span > i64::from(thresholds.max_span) {
@@ -869,7 +869,7 @@ mod tests {
     use std::time::Duration;
 
     fn process_queue(queue_id: i32, generation: u64) -> Arc<ProcessQueue> {
-        Arc::new(ProcessQueue::new(
+        Arc::new(ProcessQueue::new_for_assignment(
             MessageQueue::new("orders", "broker-a", queue_id),
             generation,
         ))

@@ -226,3 +226,22 @@
   call correspondence are not yet reconciled. Full current-revision P18-V02
   supplementary gates and P18-V03/V04 review remain outstanding. Phase 19
   Broker/Docker work was not run.
+
+
+# Phase 18 continuation — ProcessQueue API slice — 2026-10-21
+
+- Exposed the Java-shaped `ProcessQueue` public API, including mutable live
+  message-tree access, signed atomic counter handles, and the shared orderly
+  consume lock. Push and Pull expose live process-queue tables; Pull assignment
+  reconciliation adds and removes process queues. Added Java direct behavior
+  fixtures and Rust facade/table tests. Fixture SHA-256:
+  `d2a38d2f6f18436517520b28213e81f8d7b267895b0b6ba194f31fa4a4b4b3b6`.
+- Consumer all-feature tests pass (236 unit tests plus integration and doctest
+  targets), along with strict all-target/all-feature Consumer Clippy, the
+  focused Java drift verifier, `cargo fmt --all -- --check`, and
+  `git diff --check`. Pinned `mvn -f compat/java-reference/pom.xml verify`
+  passes all 37 scenarios and fixture/cross-decode checks on this worktree.
+- P18-V01 remains open for inherited rebalance call correspondence and Pull POP
+  assignment flow. Full current-revision P18-V02 supplementary gates and
+  P18-V03/V04 review remain outstanding. No Phase 19 Broker/Docker validation
+  was run.

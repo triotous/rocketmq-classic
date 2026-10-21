@@ -4,12 +4,15 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::{Arc, Mutex, MutexGuard},
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex, MutexGuard, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 pub(crate) const PULL_MAX_IDLE_TIME_PROPERTY: &str = "rocketmq.client.pull.pullMaxIdleTime";
 pub(crate) const PULL_MAX_IDLE_TIME_MILLIS: i64 = 120_000;
+const REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY: &str = "rocketmq.client.rebalance.lockMaxLiveTime";
+const REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS: i64 = 30_000;
 
 pub(crate) fn pull_idle_time_expired(
     now_millis: i64,
@@ -27,6 +30,23 @@ pub(crate) fn pull_max_idle_time_from_environment() -> Result<i64, String> {
             "non-Unicode Java-compatible long property {PULL_MAX_IDLE_TIME_PROPERTY}={value:?}"
         )),
     }
+}
+
+fn rebalance_lock_max_live_time_from_environment() -> i64 {
+    static MAX_LIVE_TIME_MILLIS: OnceLock<i64> = OnceLock::new();
+    *MAX_LIVE_TIME_MILLIS.get_or_init(|| {
+        match std::env::var(REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY) {
+            Ok(value) => parse_java_long(&value).unwrap_or_else(|| {
+                panic!(
+                    "invalid Java-compatible long property {REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY}={value:?}"
+                )
+            }),
+            Err(std::env::VarError::NotPresent) => REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS,
+            Err(std::env::VarError::NotUnicode(value)) => panic!(
+                "non-Unicode Java-compatible long property {REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY}={value:?}"
+            ),
+        }
+    })
 }
 
 fn parse_pull_max_idle_time(value: Option<&str>) -> Result<i64, String> {
@@ -82,25 +102,28 @@ fn java_decimal_digit(unit: u16) -> Option<u16> {
 }
 
 use rocketmq_classic_common::message::{
-    MessageExt, MessageQueue, constants::PROPERTY_CONSUME_START_TIMESTAMP,
+    MessageExt, MessageQueue,
+    constants::{PROPERTY_CONSUME_START_TIMESTAMP, PROPERTY_MAX_OFFSET},
 };
 use tokio::time::Instant;
 
 /// A single queue assignment's retained messages and in-flight consume work.
 /// Every operation that can change ownership state is scoped to its generation.
-pub(crate) struct ProcessQueue {
+pub struct ProcessQueue {
     queue: MessageQueue,
     generation: u64,
     state: Mutex<ProcessQueueState>,
-    orderly_consume_gate: Arc<tokio::sync::Mutex<()>>,
+    orderly_consume_gate: Arc<tokio::sync::RwLock<()>>,
 }
 
 struct ProcessQueueState {
     messages: BTreeMap<i64, QueueMessage>,
     in_flight_batches: HashMap<u64, Vec<i64>>,
-    cached_count: usize,
-    cached_bytes: u64,
+    cached_count: i64,
+    cached_bytes: i64,
     highest_seen_offset: Option<i64>,
+    queue_offset_max: i64,
+    msg_acc_cnt: i64,
     dropped: bool,
     consuming: bool,
     next_batch_id: u64,
@@ -118,6 +141,239 @@ struct QueueMessage {
     body_bytes: u64,
     state: MessageState,
     consume_start_timestamp_millis: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+enum ProcessQueueCounterKind {
+    Count,
+    Size,
+}
+
+/// Mutable Java `AtomicLong` counterpart for the cached count or byte size.
+pub struct ProcessQueueAtomicLong<'a> {
+    state: &'a Mutex<ProcessQueueState>,
+    kind: ProcessQueueCounterKind,
+}
+
+impl ProcessQueueAtomicLong<'_> {
+    pub fn get(&self) -> i64 {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.value(&state)
+    }
+
+    pub fn set(&self, value: i64) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.set_value(&mut state, value);
+    }
+
+    pub fn get_and_add(&self, delta: i64) -> i64 {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let previous = self.value(&state);
+        self.set_value(&mut state, previous.wrapping_add(delta));
+        previous
+    }
+
+    pub fn add_and_get(&self, delta: i64) -> i64 {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let value = self.value(&state).wrapping_add(delta);
+        self.set_value(&mut state, value);
+        value
+    }
+
+    pub fn get_and_set(&self, value: i64) -> i64 {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let previous = self.value(&state);
+        self.set_value(&mut state, value);
+        previous
+    }
+
+    pub fn increment_and_get(&self) -> i64 {
+        self.add_and_get(1)
+    }
+
+    pub fn get_and_increment(&self) -> i64 {
+        self.get_and_add(1)
+    }
+
+    pub fn decrement_and_get(&self) -> i64 {
+        self.add_and_get(-1)
+    }
+
+    pub fn get_and_decrement(&self) -> i64 {
+        self.get_and_add(-1)
+    }
+
+    pub fn compare_and_set(&self, expected: i64, value: i64) -> bool {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.value(&state) != expected {
+            return false;
+        }
+        self.set_value(&mut state, value);
+        true
+    }
+
+    fn value(&self, state: &ProcessQueueState) -> i64 {
+        match self.kind {
+            ProcessQueueCounterKind::Count => state.cached_count,
+            ProcessQueueCounterKind::Size => state.cached_bytes,
+        }
+    }
+
+    fn set_value(&self, state: &mut ProcessQueueState, value: i64) {
+        match self.kind {
+            ProcessQueueCounterKind::Count => state.cached_count = value,
+            ProcessQueueCounterKind::Size => state.cached_bytes = value,
+        }
+    }
+}
+
+/// Safe Rust view of Java's directly exposed mutable `msgTreeMap`.
+///
+/// The read and write guards hold the queue lock for their full lifetime.
+/// Direct map edits intentionally do not change the separate message count or
+/// byte count, matching Java's independent `AtomicLong` fields.
+pub struct ProcessQueueMessageTreeMap<'a> {
+    state: &'a Mutex<ProcessQueueState>,
+}
+
+pub struct ProcessQueueMessageTreeReadGuard<'a> {
+    _state: MutexGuard<'a, ProcessQueueState>,
+    view: BTreeMap<i64, Arc<MessageExt>>,
+}
+
+pub struct ProcessQueueMessageTreeWriteGuard<'a> {
+    state: MutexGuard<'a, ProcessQueueState>,
+    view: BTreeMap<i64, Arc<MessageExt>>,
+}
+
+impl ProcessQueueMessageTreeMap<'_> {
+    pub fn read(&self) -> ProcessQueueMessageTreeReadGuard<'_> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let view = ready_message_view(&state);
+        ProcessQueueMessageTreeReadGuard {
+            _state: state,
+            view,
+        }
+    }
+
+    pub fn write(&self) -> ProcessQueueMessageTreeWriteGuard<'_> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let view = ready_message_view(&state);
+        ProcessQueueMessageTreeWriteGuard { state, view }
+    }
+}
+
+impl Deref for ProcessQueueMessageTreeReadGuard<'_> {
+    type Target = BTreeMap<i64, Arc<MessageExt>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.view
+    }
+}
+
+impl Deref for ProcessQueueMessageTreeWriteGuard<'_> {
+    type Target = BTreeMap<i64, Arc<MessageExt>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.view
+    }
+}
+
+impl DerefMut for ProcessQueueMessageTreeWriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.view
+    }
+}
+
+impl Drop for ProcessQueueMessageTreeWriteGuard<'_> {
+    fn drop(&mut self) {
+        reconcile_ready_message_view(&mut self.state, &self.view);
+    }
+}
+
+fn ready_message_view(state: &ProcessQueueState) -> BTreeMap<i64, Arc<MessageExt>> {
+    state
+        .messages
+        .iter()
+        .filter(|(_, message)| message.state == MessageState::Ready)
+        .map(|(offset, message)| (*offset, message.message.clone()))
+        .collect()
+}
+
+fn reconcile_ready_message_view(
+    state: &mut ProcessQueueState,
+    view: &BTreeMap<i64, Arc<MessageExt>>,
+) {
+    let ready_offsets = state
+        .messages
+        .iter()
+        .filter(|(_, message)| message.state == MessageState::Ready)
+        .map(|(offset, _)| *offset)
+        .collect::<Vec<_>>();
+    for offset in ready_offsets {
+        if !view.contains_key(&offset) {
+            state.messages.remove(&offset);
+        }
+    }
+    for (offset, message) in view {
+        let body_bytes = message.body().len() as u64;
+        let consume_start_timestamp_millis = message
+            .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+            .and_then(|value| parse_java_long(&value));
+        match state.messages.get_mut(offset) {
+            Some(existing) => {
+                existing.message = message.clone();
+                existing.body_bytes = body_bytes;
+                existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
+                existing.state = MessageState::Ready;
+            }
+            None => {
+                state.messages.insert(
+                    *offset,
+                    QueueMessage {
+                        message: message.clone(),
+                        body_bytes,
+                        state: MessageState::Ready,
+                        consume_start_timestamp_millis,
+                    },
+                );
+            }
+        }
+    }
+    let in_flight_offsets = state
+        .messages
+        .iter()
+        .filter(|(_, entry)| matches!(entry.state, MessageState::InFlight(_)))
+        .map(|(offset, _)| *offset)
+        .collect::<BTreeSet<_>>();
+    state.in_flight_batches.retain(|_, offsets| {
+        offsets.retain(|offset| in_flight_offsets.contains(offset));
+        !offsets.is_empty()
+    });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,10 +459,14 @@ pub(crate) struct CompletionOutcome {
 pub(crate) struct ProcessQueueSnapshot {
     pub(crate) queue: MessageQueue,
     pub(crate) generation: u64,
-    pub(crate) cached_count: usize,
-    pub(crate) cached_bytes: u64,
+    pub(crate) cached_count: i64,
+    pub(crate) cached_bytes: i64,
+    pub(crate) cached_map_count: usize,
     pub(crate) minimum_offset: Option<i64>,
     pub(crate) maximum_offset: Option<i64>,
+    pub(crate) transaction_minimum_offset: Option<i64>,
+    pub(crate) transaction_maximum_offset: Option<i64>,
+    pub(crate) transaction_count: usize,
     pub(crate) max_span: i64,
     pub(crate) next_commit_offset: Option<i64>,
     pub(crate) in_flight_count: usize,
@@ -220,7 +480,12 @@ pub(crate) struct ProcessQueueSnapshot {
 }
 
 impl ProcessQueue {
-    pub(crate) fn new(queue: MessageQueue, generation: u64) -> Self {
+    /// Creates a public process queue, matching Java's no-argument constructor.
+    pub fn new() -> Self {
+        Self::new_for_assignment(MessageQueue::default(), 0)
+    }
+
+    pub(crate) fn new_for_assignment(queue: MessageQueue, generation: u64) -> Self {
         let now = epoch_millis();
         Self {
             queue,
@@ -231,6 +496,8 @@ impl ProcessQueue {
                 cached_count: 0,
                 cached_bytes: 0,
                 highest_seen_offset: None,
+                queue_offset_max: 0,
+                msg_acc_cnt: 0,
                 dropped: false,
                 consuming: false,
                 next_batch_id: 1,
@@ -242,7 +509,362 @@ impl ProcessQueue {
                 lock_attempt_id: 0,
                 try_unlock_times: 0,
             }),
-            orderly_consume_gate: Arc::new(tokio::sync::Mutex::new(())),
+            orderly_consume_gate: Arc::new(tokio::sync::RwLock::new(())),
+        }
+    }
+
+    /// Returns whether this queue has been dropped from its assignment.
+    pub fn is_dropped(&self) -> bool {
+        self.lock_state().dropped
+    }
+
+    pub fn set_dropped(&self, dropped: bool) {
+        self.lock_state().dropped = dropped;
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.lock_state().locked
+    }
+
+    pub fn set_locked(&self, locked: bool) {
+        self.lock_state().locked = locked;
+    }
+
+    pub fn is_lock_expired(&self) -> bool {
+        let state = self.lock_state();
+        epoch_millis().wrapping_sub(state.last_lock_timestamp_millis)
+            > rebalance_lock_max_live_time_from_environment()
+    }
+
+    pub fn is_pull_expired(&self) -> bool {
+        self.is_pull_expired_with_timeout(
+            pull_max_idle_time_from_environment().unwrap_or_else(|error| panic!("{error}")),
+        )
+    }
+
+    pub fn get_last_lock_timestamp(&self) -> i64 {
+        self.lock_state().last_lock_timestamp_millis
+    }
+
+    pub fn set_last_lock_timestamp(&self, timestamp_millis: i64) {
+        let mut state = self.lock_state();
+        state.last_lock_timestamp_millis = timestamp_millis;
+        state.last_lock_instant = None;
+    }
+
+    pub fn get_last_pull_timestamp(&self) -> i64 {
+        self.lock_state().last_pull_timestamp_millis
+    }
+
+    pub fn set_last_pull_timestamp(&self, timestamp_millis: i64) {
+        self.lock_state().last_pull_timestamp_millis = timestamp_millis;
+    }
+
+    pub fn get_last_consume_timestamp(&self) -> i64 {
+        self.lock_state().last_consume_timestamp_millis
+    }
+
+    pub fn set_last_consume_timestamp(&self, timestamp_millis: i64) {
+        self.lock_state().last_consume_timestamp_millis = timestamp_millis;
+    }
+
+    pub fn get_msg_acc_cnt(&self) -> i64 {
+        self.lock_state().msg_acc_cnt
+    }
+
+    pub fn set_msg_acc_cnt(&self, count: i64) {
+        self.lock_state().msg_acc_cnt = count;
+    }
+
+    pub fn get_try_unlock_times(&self) -> i64 {
+        i64::try_from(self.lock_state().try_unlock_times).unwrap_or(i64::MAX)
+    }
+
+    pub fn inc_try_unlock_times(&self) {
+        let mut state = self.lock_state();
+        state.try_unlock_times = state.try_unlock_times.wrapping_add(1);
+    }
+
+    /// Returns the current ready messages in queue-offset order.
+    pub fn get_msg_tree_map(&self) -> ProcessQueueMessageTreeMap<'_> {
+        ProcessQueueMessageTreeMap { state: &self.state }
+    }
+
+    pub fn get_msg_count(&self) -> ProcessQueueAtomicLong<'_> {
+        ProcessQueueAtomicLong {
+            state: &self.state,
+            kind: ProcessQueueCounterKind::Count,
+        }
+    }
+
+    pub fn get_msg_size(&self) -> ProcessQueueAtomicLong<'_> {
+        ProcessQueueAtomicLong {
+            state: &self.state,
+            kind: ProcessQueueCounterKind::Size,
+        }
+    }
+
+    pub fn get_consume_lock(&self) -> Arc<tokio::sync::RwLock<()>> {
+        self.orderly_consume_gate()
+    }
+
+    pub fn get_max_span(&self) -> i64 {
+        let state = self.lock_state();
+        let first = state
+            .messages
+            .iter()
+            .find(|(_, message)| message.state == MessageState::Ready)
+            .map(|(offset, _)| *offset);
+        let last = state
+            .messages
+            .iter()
+            .rev()
+            .find(|(_, message)| message.state == MessageState::Ready)
+            .map(|(offset, _)| *offset);
+        first
+            .zip(last)
+            .map_or(0, |(min, max)| max.wrapping_sub(min))
+    }
+
+    pub fn contains_message(&self, message: &MessageExt) -> bool {
+        self.lock_state()
+            .messages
+            .get(&message.queue_offset())
+            .is_some_and(|entry| entry.state == MessageState::Ready)
+    }
+
+    pub fn has_temp_message(&self) -> bool {
+        self.lock_state()
+            .messages
+            .values()
+            .any(|entry| entry.state == MessageState::Ready)
+    }
+
+    pub fn put_message(&self, messages: &[MessageExt]) -> bool {
+        self.insert_messages_inner(self.generation, messages.to_vec(), false)
+            .map(|outcome| outcome.dispatch_to_consume)
+            .unwrap_or(false)
+    }
+
+    pub fn take_messages(&self, batch_size: i32) -> Vec<Arc<MessageExt>> {
+        assert!(batch_size >= 0, "batch size cannot be negative");
+        let mut state = self.lock_state();
+        state.last_consume_timestamp_millis = epoch_millis();
+        let offsets = state
+            .messages
+            .iter()
+            .filter(|(_, message)| message.state == MessageState::Ready)
+            .take(batch_size as usize)
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        if offsets.is_empty() {
+            state.consuming = false;
+            return Vec::new();
+        }
+        let batch_id = Self::allocate_batch_id(&mut state);
+        let mut messages = Vec::with_capacity(offsets.len());
+        for offset in &offsets {
+            if let Some(message) = state.messages.get_mut(offset) {
+                message.state = MessageState::InFlight(batch_id);
+                messages.push(message.message.clone());
+            }
+        }
+        state.in_flight_batches.insert(batch_id, offsets);
+        state.consuming = true;
+        messages
+    }
+
+    pub fn remove_message(&self, messages: &[Arc<MessageExt>]) -> i64 {
+        let now = epoch_millis();
+        let mut state = self.lock_state();
+        state.last_consume_timestamp_millis = now;
+        if !state
+            .messages
+            .values()
+            .any(|entry| entry.state == MessageState::Ready)
+        {
+            return -1;
+        }
+        let mut result = state.queue_offset_max.wrapping_add(1);
+        for message in messages {
+            let offset = message.queue_offset();
+            if state
+                .messages
+                .get(&offset)
+                .is_some_and(|entry| entry.state == MessageState::Ready)
+            {
+                if let Some(removed) = state.messages.remove(&offset) {
+                    state.cached_count = state.cached_count.wrapping_sub(1);
+                    state.cached_bytes = state.cached_bytes.wrapping_sub(removed.body_bytes as i64);
+                }
+            }
+        }
+        if let Some((offset, _)) = state
+            .messages
+            .iter()
+            .find(|(_, message)| message.state == MessageState::Ready)
+        {
+            result = *offset;
+        }
+        if state.cached_count == 0 {
+            state.cached_bytes = 0;
+        }
+        result
+    }
+
+    pub fn rollback(&self) {
+        let mut state = self.lock_state();
+        for message in state.messages.values_mut() {
+            if matches!(
+                message.state,
+                MessageState::InFlight(_) | MessageState::Held
+            ) {
+                message.state = MessageState::Ready;
+            }
+        }
+        state.in_flight_batches.clear();
+        state.consuming = state
+            .messages
+            .values()
+            .any(|message| message.state == MessageState::Ready);
+    }
+
+    pub fn commit(&self) -> i64 {
+        let mut state = self.lock_state();
+        let consuming_offsets = state
+            .messages
+            .iter()
+            .filter(|(_, message)| {
+                matches!(
+                    message.state,
+                    MessageState::InFlight(_) | MessageState::Held
+                )
+            })
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        let Some(last_offset) = consuming_offsets.last().copied() else {
+            return -1;
+        };
+        for offset in &consuming_offsets {
+            if let Some(message) = state.messages.remove(offset) {
+                state.cached_count = state.cached_count.wrapping_sub(1);
+                state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
+            }
+        }
+        if state.cached_count == 0 {
+            state.cached_bytes = 0;
+        }
+        state.in_flight_batches.clear();
+        state.consuming = state
+            .messages
+            .values()
+            .any(|message| message.state == MessageState::Ready);
+        state.last_consume_timestamp_millis = epoch_millis();
+        last_offset.wrapping_add(1)
+    }
+
+    pub fn make_message_to_consume_again(&self, messages: &[MessageExt]) {
+        let mut state = self.lock_state();
+        for message in messages {
+            let offset = message.queue_offset();
+            if let Some(entry) = state.messages.get_mut(&offset) {
+                entry.message = Arc::new(message.clone());
+                entry.body_bytes = message.body().len() as u64;
+                entry.state = MessageState::Ready;
+                entry.consume_start_timestamp_millis = message
+                    .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+                    .and_then(|value| parse_java_long(&value));
+            } else {
+                state.messages.insert(
+                    offset,
+                    QueueMessage {
+                        message: Arc::new(message.clone()),
+                        body_bytes: message.body().len() as u64,
+                        state: MessageState::Ready,
+                        consume_start_timestamp_millis: message
+                            .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
+                            .and_then(|value| parse_java_long(&value)),
+                    },
+                );
+            }
+        }
+        let in_flight_offsets = state
+            .messages
+            .iter()
+            .filter(|(_, entry)| matches!(entry.state, MessageState::InFlight(_)))
+            .map(|(offset, _)| *offset)
+            .collect::<BTreeSet<_>>();
+        state.in_flight_batches.retain(|_, offsets| {
+            offsets.retain(|offset| in_flight_offsets.contains(offset));
+            !offsets.is_empty()
+        });
+        state.consuming = state
+            .messages
+            .values()
+            .any(|message| message.state == MessageState::Ready);
+    }
+
+    pub fn fill_process_queue_info(
+        &self,
+        info: &mut rocketmq_classic_protocol::body::ConsumerProcessQueueInfo,
+    ) {
+        let state = self.lock_state();
+        let ready = state
+            .messages
+            .iter()
+            .filter(|(_, message)| message.state == MessageState::Ready)
+            .collect::<Vec<_>>();
+        if let (Some((minimum, _)), Some((maximum, _))) = (ready.first(), ready.last()) {
+            info.set_cached_msg_min_offset(**minimum);
+            info.set_cached_msg_max_offset(**maximum);
+            info.set_cached_msg_count(i32::try_from(ready.len()).unwrap_or(i32::MAX));
+        }
+        info.set_cached_msg_size_in_mib(
+            i32::try_from(state.cached_bytes / (1024 * 1024)).unwrap_or(i32::MAX),
+        );
+        let consuming = state
+            .messages
+            .iter()
+            .filter(|(_, message)| {
+                matches!(
+                    message.state,
+                    MessageState::InFlight(_) | MessageState::Held
+                )
+            })
+            .collect::<Vec<_>>();
+        if let (Some((minimum, _)), Some((maximum, _))) = (consuming.first(), consuming.last()) {
+            info.set_transaction_msg_min_offset(**minimum);
+            info.set_transaction_msg_max_offset(**maximum);
+            info.set_transaction_msg_count(i32::try_from(consuming.len()).unwrap_or(i32::MAX));
+        }
+        info.set_locked(state.locked);
+        info.set_try_unlock_times(i64::try_from(state.try_unlock_times).unwrap_or(i64::MAX));
+        info.set_last_lock_timestamp(state.last_lock_timestamp_millis);
+        info.set_droped(state.dropped);
+        info.set_last_pull_timestamp(state.last_pull_timestamp_millis);
+        info.set_last_consume_timestamp(state.last_consume_timestamp_millis);
+    }
+
+    pub async fn clean_expired_msg(&self, push_consumer: &crate::push::PushConsumer) {
+        if push_consumer.is_consume_orderly() {
+            return;
+        }
+        let timeout_millis = push_consumer
+            .config()
+            .consume_timeout_minutes()
+            .wrapping_mul(60_000);
+        let tree_map = self.get_msg_tree_map();
+        let iterations = tree_map.read().len().min(16);
+        for _ in 0..iterations {
+            let Ok(Some((offset, message))) =
+                self.expired_head_message(self.generation, epoch_millis(), timeout_millis)
+            else {
+                break;
+            };
+            if push_consumer.send_message_back(&message, 3).await.is_err() {
+                break;
+            }
+            let _ = self.remove_head_message(self.generation, offset, epoch_millis());
         }
     }
 
@@ -250,7 +872,7 @@ impl ProcessQueue {
         &self.queue
     }
 
-    pub(crate) fn is_pull_expired(&self, max_idle_time_millis: i64) -> bool {
+    pub(crate) fn is_pull_expired_with_timeout(&self, max_idle_time_millis: i64) -> bool {
         let last_pull_timestamp_millis = self.lock_state().last_pull_timestamp_millis;
         pull_idle_time_expired(
             epoch_millis(),
@@ -263,7 +885,7 @@ impl ProcessQueue {
         self.generation
     }
 
-    pub(crate) fn orderly_consume_gate(&self) -> Arc<tokio::sync::Mutex<()>> {
+    pub(crate) fn orderly_consume_gate(&self) -> Arc<tokio::sync::RwLock<()>> {
         self.orderly_consume_gate.clone()
     }
 
@@ -275,12 +897,32 @@ impl ProcessQueue {
         generation: u64,
         messages: Vec<MessageExt>,
     ) -> Result<InsertOutcome, ProcessQueueError> {
+        self.insert_messages_inner(generation, messages, true)
+    }
+
+    fn insert_messages_inner(
+        &self,
+        generation: u64,
+        messages: Vec<MessageExt>,
+        require_active: bool,
+    ) -> Result<InsertOutcome, ProcessQueueError> {
         let mut state = self.lock_state();
-        self.ensure_active(generation, &state)?;
+        if require_active {
+            self.ensure_active(generation, &state)?;
+        } else {
+            self.ensure_generation(generation)?;
+        }
 
         let mut inserted_count = 0usize;
+        let max_offset = messages.last().and_then(|message| {
+            Some((
+                message.queue_offset(),
+                message.get_property(PROPERTY_MAX_OFFSET)?,
+            ))
+        });
         for message in messages {
             let offset = message.queue_offset();
+            state.queue_offset_max = offset;
             let body_bytes = message.body().len() as u64;
             state.highest_seen_offset = Some(
                 state
@@ -292,7 +934,7 @@ impl ProcessQueue {
                 .get(&offset)
                 .map(|entry| (entry.state, entry.body_bytes))
             {
-                Some((MessageState::Ready, previous_body_bytes)) => {
+                Some((MessageState::Ready, _previous_body_bytes)) => {
                     let consume_start_timestamp_millis = message
                         .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
                         .and_then(|value| parse_java_long(&value));
@@ -301,10 +943,6 @@ impl ProcessQueue {
                         existing.body_bytes = body_bytes;
                         existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
                     }
-                    state.cached_bytes = state
-                        .cached_bytes
-                        .saturating_sub(previous_body_bytes)
-                        .saturating_add(body_bytes);
                 }
                 Some((MessageState::InFlight(_) | MessageState::Held, _)) => {}
                 None => {
@@ -319,9 +957,18 @@ impl ProcessQueue {
                             state: MessageState::Ready,
                         },
                     );
-                    state.cached_count = state.cached_count.saturating_add(1);
-                    state.cached_bytes = state.cached_bytes.saturating_add(body_bytes);
+                    state.cached_count = state.cached_count.wrapping_add(1);
+                    state.cached_bytes = state.cached_bytes.wrapping_add(body_bytes as i64);
                     inserted_count = inserted_count.saturating_add(1);
+                }
+            }
+        }
+
+        if let Some((message_offset, max_offset)) = max_offset {
+            if let Some(max_offset) = parse_java_long(&max_offset) {
+                let accumulated = max_offset.wrapping_sub(message_offset);
+                if accumulated > 0 {
+                    state.msg_acc_cnt = accumulated;
                 }
             }
         }
@@ -448,8 +1095,11 @@ impl ProcessQueue {
         let Some(removed) = state.messages.remove(&offset) else {
             return Ok(false);
         };
-        state.cached_count = state.cached_count.saturating_sub(1);
-        state.cached_bytes = state.cached_bytes.saturating_sub(removed.body_bytes);
+        state.cached_count = state.cached_count.wrapping_sub(1);
+        state.cached_bytes = state.cached_bytes.wrapping_sub(removed.body_bytes as i64);
+        if state.cached_count == 0 {
+            state.cached_bytes = 0;
+        }
         for offsets in state.in_flight_batches.values_mut() {
             offsets.retain(|in_flight_offset| *in_flight_offset != offset);
         }
@@ -488,14 +1138,17 @@ impl ProcessQueue {
         for offset in offsets {
             if terminal_offsets.contains(&offset) {
                 if let Some(message) = state.messages.remove(&offset) {
-                    state.cached_count = state.cached_count.saturating_sub(1);
-                    state.cached_bytes = state.cached_bytes.saturating_sub(message.body_bytes);
+                    state.cached_count = state.cached_count.wrapping_sub(1);
+                    state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
                     completed_offsets.push(offset);
                 }
             } else if let Some(message) = state.messages.get_mut(&offset) {
                 message.state = MessageState::Ready;
                 requeued_offsets.push(offset);
             }
+        }
+        if state.cached_count == 0 {
+            state.cached_bytes = 0;
         }
         let has_ready_messages = state
             .messages
@@ -575,8 +1228,8 @@ impl ProcessQueue {
                     .is_some_and(|message| message.state == MessageState::Held);
             if completion == OrderlyCompletion::CommitAll {
                 if let Some(message) = state.messages.remove(&offset) {
-                    state.cached_count = state.cached_count.saturating_sub(1);
-                    state.cached_bytes = state.cached_bytes.saturating_sub(message.body_bytes);
+                    state.cached_count = state.cached_count.wrapping_sub(1);
+                    state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
                     completed_offsets.push(offset);
                 }
             } else if current_batch || transition_held {
@@ -591,6 +1244,10 @@ impl ProcessQueue {
                     }
                 }
             }
+        }
+
+        if state.cached_count == 0 {
+            state.cached_bytes = 0;
         }
 
         let has_ready_messages = state
@@ -642,13 +1299,14 @@ impl ProcessQueue {
         Ok(true)
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let mut state = self.lock_state();
         state.messages.clear();
         state.in_flight_batches.clear();
         state.cached_count = 0;
         state.cached_bytes = 0;
         state.highest_seen_offset = None;
+        state.queue_offset_max = 0;
         state.consuming = false;
     }
 
@@ -668,8 +1326,25 @@ impl ProcessQueue {
     ) -> Result<ProcessQueueSnapshot, ProcessQueueError> {
         self.ensure_generation(generation)?;
         let state = self.lock_state();
-        let minimum_offset = state.messages.first_key_value().map(|(offset, _)| *offset);
-        let maximum_offset = state.messages.last_key_value().map(|(offset, _)| *offset);
+        let cached_offsets = state
+            .messages
+            .iter()
+            .filter(|(_, message)| message.state == MessageState::Ready)
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        let transaction_offsets = state
+            .messages
+            .iter()
+            .filter(|(_, message)| {
+                matches!(
+                    message.state,
+                    MessageState::InFlight(_) | MessageState::Held
+                )
+            })
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        let minimum_offset = cached_offsets.first().copied();
+        let maximum_offset = cached_offsets.last().copied();
         let max_span = minimum_offset
             .zip(maximum_offset)
             .map_or(0, |(min, max)| max.wrapping_sub(min));
@@ -683,8 +1358,12 @@ impl ProcessQueue {
             generation: self.generation,
             cached_count: state.cached_count,
             cached_bytes: state.cached_bytes,
+            cached_map_count: cached_offsets.len(),
             minimum_offset,
             maximum_offset,
+            transaction_minimum_offset: transaction_offsets.first().copied(),
+            transaction_maximum_offset: transaction_offsets.last().copied(),
+            transaction_count: transaction_offsets.len(),
             max_span,
             next_commit_offset: next_commit_offset(&state),
             in_flight_count,
@@ -698,7 +1377,7 @@ impl ProcessQueue {
         })
     }
 
-    pub(crate) fn set_last_pull_timestamp(
+    pub(crate) fn set_last_pull_timestamp_for_assignment(
         &self,
         generation: u64,
         timestamp_millis: i64,
@@ -891,6 +1570,12 @@ impl ProcessQueue {
     }
 }
 
+impl Default for ProcessQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn next_commit_offset(state: &ProcessQueueState) -> Option<i64> {
     state
         .messages
@@ -923,7 +1608,7 @@ mod tests {
     // rejection and gap-safe commit checks enforce the Phase 10 ownership contract.
 
     fn process_queue(generation: u64) -> ProcessQueue {
-        ProcessQueue::new(MessageQueue::new("orders", "broker-a", 0), generation)
+        ProcessQueue::new_for_assignment(MessageQueue::new("orders", "broker-a", 0), generation)
     }
 
     fn message(offset: i64, body_size: usize) -> MessageExt {
@@ -1019,7 +1704,7 @@ mod tests {
 
         let snapshot = process_queue.snapshot(17).unwrap();
         assert_eq!(snapshot.cached_count, 3);
-        assert_eq!(snapshot.cached_bytes, 10);
+        assert_eq!(snapshot.cached_bytes, 6);
         assert_eq!(snapshot.max_span, 2);
         assert_eq!(snapshot.next_commit_offset, Some(10));
 
@@ -1028,7 +1713,7 @@ mod tests {
         assert_eq!(batch.messages()[0].body().len(), 7);
         let in_flight = process_queue.snapshot(17).unwrap();
         assert_eq!(in_flight.cached_count, 3);
-        assert_eq!(in_flight.cached_bytes, 10);
+        assert_eq!(in_flight.cached_bytes, 6);
         assert_eq!(in_flight.in_flight_count, 3);
 
         let completed = process_queue

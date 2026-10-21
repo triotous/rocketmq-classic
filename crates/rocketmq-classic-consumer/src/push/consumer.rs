@@ -578,6 +578,11 @@ impl PushConsumer {
         PopProcessQueue::new()
     }
 
+    /// Creates the public process queue returned by Java rebalance.
+    pub fn create_process_queue(&self) -> ProcessQueue {
+        ProcessQueue::new()
+    }
+
     /// Returns Java `RebalancePushImpl.getConsumeInitMode()` (`MIN = 0`,
     /// `MAX = 1`) for the configured consume origin.
     pub fn consume_init_mode(&self) -> i32 {
@@ -910,6 +915,11 @@ impl PushConsumer {
         &self,
     ) -> Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>> {
         self.pop_process_queues.clone()
+    }
+
+    /// Returns the live process-queue table exposed by Java rebalance.
+    pub fn get_process_queue_table(&self) -> Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>> {
+        self.process_queues.clone()
     }
 
     /// Returns the live topic-to-queue table exposed by Java rebalance.
@@ -1542,7 +1552,7 @@ impl PushConsumer {
                     // write-lock attempt and continues with the reset.
                     let gate = process_queue.orderly_consume_gate();
                     if let Ok(guard) =
-                        tokio::time::timeout(RESET_OFFSET_MAX_WAIT, gate.lock_owned()).await
+                        tokio::time::timeout(RESET_OFFSET_MAX_WAIT, gate.write_owned()).await
                     {
                         drop(guard);
                     }
@@ -1636,7 +1646,7 @@ impl PushConsumer {
         let _consume_guard = if force_unlock {
             None
         } else {
-            match tokio::time::timeout(ORDERLY_RESET_REMOVE_LOCK_WAIT, gate.lock_owned()).await {
+            match tokio::time::timeout(ORDERLY_RESET_REMOVE_LOCK_WAIT, gate.write_owned()).await {
                 Ok(guard) => Some(guard),
                 Err(_) => {
                     let _ = process_queue.increment_try_unlock_times(generation);
@@ -1812,9 +1822,20 @@ impl PushConsumer {
                 info.set_commit_offset(offset_table.get(&queue).copied().unwrap_or(-1));
                 info.set_cached_msg_min_offset(snapshot.minimum_offset.unwrap_or(0));
                 info.set_cached_msg_max_offset(snapshot.maximum_offset.unwrap_or(0));
-                info.set_cached_msg_count(i32::try_from(snapshot.cached_count).unwrap_or(i32::MAX));
+                info.set_cached_msg_count(
+                    i32::try_from(snapshot.cached_map_count).unwrap_or(i32::MAX),
+                );
                 info.set_cached_msg_size_in_mib(
                     i32::try_from(snapshot.cached_bytes / (1024 * 1024)).unwrap_or(i32::MAX),
+                );
+                info.set_transaction_msg_min_offset(
+                    snapshot.transaction_minimum_offset.unwrap_or(0),
+                );
+                info.set_transaction_msg_max_offset(
+                    snapshot.transaction_maximum_offset.unwrap_or(0),
+                );
+                info.set_transaction_msg_count(
+                    i32::try_from(snapshot.transaction_count).unwrap_or(i32::MAX),
                 );
                 info.set_locked(snapshot.locked);
                 info.set_try_unlock_times(
@@ -2160,7 +2181,7 @@ impl PushConsumer {
                 value.checked_add(1)
             })
             .map_err(|_| PushConsumerError::GenerationExhausted)?;
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), generation));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), generation));
         {
             let mut queues = write_lock(&self.process_queues);
             if let Some(existing) = queues.get(&queue) {
@@ -2294,7 +2315,7 @@ impl PushConsumer {
             context.scheduler.cancel(&queue, generation);
             return;
         }
-        let _ = process_queue.set_last_pull_timestamp(generation, epoch_millis());
+        let _ = process_queue.set_last_pull_timestamp_for_assignment(generation, epoch_millis());
 
         if self.paused.load(Ordering::Acquire) {
             let _ = context
@@ -2716,7 +2737,7 @@ impl PushConsumer {
             let generation = process_queue.generation();
             let attempts = process_queue
                 .snapshot(generation)
-                .map_or(0, |snapshot| snapshot.cached_count.min(16));
+                .map_or(0, |snapshot| snapshot.cached_count.clamp(0, 16) as usize);
             for _ in 0..attempts {
                 let Ok(Some((offset, message))) =
                     process_queue.expired_head_message(generation, now_millis, timeout_millis)
@@ -2963,7 +2984,7 @@ impl PushConsumer {
             return;
         };
         let gate = process_queue.orderly_consume_gate();
-        let _consume_guard = gate.lock_owned().await;
+        let _consume_guard = gate.write_owned().await;
         if !process_queue
             .snapshot(generation)
             .is_ok_and(|snapshot| !snapshot.dropped)
@@ -5206,8 +5227,9 @@ impl PushConsumer {
             }
             let should_remove = authoritative_topics.contains(topic)
                 && (!desired_push_queues.contains(&queue)
-                    || process_queue
-                        .is_pull_expired(self.pull_max_idle_time_millis.load(Ordering::Acquire)));
+                    || process_queue.is_pull_expired_with_timeout(
+                        self.pull_max_idle_time_millis.load(Ordering::Acquire),
+                    ));
             if !should_remove {
                 continue;
             }
@@ -5584,7 +5606,7 @@ impl PushConsumer {
         });
         let _consume_guard = if orderly_clustering.is_some() {
             let gate = process_queue.orderly_consume_gate();
-            match tokio::time::timeout(Duration::from_millis(500), gate.lock_owned()).await {
+            match tokio::time::timeout(Duration::from_millis(500), gate.write_owned()).await {
                 Ok(guard) => Some(guard),
                 Err(_) => {
                     let force_unlock = orderly_clustering.is_some_and(|settings| {
@@ -6809,7 +6831,7 @@ mod tests {
         assert_eq!(consumer.get_max_reconsume_times(), 9);
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = ProcessQueue::new(queue, 1);
+        let process_queue = ProcessQueue::new_for_assignment(queue, 1);
         process_queue
             .insert_messages(1, (0..5).map(message).collect())
             .unwrap();
@@ -6860,7 +6882,7 @@ mod tests {
         ];
         write_lock(&consumer.process_queues).insert(
             queues[0].clone(),
-            Arc::new(ProcessQueue::new(queues[0].clone(), 1)),
+            Arc::new(ProcessQueue::new_for_assignment(queues[0].clone(), 1)),
         );
         consumer.update_pull_thresholds_after_rebalance();
         assert_eq!(active(), expected("pushQueueThresholdSingleAssignment"));
@@ -6868,7 +6890,10 @@ mod tests {
         for (generation, queue) in queues.iter().enumerate().skip(1) {
             write_lock(&consumer.process_queues).insert(
                 queue.clone(),
-                Arc::new(ProcessQueue::new(queue.clone(), generation as u64 + 1)),
+                Arc::new(ProcessQueue::new_for_assignment(
+                    queue.clone(),
+                    generation as u64 + 1,
+                )),
             );
         }
         consumer.update_pull_thresholds_after_rebalance();
@@ -6876,7 +6901,7 @@ mod tests {
             active(),
             expected("pushQueueThresholdFourAssignmentsAcrossTopics")
         );
-        let backlog = ProcessQueue::new(queues[0].clone(), 100);
+        let backlog = ProcessQueue::new_for_assignment(queues[0].clone(), 100);
         backlog
             .insert_messages(100, (0..6).map(message).collect())
             .unwrap();
@@ -7392,7 +7417,7 @@ mod tests {
 
         write_lock(&consumer.process_queues).insert(
             assigned.clone(),
-            Arc::new(ProcessQueue::new(assigned.clone(), 1)),
+            Arc::new(ProcessQueue::new_for_assignment(assigned.clone(), 1)),
         );
         consumer.set_service_state(Some(ConsumerServiceState::Running));
         consumer.persist_consumer_offset().await.unwrap();
@@ -8734,7 +8759,7 @@ mod tests {
         generation: u64,
         messages: Vec<MessageExt>,
     ) -> ConsumeRequest {
-        let process_queue = Arc::new(ProcessQueue::new(queue, generation));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue, generation));
         process_queue.insert_messages(generation, messages).unwrap();
         let batch = process_queue
             .take_batch(generation, usize::MAX)
@@ -9281,7 +9306,7 @@ mod tests {
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         let store = Arc::new(RecordingOffsetStore::default());
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 37));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 37));
         store.update_offset(&queue, 45, false);
         write_lock(&consumer.subscriptions).insert(
             "orders".to_owned(),
@@ -9347,7 +9372,7 @@ mod tests {
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         let store = Arc::new(RecordingOffsetStore::default());
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 37));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 37));
         store.update_offset(&queue, 45, false);
         write_lock(&consumer.subscriptions).insert(
             "orders".to_owned(),
@@ -9473,7 +9498,7 @@ mod tests {
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         let store = Arc::new(RecordingOffsetStore::default());
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 41));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 41));
         store.update_offset(&queue, 52, false);
         write_lock(&consumer.subscriptions).insert(
             "orders".to_owned(),
@@ -9523,7 +9548,7 @@ mod tests {
         let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
         let store = Arc::new(RecordingOffsetStore::default());
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 31));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 31));
         store.update_offset(&queue, 45, false);
         write_lock(&consumer.subscriptions).insert(
             "orders".to_owned(),
@@ -9840,17 +9865,17 @@ mod tests {
             }
             let mut queues = BTreeMap::new();
             if name != "empty-push-null-inputs" {
-                let process_queue = Arc::new(ProcessQueue::new(queue0.clone(), 100));
+                let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue0.clone(), 100));
                 if name == "subscribed-pull-expired" {
                     process_queue
-                        .set_last_pull_timestamp(100, epoch_millis() - 120_001)
+                        .set_last_pull_timestamp_for_assignment(100, epoch_millis() - 120_001)
                         .unwrap();
                     store
                         .fail_read_queues
                         .lock()
                         .unwrap()
                         .insert(queue0.clone());
-                    assert!(process_queue.is_pull_expired(120_000));
+                    assert!(process_queue.is_pull_expired_with_timeout(120_000));
                     assert!(read_lock(&consumer.subscriptions).contains_key("orders"));
                     assert!(
                         read_lock(&consumer.topic_queues)
@@ -9867,7 +9892,7 @@ mod tests {
                 store.values.lock().unwrap().insert(queue0.clone(), 50);
             }
             if name == "per-queue-failure" {
-                let process_queue = Arc::new(ProcessQueue::new(queue1.clone(), 101));
+                let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue1.clone(), 101));
                 write_lock(&consumer.process_queues).insert(queue1.clone(), process_queue.clone());
                 queues.insert(1, process_queue);
                 store.values.lock().unwrap().insert(queue1.clone(), 60);
@@ -9922,7 +9947,8 @@ mod tests {
                         offsets.insert(Some(queue0.clone()), Some(77));
                     });
                 } else {
-                    let process_queue = Arc::new(ProcessQueue::new(queue1.clone(), 101));
+                    let process_queue =
+                        Arc::new(ProcessQueue::new_for_assignment(queue1.clone(), 101));
                     write_lock(&consumer.process_queues)
                         .insert(queue1.clone(), process_queue.clone());
                     queues.insert(1, process_queue);
@@ -9992,7 +10018,7 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 100));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 100));
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         let weak = Arc::downgrade(&consumer);
         let store = second.clone();
@@ -10088,12 +10114,15 @@ mod tests {
         let queue = MessageQueue::new("orders", "broker-a", 0);
         write_lock(&owners[1].process_queues).insert(
             queue.clone(),
-            Arc::new(ProcessQueue::new(queue.clone(), 200)),
+            Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 200)),
         );
         let cases = fixture["resume"].as_array().unwrap();
         assert_eq!(cases.len(), 2);
         for (round, expected) in cases.iter().enumerate() {
-            let process_queue = Arc::new(ProcessQueue::new(queue.clone(), round as u64 + 100));
+            let process_queue = Arc::new(ProcessQueue::new_for_assignment(
+                queue.clone(),
+                round as u64 + 100,
+            ));
             write_lock(&owners[0].process_queues).insert(queue.clone(), process_queue.clone());
             if round == 0 {
                 owners[0].suspend().await;
@@ -10191,7 +10220,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 100));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 100));
         // Match the Java probe's nullable-reset precondition at entry to its
         // real doRebalance: dropped queue, retained offset and no subscription.
         process_queue.drop_assignment(100).unwrap();
@@ -10360,14 +10389,14 @@ mod tests {
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.update_offset(&queue, 50, false);
         store.persist(&queue).await.unwrap();
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 73));
         process_queue
             .set_lock_state(73, true, epoch_millis())
             .unwrap();
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
 
         let consume_gate = process_queue.orderly_consume_gate();
-        let _consume_guard = consume_gate.lock_owned().await;
+        let _consume_guard = consume_gate.write_owned().await;
         let reset_consumer = consumer.clone();
         let reset_queue = queue.clone();
         let reset = tokio::spawn(async move {
@@ -10427,7 +10456,7 @@ mod tests {
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.update_offset(&queue, 50, false);
         store.persist(&queue).await.unwrap();
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 74));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 74));
         process_queue
             .set_lock_state(74, true, epoch_millis())
             .unwrap();
@@ -10512,7 +10541,7 @@ mod tests {
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.update_offset(&queue, 50, false);
         store.persist(&queue).await.unwrap();
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 73));
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
 
         consumer
@@ -10550,7 +10579,7 @@ mod tests {
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.update_offset(&queue, 50, false);
         store.persist(&queue).await.unwrap();
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 73));
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         let stale_request = Arc::new(PullRequest::new(
             "reset-offset-pull-race",
@@ -11001,7 +11030,7 @@ mod tests {
         );
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue, 194));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue, 194));
         process_queue
             .insert_messages(
                 194,
@@ -11069,7 +11098,7 @@ mod tests {
 
         consumer.set_consumer_group(Some("orderly-stats-live-group".into()));
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue, 192));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue, 192));
         process_queue
             .insert_messages(192, vec![message(1)])
             .unwrap();
@@ -11133,7 +11162,7 @@ mod tests {
         let store_dyn: Arc<dyn OffsetStore> = store.clone();
         let queue = MessageQueue::new("orders", "broker-a", 0);
         store.update_offset(&queue, 17, false);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 19));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 19));
         process_queue
             .insert_messages(19, vec![message(11)])
             .unwrap();
@@ -11487,7 +11516,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 73));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 73));
         store.update_offset(&queue, 50, false);
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         let request = Arc::new(PullRequest::new(
@@ -11566,7 +11595,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 2);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 44));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 44));
         process_queue.drop_assignment(44).unwrap();
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         store.update_offset(&queue, 81, false);
@@ -11708,7 +11737,8 @@ mod tests {
         };
 
         let empty_queue = MessageQueue::new("orders", "broker-a", 0);
-        let empty_process_queue = Arc::new(ProcessQueue::new(empty_queue.clone(), 1));
+        let empty_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(empty_queue.clone(), 1));
         let empty_request = Arc::new(PullRequest::new("pull-outcomes", empty_process_queue, 10));
         scheduler.schedule(empty_request.clone(), 0).unwrap();
         let active_empty_request = scheduler.take_due().unwrap();
@@ -11728,7 +11758,10 @@ mod tests {
         scheduler.finish(&follow_up);
 
         let unresolved_queue = MessageQueue::new("orders", "broker-a", 1);
-        let unresolved_process_queue = Arc::new(ProcessQueue::new(unresolved_queue.clone(), 2));
+        let unresolved_process_queue = Arc::new(ProcessQueue::new_for_assignment(
+            unresolved_queue.clone(),
+            2,
+        ));
         unresolved_process_queue
             .insert_messages(2, vec![message(30)])
             .unwrap();
@@ -11756,7 +11789,7 @@ mod tests {
         scheduler.finish(&follow_up);
 
         let found_queue = MessageQueue::new("orders", "broker-a", 2);
-        let found_process_queue = Arc::new(ProcessQueue::new(found_queue, 3));
+        let found_process_queue = Arc::new(ProcessQueue::new_for_assignment(found_queue, 3));
         let found_request = Arc::new(PullRequest::new(
             "pull-outcomes",
             found_process_queue.clone(),
@@ -11870,7 +11903,7 @@ mod tests {
 
         let request = PullRequest::new(
             "push-live-pull-batch",
-            Arc::new(ProcessQueue::new(queue, 1)),
+            Arc::new(ProcessQueue::new_for_assignment(queue, 1)),
             0,
         );
         consumer.set_consumer_group(Some("push-live-pull-mutated-group".into()));
@@ -11941,7 +11974,7 @@ mod tests {
         );
         let runtime =
             install_started_orderly_consumer(&consumer, &manager, store_dyn, listener, None).await;
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 101));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 101));
         process_queue
             .set_lock_state(101, true, epoch_millis())
             .unwrap();
@@ -12011,7 +12044,7 @@ mod tests {
         let request_group = "pull-stats-request-group";
         let request = PullRequest::new(
             request_group,
-            Arc::new(ProcessQueue::new(
+            Arc::new(ProcessQueue::new_for_assignment(
                 MessageQueue::new("orders", "broker-a", 0),
                 1,
             )),
@@ -12062,7 +12095,7 @@ mod tests {
         };
 
         let stale_queue = MessageQueue::new("orders", "broker-a", 3);
-        let stale_process_queue = Arc::new(ProcessQueue::new(stale_queue, 4));
+        let stale_process_queue = Arc::new(ProcessQueue::new_for_assignment(stale_queue, 4));
         let stale_request = Arc::new(PullRequest::new(
             "pull-generation-fence",
             stale_process_queue.clone(),
@@ -12081,7 +12114,8 @@ mod tests {
         assert!(offset_store.updates.lock().unwrap().is_empty());
 
         let illegal_queue = MessageQueue::new("orders", "broker-a", 4);
-        let illegal_process_queue = Arc::new(ProcessQueue::new(illegal_queue.clone(), 5));
+        let illegal_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(illegal_queue.clone(), 5));
         let illegal_request = Arc::new(PullRequest::new(
             "pull-generation-fence",
             illegal_process_queue.clone(),
@@ -12204,13 +12238,18 @@ mod tests {
             message
         };
         let now_millis = 106_001;
+        let direct_clean_now = epoch_millis();
 
         let expired_queue = MessageQueue::new("orders", "broker-a", 0);
-        let expired_process_queue = Arc::new(ProcessQueue::new(expired_queue.clone(), 101));
+        let expired_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(expired_queue.clone(), 101));
         expired_process_queue
             .insert_messages(
                 101,
-                vec![make_message(10, 2, 46_000), make_message(11, 3, 46_002)],
+                vec![
+                    make_message(10, 2, direct_clean_now - 60_001),
+                    make_message(11, 3, direct_clean_now - 60_000),
+                ],
             )
             .unwrap();
         write_lock(&consumer.process_queues).insert(expired_queue, expired_process_queue.clone());
@@ -12220,9 +12259,7 @@ mod tests {
             .unwrap()
             .broker_results
             .push_back(Ok(()));
-        consumer
-            .clean_expired_process_queue_messages_at(now_millis)
-            .await;
+        expired_process_queue.clean_expired_msg(&consumer).await;
         let expired_snapshot = expired_process_queue.snapshot(101).unwrap();
         assert_eq!(
             expired_snapshot.cached_count,
@@ -12236,7 +12273,8 @@ mod tests {
         assert_eq!(expired_snapshot.maximum_offset, Some(11));
 
         let failed_queue = MessageQueue::new("orders", "broker-a", 1);
-        let failed_process_queue = Arc::new(ProcessQueue::new(failed_queue.clone(), 102));
+        let failed_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(failed_queue.clone(), 102));
         failed_process_queue
             .insert_messages(
                 102,
@@ -12271,7 +12309,8 @@ mod tests {
         write_lock(&consumer.process_queues).remove(&failed_queue);
 
         let limit_queue = MessageQueue::new("orders", "broker-a", 2);
-        let limit_process_queue = Arc::new(ProcessQueue::new(limit_queue.clone(), 103));
+        let limit_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(limit_queue.clone(), 103));
         let limit_messages = (0..18)
             .map(|index| make_message(60 + index, 2 + index as usize, 46_000))
             .collect();
@@ -12306,7 +12345,8 @@ mod tests {
         write_lock(&consumer.process_queues).remove(&limit_queue);
 
         let orderly_queue = MessageQueue::new("orders", "broker-a", 3);
-        let orderly_process_queue = Arc::new(ProcessQueue::new(orderly_queue.clone(), 104));
+        let orderly_process_queue =
+            Arc::new(ProcessQueue::new_for_assignment(orderly_queue.clone(), 104));
         orderly_process_queue
             .insert_messages(104, vec![make_message(30, 2, 46_000)])
             .unwrap();
@@ -12376,7 +12416,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 104));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 104));
         process_queue
             .insert_messages(104, vec![retry_test_message(40)])
             .unwrap();
@@ -12467,7 +12507,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 105));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 105));
         let mut expired = retry_test_message(50);
         expired
             .set_system_property(
@@ -14191,7 +14231,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 40));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 40));
         process_queue
             .insert_messages(40, vec![retry_test_message(50)])
             .unwrap();
@@ -14271,7 +14311,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 40));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 40));
         process_queue
             .insert_messages(40, vec![retry_test_message(50)])
             .unwrap();
@@ -14321,7 +14361,10 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, queue)| {
-                let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 80 + index as u64));
+                let process_queue = Arc::new(ProcessQueue::new_for_assignment(
+                    queue.clone(),
+                    80 + index as u64,
+                ));
                 if index == 1 {
                     process_queue
                         .set_lock_state(81, true, epoch_millis())
@@ -14383,7 +14426,7 @@ mod tests {
         .unwrap();
         assert_eq!(fixture["rebalanceConsumerGroupAfterFacadeMutation"], group);
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 195));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 195));
         consumer
             .scripted_lock_transport
             .lock()
@@ -14417,7 +14460,7 @@ mod tests {
             .await
             .unwrap();
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue, 83));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue, 83));
         process_queue
             .set_lock_state(83, true, epoch_millis())
             .unwrap();
@@ -14466,7 +14509,7 @@ mod tests {
             .await
             .unwrap();
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 84));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 84));
         let (first_sender, first_receiver) = tokio::sync::oneshot::channel();
         let (second_sender, second_receiver) = tokio::sync::oneshot::channel();
         let requested = {
@@ -14525,8 +14568,8 @@ mod tests {
             .unwrap();
         let queue_a = MessageQueue::new("orders", "broker-a", 0);
         let queue_b = MessageQueue::new("orders", "broker-b", 0);
-        let process_queue_a = Arc::new(ProcessQueue::new(queue_a.clone(), 94));
-        let process_queue_b = Arc::new(ProcessQueue::new(queue_b.clone(), 95));
+        let process_queue_a = Arc::new(ProcessQueue::new_for_assignment(queue_a.clone(), 94));
+        let process_queue_b = Arc::new(ProcessQueue::new_for_assignment(queue_b.clone(), 95));
         let (response_a, waiter_a) = tokio::sync::oneshot::channel();
         let (response_b, waiter_b) = tokio::sync::oneshot::channel();
         let requested = {
@@ -14576,7 +14619,7 @@ mod tests {
             .await
             .unwrap();
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 85));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 85));
         let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
         let requested = {
             let mut scripted = consumer.scripted_lock_transport.lock().unwrap();
@@ -14677,7 +14720,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 86));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 86));
         process_queue
             .insert_messages(86, vec![retry_test_message(10), retry_test_message(11)])
             .unwrap();
@@ -14838,7 +14881,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 95));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 95));
         process_queue
             .insert_messages(95, vec![retry_test_message(400), retry_test_message(401)])
             .unwrap();
@@ -14904,7 +14947,7 @@ mod tests {
             .push_back(Ok(()));
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 87));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 87));
         process_queue
             .insert_messages(87, vec![retry_test_message(20)])
             .unwrap();
@@ -14989,7 +15032,7 @@ mod tests {
             .retry_results
             .push_back(Err("retry publish rejected".into()));
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 88));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 88));
         process_queue
             .insert_messages(88, vec![retry_test_message(30)])
             .unwrap();
@@ -15061,7 +15104,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue, 96));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue, 96));
         process_queue
             .insert_messages(96, vec![retry_test_message(100), retry_test_message(101)])
             .unwrap();
@@ -15163,8 +15206,8 @@ mod tests {
 
         let queue_a = MessageQueue::new("orders", "broker-a", 0);
         let queue_b = MessageQueue::new("orders", "broker-a", 1);
-        let process_queue_a = Arc::new(ProcessQueue::new(queue_a, 89));
-        let process_queue_b = Arc::new(ProcessQueue::new(queue_b, 90));
+        let process_queue_a = Arc::new(ProcessQueue::new_for_assignment(queue_a, 89));
+        let process_queue_b = Arc::new(ProcessQueue::new_for_assignment(queue_b, 90));
         process_queue_a
             .insert_messages(89, vec![retry_test_message(100)])
             .unwrap();
@@ -15256,7 +15299,7 @@ mod tests {
         .await;
 
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 91));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 91));
         process_queue
             .insert_messages(91, vec![retry_test_message(300)])
             .unwrap();
@@ -15316,7 +15359,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 92));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 92));
         write_lock(&consumer.process_queues).insert(queue.clone(), process_queue.clone());
         let requested = {
             let mut scripted = consumer.scripted_lock_transport.lock().unwrap();
@@ -15398,7 +15441,7 @@ mod tests {
         )
         .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 93));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 93));
         process_queue
             .set_lock_state(93, true, epoch_millis())
             .unwrap();
@@ -15472,7 +15515,7 @@ mod tests {
             install_started_orderly_consumer(&consumer, &manager, offset_store_dyn, listener, None)
                 .await;
         let queue = MessageQueue::new("orders", "broker-a", 0);
-        let process_queue = Arc::new(ProcessQueue::new(queue.clone(), 94));
+        let process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 94));
         process_queue
             .set_lock_state(94, true, epoch_millis())
             .unwrap();

@@ -3,7 +3,7 @@ use std::{
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex, RwLock, Weak,
-        atomic::{AtomicBool, AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -46,6 +46,7 @@ use crate::{
     error::PullConsumerError,
     offset::{LocalFileOffsetStore, OffsetStore, ReadOffsetType, RemoteBrokerOffsetStore},
     pop::PopProcessQueue,
+    process_queue::ProcessQueue,
     pull::{
         FilterMessageHook, ProcessedPullResult, PullAPIWrapper, SharedFilterMessageHooks,
         resolve_pull_broker_address,
@@ -59,6 +60,7 @@ const MAX_PULL_MESSAGE_BYTES: i32 = i32::MAX;
 const FIRST_BROKER_SUPPORTING_EXPRESSION_FILTER: i32 = 232;
 const PULL_SEND_BACK_TIMEOUT_MILLIS: u64 = 3_000;
 const LOGICAL_QUEUE_MOCK_BROKER_PREFIX: &str = "__syslo__";
+static NEXT_PULL_PROCESS_QUEUE_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 type RegisteredSubscriptions = Arc<RwLock<HashSet<SubscriptionData>>>;
 
@@ -141,6 +143,8 @@ pub struct PullConsumer {
     register_subscriptions: RegisteredSubscriptions,
     additional_heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
     topic_queues: Arc<RwLock<HashMap<String, BTreeSet<MessageQueue>>>>,
+    process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>>,
+    pop_process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>>,
     register_topics: Arc<RwLock<BTreeSet<String>>>,
     in_balance_queues: Arc<RwLock<BTreeSet<MessageQueue>>>,
     message_queue_listener: Arc<RwLock<Option<MessageQueueListener>>>,
@@ -195,6 +199,8 @@ impl PullConsumer {
                 ConsumerSubscriptionDataSet::new(),
             )),
             topic_queues: Arc::new(RwLock::new(HashMap::new())),
+            process_queues: Arc::new(RwLock::new(HashMap::new())),
+            pop_process_queues: Arc::new(RwLock::new(HashMap::new())),
             register_topics: Arc::new(RwLock::new(BTreeSet::new())),
             in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
             message_queue_listener: Arc::new(RwLock::new(message_queue_listener)),
@@ -296,6 +302,21 @@ impl PullConsumer {
     /// `RebalancePullImpl.createPopProcessQueue()`.
     pub fn create_pop_process_queue(&self) -> PopProcessQueue {
         PopProcessQueue::new()
+    }
+
+    /// Creates the public process queue returned by Java pull rebalance.
+    pub fn create_process_queue(&self) -> ProcessQueue {
+        ProcessQueue::new()
+    }
+
+    pub fn get_process_queue_table(&self) -> Arc<RwLock<HashMap<MessageQueue, Arc<ProcessQueue>>>> {
+        self.process_queues.clone()
+    }
+
+    pub fn get_pop_process_queue_table(
+        &self,
+    ) -> Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>> {
+        self.pop_process_queues.clone()
     }
 
     pub(crate) fn running_info_body(
@@ -2297,6 +2318,14 @@ impl PullConsumerRegistration {
                 store.remove_offset(&queue);
                 if write_lock(&self.in_balance_queues).remove(&queue) {
                     changed = true;
+                    if let Some(consumer) = self.consumer.upgrade() {
+                        if let Some(process_queue) =
+                            write_lock(&consumer.process_queues).remove(&queue)
+                        {
+                            process_queue.set_dropped(true);
+                        }
+                        write_lock(&consumer.pop_process_queues).remove(&queue);
+                    }
                 }
             }
 
@@ -2305,8 +2334,17 @@ impl PullConsumerRegistration {
                     return false;
                 }
                 store.remove_offset(&queue);
-                if write_lock(&self.in_balance_queues).insert(queue) {
+                if write_lock(&self.in_balance_queues).insert(queue.clone()) {
                     changed = true;
+                    if let Some(consumer) = self.consumer.upgrade() {
+                        let generation = NEXT_PULL_PROCESS_QUEUE_GENERATION
+                            .fetch_add(1, Ordering::AcqRel)
+                            .max(1);
+                        write_lock(&consumer.process_queues).insert(
+                            queue.clone(),
+                            Arc::new(ProcessQueue::new_for_assignment(queue.clone(), generation)),
+                        );
+                    }
                 }
             }
         } else if has_changes {
@@ -3894,6 +3932,9 @@ mod tests {
         store.update_offset(&first, 11, false);
         store.update_offset(&second, 22, false);
         store.update_offset(&unassigned, 33, false);
+        let pull_owner = Arc::new(PullConsumer::new(
+            PullConsumerConfig::new("pull-rebalance-broadcast").unwrap(),
+        ));
         let registration = Arc::new(PullConsumerRegistration {
             group: "pull-rebalance-broadcast".to_owned(),
             message_model: MessageModel::Broadcasting,
@@ -3920,7 +3961,7 @@ mod tests {
             in_balance_queues: Arc::new(RwLock::new(BTreeSet::new())),
             offset_store: Arc::downgrade(&store_trait),
             runtime: Arc::downgrade(&runtime),
-            consumer: Weak::new(),
+            consumer: Arc::downgrade(&pull_owner),
             rebalance_execution: tokio::sync::Mutex::new(()),
             rebalance_membership: Mutex::new(HashMap::new()),
         });
@@ -3952,6 +3993,9 @@ mod tests {
             read_lock(&registration.in_balance_queues).clone(),
             BTreeSet::from([first.clone(), second.clone()])
         );
+        assert!(read_lock(&pull_owner.process_queues).contains_key(&first));
+        assert!(read_lock(&pull_owner.process_queues).contains_key(&second));
+        let removed_process_queue = read_lock(&pull_owner.process_queues)[&first].clone();
         assert_eq!(
             store.values.lock().unwrap().get(&unassigned),
             Some(&33),
@@ -4003,6 +4047,9 @@ mod tests {
             read_lock(&registration.in_balance_queues).clone(),
             BTreeSet::from([second.clone()])
         );
+        assert!(!read_lock(&pull_owner.process_queues).contains_key(&first));
+        assert!(removed_process_queue.is_dropped());
+        assert!(read_lock(&pull_owner.process_queues).contains_key(&second));
         assert_eq!(*store.persisted.lock().unwrap(), vec![first.clone()]);
         assert!(!store.values.lock().unwrap().contains_key(&first));
         assert_eq!(changes.lock().unwrap().len(), 2);
