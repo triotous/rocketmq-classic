@@ -1391,6 +1391,74 @@ async fn name_server_kv_config_operations_match_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn broker_maintenance_operations_match_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["brokerMaintenanceApi"].as_array().unwrap();
+    assert_eq!(signatures.len(), 3);
+    let cases = fixture["brokerMaintenanceOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+    for case in cases {
+        let operation = case["operation"].as_str().unwrap();
+        let expected = &case["requests"][0];
+        let response_code = expected["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = expected["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, None).await;
+        let (client_api, client) = api().await;
+        let result = match operation {
+            "cleanExpiredConsumeQueue" => {
+                client_api
+                    .clean_expired_consume_queue(&addr, Instant::now() + Duration::from_secs(2))
+                    .await
+            }
+            "deleteExpiredCommitLog" => {
+                client_api
+                    .delete_expired_commit_log(&addr, Instant::now() + Duration::from_secs(2))
+                    .await
+            }
+            "cleanUnusedTopicByAddr" => {
+                client_api
+                    .clean_unused_topic_by_addr(&addr, Instant::now() + Duration::from_secs(2))
+                    .await
+            }
+            _ => panic!("unknown Java Broker maintenance operation: {operation}"),
+        };
+        if case["outcome"] == "returned" {
+            assert_eq!(result.unwrap(), case["result"]);
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    code,
+                    remark,
+                    ..
+                }) if code == response_code && remark == response_remark
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(
+            request.code,
+            expected["requestCode"].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert!(request.body.is_none());
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

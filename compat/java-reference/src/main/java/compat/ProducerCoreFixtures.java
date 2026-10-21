@@ -232,6 +232,14 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("kvConfigOperations", kvConfigOperations());
+        result.put("brokerMaintenanceApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("cleanExpiredConsumeQueue", "deleteExpiredCommitLog",
+                "cleanUnusedTopicByAddr").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("brokerMaintenanceOperations", brokerMaintenanceOperations());
         result.put("createSubscriptionGroupListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("createSubscriptionGroupList"))
@@ -2247,6 +2255,90 @@ public final class ProducerCoreFixtures {
                 default:
                     throw new IllegalArgumentException("unknown KV operation: " + operation);
             }
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> brokerMaintenanceOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        for (String method : List.of("cleanExpiredConsumeQueue", "deleteExpiredCommitLog",
+            "cleanUnusedTopicByAddr")) {
+            cases.add(brokerMaintenanceCase(method + "-success", method,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+            cases.add(brokerMaintenanceCase(method + "-error", method,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                method + " rejected"));
+        }
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> brokerMaintenanceCase(
+        String name,
+        String operation,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig =
+            new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("broker-maintenance-api");
+        clientConfig.setVipChannelEnabled(false);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            call.put("responseCode", responseCode);
+                            call.put("responseRemark", responseRemark);
+                            requests.add(call);
+                            return org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("operation", operation);
+        result.put("address", "broker-a:10911");
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            boolean value;
+            switch (operation) {
+                case "cleanExpiredConsumeQueue":
+                    value = api.cleanExpiredConsumeQueue("broker-a:10911", 2345L);
+                    break;
+                case "deleteExpiredCommitLog":
+                    value = api.deleteExpiredCommitLog("broker-a:10911", 2345L);
+                    break;
+                case "cleanUnusedTopicByAddr":
+                    value = api.cleanUnusedTopicByAddr("broker-a:10911", 2345L);
+                    break;
+                default:
+                    throw new IllegalArgumentException("unknown Broker maintenance operation: " + operation);
+            }
+            result.put("outcome", "returned");
+            result.put("result", value);
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());

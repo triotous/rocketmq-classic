@@ -5846,3 +5846,23 @@ owner-specific checks belong in the manual handoff.
 - This closes the NameServer KV slice only. The remaining broad P18-V01
   API/source/settings/input/error/control-flow/reverse-export audit and the
   current-revision Ubuntu/native Windows P18-V04 evidence remain open.
+
+## P18-V01 direct Broker maintenance RPCs — 2026-10-21
+
+- [x] Added `MQClientApi::{clean_expired_consume_queue,
+  delete_expired_commit_log,clean_unused_topic_by_addr}` for pinned Java
+  `MQClientAPIImpl` requests 306, 329, and 316. All send empty synchronous
+  requests through configured VIP conversion, return `true` on `SUCCESS`, and
+  preserve non-success response errors.
+- [x] Java fixture signatures and six invoked success/error cases match Rust
+  request codes, Java language, empty headers/body, and results. A configured
+  VIP loopback verifies the address offset. Producer core fixture SHA-256:
+  `212642c83a082b267df62d23621105ae2826266993e07e5778bf24179d96ae8f`.
+- [x] The focused Core test filters pass (one VIP unit test and one differential
+  test covering six fixture cases); strict locked all-target/all-feature
+  workspace Clippy, formatting, and diff checks pass. Pinned Java Maven
+  `verify` passes with 37 manifest scenarios, 72 Rust→Java typed headers, and
+  15 typed bodies.
+- This closes the three direct RPC mappings only. Broad P18-V01, current
+  Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker scenarios
+  remain open.

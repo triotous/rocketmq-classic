@@ -483,6 +483,66 @@ impl MQClientApi {
             })
     }
 
+    /// Cleans expired consume queues through Java
+    /// `MQClientAPIImpl.cleanExpiredConsumeQueue`.
+    pub async fn clean_expired_consume_queue(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        self.clean_broker_data(addr, request::CLEAN_EXPIRED_CONSUMEQUEUE, deadline)
+            .await
+    }
+
+    /// Deletes expired commit-log data through Java
+    /// `MQClientAPIImpl.deleteExpiredCommitLog`.
+    pub async fn delete_expired_commit_log(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        self.clean_broker_data(addr, request::DELETE_EXPIRED_COMMITLOG, deadline)
+            .await
+    }
+
+    /// Cleans unused topics through Java `MQClientAPIImpl.cleanUnusedTopicByAddr`.
+    pub async fn clean_unused_topic_by_addr(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        self.clean_broker_data(addr, request::CLEAN_UNUSED_TOPIC, deadline)
+            .await
+    }
+
+    async fn clean_broker_data(
+        &self,
+        addr: &str,
+        code: i32,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(true)
+    }
+
     /// Retrieves one Broker's Java `ClusterInfo` payload.
     pub async fn get_broker_cluster_info(
         &self,
@@ -1871,6 +1931,71 @@ mod tests {
         api.update_broker_config(
             &format!("127.0.0.1:{advertised_port}"),
             &HashMap::from([("brokerPermission".to_owned(), "7".to_owned())]),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn clean_expired_consume_queue_applies_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request.code,
+                rocketmq_classic_protocol::codes::request::CLEAN_EXPIRED_CONSUMEQUEUE
+            );
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.ext_fields.is_none());
+            assert!(request.body.is_none());
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("clean-expired-consume-queue-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        api.clean_expired_consume_queue(
+            &format!("127.0.0.1:{advertised_port}"),
             Instant::now() + Duration::from_secs(2),
         )
         .await

@@ -1,5 +1,16 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 Broker maintenance RPCs (2026-10-21): Rust maps the pinned public
+`MQClientAPIImpl.cleanExpiredConsumeQueue`, `deleteExpiredCommitLog`, and
+`cleanUnusedTopicByAddr` methods to requests 306, 329, and 316. Each operation
+sends an empty synchronous request through the configured VIP address
+transform, returns `true` for `SUCCESS`, and preserves Broker response errors.
+The invoked Java fixture records all three signatures and success/error
+requests; the Rust differential checks request codes, Java language, empty
+headers/body, and outcomes. A configured-VIP loopback checks the port offset.
+Producer core fixture SHA-256 is recorded in the Phase 18 release checklist.
+This closes these direct RPCs only; broad P18-V01 remains open.
+
 Phase 18 direct `createSubscriptionGroup` RPC (2026-10-21): Rust now maps the
 pinned `MQClientAPIImpl.createSubscriptionGroup(String, SubscriptionGroupConfig,
 long)` operation on request 200. It sends the Java `SubscriptionGroupConfig`

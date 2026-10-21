@@ -1372,3 +1372,15 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   This closes the direct RPC only; broad P18-V01 remains open.
 
 - NameServer KV direct API closure (`2026-10-21`): added the missing low-level `MQClientAPIImpl.getKVConfigValue`, `putKVConfigValue`, `deleteKVConfigValue`, and `getKVListByNamespace` operations as `MQClientApi::{get_kv_config_value,put_kv_config_value,delete_kv_config_value,get_kv_list_by_namespace}`. The direct put/delete paths broadcast to all configured NameServers and preserve Java's last-error selection; get/list retain nullable results. Added typed headers for the pinned Get/Put/List requests and Get response, plus Java→Rust and Rust→Java frame fixtures. `fixtures/producer/core.json` hashes to `7e6aecbca17b9711ed3276de4aae2c500fdd8f90bdeb1bde7a7c59b0d3c402af`. The focused Core differential passes, Protocol tests pass (148 including doctests), strict all-feature workspace Clippy passes, and Maven `verify` passes with 37 RPC cases, 72 typed headers and 15 typed bodies. This closes the NameServer KV slice only; broad P18-V01 source/API/settings/input/error/flow/reverse-export reconciliation remains open.
+
+- P18-V01 Broker maintenance RPCs (2026-10-21): direct public methods
+  `MQClientAPIImpl.cleanExpiredConsumeQueue`, `deleteExpiredCommitLog`, and
+  `cleanUnusedTopicByAddr` now map requests 306, 329, and 316. Java uses empty
+  request envelopes and configured VIP address conversion; `SUCCESS` returns
+  true and other response codes throw `MQClientException`. Java invoked
+  fixtures and the Rust differential compare signatures, request codes,
+  Java language, empty fields/body, and both response outcomes. A VIP-enabled
+  loopback checks the address offset. Producer core fixture digest and final
+  per-slice validation are in the release checklist. The broader P18-V01
+  source/API/settings/input/error/control-flow/reverse-export audit remains
+  open.
