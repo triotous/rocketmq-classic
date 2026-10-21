@@ -4,7 +4,7 @@ use rocketmq_classic_common::message::{
 };
 use rocketmq_classic_consumer::{
     ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus, ConsumeOrderlyContext,
-    ConsumeOrderlyStatus, PullConsumerConfig, PushConsumer, PushConsumerConfig,
+    ConsumeOrderlyStatus, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
     PushMessageListener,
     offset::{OffsetStore, RemoteBrokerOffsetStore},
     pull::PullConsumer,
@@ -43,7 +43,7 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         "topic": message.topic_nullable(), "broker": message.broker_name(),
         "queueTopic": queue.topic(), "queueBroker": queue.broker_name(), "queueId": queue.queue_id(),
         "messageId": message.message_id_for_runtime_type(), "offsetMessageId": message.offset_message_id(),
-        "reconsumeTimes": message.reconsume_times(),
+        "reconsumeTimes": message.reconsume_times(), "queueOffset": message.queue_offset(),
         "propertiesPresent": message.properties_nullable().is_some()});
     if let Some(subtype) = message.runtime_subtype::<CustomDirectMessageExt>() {
         record["messageQueueId"] = json!(message.queue_id());
@@ -57,6 +57,7 @@ struct CustomDirectMessageExt {
     broker_was_set: AtomicBool,
     topic_writes: std::sync::atomic::AtomicUsize,
     reconsume_writes: std::sync::atomic::AtomicUsize,
+    queue_offset_writes: std::sync::atomic::AtomicUsize,
 }
 
 impl CustomDirectMessageExt {
@@ -65,14 +66,16 @@ impl CustomDirectMessageExt {
             broker_was_set: AtomicBool::new(false),
             topic_writes: std::sync::atomic::AtomicUsize::new(0),
             reconsume_writes: std::sync::atomic::AtomicUsize::new(0),
+            queue_offset_writes: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
-            self.reconsume_writes.load(Ordering::SeqCst)
+            self.reconsume_writes.load(Ordering::SeqCst),
+            self.queue_offset_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -110,6 +113,15 @@ impl MessageExtSubtype for CustomDirectMessageExt {
     }
 
     fn set_queue_id(&self, _queue_id: i32) -> bool {
+        true
+    }
+
+    fn queue_offset(&self) -> Option<i64> {
+        Some(987_654_321)
+    }
+
+    fn set_queue_offset(&self, _queue_offset: i64) -> bool {
+        self.queue_offset_writes.fetch_add(1, Ordering::SeqCst);
         true
     }
 
@@ -259,6 +271,7 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
                 .set_system_property("RETRY_TOPIC", "subtype-retry-target")
                 .unwrap();
             message.set_reconsume_times(2);
+            message.set_queue_offset(17);
             message
         } else if client_message {
             let mut message = MessageClientExt::new();
@@ -339,6 +352,40 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
         push.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
+}
+
+#[test]
+fn custom_subtype_queue_offset_matches_java_process_queue() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/runtime/consumer-operations.json"
+    ))
+    .unwrap();
+    let expected = &fixture["customSubtypeProcessQueue"];
+
+    let mut message = MessageExt::default();
+    message.set_runtime_subtype(Arc::new(CustomDirectMessageExt::new()));
+    message.set_queue_offset(17);
+    message.set_body(vec![1, 2, 3]);
+    let process_queue = ProcessQueue::new();
+    let dispatch = process_queue.put_message(&[message.clone()]);
+    let offsets = process_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let subtype = message.runtime_subtype::<CustomDirectMessageExt>().unwrap();
+
+    assert_eq!(
+        json!({
+            "dispatch": dispatch,
+            "count": process_queue.get_msg_count().get(),
+            "size": process_queue.get_msg_size().get(),
+            "offsets": offsets,
+            "customField": subtype.custom_field(),
+        }),
+        *expected
+    );
 }
 
 #[tokio::test]

@@ -1791,7 +1791,10 @@ impl MessageExt {
             .unwrap_or(self.queue_id)
     }
     pub fn queue_offset(&self) -> i64 {
-        self.queue_offset
+        self.runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.queue_offset())
+            .unwrap_or(self.queue_offset)
     }
     pub fn commit_log_offset(&self) -> i64 {
         self.commit_log_offset
@@ -1923,7 +1926,13 @@ impl MessageExt {
         }
     }
     pub fn set_queue_offset(&mut self, value: i64) {
-        self.queue_offset = value;
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_queue_offset(value))
+        {
+            self.queue_offset = value;
+        }
     }
     pub fn set_commit_log_offset(&mut self, value: i64) {
         self.commit_log_offset = value;
@@ -2107,6 +2116,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn set_queue_id(&self, _queue_id: i32) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `MessageExt.getQueueOffset()`.
+    fn queue_offset(&self) -> Option<i64> {
+        None
+    }
+
+    /// Handle Java's virtual `MessageExt.setQueueOffset(long)`.
+    fn set_queue_offset(&self, _queue_offset: i64) -> bool {
         false
     }
 

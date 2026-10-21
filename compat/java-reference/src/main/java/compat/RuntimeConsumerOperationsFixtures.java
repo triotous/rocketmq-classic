@@ -54,6 +54,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("runningInfo", runningInfo);
         fixture.put("directConsumeEntrypoint", "MQClientInstance.consumeMessageDirectly(MessageExt,String,String)");
         fixture.put("directConsume", direct);
+        fixture.put("customSubtypeProcessQueue", customSubtypeProcessQueue());
         fixture.put("resetOffsetEntrypoint", "MQClientInstance.resetOffset(String,String,Map<MessageQueue,Long>)");
         fixture.put("resetOffset", reset);
         fixture.put("resetStoreHandoff", reset("store-handoff"));
@@ -431,6 +432,7 @@ public final class RuntimeConsumerOperationsFixtures {
         if (customSubtype) {
             org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "RETRY_TOPIC", "subtype-retry-target");
             message.setReconsumeTimes(2);
+            message.setQueueOffset(17L);
         }
         if (uniqueId != null) org.apache.rocketmq.common.message.MessageAccessor.putProperty(message, "UNIQ_KEY", uniqueId);
         List<Object> callbacks = new ArrayList<>();
@@ -443,6 +445,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("queueId", queue.getQueueId()); callbacks.add(item);
                 item.put("messageId", messages.get(0).getMsgId());
                 item.put("reconsumeTimes", messages.get(0).getReconsumeTimes());
+                item.put("queueOffset", messages.get(0).getQueueOffset());
                 item.put("offsetMessageId", messages.get(0) instanceof org.apache.rocketmq.common.message.MessageClientExt
                     ? ((org.apache.rocketmq.common.message.MessageClientExt) messages.get(0)).getOffsetMsgId() : null);
                 item.put("propertiesPresent", messages.get(0).getProperties() != null);
@@ -518,6 +521,7 @@ public final class RuntimeConsumerOperationsFixtures {
         private String customBrokerName;
         private int topicWrites;
         private int reconsumeWrites;
+        private int queueOffsetWrites;
 
         @Override
         public String getTopic() {
@@ -569,14 +573,41 @@ public final class RuntimeConsumerOperationsFixtures {
             this.reconsumeWrites++;
         }
 
+        @Override
+        public long getQueueOffset() {
+            return 987654321L;
+        }
+
+        @Override
+        public void setQueueOffset(long queueOffset) {
+            this.queueOffsetWrites++;
+        }
+
         public String getCustomField() {
-            return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites;
+            return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
+                + ";queueOffsetWrites=" + queueOffsetWrites;
         }
 
         @Override
         public String toString() {
             return "CustomDirectMessageExt[topicWrites=" + topicWrites + "]";
         }
+    }
+
+    private static Map<String, Object> customSubtypeProcessQueue() {
+        CustomDirectMessageExt message = new CustomDirectMessageExt();
+        message.setQueueOffset(17L);
+        message.setBody(new byte[] {1, 2, 3});
+        org.apache.rocketmq.client.impl.consumer.ProcessQueue processQueue =
+            new org.apache.rocketmq.client.impl.consumer.ProcessQueue();
+        boolean dispatch = processQueue.putMessage(List.of(message));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("dispatch", dispatch);
+        result.put("count", processQueue.getMsgCount().get());
+        result.put("size", processQueue.getMsgSize().get());
+        result.put("offsets", new ArrayList<>(processQueue.getMsgTreeMap().keySet()));
+        result.put("customField", message.getCustomField());
+        return result;
     }
 
     private static Map<String, Object> runningInfo(String name) throws Exception {
