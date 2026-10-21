@@ -535,6 +535,37 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Fetches Broker Properties through Java `MQClientAPIImpl.getBrokerConfig`.
+    ///
+    /// Java returns an empty `Properties` for an empty body and null when the
+    /// Properties stream is malformed. A missing body fails before parsing.
+    pub async fn get_broker_config(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<Option<HashMap<String, String>>, RpcError> {
+        let code = request::GET_BROKER_CONFIG;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(addr, command, deadline)
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        let Some(body) = reply.body else {
+            return Err(RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: "successful broker-config reply has no body".into(),
+            });
+        };
+        let decoded = String::from_utf8_lossy(&body);
+        Ok(crate::auth::parse_java_properties(decoded.as_bytes()))
+    }
+
     /// Deletes one topic from a Broker through Java `MqClientAdmin`'s RPC.
     pub async fn delete_topic_in_broker(
         &self,
@@ -956,6 +987,26 @@ fn client_decode_message(message: &mut MessageExt) {
 mod tests {
     use super::{AdminQueryRequest, MessageExt, QueryResult, SharedValue};
 
+    #[test]
+    fn broker_properties_parser_matches_java_fixture() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        for case in fixture["brokerConfigProperties"].as_array().unwrap() {
+            let input = case["input"].as_str().unwrap();
+            let actual = crate::auth::parse_java_properties(input.as_bytes());
+            assert_eq!(actual.is_none(), case["isNull"], "input {input:?}");
+            let expected = case["entries"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                .collect::<std::collections::HashMap<_, _>>();
+            if let Some(actual) = actual {
+                assert_eq!(actual, expected, "input {input:?}");
+            }
+        }
+    }
+
     #[tokio::test]
     async fn update_broker_config_applies_configured_vip_port_offset() {
         use super::MQClientApi;
@@ -1023,6 +1074,78 @@ mod tests {
         )
         .await
         .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_broker_config_uses_supplied_address_with_vip_enabled() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            collections::HashMap,
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request.code,
+                rocketmq_classic_protocol::codes::request::GET_BROKER_CONFIG
+            );
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.ext_fields.is_none());
+            assert!(request.body.is_none());
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request.opaque,
+                body: Some(b"brokerPermission=7\n".to_vec()),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("get-broker-config-no-vip");
+        config.set_vip_channel_enabled(true);
+        let config = Arc::new(RwLock::new(config));
+        let api = MQClientApi::with_config(remoting.clone(), config);
+        let properties = api
+            .get_broker_config(&addr, Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(
+            properties,
+            Some(HashMap::from([(
+                "brokerPermission".to_owned(),
+                "7".to_owned()
+            )]))
+        );
         peer.await.unwrap();
         remoting.shutdown().await;
     }

@@ -5402,3 +5402,22 @@ owner-specific checks belong in the manual handoff.
   P18-V03 package/provenance review and current Ubuntu/native Windows P18-V04
   evidence remain outstanding. No remote CI or Phase 19 Broker/Docker run was
   triggered.
+
+## P18-V01 `getBrokerConfig` Properties read slice — 2026-10-21
+
+- [x] Added the Java 5.5.1 `MQClientAPIImpl.getBrokerConfig(String,long)`
+  mapping to Core request 26. The request has no header/body, preserves the
+  supplied address with VIP enabled, and decodes Java Properties behavior for
+  escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
+  and a final backslash. Missing response bodies map to a structured Rust
+  `MalformedResponse`; Java dereferences null before parsing.
+- [x] Current `fixtures/producer/core.json` SHA-256:
+  `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`.
+- [x] Core all-feature locked tests (176 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy for Common/Core/
+  Producer/facade, Producer fixture comparison, format checks, and pinned Java
+  Maven `verify` (37 scenarios, fixture drift and cross-decodes) pass.
+- This closes only the Broker config read operation and Properties parser
+  inputs. Broad P18-V01, the final current-revision P18-V02 refresh, P18-V03
+  package/provenance review and current Ubuntu/native Windows P18-V04 evidence
+  remain open. Phase 19 Broker/Docker validation was not run.

@@ -306,6 +306,86 @@ async fn update_broker_config_sends_java_properties_body() {
 }
 
 #[tokio::test]
+async fn get_broker_config_matches_java_properties_decoding_cases() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getBrokerConfigApi"][0],
+        "java.util.Properties org.apache.rocketmq.client.impl.MQClientAPIImpl.getBrokerConfig(java.lang.String,long)"
+    );
+    for case in fixture["brokerConfigProperties"].as_array().unwrap() {
+        let input = case["input"].as_str().unwrap();
+        if input.is_empty() {
+            // An empty body is omitted from the RocketMQ frame and Java's
+            // getBrokerConfig dereferences null before calling string2Properties.
+            continue;
+        }
+        let (addr, peer) =
+            scripted_peer(response::SUCCESS, None, Some(input.as_bytes().to_vec())).await;
+        let (client_api, client) = api().await;
+        let properties = client_api
+            .get_broker_config(&addr, Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(properties.is_none(), case["isNull"], "input {input:?}");
+        let expected = case["entries"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+            .collect::<HashMap<_, _>>();
+        if let Some(properties) = properties {
+            assert_eq!(properties, expected, "input {input:?}");
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::GET_BROKER_CONFIG);
+        assert!(request.ext_fields.is_none());
+        assert!(request.body.is_none());
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn get_broker_config_rejects_missing_body_and_preserves_broker_error() {
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (client_api, client) = api().await;
+    assert!(matches!(
+        client_api
+            .get_broker_config(&addr, Instant::now() + Duration::from_secs(2))
+            .await,
+        Err(RpcError::MalformedResponse {
+            request_code: request::GET_BROKER_CONFIG,
+            peer,
+            reason,
+        }) if peer == addr && reason == "successful broker-config reply has no body"
+    ));
+    assert_eq!(peer.await.unwrap().code, request::GET_BROKER_CONFIG);
+    client.shutdown().await;
+
+    let (addr, peer) = scripted_peer_with_remark(
+        response::SYSTEM_ERROR,
+        Some("broker config unavailable".to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (client_api, client) = api().await;
+    assert!(matches!(
+        client_api
+            .get_broker_config(&addr, Instant::now() + Duration::from_secs(2))
+            .await,
+        Err(RpcError::Response {
+            request_code: request::GET_BROKER_CONFIG,
+            peer,
+            code: response::SYSTEM_ERROR,
+            remark: Some(remark),
+        }) if peer == addr && remark == "broker config unavailable"
+    ));
+    assert_eq!(peer.await.unwrap().code, request::GET_BROKER_CONFIG);
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn update_broker_config_empty_properties_is_a_noop() {
     let (api, client) = api().await;
     assert!(

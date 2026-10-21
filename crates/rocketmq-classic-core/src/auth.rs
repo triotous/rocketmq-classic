@@ -980,7 +980,7 @@ fn default_key_file_path() -> PathBuf {
 /// Reads the ISO-8859-1 property stream semantics used by Java
 /// `Properties.load(InputStream)` after RocketMQ has decoded and re-encoded the
 /// key file as UTF-8.
-fn parse_java_properties(bytes: &[u8]) -> Option<HashMap<String, String>> {
+pub(crate) fn parse_java_properties(bytes: &[u8]) -> Option<HashMap<String, String>> {
     let mut values = HashMap::new();
     let mut logical_line = Vec::new();
     let mut continuing = false;
@@ -1021,8 +1021,13 @@ fn parse_java_properties(bytes: &[u8]) -> Option<HashMap<String, String>> {
         }
         logical_line.clear();
     }
-    if continuing || !logical_line.is_empty() {
-        return None;
+    // Java Properties.load treats a final odd backslash as an escaped line
+    // terminator even when there is no following physical line. The slash is
+    // discarded and the accumulated property is still loaded.
+    if continuing && !logical_line.is_empty() {
+        if let Some((key, value)) = split_property(&logical_line) {
+            values.insert(unescape_property(key)?, unescape_property(value)?);
+        }
     }
     Some(values)
 }

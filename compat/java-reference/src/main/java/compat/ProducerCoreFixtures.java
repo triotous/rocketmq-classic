@@ -36,6 +36,7 @@ import org.apache.rocketmq.client.impl.CommunicationMode;
 import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
 import org.apache.rocketmq.client.impl.producer.TopicPublishInfo;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
+import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.latency.MQFaultStrategy;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -171,6 +172,24 @@ public final class ProducerCoreFixtures {
         result.put("validatorsApi", publicApiSurface(Validators.class));
         result.put("permNameApi", publicApiSurface(PermName.class));
         result.put("permNamePublicFields", publicFieldSignatures(PermName.class));
+        result.put("getBrokerConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getBrokerConfig"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
+        for (String input : Arrays.asList(
+            "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
+            "",
+            "escaped\\ key:hello\\:world\n",
+            "unicode=\\u4E2D\n",
+            "malformed=\\u12G4\n",
+            "nonAscii=中文\n",
+            "trailing=value\\")) {
+            brokerConfigProperties.add(brokerConfigProperties(input));
+        }
+        result.put("brokerConfigProperties", brokerConfigProperties);
         List<Map<String, Object>> permNameCases = new ArrayList<>();
         for (int permission : Arrays.asList(-1, 0, 1, 2, 3, 4, 6, 7, 8, 15)) {
             Map<String, Object> row = new TreeMap<>();
@@ -1417,6 +1436,21 @@ public final class ProducerCoreFixtures {
                 + "." + field.getName())
             .sorted()
             .collect(java.util.stream.Collectors.toList());
+    }
+
+    private static Map<String, Object> brokerConfigProperties(String input) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("input", input);
+        Properties properties = MixAll.string2Properties(input);
+        result.put("isNull", properties == null);
+        Map<String, String> entries = new TreeMap<>();
+        if (properties != null) {
+            for (String name : properties.stringPropertyNames()) {
+                entries.put(name, properties.getProperty(name));
+            }
+        }
+        result.put("entries", entries);
+        return result;
     }
 
     private static Map<String, Object> implementationHookExecution() {

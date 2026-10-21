@@ -1163,3 +1163,16 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   [Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md), and release checklist.
   This closes those bounded items only; broad P18-V01 method, setting,
   overload/input/error/flow and reverse-export reconciliation remains open.
+
+- P18-V01 adjacent Broker config read operation (2026-10-21): the pinned
+  public `MQClientAPIImpl.getBrokerConfig(String,long)` method was absent from
+  the runtime RPC crosswalk. Rust now sends request 26 without a header/body,
+  preserves the supplied Broker address, parses Java Properties semantics,
+  and retains Broker response errors. The Java fixture covers empty input,
+  escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
+  and a trailing backslash; the Rust parser and scripted RPC tests compare the
+  outcomes. An absent response body maps to structured `MalformedResponse`,
+  while Java dereferences null before property parsing. Current fixture SHA-256
+  is `53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`.
+  This closes the named operation/property-input slice only; broad P18-V01 and
+  the final current-worktree P18-V02 refresh remain open.

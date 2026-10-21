@@ -22,6 +22,20 @@ VIP address offset and Broker error path. Producer fixture SHA-256:
 bounded API/operation paths are covered locally; broad P18-V01 and the final
 current-revision P18-V02 refresh remain open.
 
+Phase 18 Broker config read RPC (2026-10-21): the pinned public
+`MQClientAPIImpl.getBrokerConfig(String,long)` method is mapped to
+`MQClientApi::get_broker_config`. Rust sends request 26 without a header or
+body, uses the supplied Broker address unchanged, and parses the response with
+the Java `Properties.load(InputStream)` character and escape rules after
+RocketMQ's UTF-8 decode/re-encode step. The fixture covers empty Properties,
+escaped separators, Unicode escapes, malformed escapes, raw non-ASCII text,
+and a final backslash. A missing response body produces Rust's structured
+malformed-response error; Java dereferences the missing body before parsing.
+The current producer core fixture SHA-256 is
+`53f8d3ae387f5df155d0c10484815f3a71d00debafb70c82ed0912f3848bca2f`. The
+focused Core RPC/parser tests and Producer fixture test pass; broad P18-V01 and
+the final current-revision P18-V02 refresh remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,
