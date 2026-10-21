@@ -10,124 +10,79 @@ const MINUTE_SAMPLE_INTERVAL: Duration = Duration::from_secs(10);
 const HOUR_SAMPLE_INTERVAL: Duration = Duration::from_secs(10 * 60);
 const MINUTE_SAMPLE_COUNT: usize = 7;
 const HOUR_SAMPLE_COUNT: usize = 7;
-const STATS_IDLE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 
-type StatsKey = (String, String, String);
+type StatsKey = String;
 
-/// Per-PushConsumer metrics for its Running Info snapshot.
+/// Java 5.5.1 consumer metrics shared by one `MQClientInstance` equivalent.
 #[derive(Default)]
-pub(crate) struct ConsumerStatsManager {
+pub struct ConsumerStatsManager {
     topics: Mutex<HashMap<StatsKey, TopicStats>>,
 }
 
 impl ConsumerStatsManager {
-    pub(crate) fn record_pull(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-        elapsed: Duration,
-        message_count: usize,
-    ) {
-        self.update_topic(client_id, group, topic, |stats, now| {
-            stats.pull_rt.record(now, millis(elapsed), 1);
-            if message_count > 0 {
-                stats.pull_tps.record(now, message_count as u64, 1);
-            }
+    /// Creates an empty manager for one client runtime.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Java's lifecycle hooks are no-ops; sampling is evaluated on reads.
+    pub fn start(&self) {}
+
+    /// Java's lifecycle hooks are no-ops; the runtime owns this manager.
+    pub fn shutdown(&self) {}
+
+    pub fn inc_pull_rt(&self, group: &str, topic: &str, rt: i64) {
+        self.update_topic(group, topic, |stats, now| {
+            stats.pull_rt.record(now, java_int(rt), 1);
         });
     }
 
-    pub(crate) fn record_consume_rt(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-        elapsed: Duration,
-    ) {
-        self.update_topic(client_id, group, topic, |stats, now| {
-            stats.consume_rt.record(now, millis(elapsed), 1);
+    pub fn inc_pull_tps(&self, group: &str, topic: &str, messages: i64) {
+        self.update_topic(group, topic, |stats, now| {
+            stats.pull_tps.record(now, java_int(messages), 1);
         });
     }
 
-    pub(crate) fn record_concurrent_result(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-        acknowledged: Option<usize>,
-        failed: usize,
-    ) {
-        self.update_topic(client_id, group, topic, |stats, now| {
-            if let Some(acknowledged) = acknowledged {
-                stats.consume_ok_tps.record(now, acknowledged as u64, 1);
-            }
-            stats.consume_failed_tps.record(now, failed as u64, 1);
+    pub fn inc_consume_rt(&self, group: &str, topic: &str, rt: i64) {
+        self.update_topic(group, topic, |stats, now| {
+            stats.consume_rt.record(now, java_int(rt), 1);
         });
     }
 
-    pub(crate) fn record_orderly_result(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-        acknowledged: Option<usize>,
-        failed: Option<usize>,
-    ) {
-        self.update_topic(client_id, group, topic, |stats, now| {
-            if let Some(acknowledged) = acknowledged {
-                stats.consume_ok_tps.record(now, acknowledged as u64, 1);
-            }
-            if let Some(failed) = failed {
-                stats.consume_failed_tps.record(now, failed as u64, 1);
-            }
+    pub fn inc_consume_ok_tps(&self, group: &str, topic: &str, messages: i64) {
+        self.update_topic(group, topic, |stats, now| {
+            stats.consume_ok_tps.record(now, java_int(messages), 1);
         });
     }
 
-    pub(crate) fn status(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-    ) -> ConsumerConsumeStatus {
-        self.status_at(client_id, group, topic, Instant::now())
+    pub fn inc_consume_failed_tps(&self, group: &str, topic: &str, messages: i64) {
+        self.update_topic(group, topic, |stats, now| {
+            stats.consume_failed_tps.record(now, java_int(messages), 1);
+        });
     }
 
-    #[cfg(test)]
-    pub(crate) fn contains_topic(&self, client_id: &str, group: &str, topic: &str) -> bool {
-        self.lock_topics()
-            .contains_key(&(client_id.to_owned(), group.to_owned(), topic.to_owned()))
+    pub fn consume_status(&self, group: &str, topic: &str) -> ConsumerConsumeStatus {
+        self.status_at(group, topic, Instant::now())
     }
 
-    fn status_at(
-        &self,
-        client_id: &str,
-        group: &str,
-        topic: &str,
-        now: Instant,
-    ) -> ConsumerConsumeStatus {
+    fn status_at(&self, group: &str, topic: &str, now: Instant) -> ConsumerConsumeStatus {
         let mut topics = self.lock_topics();
-        topics.retain(|_, stats| !stats.is_expired(now));
         topics
-            .get_mut(&(client_id.to_owned(), group.to_owned(), topic.to_owned()))
+            .get_mut(&java_stats_key(group, topic))
             .map(|stats| stats.status(now))
             .unwrap_or_default()
     }
 
     fn update_topic(
         &self,
-        client_id: &str,
         group: &str,
         topic: &str,
         update: impl FnOnce(&mut TopicStats, Instant),
     ) {
         let now = Instant::now();
         let mut topics = self.lock_topics();
-        topics.retain(|_, stats| !stats.is_expired(now));
-        let stats = topics
-            .entry((client_id.to_owned(), group.to_owned(), topic.to_owned()))
-            .or_default();
+        let stats = topics.entry(java_stats_key(group, topic)).or_default();
         update(stats, now);
-        stats.last_update = Some(now);
     }
 
     fn lock_topics(&self) -> std::sync::MutexGuard<'_, HashMap<StatsKey, TopicStats>> {
@@ -144,7 +99,6 @@ struct TopicStats {
     consume_rt: MetricSeries,
     consume_ok_tps: MetricSeries,
     consume_failed_tps: MetricSeries,
-    last_update: Option<Instant>,
 }
 
 impl TopicStats {
@@ -162,9 +116,7 @@ impl TopicStats {
         status.set_consume_rt(consume_rt);
         status.set_consume_ok_tps(self.consume_ok_tps.minute.rate());
         status.set_consume_failed_tps(self.consume_failed_tps.minute.rate());
-        status.set_consume_failed_msgs(
-            i64::try_from(self.consume_failed_tps.hour.sum()).unwrap_or(i64::MAX),
-        );
+        status.set_consume_failed_msgs(self.consume_failed_tps.hour.sum());
         status
     }
 
@@ -175,16 +127,11 @@ impl TopicStats {
         self.consume_ok_tps.advance(now);
         self.consume_failed_tps.advance(now);
     }
-
-    fn is_expired(&self, now: Instant) -> bool {
-        self.last_update
-            .is_none_or(|last_update| now.saturating_duration_since(last_update) > STATS_IDLE_TTL)
-    }
 }
 
 struct MetricSeries {
-    value: u64,
-    calls: u64,
+    value: i64,
+    calls: i64,
     minute: SampleWindow,
     hour: SampleWindow,
 }
@@ -201,10 +148,10 @@ impl Default for MetricSeries {
 }
 
 impl MetricSeries {
-    fn record(&mut self, now: Instant, value: u64, calls: u64) {
+    fn record(&mut self, now: Instant, value: i64, calls: i64) {
         self.advance(now);
-        self.value = self.value.saturating_add(value);
-        self.calls = self.calls.saturating_add(calls);
+        self.value = self.value.wrapping_add(value);
+        self.calls = self.calls.wrapping_add(calls);
         self.minute
             .update_if_sampled_at(now, self.value, self.calls);
         self.hour.update_if_sampled_at(now, self.value, self.calls);
@@ -255,7 +202,7 @@ impl SampleWindow {
         self.last_sample = Some(now);
     }
 
-    fn sample_until(&mut self, now: Instant, value: u64, calls: u64) {
+    fn sample_until(&mut self, now: Instant, value: i64, calls: i64) {
         if self.capacity == 0 || self.interval.is_zero() {
             return;
         }
@@ -304,7 +251,7 @@ impl SampleWindow {
         }
     }
 
-    fn update_if_sampled_at(&mut self, at: Instant, value: u64, calls: u64) {
+    fn update_if_sampled_at(&mut self, at: Instant, value: i64, calls: i64) {
         if let Some(sample) = self.samples.back_mut().filter(|sample| sample.at == at) {
             sample.value = value;
             sample.calls = calls;
@@ -325,7 +272,7 @@ impl SampleWindow {
         }
     }
 
-    fn average(&self) -> (f64, u64) {
+    fn average(&self) -> (f64, i64) {
         let Some((value, calls)) = self.delta() else {
             return (0.0, 0);
         };
@@ -336,17 +283,17 @@ impl SampleWindow {
         }
     }
 
-    fn sum(&self) -> u64 {
+    fn sum(&self) -> i64 {
         self.delta().map_or(0, |(value, _)| value)
     }
 
-    fn delta(&self) -> Option<(u64, u64)> {
+    fn delta(&self) -> Option<(i64, i64)> {
         let (Some(first), Some(last)) = (self.samples.front(), self.samples.back()) else {
             return None;
         };
         Some((
-            last.value.saturating_sub(first.value),
-            last.calls.saturating_sub(first.calls),
+            last.value.wrapping_sub(first.value),
+            last.calls.wrapping_sub(first.calls),
         ))
     }
 }
@@ -354,16 +301,20 @@ impl SampleWindow {
 #[derive(Clone, Copy)]
 struct Snapshot {
     at: Instant,
-    value: u64,
-    calls: u64,
+    value: i64,
+    calls: i64,
 }
 
 fn duration_from_nanos(nanos: u128) -> Duration {
     Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
 }
 
-fn millis(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+fn java_int(value: i64) -> i64 {
+    i64::from(value as i32)
+}
+
+fn java_stats_key(group: &str, topic: &str) -> String {
+    format!("{topic}@{group}")
 }
 
 #[cfg(test)]
@@ -402,22 +353,16 @@ mod tests {
     #[test]
     fn consume_status_is_partitioned_and_failed_results_do_not_count_as_success_calls() {
         let stats = ConsumerStatsManager::default();
-        stats.record_pull(
-            "client-a",
-            "workers",
-            "orders",
-            Duration::from_millis(500),
-            2,
-        );
-        stats.record_consume_rt("client-a", "workers", "orders", Duration::from_millis(8));
-        stats.record_concurrent_result("client-a", "workers", "orders", Some(3), 1);
-        stats.record_concurrent_result("client-a", "workers", "orders", None, 2);
+        stats.inc_pull_rt("workers", "orders", 500);
+        stats.inc_pull_tps("workers", "orders", 2);
+        stats.inc_consume_rt("workers", "orders", 8);
+        stats.inc_consume_ok_tps("workers", "orders", 3);
+        stats.inc_consume_failed_tps("workers", "orders", 1);
+        stats.inc_consume_failed_tps("workers", "orders", 2);
 
         let minute_target = Instant::now() + Duration::from_secs(10);
         let mut topics = stats.lock_topics();
-        let topic = topics
-            .get_mut(&("client-a".into(), "workers".into(), "orders".into()))
-            .unwrap();
+        let topic = topics.get_mut("orders@workers").unwrap();
         topic.advance(minute_target);
         let status = topic.status(minute_target);
 
@@ -432,14 +377,34 @@ mod tests {
         assert_eq!(hour_status.get_consume_failed_msgs(), 3);
         drop(topics);
         assert_eq!(
-            serde_json::to_value(stats.status_at("client-b", "workers", "orders", hour_target))
-                .unwrap(),
+            serde_json::to_value(stats.status_at("workers", "other-topic", hour_target)).unwrap(),
             serde_json::to_value(ConsumerConsumeStatus::default()).unwrap()
         );
         assert_eq!(
-            serde_json::to_value(stats.status_at("client-a", "other-group", "orders", hour_target))
-                .unwrap(),
+            serde_json::to_value(stats.status_at("other-group", "orders", hour_target)).unwrap(),
             serde_json::to_value(ConsumerConsumeStatus::default()).unwrap()
         );
+    }
+
+    #[test]
+    fn public_long_inputs_narrow_like_java_int_arguments() {
+        assert_eq!(
+            super::java_int(i64::from(i32::MAX) + 1),
+            i64::from(i32::MIN)
+        );
+        assert_eq!(super::java_int(-1), -1);
+    }
+
+    #[test]
+    fn stats_keys_match_java_topic_group_concatenation() {
+        let stats = ConsumerStatsManager::new();
+        stats.inc_pull_rt("workers@blue", "orders", 3);
+        stats.inc_pull_rt("blue", "orders@workers", 5);
+
+        let first = stats.consume_status("workers@blue", "orders").get_pull_rt();
+        let colliding = stats.consume_status("blue", "orders@workers").get_pull_rt();
+        assert!(first > 0.0);
+        assert_eq!(first, colliding);
+        assert_eq!(stats.lock_topics().len(), 1);
     }
 }

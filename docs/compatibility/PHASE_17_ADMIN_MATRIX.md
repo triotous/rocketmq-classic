@@ -380,8 +380,9 @@ coverage. Push/Pull consume and POP paths now populate Java-style per-topic
 success/failure counts, 10-second and 10-minute TPS/RT snapshots, and the
 one-hour failure count; Running Info has non-zero statistics coverage. The
 direct Java fixture confirms each `MQClientInstance` has an instance-scoped
-`ConsumerStatsManager`, including separate instances with the same client ID;
-Rust's PushConsumer-owned statistics pass the same isolation regression.
+`ConsumerStatsManager`, including separate instances with the same client ID.
+Rust stores the manager on `ClientRuntime`; Push owners on the same runtime
+share it, while separate runtimes with the same client ID remain isolated.
 `jstackEnable` dump enumerates process threads on macOS ARM64 and x86_64,
 Linux AArch64 and x86_64, and Windows x86_64 and ARM64. Linux sends a queued
 signal to each target thread, reads its `ucontext`, and walks readable frame

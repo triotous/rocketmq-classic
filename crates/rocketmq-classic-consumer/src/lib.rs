@@ -26,7 +26,6 @@ pub mod push;
 pub mod rebalance;
 mod service_state;
 mod stack;
-mod stats;
 #[cfg(test)]
 mod test_support;
 
@@ -44,4 +43,5 @@ pub use push::{
     PushConsumerConfig, PushMessageListener,
 };
 pub use rocketmq_classic_core::api::admin::QueryResult;
+pub use rocketmq_classic_core::runtime::ConsumerStatsManager;
 pub use service_state::ConsumerServiceState;

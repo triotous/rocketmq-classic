@@ -55,6 +55,7 @@ use tokio::time::Instant;
 use std::sync::Mutex;
 
 use crate::{
+    ConsumerStatsManager,
     admin::{first_query_message, unique_key_lookup_begin_timestamp},
     consume::{
         ConcurrentConsumeService, ConsumeMessageContext, ConsumeMessageHook,
@@ -77,7 +78,6 @@ use crate::{
     },
     rebalance::RebalanceService,
     service_state::ConsumerServiceState,
-    stats::ConsumerStatsManager,
 };
 
 use super::{
@@ -96,6 +96,14 @@ use super::{
 };
 
 type ConsumerFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+
+fn elapsed_millis(duration: Duration) -> i64 {
+    i64::try_from(duration.as_millis()).unwrap_or(i64::MAX)
+}
+
+fn metric_count(count: usize) -> i64 {
+    i64::try_from(count).unwrap_or(i64::MAX)
+}
 
 fn retry_wire_properties(
     retry: &Message,
@@ -278,7 +286,6 @@ struct StartupServices {
 
 #[derive(Clone)]
 struct RunningInfoRuntimeSnapshot {
-    client_id: String,
     nameserver_address: String,
 }
 
@@ -293,10 +300,7 @@ impl RunningInfoRuntimeSnapshot {
             nameserver_address.push_str(&address);
             nameserver_address.push(';');
         }
-        Self {
-            client_id: runtime.client_id().to_owned(),
-            nameserver_address,
-        }
+        Self { nameserver_address }
     }
 }
 
@@ -344,6 +348,13 @@ enum State {
         pull_rpc_workers: Arc<PullRpcWorkers>,
     },
     Shutdown,
+}
+
+#[derive(Clone)]
+enum StatsManagerBinding {
+    Unbound,
+    Runtime(Arc<ConsumerStatsManager>),
+    Null,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -411,7 +422,8 @@ pub struct PushConsumer {
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
-    stats: ConsumerStatsManager,
+    stats: Arc<ConsumerStatsManager>,
+    runtime_stats: RwLock<StatsManagerBinding>,
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
@@ -494,7 +506,8 @@ impl PushConsumer {
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
-            stats: ConsumerStatsManager::default(),
+            stats: Arc::new(ConsumerStatsManager::default()),
+            runtime_stats: RwLock::new(StatsManagerBinding::Unbound),
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
@@ -569,6 +582,31 @@ impl PushConsumer {
             .unwrap_or_else(|| self.config.consumer_group().unwrap_or_default())
     }
 
+    fn stats_manager(&self) -> Arc<ConsumerStatsManager> {
+        match &*read_lock(&self.runtime_stats) {
+            StatsManagerBinding::Unbound => self.stats.clone(),
+            StatsManagerBinding::Runtime(manager) => manager.clone(),
+            StatsManagerBinding::Null => {
+                panic!("consumer stats manager is unavailable without a client runtime")
+            }
+        }
+    }
+
+    fn bind_stats_manager(&self, manager: Arc<ConsumerStatsManager>) {
+        *write_lock(&self.runtime_stats) = StatsManagerBinding::Runtime(manager);
+    }
+
+    /// Returns the runtime-shared manager corresponding to Java's
+    /// `DefaultMQPushConsumerImpl.getConsumerStatsManager()`.
+    ///
+    /// The manager is unavailable before a client runtime has been created.
+    pub fn get_consumer_stats_manager(&self) -> Option<Arc<ConsumerStatsManager>> {
+        match &*read_lock(&self.runtime_stats) {
+            StatsManagerBinding::Runtime(manager) => Some(manager.clone()),
+            StatsManagerBinding::Unbound | StatsManagerBinding::Null => None,
+        }
+    }
+
     /// Returns the retained implementation handle exposed by Java's
     /// deprecated `DefaultMQPushConsumer.getDefaultMQPushConsumerImpl()`.
     /// `PushConsumer` owns both the facade behavior and implementation state,
@@ -604,10 +642,16 @@ impl PushConsumer {
     /// `DefaultMQPushConsumerImpl.setmQClientFactory`. Registration and
     /// lifecycle ownership remain with the runtime manager used by `start`.
     pub fn set_implementation_client_runtime(&self, runtime: Option<Arc<ClientRuntime>>) {
+        let stats_binding = runtime
+            .as_ref()
+            .map_or(StatsManagerBinding::Null, |runtime| {
+                StatsManagerBinding::Runtime(runtime.consumer_stats_manager())
+            });
         *self
             .implementation_client_factory
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(runtime);
+        *write_lock(&self.runtime_stats) = stats_binding;
     }
 
     /// Creates the public queue type returned by Java's
@@ -2174,8 +2218,7 @@ impl PushConsumer {
                 subscription.topic.as_ref().map(|topic| {
                     (
                         topic.clone(),
-                        self.stats.status(
-                            &runtime_snapshot.client_id,
+                        self.stats_manager().consume_status(
                             &self.config.consumer_group().unwrap_or_default(),
                             topic,
                         ),
@@ -2977,13 +3020,7 @@ impl PushConsumer {
         }
         if processed.result.status == PullStatus::Found {
             let message_count = processed.messages.as_ref().map_or(0, Vec::len);
-            self.record_pull_result_stats(
-                request,
-                context.runtime.client_id(),
-                topic,
-                pull_started.elapsed(),
-                message_count,
-            );
+            self.record_pull_result_stats(request, topic, pull_started.elapsed(), message_count);
         }
         Ok(processed)
     }
@@ -2991,18 +3028,15 @@ impl PushConsumer {
     fn record_pull_result_stats(
         &self,
         request: &PullRequest,
-        client_id: &str,
         topic: &str,
         elapsed: Duration,
         message_count: usize,
     ) {
-        self.stats.record_pull(
-            client_id,
-            request.consumer_group(),
-            topic,
-            elapsed,
-            message_count,
-        );
+        let stats = self.stats_manager();
+        stats.inc_pull_rt(request.consumer_group(), topic, elapsed_millis(elapsed));
+        if message_count > 0 {
+            stats.inc_pull_tps(request.consumer_group(), topic, metric_count(message_count));
+        }
     }
 
     async fn apply_pull_result(
@@ -3371,11 +3405,10 @@ impl PushConsumer {
         self.consume_message_hooks
             .execute_after(&mut consume_context);
         if let Some(topic) = request.batch.queue().topic() {
-            self.stats.record_consume_rt(
-                context.runtime.client_id(),
+            self.stats_manager().inc_consume_rt(
                 &self.consume_stats_group(),
                 topic,
-                callback_started.elapsed(),
+                elapsed_millis(callback_started.elapsed()),
             );
         }
         self.complete_consume_request(request, context, status, returned_context)
@@ -3530,11 +3563,10 @@ impl PushConsumer {
             self.consume_message_hooks
                 .execute_after(&mut consume_context);
             if let Some(topic) = queue.topic() {
-                self.stats.record_consume_rt(
-                    context.runtime.client_id(),
+                self.stats_manager().inc_consume_rt(
                     &self.consume_stats_group(),
                     topic,
-                    callback_started.elapsed(),
+                    elapsed_millis(callback_started.elapsed()),
                 );
             }
 
@@ -3592,13 +3624,14 @@ impl PushConsumer {
                         }
                     }
                 };
-                self.stats.record_orderly_result(
-                    context.runtime.client_id(),
-                    &self.consume_stats_group(),
-                    topic,
-                    acknowledged,
-                    failed,
-                );
+                let stats = self.stats_manager();
+                let consumer_group = self.consume_stats_group();
+                if let Some(acknowledged) = acknowledged {
+                    stats.inc_consume_ok_tps(&consumer_group, topic, metric_count(acknowledged));
+                }
+                if let Some(failed) = failed {
+                    stats.inc_consume_failed_tps(&consumer_group, topic, metric_count(failed));
+                }
             }
             let retry_required = if status == ConsumeOrderlyStatus::SuspendCurrentQueueAMoment {
                 self.check_orderly_reconsume_times(
@@ -3829,12 +3862,15 @@ impl PushConsumer {
         let acknowledged = (ack_index + 1).max(0) as usize;
         if let Some(topic) = queue.topic() {
             let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
-            self.stats.record_concurrent_result(
-                context.runtime.client_id(),
-                &self.consume_stats_group(),
+            let stats = self.stats_manager();
+            let consumer_group = self.consume_stats_group();
+            if successful_result {
+                stats.inc_consume_ok_tps(&consumer_group, topic, metric_count(acknowledged));
+            }
+            stats.inc_consume_failed_tps(
+                &consumer_group,
                 topic,
-                successful_result.then_some(acknowledged),
-                batch_len.saturating_sub(acknowledged),
+                metric_count(batch_len.saturating_sub(acknowledged)),
             );
         }
         let mut terminal_offsets = batch.offsets()[..acknowledged].to_vec();
@@ -4462,6 +4498,7 @@ impl PushConsumer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.bind_stats_manager(runtime.consumer_stats_manager());
         self.set_implementation_client_runtime(Some(runtime.clone()));
         self.set_client_runtime(Some(runtime.clone()));
         if let Err(error) = self.checkpoint(StartupStage::RuntimeCreated) {
@@ -4912,13 +4949,15 @@ impl PushConsumer {
                 continue;
             }
             let messages = result.messages().unwrap_or_default().to_vec();
-            self.stats.record_pull(
-                context.runtime.client_id(),
+            let stats = self.stats_manager();
+            stats.inc_pull_rt(
                 &consumer_group,
                 &topic,
-                pop_started.elapsed(),
-                messages.len(),
+                elapsed_millis(pop_started.elapsed()),
             );
+            if !messages.is_empty() {
+                stats.inc_pull_tps(&consumer_group, &topic, metric_count(messages.len()));
+            }
             let (messages, discarded) = self.filter_pop_messages(&subscription, messages);
             for message in discarded {
                 if let Err(error) = self
@@ -5246,32 +5285,32 @@ impl PushConsumer {
         let message_count = messages.len();
         if record_consume_stats {
             if let Some(topic) = queue.topic() {
-                let stats = &self.stats;
-                stats.record_consume_rt(
-                    runtime.client_id(),
+                let stats = self.stats_manager();
+                stats.inc_consume_rt(
                     &stats_consumer_group,
                     topic,
-                    consume_started.elapsed(),
+                    elapsed_millis(consume_started.elapsed()),
                 );
                 if message_count > 0 && return_type != "TIME_OUT" && !process_queue.is_dropped() {
                     if success {
                         let acknowledged = usize::try_from(ack_index.saturating_add(1))
                             .unwrap_or(0)
                             .min(message_count);
-                        stats.record_concurrent_result(
-                            runtime.client_id(),
+                        stats.inc_consume_ok_tps(
                             &stats_consumer_group,
                             topic,
-                            Some(acknowledged),
-                            message_count.saturating_sub(acknowledged),
+                            metric_count(acknowledged),
+                        );
+                        stats.inc_consume_failed_tps(
+                            &stats_consumer_group,
+                            topic,
+                            metric_count(message_count.saturating_sub(acknowledged)),
                         );
                     } else {
-                        stats.record_concurrent_result(
-                            runtime.client_id(),
+                        stats.inc_consume_failed_tps(
                             &stats_consumer_group,
                             topic,
-                            None,
-                            message_count,
+                            metric_count(message_count),
                         );
                     }
                 }
@@ -7236,6 +7275,7 @@ mod tests {
         assert!(std::ptr::eq(second_rebalance, first_rebalance));
         assert_eq!(first.config().consumer_group(), Some(group.to_owned()));
         assert_eq!(first.get_max_reconsume_times(), 16);
+        assert!(first.get_consumer_stats_manager().is_none());
 
         let custom_config = PushConsumerConfig::new("phase18-push-max-reconsume-custom").unwrap();
         custom_config.set_max_reconsume_times(7);
@@ -7291,6 +7331,11 @@ mod tests {
 
         consumer.set_implementation_client_runtime(Some(implementation_runtime.clone()));
         consumer.set_client_runtime(Some(rebalance_runtime.clone()));
+        let stats = consumer.get_consumer_stats_manager().unwrap();
+        assert!(Arc::ptr_eq(
+            &stats,
+            &implementation_runtime.consumer_stats_manager()
+        ));
         assert!(Arc::ptr_eq(
             &consumer.get_implementation_client_runtime().await.unwrap(),
             &implementation_runtime
@@ -7302,6 +7347,7 @@ mod tests {
 
         consumer.set_implementation_client_runtime(None);
         assert!(consumer.get_implementation_client_runtime().await.is_none());
+        assert!(consumer.get_consumer_stats_manager().is_none());
         assert!(Arc::ptr_eq(
             &consumer.get_client_runtime().await.unwrap(),
             &rebalance_runtime
@@ -8683,11 +8729,11 @@ mod tests {
             )
             .await;
 
-        assert!(!consumer.stats.contains_topic(
-            runtime.client_id(),
-            "pop-orderly-stats-group",
-            "orders"
-        ));
+        let status = consumer
+            .stats_manager()
+            .consume_status("pop-orderly-stats-group", "orders");
+        assert_eq!(status.get_consume_rt(), 0.0);
+        assert_eq!(status.get_consume_ok_tps(), 0.0);
         runtime.shutdown().await.unwrap();
     }
 
@@ -8849,16 +8895,20 @@ mod tests {
             .await;
         assert_eq!(listener_calls.load(Ordering::SeqCst), 1);
         assert_eq!(successful_queue.wait_ack_count(), 0);
-        assert!(consumer.stats.contains_topic(
-            runtime.client_id(),
-            "pop-lifecycle-group",
-            "orders"
-        ));
-        assert!(!consumer.stats.contains_topic(
-            runtime.client_id(),
-            "pop-lifecycle-live-group",
-            "orders"
-        ));
+        assert!(
+            consumer
+                .stats_manager()
+                .consume_status("pop-lifecycle-group", "orders")
+                .get_consume_ok_tps()
+                > 0.0
+        );
+        assert_eq!(
+            consumer
+                .stats_manager()
+                .consume_status("pop-lifecycle-live-group", "orders")
+                .get_consume_ok_tps(),
+            0.0
+        );
 
         let retry_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 2));
         retry_queue.inc_found_messages(1);
@@ -8914,8 +8964,8 @@ mod tests {
         );
 
         let status = consumer
-            .stats
-            .status(runtime.client_id(), "pop-lifecycle-group", "orders");
+            .stats_manager()
+            .consume_status("pop-lifecycle-group", "orders");
         assert!(status.get_consume_ok_tps() > 0.0);
 
         broker_peer.await.unwrap();
@@ -9092,8 +9142,8 @@ mod tests {
         .expect("assigned POP worker did not issue POP_MESSAGE");
         timeout(Duration::from_secs(3), async {
             while consumer
-                .stats
-                .status(runtime.client_id(), "pop-assignment-flow", "orders")
+                .stats_manager()
+                .consume_status("pop-assignment-flow", "orders")
                 .get_pull_rt()
                 <= 0.0
             {
@@ -9103,8 +9153,8 @@ mod tests {
         .await
         .expect("POP_FOUND must record pull latency in consumer statistics");
         let status = consumer
-            .stats
-            .status(runtime.client_id(), "pop-assignment-flow", "orders");
+            .stats_manager()
+            .consume_status("pop-assignment-flow", "orders");
         assert!(
             status.get_pull_rt() > 0.0,
             "unexpected POP stats: {status:?}"
@@ -9402,6 +9452,7 @@ mod tests {
             .get_or_create(consumer.config.client_config())
             .await
             .unwrap();
+        consumer.bind_stats_manager(runtime.consumer_stats_manager());
         let owner: Arc<dyn ConsumerRuntime> = Arc::new(PushConsumerRegistration {
             group: consumer_group.clone(),
             message_model: consumer.config.message_model(),
@@ -11410,6 +11461,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(first_runtime.client_id(), second_runtime.client_id());
+        first.bind_stats_manager(first_runtime.consumer_stats_manager());
+        second.bind_stats_manager(second_runtime.consumer_stats_manager());
+        let first_stats = first.get_consumer_stats_manager().unwrap();
+        let second_stats = second.get_consumer_stats_manager().unwrap();
+        assert!(!Arc::ptr_eq(&first_stats, &second_stats));
         let java_fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/consumer/push-implementation-accessor.json"
         ))
@@ -11419,23 +11475,79 @@ mod tests {
             Some(true)
         );
 
-        first.stats.record_pull(
-            first_runtime.client_id(),
-            "stats-isolation-group",
-            "stats-isolation-topic",
-            Duration::from_millis(3),
-            4,
-        );
+        first_stats.inc_pull_rt("stats-isolation-group", "stats-isolation-topic", 3);
+        first_stats.inc_pull_tps("stats-isolation-group", "stats-isolation-topic", 4);
 
-        let second_status = second.stats.status(
-            second_runtime.client_id(),
-            "stats-isolation-group",
-            "stats-isolation-topic",
-        );
+        let second_status =
+            second_stats.consume_status("stats-isolation-group", "stats-isolation-topic");
         assert_eq!(second_status.get_pull_tps(), 0.0);
 
         first_runtime.shutdown().await.unwrap();
         second_runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn push_consumers_sharing_one_runtime_share_consumer_stats_manager_identity() {
+        let client_ip = Some("198.51.100.42".to_owned());
+        let instance_name = Some("shared-stats-runtime".to_owned());
+        let mut first_config = PushConsumerConfig::new("shared-stats-group-a").unwrap();
+        first_config.client_config_mut().set_namesrv_addr(None);
+        first_config
+            .client_config_mut()
+            .set_client_ip(client_ip.clone());
+        first_config
+            .client_config_mut()
+            .set_instance_name(instance_name.clone());
+        let mut second_config = PushConsumerConfig::new("shared-stats-group-b").unwrap();
+        second_config.client_config_mut().set_namesrv_addr(None);
+        second_config.client_config_mut().set_client_ip(client_ip);
+        second_config
+            .client_config_mut()
+            .set_instance_name(instance_name);
+
+        let manager = ClientRuntimeManager::new();
+        let first = Arc::new(PushConsumer::with_manager(first_config, manager.clone()));
+        let second = Arc::new(PushConsumer::with_manager(second_config, manager.clone()));
+        assert!(first.get_consumer_stats_manager().is_none());
+        assert!(second.get_consumer_stats_manager().is_none());
+        let first_runtime = install_started_consumer(
+            &first,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        let second_runtime = install_started_consumer(
+            &second,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        assert!(Arc::ptr_eq(&first_runtime, &second_runtime));
+        let first_stats = first.get_consumer_stats_manager().unwrap();
+        let second_stats = second.get_consumer_stats_manager().unwrap();
+        assert!(Arc::ptr_eq(&first_stats, &second_stats));
+
+        first_stats.inc_pull_rt("shared-stats-group-a", "orders", 7);
+        first_stats.inc_pull_tps("shared-stats-group-a", "orders", 3);
+        let shared_status = second_stats.consume_status("shared-stats-group-a", "orders");
+        assert_eq!(shared_status.get_pull_rt(), 7.0);
+        assert!(shared_status.get_pull_tps() > 0.0);
+        assert_eq!(
+            second_stats
+                .consume_status("shared-stats-group-b", "orders")
+                .get_pull_tps(),
+            0.0
+        );
+
+        first.shutdown().await.unwrap();
+        second.shutdown().await.unwrap();
+        first_runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -11489,16 +11601,20 @@ mod tests {
             .run_consume_request(request, listener)
             .await;
 
-        assert!(consumer.stats.contains_topic(
-            runtime.client_id(),
-            "consume-stats-snapshot-group",
-            "orders"
-        ));
-        assert!(!consumer.stats.contains_topic(
-            runtime.client_id(),
-            "consume-stats-live-group",
-            "orders"
-        ));
+        assert!(
+            consumer
+                .stats_manager()
+                .consume_status("consume-stats-snapshot-group", "orders")
+                .get_consume_ok_tps()
+                > 0.0
+        );
+        assert_eq!(
+            consumer
+                .stats_manager()
+                .consume_status("consume-stats-live-group", "orders")
+                .get_consume_ok_tps(),
+            0.0
+        );
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
@@ -11797,16 +11913,20 @@ mod tests {
             )
             .await;
 
-        assert!(consumer.stats.contains_topic(
-            runtime.client_id(),
-            "orderly-stats-snapshot-group",
-            "orders"
-        ));
-        assert!(!consumer.stats.contains_topic(
-            runtime.client_id(),
-            "orderly-stats-live-group",
-            "orders"
-        ));
+        assert!(
+            consumer
+                .stats_manager()
+                .consume_status("orderly-stats-snapshot-group", "orders")
+                .get_consume_ok_tps()
+                > 0.0
+        );
+        assert_eq!(
+            consumer
+                .stats_manager()
+                .consume_status("orderly-stats-live-group", "orders")
+                .get_consume_ok_tps(),
+            0.0
+        );
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
@@ -11872,26 +11992,12 @@ mod tests {
         consumer
             .consumer_start_timestamp
             .store(1_700_000_000_000, Ordering::Release);
-        consumer.stats.record_pull(
-            runtime.client_id(),
-            "running-info-snapshot",
-            "orders",
-            Duration::from_millis(500),
-            2,
-        );
-        consumer.stats.record_consume_rt(
-            runtime.client_id(),
-            "running-info-snapshot",
-            "orders",
-            Duration::from_millis(8),
-        );
-        consumer.stats.record_concurrent_result(
-            runtime.client_id(),
-            "running-info-snapshot",
-            "orders",
-            Some(3),
-            1,
-        );
+        let stats = consumer.stats_manager();
+        stats.inc_pull_rt("running-info-snapshot", "orders", 500);
+        stats.inc_pull_tps("running-info-snapshot", "orders", 2);
+        stats.inc_consume_rt("running-info-snapshot", "orders", 8);
+        stats.inc_consume_ok_tps("running-info-snapshot", "orders", 3);
+        stats.inc_consume_failed_tps("running-info-snapshot", "orders", 1);
 
         consumer.consume_core_pool_size.store(7, Ordering::Release);
         let raw_running_info = consumer.consumer_running_info().await.unwrap();
@@ -12735,25 +12841,19 @@ mod tests {
             0,
         );
         consumer.set_consumer_group(Some("pull-stats-mutated-group".into()));
-        consumer.record_pull_result_stats(
-            &request,
-            "pull-stats-client",
-            "orders",
-            Duration::from_millis(2),
-            1,
-        );
+        consumer.record_pull_result_stats(&request, "orders", Duration::from_millis(2), 1);
 
         assert!(
             consumer
-                .stats
-                .status("pull-stats-client", request_group, "orders")
+                .stats_manager()
+                .consume_status(request_group, "orders")
                 .get_pull_tps()
                 > 0.0
         );
         assert_eq!(
             consumer
-                .stats
-                .status("pull-stats-client", "pull-stats-mutated-group", "orders")
+                .stats_manager()
+                .consume_status("pull-stats-mutated-group", "orders")
                 .get_pull_tps(),
             0.0
         );

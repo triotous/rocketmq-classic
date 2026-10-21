@@ -294,6 +294,8 @@ public final class PushImplementationAccessorFixtures {
 
         Map<String, Object> fixture = new LinkedHashMap<>();
         fixture.put("consumerStatsManagersAreInstanceScoped", consumerStatsManagersAreInstanceScoped());
+        fixture.put("consumerStatsManagersShareFactoryIdentity", consumerStatsManagersShareFactoryIdentity());
+        fixture.putAll(consumerStatsManagerApi());
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
         fixture.put("rebalanceImplementationNonNull", firstRebalance != null);
@@ -486,6 +488,25 @@ public final class PushImplementationAccessorFixtures {
             .map(PushImplementationAccessorFixtures::signature)
             .sorted()
             .collect(Collectors.toList());
+    }
+
+    private static Map<String, Object> consumerStatsManagerApi() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("consumerStatsManagerPublicConstructors",
+            Arrays.stream(ConsumerStatsManager.class.getConstructors())
+                .map(constructor -> "ConsumerStatsManager(" + Arrays.stream(constructor.getParameterTypes())
+                    .map(Class::getSimpleName)
+                    .collect(Collectors.joining(",")) + ")")
+                .sorted()
+                .collect(Collectors.toList()));
+        result.put("consumerStatsManagerPublicMethods",
+            Arrays.stream(ConsumerStatsManager.class.getDeclaredMethods())
+                .filter(method -> Modifier.isPublic(method.getModifiers()))
+                .filter(method -> !method.isBridge() && !method.isSynthetic())
+                .map(PushImplementationAccessorFixtures::signature)
+                .sorted()
+                .collect(Collectors.toList()));
+        return result;
     }
 
     private static String signature(Method method) {
@@ -949,6 +970,22 @@ public final class PushImplementationAccessorFixtures {
         } finally {
             firstScheduler.shutdownNow();
             secondScheduler.shutdownNow();
+        }
+    }
+
+    private static boolean consumerStatsManagersShareFactoryIdentity() throws Exception {
+        RecordingMqClientInstance factory = recordingMqClientInstance();
+        DefaultMQPushConsumerImpl first = new DefaultMQPushConsumerImpl(
+            new DefaultMQPushConsumer("phase18-stats-share-a"), null);
+        DefaultMQPushConsumerImpl second = new DefaultMQPushConsumerImpl(
+            new DefaultMQPushConsumer("phase18-stats-share-b"), null);
+        try {
+            first.setmQClientFactory(factory);
+            second.setmQClientFactory(factory);
+            return first.getConsumerStatsManager() == second.getConsumerStatsManager()
+                && first.getConsumerStatsManager() == factory.stats;
+        } finally {
+            factory.shutdownStats();
         }
     }
 

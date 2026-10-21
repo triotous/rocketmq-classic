@@ -113,6 +113,7 @@ pub struct ClientRuntime {
     pub(super) pull: Arc<super::pull::PullService>,
     manager: Mutex<Vec<ManagerLink>>,
     reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    consumer_stats_manager: Arc<super::ConsumerStatsManager>,
     pub(super) sharing_properties: HashMap<String, String>,
     pub(super) sharing_hook: Option<Arc<dyn RpcHook>>,
     pub(super) sharing_tls_config: Option<TlsConfig>,
@@ -130,6 +131,14 @@ pub struct ClientRuntime {
 }
 
 impl ClientRuntime {
+    /// Returns the shared consumer statistics manager for this client runtime.
+    ///
+    /// This is the Rust equivalent of
+    /// `MQClientInstance.getConsumerStatsManager()`.
+    pub fn consumer_stats_manager(&self) -> Arc<super::ConsumerStatsManager> {
+        self.consumer_stats_manager.clone()
+    }
+
     /// Replaces the remoting client's NameServer address list using the same
     /// comma/semicolon/whitespace splitting used during client construction.
     pub fn update_name_server_address_list(&self, addresses: &str) {
@@ -260,6 +269,7 @@ impl ClientRuntime {
             pull: Arc::default(),
             manager: Mutex::new(Vec::new()),
             reply_timeout_task: tokio::sync::Mutex::new(None),
+            consumer_stats_manager: Arc::new(super::ConsumerStatsManager::default()),
             sharing_properties: properties.clone(),
             sharing_hook,
             sharing_tls_config: tls_config,

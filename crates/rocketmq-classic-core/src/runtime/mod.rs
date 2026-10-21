@@ -10,6 +10,7 @@ mod pull;
 mod rebalance;
 mod registry;
 mod request_future;
+pub mod stats;
 mod tables;
 mod tasks;
 
@@ -36,6 +37,7 @@ pub use request_future::{
     RequestFutureError, RequestFutureLatch, RequestResponseCallback, RequestResponseFuture,
     RequestSendFailureCause, RequestTimeoutCause,
 };
+pub use stats::ConsumerStatsManager;
 pub use tables::{
     ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,
     ConsumerValuesView, ProducerEntryHandle, ProducerEntrySetView, ProducerKeySetView,

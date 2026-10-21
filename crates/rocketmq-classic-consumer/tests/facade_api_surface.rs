@@ -1,7 +1,7 @@
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::{
-    MqHelper, PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
-    pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
+    ConsumerStatsManager, MqHelper, PopProcessQueue, ProcessQueue, PullConsumerConfig,
+    PushConsumer, PushConsumerConfig, pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
 use rocketmq_classic_protocol::body::{ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo};
 use rocketmq_classic_protocol::heartbeat::ConsumeType;
@@ -100,6 +100,46 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
         String::new(),
         0,
     ));
+}
+
+#[test]
+fn consumer_stats_manager_exposes_the_pinned_java_methods() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/consumer/push-implementation-accessor.json"
+    ))
+    .unwrap();
+    assert_eq!(fixture["consumerStatsManagersAreInstanceScoped"], true);
+    assert_eq!(fixture["consumerStatsManagersShareFactoryIdentity"], true);
+    assert_eq!(
+        fixture["consumerStatsManagerPublicConstructors"],
+        serde_json::json!(["ConsumerStatsManager(ScheduledExecutorService)"])
+    );
+    let expected = serde_json::json!([
+        "consumeStatus(String,String)",
+        "incConsumeFailedTPS(String,String,long)",
+        "incConsumeOKTPS(String,String,long)",
+        "incConsumeRT(String,String,long)",
+        "incPullRT(String,String,long)",
+        "incPullTPS(String,String,long)",
+        "shutdown()",
+        "start()"
+    ]);
+    assert_eq!(fixture["consumerStatsManagerPublicMethods"], expected);
+
+    let stats = ConsumerStatsManager::default();
+    stats.start();
+    stats.inc_pull_rt("workers", "orders", 12);
+    stats.inc_pull_tps("workers", "orders", 3);
+    stats.inc_consume_rt("workers", "orders", 4);
+    stats.inc_consume_ok_tps("workers", "orders", 2);
+    stats.inc_consume_failed_tps("workers", "orders", 1);
+    let status = stats.consume_status("workers", "orders");
+    assert_eq!(status.get_pull_rt(), 12.0);
+    assert_eq!(status.get_consume_rt(), 4.0);
+    assert!(status.get_pull_tps() > 0.0);
+    assert!(status.get_consume_ok_tps() > 0.0);
+    assert!(status.get_consume_failed_tps() > 0.0);
+    stats.shutdown();
 }
 
 #[test]
