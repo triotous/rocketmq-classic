@@ -1731,6 +1731,41 @@ async fn delete_subscription_group_list_matches_java_requests_and_outcomes() {
     client.shutdown().await;
 }
 
+#[test]
+fn get_cluster_list_matches_java_immutable_empty_singleton_without_rpc() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getClusterListApi"],
+        json!([
+            "java.util.Set org.apache.rocketmq.client.impl.MQClientAPIImpl.getClusterList(java.lang.String,long)"
+        ])
+    );
+    let cases = fixture["getClusterListOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 3);
+    let client = RemotingClient::new(TransportMode::Plain);
+    let client_api = MQClientApi::new(client.clone());
+    for case in cases {
+        assert_eq!(case["outcome"], "returned");
+        assert_eq!(case["resultClass"], "java.util.Collections$EmptySet");
+        assert_eq!(case["size"], 0);
+        assert_eq!(case["sameSingleton"], true);
+        assert_eq!(case["mutationThrows"], true);
+        assert!(case["requests"].as_array().unwrap().is_empty());
+        let result = client_api.get_cluster_list(
+            case["topic"].as_str(),
+            Instant::now() + Duration::from_secs(1),
+        );
+        assert!(result.is_empty());
+        assert!(std::ptr::eq(
+            result,
+            client_api.get_cluster_list(None, Instant::now() + Duration::from_secs(1))
+        ));
+    }
+}
+
 #[tokio::test]
 async fn get_topics_by_cluster_matches_java_nameserver_request_and_outcomes() {
     let fixture: Value =

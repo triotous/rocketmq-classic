@@ -1639,3 +1639,14 @@ values return the typed `PushConsumerError::PullIdleTimeSettings`. The
 `subscribed-pull-expired` Java/Rust runtime comparison checks Push queue
 removal; parser and boundary tests cover the timeout arithmetic. POP assignment
 branches and the broader P18-V01 audit remain open.
+
+## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
+
+The pinned `getClusterList(String,long)` implementation ignores both inputs,
+performs no RPC, and returns Java's shared immutable `Collections.EMPTY_SET`.
+`MQClientApi::get_cluster_list(Option<&str>, Instant)` maps the observable
+contract with a shared immutable empty `HashSet` reference. The invoked Java
+fixture covers nonempty, null, and empty topics, singleton identity, rejected
+mutation, and an empty request list; the Rust regression consumes those cases
+and verifies the same result identity and no-request behavior. This closes the
+named stub only; the broad P18-V01 inventory remains open.

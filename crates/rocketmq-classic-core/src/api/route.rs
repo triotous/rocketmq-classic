@@ -1,3 +1,5 @@
+use std::{collections::HashSet, sync::OnceLock};
+
 use rocketmq_classic_protocol::{
     body::TopicList,
     codes::{request, response},
@@ -13,8 +15,20 @@ use super::MQClientApi;
 use crate::error::RpcError;
 
 const MISSING_ROUTE_BODY: &str = "missing route body";
+static EMPTY_CLUSTER_LIST: OnceLock<HashSet<String>> = OnceLock::new();
 
 impl MQClientApi {
+    /// Returns Java's shared immutable empty result for
+    /// `MQClientAPIImpl.getClusterList`. The pinned Java method does not use
+    /// either input and does not issue a request.
+    pub fn get_cluster_list(
+        &self,
+        _topic: Option<&str>,
+        _deadline: Instant,
+    ) -> &'static HashSet<String> {
+        EMPTY_CLUSTER_LIST.get_or_init(HashSet::new)
+    }
+
     pub(crate) fn route_error_is_client_exception(error: &RpcError) -> bool {
         matches!(error, RpcError::Response { .. })
             || matches!(error, RpcError::MalformedResponse { request_code: request::GET_ROUTEINFO_BY_TOPIC, reason, .. } if reason == MISSING_ROUTE_BODY)

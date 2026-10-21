@@ -282,6 +282,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("getTopicsByClusterOperations", getTopicsByClusterOperations());
+        result.put("getClusterListApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getClusterList"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("getClusterListOperations", getClusterListOperations());
         result.put("unitTopicListsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> Set.of("getUnitTopicList", "getHasUnitSubTopicList",
@@ -2752,6 +2759,60 @@ public final class ProducerCoreFixtures {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());
             result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> getClusterListOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(getClusterListCase("named-topic", "orders", 2345L));
+        cases.add(getClusterListCase("null-topic", null, -1L));
+        cases.add(getClusterListCase("empty-topic", "", 0L));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> getClusterListCase(String name, String topic, long timeoutMillis)
+        throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("get-cluster-list-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+            ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", ((org.apache.rocketmq.remoting.protocol.RemotingCommand)
+                                values[1]).getCode());
+                            requests.add(call);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("topic", topic);
+        result.put("timeoutMillis", timeoutMillis);
+        try {
+            Set<String> received = api.getClusterList(topic, timeoutMillis);
+            result.put("outcome", "returned");
+            result.put("resultClass", received.getClass().getName());
+            result.put("size", received.size());
+            result.put("sameSingleton", received == api.getClusterList(null, 0L));
+            try {
+                received.add("mutation-probe");
+                result.put("mutationThrows", false);
+            } catch (UnsupportedOperationException error) {
+                result.put("mutationThrows", true);
+            }
         } finally {
             api.shutdown();
         }

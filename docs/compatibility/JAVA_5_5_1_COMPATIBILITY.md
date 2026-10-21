@@ -1,5 +1,16 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 `getClusterList` stub (2026-10-21): pinned
+`MQClientAPIImpl.getClusterList(String,long)` ignores its topic and timeout,
+issues no RPC, and always returns Java's shared immutable
+`Collections.EMPTY_SET`. `MQClientApi::get_cluster_list` exposes a shared
+immutable empty set with the same no-request behavior. The invoked Java fixture
+checks nonempty, null, and empty topics, singleton identity, and mutation
+failure; the Rust fixture-backed regression checks each result and verifies no
+request is sent. Producer core fixture SHA-256 and gate evidence appear in the
+Phase 18 release checklist. This closes this stub only; broad P18-V01 remains
+open.
+
 Phase 18 direct subscription-group configuration lookup (2026-10-21): Rust
 maps `MQClientAPIImpl.getSubscriptionGroupConfig(String,String,long)` to request
 352. The group header accepts null and empty values, preserves inherited

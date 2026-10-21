@@ -5888,3 +5888,22 @@ owner-specific checks belong in the manual handoff.
 - This closes this lookup and typed-header slice only. Broad P18-V01, current
   Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker scenarios
   remain open.
+
+## P18-V01 `getClusterList` immutable-empty stub — 2026-10-21
+
+- [x] Mapped pinned `MQClientAPIImpl.getClusterList(String,long)` to
+  `MQClientApi::get_cluster_list`. Java ignores both arguments, sends no RPC,
+  and returns the shared immutable `Collections.EMPTY_SET`; Rust returns a
+  shared immutable empty `HashSet` reference.
+- [x] Invoked Java fixture cases cover nonempty, null, and empty topics,
+  singleton identity, mutation failure, and zero requests. The Rust
+  fixture-backed regression checks the empty result, stable singleton identity,
+  and no request for all cases. Producer core fixture SHA-256:
+  `42244fafb6e6b824db21d17ba6d3e420d6f6dc57baeabd26b5a2573178da528f`.
+- [x] `get_cluster_list_matches_java_immutable_empty_singleton_without_rpc`
+  passes. Strict locked all-target/all-feature workspace Clippy, `cargo fmt
+  --all -- --check`, and `git diff --check` pass. Pinned Maven `verify` passes
+  with 37 manifest scenarios, 73 typed headers, and 15 typed bodies.
+- Broad P18-V01, current Ubuntu/native Windows P18-V04 evidence, and Phase 19
+  live Broker scenarios remain open. Four preserved Phase 19 worktree paths
+  remain unstaged and untouched.

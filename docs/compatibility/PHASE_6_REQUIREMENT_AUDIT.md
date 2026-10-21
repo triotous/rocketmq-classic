@@ -1395,3 +1395,13 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   body, request fields, and Broker rejection; a VIP loopback checks the address
   transform. The current fixture digest and full gate evidence are recorded in
   the release checklist. Broad P18-V01 remains open.
+
+## Direct `getClusterList` stub — 2026-10-21
+
+The pinned public `MQClientAPIImpl.getClusterList(String,long)` ignores both
+arguments, sends no request, and returns the shared immutable Java empty set.
+Core maps this as `MQClientApi::get_cluster_list`; invoked Java cases and the
+Rust fixture-backed regression compare the empty result, singleton behavior,
+mutation rejection, and absence of RPCs. This closes the named stub only.
+Broad P18-V01 source/API/settings/input/error/flow/reverse-export review and
+the platform evidence gates remain open.
