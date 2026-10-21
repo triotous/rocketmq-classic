@@ -6472,3 +6472,23 @@ owner-specific checks belong in the manual handoff.
   gates must still be refreshed after this code revision. Current
   Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker/Docker scenarios
   remain separate. Protected Phase 19 paths were not changed or staged.
+
+## P18-V01 custom `MessageExt` flag hooks — 2026-10-21 (`a24fba3a`)
+
+- [x] `MessageExtSubtype` now dispatches Java virtual `getFlag` and `setFlag`.
+  Push retry/send-back message creation reads the subtype value through the
+  virtual getter.
+- [x] The invoked Java direct-consume fixture verifies custom flag `71` in the
+  callback and records the custom setter call. Rust matches both. Fixture
+  SHA-256: `8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.
+- [x] Focused direct-consume/ProcessQueue tests, default and all-feature locked
+  workspace tests, strict all-target/all-feature Clippy, format/diff checks,
+  and pinned Maven `verify` pass on code revision `a24fba3a`.
+- This closes the `getFlag`/`setFlag` adapter hooks. Arbitrary subtype behavior,
+  mutable custom body-array aliasing, and broad P18-V01 source/API/settings/
+  input/error/control-flow/reverse-export reconciliation remain open. The
+  supplemental P18-V02 differential, stress, fuzz, example, benchmark,
+  metadata/package and time-zone gates still need a current-revision refresh.
+  Current Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker/Docker
+  scenarios remain separate; protected Phase 19 paths were not changed or
+  staged.

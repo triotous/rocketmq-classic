@@ -245,3 +245,11 @@ path used in the audited consumer flow; mutable body-array aliasing and other
 inherited virtual methods remain open. Fixture:
 `fixtures/runtime/consumer-operations.json`, SHA-256
 `9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`.
+
+P18-V01 caller-defined `MessageExt` flag follow-up (2026-10-21): the subtype
+adapter now dispatches virtual `getFlag`/`setFlag`. The invoked Java fixture
+records the custom getter value `71` and setter call from direct-consume setup;
+Rust matches the callback value and write count. The getter is also used by
+Push retry/send-back message copies. Other inherited virtual methods remain
+open. Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
+`8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.

@@ -94,9 +94,11 @@ Caller-defined subtype continuation (2026-10-21): Rust now exposes
 `MessageExtSubtype`, retained by `Arc` across the `MessageExt` direct-consume
 input. Applications can downcast custom fields in the callback and provide
 virtual overrides for topic, broker name, queue ID, queue offset, body, message
-ID, reconsume-times getters/setters, and display. The adapter dispatches
+ID, flag, reconsume-times getters/setters, and display. The adapter dispatches
 virtual `getBody`/`setBody` and `getReconsumeTimes`/`setReconsumeTimes` calls
-used by ProcessQueue byte accounting and Push retry/send-back logic.
+used by ProcessQueue byte accounting and Push retry/send-back logic. It also
+maps `getFlag`/`setFlag`, so Push retry/send-back message copies read the
+subtype's virtual flag value.
 `ProcessQueue.putMessage` also uses the subtype's virtual `getQueueOffset` as
 its message-tree key. The
 `concurrent-custom-subtype` case executes Java overrides during initial topic
@@ -104,8 +106,9 @@ assignment, retry-topic restoration, namespace removal, broker assignment and
 callback formatting; it checks the custom reconsume value `13`, queue offset
 `987654321`, and overridden body length. A Java `ProcessQueue.putMessage` case
 compares dispatch, count, body size, tree key and setter side effects against
-Rust. Current fixture SHA-256:
-`9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`.
+Rust. The callback records custom flag `71` and the setter count. Current
+fixture SHA-256:
+`8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader

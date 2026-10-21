@@ -80,6 +80,14 @@ counts. Fixture SHA-256:
 `9b67a09bc850192e2856bc908c10a6dfa6590db3f924b32fe62b6e97edcc510f`. Other
 inherited `Message`/`MessageExt` virtual methods remain open.
 
+P18-V01 caller-defined subtype flag follow-up (2026-10-21):
+`MessageExtSubtype` now dispatches Java's virtual `getFlag`/`setFlag` methods.
+The direct-consume Java fixture records the overridden flag `71` and the
+custom setter invocation; Rust matches both. This covers the flag reads in
+Push retry/send-back message copies, while broad subtype and P18-V01 review
+remain open. Fixture SHA-256:
+`8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, subtype behavior beyond the adapter's selected hooks,
