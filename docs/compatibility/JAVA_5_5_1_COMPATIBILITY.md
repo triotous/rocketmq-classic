@@ -90,9 +90,20 @@ including the configured VIP address transform, no-header/no-body envelope,
 fixture and Rust scripted RPC compare the exact signature, request fields,
 topic set, Broker error and `SUCCESS` without a body. Java reports
 `MQClientException` with response code 0 for the missing body; Rust returns a
-structured `MalformedResponse`. Current producer core fixture SHA-256:
-`fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`. The
-composite `getSystemTopicList` operation remains open.
+structured `MalformedResponse`. At this direct-RPC checkpoint, producer core
+fixture SHA-256 was `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
+
+Phase 18 composite system-topic-list RPC (2026-10-21): Rust now maps pinned
+`MQClientAPIImpl.getSystemTopicList(long)`, sending request 304 through the
+NameServer selector and conditionally querying request 305 from the Broker.
+It preserves the NameServer topic set, merges nonempty Broker topics, and
+skips the Broker call for empty/null sets or blank addresses. The invoked Java
+fixture and Rust differential compare the exact method signature, request
+sequence, success/error bodies, merged set and short-circuit behavior. Current
+producer core fixture SHA-256:
+`38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`. This
+closes the composite system-topic-list method; broad P18-V01 and later gates
+remain open.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

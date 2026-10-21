@@ -73,6 +73,63 @@ impl MQClientApi {
         })
     }
 
+    /// Retrieves and merges the NameServer and Broker system-topic lists like
+    /// Java `MQClientAPIImpl.getSystemTopicList`.
+    pub async fn get_system_topic_list(&self, deadline: Instant) -> Result<TopicList, RpcError> {
+        let code = request::GET_SYSTEM_TOPIC_LIST_FROM_NS;
+        let (reply, peer) = self
+            .remoting
+            .invoke_name_server_sync_with_peer(
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer,
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body = reply.body.ok_or_else(|| RpcError::MalformedResponse {
+            request_code: code,
+            peer: peer.clone(),
+            reason: "successful system-topic-list reply has no body".into(),
+        })?;
+        let topic_list =
+            TopicList::java_decode(&body).map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer,
+                reason: error.to_string(),
+            })?;
+
+        // Java only queries the Broker for a nonempty NameServer set and a
+        // nonblank address. Mutate the retained set handle to preserve aliases.
+        if let (Some(name_server_topics), Some(broker_addr)) = (
+            topic_list.get_topic_list(),
+            topic_list.get_broker_addr().map(str::to_owned),
+        ) {
+            if !name_server_topics.snapshot().is_empty() && !broker_addr.trim().is_empty() {
+                let broker_topics = self
+                    .get_system_topic_list_from_broker(&broker_addr, deadline)
+                    .await?
+                    .get_topic_list();
+                if let Some(broker_topics) = broker_topics {
+                    let broker_topics = broker_topics.snapshot();
+                    if !broker_topics.is_empty() {
+                        name_server_topics.with_mut(|topics| topics.extend(broker_topics));
+                    }
+                }
+            }
+        }
+        Ok(topic_list)
+    }
+
     pub(crate) async fn get_topic_route_nullable(
         &self,
         topic: Option<&str>,

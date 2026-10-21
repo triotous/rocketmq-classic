@@ -5506,6 +5506,26 @@ owner-specific checks belong in the manual handoff.
 - [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
   15 typed-body fixtures, and Java/Rust cross-decodes); formatting and scoped
   `git diff --check` passed.
-- The composite `getSystemTopicList` call remains open. This closes the direct
-  Broker operation only; broad P18-V01 and P18-V02/P18-V03/P18-V04 gates remain
-  open.
+- At this Broker-only slice checkpoint, the composite `getSystemTopicList`
+  call remained open. This closes the direct Broker operation only; broad
+  P18-V01 and P18-V02/P18-V03/P18-V04 gates remain open.
+
+## P18-V01 composite system-topic-list RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::get_system_topic_list` for pinned Java
+  `MQClientAPIImpl.getSystemTopicList(long)`: request 304 through NameServer
+  selection, conditional request 305 through the returned Broker address, and
+  in-place merge of the nonempty Broker topic set.
+- [x] The Java invocation fixture and Rust differential cover both request
+  codes and envelopes, timeout and call order, merge, empty/null topic sets,
+  blank Broker address, NameServer/Broker errors and missing NameServer body.
+- [x] Current producer core fixture SHA-256:
+  `38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`.
+- [x] Core all-feature locked suite (178 unit tests, all integration targets,
+  and 16 doctests), strict all-target/all-feature Clippy, and Producer pinned
+  fixture comparison passed.
+- [x] Pinned Java Maven `verify` passed (37 scenarios, 67 typed-header frames,
+  15 typed-body fixtures, and Java/Rust cross-decodes); formatting and scoped
+  `git diff --check` passed.
+- The composite system-topic-list operation is closed. Broad P18-V01 remains
+  open, as do P18-V02/P18-V03/P18-V04 gates.

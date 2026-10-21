@@ -722,6 +722,151 @@ async fn topic_list_from_nameserver_matches_java_request_and_response() {
 }
 
 #[tokio::test]
+async fn system_topic_list_composes_nameserver_and_broker_responses_like_java() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["systemTopicListApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "org.apache.rocketmq.remoting.protocol.body.TopicList org.apache.rocketmq.client.impl.MQClientAPIImpl.getSystemTopicList(long)"));
+    let cases = fixture["systemTopicListOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 7);
+
+    for case in cases {
+        let calls = case["calls"].as_array().unwrap();
+        assert!(matches!(calls.len(), 1 | 2));
+        let name_server_body = case["nameServerResponseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let (name_server_body, broker_peer) = if calls.len() == 2 {
+            let (broker_addr, broker_peer) = scripted_peer_with_remark(
+                case["brokerResponseCode"].as_i64().unwrap() as i32,
+                case["brokerResponseRemark"].as_str().map(str::to_owned),
+                None,
+                case["brokerResponseBodyBase64"].as_str().map(|body| {
+                    base64::engine::general_purpose::STANDARD
+                        .decode(body)
+                        .unwrap()
+                }),
+            )
+            .await;
+            let mut topic_list = rocketmq_classic_protocol::body::TopicList::java_decode(
+                name_server_body.as_deref().unwrap(),
+            )
+            .unwrap();
+            topic_list.set_broker_addr(Some(broker_addr));
+            (Some(topic_list.java_encode().unwrap()), Some(broker_peer))
+        } else {
+            (name_server_body, None)
+        };
+        let (name_server_addr, name_server_peer) = scripted_peer_with_remark(
+            case["nameServerResponseCode"].as_i64().unwrap() as i32,
+            case["nameServerResponseRemark"].as_str().map(str::to_owned),
+            None,
+            name_server_body,
+        )
+        .await;
+        let (client_api, client) = api().await;
+        client.update_name_server_address_list(vec![name_server_addr]);
+        let result = client_api
+            .get_system_topic_list(Instant::now() + Duration::from_secs(2))
+            .await;
+        if case["outcome"] == "returned" {
+            let actual_topics = result
+                .unwrap()
+                .get_topic_list()
+                .map(|topics| topics.snapshot());
+            let expected_topics = case["topics"].as_array().map(|topics| {
+                topics
+                    .iter()
+                    .map(|topic| topic.as_str().unwrap().to_owned())
+                    .collect::<HashSet<_>>()
+            });
+            assert_eq!(actual_topics, expected_topics, "case {}", case["name"]);
+        } else if case["name"] == "name-server-missing-body" {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::GET_SYSTEM_TOPIC_LIST_FROM_NS,
+                    ..
+                })
+            ));
+        } else {
+            let expected_code = case["errorCode"].as_i64().unwrap() as i32;
+            let expected_request_code = if calls.len() == 2 {
+                request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER
+            } else {
+                request::GET_SYSTEM_TOPIC_LIST_FROM_NS
+            };
+            assert!(
+                matches!(
+                    result,
+                    Err(RpcError::Response {
+                        request_code,
+                        code,
+                        ..
+                    }) if request_code == expected_request_code && code == expected_code
+                ),
+                "case {}",
+                case["name"]
+            );
+        }
+
+        let name_server_call = &calls[0];
+        assert_eq!(name_server_call["addressWasNull"], true);
+        assert_eq!(
+            name_server_call["requestCode"],
+            request::GET_SYSTEM_TOPIC_LIST_FROM_NS
+        );
+        assert_eq!(name_server_call["timeoutMillis"], 2345);
+        assert_eq!(name_server_call["extFieldsPresent"], false);
+        assert_eq!(name_server_call["requestBodyPresent"], false);
+        let request = name_server_peer.await.unwrap();
+        assert_eq!(request.code, request::GET_SYSTEM_TOPIC_LIST_FROM_NS);
+        assert!(request.body.is_none());
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+
+        if let Some(broker_peer) = broker_peer {
+            let broker_call = &calls[1];
+            assert_eq!(broker_call["address"], "broker-a:10911");
+            assert_eq!(
+                broker_call["requestCode"],
+                request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER
+            );
+            assert_eq!(broker_call["timeoutMillis"], 2345);
+            assert_eq!(broker_call["extFieldsPresent"], false);
+            assert_eq!(broker_call["requestBodyPresent"], false);
+            let request = broker_peer.await.unwrap();
+            assert_eq!(request.code, request::GET_SYSTEM_TOPIC_LIST_FROM_BROKER);
+            assert!(request.body.is_none());
+            assert!(
+                request
+                    .ext_fields
+                    .as_ref()
+                    .is_none_or(|fields| fields.is_empty())
+            );
+            assert_eq!(
+                request.language,
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            );
+        }
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn system_topic_list_from_broker_matches_java_request_and_response() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

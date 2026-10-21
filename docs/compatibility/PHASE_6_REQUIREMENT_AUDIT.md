@@ -1228,6 +1228,16 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   signature, request envelope, topic set, Broker error and missing-body branch;
   Java reports `MQClientException` with code 0 for `SUCCESS` without a body,
   while Rust returns `MalformedResponse`. A VIP-enabled Core loopback confirms
-  the address transform. Current producer core fixture SHA-256:
-  `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
-  The composite `getSystemTopicList` method remains open.
+  the address transform. At this slice checkpoint, producer core fixture
+  SHA-256 was `fbe6f70615e8004c26bdba90fdc824241415d19557b57853a6a563f24becbd32`.
+
+- P18-V01 `getSystemTopicList` (2026-10-21): the pinned public
+  `MQClientAPIImpl.getSystemTopicList(long)` sends request 304 through the
+  NameServer path, then calls request 305 only for a nonempty NameServer topic
+  set and nonblank Broker address. Core now preserves the NameServer set handle
+  while merging nonempty Broker topics. The Java fixture and Rust differential
+  compare both request envelopes, call order, timeout, merge, short-circuit
+  cases, NameServer/Broker errors and missing-body handling. Current producer
+  core fixture SHA-256:
+  `38b2eac88f25aa04674f469b4e7a685dc599834969f6a1d24613de8c98efdb23`.
+  The broader P18-V01 public API inventory remains open.
