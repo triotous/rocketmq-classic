@@ -42,9 +42,15 @@ P18-V01 POP retry-assignment transition slice (2026-10-21): the invoked Java
 `RebalanceImpl.updateMessageQueueAssignment` fixture now covers push-to-pop,
 pop-to-push, mixed, retry-topic and empty assignments. It exposed that Java
 removes the retry subscription while retaining the cached route on push-to-pop;
-Rust now matches both observable tables. This closes those transition cases
-only; assignment expiry/retention dimensions and the broader inherited/source
-audit remain open.
+Rust now matches both observable tables. The runtime POP assignment fixture
+also records expired-assigned replacement, active-assigned same-object
+retention, dropped-assigned retention and empty-assignment removal
+(`fixtures/runtime/consumer-operations.json`, SHA-256
+`a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`). Rust's
+owner-flow regression checks all four states, including retention of the active
+worker after an assignment error. This closes these recorded transition cases
+only; other assignment expiry/retention dimensions and the broader
+inherited/source audit remain open.
 
 P18-V01 direct-consume runtime subtype slice (2026-10-21): `MessageClientExt`
 can be supplied through Java's `MessageExt` direct-consume parameter and remains

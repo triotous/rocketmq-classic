@@ -6163,6 +6163,24 @@ owner-specific checks belong in the manual handoff.
   Broker/Docker scenarios remain open. Preserved Phase 19 paths remain
   untouched and unstaged.
 
+## P18-V01 POP assignment retention — 2026-10-21
+
+- [x] Extended the invoked Java `RebalanceImpl.updateMessageQueueAssignment`
+  fixture to record expired-assigned replacement, active-assigned same-object
+  retention, dropped-assigned retention and empty-assignment removal.
+- [x] Rust regression
+  `broker_assignment_error_preserves_worker_until_empty_assignment` matches
+  those cases and verifies the active POP worker remains live across an
+  assignment error, then stops after empty assignment. Current
+  `fixtures/runtime/consumer-operations.json` SHA-256:
+  `a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`.
+- [x] Focused consumer regression, strict all-target/all-feature Clippy,
+  formatting, diff checks and pinned Maven `verify` pass. Maven reports 37
+  scenarios, 9 Running Info, 29 direct-consume, 15 reset cases, 85 typed
+  headers and 16 typed bodies.
+- The broader P18-V01 audit, final full-workspace P18-V02 refresh and
+  current-revision Ubuntu/native Windows P18-V04 evidence remain open.
+
 ## P18-V01 `MqClientAdmin.queryMessage` key-filter inputs — 2026-10-21
 
 - [x] Matched pinned Java `StringUtils.isNotBlank` / `Character.isWhitespace`

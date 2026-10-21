@@ -29,6 +29,19 @@ declared method counts and callable method counts in
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
+### POP assignment retention
+
+The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
+records four POP table outcomes: an expired assigned queue is dropped and
+replaced; an active assigned queue remains the same object; a dropped assigned
+queue remains present; and an empty assignment drops and removes the queue.
+`fixtures/runtime/consumer-operations.json` records these rows in
+`popRebalance` (current SHA-256
+`a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`). Rust's
+`broker_assignment_error_preserves_worker_until_empty_assignment` exercises
+the owner flow against the same four expected states, including preserving the
+active worker across an assignment error and stopping it after empty assignment.
+
 ## Local rebalance route selection and lookup order
 
 Pinned `RebalanceImpl.doRebalance(isOrder)` selects broker or local assignment
