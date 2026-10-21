@@ -6906,3 +6906,28 @@ owner-specific checks belong in the manual handoff.
   reconciliation remains open. The current-revision P18-V02 full refresh and
   P18-V04 platform evidence remain open; no remote CI, Broker, or Docker run
   was performed.
+
+## P18-V02 full current-revision server-free refresh — 2026-10-21 (`0f6a0244`)
+
+- [x] Default and all-feature locked workspace test suites, strict
+  all-target/all-feature Clippy, formatting and diff checks pass on current
+  revision `0f6a0244`. Pinned Maven `verify` passes with 37 scenarios, 9
+  Running Info, 29 direct-consume, 15 reset cases, 85 typed headers, 16 typed
+  bodies, fixture drift checks and Java/Rust cross-decodes.
+- [x] Differential comparator self-test and 37-scenario manifest validation
+  pass. The deterministic offline race/leak smoke passes 16 cases × 3;
+  release fuzz smoke passes 139 frame seeds, 11 message seeds and 2,400
+  bounded mutations (200 frame decodes, 113 message decodes). Core Unique ID
+  fixture tests pass with `TZ=UTC` and `TZ=Asia/Taipei`.
+- [x] Release examples build; all workspace benches compile; the offline
+  benchmark runs. Locked Cargo metadata reports 8 workspace packages, 216
+  total packages and 208 registry packages. Workspace metadata/license/
+  dependency-direction checks pass; all seven product package listings
+  contain `LICENSE`, `NOTICE` and `src/lib.rs`. Phase 18 benchmark observations
+  are appended to
+  [the offline baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- This closes the current server-free P18-V02 refresh only. Broad P18-V01
+  reconciliation and current-revision GitHub Ubuntu/native Windows P18-V04
+  evidence remain open. Phase 19 Broker/Docker checks remain separate; no
+  remote CI, Broker or Docker run was performed. Protected Phase 19 paths
+  remain untouched and unstaged.

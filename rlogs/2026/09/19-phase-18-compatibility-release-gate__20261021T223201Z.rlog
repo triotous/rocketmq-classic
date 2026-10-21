@@ -1,0 +1,44 @@
+# Phase 18 full server-free refresh — 2026-10-21T22:32:01Z
+
+Branch: `phase/18-phase-18-compatibility-closure`
+Verified revision: `0f6a0244` (`docs(compat): record active POP assignment retention`)
+Latest behavior-test revision: `05dcbf0e` (`test(consumer): cover active POP assignment retention`)
+Pinned Java source: `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+
+## Verification
+
+- `cargo test --workspace --locked` — passed.
+- `cargo test --workspace --all-features --locked` — passed.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  — passed.
+- `cargo fmt --all -- --check` and `git diff --check` — passed.
+- `mvn -q -f compat/java-reference/pom.xml verify` — passed: 37 scenarios,
+  9 Running Info, 29 direct-consume, 15 reset cases, 85 typed headers, 16 typed
+  bodies, fixture drift checks and Java/Rust cross-decodes. Existing JDK/Netty
+  `Unsafe` and reflective-final-field warnings were emitted.
+- Differential comparator self-test and `--validate-manifest` — passed; 37
+  scenarios validated.
+- `bash tests/stress/run-offline-smoke.sh` — passed, 16 deterministic
+  race/leak cases × 3 repetitions.
+- `cargo run --locked --offline -p rocketmq-classic-remoting --example fuzz_smoke`
+  — passed: 139 frame seeds, 11 message seeds, 2,400 bounded mutations, 200
+  frame decodes and 113 message decodes.
+- Core Unique ID fixture test passed under both `TZ=UTC` and
+  `TZ=Asia/Taipei`.
+- Release facade examples and all workspace benchmarks compiled. The offline
+  benchmark ran on macOS AArch64, Apple M5 Max, 18 logical CPUs, Rust 1.85.0;
+  current measurements are recorded in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- Locked Cargo metadata passed with 8 workspace members, 216 total packages
+  and 208 registry packages. Workspace metadata/license/dependency-direction
+  checks passed. Seven product package listings each include `LICENSE`,
+  `NOTICE` and `src/lib.rs`; the eighth member is the development integration
+  helper.
+
+## Remaining work
+
+Broad bidirectional P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open. Current-revision GitHub Ubuntu
+and native Windows P18-V04 evidence remains open. No remote CI, Broker or
+Docker run was performed. The pre-existing protected Phase 19 worktree paths
+remain untouched and unstaged.
