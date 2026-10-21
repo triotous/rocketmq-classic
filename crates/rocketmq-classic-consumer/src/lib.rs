@@ -36,7 +36,7 @@ pub use error::{LitePullConsumerError, PullConsumerError, PushConsumerError};
 pub use lite::{LitePullConsumer, LitePullConsumerConfig, TopicMessageQueueChangeListener};
 pub use mq_helper::MqHelper;
 pub use pop::{PopProcessQueue, PopReceipt, PopReceiptError, PopResult, PopStatus};
-pub use process_queue::ProcessQueue;
+pub use process_queue::{ExpiredMessageCleanupError, ProcessQueue};
 pub use push::{
     ConcurrentListenerFuture, ConsumeConcurrentlyContext, ConsumeConcurrentlyStatus,
     ConsumeOrderlyContext, ConsumeOrderlyStatus, MessageListenerConcurrently,

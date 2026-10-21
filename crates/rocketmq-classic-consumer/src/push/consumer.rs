@@ -67,7 +67,10 @@ use crate::{
     offset::{LocalFileOffsetStore, OffsetStore, OffsetStoreError, RemoteBrokerOffsetStore},
     offset::{OffsetRead, ReadOffsetType},
     pop::{PopProcessQueue, PopReceipt, PopStatus, process_pop_reply},
-    process_queue::{ConsumeBatch, LockAttemptResult, OrderlyCompletion, ProcessQueue},
+    process_queue::{
+        ConsumeBatch, ExpiredMessageCleanupError, LockAttemptResult, OrderlyCompletion,
+        ProcessQueue, ProcessQueueError,
+    },
     pull::{
         FilterMessageContext, FilterMessageHook, PullAPIWrapper,
         build_class_filter_subscription_data, build_subscription, resolve_pull_broker_address,
@@ -3108,9 +3111,12 @@ impl PushConsumer {
         }
     }
 
-    pub(crate) async fn clean_expired_process_queue_messages_at(&self, now_millis: i64) {
+    pub(crate) async fn clean_expired_process_queue_messages_at(
+        &self,
+        now_millis: i64,
+    ) -> Result<(), ExpiredMessageCleanupError> {
         if self.is_consume_orderly() {
-            return;
+            return Ok(());
         }
         let timeout_millis = self
             .config
@@ -3128,10 +3134,20 @@ impl PushConsumer {
                 .snapshot(generation)
                 .map_or(0, |snapshot| snapshot.cached_count.clamp(0, 16) as usize);
             for _ in 0..attempts {
-                let Ok(Some((offset, message))) =
-                    process_queue.expired_head_message(generation, now_millis, timeout_millis)
-                else {
-                    break;
+                let (offset, message) = match process_queue.expired_head_message(
+                    generation,
+                    now_millis,
+                    timeout_millis,
+                ) {
+                    Ok(Some(expired)) => expired,
+                    Ok(None) | Err(ProcessQueueError::StaleGeneration) => break,
+                    Err(ProcessQueueError::InvalidConsumeStartTimestamp { offset, value }) => {
+                        return Err(ExpiredMessageCleanupError::InvalidConsumeStartTimestamp {
+                            offset,
+                            value,
+                        });
+                    }
+                    Err(_) => break,
                 };
                 match self.send_message_back(&message, 3).await {
                     Ok(()) => {
@@ -3148,6 +3164,7 @@ impl PushConsumer {
                 }
             }
         }
+        Ok(())
     }
 
     fn submit_ready_messages(
@@ -12917,7 +12934,10 @@ mod tests {
             .unwrap()
             .broker_results
             .push_back(Ok(()));
-        expired_process_queue.clean_expired_msg(&consumer).await;
+        expired_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
         let expired_snapshot = expired_process_queue.snapshot(101).unwrap();
         assert_eq!(
             expired_snapshot.cached_count,
@@ -12950,9 +12970,10 @@ mod tests {
                 .retry_results
                 .extend(std::iter::repeat_with(|| Err("scripted retry failure".into())).take(2));
         }
-        consumer
-            .clean_expired_process_queue_messages_at(now_millis)
-            .await;
+        failed_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap();
         let failed_snapshot = failed_process_queue.snapshot(102).unwrap();
         assert_eq!(
             failed_snapshot.cached_count,
@@ -12988,7 +13009,8 @@ mod tests {
         }
         consumer
             .clean_expired_process_queue_messages_at(now_millis)
-            .await;
+            .await
+            .unwrap();
         let limit_snapshot = limit_process_queue.snapshot(103).unwrap();
         assert_eq!(
             limit_snapshot.cached_count,
@@ -13012,7 +13034,8 @@ mod tests {
         consumer.set_consume_orderly(true);
         consumer
             .clean_expired_process_queue_messages_at(now_millis)
-            .await;
+            .await
+            .unwrap();
         consumer.set_consume_orderly(false);
         let orderly_snapshot = orderly_process_queue.snapshot(104).unwrap();
         assert_eq!(
@@ -13052,6 +13075,63 @@ mod tests {
                 assert_eq!(rust_attempts, fixture_attempts, "{name}");
             }
         }
+
+        let malformed_queue = MessageQueue::new("orders", "broker-a", 4);
+        let malformed_process_queue = Arc::new(ProcessQueue::new_for_assignment(
+            malformed_queue.clone(),
+            105,
+        ));
+        let mut malformed_message = make_message(40, 4, 0);
+        malformed_message
+            .set_system_property(PROPERTY_CONSUME_START_TIMESTAMP, "not-a-long".to_owned())
+            .unwrap();
+        malformed_process_queue
+            .insert_messages(105, vec![malformed_message])
+            .unwrap();
+        let direct_error = malformed_process_queue
+            .clean_expired_msg(&consumer)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            &direct_error,
+            ExpiredMessageCleanupError::InvalidConsumeStartTimestamp { offset: 40, value }
+                if value == "not-a-long"
+        ));
+        assert_eq!(
+            fixture["malformedTimestamp"]["errorClass"],
+            "java.lang.NumberFormatException"
+        );
+        let malformed_snapshot = malformed_process_queue.snapshot(105).unwrap();
+        assert_eq!(
+            malformed_snapshot.cached_count,
+            fixture["malformedTimestamp"]["cachedCount"]
+        );
+        assert_eq!(
+            malformed_snapshot.cached_bytes,
+            fixture["malformedTimestamp"]["cachedBytes"]
+        );
+        assert_eq!(malformed_snapshot.minimum_offset, Some(40));
+        assert_eq!(malformed_snapshot.maximum_offset, Some(40));
+
+        write_lock(&consumer.process_queues).clear();
+        write_lock(&consumer.process_queues)
+            .insert(malformed_queue, malformed_process_queue.clone());
+        let scheduled_error = consumer
+            .clean_expired_process_queue_messages_at(now_millis)
+            .await
+            .unwrap_err();
+        assert_eq!(scheduled_error, direct_error);
+        assert!(
+            fixture["malformedTimestamp"]["attempts"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            malformed_process_queue.snapshot(105).unwrap().cached_count,
+            1
+        );
+
         consumer.shutdown().await.unwrap();
         let _ = runtime.shutdown().await;
     }
@@ -13136,7 +13216,8 @@ mod tests {
         );
         consumer
             .clean_expired_process_queue_messages_at(timestamp + 60_001)
-            .await;
+            .await
+            .unwrap();
         assert_eq!(process_queue.snapshot(104).unwrap().cached_count, 0);
 
         continue_listener.notify_one();

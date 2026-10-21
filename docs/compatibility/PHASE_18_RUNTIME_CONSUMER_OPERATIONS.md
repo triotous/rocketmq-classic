@@ -239,7 +239,17 @@ actual `ProcessQueue.cleanExpiredMsg` with scripted outcomes; Rust compares
 success, repeated send-back failure and orderly skip, plus the 16-attempt cap,
 strict boundary, late listener completion and initial timer delay. Fixture
 SHA-256:
-`76b9bdfdd20d3f6cbc1b73f4b12055c484955f39cfde5884e0d6688e38fd6f79`.
+`a240b449b86e53049d922bbaa7594852c1cf68cc97266e78992b1ac644533e73`.
+
+The expiry audit also covers malformed `CONSUME_START_TIME`: pinned Java's
+`Long.parseLong` raises `NumberFormatException` before its send-back catch,
+leaving the head in the queue and recording no attempt. Rust retains the raw
+value and returns `ExpiredMessageCleanupError` from the public direct cleanup;
+the scheduled owner logs that same error and skips the rest of that sweep, as
+Java's outer scheduled `catch(Throwable)` does. A direct send-back failure
+retries the unchanged head until the original queue-size loop ends, up to 16
+attempts. The Java fixture records malformed timestamp, empty attempts, and
+unchanged queue count/bytes.
 
 The pinned nested public API denominator and its current owner/queue mappings
 are recorded in the [Rebalance and ProcessQueue API audit](PHASE_18_REBALANCE_PROCESS_QUEUE_API.md).

@@ -140,7 +140,25 @@ struct QueueMessage {
     message: Arc<MessageExt>,
     body_bytes: u64,
     state: MessageState,
-    consume_start_timestamp_millis: Option<i64>,
+    consume_start_timestamp_millis: ConsumeStartTimestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ConsumeStartTimestamp {
+    Missing,
+    Parsed(i64),
+    Invalid(String),
+}
+
+fn consume_start_timestamp(message: &MessageExt) -> ConsumeStartTimestamp {
+    match message.get_property(PROPERTY_CONSUME_START_TIMESTAMP) {
+        None => ConsumeStartTimestamp::Missing,
+        Some(value) if value.is_empty() => ConsumeStartTimestamp::Missing,
+        Some(value) => match parse_java_long(&value) {
+            Some(timestamp) => ConsumeStartTimestamp::Parsed(timestamp),
+            None => ConsumeStartTimestamp::Invalid(value),
+        },
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -341,9 +359,7 @@ fn reconcile_ready_message_view(
     }
     for (offset, message) in view {
         let body_bytes = message.body().len() as u64;
-        let consume_start_timestamp_millis = message
-            .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
-            .and_then(|value| parse_java_long(&value));
+        let consume_start_timestamp_millis = consume_start_timestamp(message);
         match state.messages.get_mut(offset) {
             Some(existing) => {
                 existing.message = message.clone();
@@ -398,7 +414,7 @@ pub(crate) enum LockAttemptResult {
     Dropped,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum ProcessQueueError {
     #[error("work belongs to an older queue assignment generation")]
     StaleGeneration,
@@ -408,6 +424,15 @@ pub(crate) enum ProcessQueueError {
     UnknownBatch,
     #[error("consume batch no longer owns all of its messages")]
     BatchOwnershipLost,
+    #[error("invalid consume-start timestamp for message at offset {offset}: {value:?}")]
+    InvalidConsumeStartTimestamp { offset: i64, value: String },
+}
+
+/// Failure raised when an expired-message timestamp cannot be parsed like Java's `Long.parseLong`.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ExpiredMessageCleanupError {
+    #[error("invalid consume-start timestamp for message at offset {offset}: {value:?}")]
+    InvalidConsumeStartTimestamp { offset: i64, value: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -771,9 +796,7 @@ impl ProcessQueue {
                 entry.message = Arc::new(message.clone());
                 entry.body_bytes = message.body().len() as u64;
                 entry.state = MessageState::Ready;
-                entry.consume_start_timestamp_millis = message
-                    .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
-                    .and_then(|value| parse_java_long(&value));
+                entry.consume_start_timestamp_millis = consume_start_timestamp(message);
             } else {
                 state.messages.insert(
                     offset,
@@ -781,9 +804,7 @@ impl ProcessQueue {
                         message: Arc::new(message.clone()),
                         body_bytes: message.body().len() as u64,
                         state: MessageState::Ready,
-                        consume_start_timestamp_millis: message
-                            .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
-                            .and_then(|value| parse_java_long(&value)),
+                        consume_start_timestamp_millis: consume_start_timestamp(message),
                     },
                 );
             }
@@ -845,9 +866,12 @@ impl ProcessQueue {
         info.set_last_consume_timestamp(state.last_consume_timestamp_millis);
     }
 
-    pub async fn clean_expired_msg(&self, push_consumer: &crate::push::PushConsumer) {
+    pub async fn clean_expired_msg(
+        &self,
+        push_consumer: &crate::push::PushConsumer,
+    ) -> Result<(), ExpiredMessageCleanupError> {
         if push_consumer.is_consume_orderly() {
-            return;
+            return Ok(());
         }
         let timeout_millis = push_consumer
             .config()
@@ -856,16 +880,24 @@ impl ProcessQueue {
         let tree_map = self.get_msg_tree_map();
         let iterations = tree_map.read().len().min(16);
         for _ in 0..iterations {
-            let Ok(Some((offset, message))) =
-                self.expired_head_message(self.generation, epoch_millis(), timeout_millis)
-            else {
-                break;
-            };
+            let (offset, message) =
+                match self.expired_head_message(self.generation, epoch_millis(), timeout_millis) {
+                    Ok(Some(expired)) => expired,
+                    Ok(None) | Err(ProcessQueueError::StaleGeneration) => break,
+                    Err(ProcessQueueError::InvalidConsumeStartTimestamp { offset, value }) => {
+                        return Err(ExpiredMessageCleanupError::InvalidConsumeStartTimestamp {
+                            offset,
+                            value,
+                        });
+                    }
+                    Err(_) => break,
+                };
             if push_consumer.send_message_back(&message, 3).await.is_err() {
-                break;
+                continue;
             }
             let _ = self.remove_head_message(self.generation, offset, epoch_millis());
         }
+        Ok(())
     }
 
     pub(crate) fn queue(&self) -> &MessageQueue {
@@ -935,9 +967,7 @@ impl ProcessQueue {
                 .map(|entry| (entry.state, entry.body_bytes))
             {
                 Some((MessageState::Ready, _previous_body_bytes)) => {
-                    let consume_start_timestamp_millis = message
-                        .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
-                        .and_then(|value| parse_java_long(&value));
+                    let consume_start_timestamp_millis = consume_start_timestamp(&message);
                     if let Some(existing) = state.messages.get_mut(&offset) {
                         existing.message = Arc::new(message);
                         existing.body_bytes = body_bytes;
@@ -949,9 +979,7 @@ impl ProcessQueue {
                     state.messages.insert(
                         offset,
                         QueueMessage {
-                            consume_start_timestamp_millis: message
-                                .get_property(PROPERTY_CONSUME_START_TIMESTAMP)
-                                .and_then(|value| parse_java_long(&value)),
+                            consume_start_timestamp_millis: consume_start_timestamp(&message),
                             message: Arc::new(message),
                             body_bytes,
                             state: MessageState::Ready,
@@ -1051,7 +1079,8 @@ impl ProcessQueue {
             if message.state != MessageState::InFlight(batch_id) {
                 return Err(ProcessQueueError::BatchOwnershipLost);
             }
-            message.consume_start_timestamp_millis = Some(timestamp_millis);
+            message.consume_start_timestamp_millis =
+                ConsumeStartTimestamp::Parsed(timestamp_millis);
         }
         Ok(())
     }
@@ -1067,8 +1096,15 @@ impl ProcessQueue {
         let Some((offset, message)) = state.messages.first_key_value() else {
             return Ok(None);
         };
-        let Some(started_at) = message.consume_start_timestamp_millis else {
-            return Ok(None);
+        let started_at = match &message.consume_start_timestamp_millis {
+            ConsumeStartTimestamp::Missing => return Ok(None),
+            ConsumeStartTimestamp::Parsed(timestamp) => *timestamp,
+            ConsumeStartTimestamp::Invalid(value) => {
+                return Err(ProcessQueueError::InvalidConsumeStartTimestamp {
+                    offset: *offset,
+                    value: value.clone(),
+                });
+            }
         };
         if now_millis.wrapping_sub(started_at) > timeout_millis {
             Ok(Some((*offset, message.message.clone())))

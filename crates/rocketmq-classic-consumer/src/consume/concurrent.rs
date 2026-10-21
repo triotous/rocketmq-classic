@@ -108,9 +108,15 @@ impl ConcurrentConsumeService {
                         let Some(consumer) = cleaner_consumer.upgrade() else {
                             break;
                         };
-                        consumer
+                        if let Err(error) = consumer
                             .clean_expired_process_queue_messages_at(current_epoch_millis())
-                            .await;
+                            .await
+                        {
+                            tracing::error!(
+                                error = %error,
+                                "schedule clean expired messages failed"
+                            );
+                        }
                     }
                 }
             }

@@ -72,6 +72,30 @@ public final class ConsumerExpiredMessageFixtures {
         return result;
     }
 
+    private static Map<String, Object> malformedTimestamp() {
+        ProcessQueue processQueue = new ProcessQueue();
+        MessageExt malformed = message(40, 4, 0);
+        MessageAccessor.setConsumeStartTimeStamp(malformed, "not-a-long");
+        processQueue.putMessage(List.of(malformed));
+
+        RecordingConsumer consumer = new RecordingConsumer();
+        consumer.setConsumeTimeout(1);
+        String errorClass = null;
+        try {
+            processQueue.cleanExpiredMsg(consumer);
+        } catch (Throwable error) {
+            errorClass = error.getClass().getName();
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("errorClass", errorClass);
+        result.put("attempts", consumer.attempts);
+        result.put("remainingOffsets", new ArrayList<>(processQueue.getMsgTreeMap().keySet()));
+        result.put("cachedCount", processQueue.getMsgCount().get());
+        result.put("cachedBytes", processQueue.getMsgSize().get());
+        return result;
+    }
+
     private static Map<String, Object> generate() {
         Map<String, Object> fixture = new TreeMap<>();
         Map<String, Object> provenance = new TreeMap<>();
@@ -84,6 +108,7 @@ public final class ConsumerExpiredMessageFixtures {
         fixture.put("sendBackFailure", runCase(false, true, 20, 21));
         fixture.put("attemptLimit", runCase(false, true, LongStream.range(60, 78).toArray()));
         fixture.put("orderlySkipped", runCase(true, false, 30));
+        fixture.put("malformedTimestamp", malformedTimestamp());
         return fixture;
     }
 
