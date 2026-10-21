@@ -264,6 +264,48 @@ impl AsRef<[u8]> for MessageBodyReadView<'_> {
     }
 }
 
+enum MessageExtBodyReadSource<'a> {
+    Stored(MessageBodyReadView<'a>),
+    Runtime(Vec<u8>),
+}
+
+/// Read view for Java's virtual `MessageExt.getBody()` method.
+struct MessageExtBodyReadView<'a>(MessageExtBodyReadSource<'a>);
+
+impl Deref for MessageExtBodyReadView<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match &self.0 {
+            MessageExtBodyReadSource::Stored(body) => body,
+            MessageExtBodyReadSource::Runtime(body) => body,
+        }
+    }
+}
+
+impl AsRef<[u8]> for MessageExtBodyReadView<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl std::fmt::Debug for MessageExtBodyReadView<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("MessageExtBodyReadView")
+            .field(&&self[..])
+            .finish()
+    }
+}
+
+impl PartialEq for MessageExtBodyReadView<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self[..] == other[..]
+    }
+}
+
+impl Eq for MessageExtBodyReadView<'_> {}
+
 impl std::fmt::Debug for MessageBodyReadView<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&**self, formatter)
@@ -1742,6 +1784,59 @@ impl MessageExt {
         }
     }
 
+    /// Java's virtual `Message.getBody()` view, including caller-defined
+    /// `MessageExt` subtype overrides.
+    pub fn body(
+        &self,
+    ) -> impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_ {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(body) = subtype.body() {
+                return MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(
+                    body.unwrap_or_default(),
+                ));
+            }
+        }
+        let body = self
+            .message
+            .body
+            .as_ref()
+            .map(|body| read_message_state(body));
+        MessageExtBodyReadView(MessageExtBodyReadSource::Stored(MessageBodyReadView(body)))
+    }
+
+    /// Nullable Java `Message.getBody()` view, including subtype overrides.
+    pub fn body_nullable(
+        &self,
+    ) -> Option<impl Deref<Target = [u8]> + AsRef<[u8]> + std::fmt::Debug + PartialEq + '_> {
+        if let Some(subtype) = self.runtime_subtype.as_ref() {
+            if let Some(body) = subtype.body() {
+                return body
+                    .map(|body| MessageExtBodyReadView(MessageExtBodyReadSource::Runtime(body)));
+            }
+        }
+        self.message.body.as_ref().map(|body| {
+            MessageExtBodyReadView(MessageExtBodyReadSource::Stored(MessageBodyReadView(Some(
+                read_message_state(body),
+            ))))
+        })
+    }
+
+    /// Java's virtual `Message.setBody(byte[])` view.
+    pub fn set_body(&mut self, body: impl Into<Vec<u8>>) {
+        self.set_body_nullable(Some(body.into()));
+    }
+
+    /// Java's nullable virtual `Message.setBody(byte[])` view.
+    pub fn set_body_nullable(&mut self, body: Option<Vec<u8>>) {
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_body(body.clone()))
+        {
+            self.message.set_body_nullable(body);
+        }
+    }
+
     pub(crate) fn from_message(message: Message) -> Self {
         Self {
             message,
@@ -2100,6 +2195,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn set_topic(&self, _topic: Option<String>) -> bool {
+        false
+    }
+
+    /// Override Java's virtual `Message.getBody()`.
+    fn body(&self) -> Option<Option<Vec<u8>>> {
+        None
+    }
+
+    /// Handle Java's virtual `Message.setBody(byte[])`.
+    fn set_body(&self, _body: Option<Vec<u8>>) -> bool {
         false
     }
 
@@ -2654,7 +2759,10 @@ mod tests {
         ext.set_queue_offset(i64::MIN);
         ext.set_commit_log_offset(i64::MAX);
         assert_eq!(ext.topic_nullable(), message.topic_nullable());
-        assert_eq!(ext.body_nullable(), message.body_nullable());
+        assert_eq!(
+            ext.body_nullable().as_deref(),
+            message.body_nullable().as_deref()
+        );
         assert_eq!(ext.properties(), message.properties());
         assert_eq!(ext.queue_offset(), i64::MIN);
         assert_eq!(ext.commit_log_offset(), i64::MAX);

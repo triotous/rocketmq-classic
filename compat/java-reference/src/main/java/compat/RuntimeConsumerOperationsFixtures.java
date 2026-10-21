@@ -446,6 +446,7 @@ public final class RuntimeConsumerOperationsFixtures {
                 item.put("messageId", messages.get(0).getMsgId());
                 item.put("reconsumeTimes", messages.get(0).getReconsumeTimes());
                 item.put("queueOffset", messages.get(0).getQueueOffset());
+                item.put("bodyLength", messages.get(0).getBody() == null ? null : messages.get(0).getBody().length);
                 item.put("offsetMessageId", messages.get(0) instanceof org.apache.rocketmq.common.message.MessageClientExt
                     ? ((org.apache.rocketmq.common.message.MessageClientExt) messages.get(0)).getOffsetMsgId() : null);
                 item.put("propertiesPresent", messages.get(0).getProperties() != null);
@@ -522,6 +523,8 @@ public final class RuntimeConsumerOperationsFixtures {
         private int topicWrites;
         private int reconsumeWrites;
         private int queueOffsetWrites;
+        private int bodyWrites;
+        private byte[] customBody;
 
         @Override
         public String getTopic() {
@@ -583,9 +586,20 @@ public final class RuntimeConsumerOperationsFixtures {
             this.queueOffsetWrites++;
         }
 
+        @Override
+        public byte[] getBody() {
+            return customBody;
+        }
+
+        @Override
+        public void setBody(byte[] body) {
+            this.bodyWrites++;
+            this.customBody = body;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
-                + ";queueOffsetWrites=" + queueOffsetWrites;
+                + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites;
         }
 
         @Override
