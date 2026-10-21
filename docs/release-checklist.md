@@ -6000,3 +6000,33 @@ owner-specific checks belong in the manual handoff.
 - Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04,
   and Phase 19 live Broker scenarios remain open. Four preserved Phase 19
   worktree paths remain unstaged and untouched.
+
+## P18-V02 and P18-V03 current server-free gate — 2026-10-21 (`da6345bb`)
+
+- [x] `cargo fmt --all -- --check` and strict locked workspace Clippy pass.
+- [x] `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass, including all
+  workspace unit, integration, and doctests. The current Remoting
+  query/admin-header Java decode-mode comparison covers seven request/response
+  header types in fast and reflection modes.
+- [x] Pinned Java Maven `verify` passes: 37 scenario-manifest cases, 80
+  Java-decoded Rust typed header frames, and 15 typed body frames.
+- [x] Differential comparator self-test and all 37 manifest rows validate.
+  Unique ID passes with `TZ=Asia/Taipei`.
+- [x] Fuzz smoke passes with 133 frame seeds, 11 message seeds, 2,304 bounded
+  mutations, 189 frame decodes, and 116 message decodes. Offline deterministic
+  race/leak smoke passes 16 cases × 3 repetitions.
+- [x] Facade examples build in release mode. The offline benchmark runs and
+  its output for this code revision is appended to
+  `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; the bench target also compiles and
+  passes strict all-feature Clippy.
+- [x] Workspace metadata/dependency/license checks pass. `cargo package
+  --list` includes both `LICENSE` and `NOTICE` for all seven product crates.
+  No publish, release-tag, or compatibility claim is made.
+- P18-V02's current server-free gate and P18-V03's local preparation checks
+  are current for code revision `da6345bb`. The source/API/settings/input/error
+  and reverse-export audit P18-V01 remains open. Current-revision Ubuntu and
+  native Windows Actions evidence remains open: no remote branch exists for
+  `phase/18-phase-18-compatibility-closure`, and the latest listed workflow
+  runs are for earlier revisions. The 37-row Phase 19 handoff inventory
+  validates, but live Broker/Docker work stays in Phase 19.
