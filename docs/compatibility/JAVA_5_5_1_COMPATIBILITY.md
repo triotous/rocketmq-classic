@@ -1,5 +1,18 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 direct `createSubscriptionGroup` RPC (2026-10-21): Rust now maps the
+pinned `MQClientAPIImpl.createSubscriptionGroup(String, SubscriptionGroupConfig,
+long)` operation on request 200. It sends the Java `SubscriptionGroupConfig`
+encoding, treats a null config as an absent body, applies the configured VIP
+address transform, and returns success or a typed response error. The
+asynchronous `MqClientAdmin.updateOrCreateSubscriptionGroup` path remains a
+separate API with its own address behavior. Invoked Java cases cover populated,
+default, null-config and Broker-error inputs; the Rust differential compares
+the exact signature, request envelope/body and outcomes, and a VIP loopback
+checks the address transform. Producer core fixture SHA-256:
+`aaab68664cf25ff86c9b19a48c27e4691596b31124123fdbd83f7ceb93f89b57`. This
+closes the named direct RPC only; broad P18-V01 remains open.
+
 Phase 18 cluster-topic header inventory follow-up (2026-10-21): the already
 implemented `GetTopicsByClusterRequestHeader` now appears in the exhaustive
 Rust inventory and field-validation matrix, with its Java constructor and

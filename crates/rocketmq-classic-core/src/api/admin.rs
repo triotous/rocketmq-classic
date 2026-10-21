@@ -728,6 +728,47 @@ impl MQClientApi {
         Ok(())
     }
 
+    /// Creates or updates one Broker's subscription group through Java
+    /// `MQClientAPIImpl.createSubscriptionGroup`. This synchronous low-level
+    /// API applies the configured VIP address transform; the separate
+    /// `MqClientAdmin.updateOrCreateSubscriptionGroup` operation does not.
+    pub async fn create_subscription_group(
+        &self,
+        addr: &str,
+        config: Option<&SubscriptionGroupConfig>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP;
+        let body = config
+            .map(|config| config.java_encode())
+            .transpose()
+            .map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    body,
+                    ..RemotingCommand::default()
+                },
+                deadline,
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
     /// Creates a batch of subscription groups through Java
     /// `MQClientAPIImpl.createSubscriptionGroupList`.
     pub async fn create_subscription_group_list(
@@ -1934,6 +1975,77 @@ mod tests {
             .await
             .unwrap();
         assert!(topics.get_topic_list().unwrap().snapshot().is_empty());
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn create_subscription_group_applies_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::{
+            codes::{LanguageCode, request, response},
+            subscription::SubscriptionGroupConfig,
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::{Duration, Instant},
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request_command.code,
+                request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP
+            );
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert!(request_command.ext_fields.is_none());
+            let body =
+                SubscriptionGroupConfig::java_decode(request_command.body.as_deref().unwrap())
+                    .unwrap();
+            assert_eq!(body.get_group_name(), Some("workers"));
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut client_config = ClientConfig::new("create-subscription-group-vip");
+        client_config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(client_config)));
+        let mut group = SubscriptionGroupConfig::default();
+        group.set_group_name(Some("workers".into()));
+        api.create_subscription_group(
+            &format!("127.0.0.1:{advertised_port}"),
+            Some(&group),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
         peer.await.unwrap();
         remoting.shutdown().await;
     }

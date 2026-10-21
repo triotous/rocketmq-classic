@@ -1355,3 +1355,18 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   `bb28b038fdd66160007d8c757e53ed4cb78ebcad0a91b4ff9d950fa04eccee6c`.
   This closes the named RPC mapping only; the broader P18-V01 inventory remains
   open.
+
+
+- P18-V01 direct `createSubscriptionGroup` RPC (2026-10-21): the pinned public
+  `MQClientAPIImpl.createSubscriptionGroup(String,SubscriptionGroupConfig,long)`
+  sends request 200 synchronously, serializes the nullable config as a body,
+  applies the configured VIP transform, and returns on `SUCCESS` or reports a
+  Broker response error. Rust exposes `MQClientApi::create_subscription_group`
+  with `Option<&SubscriptionGroupConfig>` so Java's null-config/no-body path is
+  preserved. This is distinct from asynchronous
+  `MqClientAdmin.updateOrCreateSubscriptionGroup`, which sends to the supplied
+  address unchanged. Invoked Java cases and Rust scripted RPC checks cover the
+  exact signature, populated/default/null bodies, success/error outcomes, and a
+  VIP-enabled loopback. Producer core fixture SHA-256:
+  `aaab68664cf25ff86c9b19a48c27e4691596b31124123fdbd83f7ceb93f89b57`.
+  This closes the direct RPC only; broad P18-V01 remains open.

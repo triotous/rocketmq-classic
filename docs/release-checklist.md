@@ -5809,3 +5809,21 @@ owner-specific checks belong in the manual handoff.
   remain post-Phase-19 work, as specified by the Phase 18 plan. Broad P18-V01,
   current Ubuntu/native Windows P18-V04 evidence, and Phase 19 live scenarios
   remain open.
+
+## P18-V01 direct subscription-group RPC closure — 2026-10-21
+
+- [x] Added the missing low-level Java `MQClientAPIImpl.createSubscriptionGroup`
+  mapping (request 200), including Java DTO body encoding, absent body for a
+  null config, configured VIP address transformation, and Broker error mapping.
+  The Java fixture captures the exact public signature and four invoked cases;
+  its SHA-256 is
+  `aaab68664cf25ff86c9b19a48c27e4691596b31124123fdbd83f7ceb93f89b57`.
+- [x] The focused Rust filter passes (2 unit tests and 3 integration tests,
+  including the new Java differential); strict all-target/all-feature Core
+  Clippy, formatting, and diff checks pass. Pinned Java Maven `verify` passes,
+  including the RPC fixture harness and Rust/Java cross-decodes for 68 typed
+  headers and 15 typed bodies.
+- This closes the direct low-level RPC gap only. The broader P18-V01
+  API/source/settings/input/error/control-flow/reverse-export audit, current
+  Ubuntu/native Windows P18-V04 evidence, and remaining Phase 19 live Broker
+  scenarios remain open.

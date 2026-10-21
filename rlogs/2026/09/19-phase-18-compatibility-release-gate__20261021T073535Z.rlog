@@ -37,3 +37,20 @@ P18-V03 package/provenance refresh on code revision `6441ca56`:
 - P18-V03 preparation review is current. Release-version selection and
   published-registry dependency resolution remain post-Phase-19 work per plan;
   no release claim is made.
+
+P18-V01 direct subscription-group RPC closure on 2026-10-21:
+- Added `MQClientApi::create_subscription_group` for the pinned Java
+  `MQClientAPIImpl.createSubscriptionGroup(String, SubscriptionGroupConfig,
+  long)` signature and request 200. It Java-encodes a present config, sends no
+  body for null, applies the configured VIP port transform, and maps Broker
+  errors. Java fixtures cover populated/default/null configs and Broker error.
+- Fixture SHA-256:
+  `aaab68664cf25ff86c9b19a48c27e4691596b31124123fdbd83f7ceb93f89b57`.
+- Passed the focused Rust filter (2 unit and 3 integration tests), strict
+  all-target/all-feature Core Clippy, `cargo fmt --all -- --check`,
+  `git diff --check`, and pinned Java Maven `verify` (RPC harness plus 68
+  typed-header and 15 typed-body cross-decodes).
+- Scope is limited to this direct API gap. The broad P18-V01 audit,
+  current Ubuntu/native Windows P18-V04 evidence, and Phase 19 live Broker
+  scenarios remain open. The four preserved Phase 19 worktree paths were not
+  staged.

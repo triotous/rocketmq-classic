@@ -1149,6 +1149,87 @@ async fn system_topic_list_from_broker_matches_java_request_and_response() {
 }
 
 #[tokio::test]
+async fn create_subscription_group_matches_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["createSubscriptionGroupApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "void org.apache.rocketmq.client.impl.MQClientAPIImpl.createSubscriptionGroup(java.lang.String,org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig,long)"));
+    let cases = fixture["createSubscriptionGroupOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+
+    let (client_api, client) = api().await;
+    for case in cases {
+        let config = if case["config"].is_null() {
+            None
+        } else {
+            Some(serde_json::from_value::<SubscriptionGroupConfig>(case["config"].clone()).unwrap())
+        };
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], "broker-a:10911");
+        assert_eq!(
+            expected_request["requestCode"],
+            request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP
+        );
+        assert_eq!(expected_request["timeoutMillis"], 2345);
+        assert_eq!(expected_request["extFieldsPresent"], false);
+        let expected_body = expected_request["requestBodyBase64"]
+            .as_str()
+            .map(|encoded| {
+                base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .unwrap()
+            });
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            None,
+        )
+        .await;
+        let result = client_api
+            .create_subscription_group(
+                &addr,
+                config.as_ref(),
+                Instant::now() + Duration::from_secs(2),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && remark == "subscription group rejected"
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::UPDATE_AND_CREATE_SUBSCRIPTIONGROUP);
+        assert_eq!(request.body, expected_body);
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn create_subscription_group_list_matches_java_requests_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
