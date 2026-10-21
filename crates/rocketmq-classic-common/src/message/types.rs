@@ -2951,7 +2951,7 @@ mod tests {
             ext.body_nullable().as_deref(),
             message.body_nullable().as_deref()
         );
-        assert_eq!(ext.properties(), message.properties());
+        assert_eq!(&*ext.properties(), &*message.properties());
         assert_eq!(ext.queue_offset(), i64::MIN);
         assert_eq!(ext.commit_log_offset(), i64::MAX);
     }
