@@ -288,6 +288,22 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("switchTimerEngineOperations", switchTimerEngineOperations());
+        result.put("producerDiagnosticsApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("getProducerConnectionList", "getAllProducerInfo",
+                "getBrokerRuntimeInfo").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("producerConnectionDtoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.ProducerConnection.class));
+        result.put("producerInfoDtoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.ProducerInfo.class));
+        result.put("producerTableInfoDtoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo.class));
+        result.put("kvTableDtoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.KVTable.class));
+        result.put("producerDiagnosticsOperations", producerDiagnosticsOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -2689,6 +2705,178 @@ public final class ProducerCoreFixtures {
         result.put("responseRemark", responseRemark);
         try {
             api.switchTimerEngine("127.0.0.1:10913", engineType, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorRemark", error.getErrorMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> producerDiagnosticsOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.Connection connection =
+            new org.apache.rocketmq.remoting.protocol.body.Connection();
+        connection.setClientId("producer-client");
+        connection.setClientAddr("192.0.2.9:1234");
+        connection.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA);
+        connection.setVersion(1);
+        org.apache.rocketmq.remoting.protocol.body.ProducerConnection producerConnection =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerConnection();
+        producerConnection.setConnectionSet(new java.util.HashSet<>(List.of(connection)));
+        result.put("producerConnectionDefaultJson", JSON.toJSONString(
+            new org.apache.rocketmq.remoting.protocol.body.ProducerConnection()));
+        org.apache.rocketmq.remoting.protocol.body.ProducerConnection nullConnections =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerConnection();
+        nullConnections.setConnectionSet(null);
+        Map<String, Object> dtoNullSemantics = new TreeMap<>();
+        dtoNullSemantics.put("producerConnectionSetIsNull", nullConnections.getConnectionSet() == null);
+        dtoNullSemantics.put("producerConnectionJson", JSON.toJSONString(nullConnections));
+        result.put("getProducerConnectionList", producerDiagnosticCases(
+            "getProducerConnectionList", producerConnection, "workers"));
+
+        org.apache.rocketmq.remoting.protocol.body.ProducerInfo producerInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerInfo(
+                "producer-client", "192.0.2.9", org.apache.rocketmq.remoting.protocol.LanguageCode.JAVA,
+                1, 1_700_000_000_123L);
+        Map<String, Object> producerInfoString = new TreeMap<>();
+        producerInfoString.put("value", producerInfo.toString());
+        try {
+            new org.apache.rocketmq.remoting.protocol.body.ProducerInfo(
+                "producer-client", "192.0.2.9", null, 1, 1_700_000_000_123L).toString();
+            producerInfoString.put("nullLanguageOutcome", "returned");
+        } catch (NullPointerException expected) {
+            producerInfoString.put("nullLanguageOutcome", expected.getClass().getSimpleName());
+        }
+        result.put("producerInfoToString", producerInfoString);
+        org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo producerTableInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo(
+                new HashMap<>(Map.of("workers", List.of(producerInfo))));
+        org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo nullProducerTableInfo =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo(null);
+        dtoNullSemantics.put("producerTableInfoDataIsNull", nullProducerTableInfo.getData() == null);
+        dtoNullSemantics.put("producerTableInfoJson", JSON.toJSONString(nullProducerTableInfo));
+        result.put("getAllProducerInfo", producerDiagnosticCases(
+            "getAllProducerInfo", producerTableInfo, null));
+
+        org.apache.rocketmq.remoting.protocol.body.KVTable kvTable =
+            new org.apache.rocketmq.remoting.protocol.body.KVTable();
+        result.put("kvTableDefaultJson", JSON.toJSONString(
+            new org.apache.rocketmq.remoting.protocol.body.KVTable()));
+        org.apache.rocketmq.remoting.protocol.body.KVTable nullKvTable =
+            new org.apache.rocketmq.remoting.protocol.body.KVTable();
+        nullKvTable.setTable(null);
+        dtoNullSemantics.put("kvTableIsNull", nullKvTable.getTable() == null);
+        dtoNullSemantics.put("kvTableJson", JSON.toJSONString(nullKvTable));
+        kvTable.setTable(new HashMap<>(Map.of("brokerName", "broker-a", "brokerVersion", "5.5.1")));
+        result.put("getBrokerRuntimeInfo", producerDiagnosticCases(
+            "getBrokerRuntimeInfo", kvTable, null));
+        result.put("dtoNullSemantics", dtoNullSemantics);
+        return result;
+    }
+
+    private static Map<String, Object> producerDiagnosticCases(
+        String methodName, Object successBody, String producerGroup) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(producerDiagnosticCase(methodName, producerGroup,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, successBody));
+        cases.add(producerDiagnosticCase(methodName, producerGroup,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, null));
+        cases.add(producerDiagnosticCase(methodName, producerGroup,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        if (producerGroup != null) {
+            cases.add(producerDiagnosticCase(methodName, null,
+                org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, successBody));
+        }
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> producerDiagnosticCase(
+        String methodName, String producerGroup, int responseCode, Object responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        org.apache.rocketmq.remoting.protocol.RemotingCommand reply =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(responseCode,
+                responseCode == org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS ? null : "diagnostic rejected");
+        if (responseBody != null) reply.setBody(((org.apache.rocketmq.remoting.protocol.RemotingSerializable) responseBody).encode());
+        replies.add(reply);
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("producer-diagnostics-api");
+        config.setVipChannelEnabled(true);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                request.makeCustomHeaderToNet();
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response = replies.removeFirst();
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFields", request.getExtFields());
+                                call.put("extFieldsPresent", request.getExtFields() != null
+                                    && !request.getExtFields().isEmpty());
+                                call.put("requestBodyPresent", request.getBody() != null);
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        result.put("method", methodName);
+        result.put("producerGroup", producerGroup);
+        result.put("responseCode", responseCode);
+        result.put("responseBody", reply.getBody() == null ? null
+            : new String(reply.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            Object value;
+            switch (methodName) {
+                case "getProducerConnectionList":
+                    value = api.getProducerConnectionList("127.0.0.1:10913", producerGroup, 2345L);
+                    if (value != null) {
+                        org.apache.rocketmq.remoting.protocol.body.ProducerConnection connections =
+                            (org.apache.rocketmq.remoting.protocol.body.ProducerConnection) value;
+                        List<Map<String, Object>> rows = new ArrayList<>();
+                        for (org.apache.rocketmq.remoting.protocol.body.Connection item : connections.getConnectionSet()) {
+                            Map<String, Object> row = new TreeMap<>();
+                            row.put("clientId", item.getClientId());
+                            row.put("clientAddr", item.getClientAddr());
+                            row.put("language", item.getLanguage() == null ? null : item.getLanguage().name());
+                            row.put("version", item.getVersion());
+                            rows.add(row);
+                        }
+                        rows.sort(java.util.Comparator.comparing(row -> String.valueOf(row.get("clientId"))));
+                        result.put("result", rows);
+                    }
+                    break;
+                case "getAllProducerInfo":
+                    org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo producers =
+                        api.getAllProducerInfo("127.0.0.1:10913", 2345L);
+                    result.put("result", producers == null ? null : JSON.parseObject(JSON.toJSONString(producers.getData())));
+                    break;
+                case "getBrokerRuntimeInfo":
+                    org.apache.rocketmq.remoting.protocol.body.KVTable runtime =
+                        api.getBrokerRuntimeInfo("127.0.0.1:10913", 2345L);
+                    result.put("result", runtime == null ? null : runtime.getTable());
+                    break;
+                default:
+                    throw new IllegalArgumentException("unexpected producer diagnostic: " + methodName);
+            }
+            result.putIfAbsent("result", null);
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());

@@ -2871,6 +2871,314 @@ impl Connection {
     }
 }
 
+/// Java `ProducerConnection` response DTO returned by
+/// `GET_PRODUCER_CONNECTION_LIST`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerConnection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connection_set: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+}
+
+fn default_producer_connection_set() -> Option<Vec<Option<Connection>>> {
+    Some(Vec::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ProducerConnectionFields {
+    #[serde(default = "default_producer_connection_set")]
+    connection_set: Option<Vec<Option<Connection>>>,
+}
+
+impl Default for ProducerConnectionFields {
+    fn default() -> Self {
+        Self {
+            connection_set: default_producer_connection_set(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ProducerConnection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ProducerConnectionFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            connection_set: fields.connection_set.map(|connections| {
+                SharedValue::new(
+                    connections
+                        .into_iter()
+                        .map(|connection| connection.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+        })
+    }
+}
+
+impl Default for ProducerConnection {
+    fn default() -> Self {
+        Self {
+            connection_set: Some(SharedValue::new(Vec::new())),
+        }
+    }
+}
+
+impl ProducerConnection {
+    pub fn get_connection_set(&self) -> Option<SharedValue<Vec<Option<SharedValue<Connection>>>>> {
+        self.connection_set.clone()
+    }
+
+    pub fn set_connection_set(
+        &mut self,
+        value: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+    ) {
+        self.connection_set = value;
+    }
+}
+
+/// Java `KVTable` response DTO returned by Broker runtime and query RPCs.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KvTable {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    table: Option<SharedValue<HashMap<String, Option<String>>>>,
+}
+
+fn default_kv_table() -> Option<HashMap<String, Option<String>>> {
+    Some(HashMap::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct KvTableFields {
+    #[serde(default = "default_kv_table")]
+    table: Option<HashMap<String, Option<String>>>,
+}
+
+impl Default for KvTableFields {
+    fn default() -> Self {
+        Self {
+            table: default_kv_table(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for KvTable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: KvTableFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            table: fields.table.map(SharedValue::new),
+        })
+    }
+}
+
+impl Default for KvTable {
+    fn default() -> Self {
+        Self {
+            table: Some(SharedValue::new(HashMap::new())),
+        }
+    }
+}
+
+impl KvTable {
+    pub fn get_table(&self) -> Option<SharedValue<HashMap<String, Option<String>>>> {
+        self.table.clone()
+    }
+
+    pub fn set_table(&mut self, table: Option<SharedValue<HashMap<String, Option<String>>>>) {
+        self.table = table;
+    }
+}
+
+/// Java `ProducerInfo` record in a `ProducerTableInfo` response.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
+    #[serde(rename = "remoteIP", skip_serializing_if = "Option::is_none")]
+    remote_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<LanguageCode>,
+    version: i32,
+    last_update_timestamp: i64,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct ProducerInfoFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    client_id: Option<String>,
+    #[serde(
+        rename = "remoteIP",
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    remote_ip: Option<String>,
+    language: Option<LanguageCode>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    version: i32,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    last_update_timestamp: i64,
+}
+
+impl<'de> Deserialize<'de> for ProducerInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ProducerInfoFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            client_id: fields.client_id,
+            remote_ip: fields.remote_ip,
+            language: fields.language,
+            version: fields.version,
+            last_update_timestamp: fields.last_update_timestamp,
+        })
+    }
+}
+
+impl ProducerInfo {
+    pub fn new(
+        client_id: Option<String>,
+        remote_ip: Option<String>,
+        language: Option<LanguageCode>,
+        version: i32,
+        last_update_timestamp: i64,
+    ) -> Self {
+        Self {
+            client_id,
+            remote_ip,
+            language,
+            version,
+            last_update_timestamp,
+        }
+    }
+
+    pub fn get_client_id(&self) -> Option<&str> {
+        self.client_id.as_deref()
+    }
+
+    pub fn set_client_id(&mut self, value: Option<String>) {
+        self.client_id = value;
+    }
+
+    pub fn get_remote_ip(&self) -> Option<&str> {
+        self.remote_ip.as_deref()
+    }
+
+    pub fn set_remote_ip(&mut self, value: Option<String>) {
+        self.remote_ip = value;
+    }
+
+    pub fn get_language(&self) -> Option<LanguageCode> {
+        self.language
+    }
+
+    pub fn set_language(&mut self, value: Option<LanguageCode>) {
+        self.language = value;
+    }
+
+    pub fn get_version(&self) -> i32 {
+        self.version
+    }
+
+    pub fn set_version(&mut self, value: i32) {
+        self.version = value;
+    }
+
+    pub fn get_last_update_timestamp(&self) -> i64 {
+        self.last_update_timestamp
+    }
+
+    pub fn set_last_update_timestamp(&mut self, value: i64) {
+        self.last_update_timestamp = value;
+    }
+
+    /// Formats the pinned Java `ProducerInfo.toString()` output. Java
+    /// dereferences `language` while formatting and throws for a null value.
+    pub fn java_to_string(&self) -> Result<String, ProducerInfoToStringError> {
+        let language = self
+            .language
+            .ok_or(ProducerInfoToStringError::NullLanguage)?;
+        Ok(format!(
+            "clientId={},remoteIP={}, language={}, version={}, lastUpdateTimestamp={}",
+            self.client_id.as_deref().unwrap_or("null"),
+            self.remote_ip.as_deref().unwrap_or("null"),
+            language.name(),
+            self.version,
+            self.last_update_timestamp
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ProducerInfoToStringError {
+    #[error("Java ProducerInfo.toString dereferences a null language")]
+    NullLanguage,
+}
+
+/// Java `ProducerTableInfo` Broker response DTO.
+/// The Java producer map keyed by group, with nullable lists and nullable rows.
+pub type ProducerInfoTable = HashMap<String, Option<Vec<Option<ProducerInfo>>>>;
+/// A shared mutable Java `ProducerTableInfo.data` map.
+pub type SharedProducerInfoTable = SharedValue<ProducerInfoTable>;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProducerTableInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<SharedProducerInfoTable>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ProducerTableInfoFields {
+    data: Option<ProducerInfoTable>,
+}
+
+impl<'de> Deserialize<'de> for ProducerTableInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ProducerTableInfoFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            data: fields.data.map(SharedValue::new),
+        })
+    }
+}
+
+impl ProducerTableInfo {
+    pub fn new(data: Option<SharedProducerInfoTable>) -> Self {
+        Self { data }
+    }
+
+    pub fn get_data(&self) -> Option<SharedProducerInfoTable> {
+        self.data.clone()
+    }
+
+    pub fn set_data(&mut self, data: Option<SharedProducerInfoTable>) {
+        self.data = data;
+    }
+}
+
 /// Java `ConsumerConnection` response DTO returned by
 /// `GET_CONSUMER_CONNECTION_LIST`.
 #[derive(Debug, Clone, Serialize)]
@@ -7248,6 +7556,9 @@ impl_java_remoting_serializable_adapters!(
     UnlockBatchRequestBody,
     LockBatchResponseBody,
     ConsumerListByGroupResponseBody,
+    ProducerConnection,
+    ProducerTableInfo,
+    KvTable,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
     CreateTopicListRequestBody,
@@ -8644,6 +8955,292 @@ mod tests {
             null_element.compute_min_version(),
             Err(ConsumerConnectionComputeMinVersionError::NullConnection)
         );
+    }
+
+    #[test]
+    fn producer_diagnostic_dtos_match_java_api_and_response_bodies() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        assert_eq!(
+            fixture["producerDiagnosticsApi"],
+            json!([
+                "org.apache.rocketmq.remoting.protocol.body.KVTable org.apache.rocketmq.client.impl.MQClientAPIImpl.getBrokerRuntimeInfo(java.lang.String,long)",
+                "org.apache.rocketmq.remoting.protocol.body.ProducerConnection org.apache.rocketmq.client.impl.MQClientAPIImpl.getProducerConnectionList(java.lang.String,java.lang.String,long)",
+                "org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo org.apache.rocketmq.client.impl.MQClientAPIImpl.getAllProducerInfo(java.lang.String,long)"
+            ])
+        );
+
+        let connection_api = &fixture["producerConnectionDtoApi"];
+        assert_eq!(
+            connection_api["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.ProducerConnection()"])
+        );
+        assert_eq!(
+            connection_api["declaredPublicMethods"],
+            json!([
+                "java.util.HashSet org.apache.rocketmq.remoting.protocol.body.ProducerConnection.getConnectionSet()",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerConnection.setConnectionSet(java.util.HashSet)"
+            ])
+        );
+        let producer_info_api = &fixture["producerInfoDtoApi"];
+        assert_eq!(
+            producer_info_api["publicConstructors"],
+            json!([
+                "org.apache.rocketmq.remoting.protocol.body.ProducerInfo(java.lang.String,java.lang.String,org.apache.rocketmq.remoting.protocol.LanguageCode,int,long)"
+            ])
+        );
+        assert_eq!(
+            producer_info_api["declaredPublicMethods"],
+            json!([
+                "int org.apache.rocketmq.remoting.protocol.body.ProducerInfo.getVersion()",
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.ProducerInfo.getClientId()",
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.ProducerInfo.getRemoteIP()",
+                "java.lang.String org.apache.rocketmq.remoting.protocol.body.ProducerInfo.toString()",
+                "long org.apache.rocketmq.remoting.protocol.body.ProducerInfo.getLastUpdateTimestamp()",
+                "org.apache.rocketmq.remoting.protocol.LanguageCode org.apache.rocketmq.remoting.protocol.body.ProducerInfo.getLanguage()",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerInfo.setClientId(java.lang.String)",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerInfo.setLanguage(org.apache.rocketmq.remoting.protocol.LanguageCode)",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerInfo.setLastUpdateTimestamp(long)",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerInfo.setRemoteIP(java.lang.String)",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerInfo.setVersion(int)"
+            ])
+        );
+        assert_eq!(
+            fixture["producerTableInfoDtoApi"]["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo(java.util.Map)"])
+        );
+        assert_eq!(
+            fixture["producerTableInfoDtoApi"]["declaredPublicMethods"],
+            json!([
+                "java.util.Map org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo.getData()",
+                "void org.apache.rocketmq.remoting.protocol.body.ProducerTableInfo.setData(java.util.Map)"
+            ])
+        );
+        assert_eq!(
+            fixture["kvTableDtoApi"]["publicConstructors"],
+            json!(["org.apache.rocketmq.remoting.protocol.body.KVTable()"])
+        );
+        assert_eq!(
+            fixture["kvTableDtoApi"]["declaredPublicMethods"],
+            json!([
+                "java.util.HashMap org.apache.rocketmq.remoting.protocol.body.KVTable.getTable()",
+                "void org.apache.rocketmq.remoting.protocol.body.KVTable.setTable(java.util.HashMap)"
+            ])
+        );
+
+        let operations = &fixture["producerDiagnosticsOperations"];
+        let default_connection = ProducerConnection::default();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &default_connection.java_to_json(false).unwrap()
+            )
+            .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                operations["producerConnectionDefaultJson"]
+                    .as_str()
+                    .unwrap()
+            )
+            .unwrap()
+        );
+        let default_table = KvTable::default();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&default_table.java_to_json(false).unwrap())
+                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                operations["kvTableDefaultJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+        let null_semantics = &operations["dtoNullSemantics"];
+        assert!(
+            null_semantics["producerConnectionSetIsNull"]
+                .as_bool()
+                .unwrap()
+        );
+        let mut null_connections = ProducerConnection::default();
+        null_connections.set_connection_set(None);
+        assert!(null_connections.get_connection_set().is_none());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(
+                &null_connections.java_to_json(false).unwrap()
+            )
+            .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                null_semantics["producerConnectionJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+        assert!(
+            serde_json::from_str::<ProducerConnection>("{}")
+                .unwrap()
+                .get_connection_set()
+                .unwrap()
+                .with(|connections| connections.is_empty())
+        );
+        assert!(
+            null_semantics["producerTableInfoDataIsNull"]
+                .as_bool()
+                .unwrap()
+        );
+        let null_producer_table: ProducerTableInfo =
+            serde_json::from_str(null_semantics["producerTableInfoJson"].as_str().unwrap())
+                .unwrap();
+        assert!(null_producer_table.get_data().is_none());
+        assert!(null_semantics["kvTableIsNull"].as_bool().unwrap());
+        let mut null_table = KvTable::default();
+        null_table.set_table(None);
+        assert!(null_table.get_table().is_none());
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&null_table.java_to_json(false).unwrap())
+                .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                null_semantics["kvTableJson"].as_str().unwrap()
+            )
+            .unwrap()
+        );
+        assert!(
+            serde_json::from_str::<KvTable>("{}")
+                .unwrap()
+                .get_table()
+                .unwrap()
+                .with(|table| table.is_empty())
+        );
+        let connection_case = &operations["getProducerConnectionList"]["cases"][0];
+        let connection_body = connection_case["responseBody"].as_str().unwrap().as_bytes();
+        let producer_connection = ProducerConnection::java_decode(connection_body).unwrap();
+        let connection_set = producer_connection.get_connection_set().unwrap();
+        let connection = connection_set.with(|values| values[0].as_ref().unwrap().clone());
+        assert_eq!(
+            connection.with(|value| value.get_client_id().map(str::to_owned)),
+            Some("producer-client".to_owned())
+        );
+        assert_eq!(
+            connection.with(|value| value.get_client_addr().map(str::to_owned)),
+            Some("192.0.2.9:1234".to_owned())
+        );
+        assert_eq!(
+            connection.with(|value| value.get_language()),
+            Some(LanguageCode::Java)
+        );
+        assert_eq!(connection.with(|value| value.get_version()), 1);
+        assert!(
+            default_connection
+                .get_connection_set()
+                .unwrap()
+                .with(|values| values.is_empty())
+        );
+        assert!(
+            serde_json::from_str::<ProducerConnection>(r#"{"connectionSet":null}"#)
+                .unwrap()
+                .get_connection_set()
+                .is_none()
+        );
+
+        let producer_table_case = &operations["getAllProducerInfo"]["cases"][0];
+        let producer_table = ProducerTableInfo::java_decode(
+            producer_table_case["responseBody"]
+                .as_str()
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        let data = producer_table.get_data().unwrap();
+        data.with(|data| {
+            let producer = data["workers"].as_ref().unwrap()[0].as_ref().unwrap();
+            assert_eq!(producer.get_client_id(), Some("producer-client"));
+            assert_eq!(producer.get_remote_ip(), Some("192.0.2.9"));
+            assert_eq!(producer.get_language(), Some(LanguageCode::Java));
+            assert_eq!(producer.get_version(), 1);
+            assert_eq!(producer.get_last_update_timestamp(), 1_700_000_000_123);
+            assert_eq!(
+                producer.java_to_string().unwrap(),
+                operations["producerInfoToString"]["value"]
+            );
+        });
+        assert_eq!(
+            operations["producerInfoToString"]["nullLanguageOutcome"],
+            "NullPointerException"
+        );
+        assert_eq!(
+            ProducerInfo::new(
+                Some("producer-client".into()),
+                Some("192.0.2.9".into()),
+                None,
+                1,
+                0,
+            )
+            .java_to_string(),
+            Err(ProducerInfoToStringError::NullLanguage)
+        );
+
+        let runtime_case = &operations["getBrokerRuntimeInfo"]["cases"][0];
+        let runtime =
+            KvTable::java_decode(runtime_case["responseBody"].as_str().unwrap().as_bytes())
+                .unwrap();
+        let table = runtime.get_table().unwrap();
+        assert_eq!(
+            table.with(|table| table["brokerName"].clone()),
+            Some("broker-a".to_owned())
+        );
+        assert_eq!(
+            table.with(|table| table["brokerVersion"].clone()),
+            Some("5.5.1".to_owned())
+        );
+        assert!(
+            default_table
+                .get_table()
+                .unwrap()
+                .with(|table| table.is_empty())
+        );
+
+        let assigned_connection = SharedValue::new(Connection::default());
+        let assigned_connections = SharedValue::new(vec![Some(assigned_connection.clone())]);
+        let mut connection_owner = ProducerConnection::default();
+        connection_owner.set_connection_set(Some(assigned_connections.clone()));
+        let returned_connections = connection_owner.get_connection_set().unwrap();
+        assert!(returned_connections.ptr_eq(&assigned_connections));
+        returned_connections.with_mut(|values| {
+            values[0]
+                .as_ref()
+                .unwrap()
+                .with_mut(|value| value.set_client_id(Some("updated-client".into())))
+        });
+        assert_eq!(
+            assigned_connection.with(|value| value.get_client_id().map(str::to_owned)),
+            Some("updated-client".to_owned())
+        );
+
+        let assigned_table = SharedValue::new(HashMap::from([(
+            "brokerName".to_owned(),
+            Some("broker-a".to_owned()),
+        )]));
+        let mut table_owner = KvTable::default();
+        table_owner.set_table(Some(assigned_table.clone()));
+        assert!(table_owner.get_table().unwrap().ptr_eq(&assigned_table));
+
+        let assigned_data = SharedValue::new(HashMap::from([(
+            "workers".to_owned(),
+            Some(vec![Some(ProducerInfo::new(
+                Some("producer-client".into()),
+                Some("192.0.2.9".into()),
+                Some(LanguageCode::Java),
+                1,
+                1_700_000_000_123,
+            ))]),
+        )]));
+        let mut producer_owner = ProducerTableInfo::new(Some(assigned_data.clone()));
+        assert!(producer_owner.get_data().unwrap().ptr_eq(&assigned_data));
+        producer_owner.set_data(Some(SharedValue::new(HashMap::from([(
+            "workers".to_owned(),
+            Some(vec![Some(ProducerInfo::new(
+                Some("updated-client".into()),
+                Some("192.0.2.10".into()),
+                Some(LanguageCode::Java),
+                2,
+                2_000,
+            ))]),
+        )]))));
+        assert!(!producer_owner.get_data().unwrap().ptr_eq(&assigned_data));
     }
 
     #[test]

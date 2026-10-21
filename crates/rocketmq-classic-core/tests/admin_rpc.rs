@@ -132,6 +132,118 @@ async fn api() -> (MQClientApi, RemotingClient) {
     (MQClientApi::new(client.clone()), client)
 }
 
+#[tokio::test]
+async fn producer_diagnostic_rpcs_match_invoked_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    for (operation, request_code) in [
+        (
+            "getProducerConnectionList",
+            request::GET_PRODUCER_CONNECTION_LIST,
+        ),
+        ("getAllProducerInfo", request::GET_ALL_PRODUCER_INFO),
+        ("getBrokerRuntimeInfo", request::GET_BROKER_RUNTIME_INFO),
+    ] {
+        for case in fixture["producerDiagnosticsOperations"][operation]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let response_code = case["responseCode"].as_i64().unwrap() as i32;
+            let response_body = case["responseBody"]
+                .as_str()
+                .map(|body| body.as_bytes().to_vec());
+            let (addr, peer) = scripted_peer_with_remark(
+                response_code,
+                case["requests"][0]["responseRemark"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .or_else(|| case["errorRemark"].as_str().map(str::to_owned)),
+                None,
+                response_body,
+            )
+            .await;
+            let (client_api, client) = api().await;
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let actual = match operation {
+                "getProducerConnectionList" => {
+                    let group = case["producerGroup"].as_str();
+                    client_api
+                        .get_producer_connection_list_nullable(&addr, group, deadline)
+                        .await
+                        .map(|value| {
+                            value.map(|value| {
+                                serde_json::from_str(&value.java_to_json(false).unwrap()).unwrap()
+                            })
+                        })
+                }
+                "getAllProducerInfo" => client_api
+                    .get_all_producer_info(&addr, deadline)
+                    .await
+                    .map(|value| {
+                        value.map(|value| {
+                            serde_json::from_str(&value.java_to_json(false).unwrap()).unwrap()
+                        })
+                    }),
+                "getBrokerRuntimeInfo" => client_api
+                    .get_broker_runtime_info(&addr, deadline)
+                    .await
+                    .map(|value| {
+                        value.map(|value| {
+                            serde_json::from_str(&value.java_to_json(false).unwrap()).unwrap()
+                        })
+                    }),
+                _ => unreachable!(),
+            };
+
+            if response_code == response::SUCCESS {
+                let actual = actual.unwrap().unwrap_or(Value::Null);
+                let expected = case["responseBody"]
+                    .as_str()
+                    .map(|body| serde_json::from_str::<Value>(body).unwrap())
+                    .unwrap_or(Value::Null);
+                assert_eq!(actual, expected, "{operation}: {case}");
+            } else {
+                assert!(
+                    matches!(
+                        actual,
+                        Err(RpcError::Response {
+                            request_code: actual_code,
+                        peer: error_peer,
+                            code,
+                            remark: Some(remark),
+                            ..
+                        }) if actual_code == request_code
+                        && error_peer == addr
+                            && code == response_code
+                            && Some(remark.as_str()) == case["errorRemark"].as_str()
+                    ),
+                    "{operation}: {case}"
+                );
+            }
+
+            let request = peer.await.unwrap();
+            assert_eq!(request.code, request_code);
+            assert_eq!(
+                request.language,
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            );
+            assert!(request.body.is_none());
+            let expected_fields = case["requests"][0]["extFields"]
+                .as_object()
+                .map(|_| case["requests"][0]["extFields"].clone())
+                .unwrap_or_else(|| json!({}));
+            let actual_fields = request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({}));
+            assert_eq!(actual_fields, expected_fields);
+            client.shutdown().await;
+        }
+    }
+}
+
 async fn compare_batch_delete_fixture(
     api: &MQClientApi,
     fixture: &Value,

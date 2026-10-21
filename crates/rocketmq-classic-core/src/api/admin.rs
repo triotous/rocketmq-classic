@@ -9,9 +9,9 @@ use rocketmq_classic_protocol::{
     body::{
         ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection,
         ConsumerRunningInfoBody, CreateTopicListRequestBody,
-        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList,
-        QuerySubscriptionResponseBody, ResetOffsetBody, SharedQueueOffsetEntries,
-        SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
+        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList, KvTable,
+        ProducerConnection, ProducerTableInfo, QuerySubscriptionResponseBody, ResetOffsetBody,
+        SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -19,7 +19,7 @@ use rocketmq_classic_protocol::{
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetConsumerRunningInfoRequestHeader, GetTopicStatsInfoRequestHeader,
+        GetConsumerRunningInfoRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
@@ -377,6 +377,134 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         let reply = classify(reply, code, addr)?;
         ConsumerConnection::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Retrieves one Broker's Java `ProducerConnection` response.
+    ///
+    /// Java `MQClientAPIImpl.getProducerConnectionList` applies the configured
+    /// VIP address transform and sends only `producerGroup` in the request
+    /// header. The source header's `checkFields` is a no-op, so the nullable
+    /// adapter preserves a null group by omitting the wire field.
+    pub async fn get_producer_connection_list(
+        &self,
+        addr: &str,
+        producer_group: &str,
+        deadline: Instant,
+    ) -> Result<Option<ProducerConnection>, RpcError> {
+        self.get_producer_connection_list_nullable(addr, Some(producer_group), deadline)
+            .await
+    }
+
+    /// Nullable-input adapter for Java's `getProducerConnectionList`.
+    pub async fn get_producer_connection_list_nullable(
+        &self,
+        addr: &str,
+        producer_group: Option<&str>,
+        deadline: Instant,
+    ) -> Result<Option<ProducerConnection>, RpcError> {
+        let code = request::GET_PRODUCER_CONNECTION_LIST;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| super::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut fields = HeaderMap::new();
+        if let Some(producer_group) = producer_group {
+            fields.insert("producerGroup".into(), producer_group.to_owned());
+        }
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ext_fields: Some(fields.into()),
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        ProducerConnection::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Retrieves every producer group and its current connections from one
+    /// Broker through Java `MQClientAPIImpl.getAllProducerInfo`.
+    pub async fn get_all_producer_info(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<Option<ProducerTableInfo>, RpcError> {
+        let code = request::GET_ALL_PRODUCER_INFO;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| super::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        ProducerTableInfo::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Retrieves the Java `KVTable` runtime snapshot from one Broker.
+    pub async fn get_broker_runtime_info(
+        &self,
+        addr: &str,
+        deadline: Instant,
+    ) -> Result<Option<KvTable>, RpcError> {
+        let code = request::GET_BROKER_RUNTIME_INFO;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| super::read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(
+                &broker_addr,
+                RemotingCommand {
+                    code,
+                    language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    ..Default::default()
+                },
+                deadline,
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        KvTable::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
             RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -1641,6 +1769,99 @@ mod tests {
                 "7".to_owned()
             )]))
         );
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn producer_diagnostic_rpcs_apply_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, request, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            for (expected_code, expected_fields, body) in [
+                (
+                    request::GET_PRODUCER_CONNECTION_LIST,
+                    Some(("producerGroup", "workers")),
+                    b"{\"connectionSet\":[]}".as_slice(),
+                ),
+                (
+                    request::GET_ALL_PRODUCER_INFO,
+                    None,
+                    b"{\"data\":{}}".as_slice(),
+                ),
+                (
+                    request::GET_BROKER_RUNTIME_INFO,
+                    None,
+                    b"{\"table\":{}}".as_slice(),
+                ),
+            ] {
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = bytes::BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+                assert_eq!(request.code, expected_code);
+                assert_eq!(request.language, Some(LanguageCode::Java));
+                assert!(request.body.is_none());
+                let fields = request.ext_fields.unwrap_or_default();
+                match expected_fields {
+                    Some((key, value)) => {
+                        assert_eq!(fields.get(key).map(String::as_str), Some(value))
+                    }
+                    None => assert!(fields.is_empty()),
+                }
+                let mut reply = RemotingCommand {
+                    code: response::SUCCESS,
+                    opaque: request.opaque,
+                    body: Some(body.to_vec()),
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("producer-diagnostics-vip");
+        config.set_vip_channel_enabled(true);
+        let config = Arc::new(RwLock::new(config));
+        let api = MQClientApi::with_config(remoting.clone(), config);
+        let advertised_addr = format!("127.0.0.1:{advertised_port}");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        api.get_producer_connection_list(&advertised_addr, "workers", deadline)
+            .await
+            .unwrap();
+        api.get_all_producer_info(&advertised_addr, deadline)
+            .await
+            .unwrap();
+        api.get_broker_runtime_info(&advertised_addr, deadline)
+            .await
+            .unwrap();
         peer.await.unwrap();
         remoting.shutdown().await;
     }

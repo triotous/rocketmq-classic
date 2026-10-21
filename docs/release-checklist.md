@@ -5667,6 +5667,36 @@ owner-specific checks belong in the manual handoff.
 - The named RPC mapping is closed after validation. Broad P18-V01 and
   P18-V02/P18-V03/P18-V04 gates remain open.
 
+## P18-V01 Broker and Producer diagnostics RPC slice — 2026-10-21
+
+- [x] Added `MQClientApi::get_producer_connection_list`,
+  `get_all_producer_info`, and `get_broker_runtime_info` for pinned Java
+  requests 204, 328, and 28. All three use the configured VIP address,
+  preserve the supplied Broker address in response errors, and decode nullable
+  success bodies. The producer-group nullable adapter follows Java's no-op
+  header validation and omits null from the wire fields.
+- [x] Added Java-compatible `ProducerConnection`, `ProducerTableInfo`,
+  `ProducerInfo`, and `KvTable` models, including defaults, explicit null
+  setters, mutable collection aliases, public accessor/constructor inventories,
+  and `ProducerInfo.toString()` formatting and null-language failure behavior.
+- [x] Invoked Java fixtures and Rust scripted RPC tests compare all three
+  signatures/envelopes, populated and absent bodies, null producer group,
+  Broker errors, typed response DTOs, and VIP address translation. Producer
+  core fixture SHA-256:
+  `85de9ff0aeeb0236d72fa0ecff85ec01cc24ff1b75a64308eddbc0ac5cfe077d`.
+- [x] `cargo test -p rocketmq-classic-protocol --all-features --locked
+  producer_diagnostic_dtos_match_java_api_and_response_bodies` passes.
+- [x] `cargo test -p rocketmq-classic-core --all-features --locked` passes
+  (185 unit tests, all integration targets, and 16 doctests).
+- [x] Strict all-target/all-feature Clippy for Common, Protocol, Remoting, Core,
+  Producer, Consumer, and the facade passes with `-D warnings`.
+- [x] Pinned Java Maven `verify` passes, including the producer core fixture,
+  37 invoked RPC scenarios, 67 typed-header frames, 15 typed-body fixtures,
+  and Java/Rust cross-decodes.
+- [x] `cargo fmt --all -- --check` and `git diff --check` pass.
+- This closes only the named diagnostic RPC/DTO slice. Broad P18-V01 and
+  P18-V02/P18-V03/P18-V04 remain open.
+
 ## P18-V01 timer-engine switch RPC slice — 2026-10-21
 
 - [x] Added `MQClientApi::switch_timer_engine` for pinned Java

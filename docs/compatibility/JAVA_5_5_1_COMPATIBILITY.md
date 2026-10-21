@@ -1,5 +1,23 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 Broker and Producer diagnostics RPCs (`GET_BROKER_RUNTIME_INFO` 28,
+`GET_PRODUCER_CONNECTION_LIST` 204, and `GET_ALL_PRODUCER_INFO` 328): Rust maps
+the pinned `MQClientAPIImpl.getBrokerRuntimeInfo`,
+`getProducerConnectionList`, and `getAllProducerInfo` synchronous operations.
+All three apply Java's configured Broker VIP address transformation and retain
+the supplied Broker address in typed response errors. The producer-group
+header accepts null because the pinned header's `checkFields()` is a no-op;
+null is omitted from the wire fields. Added `KvTable`, `ProducerConnection`,
+`ProducerTableInfo`, and `ProducerInfo` response models, including default and
+explicit-null table/set behavior, shared map/set aliases, scalar accessors,
+and `ProducerInfo.toString()` formatting/null-language failure behavior.
+Invoked Java fixtures cover exact method signatures, request envelopes,
+populated and absent bodies, Broker errors, null producer group, DTO APIs and
+body values. Rust scripted peers compare all three response DTOs and outcomes;
+a VIP-enabled loopback checks all request codes through the two-port transform.
+Producer core fixture SHA-256 is recorded in the release checklist. This closes
+only these three RPC/DTO slices; broad P18-V01 remains open.
+
 Phase 18 Lite topic-info request-header fixture closure (`d578db50`): the
 `GetLiteTopicInfoRequestHeader` API, nullable default fields, no-op
 `checkFields`, typed Java frame, and Rust reverse frame are now covered in the
