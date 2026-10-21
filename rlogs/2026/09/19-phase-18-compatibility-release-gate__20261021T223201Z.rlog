@@ -68,3 +68,23 @@ remain untouched and unstaged.
   target and source-JAR byte identities are verified. Release version and
   registry resolution remain post-Phase-19 tasks per the plan. Broad P18-V01
   and current-revision GitHub Ubuntu/native Windows P18-V04 remain open.
+
+## P18-V03 current-revision package/provenance recheck — 2026-10-21
+
+- Current verified revision: `79406d1991c6a2ff6805299c602c551379fb1e37`.
+- Offline Maven `dependency:tree` confirms client 5.5.1 -> remoting 5.5.1 ->
+  common 5.5.1. All nine documented Maven artifact SHA-256 values match local
+  cache files, and four selected source-JAR files byte-match the exact pinned
+  Java tag. Tag commit:
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- Current locked Cargo metadata reports 8 workspace members, 216 packages and
+  208 registry packages. Workspace license/dependency-direction validation
+  passes; all seven product package listings contain `LICENSE`, `NOTICE`, and
+  `src/lib.rs`.
+- P18-07 README usage, retry/duplicate delivery, and shutdown semantics are
+  documented; the updated producer example builds in release mode and strict
+  Clippy passes. Local P18-V03 preparation checks are complete. GPG is
+  unavailable for detached tag signature verification; registry resolution,
+  release version selection and publication remain post-Phase-19 work.
+- Broad P18-V01 and current-revision GitHub Ubuntu/native Windows P18-V04
+  evidence remain open. Protected Phase 19 paths remain unstaged.

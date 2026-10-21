@@ -6931,3 +6931,25 @@ owner-specific checks belong in the manual handoff.
   evidence remain open. Phase 19 Broker/Docker checks remain separate; no
   remote CI, Broker or Docker run was performed. Protected Phase 19 paths
   remain untouched and unstaged.
+
+## P18-V03 current-revision provenance and package recheck — 2026-10-21 (`79406d19`)
+
+- [x] Offline Maven dependency tree resolves
+  `rocketmq-client:5.5.1 -> rocketmq-remoting:5.5.1 -> rocketmq-common:5.5.1`.
+  All nine documented local artifact SHA-256 values match, and four selected
+  source-JAR files byte-match the files at pinned tag commit
+  `efa1be59d6fc747ad220f036c86030f05f0419f9`.
+- [x] Locked Cargo metadata, workspace license/dependency-direction checks and
+  package-content lists pass: eight workspace members, 216 total packages,
+  208 registry packages, and seven product packages each containing
+  `LICENSE`, `NOTICE` and `src/lib.rs`. The leaf-to-facade package order and
+  Java 5.5.1 / Broker 5.3.4 baseline remain documented in the provenance file.
+- [x] The README and compiled facade Producer example now document the Java
+  start/send/shutdown usage flow, ambiguous timeout and duplicate-delivery
+  behavior, idempotent handling, and bounded Push consumer shutdown.
+- P18-V03 local preparation review is complete. The signed tag's target and
+  source-JAR bytes are verified, but its OpenPGP signature is not independently
+  verified because GPG is unavailable. Release version selection and registry
+  dependency resolution remain post-Phase-19 tasks; no publication or release
+  claim is made. Broad P18-V01 and current-revision GitHub Ubuntu/native
+  Windows P18-V04 evidence remain open.
