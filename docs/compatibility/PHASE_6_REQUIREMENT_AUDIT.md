@@ -1743,7 +1743,10 @@ working tree. The 34 `Message`, 41 `MessageExt`, and 4 `MessageClientExt`
 declared public non-static instance methods are mapped to Rust APIs and
 `MessageExtSubtype` hooks in
 `PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md`. The source's constructors are
-crosswalked separately. This confirms there are no unreviewed declared
+crosswalked separately; the three public static `MessageExt` helpers
+(`parseTopicFilterType` and both `socketAddress2ByteBuffer` overloads) map to
+Rust helpers there as well. This crosswalk covers all 82 declared public
+methods, with no unreviewed declared
 message-family methods; it supersedes earlier notes leaving other inherited
 message methods and custom live properties-map identity open.
 

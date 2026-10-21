@@ -8,7 +8,9 @@ The source-declared public, non-static instance-method counts are 34 for
 `Message`, 41 for `MessageExt`, and 4 for `MessageClientExt`. Constructors are
 listed separately: `Message` declares five, `MessageExt` declares two, and
 `MessageClientExt` inherits its public no-argument constructor from Java's
-implicit default-constructor rule.
+implicit default-constructor rule. `MessageExt` also declares three public
+static methods; the other two classes declare none. Together the classes
+declare 82 public methods (79 instance and 3 static), excluding constructors.
 
 ## `Message`
 
@@ -30,6 +32,7 @@ implicit default-constructor rule.
 | Message metadata: born/store timestamp, `get/setSysFlag`, IPv6 host-flag setters, body CRC, commit-log offset, store size, reconsume times, prepared transaction offset | Rust accessors and setters with the corresponding names in `MessageExt`; `MessageExtSubtype` contains paired override hooks for every getter/setter and both IPv6 flag setters. |
 | `getBornHost`, `setBornHost`, `getStoreHost`, `setStoreHost`, `getBornHostString`, `getBornHostNameString` | `born_host`, `set_born_host`, `store_host`, `set_store_host`, `born_host_string`, and `born_host_name_string`, including nullable host values and subtype dispatch. |
 | `getBornHostBytes()`, `getBornHostBytes(ByteBuffer)`, `getStoreHostBytes()`, `getStoreHostBytes(ByteBuffer)` | `born_host_bytes`, `write_born_host_bytes`, `store_host_bytes`, and `write_store_host_bytes`. The byte-array results and bytes written are compared; Java `ByteBuffer` identity and position are represented by a Rust mutable slice and returned byte count. |
+| Static `parseTopicFilterType(int)`, `socketAddress2ByteBuffer(SocketAddress)`, `socketAddress2ByteBuffer(SocketAddress, ByteBuffer)` | `parse_topic_filter_type`, `MessageHostAddress::network_bytes`, and `MessageHostAddress::write_network_bytes`. |
 | `getMsgId`, `setMsgId`, `getTopicSysFlag`, `setTopicSysFlag`, `getGroupSysFlag`, `setGroupSysFlag`, `toString` | `message_id_for_runtime_type`, `set_message_id`, `topic_sys_flag`, `set_topic_sys_flag`, `group_sys_flag`, `set_group_sys_flag`, and `Display`/`.to_string()`. The runtime subtype adapter dispatches the virtual methods. |
 
 `MessageExt` carries its `Message` fields and exposes the same property, body,

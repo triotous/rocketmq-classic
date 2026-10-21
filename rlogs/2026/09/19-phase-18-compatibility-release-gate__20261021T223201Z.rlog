@@ -112,3 +112,15 @@ remain untouched and unstaged.
   current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
 - The protected Phase 19 paths remain untouched and unstaged. No push, remote
   CI, Broker, or Docker run was performed.
+
+## Message-family static method inventory correction — 2026-10-21
+
+- Diff review found three declared public static methods on pinned
+  `MessageExt` in addition to the 79 public instance methods:
+  `parseTopicFilterType(int)` and both `socketAddress2ByteBuffer` overloads.
+- Added mappings to `parse_topic_filter_type`,
+  `MessageHostAddress::network_bytes`, and
+  `MessageHostAddress::write_network_bytes`. The crosswalk now covers 82
+  declared methods total, with constructors listed separately.
+- No implementation change was needed; the focused Rust tests and pinned Maven
+  verification recorded in the preceding entry passed for these methods.

@@ -6958,7 +6958,8 @@ owner-specific checks belong in the manual handoff.
 
 - [x] Crosswalk all pinned 5.5.1 public instance methods declared by `Message`
   (34), `MessageExt` (41), and `MessageClientExt` (4), with constructors and
-  virtual subtype hooks mapped separately:
+  virtual subtype hooks mapped separately, plus all three `MessageExt` static
+  helpers (82 method declarations total):
   [message-family crosswalk](compatibility/PHASE_18_MESSAGE_SUBTYPE_API_CROSSWALK.md).
 - [x] Pinned Java consumer-operation fixture hash:
   `a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`;
