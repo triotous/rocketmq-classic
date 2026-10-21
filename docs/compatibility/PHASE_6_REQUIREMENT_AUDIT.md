@@ -88,6 +88,13 @@ Push retry/send-back message copies, while broad subtype and P18-V01 review
 remain open. Fixture SHA-256:
 `8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.
 
+P18-V01 caller-defined subtype property follow-up (2026-10-21):
+`MessageExtSubtype` now dispatches Java's virtual `getProperty(String)`.
+`ProcessQueue.putMessage` reads the overridden `MAX_OFFSET` property and both
+Java and Rust compute `msgAccCnt` as `12`; the fixture also compares the getter
+call count. Fixture SHA-256:
+`2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
 reverse-export review, subtype behavior beyond the adapter's selected hooks,

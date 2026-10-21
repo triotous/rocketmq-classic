@@ -253,3 +253,10 @@ Rust matches the callback value and write count. The getter is also used by
 Push retry/send-back message copies. Other inherited virtual methods remain
 open. Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
 `8afd6c83b5085d3c74cbcdd919bca3257514abbde3c7f3ec70847dd08a1a2f7f`.
+
+P18-V01 caller-defined `MessageExt` property follow-up (2026-10-21): the
+subtype adapter now dispatches virtual `getProperty(String)`. The invoked Java
+`ProcessQueue.putMessage` reads a subtype `MAX_OFFSET` override and calculates
+`msgAccCnt` as `12`; Rust matches the value and getter count. Other inherited
+virtual methods remain open. Fixture: `fixtures/runtime/consumer-operations.json`,
+SHA-256 `2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.

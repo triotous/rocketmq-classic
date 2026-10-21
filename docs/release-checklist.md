@@ -6492,3 +6492,22 @@ owner-specific checks belong in the manual handoff.
   Current Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker/Docker
   scenarios remain separate; protected Phase 19 paths were not changed or
   staged.
+
+## P18-V01 custom `MessageExt.getProperty` hook — 2026-10-21 (`d70771a2`)
+
+- [x] `MessageExtSubtype` now dispatches Java virtual `getProperty(String)`;
+  nullable hook results can explicitly return Java null or fall back to the
+  stored base properties.
+- [x] The invoked Java `ProcessQueue.putMessage` fixture overrides
+  `getProperty(MAX_OFFSET)`, records one virtual read, and computes
+  `msgAccCnt=12`. Rust matches the count, tree key, queue size and custom getter
+  call. Fixture SHA-256:
+  `2a70e2a142e6adfa8b43baf7e396515630fcd6dc2231e8d8867e8eab3a4b2db4`.
+- [x] Focused Rust `runtime_direct_consume` integration tests and Java fixture
+  generation pass on code revision `d70771a2`; full workspace and Maven
+  verification are scheduled with the next current-tree gate refresh.
+- This closes only the property getter used by ProcessQueue's backlog
+  accounting. Other inherited methods, broad P18-V01 reconciliation and
+  supplemental P18-V02 gates remain open. Current Ubuntu/native Windows
+  P18-V04 evidence and Phase 19 Broker/Docker scenarios remain separate.
+  Protected Phase 19 paths were not changed or staged.
