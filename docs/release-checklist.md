@@ -6272,3 +6272,26 @@ owner-specific checks belong in the manual handoff.
   GitHub Ubuntu and native Windows P18-V04 evidence and Phase 19 live Broker
   scenarios remain pending; protected Phase 19 worktree paths remain untouched
   and unstaged.
+
+## P18-V02 refresh after rebalance membership fix — 2026-10-21
+
+- [x] Verified code revision `9008c10e`. Default and all-feature locked
+  workspace tests, strict all-target/all-feature Clippy, pinned Maven
+  `verify` (37 scenarios and Rust/Java fixture cross-decodes), differential
+  self-test and 37-row manifest, offline stress smoke (16 cases × 3), release
+  fuzz smoke, release examples, offline benchmark, metadata/dependency checks,
+  seven package listings with `LICENSE`/`NOTICE`, and Unique ID tests under UTC
+  and Asia/Taipei pass.
+- The workspace suites, strict Clippy and Maven ran after the behavior change.
+  The only later code edit restored the test's historical name for the stress
+  runner; that focused regression and the full stress smoke passed afterward.
+  `cargo fmt --all --check` and `git diff --check` pass.
+- Benchmark observations and detailed outcomes are recorded in
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md` and
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T160047Z.rlog`.
+  No benchmark threshold is asserted.
+- Broad P18-V01 remains open, including raw Push consume-service replacement,
+  the shared mutable stats-manager accessor, the arbitrary Java subclass
+  boundary and reverse API coverage. Current Ubuntu/native Windows P18-V04
+  evidence and Phase 19 live Broker scenarios remain pending. Protected Phase
+  19 worktree paths remain untouched and unstaged.
