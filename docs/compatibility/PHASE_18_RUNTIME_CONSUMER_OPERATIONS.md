@@ -403,3 +403,14 @@ without Java buffer identity or position state. Fixture SHA-256:
 `30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
 Other inherited methods, broad P18-V01 and P18-V04 platform evidence remain
 open.
+
+P18-V01 caller-defined priority override follow-up (code revision `da1f4b1e`,
+2026-10-21): the runtime subtype adapter dispatches Java's virtual
+`getPriority()` and `setPriority(int)`. The Java direct-consume fixture
+overrides both, accepts `-7`, and compares the custom value, property lookup,
+and read/write counts. A property-only Java subtype checks that inherited
+`getPriority()` calls virtual `getProperty`; its inherited setter stores `17`
+in the base map and rejects negative input. Rust matches both paths. Fixture
+SHA-256: `44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
+This closes priority override behavior only; the broader inherited-method and
+P18-V01 source/API/input/error/flow/reverse-export audits remain open.

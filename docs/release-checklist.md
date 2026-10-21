@@ -6782,3 +6782,35 @@ owner-specific checks belong in the manual handoff.
   remaining inherited methods, and current-revision GitHub Ubuntu/native
   Windows P18-V04 evidence remain open. No push, remote CI, Broker or Docker
   run was performed; protected Phase 19 paths were left untouched.
+
+## P18-V01 custom `MessageExt` priority overrides and current-revision P18-V02 — 2026-10-21 (`da1f4b1e`)
+
+- [x] Added `MessageExtSubtype` dispatch for Java's virtual `getPriority()`
+  and `setPriority(int)`. The inherited getter falls through subtype-aware
+  `getProperty(PROPERTY_PRIORITY)`; the base setter preserves negative-value
+  rejection and property storage. The invoked Java direct-consume fixture
+  overrides both methods, accepts `-7`, and compares the custom value,
+  property view, and read/write counts. A property-only subtype verifies
+  inherited getter dispatch, base storage of `17`, and negative rejection.
+  Fixture SHA-256:
+  `44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
+- [x] Default and all-feature locked workspace tests; strict all-target,
+  all-feature Clippy; format and diff checks; and pinned Maven `verify` pass.
+  Maven verifies 37 scenarios, 9 Running Info, 27 direct-consume, 15 reset
+  cases, 83 typed headers, 16 typed bodies and Java/Rust cross-decodes.
+- [x] Current-revision server-free P18-V02 passes: differential comparator
+  self-test and 37-scenario manifest; offline race/leak smoke (16 cases × 3);
+  release fuzz smoke (137 frame seeds, 11 message seeds, 2,368 bounded
+  mutations, 201 frame decodes, 118 message decodes); facade examples and
+  workspace bench compilation; locked Cargo metadata, workspace metadata and
+  dependency-direction checks; seven package listings with `LICENSE` and
+  `NOTICE`; and four Core Unique ID tests under UTC and Asia/Taipei.
+- [x] Offline benchmark on Apple M5 Max, macOS aarch64, Rust 1.85.0:
+  frame encode/decode 2,266.9 ns/iteration; zstd decode 1,153.2 ns; producer
+  request construction 1,297.8 ns; route lookup 15.7 ns; loopback completion
+  69,060.5 ns. Allocation counts/bytes per iteration: 40/4,676; 17/197,493;
+  54/3,665; 0/0; 81/9,546. Measurements are observations, not thresholds.
+- Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+  reconciliation and current-revision GitHub Ubuntu/native Windows P18-V04
+  evidence remain open. No push, remote CI, Broker or Docker run was performed;
+  protected Phase 19 paths were left untouched.

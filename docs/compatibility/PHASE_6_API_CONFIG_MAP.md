@@ -1482,6 +1482,15 @@ The invoked Java fixture adds a custom reserved name, null, and the empty string
 
 The invoked Java fixture and Rust regression cover absent-property map initialization, zero/positive/negative setter values, no mutation after rejected negative input, signed `i32` boundaries, malformed and whitespace inputs, overflow, and Arabic-Indic decimal digits. This closes the priority accessor slice only; broad Common/P18-V01 reconciliation remains open.
 
+P18-V01 subtype follow-up (code revision `da1f4b1e`, 2026-10-21):
+`MessageExtSubtype` dispatches virtual `getPriority()` and `setPriority(int)`.
+The inherited Rust getter falls back through subtype-aware `getProperty`,
+matching Java's delegation; the inherited setter keeps the base negative-value
+error and property write. A custom subtype fixture overrides both methods and
+accepts `-7`. Fixture SHA-256:
+`44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
+This closes the custom priority override slice only; broad P18-V01 remains open.
+
 ## Common public API: CorrelationIdUtil
 
 | Pinned Java 5.5.1 API | Rust counterpart / current behavior |

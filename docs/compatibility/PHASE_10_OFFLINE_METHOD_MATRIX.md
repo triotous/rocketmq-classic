@@ -354,3 +354,14 @@ written byte count; buffer identity and position metadata are outside this
 mapping. Fixture SHA-256:
 `30af1bcbb2cfbf967f636fbbf7cbf9d54ba886a68c25fbe92df5ddf88000946c`.
 Remaining inherited methods and broad P18-V01 reconciliation remain open.
+
+P18-V01 `MessageExt` priority override follow-up (code revision `da1f4b1e`,
+2026-10-21): Java's inherited `getPriority()` parses the result of virtual
+`getProperty(PROPERTY_PRIORITY)`, and Rust now keeps that dispatch when no
+explicit priority override is installed. A direct-consume custom subtype
+overrides both `getPriority()` and `setPriority(int)`, accepts `-7`, and
+matches Rust getter output and read/write counts. A property-only subtype
+confirms the inherited getter reads `23`, while the base setter stores `17`
+and rejects a negative value. Fixture SHA-256:
+`44eb8359e7df5735cb527a59942190fb74dd4191306a4290ea3bba644a777a5c`.
+Other inherited methods and broad P18-V01 reconciliation remain open.
