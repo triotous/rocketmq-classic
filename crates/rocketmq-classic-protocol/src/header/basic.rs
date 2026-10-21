@@ -4014,6 +4014,50 @@ impl ExportRocksDBConfigToJsonRequestHeader {
     }
 }
 
+/// Pinned Java `CheckRocksdbCqWriteProgressRequestHeader`. The annotated
+/// topic remains nullable because Java's `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct CheckRocksdbCqWriteProgressRequestHeader {
+    pub(crate) topic: Option<String>,
+    pub(crate) check_store_time: i64,
+}
+
+impl CheckRocksdbCqWriteProgressRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_check_store_time(&self) -> i64 {
+        self.check_store_time
+    }
+
+    pub fn set_check_store_time(&mut self, value: i64) {
+        self.check_store_time = value;
+    }
+}
+
+impl CommandHeader for CheckRocksdbCqWriteProgressRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert(
+            "checkStoreTime".to_owned(),
+            self.check_store_time.to_string(),
+        );
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            check_store_time: optional_i64_with_mode(fields, "checkStoreTime", false)?
+                .unwrap_or_default(),
+        })
+    }
+}
+
 impl CommandHeader for ExportRocksDBConfigToJsonRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "configType", self.config_type.as_deref());

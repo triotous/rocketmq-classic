@@ -1692,3 +1692,19 @@ the four request/response header models and both Core calls. Invoked Java and
 Rust fixtures cover the direct address, request codes, fields, signed result,
 null/empty name, malformed/missing count, and Broker rejection. This closes
 these direct API/header rows only; broad P18-V01 remains open.
+
+## Direct `checkRocksdbCqWriteProgress` Broker API — 2026-10-21
+
+Pinned `MQClientAPIImpl.checkRocksdbCqWriteProgress(String,String,long,long)`
+maps request 354 to `MQClientApi::check_rocksdb_cq_write_progress`. It sends
+the supplied address unchanged with the caller deadline, nullable `topic`, and
+primitive `checkStoreTime`, without a request body. Core returns an optional
+`CheckRocksdbCqWriteResult`; the DTO preserves nullable `checkResult` and
+primitive `checkStatus`, and `CheckRocksdbCqWriteStatus` maps the nested Java
+enum's names, ordinals, and integer values. Successful null, absent, or empty
+bodies return `None`; malformed JSON is a malformed response, and non-success
+codes preserve the Broker response. Java invoked fixtures, the typed request
+frame, fast/reflection header comparisons, Protocol tests and a Core loopback
+cover the request, DTO defaults, enum surface and outcomes. This closes the
+named API/header slice only; broad P18-V01, P18-V02 and platform evidence gates
+remain open.

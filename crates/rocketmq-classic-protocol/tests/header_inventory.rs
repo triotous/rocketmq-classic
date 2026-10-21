@@ -77,6 +77,7 @@ macro_rules! inventory {
             ResetOffsetRequestHeader => ("header-reset-offset-request", "typed-reset-offset.bin"),
             ResetMasterFlushOffsetHeader => ("header-reset-master-flush-offset", "typed-reset-master-flush-offset.bin"),
             ExportRocksDBConfigToJsonRequestHeader => ("header-export-rocksdb-config-request", "typed-export-rocksdb-config-request.bin"),
+            CheckRocksdbCqWriteProgressRequestHeader => ("header-check-rocksdb-cq-write-progress-request", "typed-check-rocksdb-cq-write-progress-request.bin"),
             GetConsumerStatusRequestHeader => ("header-consumer-status-request", "typed-consumer-status-request.bin"),
             GetConsumerConnectionListRequestHeader => ("header-consumer-connection-list-request", "typed-consumer-connection-list-request.bin"),
             PopMessageRequestHeader => ("header-pop-request", "typed-pop.bin"),
@@ -491,6 +492,50 @@ fn export_rocksdb_config_header_and_enum_api_match_java_inventory() {
     }
     assert!(source.contains("pub const fn values()"));
     assert!(source.contains("pub const fn ordinal(self)"));
+}
+
+#[test]
+fn check_rocksdb_cq_write_progress_header_matches_java_public_api_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let api = &fixture["apiInventories"]["CheckRocksdbCqWriteProgressRequestHeader"];
+    assert_eq!(api["publicFields"], serde_json::json!([]));
+    let declared = api["declaredPublicMethods"].as_array().unwrap();
+    for method in [
+        "getTopic",
+        "setTopic",
+        "getCheckStoreTime",
+        "setCheckStoreTime",
+        "checkFields",
+    ] {
+        assert!(
+            declared.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+            }),
+            "missing Java method {method}"
+        );
+    }
+
+    let source = include_str!("../src/header/basic.rs");
+    let exports = include_str!("../src/header/mod.rs");
+    for method in [
+        "get_topic",
+        "set_topic",
+        "get_check_store_time",
+        "set_check_store_time",
+    ] {
+        assert!(rust_header_method_exists(
+            source,
+            exports,
+            "CheckRocksdbCqWriteProgressRequestHeader",
+            method
+        ));
+    }
+    assert!(source.contains("impl CommandHeader for CheckRocksdbCqWriteProgressRequestHeader"));
 }
 
 #[test]

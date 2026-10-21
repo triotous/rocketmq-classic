@@ -319,6 +319,10 @@ public final class Main {
             ProducerCoreFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "query-admin-header-decode-mode-fixture".equals(args[0])) {
+            QueryAdminHeaderDecodeModeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "producer-lifecycle-fixtures".equals(args[0])) {
             ProducerLifecycleFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -876,6 +880,12 @@ public final class Main {
             org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader.ConfigType.CONSUMER_OFFSETS));
         writeTypedHeaderFixture(output, "export-rocksdb-config-request", 355, exportRocksDB);
 
+        org.apache.rocketmq.remoting.protocol.header.CheckRocksdbCqWriteProgressRequestHeader checkRocksdbCq =
+            new org.apache.rocketmq.remoting.protocol.header.CheckRocksdbCqWriteProgressRequestHeader();
+        checkRocksdbCq.setTopic("orders");
+        checkRocksdbCq.setCheckStoreTime(1_712_345_678_901L);
+        writeTypedHeaderFixture(output, "check-rocksdb-cq-write-progress-request", 354, checkRocksdbCq);
+
         NotificationResponseHeader notificationResponse = new NotificationResponseHeader();
         notificationResponse.setHasMsg(true); notificationResponse.setPollingFull(false);
         writeTypedHeaderFixture(output, "notification-response", RemotingCommand.createResponseCommandWithHeader(0, notificationResponse));
@@ -1081,7 +1091,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 79, "all Rust typed header fixtures were supplied");
+            require(count == 80, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1134,6 +1144,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-reset-offset.bin", 211);
             assertAllExtFields(byName, "typed-reset-master-flush-offset.bin", 908);
             assertAllExtFields(byName, "typed-export-rocksdb-config-request.bin", 355);
+            assertAllExtFields(byName, "typed-check-rocksdb-cq-write-progress-request.bin", 354);
             assertAllExtFields(byName, "typed-pop.bin", 200050);
             assertAllExtFields(byName, "typed-pop-response.bin", 0);
             assertAllExtFields(byName, "typed-pop-lite-response.bin", 0);
@@ -1243,6 +1254,10 @@ public final class Main {
                 "masterFlushOffset", "9876543210");
             assertExtField(byName, "typed-export-rocksdb-config-request.bin", 355,
                 "configType", "topics;subscriptionGroups;consumerOffsets;");
+            assertExtField(byName, "typed-check-rocksdb-cq-write-progress-request.bin", 354,
+                "topic", "orders");
+            assertExtField(byName, "typed-check-rocksdb-cq-write-progress-request.bin", 354,
+                "checkStoreTime", "1712345678901");
             assertExtField(byName, "typed-pop.bin", 200050, "maxMsgNums", "16");
             assertExtField(byName, "typed-ack.bin", 200051, "extraInfo", "startOffset popTime invisibleTime queueId");
             assertExtField(byName, "typed-change-invisible.bin", 200053, "invisibleTime", "60000");
@@ -1333,6 +1348,7 @@ public final class Main {
             case "typed-reset-offset.bin": fixtureStem = "header-reset-offset-request"; break;
             case "typed-reset-master-flush-offset.bin": fixtureStem = "header-reset-master-flush-offset"; break;
             case "typed-export-rocksdb-config-request.bin": fixtureStem = "header-export-rocksdb-config-request"; break;
+            case "typed-check-rocksdb-cq-write-progress-request.bin": fixtureStem = "header-check-rocksdb-cq-write-progress-request"; break;
             case "typed-pop.bin": fixtureStem = "header-pop-request"; break;
             case "typed-pop-lite-response.bin": fixtureStem = "header-pop-lite-response"; break;
             case "typed-ack.bin": fixtureStem = "header-ack-request"; break;

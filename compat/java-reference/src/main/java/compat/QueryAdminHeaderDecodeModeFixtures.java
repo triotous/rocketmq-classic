@@ -32,6 +32,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.remoting.CommandCustomHeader;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.CheckRocksdbCqWriteProgressRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonRequestHeader;
@@ -95,6 +96,11 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("export-rocksdb-config-empty", decodeModes("export-rocksdb-config",
             fields("configType", "")));
         cases.put("export-rocksdb-config-missing", decodeModes("export-rocksdb-config", fields()));
+        cases.put("check-rocksdb-cq-write-progress-valid", decodeModes("check-rocksdb-cq-write-progress",
+            fields("topic", "orders", "checkStoreTime", "1712345678901")));
+        cases.put("check-rocksdb-cq-write-progress-missing", decodeModes("check-rocksdb-cq-write-progress", fields()));
+        cases.put("check-rocksdb-cq-write-progress-invalid-time", decodeModes("check-rocksdb-cq-write-progress",
+            fields("topic", "orders", "checkStoreTime", "not-a-long")));
         cases.put("wipe-write-perm-request-valid", decodeModes("wipe-write-perm-request",
             fields("brokerName", "broker-a")));
         cases.put("wipe-write-perm-request-missing", decodeModes("wipe-write-perm-request", fields()));
@@ -164,6 +170,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(ResetMasterFlushOffsetHeader.class));
         apiInventories.put("ExportRocksDBConfigToJsonRequestHeader",
             apiInventory(ExportRocksDBConfigToJsonRequestHeader.class));
+        apiInventories.put("CheckRocksdbCqWriteProgressRequestHeader",
+            apiInventory(CheckRocksdbCqWriteProgressRequestHeader.class));
         apiInventories.put("ExportRocksDBConfigType",
             apiInventory(ExportRocksDBConfigToJsonRequestHeader.ConfigType.class));
         apiInventories.put("WipeWritePermOfBrokerRequestHeader",
@@ -228,6 +236,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 908;
         } else if ("export-rocksdb-config".equals(type)) {
             code = 355;
+        } else if ("check-rocksdb-cq-write-progress".equals(type)) {
+            code = 354;
         } else if ("wipe-write-perm-request".equals(type)
             || "wipe-write-perm-response".equals(type)) {
             code = 205;
@@ -272,6 +282,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "export-rocksdb-config":
                     headerClass = ExportRocksDBConfigToJsonRequestHeader.class;
+                    break;
+                case "check-rocksdb-cq-write-progress":
+                    headerClass = CheckRocksdbCqWriteProgressRequestHeader.class;
                     break;
                 case "wipe-write-perm-request":
                     headerClass = WipeWritePermOfBrokerRequestHeader.class;

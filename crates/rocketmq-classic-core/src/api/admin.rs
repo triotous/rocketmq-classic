@@ -7,15 +7,16 @@ use rocketmq_classic_common::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats, ConsumerConnection,
-        ConsumerRunningInfoBody, CreateTopicListRequestBody,
+        CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
+        ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
         DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList, KvTable,
         ProducerConnection, ProducerTableInfo, QuerySubscriptionResponseBody, ResetOffsetBody,
         SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
-        AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader, CommandHeader,
+        AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader,
+        CheckRocksdbCqWriteProgressRequestHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
@@ -637,6 +638,33 @@ impl MQClientApi {
             });
         }
         Ok(())
+    }
+
+    /// Checks RocksDB consume-queue write progress through Java
+    /// `MQClientAPIImpl.checkRocksdbCqWriteProgress`.
+    ///
+    /// A successful response body may be JSON `null` or absent; both produce
+    /// `Ok(None)`, matching Fastjson's nullable parse result.
+    pub async fn check_rocksdb_cq_write_progress(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        check_store_time: i64,
+        deadline: Instant,
+    ) -> Result<Option<CheckRocksdbCqWriteResult>, RpcError> {
+        let mut header = CheckRocksdbCqWriteProgressRequestHeader::default();
+        header.set_topic(topic.map(str::to_owned));
+        header.set_check_store_time(check_store_time);
+        let code = request::CHECK_ROCKSDB_CQ_WRITE_PROGRESS;
+        let reply = self.request(addr, code, &header, None, deadline).await?;
+        let reply = classify(reply, code, addr)?;
+        CheckRocksdbCqWriteResult::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
     }
 
     /// Exports the selected RocksDB configuration through Java

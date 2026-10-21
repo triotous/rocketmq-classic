@@ -131,6 +131,98 @@ macro_rules! impl_java_remoting_serializable_adapters {
     };
 }
 
+/// Status names and integer values of Java
+/// `CheckRocksdbCqWriteResult.CheckStatus`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CheckRocksdbCqWriteStatus {
+    CheckOk,
+    CheckNotOk,
+    CheckInProgress,
+    CheckError,
+}
+
+impl_java_enum_api!(
+    CheckRocksdbCqWriteStatus,
+    "org.apache.rocketmq.common.CheckRocksdbCqWriteResult$CheckStatus",
+    4,
+    CheckOk => "CHECK_OK" = 0,
+    CheckNotOk => "CHECK_NOT_OK" = 1,
+    CheckInProgress => "CHECK_IN_PROGRESS" = 2,
+    CheckError => "CHECK_ERROR" = 3,
+);
+
+impl CheckRocksdbCqWriteStatus {
+    pub const fn get_value(&self) -> i32 {
+        self.ordinal()
+    }
+}
+
+/// Java `CheckRocksdbCqWriteResult`. The DTO has identity-based equality and
+/// exposes its nullable result text and primitive status through accessors.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::CheckRocksdbCqWriteResult;
+/// fn require_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// fn main() { require_java_identity::<CheckRocksdbCqWriteResult>(); }
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::CheckRocksdbCqWriteResult;
+/// let _ = CheckRocksdbCqWriteResult::default().check_status;
+/// ```
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRocksdbCqWriteResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    check_result: Option<String>,
+    check_status: i32,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckRocksdbCqWriteResultFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    check_result: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    check_status: i32,
+}
+
+impl<'de> Deserialize<'de> for CheckRocksdbCqWriteResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: CheckRocksdbCqWriteResultFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            check_result: fields.check_result,
+            check_status: fields.check_status,
+        })
+    }
+}
+
+impl CheckRocksdbCqWriteResult {
+    pub fn get_check_result(&self) -> Option<&str> {
+        self.check_result.as_deref()
+    }
+
+    pub fn set_check_result(&mut self, value: Option<String>) {
+        self.check_result = value;
+    }
+
+    pub fn get_check_status(&self) -> i32 {
+        self.check_status
+    }
+
+    pub fn set_check_status(&mut self, value: i32) {
+        self.check_status = value;
+    }
+}
+
 /// Java inherits identity-based equality and hashing for this DTO.
 ///
 /// ```compile_fail
@@ -7546,6 +7638,7 @@ fn default_auto_commit() -> bool {
 
 impl_java_remoting_serializable_adapters!(
     CheckClientRequestBody,
+    CheckRocksdbCqWriteResult,
     LiteSubscriptionCtlRequestBody,
     QueryAssignmentRequestBody,
     QueryAssignmentResponseBody,

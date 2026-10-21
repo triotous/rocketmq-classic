@@ -5930,6 +5930,31 @@ owner-specific checks belong in the manual handoff.
   and Phase 19 live Broker scenarios remain open. Four preserved Phase 19
   worktree paths remain unstaged and untouched.
 
+## P18-V01 `checkRocksdbCqWriteProgress` Broker API — 2026-10-21
+
+- [x] Added `MQClientApi::check_rocksdb_cq_write_progress` for pinned request
+  354. It sends the supplied Broker address with the caller deadline, retains
+  nullable `topic`, serializes primitive `checkStoreTime` including zero, and
+  sends no request body. The return value is an optional typed
+  `CheckRocksdbCqWriteResult`; the nested `CheckStatus` enum preserves Java
+  names, ordinals and values.
+- [x] Added Java invoked cases and a typed header fixture. The cases cover
+  nullable/empty topics, default primitive fields, populated and missing DTO
+  properties, JSON null, absent/empty/malformed response bodies, and Broker
+  rejection. Successful null/absent/empty bodies return `None`; malformed JSON
+  becomes `MalformedResponse`. Header fixtures cover fast/reflection decode.
+  Producer core fixture SHA-256:
+  `6f853c6e49ad04a2fe2d1d7d202c992d1088e17da1fc248330bef7de968603a0`.
+- [x] Protocol `header_inventory` passes (12 tests), Protocol `headers` passes
+  (23 tests, including `header_validation_matrix`), and Protocol doctests pass
+  (151). The full Core `admin_rpc` suite passes (80 tests). Strict locked
+  all-target/all-feature workspace Clippy, `cargo fmt --all -- --check`, and
+  `git diff --check` pass. Pinned Maven `verify` passes with 37 manifest
+  scenarios, 80 Java-decoded typed headers, and 15 typed bodies.
+- Broad P18-V01, final current-revision P18-V02, Ubuntu/native Windows P18-V04,
+  and Phase 19 live Broker scenarios remain open. Four preserved Phase 19
+  worktree paths remain unstaged and untouched.
+
 ## P18-V01 `resetMasterFlushOffset` Broker API — 2026-10-21
 
 - [x] Added `MQClientApi::reset_master_flush_offset` for pinned Java request

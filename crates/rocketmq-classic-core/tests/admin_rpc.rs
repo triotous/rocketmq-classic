@@ -12,7 +12,7 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::TopicConfig,
+    body::{CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, TopicConfig},
     codes::{request, response},
     header::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
@@ -1824,6 +1824,166 @@ async fn reset_master_flush_offset_matches_java_header_timeout_and_outcomes() {
         assert_eq!(
             java_request["extFields"]["masterFlushOffset"],
             offset.to_string()
+        );
+        assert!(java_request["requestBodyBase64"].is_null());
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn check_rocksdb_cq_write_progress_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["checkRocksdbCqWriteProgressApi"],
+        json!([
+            "org.apache.rocketmq.common.CheckRocksdbCqWriteResult org.apache.rocketmq.client.impl.MQClientAPIImpl.checkRocksdbCqWriteProgress(java.lang.String,java.lang.String,long,long)"
+        ])
+    );
+    let result_api = &fixture["checkRocksdbCqWriteResultApi"];
+    assert_eq!(fixture["checkRocksdbCqWriteResultPublicFields"], json!([]));
+    for method in [
+        "getCheckResult",
+        "setCheckResult",
+        "getCheckStatus",
+        "setCheckStatus",
+    ] {
+        assert!(
+            result_api["declaredPublicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|signature| signature.as_str().unwrap().contains(&format!(".{method}(")))
+        );
+    }
+    let status_api = &fixture["checkRocksdbCqWriteStatusApi"];
+    let status_methods = status_api["declaredPublicMethods"].as_array().unwrap();
+    assert!(
+        status_methods
+            .iter()
+            .any(|signature| signature.as_str().unwrap().contains(".getValue("))
+    );
+    let java_statuses = fixture["checkRocksdbCqWriteStatusValues"]
+        .as_array()
+        .unwrap();
+    assert_eq!(java_statuses.len(), 4);
+    for (index, (status, name, ordinal, value)) in [
+        (CheckRocksdbCqWriteStatus::CheckOk, "CHECK_OK", 0, 0),
+        (CheckRocksdbCqWriteStatus::CheckNotOk, "CHECK_NOT_OK", 1, 1),
+        (
+            CheckRocksdbCqWriteStatus::CheckInProgress,
+            "CHECK_IN_PROGRESS",
+            2,
+            2,
+        ),
+        (CheckRocksdbCqWriteStatus::CheckError, "CHECK_ERROR", 3, 3),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(java_statuses[index]["name"], name);
+        assert_eq!(java_statuses[index]["ordinal"], ordinal);
+        assert_eq!(java_statuses[index]["value"], value);
+        assert_eq!(status.name(), name);
+        assert_eq!(status.ordinal(), ordinal);
+        assert_eq!(status.get_value(), value);
+        assert_eq!(
+            CheckRocksdbCqWriteStatus::value_of_name(Some(name)),
+            Ok(status)
+        );
+    }
+    assert_eq!(CheckRocksdbCqWriteStatus::values().len(), 4);
+
+    let cases = fixture["checkRocksdbCqWriteProgressOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 8);
+    let (client_api, client) = api().await;
+    for case in cases {
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let topic = case["topic"].as_str();
+        let check_store_time = case["checkStoreTime"].as_i64().unwrap();
+        let result = client_api
+            .check_rocksdb_cq_write_progress(
+                &addr,
+                topic,
+                check_store_time,
+                Instant::now() + Duration::from_millis(2345),
+            )
+            .await;
+        match case["outcome"].as_str().unwrap() {
+            "returned" => {
+                if case["resultIsNull"] == true {
+                    assert!(result.unwrap().is_none(), "{}", case["name"]);
+                } else {
+                    let result: CheckRocksdbCqWriteResult = result.unwrap().unwrap();
+                    assert_eq!(result.get_check_result(), case["checkResult"].as_str());
+                    assert_eq!(
+                        result.get_check_status(),
+                        case["checkStatus"].as_i64().unwrap_or_default() as i32
+                    );
+                }
+            }
+            "MQClientException" => assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::CHECK_ROCKSDB_CQ_WRITE_PROGRESS,
+                    peer: error_peer,
+                    code,
+                    remark: Some(error_remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && Some(error_remark.as_str()) == case["responseRemark"].as_str()
+            )),
+            "JSONException" => assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::CHECK_ROCKSDB_CQ_WRITE_PROGRESS,
+                    peer: error_peer,
+                    ..
+                }) if error_peer == addr
+            )),
+            outcome => panic!("unexpected Java result {outcome}"),
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::CHECK_ROCKSDB_CQ_WRITE_PROGRESS);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        let fields = request.ext_fields.as_ref().unwrap();
+        assert_eq!(
+            fields.get("topic").map(String::as_str),
+            topic,
+            "{}",
+            case["name"]
+        );
+        assert_eq!(fields["checkStoreTime"], check_store_time.to_string());
+
+        let java_request = &case["requests"][0];
+        assert_eq!(java_request["address"], "broker-a:10911");
+        assert_eq!(
+            java_request["requestCode"],
+            request::CHECK_ROCKSDB_CQ_WRITE_PROGRESS
+        );
+        assert_eq!(java_request["timeoutMillis"], 2345);
+        assert_eq!(
+            java_request["extFields"]["topic"].as_str(),
+            topic,
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            java_request["extFields"]["checkStoreTime"],
+            check_store_time.to_string()
         );
         assert!(java_request["requestBodyBase64"].is_null());
     }

@@ -14,8 +14,8 @@ use rocketmq_classic_protocol::{
     header::{
         AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
-        CheckTransactionStateResponseHeader, CommandHeader,
+        ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
+        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
@@ -663,6 +663,17 @@ fn generate_p4_headers(output: &std::path::Path) {
         ]);
         header
     });
+    write_typed(
+        output,
+        "typed-check-rocksdb-cq-write-progress-request.bin",
+        354,
+        &{
+            let mut header = CheckRocksdbCqWriteProgressRequestHeader::default();
+            header.set_topic(Some("orders".into()));
+            header.set_check_store_time(1_712_345_678_901);
+            header
+        },
+    );
     write_typed(output, "typed-pop.bin", 200050, &{
         let mut __phase18_header_12 = PopMessageRequestHeader::default();
         __phase18_header_12.set_consumer_group(Some("workers".into()));

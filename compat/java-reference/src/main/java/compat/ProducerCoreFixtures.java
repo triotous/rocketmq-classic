@@ -311,6 +311,29 @@ public final class ProducerCoreFixtures {
             .collect(java.util.stream.Collectors.toList()));
         result.put("exportRocksDBConfigTypeParsing", exportRocksDBConfigTypeParsing());
         result.put("exportRocksDBConfigToJsonOperations", exportRocksDBConfigToJsonOperations());
+        result.put("checkRocksdbCqWriteProgressApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("checkRocksdbCqWriteProgress"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("checkRocksdbCqWriteResultApi",
+            publicApiSurface(org.apache.rocketmq.common.CheckRocksdbCqWriteResult.class));
+        result.put("checkRocksdbCqWriteResultPublicFields", publicFieldSignatures(
+            org.apache.rocketmq.common.CheckRocksdbCqWriteResult.class));
+        result.put("checkRocksdbCqWriteStatusApi",
+            publicApiSurface(org.apache.rocketmq.common.CheckRocksdbCqWriteResult.CheckStatus.class));
+        result.put("checkRocksdbCqWriteStatusValues", Arrays.stream(
+            org.apache.rocketmq.common.CheckRocksdbCqWriteResult.CheckStatus.values())
+            .map(status -> {
+                Map<String, Object> row = new TreeMap<>();
+                row.put("name", status.name());
+                row.put("ordinal", status.ordinal());
+                row.put("value", status.getValue());
+                return row;
+            })
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("checkRocksdbCqWriteProgressOperations", checkRocksdbCqWriteProgressOperations());
         result.put("wipeWritePermOfBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("wipeWritePermOfBroker"))
@@ -3049,6 +3072,101 @@ public final class ProducerCoreFixtures {
                 "write permission update rejected", null));
         }
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> checkRocksdbCqWriteProgressOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(checkRocksdbCqWriteProgressCase("success-in-progress", "orders", 1_712_345_678_901L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"checkResult\":\"write in progress\",\"checkStatus\":2}"));
+        cases.add(checkRocksdbCqWriteProgressCase("null-topic-zero-time", null, 0L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{}"));
+        cases.add(checkRocksdbCqWriteProgressCase("empty-topic-negative-time", "", -1L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"checkResult\":\"\",\"checkStatus\":3}"));
+        cases.add(checkRocksdbCqWriteProgressCase("json-null", "orders", 17L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "null"));
+        cases.add(checkRocksdbCqWriteProgressCase("missing-body", "orders", 18L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(checkRocksdbCqWriteProgressCase("empty-body", "orders", 19L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, ""));
+        cases.add(checkRocksdbCqWriteProgressCase("malformed-body", "orders", 20L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{"));
+        cases.add(checkRocksdbCqWriteProgressCase("broker-error", "orders", 21L,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "check rejected", null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> checkRocksdbCqWriteProgressCase(
+        String name,
+        String topic,
+        long checkStoreTime,
+        int responseCode,
+        String responseRemark,
+        String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("check-rocksdb-cq-write-progress-api");
+        clientConfig.setVipChannelEnabled(true);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("topic", topic);
+        result.put("checkStoreTime", checkStoreTime);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.common.CheckRocksdbCqWriteResult received =
+                api.checkRocksdbCqWriteProgress("broker-a:10911", topic, checkStoreTime, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", received == null);
+            result.put("checkResult", received == null ? null : received.getCheckResult());
+            result.put("checkStatus", received == null ? null : received.getCheckStatus());
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

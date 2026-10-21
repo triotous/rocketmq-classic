@@ -12,8 +12,8 @@ use rocketmq_classic_protocol::{
     header::{
         AckMessageRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
-        ChangeInvisibleTimeResponseHeader, CheckTransactionStateRequestHeader,
-        CheckTransactionStateResponseHeader, CommandHeader,
+        ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
+        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
         ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
@@ -524,6 +524,55 @@ fn export_rocksdb_config_header_and_enum_match_java_contract() {
                 }
                 error => panic!("unexpected error: {error}"),
             }
+        }
+    }
+}
+
+#[test]
+fn check_rocksdb_cq_write_progress_header_matches_java_decode_modes() {
+    let raw = java_ext_fields("header-check-rocksdb-cq-write-progress-request");
+    let header = CheckRocksdbCqWriteProgressRequestHeader::decode_fields(&raw).unwrap();
+    assert_eq!(header.get_topic(), Some("orders"));
+    assert_eq!(header.get_check_store_time(), 1_712_345_678_901);
+    let mut encoded = HeaderMap::new();
+    header.encode_fields(&mut encoded);
+    assert_eq!(encoded, raw);
+
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    for case_name in [
+        "check-rocksdb-cq-write-progress-valid",
+        "check-rocksdb-cq-write-progress-missing",
+        "check-rocksdb-cq-write-progress-invalid-time",
+    ] {
+        let case = &fixture["cases"][case_name];
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for (mode_name, use_fast_encode) in [("fast", true), ("reflection", false)] {
+            let expected = &case[mode_name];
+            let decoded = CheckRocksdbCqWriteProgressRequestHeader::decode_fields_with_mode(
+                &fields,
+                use_fast_encode,
+            )
+            .unwrap();
+            assert_eq!(
+                decoded.get_topic(),
+                expected["decodedFields"]["topic"].as_str(),
+                "{case_name} {mode_name}"
+            );
+            assert_eq!(
+                decoded.get_check_store_time(),
+                expected["decodedFields"]["checkStoreTime"]
+                    .as_i64()
+                    .unwrap(),
+                "{case_name} {mode_name}"
+            );
+            let mut encoded = HeaderMap::new();
+            decoded.encode_fields(&mut encoded);
+            let expected_fields: HeaderMap =
+                serde_json::from_value(expected["encodedFields"].clone()).unwrap();
+            assert_eq!(encoded, expected_fields, "{case_name} {mode_name}");
         }
     }
 }
@@ -2570,6 +2619,15 @@ fn header_validation_matrix() {
             ""
         ),
         row!(
+            CheckRocksdbCqWriteProgressRequestHeader,
+            "check-rocksdb-cq-write-progress-request",
+            "",
+            "",
+            "checkStoreTime",
+            "topic",
+            ""
+        ),
+        row!(
             GetConsumerStatusRequestHeader,
             "consumer-status-request",
             "topic group",
@@ -2970,6 +3028,7 @@ fn header_validation_matrix() {
                             | "PopLiteMessageRequestHeader"
                             | "PopMessageResponseHeader"
                             | "PopLiteMessageResponseHeader"
+                            | "CheckRocksdbCqWriteProgressRequestHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

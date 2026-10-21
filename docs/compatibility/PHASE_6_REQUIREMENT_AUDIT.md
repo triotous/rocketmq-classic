@@ -1444,8 +1444,23 @@ loopback test cover the signature, request envelope, result, and failure
 branches. This closes the named direct method/header slices only; broad
 P18-V01, P18-V02 and platform evidence gates remain open.
 
-P18 follow-up to the Phase 17 tools boundary note: `exportRocksDBConfigToJson`
-is now mapped as a public low-level `MQClientAPIImpl` operation. The Phase 17
-`TOOLS_OUT_OF_SCOPE` disposition still applies to the `MQAdminExt` wrapper and
-`checkRocksdbCqWriteProgress` path; it does not remove this public client
-operation from the Phase 18 source/API inventory.
+## Direct `checkRocksdbCqWriteProgress` API — 2026-10-21
+
+Pinned `MQClientAPIImpl.checkRocksdbCqWriteProgress(String,String,long,long)`
+sends request 354 to the supplied Broker address and parses
+`CheckRocksdbCqWriteResult` from the nullable response body. Rust maps the
+request header, nullable result DTO and `CheckStatus` enum, including primitive
+defaults, direct address/deadline use, Broker errors, malformed JSON and
+successful null/absent/empty bodies. Java invoked fixtures, Java→Rust and
+Rust→Java header frames, both header decode modes, Protocol tests and a Core
+loopback comparison cover the named mapping. Producer core fixture SHA-256:
+`6f853c6e49ad04a2fe2d1d7d202c992d1088e17da1fc248330bef7de968603a0`. This
+closes the direct API/header slice only; broad P18-V01, final P18-V02 and
+platform evidence gates remain open.
+
+P18 follow-up to the Phase 17 tools boundary note: both
+`exportRocksDBConfigToJson` and `checkRocksdbCqWriteProgress` are now mapped as
+public low-level `MQClientAPIImpl` operations. The Phase 17
+`TOOLS_OUT_OF_SCOPE` disposition continues to apply to their `MQAdminExt`
+wrappers; it does not remove either client operation from the Phase 18
+source/API inventory.

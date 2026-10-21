@@ -731,3 +731,16 @@ field, empty body, address and success/error results. Producer core fixture
 SHA-256: `bb28b038fdd66160007d8c757e53ed4cb78ebcad0a91b4ff9d950fa04eccee6c`.
 This closes this RPC mapping only; broad P18-V01 and the final P18-V02 refresh
 remain open.
+
+Phase 18 `checkRocksdbCqWriteProgress` RPC (2026-10-21): pinned
+`MQClientAPIImpl.checkRocksdbCqWriteProgress(String,String,long,long)` sends
+request 354 to the supplied address, serializes nullable `topic` and primitive
+`checkStoreTime`, and parses a nullable `CheckRocksdbCqWriteResult`. Rust maps
+the status DTO and `CheckStatus` names/values, preserves null, absent and empty
+successful bodies as `None`, reports malformed JSON as a malformed response,
+and preserves Broker errors. Java invoked cases and Rust loopback tests cover
+the request, status values, defaults and response outcomes; header fixtures
+cover fast/reflection decoding. Producer core fixture SHA-256:
+`6f853c6e49ad04a2fe2d1d7d202c992d1088e17da1fc248330bef7de968603a0`. This
+closes this RPC/header slice only; broad P18-V01 and the final P18-V02 refresh
+remain open.
