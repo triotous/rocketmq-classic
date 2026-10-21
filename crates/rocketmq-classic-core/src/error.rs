@@ -1,3 +1,4 @@
+use rocketmq_classic_common::permission::PermissionParseError;
 use rocketmq_classic_protocol::header::ProtocolError;
 use rocketmq_classic_remoting::TransportError;
 use thiserror::Error;
@@ -36,4 +37,22 @@ pub enum RpcError {
         code: i32,
         remark: Option<String>,
     },
+    #[error(
+        "CODE: {response_code}  DESC: {message}\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    )]
+    ClientValidation {
+        request_code: i32,
+        response_code: i32,
+        message: String,
+    },
+    #[error(transparent)]
+    PermissionParse(#[from] PermissionParseError),
+    #[error("runtime failure: {0}")]
+    Runtime(#[source] Box<crate::runtime::RuntimeError>),
+}
+
+impl From<crate::runtime::RuntimeError> for RpcError {
+    fn from(source: crate::runtime::RuntimeError) -> Self {
+        Self::Runtime(Box::new(source))
+    }
 }

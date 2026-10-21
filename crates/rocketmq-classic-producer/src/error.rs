@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use rocketmq_classic_common::permission::PermissionParseError;
+
 use crate::ProducerServiceState;
 
 #[derive(Debug, Error)]
@@ -47,6 +49,12 @@ pub enum ProducerError {
     BodyTooLarge { actual: usize, maximum: i32 },
     #[error("INNER_MULTI_DISPATCH contains the platform path separator")]
     InvalidMultiDispatch,
+    #[error(
+        "CODE: {response_code}  DESC: {message}\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    )]
+    ClientValidation { response_code: i32, message: String },
+    #[error(transparent)]
+    PermissionParse(#[from] PermissionParseError),
     #[error("producer is not started")]
     NotStarted,
     #[error("producer has already been started")]

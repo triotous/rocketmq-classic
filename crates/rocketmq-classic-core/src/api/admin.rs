@@ -1,5 +1,8 @@
-use rocketmq_classic_common::message::{
-    DecodeOptions, MessageExt, constants, decode_many, decode_one,
+use std::collections::HashMap;
+
+use rocketmq_classic_common::{
+    message::{DecodeOptions, MessageExt, constants, decode_many, decode_one},
+    permission::PermName,
 };
 use rocketmq_classic_protocol::{
     SharedValue,
@@ -30,6 +33,7 @@ use tokio::{
 };
 
 use super::{MQClientApi, classify, decode_body, decode_header};
+use crate::config::read_shared_client_config;
 use crate::error::RpcError;
 
 /// The index watermark and matching messages returned by a Broker query.
@@ -462,7 +466,71 @@ impl MQClientApi {
         deadline: Instant,
     ) -> Result<(), RpcError> {
         let code = request::UPDATE_AND_CREATE_TOPIC;
+        if let Some(permission) = header.get_perm() {
+            if !PermName::is_valid(permission) {
+                return Err(RpcError::ClientValidation {
+                    request_code: code,
+                    response_code: response::NO_PERMISSION,
+                    message: format!("topicPermission value: {permission} is invalid."),
+                });
+            }
+        }
         let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Sends Java `MQClientAPIImpl.updateBrokerConfig` to one Broker.
+    ///
+    /// Java validates an optional `brokerPermission` property before encoding
+    /// Properties as UTF-8 `key=value\n` lines. An empty Properties object is
+    /// a successful no-op.
+    pub async fn update_broker_config(
+        &self,
+        addr: &str,
+        properties: &HashMap<String, String>,
+        deadline: Instant,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_BROKER_CONFIG;
+        if let Some(value) = properties.get("brokerPermission") {
+            let valid = PermName::is_valid_string(value)?;
+            if !valid {
+                return Err(RpcError::ClientValidation {
+                    request_code: code,
+                    response_code: response::NO_PERMISSION,
+                    message: format!("brokerPermission value: {value} is invalid."),
+                });
+            }
+        }
+
+        if properties.is_empty() {
+            return Ok(());
+        }
+
+        let mut body = String::new();
+        for (key, value) in properties {
+            body.push_str(key);
+            body.push('=');
+            body.push_str(value);
+            body.push('\n');
+        }
+        let body = body.into_bytes();
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let command = RemotingCommand {
+            code,
+            language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            body: Some(body),
+            ..Default::default()
+        };
+        let reply = self
+            .remoting
+            .invoke_sync_with_deadline(&broker_addr, command, deadline)
+            .await?;
         classify(reply, code, addr)?;
         Ok(())
     }
@@ -887,6 +955,77 @@ fn client_decode_message(message: &mut MessageExt) {
 #[cfg(test)]
 mod tests {
     use super::{AdminQueryRequest, MessageExt, QueryResult, SharedValue};
+
+    #[tokio::test]
+    async fn update_broker_config_applies_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::{
+            collections::HashMap,
+            sync::{Arc, RwLock},
+            time::Duration,
+        };
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+            time::Instant,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request.code,
+                rocketmq_classic_protocol::codes::request::UPDATE_BROKER_CONFIG
+            );
+            assert_eq!(request.language, Some(LanguageCode::Java));
+            assert!(request.ext_fields.is_none());
+            assert_eq!(
+                request.body.as_deref(),
+                Some(b"brokerPermission=7\n".as_slice())
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("update-broker-config-vip");
+        config.set_vip_channel_enabled(true);
+        let config = Arc::new(RwLock::new(config));
+        let api = MQClientApi::with_config(remoting.clone(), config);
+        api.update_broker_config(
+            &format!("127.0.0.1:{advertised_port}"),
+            &HashMap::from([("brokerPermission".to_owned(), "7".to_owned())]),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
 
     #[test]
     fn query_result_java_getters_expose_the_stored_values() {

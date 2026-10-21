@@ -3,6 +3,7 @@ pub use rocketmq_classic_common::message::{
 };
 pub use rocketmq_classic_common::sysflag::message::CompressionType;
 pub use rocketmq_classic_common::topic::{TopicValidator, TopicValidatorError, ValidateResult};
+pub use rocketmq_classic_common::{PermName, PermissionParseError};
 pub use rocketmq_classic_consumer::config::DEFAULT_CONSUMER_GROUP;
 pub use rocketmq_classic_consumer::pull::{BoundaryType, MessageSelector, PullConsumer};
 pub use rocketmq_classic_consumer::{

@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -42,6 +43,8 @@ import org.apache.rocketmq.client.producer.MessageQueueSelector;
 import org.apache.rocketmq.client.producer.MQProducer;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
+import org.apache.rocketmq.common.TopicConfig;
+import org.apache.rocketmq.common.constant.PermName;
 import org.apache.rocketmq.common.compression.Compressor;
 import org.apache.rocketmq.common.compression.CompressionType;
 import org.apache.rocketmq.common.message.Message;
@@ -79,6 +82,29 @@ public final class ProducerCoreFixtures {
         } catch (Exception expected) {
             return false;
         }
+    }
+
+    private static Map<String, Object> permissionOutcome(Object input, Check check) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("input", input);
+        try {
+            check.run();
+            result.put("accepted", true);
+            result.put("responseCode", -1);
+            result.put("errorClass", "none");
+            result.put("message", "");
+        } catch (MQClientException error) {
+            result.put("accepted", false);
+            result.put("responseCode", error.getResponseCode());
+            result.put("errorClass", error.getClass().getSimpleName());
+            result.put("message", error.getMessage());
+        } catch (Exception error) {
+            result.put("accepted", false);
+            result.put("responseCode", -1);
+            result.put("errorClass", error.getClass().getSimpleName());
+            result.put("message", error.getMessage());
+        }
+        return result;
     }
 
     private static long totalAccumulatorHoldBytes(DefaultMQProducer producer) {
@@ -142,6 +168,32 @@ public final class ProducerCoreFixtures {
         result.put("provenance", provenance);
         result.put("producerImplementationApi", producerImplementationApi());
         result.put("producerFacadeApi", producerFacadeApi());
+        result.put("validatorsApi", publicApiSurface(Validators.class));
+        result.put("permNameApi", publicApiSurface(PermName.class));
+        result.put("permNamePublicFields", publicFieldSignatures(PermName.class));
+        List<Map<String, Object>> permNameCases = new ArrayList<>();
+        for (int permission : Arrays.asList(-1, 0, 1, 2, 3, 4, 6, 7, 8, 15)) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("input", permission);
+            row.put("text", PermName.perm2String(permission));
+            row.put("readable", PermName.isReadable(permission));
+            row.put("writeable", PermName.isWriteable(permission));
+            row.put("inherited", PermName.isInherited(permission));
+            row.put("priority", PermName.isPriority(permission));
+            row.put("accessible", PermName.isAccessible(permission));
+            row.put("valid", PermName.isValid(permission));
+            permNameCases.add(row);
+        }
+        result.put("permNameCases", permNameCases);
+        List<Map<String, Object>> permNameStringCases = new ArrayList<>();
+        for (String permission : Arrays.asList("0", "+7", "٧", "8", "-1")) {
+            permNameStringCases.add(row(permission, PermName.isValid(permission)));
+        }
+        for (String permission : Arrays.asList("", " 7", "2147483648", "--1")) {
+            permNameStringCases.add(permissionOutcome(permission,
+                () -> PermName.isValid(permission)));
+        }
+        result.put("permNameStringCases", permNameStringCases);
         result.put("messageBatchPublicApi", messageBatchPublicApi());
         result.put("messageBatchInputSemantics", messageBatchInputSemantics());
         result.put("messageBatchValidationFailures", messageBatchValidationFailures());
@@ -318,6 +370,27 @@ public final class ProducerCoreFixtures {
             systemTopics.add(row);
         }
         result.put("systemTopics", systemTopics);
+
+        List<Map<String, Object>> topicPermissions = new ArrayList<>();
+        for (int permission : Arrays.asList(-1, 0, 4, 6, 7, 8, 15)) {
+            TopicConfig topicConfig = new TopicConfig();
+            topicConfig.setPerm(permission);
+            topicPermissions.add(permissionOutcome(permission,
+                () -> Validators.checkTopicConfig(topicConfig)));
+        }
+        result.put("topicPermissions", topicPermissions);
+
+        List<Map<String, Object>> brokerPermissions = new ArrayList<>();
+        for (String permission : Arrays.asList("0", "+7", "٧", "8", "-1", "", " 7", "2147483648")) {
+            Properties properties = new Properties();
+            properties.setProperty("brokerPermission", permission);
+            brokerPermissions.add(permissionOutcome(permission,
+                () -> Validators.checkBrokerConfig(properties)));
+        }
+        Properties missingBrokerPermission = new Properties();
+        brokerPermissions.add(permissionOutcome("missing",
+            () -> Validators.checkBrokerConfig(missingBrokerPermission)));
+        result.put("brokerPermissions", brokerPermissions);
 
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(row("null-message", accepts(() -> Validators.checkMessage(null, producer))));
@@ -1335,6 +1408,15 @@ public final class ProducerCoreFixtures {
         result.put("publicMethods", methods);
         result.put("publicMethodCount", methods.size());
         return result;
+    }
+
+    private static List<String> publicFieldSignatures(Class<?> apiType) {
+        return Arrays.stream(apiType.getDeclaredFields())
+            .filter(field -> Modifier.isPublic(field.getModifiers()))
+            .map(field -> field.getType().getName() + " " + field.getDeclaringClass().getName()
+                + "." + field.getName())
+            .sorted()
+            .collect(java.util.stream.Collectors.toList());
     }
 
     private static Map<String, Object> implementationHookExecution() {

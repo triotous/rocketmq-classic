@@ -9,6 +9,19 @@ typed-header frames and passes with 15 typed-body frames. Rust frame SHA-256:
 closes only the Lite topic-info header fixture slice; broad P18-V01
 reconciliation remains open.
 
+Phase 18 Producer permission validation and Broker config RPC (2026-10-21):
+the pinned `Validators` and `PermName` inventories now include all seven
+validator methods, eight permission constants and methods, and valid, invalid,
+Arabic-digit, malformed and overflow inputs. Rust maps the permission helpers,
+formats invalid permission errors with Java's code-16 `MQClientException`
+message, and preserves `NumberFormatException` text for malformed strings.
+`MQClientApi::create_topic` validates a supplied permission before network I/O;
+`update_broker_config` maps the empty-properties no-op, UTF-8 properties body,
+VIP address offset and Broker error path. Producer fixture SHA-256:
+`8216bf9c1a66b57a61e88af448f61ab38dc84015ffd872ee340d68896d3ec9b5`. These
+bounded API/operation paths are covered locally; broad P18-V01 and the final
+current-revision P18-V02 refresh remain open.
+
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,
 missing-topic `NO_ROUTE`, heartbeat request/response parity, synchronous send,

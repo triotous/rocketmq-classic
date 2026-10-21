@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use base64::Engine;
 use bytes::BytesMut;
@@ -240,6 +240,146 @@ async fn create_topic_sends_java_request_code_and_header_fields() {
             "field {key}"
         );
     }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_topic_rejects_invalid_permission_before_network_io() {
+    let (api, client) = api().await;
+    let mut header = CreateTopicRequestHeader::default();
+    header.set_topic(Some("orders".into()));
+    header.set_perm(Some(8));
+    let error = api
+        .create_topic(
+            "not-an-address",
+            &header,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "CODE: 16  DESC: topicPermission value: 8 is invalid.\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    );
+    assert!(matches!(
+        &error,
+        RpcError::ClientValidation {
+            request_code: request::UPDATE_AND_CREATE_TOPIC,
+            response_code: response::NO_PERMISSION,
+            message,
+        } if message == "topicPermission value: 8 is invalid."
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn update_broker_config_sends_java_properties_body() {
+    let (addr, peer) = scripted_peer(response::SUCCESS, None, None).await;
+    let (api, client) = api().await;
+    let properties = HashMap::from([
+        ("brokerPermission".to_owned(), "7".to_owned()),
+        ("brokerRole".to_owned(), "ASYNC_MASTER".to_owned()),
+    ]);
+    api.update_broker_config(&addr, &properties, Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap();
+    let command = peer.await.unwrap();
+    assert_eq!(command.code, request::UPDATE_BROKER_CONFIG);
+    assert_eq!(
+        command.language,
+        Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+    );
+    assert!(command.ext_fields.is_none());
+    let lines = String::from_utf8(command.body.unwrap())
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(
+        lines,
+        std::collections::HashSet::from([
+            "brokerPermission=7".to_owned(),
+            "brokerRole=ASYNC_MASTER".to_owned(),
+        ])
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn update_broker_config_empty_properties_is_a_noop() {
+    let (api, client) = api().await;
+    assert!(
+        api.update_broker_config(
+            "not-an-address",
+            &HashMap::new(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .is_ok()
+    );
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn update_broker_config_rejects_invalid_and_malformed_permissions_locally() {
+    let (api, client) = api().await;
+    let invalid = HashMap::from([("brokerPermission".to_owned(), "8".to_owned())]);
+    let error = api
+        .update_broker_config(
+            "not-an-address",
+            &invalid,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "CODE: 16  DESC: brokerPermission value: 8 is invalid.\nFor more information, please visit the url, https://rocketmq.apache.org/docs/faq/"
+    );
+    assert!(matches!(
+        &error,
+        RpcError::ClientValidation {
+            request_code: request::UPDATE_BROKER_CONFIG,
+            response_code: response::NO_PERMISSION,
+            message,
+        } if message == "brokerPermission value: 8 is invalid."
+    ));
+
+    let malformed = HashMap::from([("brokerPermission".to_owned(), " 7".to_owned())]);
+    assert!(matches!(
+        api.update_broker_config(
+            "not-an-address",
+            &malformed,
+            Instant::now() + Duration::from_secs(2),
+        )
+        .await,
+        Err(RpcError::PermissionParse(source)) if source.to_string() == "For input string: \" 7\""
+    ));
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn update_broker_config_preserves_broker_error() {
+    let (addr, peer) = scripted_peer_with_remark(
+        response::NO_PERMISSION,
+        Some("broker denied update".to_owned()),
+        None,
+        None,
+    )
+    .await;
+    let (api, client) = api().await;
+    let properties = HashMap::from([("brokerRole".to_owned(), "ASYNC_MASTER".to_owned())]);
+    assert!(matches!(
+        api.update_broker_config(&addr, &properties, Instant::now() + Duration::from_secs(2))
+            .await,
+        Err(RpcError::Response {
+            request_code: request::UPDATE_BROKER_CONFIG,
+            peer,
+            code: response::NO_PERMISSION,
+            remark: Some(remark),
+        }) if peer == addr && remark == "broker denied update"
+    ));
+    assert_eq!(peer.await.unwrap().code, request::UPDATE_BROKER_CONFIG);
     client.shutdown().await;
 }
 

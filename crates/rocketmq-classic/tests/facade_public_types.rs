@@ -1,12 +1,12 @@
 use rocketmq_classic::{
     ConsumerServiceState, DEFAULT_CONSUMER_GROUP, DEFAULT_PRODUCER_GROUP, EndTransactionContext,
     EndTransactionHook, Message, MessageBatch, MqHelper, NotifyResult,
-    NullablePublishInfoQueueFilters, OrderlyListenerFuture, PopResult, PopStatus, Producer,
-    ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState,
-    PublishInfoQueueFilter, QueryResult, SharedMessageBody, SharedMessageProperties,
-    TopicPublishInfo, TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView,
-    TopicPublishInfoKeySetView, TopicPublishInfoTable, TopicPublishInfoTableError,
-    TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
+    NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName, PermissionParseError,
+    PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex,
+    ProducerServiceState, PublishInfoQueueFilter, QueryResult, SharedMessageBody,
+    SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
+    TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
 
 fn assert_public_type<T: ?Sized>() {}
@@ -15,6 +15,9 @@ fn assert_public_type<T: ?Sized>() {}
 fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_eq!(DEFAULT_CONSUMER_GROUP, "DEFAULT_CONSUMER");
     assert_eq!(DEFAULT_PRODUCER_GROUP, "DEFAULT_PRODUCER");
+    assert!(PermName::is_valid_string("٧").unwrap());
+    assert_public_type::<PermName>();
+    assert_public_type::<PermissionParseError>();
 
     let producer = Producer::new(ProducerConfig::new("facade-api-probe").unwrap());
     let _: Option<ProducerServiceState> = producer.service_state();

@@ -14,7 +14,7 @@ HEAD in the Java checkout.
 | --- | --- | --- |
 | `client/src/main/java/org/apache/rocketmq/client/producer/DefaultMQProducer.java` | `start`, `shutdown`, `fetchPublishMessageQueues`; default, explicit-queue, selector, oneway, and collection `send` overloads; wrapper dispatch to `sendDirect` / `sendByAccumulator`; `batch(Collection)`; producer setting getters/setters | `Producer::{start,shutdown,fetch_publish_message_queues}`; `send*` and `send_batch*`; `ProducerConfig` |
 | `client/src/main/java/org/apache/rocketmq/client/impl/producer/DefaultMQProducerImpl.java` | `start`, `shutdown`, `sendDefaultImpl`, `sendSelectImpl`, `sendKernelImpl`, `tryToFindTopicPublishInfo`, `selectOneMessageQueue`, `updateFaultItem`, `pickTopic`; sync/future/oneway mode branches and the `ServiceDetector.detect` callback | `Producer` lifecycle, route cache, `send`, `selector`, `fault`, and `detect_brokers`; the detector calls `MQClientApi::probe_broker` |
-| `client/src/main/java/org/apache/rocketmq/client/Validators.java`; `common/.../topic/TopicValidator.java` | `checkGroup`, `checkMessage`, `checkTopic`, `isSystemTopic`, `isNotAllowedSendTopic`; topic classification remains distinct from the send-forbidden check | Public `validation::{is_system_topic,validate_group,validate_message,validate_send_topic,validate_system_topic,validate_topic}`; `is_system_topic` maps `TopicValidator.isSystemTopic`, while the `validate_*` helpers preserve error-returning `Validators` checks. Collection sends validate original elements before using `batch::encode_prepared_batch` to construct the wire message. |
+| `client/src/main/java/org/apache/rocketmq/client/Validators.java`; `common/.../constant/PermName.java`; `common/.../topic/TopicValidator.java` | `checkGroup`, `checkMessage`, `checkTopic`, `checkTopicConfig`, `checkBrokerConfig`, `isSystemTopic`, `isNotAllowedSendTopic`; topic classification remains distinct from the send-forbidden check | Public `validation::{is_system_topic,validate_group,validate_message,validate_send_topic,validate_system_topic,validate_topic,check_topic_config,check_broker_config}`; Common `PermName` maps all eight Java constants and methods, including the string overload's Java integer parsing. `MQClientApi::{create_topic,update_broker_config}` maps topic permission validation and the Broker config RPC, including empty-properties no-op, UTF-8 properties body, configured VIP port offset, and Broker errors. Fixture `validatorsApi`, `permNameApi`, `permNameCases`, `permNameStringCases`, `topicPermissions`, and `brokerPermissions` in `fixtures/producer/core.json` has SHA-256 `8216bf9c1a66b57a61e88af448f61ab38dc84015ffd872ee340d68896d3ec9b5`; `perm_name_*_match_the_pinned_java_fixture`, `pinned_java_producer_core_fixture_matches_defaults_and_validation`, and Core admin RPC tests compare the API, values, failures, request bytes and response paths. Collection sends still validate original elements before `batch::encode_prepared_batch` constructs the wire message. |
 | `common/src/main/java/org/apache/rocketmq/common/message/MessageClientIDSetter.java` | `createUniqID`, `setUniqID`, `getUniqID`, `getNearlyTimeFromID`, `getIPStrFromID`, `getIPFromID`, `getPidFromID`, `createFakeIP` | `UniqueIdGenerator::{create, set_if_missing}`, `Message::get_property`, and `unique_id::{get_nearly_time_from_id, get_ip_str_from_id, get_ip_from_id, get_pid_from_id, create_fake_ip}`. `uniqueIdHelpers.publicApi` reflects the public no-argument constructor, zero public fields, and all eight declared/callable public methods; `public_unique_id_helpers_match_the_pinned_java_fixture` pins those signatures and existing behavior checks cover IPv4/IPv6 fields and address text, near-time reconstruction relative to the selected month start, short/odd/invalid hex inputs, and fake-IP length. The stateless Java utility constructor is represented by the Rust `unique_id` namespace. Fixture SHA-256: `af16e63df4a3506daaf22162afdf7b52655861bbf0cffea072983a4dacfa25b6`. The Java fixture stores the near-time delta rather than an absolute epoch, so it remains stable across timezones and month rollovers. Month boundaries use the process-local timezone like Java `Calendar`; the differential passes in UTC and `TZ=Asia/Taipei`. |
 | `common/src/main/java/org/apache/rocketmq/common/message/MessageBatch.java` | Public `List<Message>` constructor, `generateFromList`, `encode`, `iterator`; inherited `Message` API | `MessageBatch::{new,new_nullable,generate_from_list,generate_from_list_nullable,encode}`, `IntoIterator` for owned/shared/mutable batches, and `Deref<Target = Message>`. Nullable adapters represent Java null collection/elements; constructor input remains unchecked and null failures occur at encode/iteration, while `generateFromList` rejects null/empty inputs. Invoked fixture and Rust tests cover four delay properties, retry topics, topic/wait-store mismatches, null inputs, exception classes/messages and compact encoding; Producer collection sends call `generate_from_list` before input mutation. |
 | `client/src/main/java/org/apache/rocketmq/client/impl/producer/TopicPublishInfo.java` | `ok`, queue-list/order/router-info/route/cursor getters and setters, filtered selection, previous-broker avoidance, reset, write-queue count, diagnostic text | public `TopicPublishInfo`; live queue-list, route-data, and cursor handles; `FaultStrategy` reads the retained per-info cursor |
@@ -401,3 +401,30 @@ This closes the reviewed Producer facade token-scan candidates and the bounded
 callable method-name reverse scan only. It does not close per-overload
 input/error/control-flow crosswalks, the full Rust public API reverse export,
 or whole-client source/input reconciliation required by P18-V01.
+
+## P18-V01 `Validators` permission methods and broker config RPC — 2026-10-21
+
+Pinned Java `Validators` declares seven public methods, including
+`checkTopicConfig(TopicConfig)` and `checkBrokerConfig(Properties)`. The former
+accepts permissions 0 through 7 and throws `MQClientException` code 16 for
+other values. The latter is a no-op when `brokerPermission` is absent, parses
+the present value with `Integer.parseInt`, and then applies the same 0 through
+7 range check. Rust exposes these checks as `validation::check_topic_config`
+and `validation::check_broker_config`; `PermName` maps the Java masks, tests,
+string overload and public constants.
+
+`MQClientApi::create_topic` validates an explicitly supplied `perm` before
+network I/O. `MQClientApi::update_broker_config` validates before encoding,
+returns without RPC for an empty map, sends non-empty values as UTF-8
+`key=value\n` lines with request code 25 and no header fields, applies the
+configured Java VIP port offset, and preserves Broker response errors. Invalid
+permissions format the same code-16 `MQClientException` message, while
+malformed strings retain Java's `NumberFormatException` input text. The pinned
+Java fixture records all seven `Validators` signatures, all eight `PermName`
+signatures and public fields, numeric/string permission inputs, and the
+validation outcomes. Fixture SHA-256:
+`8216bf9c1a66b57a61e88af448f61ab38dc84015ffd872ee340d68896d3ec9b5`.
+Common permission differentials, Producer fixture comparisons and scripted
+Core admin RPC tests cover the values and branches listed above. This closes
+these bounded APIs and operation paths only; broad P18-V01 and the final
+current-revision P18-V02 refresh remain open.

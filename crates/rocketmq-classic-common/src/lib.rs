@@ -24,7 +24,10 @@
 
 pub mod compression;
 pub mod message;
+pub mod permission;
 mod serde_fastjson;
 pub mod sysflag;
 pub mod topic;
 pub mod utils;
+
+pub use permission::{PermName, PermissionParseError};

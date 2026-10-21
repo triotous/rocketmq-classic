@@ -15,8 +15,8 @@ use rocketmq_classic_producer::{
     SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
     TopicPublishInfoTableError,
     validation::{
-        validate_group, validate_message, validate_send_topic, validate_system_topic,
-        validate_topic,
+        check_broker_config, check_topic_config, validate_group, validate_message,
+        validate_send_topic, validate_system_topic, validate_topic,
     },
 };
 use rocketmq_classic_protocol::route::{QueueData, TopicRouteData};
@@ -2598,6 +2598,94 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
         assert_eq!(validate_send_topic(topic).is_err(), row["sendForbidden"]);
         assert_eq!(validate_send_topic(topic).is_ok(), row["sendAllowed"]);
     }
+    let validators_api = &fixture["validatorsApi"];
+    assert_eq!(
+        validators_api["className"],
+        "org.apache.rocketmq.client.Validators"
+    );
+    for method in [
+        "void org.apache.rocketmq.client.Validators.checkTopicConfig(org.apache.rocketmq.common.TopicConfig)",
+        "void org.apache.rocketmq.client.Validators.checkBrokerConfig(java.util.Properties)",
+    ] {
+        assert!(
+            validators_api["publicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate == method)
+        );
+    }
+
+    for row in fixture["topicPermissions"].as_array().unwrap() {
+        let permission = row["input"].as_i64().unwrap() as i32;
+        let actual = check_topic_config(permission);
+        assert_eq!(
+            actual.is_ok(),
+            row["accepted"],
+            "topic permission {permission}"
+        );
+        if let Err(error) = actual {
+            assert!(matches!(
+                &error,
+                ProducerError::ClientValidation {
+                    response_code: 16,
+                    ..
+                }
+            ));
+            assert_eq!(error.to_string(), row["message"].as_str().unwrap());
+        }
+    }
+
+    for row in fixture["brokerPermissions"].as_array().unwrap() {
+        let permission = row["input"].as_str().unwrap();
+        let properties = if permission == "missing" {
+            HashMap::new()
+        } else {
+            HashMap::from([("brokerPermission".to_owned(), permission.to_owned())])
+        };
+        let actual = check_broker_config(&properties);
+        assert_eq!(
+            actual.is_ok(),
+            row["accepted"],
+            "broker permission {permission:?}"
+        );
+        match actual {
+            Ok(()) => {}
+            Err(error @ ProducerError::ClientValidation { response_code, .. }) => {
+                assert_eq!(response_code, row["responseCode"].as_i64().unwrap() as i32);
+                assert_eq!(error.to_string(), row["message"].as_str().unwrap());
+            }
+            Err(ProducerError::PermissionParse(source)) => {
+                assert_eq!(row["errorClass"], "NumberFormatException");
+                assert_eq!(source.to_string(), row["message"].as_str().unwrap());
+            }
+            other => panic!("unexpected broker permission result: {other:?}"),
+        }
+    }
+
+    let perm_name_api = &fixture["permNameApi"];
+    assert_eq!(
+        perm_name_api["className"],
+        "org.apache.rocketmq.common.constant.PermName"
+    );
+    for method_name in [
+        ".perm2String(",
+        ".isReadable(",
+        ".isWriteable(",
+        ".isInherited(",
+        ".isValid(",
+        ".isPriority(",
+        ".isAccessible(",
+    ] {
+        assert!(
+            perm_name_api["publicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate.as_str().unwrap().contains(method_name))
+        );
+    }
+    assert!(fixture["permNamePublicFields"].as_array().unwrap().len() >= 8);
     for row in fixture["messages"].as_array().unwrap() {
         let case = row["input"].as_str().unwrap();
         let valid = match case {

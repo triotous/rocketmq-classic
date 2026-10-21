@@ -1354,6 +1354,24 @@ entry used by discovery callbacks.
 
 The pinned fixture invokes all constants, validation/classification methods, mutable table/set behavior, and six direct constructor cases covering both valid flags with null, empty, and non-empty remarks. It also checks Java null-input exceptions for `isTopicOrGroupIllegal` and `isSystemTopic`, null membership before and after adding null to the mutable sets, and non-null classification cases. For `ValidateResult`, the fixture reflects that `equals` and `hashCode` are inherited from `java.lang.Object`, verifies self-equality, and verifies that a second instance with identical fields is unequal. A compile-fail rustdoc example guards against adding structural `Eq` to the Rust type. `public_topic_validator_surface_matches_pinned_java_fixture` compares Java outcomes with the nullable Rust adapters and the constructor, including null versus empty/non-null remarks. Updated fixture SHA-256: `5f6b913ce7174c578fe069cd3d1b6badb44c971b8c16c164378ab6129dc23c55`.
 
+## Common public API: PermName permission masks
+
+| Pinned Java 5.5.1 API | Rust counterpart / current behavior |
+| --- | --- |
+| `INDEX_PERM_PRIORITY`, `INDEX_PERM_READ`, `INDEX_PERM_WRITE`, `INDEX_PERM_INHERIT`; `PERM_PRIORITY`, `PERM_READ`, `PERM_WRITE`, `PERM_INHERIT` | Matching public associated constants on `rocketmq_classic_common::PermName`, also re-exported by the top-level facade |
+| `perm2String(int)`, `isReadable(int)`, `isWriteable(int)`, `isInherited(int)`, `isValid(int)`, `isValid(String)`, `isPriority(int)`, `isAccessible(int)` | `PermName::{perm_to_string,is_readable,is_writeable,is_inherited,is_valid,is_valid_string,is_priority,is_accessible}`; the string adapter uses Java-compatible `Integer.parseInt` behavior and returns `PermissionParseError` for malformed or overflowing input |
+
+The pinned Producer fixture reflects all eight public fields and methods and
+invokes numeric and string inputs, including negative and out-of-range masks,
+Arabic-Indic digits, leading plus, whitespace, malformed signs and overflow.
+`perm_name_numeric_methods_match_the_pinned_java_fixture`,
+`perm_name_string_overload_matches_java_parse_and_validation`, and
+`perm_name_constants_match_java_public_fields` compare the Rust API to those
+results. The fixture SHA-256 is
+`8216bf9c1a66b57a61e88af448f61ab38dc84015ffd872ee340d68896d3ec9b5`. This
+closes the mapped permission helper slice only; the Common/P18-V01 source,
+input, error, flow and reverse-export audit remains open.
+
 ## Common public API: Message diagnostic formatting
 
 | Pinned Java 5.5.1 API | Rust counterpart / current boundary |

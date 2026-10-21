@@ -1151,3 +1151,15 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   through idiomatic Rust fields. This closes the field inventory and the
   surfaced `ClientGroup` mutability gap only; broad P18-V01 method, input,
   error, flow, and reverse-export reconciliation remains open.
+
+- P18-V01 Producer permission validation and Broker config operation slice
+  (2026-10-21): pinned Java `Validators`/`PermName` reflection and input fixtures
+  exposed two permission checks and the `MQClientAPIImpl.updateBrokerConfig`
+  request path absent from the Rust mapping. Common now maps all permission
+  constants and methods, Producer exposes the validator counterparts, and Core
+  validates topic permission and implements the Broker config call. Scripted
+  tests cover Java exception text, malformed integers, no-op properties,
+  request bytes, VIP routing and Broker errors. See the [Phase 6 API map](PHASE_6_API_CONFIG_MAP.md),
+  [Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md), and release checklist.
+  This closes those bounded items only; broad P18-V01 method, setting,
+  overload/input/error/flow and reverse-export reconciliation remains open.

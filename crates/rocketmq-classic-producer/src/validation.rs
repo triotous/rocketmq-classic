@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 use rocketmq_classic_common::{
     message::{Message, constants::PROPERTY_INNER_MULTI_DISPATCH},
+    permission::PermName,
     topic::TopicValidator,
 };
+use rocketmq_classic_protocol::codes::response;
 
 use crate::{ProducerConfig, ProducerError};
 
@@ -100,6 +104,35 @@ pub fn validate_message(
         }
     }
     Ok(())
+}
+
+/// Matches Java `Validators.checkTopicConfig` using the permission read from
+/// `TopicConfig.getPerm()`.
+pub fn check_topic_config(permission: i32) -> Result<(), ProducerError> {
+    if PermName::is_valid(permission) {
+        Ok(())
+    } else {
+        Err(ProducerError::ClientValidation {
+            response_code: response::NO_PERMISSION,
+            message: format!("topicPermission value: {permission} is invalid."),
+        })
+    }
+}
+
+/// Matches Java `Validators.checkBrokerConfig` for the string properties
+/// exposed by Rust's map-shaped configuration input.
+pub fn check_broker_config(properties: &HashMap<String, String>) -> Result<(), ProducerError> {
+    let Some(value) = properties.get("brokerPermission") else {
+        return Ok(());
+    };
+    if PermName::is_valid_string(value)? {
+        Ok(())
+    } else {
+        Err(ProducerError::ClientValidation {
+            response_code: response::NO_PERMISSION,
+            message: format!("brokerPermission value: {value} is invalid."),
+        })
+    }
 }
 
 #[cfg(test)]

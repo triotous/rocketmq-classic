@@ -5380,3 +5380,25 @@ owner-specific checks belong in the manual handoff.
   reconciliation; current-revision full-workspace P18-V02, final P18-V03
   review, and current Ubuntu/native Windows P18-V04 evidence remain outstanding.
   Phase 19 Broker/Docker validation was not run.
+
+## P18-V01 Validator permission and Broker config RPC slice — 2026-10-21
+
+- [x] Pinned Java reflection now records all seven `Validators` public methods,
+  all eight `PermName` methods and permission constants, and numeric/string
+  validation outcomes. The Producer fixture SHA-256 is
+  `8216bf9c1a66b57a61e88af448f61ab38dc84015ffd872ee340d68896d3ec9b5`.
+- [x] Common now exposes the mapped permission masks, predicates, formatter
+  and Java-compatible string parser. Producer validation maps topic and Broker
+  config checks, including code-16 exception text and malformed-integer
+  behavior. Core validates supplied topic permission and implements
+  `update_broker_config` with the empty-map no-op, UTF-8 Properties body,
+  configured VIP offset and Broker response path.
+- [x] Common/Core/Producer all-feature test suites, focused permission and
+  Broker RPC regressions, strict all-target/all-feature Clippy for Common,
+  Core, Producer and the facade, formatting, and pinned Maven `verify` (37
+  scenarios, fixture drift and Java/Rust cross-decodes) pass.
+- This closes the listed permission methods and Broker-config operation only.
+  Broad P18-V01 remains open, and the full current-revision P18-V02 refresh,
+  P18-V03 package/provenance review and current Ubuntu/native Windows P18-V04
+  evidence remain outstanding. No remote CI or Phase 19 Broker/Docker run was
+  triggered.
