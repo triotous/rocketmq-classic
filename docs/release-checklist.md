@@ -6064,3 +6064,23 @@ owner-specific checks belong in the manual handoff.
   verification results are recorded in the Phase 18 execution log.
 - The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
   evidence and Phase 19 live Broker scenarios remain open.
+
+## P18-V01 RPC slice: `getParentTopicInfo` — 2026-10-21
+
+- [x] Added `MQClientApi::get_parent_topic_info` for request 200075 with a
+  nullable `topic` header, synchronous invocation, configured VIP conversion,
+  caller deadline, and nullable `GetParentTopicInfoResponseBody` decoding. The
+  DTO preserves primitive defaults, nullable topic/groups, and mutable Set
+  aliases.
+- [x] Seven invoked Java cases pin the RPC/header/DTO API surface and cover
+  populated/default responses, absent/malformed bodies, null topic, and Broker
+  errors. The Rust fixture differential checks request fields and outcomes; a
+  VIP loopback checks the transformed address. Success fixture SHA-256:
+  `1977e67d8e3c856784cf2628b82bcd14429e2118fb1a3e001db1e4ba2f2ad943`.
+- [x] Focused Protocol and Core tests, header inventory, and the invoked
+  fixture differential pass. Both locked full-workspace suites, strict
+  all-target/all-feature Clippy, formatting, and pinned Maven `verify` pass;
+  Maven decoded 81 Rust typed header frames. Full evidence is in the Phase 18
+  execution log.
+- The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
+  evidence and Phase 19 live Broker scenarios remain open.

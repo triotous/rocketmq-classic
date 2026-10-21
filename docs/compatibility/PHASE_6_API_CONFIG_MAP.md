@@ -1343,6 +1343,18 @@ scripted peer checks the request ext fields, body, result values and error
 category. `POLLING_INFO` remains a registry/wire model because pinned 5.5.1 has
 no outbound client callsite.
 
+`MQClientAPIImpl.getParentTopicInfo` is exposed as
+`MQClientApi::get_parent_topic_info`. It sends request 200075 synchronously
+with nullable `topic` in `GetParentTopicInfoRequestHeader`; Java's no-op
+`checkFields()` means null is omitted without local rejection. Rust applies
+the configured VIP address transform and caller deadline, maps absent success
+bodies to `None`, and decodes `GetParentTopicInfoResponseBody` with Java's
+primitive defaults, nullable topic/groups, and mutable Set getter alias. The
+seven invoked Java cases pin the method/header/DTO inventories and cover
+populated/default responses, absent/malformed bodies, null topic, and Broker
+errors; the Rust fixture differential checks request code/fields and decoded
+outcomes, and a VIP loopback checks the transformed destination.
+
 `ClientGroup.clientId` and `ClientGroup.group` are public final Java fields.
 Rust keeps both fields private and exposes read-only `client_id()`/`group()`
 accessors, so callers retain value access without gaining Java-absent mutation.

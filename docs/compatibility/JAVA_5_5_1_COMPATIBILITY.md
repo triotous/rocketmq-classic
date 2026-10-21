@@ -768,3 +768,16 @@ and Broker rejection; a Rust VIP loopback verifies the address transform.
 Fixture SHA-256:
 `57eff87ee4fd5bc652076a744109cdc2fb4d395362558b6ed5802e5dc166fe0e`. This
 closes this RPC/DTO slice only; broad P18-V01 remains open.
+
+Phase 18 `getParentTopicInfo` RPC and response DTO (2026-10-21): pinned
+`MQClientAPIImpl.getParentTopicInfo(String,String,long)` sends request 200075
+with nullable `topic`; `GetParentTopicInfoRequestHeader.checkFields()` is a
+no-op despite the field annotation. Rust uses synchronous invocation, the
+configured VIP address transform and caller deadline, and decodes a nullable
+`GetParentTopicInfoResponseBody` with primitive defaults, nullable topic and
+groups, and a mutable Set getter alias. Seven invoked Java cases compare the
+RPC/header/DTO public surface and populated/default, null-body, null-topic,
+malformed-body and Broker-error outcomes. A Rust differential checks the
+request and decoded results; a loopback verifies VIP conversion. Success
+fixture SHA-256: `1977e67d8e3c856784cf2628b82bcd14429e2118fb1a3e001db1e4ba2f2ad943`. This closes this RPC/DTO slice only; broad
+P18-V01 remains open.
