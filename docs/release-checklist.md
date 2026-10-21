@@ -6415,3 +6415,22 @@ owner-specific checks belong in the manual handoff.
   P18-V04 runtime evidence remains absent; Phase 19 live Broker/Docker
   scenarios remain separate. Protected Phase 19 working-tree paths remain
   untouched and unstaged.
+
+## P18-V01 custom `MessageExt` reconsume-counter hooks — 2026-10-21 (`bcf66469`)
+
+- [x] `MessageExtSubtype` now dispatches Java's virtual
+  `getReconsumeTimes` and `setReconsumeTimes` methods. Those getters and setters
+  participate in Push retry and send-back decisions.
+- [x] The invoked Java custom-subtype fixture calls its setter and observes the
+  overridden getter value `13` from the direct-consume callback. Rust compares
+  that value and the setter side effect. Fixture SHA-256:
+  `c05bde846eae0f39cc654cf49cfa33f624be62165c17cbc2da46fa80d1a77c0a`.
+- [x] Default and all-feature locked workspace tests, Common and Consumer
+  package tests, strict all-target/all-feature Clippy, format/diff checks, and
+  pinned Maven `verify` pass on code revision `bcf66469`.
+- This closes the two reconsume-counter virtual hooks. Other inherited
+  `Message`/`MessageExt` overrides and broad P18-V01 reconciliation remain
+  open; supplemental P18-V02 release gates must still be refreshed after this
+  code revision. Current Ubuntu/native Windows P18-V04 evidence and Phase 19
+  Broker/Docker scenarios remain separate. Protected Phase 19 paths were not
+  changed or staged.

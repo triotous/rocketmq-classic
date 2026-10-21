@@ -93,16 +93,20 @@ the later runtime adapter slice.
 Caller-defined subtype continuation (2026-10-21): Rust now exposes
 `MessageExtSubtype`, retained by `Arc` across the `MessageExt` direct-consume
 input. Applications can downcast custom fields in the callback and provide
-virtual overrides for topic, broker name, queue ID, message ID, setters, and
-display. The `concurrent-custom-subtype` case executes Java overrides during
-initial topic assignment, retry-topic restoration, namespace removal, broker
-assignment and callback formatting. Rust compares the same callback class
-name, queue/message values, custom field and display result. Fixture SHA-256:
-`4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`.
+virtual overrides for topic, broker name, queue ID, message ID,
+reconsume-times getters/setters, and display. The direct-consume path also
+dispatches virtual `getReconsumeTimes`/`setReconsumeTimes` hooks used by Push
+retry and send-back logic. The `concurrent-custom-subtype` case executes Java
+overrides during initial topic assignment, retry-topic restoration, namespace
+removal, broker assignment and callback formatting; it invokes the custom
+setter once and checks that the callback sees the overridden value `13`. Rust
+compares callback class, queue/message values, reconsume value, custom field
+and display. Current fixture SHA-256:
+`c05bde846eae0f39cc654cf49cfa33f624be62165c17cbc2da46fa80d1a77c0a`.
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
-`Message`/`MessageExt` override coverage and the broader P18-V01 audit remain
-open.
+`Message`/`MessageExt` override coverage beyond the mapped hooks and the broader
+P18-V01 audit remain open.
 
 Callback message/queue topics retain null versus empty input. The retry-topic
 property is read for every message, preserving Java `getProperty`'s observable

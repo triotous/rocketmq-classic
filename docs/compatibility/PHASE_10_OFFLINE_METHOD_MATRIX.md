@@ -215,3 +215,14 @@ Fixture provenance for newly added cases must name the pinned Java source or
 Java-produced fixture and its SHA-256 in the test/fixture metadata. This matrix
 records local evidence only; live Broker compatibility remains a Phase 19
 check.
+
+P18-V01 caller-defined `MessageExt` subtype follow-up (2026-10-21): the
+`MessageExtSubtype` adapter now dispatches Java virtual
+`getReconsumeTimes`/`setReconsumeTimes` calls as well as its previously mapped
+topic, queue, broker, message-ID and display hooks. The invoked Java
+direct-consume fixture calls the custom setter and reads the overridden value
+in the callback; Rust compares the write count and value. This supports the
+Push retry/send-back call sites and leaves other inherited virtual methods in
+the broader reverse/API audit. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`c05bde846eae0f39cc654cf49cfa33f624be62165c17cbc2da46fa80d1a77c0a`.

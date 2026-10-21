@@ -60,12 +60,13 @@ this closes only the `MessageClientExt` direct-consume path.
 
 P18-V01 caller-defined `MessageExt` subtype adapter (2026-10-21): public Rust
 `MessageExtSubtype` retains application fields for typed callback downcasts and
-provides virtual hooks for topic, broker name, queue ID, message ID, their
-setters, and display. The invoked `concurrent-custom-subtype` Java fixture
-checks the runtime subclass, overridden retry-topic and namespace setters,
-broker assignment, message/queue values, custom field, and `toString`; the Rust
-direct-consume comparison matches all of them. Fixture SHA-256:
-`4246e4a2563d79e9c8e78b2405941a850ad904d48e121e0b3fe009e9ae366263`. Subtype
+provides virtual hooks for topic, broker name, queue ID, message ID,
+reconsume-times getters/setters, and display. The invoked
+`concurrent-custom-subtype` Java fixture checks the runtime subclass, overridden
+retry-topic and namespace setters, broker assignment, message/queue values,
+reconsume getter/setter, custom field, and `toString`; the Rust direct-consume
+comparison matches all of them. Current fixture SHA-256:
+`c05bde846eae0f39cc654cf49cfa33f624be62165c17cbc2da46fa80d1a77c0a`. Subtype
 state is runtime-only and is omitted by serialization. This closes the
 direct-consume custom-field and selected-override slice; it does not inventory
 every inherited `Message`/`MessageExt` virtual method.
