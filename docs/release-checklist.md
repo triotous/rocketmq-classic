@@ -6084,3 +6084,21 @@ owner-specific checks belong in the manual handoff.
   execution log.
 - The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
   evidence and Phase 19 live Broker scenarios remain open.
+
+## P18-V01 RPC slice: `getLiteClientInfo` — 2026-10-21
+
+- [x] Added `MQClientApi::get_lite_client_info` for request 200077 with nullable
+  topic/group/client inputs, Java's default `maxCount=1000`, synchronous
+  invocation, configured VIP conversion, caller deadline and nullable response
+  body decoding. The body preserves nullable Set elements and mutable aliases.
+- [x] Seven invoked Java cases pin the RPC/header/DTO surface and cover
+  populated/default responses, null inputs/body, malformed body and Broker
+  errors. The Rust fixture differential checks request/response values; a VIP
+  loopback verifies address conversion. Success fixture SHA-256:
+  `9e4e1ad1abd344d58ba5939b2fd204a4237c4e60570ceba9c878790aee85ae8b`.
+- [x] Focused body/header/Core loopback and invoked fixture differential pass.
+  Pinned Maven `verify` passes with 37 scenario cases, 82 Java-decoded Rust
+  typed header frames, and 15 typed body frames. Full workspace tests and
+  strict Clippy will be recorded with the remaining Lite discovery slice.
+- The broad bidirectional P18-V01 audit, current Ubuntu/native Windows P18-V04
+  evidence and Phase 19 live Broker scenarios remain open.

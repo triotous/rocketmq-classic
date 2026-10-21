@@ -781,3 +781,17 @@ malformed-body and Broker-error outcomes. A Rust differential checks the
 request and decoded results; a loopback verifies VIP conversion. Success
 fixture SHA-256: `1977e67d8e3c856784cf2628b82bcd14429e2118fb1a3e001db1e4ba2f2ad943`. This closes this RPC/DTO slice only; broad
 P18-V01 remains open.
+
+Phase 18 `getLiteClientInfo` RPC and response DTO (2026-10-21): pinned
+`MQClientAPIImpl.getLiteClientInfo(String,String,String,String,long)` sends
+request 200077 with nullable `parentTopic`, `group`, and `clientId`; its header
+defaults `maxCount` to 1000 and rejects nonpositive explicit values. Rust uses
+synchronous invocation, the configured VIP address transform, and the caller
+deadline. `GetLiteClientInfoResponseBody` preserves nullable strings, a nullable
+Set with nullable members, primitive defaults, and the mutable Set getter
+alias; an absent success body returns `None`. Seven invoked Java cases compare
+the RPC/header/DTO surface and cover populated/default bodies, null inputs,
+null/malformed bodies, and Broker errors. The Rust fixture differential and
+VIP loopback verify the request and decoded response. Success fixture
+SHA-256: `9e4e1ad1abd344d58ba5939b2fd204a4237c4e60570ceba9c878790aee85ae8b`. This closes this RPC/DTO slice only; broad P18-V01
+remains open.

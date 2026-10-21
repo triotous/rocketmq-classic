@@ -1355,6 +1355,18 @@ populated/default responses, absent/malformed bodies, null topic, and Broker
 errors; the Rust fixture differential checks request code/fields and decoded
 outcomes, and a VIP loopback checks the transformed destination.
 
+`MQClientAPIImpl.getLiteClientInfo` is exposed as
+`MQClientApi::get_lite_client_info`. It sends request 200077 synchronously with
+nullable `parentTopic`, `group`, and `clientId`; the request header sends
+`maxCount=1000` by default and rejects nonpositive explicit values. Rust
+applies the configured VIP address transform and caller deadline, maps an
+absent success body to `None`, and decodes `GetLiteClientInfoResponseBody` with
+primitive defaults, nullable strings/Set members, and a mutable Set getter
+alias. The seven invoked Java cases pin RPC/header/DTO inventories and cover
+populated/default responses, null inputs/body, malformed JSON and Broker
+errors; the Rust differential compares request fields and decoded values, and
+a VIP loopback verifies the transformed destination.
+
 `ClientGroup.clientId` and `ClientGroup.group` are public final Java fields.
 Rust keeps both fields private and exposes read-only `client_id()`/`group()`
 accessors, so callers retain value access without gaining Java-absent mutation.
