@@ -120,6 +120,23 @@ Rust. The callback records custom flag `71` and the setter count. Current
 fixture verifies the custom `MAX_OFFSET` getter and `msgAccCnt` value `12`.
 Current fixture SHA-256:
 `3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.
+
+Caller-defined subtype metadata follow-up (2026-10-21): the adapter now
+dispatches the remaining stored `MessageExt` metadata getter/setter pairs for
+born/store timestamps, born host, sysFlag, body CRC, commit-log offset, store
+size and prepared-transaction offset. The invoked custom subtype returns
+distinct values and counts all eight setters. Its born/store host overrides
+also differ from their stored host fields: Rust preserves virtual
+`getBornHost`/`getStoreHost`, while Java's host string/name/bytes helpers read
+the stored fields directly, so the Rust derived helpers do the same. The
+fixture compares both virtual host values and the field-derived IPv4 byte
+arrays. Current fixture SHA-256:
+`aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
+Focused direct-consume tests, both locked workspace test modes, strict
+all-target/all-feature Clippy, and pinned Maven `verify` pass on code revision
+`8425a30d`. This extends the selected override slice only; map identity and
+other inherited virtual methods remain open.
+
 The adapter is runtime-only and does not serialize custom subtype state. This
 closes the direct-consume custom-field and selected-override slice; inherited
 `Message`/`MessageExt` override coverage beyond the mapped hooks and the broader

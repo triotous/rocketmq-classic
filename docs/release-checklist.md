@@ -6566,3 +6566,21 @@ owner-specific checks belong in the manual handoff.
   P18-V02 gates remain open. Current Ubuntu/native Windows P18-V04 evidence and
   Phase 19 Broker/Docker scenarios remain separate; protected Phase 19 paths
   were not changed or staged.
+
+## P18-V01 custom `MessageExt` metadata hooks — 2026-10-21 (`8425a30d`)
+
+- [x] `MessageExtSubtype` now dispatches virtual born/store timestamps, born
+  host, sysFlag, body CRC, commit-log offset, store size and prepared
+  transaction offset getters and setters.
+- [x] The invoked Java direct-consume fixture compares each custom getter,
+  eight setter calls, virtual host values, and host string/name/byte helpers
+  that read the stored host fields directly. Fixture SHA-256:
+  `aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
+- [x] Focused direct-consume tests, default/all-feature locked workspace tests,
+  strict all-target/all-feature Clippy, format/diff checks, and pinned Maven
+  `verify` pass on code revision `8425a30d`.
+- This closes the listed metadata hooks only. Other inherited methods and the
+  mutable custom `getProperties()` map identity gap remain open. Refresh the
+  supplemental P18-V02 gates after this code change. Current Ubuntu/native
+  Windows P18-V04 evidence and Phase 19 Broker/Docker scenarios remain
+  separate; protected Phase 19 paths were not changed or staged.

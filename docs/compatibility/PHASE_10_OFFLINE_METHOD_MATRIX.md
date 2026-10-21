@@ -283,3 +283,12 @@ the Rust regression confirms its request target comes from the override. The
 invoked Java direct-consume fixture compares host presence and setter count.
 Fixture: `fixtures/runtime/consumer-operations.json`, SHA-256
 `3633f3ac0098815df76790a969a15e7a9e2edda45f30723bd67a2753468facab`.
+
+P18-V01 caller-defined `MessageExt` metadata follow-up (2026-10-21): the
+subtype adapter now dispatches born/store timestamps, born host, sysFlag, body
+CRC, commit-log offset, store size and prepared-transaction offset getters and
+setters. The direct-consume fixture compares all getter results and eight
+setter calls. It also distinguishes virtual born/store host values from the
+stored fields used by Java's host string/name/byte helpers. Fixture:
+`fixtures/runtime/consumer-operations.json`, SHA-256
+`aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.

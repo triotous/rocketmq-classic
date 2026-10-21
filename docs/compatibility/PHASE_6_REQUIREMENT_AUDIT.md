@@ -1603,3 +1603,14 @@ This closes the named raw service-replacement seam only. Broad P18-V01
 source/API/settings/input/error/control-flow/reverse-export reconciliation,
 `MessageExt` virtual methods beyond the selected subtype adapter hooks, and
 P18-V04 platform evidence remain open.
+
+P18-V01 caller-defined subtype metadata follow-up (2026-10-21):
+`MessageExtSubtype` now dispatches Java virtual born/store timestamp, born-host,
+sysFlag, body-CRC, commit-log-offset, store-size and prepared-transaction
+offset accessors. The invoked direct-consume fixture checks the custom values
+and eight setter calls. It also distinguishes the virtual host getters from
+Java's host string/name/byte helpers, which read the stored host fields
+directly. Fixture SHA-256:
+`aa202880244ea5606fbebc63d8558965fddede4a95be58baacd56320f8f16571`.
+Other inherited methods, the mutable `getProperties()` map identity gap, the
+broad P18-V01 audit and P18-V04 platform evidence remain open.
