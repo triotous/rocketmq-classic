@@ -25,13 +25,13 @@ use rocketmq_classic_protocol::{
         GetEarliestMsgStoretimeResponseHeader, GetLiteTopicInfoRequestHeader,
         GetMaxOffsetRequestHeader, GetMaxOffsetResponseHeader, GetMinOffsetRequestHeader,
         GetMinOffsetResponseHeader, GetRouteInfoRequestHeader, GetTopicStatsInfoRequestHeader,
-        HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader,
-        NotificationRequestHeader, NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader,
-        PollingInfoRequestHeader, PollingInfoResponseHeader, PopLiteMessageRequestHeader,
-        PopLiteMessageResponseHeader, PopMessageRequestHeader, PopMessageResponseHeader,
-        PullMessageRequestHeader, PullMessageResponseHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
+        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
+        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
+        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
+        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, ReplyMessageRequestHeader, ResetOffsetRequestHeader,
@@ -127,6 +127,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-topic-stats-info-request.bin",
         "header-topic-stats-info-request",
         202,
+    );
+    write_oracle_header::<GetTopicsByClusterRequestHeader>(
+        output,
+        "typed-topics-by-cluster-request.bin",
+        "header-topics-by-cluster-request",
+        224,
     );
     write_oracle_header::<GetLiteTopicInfoRequestHeader>(
         output,

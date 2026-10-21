@@ -1,5 +1,13 @@
 # Java 5.5.1 compatibility evidence
 
+Phase 18 cluster-topic header inventory follow-up (2026-10-21): the already
+implemented `GetTopicsByClusterRequestHeader` now appears in the exhaustive
+Rust inventory and field-validation matrix, with its Java constructor and
+method inventory recorded beside the query-admin decode fixture. Request 224
+is included in the typed Rust-to-Java frame set, bringing Maven's exact header
+count to 68; all 68 frames decode in Java. This closes the inventory and
+reverse-frame evidence gap only; broad P18-V01 remains open.
+
 Phase 18 Broker and Producer diagnostics RPCs (`GET_BROKER_RUNTIME_INFO` 28,
 `GET_PRODUCER_CONNECTION_LIST` 204, and `GET_ALL_PRODUCER_INFO` 328): Rust maps
 the pinned `MQClientAPIImpl.getBrokerRuntimeInfo`,
@@ -21,7 +29,7 @@ only these three RPC/DTO slices; broad P18-V01 remains open.
 Phase 18 Lite topic-info request-header fixture closure (`d578db50`): the
 `GetLiteTopicInfoRequestHeader` API, nullable default fields, no-op
 `checkFields`, typed Java frame, and Rust reverse frame are now covered in the
-header inventory and validation matrix. The Maven gate requires exactly 67
+header inventory and validation matrix. The Maven gate requires exactly 68
 typed-header frames and passes with 15 typed-body frames. Rust frame SHA-256:
 `92e15800cdfb810908a8a016582189b5523bdc2d7dbbfc8ff69523f2a7184884`. This
 closes only the Lite topic-info header fixture slice; broad P18-V01

@@ -119,6 +119,10 @@ public final class Main {
             ChangeInvisibleTimeResponseHeaderFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "query-admin-header-decode-mode-fixture".equals(args[0])) {
+            QueryAdminHeaderDecodeModeFixtures.main(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "code-registry-fixtures".equals(args[0])) {
             CodeRegistryFixtures.main(Arrays.copyOfRange(args, 1, args.length));
             return;
@@ -1016,7 +1020,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 67, "all Rust typed header fixtures were supplied");
+            require(count == 68, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1039,6 +1043,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-query-subscription-by-consumer-request.bin", 345);
             assertAllExtFields(byName, "typed-query-topic-consume-by-who-request.bin", 300);
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
+            assertAllExtFields(byName, "typed-topics-by-cluster-request.bin", 224);
             assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
             assertAllExtFields(byName, "typed-delete-topic-request.bin", 215);
             assertAllExtFields(byName, "typed-delete-topic-from-namesrv-request.bin", 216);
@@ -1108,6 +1113,7 @@ public final class Main {
             assertExtField(byName, "typed-query-subscription-by-consumer-request.bin", 345, "group", "workers");
             assertExtField(byName, "typed-query-topic-consume-by-who-request.bin", 300, "topic", "orders");
             assertExtField(byName, "typed-topic-stats-info-request.bin", 202, "topic", "orders");
+            assertExtField(byName, "typed-topics-by-cluster-request.bin", 224, "cluster", "cluster-a");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "parentTopic", "lite-parent");
             assertExtField(byName, "typed-lite-topic-info-request.bin", 200076, "liteTopic", "%LMQ%lite-parent%orders");
             assertExtField(byName, "typed-delete-topic-request.bin", 215, "topic", "orders");
@@ -1197,6 +1203,7 @@ public final class Main {
             case "typed-query-subscription-by-consumer-request.bin": fixtureStem = "header-query-subscription-by-consumer-request"; break;
             case "typed-query-topic-consume-by-who-request.bin": fixtureStem = "header-query-topic-consume-by-who-request"; break;
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
+            case "typed-topics-by-cluster-request.bin": fixtureStem = "header-topics-by-cluster-request"; break;
             case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
             case "typed-delete-topic-request.bin": fixtureStem = "header-delete-topic-request"; break;
             case "typed-delete-topic-from-namesrv-request.bin": fixtureStem = "header-delete-topic-from-namesrv-request"; break;

@@ -2772,7 +2772,10 @@ public final class ProducerCoreFixtures {
         nullKvTable.setTable(null);
         dtoNullSemantics.put("kvTableIsNull", nullKvTable.getTable() == null);
         dtoNullSemantics.put("kvTableJson", JSON.toJSONString(nullKvTable));
-        kvTable.setTable(new HashMap<>(Map.of("brokerName", "broker-a", "brokerVersion", "5.5.1")));
+        HashMap<String, String> runtimeTable = new HashMap<>();
+        runtimeTable.put("brokerName", "broker-a");
+        runtimeTable.put("brokerVersion", "5.5.1");
+        kvTable.setTable(runtimeTable);
         result.put("getBrokerRuntimeInfo", producerDiagnosticCases(
             "getBrokerRuntimeInfo", kvTable, null));
         result.put("dtoNullSemantics", dtoNullSemantics);

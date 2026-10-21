@@ -45,6 +45,7 @@ macro_rules! inventory {
             QuerySubscriptionByConsumerRequestHeader => ("header-query-subscription-by-consumer-request", "typed-query-subscription-by-consumer-request.bin"),
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
+            GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
             GetConsumeStatsRequestHeader => ("header-consume-stats-request", "typed-consume-stats-request.bin"),
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
@@ -255,6 +256,51 @@ fn request_header_api_inventories_match_java_fields_and_accessors() {
             );
         }
     }
+}
+
+#[test]
+fn get_topics_by_cluster_header_api_matches_java_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let inventory = &fixture["apiInventories"]["GetTopicsByClusterRequestHeader"];
+    assert_eq!(inventory["publicFields"], serde_json::json!([]));
+    assert_eq!(
+        inventory["publicConstructors"],
+        serde_json::json!([
+            "org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader()"
+        ])
+    );
+    assert_eq!(
+        inventory["declaredPublicMethods"],
+        serde_json::json!([
+            "java.lang.String org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader.getCluster()",
+            "void org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader.checkFields()",
+            "void org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader.setCluster(java.lang.String)"
+        ])
+    );
+
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    assert!(rust_header_method_exists(
+        source,
+        trait_source,
+        "GetTopicsByClusterRequestHeader",
+        "get_cluster"
+    ));
+    assert!(rust_header_method_exists(
+        source,
+        trait_source,
+        "GetTopicsByClusterRequestHeader",
+        "set_cluster"
+    ));
+    assert!(rust_header_method_exists(
+        source,
+        trait_source,
+        "GetTopicsByClusterRequestHeader",
+        "check_fields"
+    ));
 }
 
 #[test]

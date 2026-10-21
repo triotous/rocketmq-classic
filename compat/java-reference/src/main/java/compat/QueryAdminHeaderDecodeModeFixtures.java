@@ -36,6 +36,7 @@ import org.apache.rocketmq.remoting.protocol.header.namesrv.DeleteKVConfigReques
 import org.apache.rocketmq.remoting.protocol.header.DeleteSubscriptionGroupRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
@@ -121,6 +122,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(QueryConsumeTimeSpanRequestHeader.class));
         apiInventories.put("GetTopicStatsInfoRequestHeader",
             apiInventory(GetTopicStatsInfoRequestHeader.class));
+        apiInventories.put("GetTopicsByClusterRequestHeader",
+            apiInventory(GetTopicsByClusterRequestHeader.class));
         apiInventories.put("DeleteTopicRequestHeader",
             apiInventory(DeleteTopicRequestHeader.class));
         apiInventories.put("DeleteTopicFromNamesrvRequestHeader",

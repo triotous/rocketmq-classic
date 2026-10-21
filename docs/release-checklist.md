@@ -5732,3 +5732,25 @@ owner-specific checks belong in the manual handoff.
   scoped `git diff --check` passed.
 - The named RPC mapping is closed after validation. Broad P18-V01 and
   P18-V02/P18-V03/P18-V04 gates remain open.
+
+## P18-V01 cluster-topic header inventory slice — 2026-10-21
+
+- [x] Added the implemented `GetTopicsByClusterRequestHeader` to the exhaustive
+  Rust header inventory and header validation matrix. The Java API inventory
+  now records its constructor, `getCluster`, `setCluster`, and no-op
+  `checkFields` methods in the query-admin decode fixture.
+- [x] Added the request-224 typed frame with `cluster=cluster-a` to the Rust to
+  Java cross-decode set and its fixture mapping. Maven now requires exactly 68
+  typed header frames; Java decoded all 68 Rust-generated frames.
+- [x] Made the Producer core fixture's `KVTable` entry order deterministic by
+  inserting keys explicitly. The fixture SHA-256 is
+  `861cc12c939270c338349d9ec343a4aaceb8e987031c99c016f75e03df4537c1`.
+- [x] Focused header validation and inventory tests, `cargo test --workspace
+  --locked`, and `cargo test --workspace --all-features --locked` pass.
+- [x] `cargo clippy --workspace --all-targets --all-features --locked --
+  -D warnings` passes.
+- [x] Pinned Java Maven `verify` passes with 37 invoked RPC scenarios, 68 typed
+  header frames, 15 typed body fixtures, and Java/Rust cross-decodes.
+- [x] `cargo fmt --all -- --check` and `git diff --check` pass.
+- This closes the missing header inventory and reverse-frame evidence only.
+  Broad P18-V01 and P18-V02/P18-V03/P18-V04 remain open.
