@@ -46,9 +46,23 @@ produce no request. Cold-data status reads the supplied address and returns
 omits Java's null field value on the wire. Scripted tests compare success,
 nullable results, Broker errors and request fields; a VIP-enabled loopback test
 checks both mutation operations. Current producer core fixture SHA-256 is
-`c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`. The
+`c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0` at this
+slice checkpoint. The subsequent `registerClient` addition advances the
+current fixture SHA-256 to
+`434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`. The
 tools facade remains outside Phase 17; the Core low-level operation mappings
 do not claim that facade's methods or command-line tools.
+
+Phase 18 `registerClient` heartbeat result contract (2026-10-21): the pinned
+public `MQClientAPIImpl.registerClient(String, HeartbeatData, long)` operation
+shares request 34 and the heartbeat body with `sendHeartbeat`, but synchronously
+uses the supplied address and returns a boolean for response-code equality
+with `SUCCESS`; other Broker response codes return `false`. Rust now exposes
+`MQClientApi::register_client` with that result behavior, separate from
+`send_heartbeat`'s Broker-version/error contract. The direct Java fixture and
+Rust scripted RPC compare the exact signature, timeout, body, and success and
+non-success results. Broad P18-V01 and the final current-revision P18-V02
+refresh remain open.
 
 Phase 19 live baseline checkpoint (2026-10-17): seven of 37 live cases pass
 against the pinned RocketMQ 5.3.4 Broker: existing-topic route lookup,

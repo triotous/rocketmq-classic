@@ -22,6 +22,7 @@ use rocketmq_classic_protocol::{
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         ResetOffsetRequestHeader, SearchOffsetRequestHeader, ViewMessageRequestHeader,
     },
+    heartbeat::HeartbeatData,
     heartbeat::SubscriptionData,
     route::TopicRouteData,
     subscription::{
@@ -581,6 +582,53 @@ async fn cold_data_flow_and_read_ahead_operations_match_java_fixture() {
                 "request code {code} result {result:?} disagrees with response {expected_code}"
             ),
         }
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn register_client_returns_success_boolean_and_matches_java_request() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let signatures = fixture["registerClientApi"].as_array().unwrap();
+    assert!(signatures.iter().any(|value| value
+        == "boolean org.apache.rocketmq.client.impl.MQClientAPIImpl.registerClient(java.lang.String,org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData,long)"));
+    let cases = fixture["registerClientOperations"].as_object().unwrap();
+    assert_eq!(cases["success"], true);
+    assert_eq!(cases["nonSuccess"], false);
+    let requests = cases["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+
+    let mut heartbeat = HeartbeatData::default();
+    heartbeat.set_client_id(Some("registration-client".to_owned()));
+    let (client_api, client) = api().await;
+    for case in requests {
+        assert_eq!(case["address"], "127.0.0.1:10913");
+        assert_eq!(case["requestCode"], request::HEART_BEAT);
+        assert_eq!(case["timeoutMillis"], 4321);
+        let body = case["body"].as_str().unwrap().as_bytes().to_vec();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let (addr, peer) = scripted_peer_with_remark(
+            response_code,
+            case["responseRemark"].as_str().map(str::to_owned),
+            None,
+            None,
+        )
+        .await;
+        let result = client_api
+            .register_client(&addr, &heartbeat, Instant::now() + Duration::from_secs(2))
+            .await;
+        assert_eq!(result.unwrap(), response_code == response::SUCCESS);
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::HEART_BEAT);
+        assert_eq!(request.body.as_deref(), Some(body.as_slice()));
+        assert!(
+            request
+                .ext_fields
+                .as_ref()
+                .is_none_or(|fields| fields.is_empty())
+        );
     }
     client.shutdown().await;
 }

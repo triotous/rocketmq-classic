@@ -5433,7 +5433,8 @@ owner-specific checks belong in the manual handoff.
   omitted from the remoting wire fields, matching Java's serializer.
 - [x] Java invocation fixture and Rust scripted differential cover all four
   methods and their named response branches. Current producer core fixture
-  SHA-256: `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`.
+  SHA-256 at this slice checkpoint:
+  `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`.
 - [x] Core all-feature locked suite (177 unit tests, all integration targets,
   and 16 doctests), strict all-target/all-feature Clippy for Common/Core/
   Producer/facade, Producer fixture comparison, pinned Java Maven `verify`
@@ -5444,3 +5445,23 @@ owner-specific checks belong in the manual handoff.
   P18-V02, P18-V03 package/provenance review and current Ubuntu/native Windows
   P18-V04 evidence remain open. No remote CI or Phase 19 Broker/Docker run was
   triggered.
+
+## P18-V01 `registerClient` heartbeat result slice — 2026-10-21
+
+- [x] Added `MQClientApi::register_client` for pinned Java
+  `MQClientAPIImpl.registerClient(String, HeartbeatData, long)`: request 34,
+  encoded heartbeat body, empty header, supplied address, and synchronous
+  boolean result (`true` only for `SUCCESS`; any other Broker code returns
+  `false`).
+- [x] Direct Java signature/invocation fixture and Rust scripted RPC compare
+  both response branches, request code, exact body and empty ext fields.
+  Current producer core fixture SHA-256:
+  `434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`.
+- [x] Core all-feature locked suite (177 unit tests, all integration targets,
+  and 16 doctests), focused Producer fixture comparison, strict all-target/
+  all-feature Clippy for Common/Core/Producer/facade, pinned Java Maven
+  `verify` (37 scenarios, fixture drift, 67 typed-header frames, 15 typed-body
+  fixtures and cross-decodes), formatting, and scoped whitespace checks pass.
+- This closes the direct registration method only. Broad P18-V01,
+  current-revision P18-V02, P18-V03 and P18-V04 remain open; no remote CI or
+  Phase 19 Broker/Docker validation ran.

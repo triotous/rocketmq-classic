@@ -337,6 +337,26 @@ impl MQClientApi {
         Ok(classify(reply, request::HEART_BEAT, addr)?.version)
     }
 
+    /// Sends the synchronous Java `MQClientAPIImpl.registerClient` heartbeat
+    /// request and returns whether the Broker replied with `SUCCESS`.
+    pub async fn register_client(
+        &self,
+        addr: &str,
+        data: &HeartbeatData,
+        deadline: Instant,
+    ) -> Result<bool, RpcError> {
+        let reply = self
+            .request(
+                addr,
+                request::HEART_BEAT,
+                &HeartbeatRequestHeader::default(),
+                Some(heartbeat_json_body(data)?),
+                deadline,
+            )
+            .await?;
+        Ok(reply.code == response::SUCCESS)
+    }
+
     /// Future-based counterpart of Java `MQClientAPIExt.sendHeartbeatAsync`.
     pub async fn send_heartbeat_async(
         &self,

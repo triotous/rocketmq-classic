@@ -1187,8 +1187,22 @@ settings, input/error/flow, and Rust reverse-export reconciliation.
   request envelopes and response outcomes; Rust scripted RPCs compare them,
   and a VIP-enabled loopback test checks update/remove address transformation.
   Java's null read-ahead field is omitted by the wire encoder; Rust's nullable
-  adapter emits no ext fields for that input. Current fixture SHA-256 is
+  adapter emits no ext fields for that input. At this slice checkpoint, fixture SHA-256 was
   `c20f4474d674bd4e0001f19c82fed8c5e2dfbe6f5c911ee6eade0fb1842c7cb0`.
   The high-level `rocketmq-tools` facade stays outside Phase 17. This closes
   these low-level RPC operations only; broad P18-V01 and the final current-tree
   P18-V02 refresh remain open.
+
+- P18-V01 `registerClient` heartbeat result contract (2026-10-21): the pinned
+  public `MQClientAPIImpl.registerClient(String, HeartbeatData, long)` method
+  shares request 34 and the encoded heartbeat body with `sendHeartbeat`, but
+  passes the supplied address directly and returns a boolean for `SUCCESS`;
+  all other Broker response codes return `false`. Core now provides the
+  separately named `register_client` API rather than reusing
+  `send_heartbeat`, whose Java-facing contract returns the Broker version and
+  raises on non-success. The Java invocation fixture and Rust scripted RPC
+  compare signature, body, empty header, timeout, and both response branches.
+  Current producer core fixture SHA-256:
+  `434a3fe8b1cba71732f41ccb710e601e0d8ce4cbcf196265695cef7641b90905`.
+  This closes the direct registration method only; broad P18-V01 and the final
+  current-worktree P18-V02 refresh remain open.

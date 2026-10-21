@@ -187,6 +187,13 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("coldDataFlowAndReadAheadOperations", coldDataFlowAndReadAheadOperations());
+        result.put("registerClientApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("registerClient"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("registerClientOperations", registerClientOperations());
         List<Map<String, Object>> brokerConfigProperties = new ArrayList<>();
         for (String input : Arrays.asList(
             "brokerPermission=7\nbrokerRole=ASYNC_MASTER\n",
@@ -1583,6 +1590,59 @@ public final class ProducerCoreFixtures {
                 result.put("modeErrorCode", error.getResponseCode());
                 result.put("modeErrorMessage", error.getMessage());
             }
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> registerClientOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>();
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        replies.add(org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "registration rejected"));
+
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("register-client-api");
+        config.setVipChannelEnabled(true);
+        org.apache.rocketmq.client.impl.MQClientAPIImpl api =
+            new org.apache.rocketmq.client.impl.MQClientAPIImpl(
+                new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null, config, null,
+                ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                    java.lang.reflect.Proxy.newProxyInstance(
+                        ProducerCoreFixtures.class.getClassLoader(),
+                        new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                        (proxy, method, values) -> {
+                            if ("invokeSync".equals(method.getName())) {
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                    (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                                Map<String, Object> call = new TreeMap<>();
+                                call.put("address", values[0]);
+                                call.put("requestCode", request.getCode());
+                                call.put("timeoutMillis", values[2]);
+                                call.put("extFields", request.getExtFields());
+                                call.put("body", request.getBody() == null ? null
+                                    : new String(request.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                    replies.removeFirst();
+                                call.put("responseCode", response.getCode());
+                                call.put("responseRemark", response.getRemark());
+                                requests.add(call);
+                                return response;
+                            }
+                            return method.getReturnType() == boolean.class ? false : null;
+                        }));
+        try {
+            org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData heartbeat =
+                new org.apache.rocketmq.remoting.protocol.heartbeat.HeartbeatData();
+            heartbeat.setClientID("registration-client");
+            result.put("success", api.registerClient("127.0.0.1:10913", heartbeat, 4321L));
+            result.put("nonSuccess", api.registerClient("127.0.0.1:10913", heartbeat, 4321L));
         } finally {
             api.shutdown();
         }
