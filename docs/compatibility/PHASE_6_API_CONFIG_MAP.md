@@ -1440,6 +1440,14 @@ Compile-fail rustdoc examples guard the three removed helper exports. `message_p
 
 `messageExtPublicApi` reflects all 44 declared public `MessageExt` methods, and `messageClientExtApi` reflects all four declared public `MessageClientExt` methods. Rust tests pin both sorted Java signature lists alongside constructor, scalar, host, and client-ID behavior. The complete crosswalk is recorded below; the workspace-wide Rust/Common API reconciliation remains open.
 
+Direct-consume subtype follow-up (2026-10-21): `MessageClientExt` converts to
+the Rust base input with a retained subtype marker, matching Java's polymorphic
+`MessageExt` parameter. `message_id_for_runtime_type` reads the live unique ID
+property and physical-ID fallback, and `set_message_id` stays a no-op on the
+marked value. The invoked runtime fixture records the callback's actual class.
+This closes that direct-consume subtype path only; other subclasses and the
+workspace-wide reverse-surface audit remain open.
+
 ## Common public API: Message equality semantics
 
 | Pinned Java 5.5.1 API | Rust counterpart / current boundary |

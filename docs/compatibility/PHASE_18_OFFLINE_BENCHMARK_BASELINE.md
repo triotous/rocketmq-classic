@@ -230,3 +230,21 @@ Allocation totals are aggregate allocator calls and requested bytes divided by
 sampled operations. Timing variation across runs is not evidence of a
 regression or improvement; loopback timing includes local TCP and Tokio
 scheduling.
+
+## Client message subtype closure revision
+
+Captured with the same command and environment on 2026-10-21 at code revision
+`6e2e3d09`. These observations include the `MessageClientExt` runtime-subtype
+adapter and are machine-specific; they set no acceptance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 3,469.9 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 2,387.5 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 2,622.5 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 28.1 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 80,951.7 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Allocation figures are aggregate allocator calls and requested bytes divided by
+sampled operations. Timing varies between runs; loopback timing includes local
+TCP and Tokio scheduling.

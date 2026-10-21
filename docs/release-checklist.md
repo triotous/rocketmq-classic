@@ -6178,3 +6178,50 @@ owner-specific checks belong in the manual handoff.
 - The bounded filter input cases are closed. Broad P18-V01, final
   full-workspace P18-V02, current native platform evidence and Phase 19 live
   Broker/Docker scenarios remain open.
+
+## P18-V01 direct-consume `MessageClientExt` subtype — 2026-10-21
+
+- [x] Direct consumption now retains Java's runtime subtype when a
+  `MessageClientExt` is passed through the `MessageExt` input. The listener can
+  inspect `is_message_client_ext()` and obtain the virtual message ID with live
+  `UNIQ_KEY` lookup through `message_id_for_runtime_type()`.
+- [x] Client decode, pull result and admin decode paths use the same subtype
+  state. The invoked Java fixture records callback class, and the 26-case Rust
+  direct-consume comparison checks class, effective ID, offset ID and offset
+  isolation. Fixture SHA-256:
+  `d0b4e39ba340e509d1ddc2665da122a0cf161ed757cc1d9ac2cbd022edb7d83f`.
+- [x] Focused Common tests, the full Common suite, direct-consume fixture
+  comparison and Maven `verify` pass. Code commits: `40a02244` and
+  `6e2e3d09`.
+- The broader inherited/public/DTO/config and reverse-export audit, other raw
+  `MessageExt` subclass inputs, and remaining rebalance assignment branches
+  remain open P18-V01 work.
+
+## Current Phase 18 local gate — 2026-10-21
+
+- [x] Complete server-free P18-V02 gate on code revision `6e2e3d09` (macOS
+  AArch64, Apple M5 Max, 18 logical CPUs, Rust 1.85.0, OpenJDK 21): sequential
+  default and all-feature locked workspace tests; strict all-target/all-feature
+  Clippy; fmt and diff checks; pinned Maven `verify` (37 scenarios, 83 typed
+  header frames, 16 typed body frames); differential self-test and 37-row
+  manifest; deterministic race/leak smoke (16 cases × 3); fuzz smoke (137 frame
+  seeds, 11 message seeds, 2,368 mutations); release examples; offline
+  workspace benchmark compilation and offline measurements; locked Cargo
+  metadata; workspace metadata/license/dependency checks; seven package
+  listings with `LICENSE`/`NOTICE`; and the Unique ID fixture under UTC and
+  `TZ=Asia/Taipei` all pass.
+- Cargo metadata reports 8 workspace members, 216 total packages, and 208
+  registry packages. Benchmark observations and exact outputs are recorded in
+  the linked execution log and benchmark baseline. No benchmark threshold is
+  asserted.
+- [x] P18-V03 package graph/content, source provenance, license files and
+  compatibility documentation review remain complete; no release or final
+  compatibility claim is made.
+- [ ] P18-V04 handoff manifest and local server-free gates pass on this code
+  revision. Current-revision GitHub Ubuntu address-profile evidence and native
+  Windows stack-runtime evidence remain absent. The broad P18-V01 audit and
+  Phase 19 Broker/Docker scenarios also remain open. The preserved Phase 19
+  worktree paths remain untouched and unstaged.
+- Full command outcomes, first-attempt lint/fixture/metadata diagnostics and
+  recovery actions are recorded in
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T145812Z.rlog`.

@@ -46,10 +46,23 @@ Rust now matches both observable tables. This closes those transition cases
 only; assignment expiry/retention dimensions and the broader inherited/source
 audit remain open.
 
+P18-V01 direct-consume runtime subtype slice (2026-10-21): `MessageClientExt`
+can be supplied through Java's `MessageExt` direct-consume parameter and remains
+the runtime class observed by the listener. Rust now preserves the subtype when
+converting its `MessageClientExt` wrapper to the base input type, retains live
+`UNIQ_KEY` lookup and the virtual message-ID fallback, and uses the same subtype
+state for client decoding, pull results and admin-decoded messages. The invoked
+fixture records callback class and the Rust comparison checks all 26 direct
+consume cases. Fixture SHA-256:
+`d0b4e39ba340e509d1ddc2665da122a0cf161ed757cc1d9ac2cbd022edb7d83f`.
+Other public `MessageExt` subclasses and the full inherited/public/DTO/config
+and reverse-export audit remain open; this closes only the `MessageClientExt`
+direct-consume path.
+
 These operation-presence and tested-flow slices do not close broad P18-V01.
 Remaining work includes the full inherited/public/DTO/configuration and
-reverse-export review, including nullable and subclass-sensitive raw
-`MessageExt` inputs beyond the current direct-consume corpus, and the broader
+reverse-export review, including nullable and other-subclass raw `MessageExt`
+inputs beyond the current direct-consume corpus, and the broader
 rebalance assignment/pull-expiry branches beyond the cases above. Native
 platform CI evidence is still outstanding. Historical checkpoints
 below retain their original scope and results; none is a current full-phase

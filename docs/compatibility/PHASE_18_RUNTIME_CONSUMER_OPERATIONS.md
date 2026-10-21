@@ -67,6 +67,19 @@ existing `client_decode` adapter at Java's `MessageDecoder.clientDecode`
 boundary. A separate inbound regression checks both IDs after a full encoded
 record crosses the processor/owned task/listener path.
 
+Runtime subtype continuation (2026-10-21): Java passes an input
+`MessageClientExt` through the `MessageExt` direct-consume parameter without
+wrapping it, so the listener still observes the subtype and virtual
+`getMsgId()` result. Rust now keeps that subtype marker when converting
+`MessageClientExt` to the base input type, exposes a runtime-type ID accessor,
+and keeps the `UNIQ_KEY` lookup live. Client decoding, pull results and admin
+message decoding apply the same subtype state. The invoked Java fixture records
+the callback class; the 26-case Rust comparison checks class, effective ID,
+offset ID and offset isolation. Fixture SHA-256:
+`d0b4e39ba340e509d1ddc2665da122a0cf161ed757cc1d9ac2cbd022edb7d83f`.
+Other public `MessageExt` subclasses and the broader inherited/API audit
+remain open P18-V01 work.
+
 Callback message/queue topics retain null versus empty input. The retry-topic
 property is read for every message, preserving Java `getProperty`'s observable
 initialization of a null properties map. The ten added raw/client ID and topic
