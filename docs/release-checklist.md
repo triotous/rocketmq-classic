@@ -5345,3 +5345,17 @@ owner-specific checks belong in the manual handoff.
   current-revision full-workspace P18-V02, final P18-V03 package/provenance
   review and current Ubuntu/native Windows P18-V04 evidence remain open.
   Phase 19 Broker/Docker validation was not run.
+
+## P18 inherited rebalance method crosswalk — 2026-10-21
+
+- [x] Added a method-level crosswalk for all 32 pinned Java
+  `RebalanceImpl` callable methods, including the raw factory replacement and
+  mutable dispatch-list adaptations. A Rust fixture test now rejects any
+  inherited Java method absent from the crosswalk or its owner source mapping.
+- [x] Focused Consumer facade API suite passes all 10 tests. The full Consumer
+  all-feature suite, strict Consumer Clippy, pinned fixture drift check,
+  formatting and diff checks passed immediately before this crosswalk-only
+  follow-up.
+- This closes the inherited rebalance crosswalk inventory. Broad P18-V01 still
+  covers the rest of the Java client source, input/error/control-flow and
+  reverse-export audit.

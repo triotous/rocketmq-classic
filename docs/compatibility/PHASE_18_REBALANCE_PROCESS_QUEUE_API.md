@@ -29,6 +29,37 @@ declared method counts and callable method counts in
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
+## Pinned inherited-method crosswalk
+
+The fixture records 32 callable methods on each rebalance implementation. This
+crosswalk names the complete inherited method set; Push and Pull use the same
+owner mappings unless the disposition says otherwise.
+
+| Java `RebalanceImpl` method | Rust owner mapping or disposition |
+| --- | --- |
+| `clientRebalance(String)` | `client_rebalance(topic)` on Push and Pull. |
+| `doRebalance(boolean)` | `do_rebalance_with_order(is_order)` runs the owner's assignment pass. |
+| `lock(MessageQueue)`, `lockAll()` | `lock(queue)`, `lock_all()` use owner-scoped Broker requests and update local queue lock state. |
+| `unlock(MessageQueue, boolean)`, `unlockAll(boolean)` | `unlock(queue, oneway)`, `unlock_all(oneway)` preserve the one-way option. |
+| `removeProcessQueue(MessageQueue)` | `remove_process_queue(queue)` applies Rust assignment-generation fencing. |
+| `removeUnnecessaryMessageQueue(MessageQueue, ProcessQueue)` | `remove_unnecessary_message_queue(queue, process_queue)` dispatches to the Push or Pull offset-store cleanup path. |
+| `removeUnnecessaryPopMessageQueue(MessageQueue, PopProcessQueue)` | `remove_unnecessary_pop_process_queue(queue, process_queue)` returns the Java base implementation's `true`. |
+| `removeDirtyOffset(MessageQueue)` | `remove_dirty_offset(queue)` clears the owner's retained offset. |
+| `computePullFromWhere(MessageQueue)`, `computePullFromWhereWithException(MessageQueue)` | `compute_pull_from_where` and `compute_pull_from_where_with_exception`; Pull returns zero, while Push uses its configured offset store. |
+| `getConsumeInitMode()` | Push `consume_init_mode()`; Pull `get_consume_init_mode()` returns the Java unsupported-operation error. |
+| `getConsumerGroup()`, `setConsumerGroup(String)` | `get_consumer_group()` and `set_consumer_group(...)` on the owner. |
+| `getMessageModel()`, `setMessageModel(MessageModel)` | `message_model()` and `set_message_model(...)`; Pull model changes are shared with its live registration. |
+| `getAllocateMessageQueueStrategy()`, `setAllocateMessageQueueStrategy(Strategy)` | `get_allocate_message_queue_strategy()` and `set_allocate_message_queue_strategy(...)`; Pull strategy changes are shared with its live registration. |
+| `getSubscriptionInner()`, `getTopicSubscribeInfoTable()` | `get_subscription_inner()` and `get_topic_subscribe_info_table()` return the live owner tables. |
+| `getProcessQueueTable()`, `getPopProcessQueueTable()` | `get_process_queue_table()` and `get_pop_process_queue_table()` return the live owner tables. |
+| `createProcessQueue()`, `createPopProcessQueue()` | `create_process_queue()` and `create_pop_process_queue()`; Pull returns no POP queue. |
+| `getmQClientFactory()` | `get_client_runtime()` exposes the current shared runtime, when started. |
+| `setmQClientFactory(MQClientInstance)` | No replaceable raw factory is exposed. Runtime identity remains owned by `ClientRuntimeManager`; a started runtime cannot be swapped independently of its registrations. |
+| `consumeType()` | `consume_type()` returns the owner-specific Pull or Push consume type. |
+| `destroy()` | `destroy()` drops assignment state and cancels owner work. |
+| `dispatchPullRequest(List, long)`, `dispatchPopPullRequest(List, long)` | Java Pull implementations are no-ops. Push scheduling is owned by the Rust assignment scheduler and POP workers, so mutable internal request lists are not a public Rust input. |
+| `messageQueueChanged(String, Set, Set)` | `message_queue_changed(topic, all, divided)` invokes the owner's configured callback with exception isolation. |
+
 ## Internal implementation adaptation
 
 The Java raw Push/Pull implementation accessors return a `RebalanceImpl`

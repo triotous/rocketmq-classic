@@ -125,6 +125,102 @@ fn pinned_java_nested_rebalance_and_process_queue_api_denominator_is_recorded() 
 }
 
 #[test]
+fn every_pinned_java_rebalance_method_has_an_owner_mapping_or_disposition() {
+    let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
+    let methods = fixture["implementationApis"]["RebalanceImpl"]["publicMethods"]
+        .as_array()
+        .expect("pinned inherited methods");
+    assert_eq!(methods.len(), 32);
+
+    let crosswalk =
+        include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
+    let owners = [
+        include_str!("../src/pull/consumer.rs"),
+        include_str!("../src/push/consumer.rs"),
+    ]
+    .join("\n");
+    let mappings = [
+        ("clientRebalance", "client_rebalance"),
+        ("doRebalance", "do_rebalance_with_order"),
+        ("lock", "lock"),
+        ("lockAll", "lock_all"),
+        ("unlock", "unlock"),
+        ("unlockAll", "unlock_all"),
+        ("removeProcessQueue", "remove_process_queue"),
+        (
+            "removeUnnecessaryMessageQueue",
+            "remove_unnecessary_message_queue",
+        ),
+        (
+            "removeUnnecessaryPopMessageQueue",
+            "remove_unnecessary_pop_process_queue",
+        ),
+        ("removeDirtyOffset", "remove_dirty_offset"),
+        ("computePullFromWhere", "compute_pull_from_where"),
+        (
+            "computePullFromWhereWithException",
+            "compute_pull_from_where_with_exception",
+        ),
+        ("getConsumeInitMode", "get_consume_init_mode"),
+        ("getConsumerGroup", "get_consumer_group"),
+        ("setConsumerGroup", "set_consumer_group"),
+        ("getMessageModel", "message_model"),
+        ("setMessageModel", "set_message_model"),
+        (
+            "getAllocateMessageQueueStrategy",
+            "get_allocate_message_queue_strategy",
+        ),
+        (
+            "setAllocateMessageQueueStrategy",
+            "set_allocate_message_queue_strategy",
+        ),
+        ("getSubscriptionInner", "get_subscription_inner"),
+        (
+            "getTopicSubscribeInfoTable",
+            "get_topic_subscribe_info_table",
+        ),
+        ("getProcessQueueTable", "get_process_queue_table"),
+        ("getPopProcessQueueTable", "get_pop_process_queue_table"),
+        ("createProcessQueue", "create_process_queue"),
+        ("createPopProcessQueue", "create_pop_process_queue"),
+        ("getmQClientFactory", "get_client_runtime"),
+        ("consumeType", "consume_type"),
+        ("destroy", "destroy"),
+        ("messageQueueChanged", "message_queue_changed"),
+    ];
+    for signature in methods {
+        let signature = signature.as_str().expect("method signature");
+        let java_name = signature
+            .split('(')
+            .next()
+            .expect("method name")
+            .rsplit('.')
+            .next()
+            .expect("declaring class and method");
+        assert!(
+            crosswalk.contains(java_name),
+            "Java {java_name} needs a documented mapping or disposition"
+        );
+        if let Some((_, rust_name)) = mappings.iter().find(|(name, _)| *name == java_name) {
+            assert!(
+                owners.contains(&format!("fn {rust_name}")),
+                "Java {java_name} maps to a Rust owner method {rust_name}"
+            );
+        } else {
+            assert!(
+                [
+                    "setmQClientFactory",
+                    "dispatchPullRequest",
+                    "dispatchPopPullRequest"
+                ]
+                .contains(&java_name),
+                "unexpected unimplemented inherited method {java_name}"
+            );
+        }
+    }
+}
+
+#[test]
 fn pull_rebalance_matches_pinned_java_pop_and_offset_behavior() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     let expected = &fixture["implementationBehaviors"]["rebalancePull"];
