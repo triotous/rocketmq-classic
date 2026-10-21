@@ -53,6 +53,31 @@ impl MessageExtSubtype for OffsetOnlyClientExtSubtype {
     }
 }
 
+#[derive(Default)]
+struct ClientMessageIdOverrideSubtype {
+    message_id: Mutex<Option<String>>,
+    message_id_writes: Mutex<Vec<Option<String>>>,
+}
+
+impl MessageExtSubtype for ClientMessageIdOverrideSubtype {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn message_id(&self) -> Option<Option<String>> {
+        Some(self.message_id.lock().unwrap().clone())
+    }
+
+    fn set_message_id(&self, message_id: Option<String>) -> bool {
+        self.message_id_writes
+            .lock()
+            .unwrap()
+            .push(message_id.clone());
+        *self.message_id.lock().unwrap() = message_id.map(|value| format!("subtype-{value}"));
+        true
+    }
+}
+
 fn fixture() -> Value {
     serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap()
 }
@@ -552,6 +577,59 @@ fn message_client_ext_offset_methods_dispatch_to_runtime_subtype() {
     assert_eq!(
         subtype.offset_writes.lock().unwrap().as_slice(),
         &[Some("physical-id".to_owned())]
+    );
+}
+
+#[test]
+fn message_client_ext_message_id_overrides_dispatch_to_runtime_subtype() {
+    let expected = &fixture()["messageClientExtApi"];
+    let subtype = Arc::new(ClientMessageIdOverrideSubtype {
+        message_id: Mutex::new(
+            expected["customSubtypeMessageId"]
+                .as_str()
+                .map(str::to_owned),
+        ),
+        ..ClientMessageIdOverrideSubtype::default()
+    });
+    let mut message = MessageClientExt::new();
+    message.set_runtime_subtype(subtype.clone());
+    assert_eq!(
+        message.message_id().as_deref(),
+        expected["customSubtypeMessageId"].as_str()
+    );
+    message
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-shadow",
+        )
+        .unwrap();
+    assert_eq!(
+        message.message_id().as_deref(),
+        expected["customSubtypeMessageIdIgnoresUnique"].as_str()
+    );
+    message.set_message_id(Some("replacement".into()));
+    assert_eq!(
+        message.message_id().as_deref(),
+        expected["customSubtypeMessageIdAfterSet"].as_str()
+    );
+    assert_eq!(
+        message.offset_message_id(),
+        None,
+        "the custom message-ID setter must not mutate the base offset ID"
+    );
+    assert_eq!(
+        expected["customSubtypeOffsetUnaffected"].as_bool(),
+        Some(true)
+    );
+    message.set_message_id(None);
+    assert_eq!(message.message_id(), None);
+    assert_eq!(
+        expected["customSubtypeMessageIdCleared"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        subtype.message_id_writes.lock().unwrap().as_slice(),
+        &[Some("replacement".to_owned()), None]
     );
 }
 

@@ -1258,6 +1258,28 @@ public final class MessageDecodeFixtures {
         message.setOffsetMsgId(null);
         expected.put("offsetMessageIdCleared", message.getOffsetMsgId() == null);
         expected.put("messageIdAfterOffsetCleared", message.getMsgId() == null);
+
+        String[] subtypeMessageId = {"custom-client-id"};
+        MessageClientExt customSubtype = new MessageClientExt() {
+            @Override
+            public String getMsgId() {
+                return subtypeMessageId[0];
+            }
+
+            @Override
+            public void setMsgId(String msgId) {
+                subtypeMessageId[0] = msgId == null ? null : "subtype-" + msgId;
+            }
+        };
+        expected.put("customSubtypeMessageId", customSubtype.getMsgId());
+        MessageAccessor.putProperty(customSubtype,
+            MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "unique-shadow");
+        expected.put("customSubtypeMessageIdIgnoresUnique", customSubtype.getMsgId());
+        customSubtype.setMsgId("replacement");
+        expected.put("customSubtypeMessageIdAfterSet", customSubtype.getMsgId());
+        expected.put("customSubtypeOffsetUnaffected", customSubtype.getOffsetMsgId() == null);
+        customSubtype.setMsgId(null);
+        expected.put("customSubtypeMessageIdCleared", customSubtype.getMsgId() == null);
         message.setTopic("inherited-topic");
         expected.put("inheritedTopic", message.getTopic());
         message.setQueueId(-17);
