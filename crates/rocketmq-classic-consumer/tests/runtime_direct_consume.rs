@@ -71,6 +71,8 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["storeHostBytes"] = json!(message.store_host_bytes().unwrap());
         record["bornHost"] = json!(message.born_host().map(ToString::to_string));
         record["storeHost"] = json!(message.store_host().map(ToString::to_string));
+        record["topicSysFlag"] = json!(message.topic_sys_flag().unwrap());
+        record["groupSysFlag"] = json!(message.group_sys_flag().unwrap());
         record["customField"] = json!(subtype.custom_field());
         record["messageDisplay"] = json!(message.to_string());
     }
@@ -90,6 +92,8 @@ struct CustomDirectMessageExt {
     properties_reads: std::sync::atomic::AtomicUsize,
     store_host_writes: std::sync::atomic::AtomicUsize,
     metadata_writes: std::sync::atomic::AtomicUsize,
+    topic_sys_flag_writes: std::sync::atomic::AtomicUsize,
+    group_sys_flag_writes: std::sync::atomic::AtomicUsize,
     custom_born_host: MessageHostAddress,
     custom_store_host: MessageHostAddress,
     custom_body: Mutex<Option<Vec<u8>>>,
@@ -110,6 +114,8 @@ impl CustomDirectMessageExt {
             properties_reads: std::sync::atomic::AtomicUsize::new(0),
             store_host_writes: std::sync::atomic::AtomicUsize::new(0),
             metadata_writes: std::sync::atomic::AtomicUsize::new(0),
+            topic_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
+            group_sys_flag_writes: std::sync::atomic::AtomicUsize::new(0),
             custom_born_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_store_host: MessageHostAddress::new("127.0.0.1", 10913),
             custom_body: Mutex::new(None),
@@ -118,7 +124,7 @@ impl CustomDirectMessageExt {
 
     fn custom_field(&self) -> String {
         format!(
-            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={}",
+            "topicWrites={};reconsumeWrites={};queueOffsetWrites={};bodyWrites={};flagWrites={};maxOffsetReads={};tagsReads={};keysReads={};propertiesReads={};storeHostWrites={};metadataWrites={};topicSysFlagWrites={};groupSysFlagWrites={}",
             self.topic_writes.load(Ordering::SeqCst),
             self.reconsume_writes.load(Ordering::SeqCst),
             self.queue_offset_writes.load(Ordering::SeqCst),
@@ -129,7 +135,9 @@ impl CustomDirectMessageExt {
             self.keys_reads.load(Ordering::SeqCst),
             self.properties_reads.load(Ordering::SeqCst),
             self.store_host_writes.load(Ordering::SeqCst),
-            self.metadata_writes.load(Ordering::SeqCst)
+            self.metadata_writes.load(Ordering::SeqCst),
+            self.topic_sys_flag_writes.load(Ordering::SeqCst),
+            self.group_sys_flag_writes.load(Ordering::SeqCst)
         )
     }
 }
@@ -162,6 +170,12 @@ impl MessageExtSubtype for CustomDirectMessageExt {
                 self.keys_reads.fetch_add(1, Ordering::SeqCst);
                 Some(Some("subtype-key".to_owned()))
             }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG) => {
+                Some(Some("73".to_owned()))
+            }
+            Some(rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG) => {
+                Some(Some("-19".to_owned()))
+            }
             _ => None,
         }
     }
@@ -172,6 +186,16 @@ impl MessageExtSubtype for CustomDirectMessageExt {
             Some("subtype-only".to_owned()),
             Some("visible".to_owned()),
         )])))
+    }
+
+    fn set_topic_sys_flag(&self, _topic_sys_flag: Option<i32>) -> bool {
+        self.topic_sys_flag_writes.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn set_group_sys_flag(&self, _group_sys_flag: Option<i32>) -> bool {
+        self.group_sys_flag_writes.fetch_add(1, Ordering::SeqCst);
+        true
     }
 
     fn store_host(&self) -> Option<Option<&MessageHostAddress>> {
@@ -462,6 +486,8 @@ async fn direct_runtime_consumption_matches_java_status_callbacks_and_offset_iso
             message.set_store_size(6);
             message.set_prepared_transaction_offset(7);
             message.set_born_host(Some(MessageHostAddress::new("127.0.0.1", 10912)));
+            message.set_topic_sys_flag(Some(5));
+            message.set_group_sys_flag(Some(6));
             message
         } else if client_message {
             let mut message = MessageClientExt::new();

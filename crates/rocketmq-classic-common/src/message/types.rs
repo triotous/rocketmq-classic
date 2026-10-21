@@ -2341,35 +2341,45 @@ impl MessageExt {
     /// treated as absent; malformed decimal input is returned as a parse error.
     pub fn topic_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         parse_transient_sys_flag(
-            self.message
-                .get_property(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG)
+            self.get_property(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG)
                 .as_deref(),
         )
     }
     /// Set or clear Java's transient topic system flag property.
     pub fn set_topic_sys_flag(&mut self, value: Option<i32>) {
-        set_transient_sys_flag(
-            &mut self.message,
-            crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
-            value,
-        );
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_topic_sys_flag(value))
+        {
+            set_transient_sys_flag(
+                &mut self.message,
+                crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG,
+                value,
+            );
+        }
     }
     /// Read Java's transient group system flag property. An empty property is
     /// treated as absent; malformed decimal input is returned as a parse error.
     pub fn group_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         parse_transient_sys_flag(
-            self.message
-                .get_property(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG)
+            self.get_property(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG)
                 .as_deref(),
         )
     }
     /// Set or clear Java's transient group system flag property.
     pub fn set_group_sys_flag(&mut self, value: Option<i32>) {
-        set_transient_sys_flag(
-            &mut self.message,
-            crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
-            value,
-        );
+        if !self
+            .runtime_subtype
+            .as_ref()
+            .is_some_and(|subtype| subtype.set_group_sys_flag(value))
+        {
+            set_transient_sys_flag(
+                &mut self.message,
+                crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG,
+                value,
+            );
+        }
     }
 
     /// Java-style diagnostic string. Property entries are emitted in Rust's
@@ -2439,6 +2449,16 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     /// Returned maps are snapshotted for Rust reads and retry-property copies.
     fn properties(&self) -> Option<Option<NullableMessageProperties>> {
         None
+    }
+
+    /// Handle Java's virtual `MessageExt.setTopicSysFlag(Integer)`.
+    fn set_topic_sys_flag(&self, _topic_sys_flag: Option<i32>) -> bool {
+        false
+    }
+
+    /// Handle Java's virtual `MessageExt.setGroupSysFlag(Integer)`.
+    fn set_group_sys_flag(&self, _group_sys_flag: Option<i32>) -> bool {
+        false
     }
 
     fn set_topic(&self, _topic: Option<String>) -> bool {

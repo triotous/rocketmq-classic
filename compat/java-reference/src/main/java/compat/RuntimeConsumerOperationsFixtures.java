@@ -439,6 +439,8 @@ public final class RuntimeConsumerOperationsFixtures {
             message.setStoreSize(6);
             message.setPreparedTransactionOffset(7L);
             message.setBornHost(new java.net.InetSocketAddress("127.0.0.1", 10912));
+            message.setTopicSysFlag(5);
+            message.setGroupSysFlag(6);
         }
         if (clientMessage) ((org.apache.rocketmq.common.message.MessageClientExt) message).setOffsetMsgId(physicalId);
         else message.setMsgId(physicalId);
@@ -485,6 +487,8 @@ public final class RuntimeConsumerOperationsFixtures {
                     item.put("storeHostBytes", unsignedBytes(messages.get(0).getStoreHostBytes().array()));
                     item.put("bornHost", messages.get(0).getBornHost().toString());
                     item.put("storeHost", messages.get(0).getStoreHost().toString());
+                    item.put("topicSysFlag", messages.get(0).getTopicSysFlag());
+                    item.put("groupSysFlag", messages.get(0).getGroupSysFlag());
                     item.put("customField", custom.getCustomField());
                     item.put("messageDisplay", messages.get(0).toString());
                 }
@@ -563,6 +567,8 @@ public final class RuntimeConsumerOperationsFixtures {
         private int propertiesReads;
         private int storeHostWrites;
         private int metadataWrites;
+        private int topicSysFlagWrites;
+        private int groupSysFlagWrites;
         private final Map<String, String> customProperties = new HashMap<>(Map.of("subtype-only", "visible"));
         private byte[] customBody;
 
@@ -660,6 +666,12 @@ public final class RuntimeConsumerOperationsFixtures {
             if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS.equals(name)) {
                 this.keysReads++;
                 return "subtype-key";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG.equals(name)) {
+                return "73";
+            }
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG.equals(name)) {
+                return "-19";
             }
             return super.getProperty(name);
         }
@@ -762,13 +774,24 @@ public final class RuntimeConsumerOperationsFixtures {
             metadataWrites++;
         }
 
+        @Override
+        public void setTopicSysFlag(Integer topicSysFlag) {
+            topicSysFlagWrites++;
+        }
+
+        @Override
+        public void setGroupSysFlag(Integer groupSysFlag) {
+            groupSysFlagWrites++;
+        }
+
         public String getCustomField() {
             return "topicWrites=" + topicWrites + ";reconsumeWrites=" + reconsumeWrites
                 + ";queueOffsetWrites=" + queueOffsetWrites + ";bodyWrites=" + bodyWrites
                 + ";flagWrites=" + flagWrites + ";maxOffsetReads=" + maxOffsetReads
                 + ";tagsReads=" + tagsReads + ";keysReads=" + keysReads
                 + ";propertiesReads=" + propertiesReads + ";storeHostWrites=" + storeHostWrites
-                + ";metadataWrites=" + metadataWrites;
+                + ";metadataWrites=" + metadataWrites + ";topicSysFlagWrites=" + topicSysFlagWrites
+                + ";groupSysFlagWrites=" + groupSysFlagWrites;
         }
 
         @Override
