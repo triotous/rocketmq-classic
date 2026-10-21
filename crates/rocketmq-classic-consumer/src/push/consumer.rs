@@ -412,6 +412,7 @@ pub struct PushConsumer {
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
     state: tokio::sync::Mutex<State>,
+    implementation_client_factory: std::sync::Mutex<Option<Option<Arc<ClientRuntime>>>>,
     rebalance_client_factory: std::sync::Mutex<Option<Option<Arc<ClientRuntime>>>>,
     owner: std::sync::Mutex<Weak<Self>>,
     service_state: RwLock<Option<ConsumerServiceState>>,
@@ -493,6 +494,7 @@ impl PushConsumer {
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
             state: tokio::sync::Mutex::new(State::Created),
+            implementation_client_factory: std::sync::Mutex::new(None),
             rebalance_client_factory: std::sync::Mutex::new(None),
             owner: std::sync::Mutex::new(Weak::new()),
             service_state: RwLock::new(Some(ConsumerServiceState::CreateJust)),
@@ -572,6 +574,33 @@ impl PushConsumer {
     /// rebalance behavior live on this owner in Rust, so it aliases `self`.
     pub fn get_rebalance_impl(&self) -> &Self {
         self
+    }
+
+    /// Returns the runtime stored by the Push implementation, matching
+    /// `DefaultMQPushConsumerImpl.getmQClientFactory`.
+    pub async fn get_implementation_client_runtime(&self) -> Option<Arc<ClientRuntime>> {
+        if let Some(runtime) = self
+            .implementation_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            return runtime;
+        }
+        match &*self.state.lock().await {
+            State::Started { runtime, .. } => runtime.upgrade(),
+            State::Created | State::Shutdown => None,
+        }
+    }
+
+    /// Replaces the Push implementation's runtime reference, matching
+    /// `DefaultMQPushConsumerImpl.setmQClientFactory`. Registration and
+    /// lifecycle ownership remain with the runtime manager used by `start`.
+    pub fn set_implementation_client_runtime(&self, runtime: Option<Arc<ClientRuntime>>) {
+        *self
+            .implementation_client_factory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(runtime);
     }
 
     /// Creates the public queue type returned by Java's
@@ -2077,9 +2106,15 @@ impl PushConsumer {
 
     async fn active_client_runtime(&self) -> Result<Arc<ClientRuntime>, PushConsumerError> {
         match &*self.state.lock().await {
-            State::Started { runtime, .. } => {
-                runtime.upgrade().ok_or(PushConsumerError::NotStarted)
-            }
+            State::Started { runtime, .. } => match self
+                .implementation_client_factory
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+            {
+                Some(runtime) => runtime.ok_or(PushConsumerError::NotStarted),
+                None => runtime.upgrade().ok_or(PushConsumerError::NotStarted),
+            },
             State::Created => Err(PushConsumerError::NotStarted),
             State::Shutdown => Err(PushConsumerError::Shutdown),
         }
@@ -2627,12 +2662,23 @@ impl PushConsumer {
                 pull_scheduler,
                 consume_service,
                 ..
-            } => Some(PullContext {
-                runtime: runtime.upgrade()?,
-                offset_store: offset_store.clone(),
-                scheduler: pull_scheduler.clone(),
-                consume_service: consume_service.clone(),
-            }),
+            } => {
+                let runtime = match self
+                    .implementation_client_factory
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone()
+                {
+                    Some(runtime) => runtime?,
+                    None => runtime.upgrade()?,
+                };
+                Some(PullContext {
+                    runtime,
+                    offset_store: offset_store.clone(),
+                    scheduler: pull_scheduler.clone(),
+                    consume_service: consume_service.clone(),
+                })
+            }
             State::Created | State::Shutdown => None,
         }
     }
@@ -4391,6 +4437,7 @@ impl PushConsumer {
                 self.config.tls_config().cloned(),
             )
             .await?;
+        self.set_implementation_client_runtime(Some(runtime.clone()));
         self.set_client_runtime(Some(runtime.clone()));
         if let Err(error) = self.checkpoint(StartupStage::RuntimeCreated) {
             let _ = runtime.shutdown().await;
@@ -7192,6 +7239,48 @@ mod tests {
         assert!(consumer.get_client_runtime().await.is_none());
         assert!(!runtime.client_id().is_empty());
         runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn implementation_factory_setter_is_independent_of_rebalance_factory() {
+        let mut config = PushConsumerConfig::new("implementation-factory-setter").unwrap();
+        config.client_config_mut().set_namesrv_addr(None);
+        let consumer = Arc::new(PushConsumer::with_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        assert!(consumer.get_implementation_client_runtime().await.is_none());
+
+        let implementation_manager = ClientRuntimeManager::new();
+        let rebalance_manager = ClientRuntimeManager::new();
+        let implementation_runtime = implementation_manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+        let rebalance_runtime = rebalance_manager
+            .get_or_create(consumer.config().client_config())
+            .await
+            .unwrap();
+
+        consumer.set_implementation_client_runtime(Some(implementation_runtime.clone()));
+        consumer.set_client_runtime(Some(rebalance_runtime.clone()));
+        assert!(Arc::ptr_eq(
+            &consumer.get_implementation_client_runtime().await.unwrap(),
+            &implementation_runtime
+        ));
+        assert!(Arc::ptr_eq(
+            &consumer.get_client_runtime().await.unwrap(),
+            &rebalance_runtime
+        ));
+
+        consumer.set_implementation_client_runtime(None);
+        assert!(consumer.get_implementation_client_runtime().await.is_none());
+        assert!(Arc::ptr_eq(
+            &consumer.get_client_runtime().await.unwrap(),
+            &rebalance_runtime
+        ));
+        implementation_runtime.shutdown().await.unwrap();
+        rebalance_runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

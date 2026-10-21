@@ -110,6 +110,13 @@ creates requests through assignment activation and routes them through its
 owned pull scheduler/POP workers. These differences do not remove a consumer
 setting, queue operation or message-delivery flow from the public Rust facade.
 
+Java exposes the Push implementation and its nested `RebalancePushImpl` as
+separate objects. Rust's stable owner handle aliases both APIs, so it keeps
+separate nullable runtime slots: `set_implementation_client_runtime` maps the
+implementation's factory field, while `set_client_runtime` maps the rebalance
+factory. Runtime registration and shutdown ownership remain tied to the
+manager used by `start()`.
+
 The complete pinned denominator and these implementation adaptations are
 recorded. The remaining broad P18-V01 gate still covers every other Java
 client source/configuration/flow row and the reverse Rust API audit.

@@ -6225,3 +6225,23 @@ owner-specific checks belong in the manual handoff.
 - Full command outcomes, first-attempt lint/fixture/metadata diagnostics and
   recovery actions are recorded in
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261021T145812Z.rlog`.
+
+## P18-V01 Push implementation factory setter — 2026-10-21
+
+- [x] Added `get_implementation_client_runtime` and
+  `set_implementation_client_runtime` for the pinned
+  `DefaultMQPushConsumerImpl.getmQClientFactory/setmQClientFactory` field. The
+  implementation factory slot stays distinct from the nested rebalance factory;
+  startup initializes both, and Push runtime contexts use an explicit
+  implementation override.
+- [x] Added a regression that checks initial null, runtime identity replacement,
+  explicit null, and independence from the rebalance factory slot. Updated the
+  Phase 10 and Phase 18 compatibility crosswalks.
+- [x] Focused setter and raw implementation accessor tests pass; all 244
+  consumer library tests pass. Strict consumer Clippy, formatting and diff
+  checks pass. The full workspace P18-V02 suite must be refreshed after this
+  implementation slice.
+- Broad P18-V01 source/settings/input/error/flow/reverse-export audit remains
+  open; current Ubuntu/native Windows P18-V04 evidence and Phase 19 Broker
+  scenarios remain pending. The preserved Phase 19 worktree paths were not
+  changed.
