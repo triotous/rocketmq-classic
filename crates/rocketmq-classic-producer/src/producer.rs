@@ -2002,6 +2002,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn producer_start_propagates_route_transport_failure_and_releases_lease() {
+        use bytes::BytesMut;
+        use rocketmq_classic_protocol::codes::request;
+        use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
+        use tokio::{
+            io::AsyncReadExt,
+            net::{TcpListener, TcpStream},
+        };
+
+        async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            frame::decode_next(&mut bytes).unwrap().unwrap()
+        }
+
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let command = read_command(&mut stream).await;
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            // Closing without a remoting response models a transport failure.
+        });
+
+        let manager = ClientRuntimeManager::new();
+        let mut config = ProducerConfig::new("startup-route-transport-failure").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config.set_topics(Some(vec!["startup-topic".into()].into()));
+        let runtime = manager.get_or_create(config.client_config()).await.unwrap();
+        runtime.start().await.unwrap();
+
+        let producer = Arc::new(Producer::with_runtime_manager(config, manager));
+        assert!(producer.start_with_factory(false).await.is_err());
+        nameserver_peer.await.unwrap();
+        assert!(
+            runtime
+                .select_producer("startup-route-transport-failure")
+                .unwrap()
+                .is_none()
+        );
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
     async fn shutdown_unregisters_the_live_group_like_pinned_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
