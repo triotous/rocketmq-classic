@@ -1744,8 +1744,8 @@ operation or fixture-backed owner path. Since this list was captured,
 `fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
 been implemented and checked against the pinned Java fixture. The initial list
 of 12 direct operations has since been reduced by the `getAllTopicConfig`,
-`getAllSubscriptionGroup`, `queryConsumeQueue`, `createStaticTopic`, and
-`createUser` slices below; 7 remain
+`getAllSubscriptionGroup`, `queryConsumeQueue`, `createStaticTopic`,
+`createUser`, and `updateUser` slices below; 6 remain
 implementation work rather than approved differences:
 
 | Request | Java method | Code | Status |
@@ -1761,7 +1761,7 @@ implementation work rather than approved differences:
 | Broker HA status | `getBrokerHAStatus` | 907 | Closed by `get_broker_ha_status` |
 | Static-topic creation/update | `createStaticTopic` | 513 | Closed by `create_static_topic` |
 | User creation | `createUser` | 3001 | Closed by `create_user` |
-| User update | `updateUser` | 3002 | Open |
+| User update | `updateUser` | 3002 | Closed by `update_user` |
 | User deletion | `deleteUser` | 3003 | Open |
 | User listing | `listUser` | 3005 | Open |
 | ACL creation | `createAcl` | 3006 | Open |
@@ -1772,7 +1772,7 @@ implementation work rather than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 7 open rows, but their Rust DTO and RPC owners are still
+already exist for the 6 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -1945,3 +1945,16 @@ Java/Rust fixtures cover populated/default/null-field inputs, success, Broker
 rejection, exact body bytes, timeout, header inventory/cross-decode, and the
 VIP-enabled unchanged address. This closes only the direct user-creation
 slice; broad P18-V01 remains open.
+
+## P18-V01 direct `updateUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.updateUser(String,UserInfo,long)` sends
+request 3002 with `UpdateUserRequestHeader.username` and the encoded `UserInfo`
+body. Core exposes `MQClientApi::update_user`, uses the caller timeout, and
+sends the supplied Broker address unchanged even when VIP channels are
+enabled. It reuses `UserInfo` and preserves the update header's nullable
+username and no-op validation boundary. Invoked Java/Rust fixtures cover
+populated/default/null-username inputs, success, Broker rejection, exact body
+bytes, timeout, typed-header inventory/cross-decode, and the VIP-enabled
+unchanged address. This closes one direct API/header slice and reduces the
+reverse-audit list from seven to six open rows; broad P18-V01 remains open.

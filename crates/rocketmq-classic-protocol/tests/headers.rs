@@ -47,9 +47,9 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        UpdateGroupForbiddenRequestHeader, ViewBrokerStatsDataRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
+        ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
 };
 
@@ -2323,6 +2323,15 @@ fn header_validation_matrix() {
         row!(
             CreateUserRequestHeader,
             "create-user-request",
+            "",
+            "",
+            "",
+            "username",
+            ""
+        ),
+        row!(
+            UpdateUserRequestHeader,
+            "update-user-request",
             "",
             "",
             "",

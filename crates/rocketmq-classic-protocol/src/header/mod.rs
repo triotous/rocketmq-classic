@@ -43,7 +43,7 @@ pub use basic::{
     ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
     SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
     UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
+    UpdateConsumerOffsetRequestHeader, UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
     ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
     WipeWritePermOfBrokerResponseHeader,
 };

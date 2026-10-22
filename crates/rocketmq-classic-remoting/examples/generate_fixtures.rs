@@ -51,9 +51,9 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        UpdateGroupForbiddenRequestHeader, ViewBrokerStatsDataRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
+        ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
     subscription::SubscriptionGroupConfig,
 };
@@ -113,6 +113,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-create-user-request.bin",
         "header-create-user-request",
         3001,
+    );
+    write_oracle_header::<UpdateUserRequestHeader>(
+        output,
+        "typed-update-user-request.bin",
+        "header-update-user-request",
+        3002,
     );
     write_oracle_header::<QueryMessageRequestHeader>(
         output,

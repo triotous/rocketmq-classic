@@ -2034,3 +2034,15 @@ address unchanged when VIP channels are enabled. Invoked Java fixtures and
 Rust loopback tests compare the request header/body, success and Broker error,
 timeout, and unchanged-address behavior. The direct reverse audit now has
 seven open APIs; broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `updateUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.updateUser` sends request 3002 with an
+`UpdateUserRequestHeader` and a `UserInfo` body. Core exposes
+`MQClientApi::update_user`, reuses the verified nullable user model and
+null-omitting body encoding, uses the supplied timeout, and leaves the Broker
+address unchanged when VIP channels are enabled. The nullable update header
+has Java's no-op validation behavior. Invoked Java fixtures and Rust loopback
+tests compare the request header/body, success and Broker error, timeout, typed
+header cross-decode, and unchanged-address behavior. The direct reverse audit
+now has six open APIs; broader P18-V01 reconciliation remains open.
