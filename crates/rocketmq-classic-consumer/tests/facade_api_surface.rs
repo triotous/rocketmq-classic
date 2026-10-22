@@ -1,4 +1,5 @@
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
+use rocketmq_classic_consumer::process_queue::ProcessQueueError;
 use rocketmq_classic_consumer::{
     ConsumeMessageService, ConsumeMessageServiceFuture, ConsumerStatsManager, MqHelper,
     PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
@@ -627,7 +628,9 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     second.set_body(vec![3]);
 
     let queue = ProcessQueue::new();
-    let dispatch = queue.put_message(&[first.clone(), second.clone()]);
+    let dispatch = queue
+        .put_message(&[first.clone(), second.clone()])
+        .expect("valid ProcessQueue MAX_OFFSET");
     let tree_map = queue.get_msg_tree_map();
     let initial_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
     let initial_count = queue.get_msg_count().get();
@@ -669,7 +672,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     direct.set_queue_offset(21);
     direct.set_body(vec![5, 6]);
     let map_queue = ProcessQueue::new();
-    map_queue.put_message(&[original]);
+    map_queue.put_message(&[original]).expect("valid message");
     let counter_previous = map_queue.get_msg_count().get_and_add(4);
     let counter_size_after_add = map_queue.get_msg_size().add_and_get(3);
     {
@@ -688,13 +691,19 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     replacement_duplicate.set_queue_offset(30);
     replacement_duplicate.set_body(vec![9, 10, 11, 12]);
     let duplicate_queue = ProcessQueue::new();
-    duplicate_queue.put_message(&[original_duplicate]);
-    let duplicate_dispatch = duplicate_queue.put_message(&[replacement_duplicate]);
+    duplicate_queue
+        .put_message(&[original_duplicate])
+        .expect("valid message");
+    let duplicate_dispatch = duplicate_queue
+        .put_message(&[replacement_duplicate])
+        .expect("valid message");
     let duplicate_tree = duplicate_queue.get_msg_tree_map();
     let duplicate_body_size = duplicate_tree.read().get(&30).unwrap().body().len();
     let dropped_queue = ProcessQueue::new();
     dropped_queue.set_dropped(true);
-    let dropped_dispatch = dropped_queue.put_message(&[first.clone()]);
+    let dropped_dispatch = dropped_queue
+        .put_message(&[first.clone()])
+        .expect("valid message");
 
     let mut in_flight_first = MessageExt::new();
     in_flight_first.set_queue_offset(50);
@@ -703,7 +712,9 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     in_flight_second.set_queue_offset(51);
     in_flight_second.set_body(vec![3, 4, 5]);
     let in_flight_removal_queue = ProcessQueue::new();
-    in_flight_removal_queue.put_message(&[in_flight_first, in_flight_second]);
+    in_flight_removal_queue
+        .put_message(&[in_flight_first, in_flight_second])
+        .expect("valid messages");
     let in_flight_batch = in_flight_removal_queue.take_messages(1);
     let remove_in_flight_next_offset = in_flight_removal_queue.remove_message(&in_flight_batch);
     let remove_in_flight_ready_tree_keys = in_flight_removal_queue
@@ -723,10 +734,15 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     following_message.set_queue_offset(61);
     following_message.set_body(vec![7, 8]);
     let dispatch_after_remove_queue = ProcessQueue::new();
-    dispatch_after_remove_queue.put_message(&[removed_message.clone()]);
+    dispatch_after_remove_queue.set_last_pull_timestamp(500);
+    dispatch_after_remove_queue
+        .put_message(&[removed_message.clone()])
+        .expect("valid message");
     let remove_last_next_offset =
         dispatch_after_remove_queue.remove_message(&[std::sync::Arc::new(removed_message)]);
-    let dispatch_after_remove = dispatch_after_remove_queue.put_message(&[following_message]);
+    let dispatch_after_remove = dispatch_after_remove_queue
+        .put_message(&[following_message])
+        .expect("valid message");
     let dispatch_after_remove_tree_keys = dispatch_after_remove_queue
         .get_msg_tree_map()
         .read()
@@ -748,6 +764,48 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "count": dispatch_after_remove_queue.get_msg_count().get(),
         "size": dispatch_after_remove_queue.get_msg_size().get(),
         "treeKeys": dispatch_after_remove_tree_keys,
+        "lastPullTimestamp": dispatch_after_remove_queue.get_last_pull_timestamp(),
+    });
+    let mut malformed_max_offset_message = MessageExt::new();
+    malformed_max_offset_message.set_queue_offset(70);
+    malformed_max_offset_message.set_body(vec![7, 0]);
+    malformed_max_offset_message
+        .set_system_property("MAX_OFFSET", "not-a-long")
+        .unwrap();
+    let malformed_max_offset_queue = ProcessQueue::new();
+    let malformed_max_offset_error = malformed_max_offset_queue
+        .put_message(&[malformed_max_offset_message])
+        .expect_err("invalid Java MAX_OFFSET should return a NumberFormatException mapping");
+    assert!(matches!(
+        malformed_max_offset_error,
+        ProcessQueueError::InvalidMaxOffset { value } if value == "not-a-long"
+    ));
+    let malformed_max_offset_tree_keys = malformed_max_offset_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut after_max_offset_error = MessageExt::new();
+    after_max_offset_error.set_queue_offset(71);
+    after_max_offset_error.set_body(vec![7, 1]);
+    let dispatch_after_max_offset_error = malformed_max_offset_queue
+        .put_message(&[after_max_offset_error])
+        .expect("valid message after malformed property");
+    let malformed_max_offset_result = serde_json::json!({
+        "errorClass": "java.lang.NumberFormatException",
+        "countAfterError": 1,
+        "sizeAfterError": 2,
+        "treeKeysAfterError": malformed_max_offset_tree_keys,
+        "dispatchAfterError": dispatch_after_max_offset_error,
+        "finalCount": malformed_max_offset_queue.get_msg_count().get(),
+        "finalSize": malformed_max_offset_queue.get_msg_size().get(),
+        "finalTreeKeys": malformed_max_offset_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
     });
     let actual = serde_json::json!({
         "dispatch": dispatch,
@@ -799,6 +857,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "droppedQueueCount": dropped_queue.get_msg_count().get(),
         "removeInFlight": remove_in_flight,
         "dispatchAfterRemove": dispatch_after_remove_result,
+        "malformedMaxOffset": malformed_max_offset_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

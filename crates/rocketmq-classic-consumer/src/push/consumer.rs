@@ -455,7 +455,10 @@ impl ConsumeMessageService for BuiltinConsumeMessageService {
             .iter()
             .map(|message| message.as_ref().clone())
             .collect::<Vec<_>>();
-        let _ = process_queue.put_message(&message_snapshots);
+        if let Err(error) = process_queue.put_message(&message_snapshots) {
+            tracing::error!(%error, "failed to add consumed messages to process queue");
+            return;
+        }
         let process_queue_generation = process_queue.generation();
         tokio::spawn(async move {
             if let Some(context) = owner.pull_context().await {

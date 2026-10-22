@@ -43,6 +43,22 @@ batch ownership internal. The invoked `processQueue` fixture and
 `remove_message_preserves_dispatch_state_until_empty_take` cover the behavior.
 Fixture SHA-256: `67aac16425d8ac98e2d2cde4ff53a91e68b080b429711852979eb302d173dc5e`.
 
+### `MAX_OFFSET` parse failure and pull timestamp
+
+Java parses the last message's `MAX_OFFSET` property only after inserting the
+messages and setting the dispatch flag. An invalid or overflowing value throws
+`NumberFormatException` while leaving those state changes in place. Rust's
+public `put_message` now returns
+`ProcessQueueError::InvalidMaxOffset` after retaining the same messages,
+counters and dispatch state. The invoked fixture verifies the Java exception
+class, queue snapshot, and that a following valid insertion does not request a
+second dispatch. The same parser error propagates through assigned queue
+insertion. Java also updates `lastPullTimestamp` at the pull-request boundary,
+not from `ProcessQueue.putMessage`; the Rust owner does the same, and the
+fixture checks that direct insertion preserves a caller-set timestamp. Fixture
+SHA-256:
+`a334ff119c014259676917531ce4032160b10209cdac027d9963d2c1327d5d6a`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -173,6 +189,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `67aac16425d8ac98e2d2cde4ff53a91e68b080b429711852979eb302d173dc5e`
+  `a334ff119c014259676917531ce4032160b10209cdac027d9963d2c1327d5d6a`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`

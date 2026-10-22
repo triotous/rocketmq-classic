@@ -1158,7 +1158,9 @@ fn custom_subtype_queue_offset_matches_java_process_queue() {
     message.set_queue_offset(17);
     message.set_body(vec![1, 2, 3]);
     let process_queue = ProcessQueue::new();
-    let dispatch = process_queue.put_message(&[message.clone()]);
+    let dispatch = process_queue
+        .put_message(&[message.clone()])
+        .expect("valid subtype message");
     let offsets = process_queue
         .get_msg_tree_map()
         .read()

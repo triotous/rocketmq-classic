@@ -430,7 +430,7 @@ pub(crate) enum LockAttemptResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum ProcessQueueError {
+pub enum ProcessQueueError {
     #[error("work belongs to an older queue assignment generation")]
     StaleGeneration,
     #[error("process queue assignment has been dropped")]
@@ -439,6 +439,8 @@ pub(crate) enum ProcessQueueError {
     UnknownBatch,
     #[error("consume batch no longer owns all of its messages")]
     BatchOwnershipLost,
+    #[error("java.lang.NumberFormatException parsing MAX_OFFSET property: {value:?}")]
+    InvalidMaxOffset { value: String },
     #[error("invalid consume-start timestamp for message at offset {offset}: {value:?}")]
     InvalidConsumeStartTimestamp { offset: i64, value: String },
 }
@@ -681,10 +683,9 @@ impl ProcessQueue {
             .any(|entry| entry.state == MessageState::Ready)
     }
 
-    pub fn put_message(&self, messages: &[MessageExt]) -> bool {
+    pub fn put_message(&self, messages: &[MessageExt]) -> Result<bool, ProcessQueueError> {
         self.insert_messages_inner(self.generation, messages.to_vec(), false)
             .map(|outcome| outcome.dispatch_to_consume)
-            .unwrap_or(false)
     }
 
     pub fn take_messages(&self, batch_size: i32) -> Vec<Arc<MessageExt>> {
@@ -1009,16 +1010,18 @@ impl ProcessQueue {
             }
         }
 
+        let mut invalid_max_offset = None;
         if let Some((message_offset, max_offset)) = max_offset {
             if let Some(max_offset) = parse_java_long(&max_offset) {
                 let accumulated = max_offset.wrapping_sub(message_offset);
                 if accumulated > 0 {
                     state.msg_acc_cnt = accumulated;
                 }
+            } else {
+                invalid_max_offset = Some(max_offset);
             }
         }
 
-        state.last_pull_timestamp_millis = epoch_millis();
         let has_ready_messages = state
             .messages
             .values()
@@ -1026,6 +1029,9 @@ impl ProcessQueue {
         let dispatch_to_consume = has_ready_messages && !state.consuming;
         if dispatch_to_consume {
             state.consuming = true;
+        }
+        if let Some(value) = invalid_max_offset {
+            return Err(ProcessQueueError::InvalidMaxOffset { value });
         }
         Ok(InsertOutcome {
             inserted_count,
@@ -1675,7 +1681,9 @@ mod tests {
     fn remove_message_matches_java_for_in_flight_entries() {
         let process_queue = process_queue(16);
         let first = message(10, 2);
-        process_queue.put_message(&[first.clone(), message(11, 3)]);
+        process_queue
+            .put_message(&[first.clone(), message(11, 3)])
+            .unwrap();
         let batch = process_queue.take_messages(1);
         assert_eq!(batch[0].queue_offset(), 10);
         assert_eq!(process_queue.snapshot(16).unwrap().in_flight_count, 1);
@@ -1705,10 +1713,10 @@ mod tests {
     fn remove_message_preserves_dispatch_state_until_empty_take() {
         let process_queue = process_queue(17);
         let first = message(10, 2);
-        assert!(process_queue.put_message(&[first.clone()]));
+        assert!(process_queue.put_message(&[first.clone()]).unwrap());
         assert_eq!(process_queue.remove_message(&[Arc::new(first)]), 11);
 
-        assert!(!process_queue.put_message(&[message(11, 3)]));
+        assert!(!process_queue.put_message(&[message(11, 3)]).unwrap());
         assert_eq!(process_queue.get_msg_count().get(), 1);
         assert_eq!(process_queue.get_msg_size().get(), 3);
         assert_eq!(

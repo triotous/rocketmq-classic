@@ -32,6 +32,8 @@ import org.apache.rocketmq.client.impl.consumer.RebalancePushImpl;
 import org.apache.rocketmq.remoting.protocol.body.PopProcessQueueInfo;
 import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.common.message.MessageConst;
+import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
@@ -289,6 +291,7 @@ public final class ConsumerFacadeApiFixtures {
         result.put("removeInFlight", removeInFlight);
 
         ProcessQueue dispatchAfterRemoveQueue = new ProcessQueue();
+        dispatchAfterRemoveQueue.setLastPullTimestamp(500L);
         MessageExt removedMessage = processQueueMessage(60L, new byte[] {6});
         dispatchAfterRemoveQueue.putMessage(Arrays.asList(removedMessage));
         long removeLastNextOffset = dispatchAfterRemoveQueue.removeMessage(Arrays.asList(removedMessage));
@@ -300,7 +303,31 @@ public final class ConsumerFacadeApiFixtures {
         dispatchAfterRemoveResult.put("count", dispatchAfterRemoveQueue.getMsgCount().get());
         dispatchAfterRemoveResult.put("size", dispatchAfterRemoveQueue.getMsgSize().get());
         dispatchAfterRemoveResult.put("treeKeys", new ArrayList<>(dispatchAfterRemoveQueue.getMsgTreeMap().keySet()));
+        dispatchAfterRemoveResult.put("lastPullTimestamp", dispatchAfterRemoveQueue.getLastPullTimestamp());
         result.put("dispatchAfterRemove", dispatchAfterRemoveResult);
+
+        ProcessQueue malformedMaxOffsetQueue = new ProcessQueue();
+        MessageExt malformedMaxOffsetMessage = processQueueMessage(70L, new byte[] {7, 0});
+        MessageAccessor.putProperty(
+            malformedMaxOffsetMessage, MessageConst.PROPERTY_MAX_OFFSET, "not-a-long");
+        String maxOffsetError = "";
+        try {
+            malformedMaxOffsetQueue.putMessage(Arrays.asList(malformedMaxOffsetMessage));
+        } catch (NumberFormatException e) {
+            maxOffsetError = e.getClass().getName();
+        }
+        Map<String, Object> malformedMaxOffset = new TreeMap<>();
+        malformedMaxOffset.put("errorClass", maxOffsetError);
+        malformedMaxOffset.put("countAfterError", malformedMaxOffsetQueue.getMsgCount().get());
+        malformedMaxOffset.put("sizeAfterError", malformedMaxOffsetQueue.getMsgSize().get());
+        malformedMaxOffset.put("treeKeysAfterError", new ArrayList<>(malformedMaxOffsetQueue.getMsgTreeMap().keySet()));
+        boolean dispatchAfterError = malformedMaxOffsetQueue.putMessage(
+            Arrays.asList(processQueueMessage(71L, new byte[] {7, 1})));
+        malformedMaxOffset.put("dispatchAfterError", dispatchAfterError);
+        malformedMaxOffset.put("finalCount", malformedMaxOffsetQueue.getMsgCount().get());
+        malformedMaxOffset.put("finalSize", malformedMaxOffsetQueue.getMsgSize().get());
+        malformedMaxOffset.put("finalTreeKeys", new ArrayList<>(malformedMaxOffsetQueue.getMsgTreeMap().keySet()));
+        result.put("malformedMaxOffset", malformedMaxOffset);
 
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
