@@ -38,17 +38,23 @@ queue remains present; and an empty assignment drops and removes the queue.
 `fixtures/runtime/consumer-operations.json` records these rows in
 `popRebalance` and separately records an unsubscribed POP queue being dropped
 and removed by Java's topic-truncation helper. The matching Rust rebalance
-regression also checks worker cancellation. A PULL assignment that replaces
-POP keeps the existing PULL queue, drops/removes the POP queue, and cancels its
-worker in both implementations. The fixture SHA-256 is
+regression checks table removal and retires the worker while an issued response
+finishes. A PULL assignment that replaces POP keeps the existing PULL queue and
+drops/removes the POP queue in both implementations. The fixture SHA-256 is
 `b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`. Rust's
 `broker_assignment_error_preserves_worker_until_empty_assignment` exercises
 the owner flow against the same four expected states, including preserving the
-active worker across an assignment error and stopping it after empty assignment.
-`rebalance_truncates_unsubscribed_pop_queue_and_stops_worker` covers the
-unsubscribed queue cleanup branch, and
-`rebalance_switch_to_pull_removes_pop_queue_and_stops_worker` covers the POP
-to PULL transition.
+active worker across an assignment error and removing it from the assignment
+map after an empty assignment. Queue removal retires the task so an already
+issued POP response can finish; the loop exits before issuing another request.
+`rebalance_truncates_unsubscribed_pop_queue_and_retires_inflight_worker` covers
+the unsubscribed queue cleanup branch, and
+`rebalance_switch_to_pull_removes_pop_queue_and_retires_inflight_worker` covers
+the POP-to-PULL transition. The
+`removed_pop_queue_finishes_inflight_found_callback_before_retiring` regression
+verifies that a late FOUND callback filters and ACKs a rejected message after
+removal. Its callback also continues through the existing pull-statistics and
+accepted-message dispatch path, matching Java's callback flow.
 
 ## Local rebalance route selection and lookup order
 

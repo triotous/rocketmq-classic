@@ -562,6 +562,7 @@ pub struct PushConsumer {
     offset_corrections_pending: Arc<RwLock<HashSet<MessageQueue>>>,
     pop_process_queues: Arc<RwLock<HashMap<MessageQueue, Arc<PopProcessQueue>>>>,
     pop_workers: std::sync::Mutex<HashMap<MessageQueue, tokio::task::JoinHandle<()>>>,
+    pop_retired_workers: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
     pop_consume_workers: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
     pop_consume_semaphore: Arc<tokio::sync::Semaphore>,
     next_generation: AtomicU64,
@@ -647,6 +648,7 @@ impl PushConsumer {
             offset_corrections_pending: Arc::new(RwLock::new(HashSet::new())),
             pop_process_queues: Arc::new(RwLock::new(HashMap::new())),
             pop_workers: std::sync::Mutex::new(HashMap::new()),
+            pop_retired_workers: std::sync::Mutex::new(Vec::new()),
             pop_consume_workers: std::sync::Mutex::new(Vec::new()),
             pop_consume_semaphore: Arc::new(tokio::sync::Semaphore::new(pop_consume_limit)),
             next_generation: AtomicU64::new(1),
@@ -1358,12 +1360,21 @@ impl PushConsumer {
             process_queue.drop_assignment();
         }
         write_lock(&self.pop_process_queues).clear();
-        for (_, worker) in std::mem::take(
+        let mut pop_workers = std::mem::take(
             &mut *self
                 .pop_workers
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
-        ) {
+        )
+        .into_values()
+        .collect::<Vec<_>>();
+        pop_workers.extend(std::mem::take(
+            &mut *self
+                .pop_retired_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        ));
+        for worker in pop_workers {
             worker.abort();
         }
     }
@@ -5741,6 +5752,10 @@ impl PushConsumer {
         let Some(context) = self.pull_context().await else {
             return true;
         };
+        self.pop_retired_workers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|worker| !worker.is_finished());
         let rebalance_runtime = self.get_client_runtime().await;
         let mut balanced = true;
         let mut subscriptions = read_lock(&self.subscriptions)
@@ -6037,8 +6052,12 @@ impl PushConsumer {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .remove(&queue);
             if let Some(worker) = worker {
-                worker.abort();
-                let _ = worker.await;
+                if !worker.is_finished() {
+                    self.pop_retired_workers
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push(worker);
+                }
             }
             changed_queues.insert(queue);
         }
@@ -6189,22 +6208,26 @@ impl PushConsumer {
                     continue;
                 }
             };
-            let mut workers = self
-                .pop_workers
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if workers
-                .get(&queue)
-                .is_some_and(|worker| !worker.is_finished())
-            {
-                if read_lock(&self.pop_process_queues).contains_key(&queue) {
+            let previous_worker = {
+                let mut workers = self
+                    .pop_workers
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if workers
+                    .get(&queue)
+                    .is_some_and(|worker| !worker.is_finished())
+                    && read_lock(&self.pop_process_queues).contains_key(&queue)
+                {
                     continue;
                 }
-                workers.remove(&queue).unwrap().abort();
-            } else {
-                workers.remove(&queue);
+                workers.remove(&queue)
+            };
+            if let Some(worker) = previous_worker.filter(|worker| !worker.is_finished()) {
+                self.pop_retired_workers
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(worker);
             }
-            drop(workers);
 
             if read_lock(&self.pop_process_queues).contains_key(&queue) {
                 // Java's putIfAbsent does not replace a registered POP queue
@@ -7031,13 +7054,19 @@ impl PushConsumer {
             process_queue.drop_assignment();
         }
         write_lock(&self.pop_process_queues).clear();
-        let pop_workers = self
+        let mut pop_workers = self
             .pop_workers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .drain()
             .map(|(_, worker)| worker)
             .collect::<Vec<_>>();
+        pop_workers.extend(
+            self.pop_retired_workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .drain(..),
+        );
         for worker in &pop_workers {
             worker.abort();
         }
@@ -8834,7 +8863,10 @@ mod tests {
         message
     }
 
-    async fn read_remoting_command(stream: &mut TcpStream) -> RemotingCommand {
+    async fn read_remoting_command<R>(stream: &mut R) -> RemotingCommand
+    where
+        R: tokio::io::AsyncRead + Unpin,
+    {
         let mut length = [0; 4];
         stream.read_exact(&mut length).await.unwrap();
         let mut bytes = BytesMut::from(&length[..]);
@@ -8843,22 +8875,26 @@ mod tests {
         frame::decode_next(&mut bytes).unwrap().unwrap()
     }
 
-    async fn write_remoting_reply(
-        stream: &mut TcpStream,
+    async fn write_remoting_reply<W>(
+        stream: &mut W,
         request: &RemotingCommand,
         code: i32,
         fields: Option<HeaderMap>,
-    ) {
+    ) where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
         write_remoting_reply_with_body(stream, request, code, fields, None).await;
     }
 
-    async fn write_remoting_reply_with_body(
-        stream: &mut TcpStream,
+    async fn write_remoting_reply_with_body<W>(
+        stream: &mut W,
         request: &RemotingCommand,
         code: i32,
         fields: Option<HeaderMap>,
         body: Option<Vec<u8>>,
-    ) {
+    ) where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
         let mut reply = RemotingCommand {
             code,
             opaque: request.opaque,
@@ -8914,6 +8950,19 @@ mod tests {
         record.push(6);
         record.extend_from_slice(b"orders");
         record.extend_from_slice(&0i16.to_be_bytes());
+        let size = i32::try_from(record.len()).unwrap();
+        record[..4].copy_from_slice(&size.to_be_bytes());
+        record
+    }
+
+    fn pop_test_message_record_with_receipt(receipt: &str) -> Vec<u8> {
+        let properties =
+            encode_nullable_property_entries(Some(&[(Some(PROPERTY_POP_CK), Some(receipt))]))
+                .into_bytes();
+        let mut record = pop_test_message_record();
+        record.truncate(record.len() - 2);
+        record.extend_from_slice(&i16::try_from(properties.len()).unwrap().to_be_bytes());
+        record.extend_from_slice(&properties);
         let size = i32::try_from(record.len()).unwrap();
         record[..4].copy_from_slice(&size.to_be_bytes());
         record
@@ -9600,7 +9649,234 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rebalance_truncates_unsubscribed_pop_queue_and_stops_worker() {
+    async fn removed_pop_queue_finishes_inflight_found_callback_before_retiring() {
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker_listener.local_addr().unwrap().to_string();
+        let route = pop_test_route(&broker_address);
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let incoming = read_remoting_command(&mut stream).await;
+            assert_eq!(incoming.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: incoming.opaque,
+                body: Some(route),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let (pop_received, pop_received_signal) = tokio::sync::oneshot::channel();
+        let (release_pop, mut release_pop_signal) = tokio::sync::oneshot::channel();
+        let (ack_received, ack_received_signal) = tokio::sync::oneshot::channel();
+        let receipt = format!("17 {} 60000 2 0 broker-a 0 10", epoch_millis());
+        let found_record = pop_test_message_record_with_receipt(&receipt);
+        let broker_peer = tokio::spawn(async move {
+            let (request_sender, mut request_receiver) = tokio::sync::mpsc::unbounded_channel::<(
+                RemotingCommand,
+                Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
+            )>();
+            let mut readers = tokio::task::JoinSet::new();
+            let mut assignment_calls = 0;
+            let mut held_pop = None;
+            let mut pop_received = Some(pop_received);
+            let mut ack_received = Some(ack_received);
+            loop {
+                tokio::select! {
+                    accepted = broker_listener.accept() => {
+                        let (stream, _) = accepted.unwrap();
+                        let (mut reader, writer) = stream.into_split();
+                        let writer = Arc::new(tokio::sync::Mutex::new(writer));
+                        let sender = request_sender.clone();
+                        let task_writer = writer.clone();
+                        readers.spawn(async move {
+                            loop {
+                                let incoming = read_remoting_command(&mut reader).await;
+                                if sender.send((incoming, task_writer.clone())).is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                    Some((incoming, writer)) = request_receiver.recv() => {
+                        match incoming.code {
+                            request::QUERY_ASSIGNMENT => {
+                                let body: serde_json::Value = serde_json::from_slice(
+                                    incoming.body.as_deref().expect("assignment request body"),
+                                )
+                                .unwrap();
+                                assert_eq!(body["topic"], "orders");
+                                assert_eq!(body["consumerGroup"], "pop-inflight-drop");
+                                assignment_calls += 1;
+                                let assignments = if assignment_calls == 1 {
+                                    serde_json::json!([{
+                                        "messageQueue": {
+                                            "topic": "orders",
+                                            "brokerName": "broker-a",
+                                            "queueId": 0
+                                        },
+                                        "mode": "POP"
+                                    }])
+                                } else {
+                                    serde_json::json!([])
+                                };
+                                let mut writer = writer.lock().await;
+                                write_remoting_reply_with_body(
+                                    &mut *writer,
+                                    &incoming,
+                                    response::SUCCESS,
+                                    None,
+                                    Some(
+                                        serde_json::to_vec(&serde_json::json!({
+                                            "messageQueueAssignments": assignments
+                                        }))
+                                        .unwrap(),
+                                    ),
+                                )
+                                .await;
+                            }
+                            request::POP_MESSAGE => {
+                                let fields = incoming.ext_fields.as_ref().unwrap();
+                                assert_eq!(fields.get("maxMsgNums"), Some(&"7".to_owned()));
+                                held_pop = Some((incoming, writer));
+                                pop_received.take().unwrap().send(()).unwrap();
+                            }
+                            request::ACK_MESSAGE => {
+                                let fields = incoming.ext_fields.as_ref().unwrap();
+                                assert_eq!(
+                                    fields.get("consumerGroup"),
+                                    Some(&"pop-inflight-drop".to_owned())
+                                );
+                                assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
+                                assert_eq!(fields.get("extraInfo"), Some(&receipt));
+                                let mut writer = writer.lock().await;
+                                write_remoting_reply(
+                                    &mut *writer,
+                                    &incoming,
+                                    response::SUCCESS,
+                                    None,
+                                )
+                                .await;
+                                ack_received.take().unwrap().send(()).unwrap();
+                            }
+                            request::HEART_BEAT
+                            | request::UNREGISTER_CLIENT
+                            | request::CHECK_CLIENT_CONFIG => {
+                                let mut writer = writer.lock().await;
+                                write_remoting_reply(
+                                    &mut *writer,
+                                    &incoming,
+                                    response::SUCCESS,
+                                    None,
+                                )
+                                .await;
+                            }
+                            code => panic!("unexpected scripted Broker request code {code}"),
+                        }
+                    }
+                    release = &mut release_pop_signal, if held_pop.is_some() => {
+                        release.unwrap();
+                        let (request, writer) = held_pop.take().unwrap();
+                        let mut writer = writer.lock().await;
+                        write_remoting_reply_with_body(
+                            &mut *writer,
+                            &request,
+                            response::SUCCESS,
+                            Some(HeaderMap::from([
+                                ("popTime".into(), epoch_millis().to_string()),
+                                ("invisibleTime".into(), "60000".into()),
+                                ("reviveQid".into(), "2".into()),
+                                ("restNum".into(), "0".into()),
+                            ])),
+                            Some(found_record.clone()),
+                        )
+                        .await;
+                    }
+                    Some(_) = readers.join_next(), if !readers.is_empty() => {}
+                }
+            }
+        });
+
+        let mut config = PushConsumerConfig::new("pop-inflight-drop").unwrap();
+        config.set_client_rebalance(false);
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config
+            .client_config_mut()
+            .set_instance_name(Some("pop-inflight-drop-client".into()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let mut subscription =
+            SubscriptionData::new(Some("orders".to_owned()), Some("blue".to_owned()));
+        subscription.set_tags_set_owned(Some(HashSet::from([Some("blue".to_owned())])));
+        write_lock(&consumer.subscriptions).insert("orders".to_owned(), subscription);
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+        consumer.config().set_pop_batch_nums(7);
+        consumer.config().set_pop_invisible_time_millis(60_000);
+        runtime.remoting().start().unwrap();
+        runtime
+            .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
+            .await
+            .unwrap();
+        nameserver_peer.await.unwrap();
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        timeout(Duration::from_secs(3), pop_received_signal)
+            .await
+            .expect("assigned POP worker did not issue POP_MESSAGE")
+            .unwrap();
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = read_lock(&consumer.pop_process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("the initial POP assignment must exist");
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert!(process_queue.is_dropped());
+        assert!(!read_lock(&consumer.pop_process_queues).contains_key(&queue));
+        assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
+        assert_eq!(consumer.pop_retired_workers.lock().unwrap().len(), 1);
+        release_pop.send(()).unwrap();
+        timeout(Duration::from_secs(5), ack_received_signal)
+            .await
+            .expect("FOUND callback must ACK filtered messages after assignment removal")
+            .unwrap();
+        timeout(Duration::from_secs(3), async {
+            while consumer
+                .pop_retired_workers
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|worker| !worker.is_finished())
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("retired POP worker must exit after processing its in-flight response");
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+        broker_peer.abort();
+    }
+
+    #[tokio::test]
+    async fn rebalance_truncates_unsubscribed_pop_queue_and_retires_inflight_worker() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/consumer-operations.json"
         ))
@@ -9632,10 +9908,11 @@ mod tests {
                 self.0.store(true, Ordering::Release);
             }
         }
+        let (finish_worker, worker_finished) = tokio::sync::oneshot::channel();
         let drop_signal = WorkerDropSignal(worker_stopped.clone());
         let worker = tokio::spawn(async move {
             let _drop_signal = drop_signal;
-            std::future::pending::<()>().await;
+            let _ = worker_finished.await;
         });
         write_lock(&consumer.pop_process_queues).insert(queue.clone(), process_queue.clone());
         consumer
@@ -9654,14 +9931,23 @@ mod tests {
             expected["present"].as_bool().unwrap()
         );
         assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
-        assert!(worker_stopped.load(Ordering::Acquire));
+        assert!(!worker_stopped.load(Ordering::Acquire));
+        assert_eq!(consumer.pop_retired_workers.lock().unwrap().len(), 1);
+        finish_worker.send(()).unwrap();
+        timeout(Duration::from_secs(1), async {
+            while !worker_stopped.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("retired POP worker must finish after its in-flight operation");
 
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
-    async fn rebalance_switch_to_pull_removes_pop_queue_and_stops_worker() {
+    async fn rebalance_switch_to_pull_removes_pop_queue_and_retires_inflight_worker() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../fixtures/runtime/consumer-operations.json"
         ))
@@ -9703,10 +9989,11 @@ mod tests {
                 self.0.store(true, Ordering::Release);
             }
         }
+        let (finish_worker, worker_finished) = tokio::sync::oneshot::channel();
         let drop_signal = WorkerDropSignal(worker_stopped.clone());
         let worker = tokio::spawn(async move {
             let _drop_signal = drop_signal;
-            std::future::pending::<()>().await;
+            let _ = worker_finished.await;
         });
         consumer
             .pop_workers
@@ -9737,7 +10024,16 @@ mod tests {
         );
         assert!(!retained_pull_queue.is_dropped());
         assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
-        assert!(worker_stopped.load(Ordering::Acquire));
+        assert!(!worker_stopped.load(Ordering::Acquire));
+        assert_eq!(consumer.pop_retired_workers.lock().unwrap().len(), 1);
+        finish_worker.send(()).unwrap();
+        timeout(Duration::from_secs(1), async {
+            while !worker_stopped.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("retired POP worker must finish after its in-flight operation");
 
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();

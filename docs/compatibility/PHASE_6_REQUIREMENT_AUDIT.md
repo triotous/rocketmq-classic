@@ -3199,3 +3199,31 @@ fixture drift checks and Java cross-decodes of 106 typed headers and 19 typed
 bodies, and formatting/diff checks pass. This closes the tested POP-to-PULL
 cleanup branch only; broad P18-V01 reconciliation and Phase 19 live/platform
 evidence remain open.
+
+## P18-V01 POP in-flight callback after assignment removal — 2026-10-22
+
+Review of the pinned Java 5.5.1 `DefaultMQPushConsumerImpl.popMessage` callback
+showed that queue removal does not discard an already-issued POP response. A
+FOUND response still records pull statistics, filters messages, ACKs filtered
+messages, and submits accepted messages. The POP consume request then checks
+`PopProcessQueue.isDropped()` before listener dispatch. Rust previously aborted
+the queue worker at removal, losing this callback flow. Rebalance now removes
+the worker from the assignment map and retires its task until the in-flight
+response completes; the dropped-state check then ends the task before another
+POP request. Shutdown and destroy drain retired task handles.
+
+`removed_pop_queue_finishes_inflight_found_callback_before_retiring` scripts a
+FOUND response with a filtered message and valid POP receipt, removes the queue
+before releasing the response, and verifies the filtered-message ACK still
+reaches the Broker and the retired task finishes. The existing
+`popUnsubscribedTruncation` and `popToPullTransition` fixtures are unchanged;
+`consumer-operations.json` SHA-256 remains
+`b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`.
+
+The focused regression and all 257 Consumer library tests pass. All-feature
+workspace library suites pass (27, 257, 215, 154, 160 and 140 tests in the
+nonempty suites). Strict all-target/all-feature workspace Clippy, formatting,
+and diff checks pass. This closes the in-flight callback behavior for this
+assignment-removal case only; broad P18-V01 reconciliation, current-revision
+remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker evidence
+remain open.
