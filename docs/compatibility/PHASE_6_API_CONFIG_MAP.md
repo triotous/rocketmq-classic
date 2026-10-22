@@ -2635,7 +2635,7 @@ as Common module functions and types. The method groups map as follows:
 | --- | --- | --- |
 | `encode(MessageExt,boolean)`, `encodeUniquely(MessageExt,boolean)` | `encode_message_ext`, `encode_message_ext_uniquely` | MessageExt encoder fixture covers V1/V2 hosts, standard/unique output, compression, padding and short store size. |
 | `decode(ByteBuffer,...)`, `clientDecode(ByteBuffer,boolean)` | `decode_one`, `decode_one_as_client`, `client_decode`, `DecodeOptions` | Invoked overload snapshots cover body, decompression, properties-string, CRC and client-ID choices; malformed store-size and nonpositive-length branches are recorded above. |
-| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `client_decodes`, `client_decodes_with_body` | Concatenated fixture cases compare per-record decoded data and consumed boundaries. |
+| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `decode_many_as_client_compatible`, `client_decodes`, `client_decodes_with_body` | Concatenated fixtures compare per-record data and consumed boundaries. The malformed-tail fixture verifies that Java `decodesBatch` retains the valid prefix and moves its buffer to the limit; the compatible Rust path returns that prefix while strict `decode_many` still reports the malformed record. |
 | `encodeMessage`, `encodeMessages`, `decodeMessage(ByteBuffer)`, `decodeMessages(ByteBuffer)`, `decodeMessage(MessageExt,List)` | `encode_compact_message(s)`, `decode_compact_message(s)`, `decode_inner_batch` | Compact API fixture covers single/batch bytes, decode results, batch expansion and malformed inputs. `decode_inner_batch` marks each expanded `MessageExt` as Java's runtime `MessageClientExt`, preserving virtual message-ID lookup, no-op `setMsgId`, offset-ID fallback and `UNIQ_KEY` precedence. The invoked fixture compares these inherited/subtype outcomes. |
 | `messageProperties2String`, `string2messageProperties`, `decodeProperties(ByteBuffer)` | `encode_properties_nullable`, `encode_nullable_property_entries`, `decode_properties_nullable`, `decode_record_properties` | Direct fixture covers null/empty/malformed property text, record offsets, cursor positions and truncation. |
 | `createMessageId(SocketAddress,...)`, `decodeMessageId(String)` | `create_message_id`, `decode_message_id` | Message ID API fixture compares IPv4/IPv6 output, setters, malformed hex, short values and ports. |
@@ -2648,3 +2648,29 @@ these operations directly as module functions. The fixture records the complete
 26-signature Java surface in `fixtures/messages/records.json`. This crosswalk
 accounts for the callable surface but does not close P18-V01 behavior, error,
 control-flow, settings, or reverse-export reconciliation.
+
+## P18-V01 Java `decodesBatch` malformed-tail behavior — 2026-10-22 (`4e718e35`)
+
+Pinned Java `MessageDecoder.decode(ByteBuffer,...)` catches record decode
+exceptions, advances its input to the limit, and returns null. Its
+`decodesBatch` loop then stops and returns the messages decoded before that
+record. The new invoked fixture encodes a valid `MessageExt`, appends one
+malformed byte, and records the one-message prefix, runtime class and IDs, and
+the final Java buffer position/limit. The refreshed
+`fixtures/messages/records.json` SHA-256 is
+`d96af9e17c6a06adb1519eefcb66b546cea5c0e6bda52b3233a6b2fe5440ee6c`.
+
+Rust keeps strict `decode_many` error reporting and adds
+`decode_many_as_client_compatible` for Java batch flows. Pull result, POP reply,
+and both admin query paths now retain the valid prefix on a malformed tail.
+Pull processing reapplies IDs after compact-batch expansion so expanded
+messages preserve their `UNIQ_KEY` behavior and physical offset IDs. `view_message`
+continues using the one-record decoder. Common, pull, POP, and admin regressions
+cover these outcomes.
+
+Default and all-feature workspace tests, strict all-target/all-feature Clippy,
+format and diff checks, and pinned Maven verify pass. Maven verifies 37
+scenarios, 36 route/VIP cases, 106 typed headers, 19 typed bodies, and all 11
+message decode fixtures. This closes the batch malformed-tail control-flow
+slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
+native Windows runtime, and Phase 19 Broker/Docker evidence remain open.

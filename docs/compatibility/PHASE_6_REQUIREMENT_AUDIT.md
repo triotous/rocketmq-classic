@@ -3039,3 +3039,24 @@ API-shape adaptation. The compact API fixture already compares valid counts
 and malformed-size outcomes. This resolves the count-helper cursor review
 item; broad P18-V01 reconciliation remains open. No tests were run for this
 docs-only update.
+
+## P18-V01 Java `MessageDecoder.decodesBatch` malformed-tail control flow — 2026-10-22 (`4e718e35`)
+
+Pinned Java `decode(ByteBuffer,...)` catches record exceptions, moves the
+input position to its limit, and returns null; `decodesBatch` then stops and
+returns its already-decoded prefix. An invoked Java fixture appends one
+malformed byte to a valid encoded `MessageExt` and records the retained
+`MessageClientExt`, topic, message IDs, count, and final buffer position/limit.
+Rust adds `decode_many_as_client_compatible` while leaving strict
+`decode_many` intact. Pull-result, POP reply, and both admin query owners use
+the compatible path; pull processing reapplies IDs after compact expansion to
+preserve inner-message ID semantics. `view_message` remains on one-record
+decoding. Fixture SHA-256:
+`d96af9e17c6a06adb1519eefcb66b546cea5c0e6bda52b3233a6b2fe5440ee6c`.
+
+Default and all-feature workspace tests, strict Clippy, formatting/diff
+checks, and pinned Maven verify pass. The Maven gate validates 37 scenarios,
+36 route/VIP cases, 106 typed headers, 19 typed bodies, and all 11 message
+decode fixtures. This closes the batch malformed-tail behavior slice only;
+broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+Windows runtime, and Phase 19 Broker/Docker evidence remain open.
