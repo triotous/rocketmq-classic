@@ -2412,3 +2412,28 @@ format/diff checks, and Java lifecycle fixture verification pass. This closes
 these LitePull synchronized-operation branches only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull metadata refresh and direct NameServer lookup — 2026-10-22 (`b161c9a0`)
+
+Pinned Java `MQAdminImpl.fetchSubscribeMessageQueues` queries NameServer on
+every call and converts the returned route directly to subscribe queues
+without publishing it to the runtime route cache. Java's LitePull scheduled
+metadata check starts after 10 seconds, then runs at the configured fixed-rate
+period; its synchronized callback only checks registered queue-change
+listeners. Shared subscription route refresh remains owned by the runtime's
+route schedule.
+
+Rust `PullConsumer::fetch_message_queues` now performs the corresponding fresh
+NameServer query through `ClientRuntime::get_topic_subscribe_queues`, which
+does not alter the shared cache. LitePull now checks queue-change listeners
+only on the matching 10-second-initial-delay, fixed-rate schedule, under the
+lifecycle gate. It no longer checks listeners on each 200 ms worker
+reconciliation or refreshes subscription routes from the metadata timer. The
+regression changes the scripted NameServer route from one to two queues and
+verifies the direct lookup sees both while the cached snapshot remains at one.
+Full locked core and consumer tests, strict core/consumer Clippy,
+`cargo fmt --all`, and `git diff --check` pass. The pinned Java source was
+unchanged; no Java fixture was regenerated for this source-level control-flow
+correction. This closes the LitePull metadata polling and direct queue-lookup
+slice only; broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open.
