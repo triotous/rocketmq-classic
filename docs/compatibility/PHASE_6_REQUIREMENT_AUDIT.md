@@ -2460,3 +2460,23 @@ and pinned Java lifecycle fixture verification pass. This closes the LitePull
 NameServer update concurrency and callback-timing slice only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull metadata timer registration point — 2026-10-22 (`85f547e3`)
+
+Java `DefaultLitePullConsumerImpl.start()` registers the Lite metadata task
+immediately after `MQClientInstance.start()` and before its remaining
+post-start route and Broker checks. The scheduler's 10-second initial delay
+and configured fixed-rate period are therefore measured/snapshotted before
+those operations, while its synchronized callback waits for `start()` to
+release the implementation monitor.
+
+Rust now captures the metadata deadline and period immediately after the
+client runtime starts, then spawns the monitor after post-start initialization.
+The regression changes the NameServer route while a scripted Broker holds
+startup in `CHECK_CLIENT_CONFIG` for longer than 10 seconds; after startup
+returns, the queue-change callback runs within two seconds, proving the timer
+did not restart its initial delay at task-spawn time. All 24 Lite/POP
+integration tests, strict Consumer Clippy, formatting, and diff checks pass.
+This closes the Lite metadata timer registration-point slice only; broad
+P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains open.
