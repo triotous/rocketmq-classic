@@ -188,3 +188,18 @@ P18-V01 Remoting crate verification follow-up — 2026-10-22 06:05 UTC
 - `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
   --locked -- -D warnings` passed. Formatting, focused GO_AWAY regression,
   and diff checks also passed.
+
+P18-V01 Protocol DTO/identity crosswalk follow-up — 2026-10-22 06:10 UTC
+- Expanded the Protocol map for Java object-reference identity (`SharedValue::ptr_eq`
+  maps Java `==`), locked mutable handles, owned setter adapters, snapshot reads,
+  DataVersion/BitSet/namespace/collection/enum methods, and derived route and
+  LiteSubscription helpers. These entries clarify Rust ownership/name adapters;
+  they do not close source/default/error/control-flow parity.
+- Re-ran the exact-string Rustdoc name scan after the crosswalk edits: Protocol
+  has 1,499 distinct names (including the crate-root marker), 949 names not
+  literally present in the map; Remoting has 338 names and only the synthetic
+  root marker unmatched. Protocol's raw string count is not a missing-feature
+  count because Java camelCase, inherited APIs, collection fields, and Rust
+  ownership adapters require owner-level mapping.
+- P18-V01 remains open for full DTO/body source and control-flow reconciliation.
+  No tests were added or run for this documentation-only continuation.
