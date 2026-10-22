@@ -9,8 +9,8 @@ use rocketmq_classic_protocol::{
     body::{
         CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
         ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
-        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList, KvTable,
-        ProducerConnection, ProducerTableInfo, QueryCorrectionOffsetBody,
+        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList,
+        HaRuntimeInfo, KvTable, ProducerConnection, ProducerTableInfo, QueryCorrectionOffsetBody,
         QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
         SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
@@ -1465,6 +1465,33 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         GroupForbidden::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Reads a Broker's HA runtime status through Java
+    /// `MQClientAPIImpl.getBrokerHAStatus`. Java sends this request without a
+    /// custom header, request body, or VIP address transformation.
+    pub async fn get_broker_ha_status(
+        &self,
+        addr: &str,
+        timeout_millis: i64,
+    ) -> Result<Option<HaRuntimeInfo>, RpcError> {
+        let code = request::GET_BROKER_HA_STATUS;
+        let reply = self
+            .request_without_header(
+                addr,
+                code,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        HaRuntimeInfo::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
             RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),

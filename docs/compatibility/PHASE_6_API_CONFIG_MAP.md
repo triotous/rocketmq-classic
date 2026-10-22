@@ -1898,3 +1898,16 @@ cases and the Rust loopback test cover populated/null headers and results,
 success and Broker rejection. The header inventory and field validation
 matrix include every request field. This closes this direct API/header/DTO
 slice only; broad P18-V01 remains open.
+
+## P18-V01 direct `getBrokerHAStatus` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.getBrokerHAStatus(String,long)` sends request 907 to
+the supplied Broker address with no custom header, body, or VIP transformation.
+`MQClientApi::get_broker_ha_status` uses the caller timeout and decodes nullable
+`HaRuntimeInfo`, including Java's empty connection-list and default client-info
+values when fields are absent. The nested connection/client DTOs preserve their
+Java getter/setter surface and Fastjson field names. Invoked Java fixtures and
+a Rust loopback test cover populated/default DTOs, success without a body,
+Broker errors, and the empty request envelope. Producer core fixture SHA-256 is
+recorded in the execution log. This closes this direct API slice only; broad
+P18-V01 remains open.

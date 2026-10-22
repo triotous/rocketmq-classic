@@ -1432,7 +1432,7 @@ async fn broker_maintenance_operations_match_java_requests_and_outcomes() {
     let cases = fixture["brokerMaintenanceOperations"]["cases"]
         .as_array()
         .unwrap();
-    assert_eq!(cases.len(), 5);
+    assert_eq!(cases.len(), 6);
     for case in cases {
         let operation = case["operation"].as_str().unwrap();
         let expected = &case["requests"][0];
@@ -1654,7 +1654,7 @@ async fn create_topic_list_matches_java_requests_and_outcomes() {
     let cases = fixture["createTopicListOperations"]["cases"]
         .as_array()
         .unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 5);
 
     let (client_api, client) = api().await;
     for case in cases {
@@ -2266,6 +2266,99 @@ async fn update_and_get_group_forbidden_matches_java_fixture() {
                 .unwrap_or_else(|| json!({})),
             expected_request["extFields"]
         );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn get_broker_ha_status_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getBrokerHAStatusApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo org.apache.rocketmq.client.impl.MQClientAPIImpl.getBrokerHAStatus(java.lang.String,long)"
+        ])
+    );
+    let cases = fixture["getBrokerHAStatusOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api.get_broker_ha_status(&addr, timeout_millis).await;
+        if case["outcome"] == "returned" {
+            let status = result.unwrap();
+            if case["resultIsNull"].as_bool().unwrap() {
+                assert!(status.is_none());
+            } else {
+                let status = status.unwrap();
+                assert_eq!(
+                    status.java_to_json(false).unwrap(),
+                    case["resultJson"].as_str().unwrap()
+                );
+                if case["name"] == "ha-populated" {
+                    assert!(status.is_master());
+                    assert_eq!(status.get_master_commit_log_max_offset(), 987_654_321);
+                    assert_eq!(status.get_in_sync_slave_nums(), 2);
+                    status
+                        .get_ha_connection_info()
+                        .unwrap()
+                        .with(|connections| {
+                            assert_eq!(connections.len(), 1);
+                            let connection = connections[0].as_ref().unwrap();
+                            connection.with(|connection| {
+                                assert_eq!(connection.get_addr(), Some("10.0.0.2:10912"));
+                                assert_eq!(connection.get_slave_ack_offset(), 987_654_300);
+                                assert_eq!(connection.get_diff(), 21);
+                                assert!(connection.is_in_sync());
+                                assert_eq!(connection.get_transferred_byte_in_second(), 4096);
+                                assert_eq!(connection.get_transfer_from_where(), 987_650_000);
+                            });
+                        });
+                    status.get_ha_client_runtime_info().unwrap().with(|client| {
+                        assert_eq!(client.get_master_addr(), Some("10.0.0.1:10912"));
+                        assert_eq!(client.get_transferred_byte_in_second(), 2048);
+                        assert_eq!(client.get_max_offset(), 987_654_321);
+                        assert_eq!(client.get_last_read_timestamp(), 123_456_789);
+                        assert_eq!(client.get_last_write_timestamp(), 123_456_790);
+                        assert_eq!(client.get_master_flush_offset(), 987_654_320);
+                    });
+                }
+            }
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.ext_fields.is_none());
+        assert!(request.body.is_none());
         client.shutdown().await;
     }
 }

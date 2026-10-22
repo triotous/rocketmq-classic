@@ -2113,6 +2113,214 @@ impl QueryCorrectionOffsetBody {
     }
 }
 
+/// Java `HARuntimeInfo` returned by `GET_BROKER_HA_STATUS`.
+///
+/// The default connection list and client status match the Java constructor.
+/// Shared handles preserve the mutable list and nested object references
+/// returned by Java accessors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HaRuntimeInfo {
+    master: bool,
+    master_commit_log_max_offset: i64,
+    in_sync_slave_nums: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ha_connection_info: Option<SharedValue<Vec<Option<SharedValue<HaConnectionRuntimeInfo>>>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ha_client_runtime_info: Option<SharedValue<HaClientRuntimeInfo>>,
+}
+
+impl Default for HaRuntimeInfo {
+    fn default() -> Self {
+        Self {
+            master: false,
+            master_commit_log_max_offset: 0,
+            in_sync_slave_nums: 0,
+            ha_connection_info: Some(SharedValue::new(Vec::new())),
+            ha_client_runtime_info: Some(SharedValue::new(HaClientRuntimeInfo::default())),
+        }
+    }
+}
+
+impl HaRuntimeInfo {
+    pub fn is_master(&self) -> bool {
+        self.master
+    }
+
+    pub fn set_master(&mut self, value: bool) {
+        self.master = value;
+    }
+
+    pub fn get_master_commit_log_max_offset(&self) -> i64 {
+        self.master_commit_log_max_offset
+    }
+
+    pub fn set_master_commit_log_max_offset(&mut self, value: i64) {
+        self.master_commit_log_max_offset = value;
+    }
+
+    pub fn get_in_sync_slave_nums(&self) -> i32 {
+        self.in_sync_slave_nums
+    }
+
+    pub fn set_in_sync_slave_nums(&mut self, value: i32) {
+        self.in_sync_slave_nums = value;
+    }
+
+    pub fn get_ha_connection_info(
+        &self,
+    ) -> Option<SharedValue<Vec<Option<SharedValue<HaConnectionRuntimeInfo>>>>> {
+        self.ha_connection_info.clone()
+    }
+
+    pub fn set_ha_connection_info(
+        &mut self,
+        value: Option<SharedValue<Vec<Option<SharedValue<HaConnectionRuntimeInfo>>>>>,
+    ) {
+        self.ha_connection_info = value;
+    }
+
+    pub fn get_ha_client_runtime_info(&self) -> Option<SharedValue<HaClientRuntimeInfo>> {
+        self.ha_client_runtime_info.clone()
+    }
+
+    pub fn set_ha_client_runtime_info(&mut self, value: Option<SharedValue<HaClientRuntimeInfo>>) {
+        self.ha_client_runtime_info = value;
+    }
+}
+
+/// Java `HARuntimeInfo.HAConnectionRuntimeInfo` nested DTO.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HaConnectionRuntimeInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    addr: Option<String>,
+    slave_ack_offset: i64,
+    diff: i64,
+    in_sync: bool,
+    transferred_byte_in_second: i64,
+    transfer_from_where: i64,
+}
+
+impl HaConnectionRuntimeInfo {
+    pub fn get_addr(&self) -> Option<&str> {
+        self.addr.as_deref()
+    }
+
+    pub fn set_addr(&mut self, value: Option<String>) {
+        self.addr = value;
+    }
+
+    pub fn get_slave_ack_offset(&self) -> i64 {
+        self.slave_ack_offset
+    }
+
+    pub fn set_slave_ack_offset(&mut self, value: i64) {
+        self.slave_ack_offset = value;
+    }
+
+    pub fn get_diff(&self) -> i64 {
+        self.diff
+    }
+
+    pub fn set_diff(&mut self, value: i64) {
+        self.diff = value;
+    }
+
+    pub fn is_in_sync(&self) -> bool {
+        self.in_sync
+    }
+
+    pub fn set_in_sync(&mut self, value: bool) {
+        self.in_sync = value;
+    }
+
+    pub fn get_transferred_byte_in_second(&self) -> i64 {
+        self.transferred_byte_in_second
+    }
+
+    pub fn set_transferred_byte_in_second(&mut self, value: i64) {
+        self.transferred_byte_in_second = value;
+    }
+
+    pub fn get_transfer_from_where(&self) -> i64 {
+        self.transfer_from_where
+    }
+
+    pub fn set_transfer_from_where(&mut self, value: i64) {
+        self.transfer_from_where = value;
+    }
+}
+
+/// Java `HARuntimeInfo.HAClientRuntimeInfo` nested DTO.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HaClientRuntimeInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    master_addr: Option<String>,
+    transferred_byte_in_second: i64,
+    max_offset: i64,
+    last_read_timestamp: i64,
+    last_write_timestamp: i64,
+    master_flush_offset: i64,
+}
+
+impl HaClientRuntimeInfo {
+    pub fn get_master_addr(&self) -> Option<&str> {
+        self.master_addr.as_deref()
+    }
+
+    pub fn set_master_addr(&mut self, value: Option<String>) {
+        self.master_addr = value;
+    }
+
+    pub fn get_transferred_byte_in_second(&self) -> i64 {
+        self.transferred_byte_in_second
+    }
+
+    pub fn set_transferred_byte_in_second(&mut self, value: i64) {
+        self.transferred_byte_in_second = value;
+    }
+
+    pub fn get_max_offset(&self) -> i64 {
+        self.max_offset
+    }
+
+    pub fn set_max_offset(&mut self, value: i64) {
+        self.max_offset = value;
+    }
+
+    pub fn get_last_read_timestamp(&self) -> i64 {
+        self.last_read_timestamp
+    }
+
+    pub fn set_last_read_timestamp(&mut self, value: i64) {
+        self.last_read_timestamp = value;
+    }
+
+    pub fn get_last_write_timestamp(&self) -> i64 {
+        self.last_write_timestamp
+    }
+
+    pub fn set_last_write_timestamp(&mut self, value: i64) {
+        self.last_write_timestamp = value;
+    }
+
+    pub fn get_master_flush_offset(&self) -> i64 {
+        self.master_flush_offset
+    }
+
+    pub fn set_master_flush_offset(&mut self, value: i64) {
+        self.master_flush_offset = value;
+    }
+}
+
+impl_java_remoting_serializable_adapters!(
+    HaRuntimeInfo,
+    HaConnectionRuntimeInfo,
+    HaClientRuntimeInfo,
+);
+
 impl QueryConsumeTimeSpanBody {
     pub fn get_consume_time_span_set(
         &self,

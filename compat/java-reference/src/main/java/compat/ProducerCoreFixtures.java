@@ -399,6 +399,19 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden.class));
         result.put("groupForbiddenDtoOperations", groupForbiddenDtoOperations());
         result.put("updateAndGetGroupForbiddenOperations", updateAndGetGroupForbiddenOperations());
+        result.put("getBrokerHAStatusApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getBrokerHAStatus"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("haRuntimeInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.class));
+        result.put("haConnectionRuntimeInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAConnectionRuntimeInfo.class));
+        result.put("haClientRuntimeInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAClientRuntimeInfo.class));
+        result.put("getBrokerHAStatusOperations", getBrokerHAStatusOperations());
         result.put("addBrokerRequestHeaderApi",
             publicApiSurface(org.apache.rocketmq.remoting.protocol.header.AddBrokerRequestHeader.class));
         result.put("removeBrokerRequestHeaderApi",
@@ -3072,6 +3085,106 @@ public final class ProducerCoreFixtures {
         result.put("defaultHashCode", defaultValue.hashCode());
         result.put("defaultToString", defaultValue.toString());
         result.put("defaultJson", defaultValue.toJson());
+        return result;
+    }
+
+    private static Map<String, Object> getBrokerHAStatusOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(getBrokerHAStatusCase("ha-populated", 0, null, haruntimeInfoSample()));
+        cases.add(getBrokerHAStatusCase("ha-defaults", 0, null, "{}"));
+        cases.add(getBrokerHAStatusCase("ha-success-no-body", 0, null, null));
+        cases.add(getBrokerHAStatusCase("ha-error", 1, "HA status unavailable", null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static String haruntimeInfoSample() {
+        org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo status =
+            new org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo();
+        status.setMaster(true);
+        status.setMasterCommitLogMaxOffset(987654321L);
+        status.setInSyncSlaveNums(2);
+
+        org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAConnectionRuntimeInfo connection =
+            new org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAConnectionRuntimeInfo();
+        connection.setAddr("10.0.0.2:10912");
+        connection.setSlaveAckOffset(987654300L);
+        connection.setDiff(21L);
+        connection.setInSync(true);
+        connection.setTransferredByteInSecond(4096L);
+        connection.setTransferFromWhere(987650000L);
+        status.setHaConnectionInfo(Arrays.asList(connection));
+
+        org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAClientRuntimeInfo client =
+            new org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo.HAClientRuntimeInfo();
+        client.setMasterAddr("10.0.0.1:10912");
+        client.setTransferredByteInSecond(2048L);
+        client.setMaxOffset(987654321L);
+        client.setLastReadTimestamp(123456789L);
+        client.setLastWriteTimestamp(123456790L);
+        client.setMasterFlushOffset(987654320L);
+        status.setHaClientRuntimeInfo(client);
+        return status.toJson();
+    }
+
+    private static Map<String, Object> getBrokerHAStatusCase(
+        String name, int responseCode, String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("broker-ha-status-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.HARuntimeInfo status =
+                api.getBrokerHAStatus("broker-a:10911", 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", status == null);
+            if (status != null) {
+                result.put("resultJson", status.toJson());
+            }
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 
