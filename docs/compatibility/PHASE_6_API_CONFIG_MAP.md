@@ -2011,3 +2011,15 @@ configured VIP route. Header decode-mode checks and bidirectional typed header
 and body fixtures pass. This closes only this direct API/header/DTO slice;
 the broader P18-V01 settings/API/feature/input/error/control-flow/reverse-export
 audit remains open.
+
+## P18-V01 direct `createStaticTopic` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.createStaticTopic` maps `TopicConfig` into
+`CreateTopicRequestHeader`, then sends `TopicQueueMappingDetail.encode()` as
+the body with request 513. Core exposes `MQClientApi::create_static_topic`,
+uses configured VIP conversion and the caller timeout, and preserves Java's
+lack of local permission validation. The Fastjson body writer keeps integer
+keys in `currIdMap` and `hostedQueues` unquoted. Invoked Java fixtures and Rust
+loopback tests compare the header, exact body bytes, success/error outcomes,
+timeout, and VIP routing. The reverse audit now has eight open direct APIs;
+broader P18-V01 reconciliation remains open.

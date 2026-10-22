@@ -14,7 +14,8 @@ use rocketmq_classic_protocol::{
         ProducerTableInfo, QueryConsumeQueueResponseBody, QueryCorrectionOffsetBody,
         QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
         SubscriptionGroupList, SubscriptionGroupWrapper, TopicConfig, TopicConfigAndQueueMapping,
-        TopicConfigSerializeWrapper, TopicList, TopicStatsTable,
+        TopicConfigFilterType, TopicConfigSerializeWrapper, TopicList, TopicQueueMappingDetail,
+        TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -1394,6 +1395,63 @@ impl MQClientApi {
             }
         }
         let reply = self.request(addr, code, header, None, deadline).await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Creates or updates a static topic through Java
+    /// `MQClientAPIImpl.createStaticTopic` (request 513). The static mapping
+    /// detail is encoded as the request body; this path intentionally does not
+    /// add `createTopic`'s local permission validation.
+    pub async fn create_static_topic(
+        &self,
+        addr: &str,
+        default_topic: Option<&str>,
+        topic_config: &TopicConfig,
+        mapping_detail: &TopicQueueMappingDetail,
+        force: bool,
+        timeout_millis: i64,
+    ) -> Result<(), RpcError> {
+        let code = request::UPDATE_AND_CREATE_STATIC_TOPIC;
+        let mut header = CreateTopicRequestHeader::default();
+        header.set_topic(topic_config.topic_name().map(str::to_owned));
+        header.set_default_topic(default_topic.map(str::to_owned));
+        header.set_read_queue_nums(Some(topic_config.read_queue_nums()));
+        header.set_write_queue_nums(Some(topic_config.write_queue_nums()));
+        header.set_perm(Some(topic_config.perm()));
+        header.set_topic_filter_type(topic_config.topic_filter_type().map(|filter_type| {
+            match filter_type {
+                TopicConfigFilterType::SingleTag => "SINGLE_TAG".to_owned(),
+                TopicConfigFilterType::MultiTag => "MULTI_TAG".to_owned(),
+            }
+        }));
+        header.set_topic_sys_flag(Some(topic_config.topic_sys_flag()));
+        header.set_order(Some(topic_config.is_order()));
+        header.set_force(Some(force));
+        header.check_fields()?;
+
+        let body =
+            mapping_detail
+                .java_encode()
+                .map_err(|source| RpcError::RequestSerialization {
+                    request_code: code,
+                    source,
+                })?;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                Some(body),
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
         classify(reply, code, addr)?;
         Ok(())
     }
@@ -3211,6 +3269,109 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(queue.unwrap().get_max_queue_index(), 0);
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn create_static_topic_applies_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use base64::Engine as _;
+        use rocketmq_classic_protocol::{
+            body::{TopicConfig, TopicQueueMappingDetail},
+            codes::{LanguageCode, request, response},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let case = fixture["createStaticTopicOperations"]["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "vip-address")
+            .unwrap();
+        assert_eq!(case["vipEnabled"], true);
+        let expected_request = &case["requests"][0];
+        let expected_fields = expected_request["extFields"].clone();
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(expected_request["requestBodyBase64"].as_str().unwrap())
+            .unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(
+                request_command.code,
+                request::UPDATE_AND_CREATE_STATIC_TOPIC
+            );
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request_command
+                    .ext_fields
+                    .as_ref()
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                expected_fields
+            );
+            assert_eq!(
+                request_command.body.as_deref(),
+                Some(expected_body.as_slice())
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let topic_config =
+            serde_json::from_str::<TopicConfig>(case["topicConfigJson"].as_str().unwrap()).unwrap();
+        let mapping_detail = TopicQueueMappingDetail::java_decode(
+            case["mappingDetailJson"].as_str().unwrap().as_bytes(),
+        )
+        .unwrap();
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("create-static-topic-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let address = format!("127.0.0.1:{advertised_port}");
+        api.create_static_topic(
+            &address,
+            case["defaultTopic"].as_str(),
+            &topic_config,
+            &mapping_detail,
+            case["force"].as_bool().unwrap(),
+            case["timeoutMillis"].as_i64().unwrap(),
+        )
+        .await
+        .unwrap();
         peer.await.unwrap();
         remoting.shutdown().await;
     }

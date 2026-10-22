@@ -15,6 +15,7 @@ use rocketmq_classic_protocol::{
     body::{
         CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, ConsumeQueueData,
         QueryConsumeQueueResponseBody, TopicConfig, TopicConfigAndQueueMapping,
+        TopicQueueMappingDetail,
     },
     codes::{request, response},
     header::{
@@ -3166,6 +3167,179 @@ async fn get_topic_config_honors_the_java_timeout_argument() {
     .await;
     let (client_api, client) = api().await;
     let result = client_api.get_topic_config(&addr, Some("orders"), 25).await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_static_topic_matches_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["createStaticTopicApi"],
+        json!([
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.createStaticTopic(java.lang.String,java.lang.String,org.apache.rocketmq.common.TopicConfig,org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail,boolean,long)"
+        ])
+    );
+    for (surface, required_methods) in [
+        (
+            "createStaticTopicRequestHeaderApi",
+            vec![
+                "getTopic",
+                "setTopic",
+                "getDefaultTopic",
+                "setDefaultTopic",
+                "getReadQueueNums",
+                "setReadQueueNums",
+                "getWriteQueueNums",
+                "setWriteQueueNums",
+                "getPerm",
+                "setPerm",
+                "getTopicFilterType",
+                "setTopicFilterType",
+                "getTopicSysFlag",
+                "setTopicSysFlag",
+                "getOrder",
+                "setOrder",
+                "getForce",
+                "setForce",
+                "checkFields",
+            ],
+        ),
+        (
+            "staticTopicConfigApi",
+            vec![
+                "getTopicName",
+                "getReadQueueNums",
+                "getWriteQueueNums",
+                "getPerm",
+                "getTopicFilterType",
+                "getTopicSysFlag",
+                "isOrder",
+            ],
+        ),
+    ] {
+        let methods = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in required_methods {
+            assert!(
+                methods.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+                }),
+                "{surface} lacks {method}"
+            );
+        }
+    }
+
+    let cases = fixture["createStaticTopicOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 7);
+    let (client_api, client) = api().await;
+    for case in cases
+        .iter()
+        .filter(|case| !case["vipEnabled"].as_bool().unwrap())
+    {
+        let name = case["name"].as_str().unwrap();
+        let topic_config =
+            serde_json::from_str::<TopicConfig>(case["topicConfigJson"].as_str().unwrap()).unwrap();
+        let mapping_detail = TopicQueueMappingDetail::java_decode(
+            case["mappingDetailJson"].as_str().unwrap().as_bytes(),
+        )
+        .unwrap();
+        if name == "populated" {
+            assert_eq!(topic_config.topic_name(), Some("orders"));
+            assert_eq!(topic_config.read_queue_nums(), 8);
+            assert_eq!(topic_config.write_queue_nums(), 6);
+            assert_eq!(topic_config.perm(), 7);
+            assert_eq!(topic_config.topic_sys_flag(), 3);
+            assert!(topic_config.is_order());
+            assert_eq!(mapping_detail.get_topic(), Some("orders"));
+            assert_eq!(mapping_detail.get_total_queues(), 4);
+        }
+
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(
+            expected_request["requestCode"],
+            request::UPDATE_AND_CREATE_STATIC_TOPIC
+        );
+        assert_eq!(expected_request["timeoutMillis"], case["timeoutMillis"]);
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(expected_request["requestBodyBase64"].as_str().unwrap())
+            .unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, None).await;
+        let result = client_api
+            .create_static_topic(
+                &addr,
+                case["defaultTopic"].as_str(),
+                &topic_config,
+                &mapping_detail,
+                case["force"].as_bool().unwrap(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            result.unwrap_or_else(|error| panic!("{name}: {error}"));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::UPDATE_AND_CREATE_STATIC_TOPIC,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && response_remark.as_deref() == Some(remark.as_str())
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::UPDATE_AND_CREATE_STATIC_TOPIC);
+        assert_eq!(
+            request.body.as_deref(),
+            Some(expected_body.as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            request
+                .ext_fields
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"],
+            "{name}"
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_static_topic_honors_the_java_timeout_argument() {
+    let (addr, peer) =
+        scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;
+    let (client_api, client) = api().await;
+    let config = TopicConfig::new("orders");
+    let mapping = TopicQueueMappingDetail::default();
+    let result = client_api
+        .create_static_topic(&addr, Some("TBW102"), &config, &mapping, false, 25)
+        .await;
     assert!(matches!(
         result,
         Err(RpcError::Transport(ref error)) if error.is_timeout()

@@ -311,6 +311,16 @@ public final class ProducerCoreFixtures {
         result.put("consumeQueueDataApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData.class));
         result.put("queryConsumeQueueOperations", queryConsumeQueueOperations());
+        result.put("createStaticTopicApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("createStaticTopic"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("createStaticTopicRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader.class));
+        result.put("staticTopicConfigApi", publicApiSurface(TopicConfig.class));
+        result.put("createStaticTopicOperations", createStaticTopicOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -2756,6 +2766,124 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{"));
         Map<String, Object> result = new TreeMap<>();
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> createStaticTopicOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        org.apache.rocketmq.common.TopicConfig populated = new org.apache.rocketmq.common.TopicConfig("orders");
+        populated.setReadQueueNums(8);
+        populated.setWriteQueueNums(6);
+        populated.setPerm(7);
+        populated.setTopicSysFlag(3);
+        populated.setOrder(true);
+        populated.setTopicFilterType(org.apache.rocketmq.common.TopicFilterType.MULTI_TAG);
+        populated.setAttributes(new TreeMap<>(Map.of("owner", "compat", "tier", "gold")));
+        org.apache.rocketmq.common.TopicConfig defaults = new org.apache.rocketmq.common.TopicConfig("defaults");
+        org.apache.rocketmq.common.TopicConfig invalidPermission = new org.apache.rocketmq.common.TopicConfig("invalid-perm");
+        invalidPermission.setPerm(-7);
+
+        cases.add(createStaticTopicCase("populated", populated, "TBW102",
+            staticTopicMappingSample(), true, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createStaticTopicCase("defaults", defaults, "TBW102",
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createStaticTopicCase("null-default-topic", new org.apache.rocketmq.common.TopicConfig("null-default"),
+            null, new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createStaticTopicCase("empty-default-topic", new org.apache.rocketmq.common.TopicConfig("empty-default"),
+            "", new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(), true, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createStaticTopicCase("invalid-permission-is-sent", invalidPermission, "TBW102",
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(), false, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createStaticTopicCase("broker-error", populated, "TBW102",
+            staticTopicMappingSample(), true, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "static topic rejected"));
+        cases.add(createStaticTopicCase("vip-address", populated, "TBW102",
+            staticTopicMappingSample(), true, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+        staticTopicMappingSample() {
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail detail =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(
+                "orders", 4, "broker-a", 12L);
+        detail.setScope("__global__");
+        detail.setDirty(true);
+        detail.setCurrIdMap(new java.util.concurrent.ConcurrentHashMap<>(Map.of(2, 1)));
+        org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem item =
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 1, "broker-a", 100L, 20L, 80L, 1000L, 2000L);
+        detail.getHostedQueues().put(2, List.of(item));
+        return detail;
+    }
+
+    private static Map<String, Object> createStaticTopicCase(
+        String name,
+        org.apache.rocketmq.common.TopicConfig topicConfig,
+        String defaultTopic,
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail mappingDetail,
+        boolean force,
+        boolean vipEnabled,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("create-static-topic-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            return RemotingCommand.createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("defaultTopic", defaultTopic);
+        result.put("topicConfigJson", JSON.toJSONString(topicConfig));
+        result.put("mappingDetailJson", JSON.toJSONString(mappingDetail));
+        result.put("force", force);
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.createStaticTopic("broker-a:10911", defaultTopic, topicConfig, mappingDetail,
+                force, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

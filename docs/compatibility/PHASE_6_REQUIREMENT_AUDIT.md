@@ -1744,7 +1744,8 @@ operation or fixture-backed owner path. Since this list was captured,
 `fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
 been implemented and checked against the pinned Java fixture. The initial list
 of 12 direct operations has since been reduced by the `getAllTopicConfig`,
-`getAllSubscriptionGroup`, and `queryConsumeQueue` slices below; 9 remain
+`getAllSubscriptionGroup`, `queryConsumeQueue`, and `createStaticTopic` slices
+below; 8 remain
 implementation work rather than approved differences:
 
 | Request | Java method | Code | Status |
@@ -1758,7 +1759,7 @@ implementation work rather than approved differences:
 | Static-topic configuration lookup | `getTopicConfig` | 351 | Closed by `get_topic_config` |
 | Group-forbidden update/read | `updateAndGetGroupForbidden` | 353 | Closed by `update_and_get_group_forbidden` |
 | Broker HA status | `getBrokerHAStatus` | 907 | Closed by `get_broker_ha_status` |
-| Static-topic creation/update | `createStaticTopic` | 513 | Open |
+| Static-topic creation/update | `createStaticTopic` | 513 | Closed by `create_static_topic` |
 | User creation | `createUser` | 3001 | Open |
 | User update | `updateUser` | 3002 | Open |
 | User deletion | `deleteUser` | 3003 | Open |
@@ -1771,7 +1772,7 @@ implementation work rather than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 9 open rows, but their Rust DTO and RPC owners are still
+already exist for the 8 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -1915,3 +1916,18 @@ VIP port transformation is checked by the core loopback test. This closes one
 direct API/header/DTO slice and reduces the reverse-audit list from 10 to 9
 open rows; broad settings/API/input/error/control-flow/reverse-export
 reconciliation remains open.
+
+## P18-V01 direct `createStaticTopic` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.createStaticTopic(String,String,TopicConfig,
+TopicQueueMappingDetail,boolean,long)` sends request 513 using
+`CreateTopicRequestHeader` and the encoded `TopicQueueMappingDetail` body. Core
+exposes `MQClientApi::create_static_topic`, maps topic configuration into the
+header, applies configured VIP conversion, and uses the supplied timeout. It
+does not add local permission validation: the invoked Java fixture confirms
+that an invalid permission value is still sent. `TopicQueueMappingDetail`
+encoding preserves Fastjson's unquoted integer keys for both `currIdMap` and
+`hostedQueues`. Java and Rust fixtures cover populated/default mapping bodies,
+null and empty default topics, force/order/filter fields, invalid permissions,
+success, Broker rejection, exact request bytes, timeout, and VIP routing. This
+closes only this direct API/header/body slice; broad P18-V01 remains open.

@@ -1965,7 +1965,10 @@ fn write_java_route_json(
         }
         serde_json::Value::Object(fields) => {
             let numeric_keys = writer_options.unquote_numeric_map_keys
-                && matches!(field_name, Some("brokerAddrs" | "currIdMap"));
+                && matches!(
+                    field_name,
+                    Some("brokerAddrs" | "currIdMap" | "hostedQueues")
+                );
             let long_keys_are_strings =
                 writer_options.stringify_long_map_keys && field_name == Some("brokerAddrs");
             let mut entries: Vec<_> = fields.iter().collect();
