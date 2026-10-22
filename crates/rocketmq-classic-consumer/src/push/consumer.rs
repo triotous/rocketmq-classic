@@ -8968,6 +8968,21 @@ mod tests {
         record
     }
 
+    fn pop_test_message_record_with_tag_and_receipt(tag: &str, receipt: &str) -> Vec<u8> {
+        let properties = encode_nullable_property_entries(Some(&[
+            (Some(PROPERTY_POP_CK), Some(receipt)),
+            (Some(PROPERTY_TAGS), Some(tag)),
+        ]))
+        .into_bytes();
+        let mut record = pop_test_message_record();
+        record.truncate(record.len() - 2);
+        record.extend_from_slice(&i16::try_from(properties.len()).unwrap().to_be_bytes());
+        record.extend_from_slice(&properties);
+        let size = i32::try_from(record.len()).unwrap();
+        record[..4].copy_from_slice(&size.to_be_bytes());
+        record
+    }
+
     async fn accept_remoting_request(
         listener: &TcpListener,
         current: &mut Option<TcpStream>,
@@ -9675,8 +9690,15 @@ mod tests {
         let (pop_received, pop_received_signal) = tokio::sync::oneshot::channel();
         let (release_pop, mut release_pop_signal) = tokio::sync::oneshot::channel();
         let (ack_received, ack_received_signal) = tokio::sync::oneshot::channel();
-        let receipt = format!("17 {} 60000 2 0 broker-a 0 10", epoch_millis());
-        let found_record = pop_test_message_record_with_receipt(&receipt);
+        let filtered_receipt = format!("17 {} 60000 2 0 broker-a 0 10", epoch_millis());
+        let accepted_receipt = format!("18 {} 60000 2 0 broker-a 0 11", epoch_millis());
+        let mut found_record = pop_test_message_record_with_receipt(&filtered_receipt);
+        found_record.extend_from_slice(&pop_test_message_record_with_tag_and_receipt(
+            "blue",
+            &accepted_receipt,
+        ));
+        let ack_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let peer_ack_count = ack_count.clone();
         let broker_peer = tokio::spawn(async move {
             let (request_sender, mut request_receiver) = tokio::sync::mpsc::unbounded_channel::<(
                 RemotingCommand,
@@ -9748,13 +9770,14 @@ mod tests {
                                 pop_received.take().unwrap().send(()).unwrap();
                             }
                             request::ACK_MESSAGE => {
+                                peer_ack_count.fetch_add(1, Ordering::SeqCst);
                                 let fields = incoming.ext_fields.as_ref().unwrap();
                                 assert_eq!(
                                     fields.get("consumerGroup"),
                                     Some(&"pop-inflight-drop".to_owned())
                                 );
                                 assert_eq!(fields.get("topic"), Some(&"orders".to_owned()));
-                                assert_eq!(fields.get("extraInfo"), Some(&receipt));
+                                assert_eq!(fields.get("extraInfo"), Some(&filtered_receipt));
                                 let mut writer = writer.lock().await;
                                 write_remoting_reply(
                                     &mut *writer,
@@ -9763,7 +9786,9 @@ mod tests {
                                     None,
                                 )
                                 .await;
-                                ack_received.take().unwrap().send(()).unwrap();
+                                if let Some(ack_received) = ack_received.take() {
+                                    ack_received.send(()).unwrap();
+                                }
                             }
                             request::HEART_BEAT
                             | request::UNREGISTER_CLIENT
@@ -9826,6 +9851,14 @@ mod tests {
             Arc::new(PullRpcWorkers::new()),
         )
         .await;
+        let listener_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        *write_lock(&consumer.pop_listener) = Some(PushMessageListener::concurrently({
+            let listener_calls = listener_calls.clone();
+            move |_messages, context| {
+                listener_calls.fetch_add(1, Ordering::SeqCst);
+                std::future::ready((Some(ConsumeConcurrentlyStatus::ConsumeSuccess), context))
+            }
+        }));
         consumer.config().set_pop_batch_nums(7);
         consumer.config().set_pop_invisible_time_millis(60_000);
         runtime.remoting().start().unwrap();
@@ -9869,6 +9902,21 @@ mod tests {
         })
         .await
         .expect("retired POP worker must exit after processing its in-flight response");
+        timeout(Duration::from_secs(3), async {
+            while consumer
+                .pop_consume_workers
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|worker| !worker.is_finished())
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("accepted message consume request must finish on the dropped queue");
+        assert_eq!(listener_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(ack_count.load(Ordering::SeqCst), 1);
 
         consumer.shutdown().await.unwrap();
         runtime.shutdown().await.unwrap();

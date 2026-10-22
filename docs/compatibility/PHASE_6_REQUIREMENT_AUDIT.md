@@ -3227,3 +3227,22 @@ and diff checks pass. This closes the in-flight callback behavior for this
 assignment-removal case only; broad P18-V01 reconciliation, current-revision
 remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V01 POP accepted-message consume guard after assignment removal — 2026-10-22
+
+The in-flight FOUND regression now includes both a filtered message and an
+accepted `blue` message. After rebalance drops and removes the POP queue, the
+late callback ACKs only the filtered message and dispatches the accepted
+message to a consume request. The request observes the dropped state and exits
+before invoking the listener; the regression asserts zero listener calls and
+exactly one Broker ACK. This matches Java's callback filtering/ACK order and
+`ConsumeMessagePopConcurrentlyService.ConsumeRequest.run` dropped-queue guard.
+The Java fixtures are unchanged; `consumer-operations.json` SHA-256 remains
+`b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`.
+
+The focused regression and all 257 Consumer library tests pass. Strict
+all-target/all-feature workspace Clippy, Windows GNU Consumer test linking and
+strict Clippy, formatting and diff checks pass. This closes the accepted
+message dropped-queue guard for this POP removal path only; broad P18-V01,
+current-revision remote Ubuntu CI, native Windows execution, and Phase 19 live
+Broker/Docker evidence remain open.

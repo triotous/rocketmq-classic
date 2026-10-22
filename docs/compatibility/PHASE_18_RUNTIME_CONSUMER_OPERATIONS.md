@@ -294,7 +294,8 @@ issued response still follows Java's callback path: a FOUND result updates
 pull statistics, filters messages, ACKs filtered messages, and dispatches
 accepted messages to a consume request that exits on the dropped queue. The
 worker then exits before issuing another POP request. A scripted Rust
-regression verifies the filtered-message ACK after removal. The
+regression verifies the filtered-message ACK after removal and confirms an
+accepted message does not reach the listener after removal. The
 `popToPullTransition` fixture invokes a PULL assignment while the same queue
 has an active entry in both tables; Java and Rust both remove the POP entry,
 retire its worker, and retain the existing PULL queue. Remaining POP assignment

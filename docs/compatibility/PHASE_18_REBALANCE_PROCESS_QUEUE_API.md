@@ -53,8 +53,10 @@ the unsubscribed queue cleanup branch, and
 the POP-to-PULL transition. The
 `removed_pop_queue_finishes_inflight_found_callback_before_retiring` regression
 verifies that a late FOUND callback filters and ACKs a rejected message after
-removal. Its callback also continues through the existing pull-statistics and
-accepted-message dispatch path, matching Java's callback flow.
+removal. The same response contains an accepted message; the test confirms its
+consume request exits on the dropped queue without calling the listener or
+ACKing it. Pull statistics and the remaining callback handling continue to
+follow Java's FOUND path.
 
 ## Local rebalance route selection and lookup order
 
