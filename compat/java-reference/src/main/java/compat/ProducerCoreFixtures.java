@@ -2874,6 +2874,7 @@ public final class ProducerCoreFixtures {
 
     private static Map<String, Object> topicConfigModelOperations() {
         Map<String, Object> result = new TreeMap<>();
+        result.put("topicConfigAndQueueMappingApi", topicConfigAndQueueMappingApiCases());
         TopicConfig defaults = new TopicConfig();
         result.put("default", topicConfigModelState(defaults));
         result.put("defaultEncoded", defaults.encode());
@@ -3013,6 +3014,134 @@ public final class ProducerCoreFixtures {
         result.put("messageTypeValues", Arrays.stream(TopicMessageType.values())
             .map(TopicMessageType::getValue).collect(java.util.stream.Collectors.toList()));
         result.put("messageTypeMetrics", TopicMessageType.LITE.getMetricsValue());
+        return result;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+    topicConfigMappingDetail(String topic, String broker, long logicOffset) {
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail detail =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(
+                topic, 1, broker, 1);
+        ConcurrentMap<Integer, List<org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem>>
+            hostedQueues = new java.util.concurrent.ConcurrentHashMap<>();
+        hostedQueues.put(0, new ArrayList<>(Arrays.asList(
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 2, broker, logicOffset, 0, 3, 10, 20))));
+        detail.setHostedQueues(hostedQueues);
+        return detail;
+    }
+
+    private static Map<String, Object> topicConfigAndQueueMappingState(
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping value) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topicConfig", topicConfigModelState(value));
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail mappingDetail =
+            value.getMappingDetail();
+        result.put("mappingDetail", mappingDetail == null ? null : JSON.parseObject(
+            JSON.toJSONString(mappingDetail,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("toString", value.toString());
+        return result;
+    }
+
+    private static Map<String, Object> topicConfigAndQueueMappingPair(
+            String name,
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping left,
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping right) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("case", name);
+        result.put("left", JSON.parseObject(JSON.toJSONString(left,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("right", JSON.parseObject(JSON.toJSONString(right,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("equals", left.equals(right));
+        result.put("hashCodeEqual", left.hashCode() == right.hashCode());
+        result.put("leftToString", left.toString());
+        result.put("rightToString", right.toString());
+        return result;
+    }
+
+    private static Map<String, Object> topicConfigAndQueueMappingApiCases() {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping defaults =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping();
+        result.put("default", topicConfigAndQueueMappingState(defaults));
+
+        TopicConfig source = new TopicConfig("source-topic", 3, 4, 6, 7);
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("owner", "initial");
+        source.setAttributes(attributes);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail detail =
+            topicConfigMappingDetail("mapping-topic", "broker", 0);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping wrapper =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                source, detail);
+        result.put("sourceBefore", topicConfigModelState(source));
+        result.put("detailBefore", JSON.parseObject(JSON.toJSONString(detail,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("constructed", topicConfigAndQueueMappingState(wrapper));
+        result.put("getterPreservesMappingIdentity", wrapper.getMappingDetail() == detail);
+
+        source.setTopicName("source-mutated");
+        source.setReadQueueNums(99);
+        attributes.put("owner", "updated");
+        result.put("afterSourceMutation", topicConfigAndQueueMappingState(wrapper));
+        detail.setTopic("mapping-mutated");
+        result.put("afterMappingMutation", topicConfigAndQueueMappingState(wrapper));
+
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail replacement =
+            topicConfigMappingDetail("replacement", "broker-2", 4);
+        wrapper.setMappingDetail(replacement);
+        result.put("setterPreservesMappingIdentity", wrapper.getMappingDetail() == replacement);
+        wrapper.setMappingDetail(null);
+        result.put("setterAcceptsNull", wrapper.getMappingDetail() == null);
+        try {
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                null, null);
+            result.put("nullConfigConstructorError", "none");
+        } catch (RuntimeException error) {
+            result.put("nullConfigConstructorError", error.getClass().getSimpleName());
+        }
+
+        TopicConfig equalConfig = new TopicConfig("orders", 2, 3, 6, 8);
+        equalConfig.setAttributes(new HashMap<>(Map.of("owner", "compat")));
+        TopicConfig differentConfig = new TopicConfig(equalConfig);
+        differentConfig.setTopicName("other-topic");
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail leftDetail =
+            topicConfigMappingDetail("mapping-topic", "broker", 0);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail equalDetail =
+            topicConfigMappingDetail("mapping-topic", "broker", 0);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail metadataOnlyDetail =
+            topicConfigMappingDetail("other-mapping-topic", "broker", 0);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail differentDetail =
+            topicConfigMappingDetail("mapping-topic", "broker", 1);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping equalLeft =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                equalConfig, leftDetail);
+        List<Object> equality = new ArrayList<>();
+        equality.add(topicConfigAndQueueMappingPair("default",
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(),
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping()));
+        equality.add(topicConfigAndQueueMappingPair("same-populated", equalLeft,
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                new TopicConfig(equalConfig), equalDetail)));
+        equality.add(topicConfigAndQueueMappingPair("config-field", equalLeft,
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                differentConfig, equalDetail)));
+        equality.add(topicConfigAndQueueMappingPair("mapping-metadata-only", equalLeft,
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                new TopicConfig(equalConfig), metadataOnlyDetail)));
+        equality.add(topicConfigAndQueueMappingPair("mapping-content", equalLeft,
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                new TopicConfig(equalConfig), differentDetail)));
+        equality.add(topicConfigAndQueueMappingPair("null-vs-empty-mapping", equalLeft,
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                new TopicConfig(equalConfig), null)));
+        result.put("equality", equality);
         return result;
     }
 

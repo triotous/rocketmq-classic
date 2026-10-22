@@ -4034,6 +4034,12 @@ impl PartialEq for TopicQueueMappingDetail {
 
 impl Eq for TopicQueueMappingDetail {}
 
+impl Hash for TopicQueueMappingDetail {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.java_hash_code().hash(state);
+    }
+}
+
 /// Java `TopicConfigAndQueueMapping`, a `TopicConfig` with optional static
 /// queue mapping metadata.
 ///
@@ -4118,6 +4124,28 @@ impl<'de> Deserialize<'de> for TopicConfigAndQueueMapping {
 }
 
 impl TopicConfigAndQueueMapping {
+    /// Copies the supplied Java `TopicConfig` fields while retaining its
+    /// mutable attributes handle, then retains the mapping-detail handle.
+    pub fn new(
+        topic_config: &TopicConfig,
+        mapping_detail: Option<SharedValue<TopicQueueMappingDetail>>,
+    ) -> Self {
+        Self {
+            topic_config: TopicConfig::copy_from(topic_config),
+            mapping_detail,
+        }
+    }
+
+    /// Nullable Java-constructor adapter; Java dereferences the config in its
+    /// copy constructor and throws `NullPointerException` for a null input.
+    pub fn new_nullable(
+        topic_config: Option<&TopicConfig>,
+        mapping_detail: Option<SharedValue<TopicQueueMappingDetail>>,
+    ) -> Result<Self, TopicConfigError> {
+        let topic_config = topic_config.ok_or(TopicConfigError::NullInput)?;
+        Ok(Self::new(topic_config, mapping_detail))
+    }
+
     pub fn topic_config(&self) -> &TopicConfig {
         &self.topic_config
     }
@@ -4137,6 +4165,23 @@ impl TopicConfigAndQueueMapping {
     pub fn set_mapping_detail_owned(&mut self, value: Option<TopicQueueMappingDetail>) {
         self.mapping_detail = value.map(SharedValue::new);
     }
+
+    /// Returns the Java `TopicConfigAndQueueMapping.toString` text.
+    pub fn java_to_string(&self) -> String {
+        let mut text = self.topic_config.java_to_string();
+        if !text.trim().is_empty() {
+            text.pop();
+            text.push_str(", mappingDetail=");
+            match &self.mapping_detail {
+                Some(mapping_detail) => {
+                    text.push_str(&mapping_detail.with(TopicQueueMappingDetail::java_to_string));
+                }
+                None => text.push_str("null"),
+            }
+            text.push(']');
+        }
+        text
+    }
 }
 
 impl PartialEq for TopicConfigAndQueueMapping {
@@ -4148,6 +4193,16 @@ impl PartialEq for TopicConfigAndQueueMapping {
 }
 
 impl Eq for TopicConfigAndQueueMapping {}
+
+impl Hash for TopicConfigAndQueueMapping {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.topic_config.hash(state);
+        self.mapping_detail
+            .as_ref()
+            .map(SharedValue::snapshot)
+            .hash(state);
+    }
+}
 
 impl std::ops::Deref for TopicConfigAndQueueMapping {
     type Target = TopicConfig;

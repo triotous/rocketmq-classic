@@ -12,7 +12,10 @@ use rocketmq_classic_common::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{TopicConfig, TopicConfigAttributeMap, TopicConfigError, TopicConfigFilterType},
+    body::{
+        TopicConfig, TopicConfigAndQueueMapping, TopicConfigAttributeMap, TopicConfigError,
+        TopicConfigFilterType, TopicQueueMappingDetail,
+    },
 };
 use serde_json::{Value, json};
 
@@ -28,6 +31,16 @@ fn assert_config(config: &TopicConfig, expected: &Value) {
     actual["liteTopicExpiration"] = json!(config.lite_topic_expiration().unwrap());
     actual["toString"] = json!(config.java_to_string());
     assert_eq!(&actual, expected);
+}
+
+fn assert_config_fields(config: &TopicConfig, expected: &Value) {
+    let mut actual = serde_json::to_value(config).unwrap();
+    actual["topicMessageType"] = json!(config.topic_message_type().unwrap().get_value());
+    actual["liteTopicExpiration"] = json!(config.lite_topic_expiration().unwrap());
+    actual.as_object_mut().unwrap().remove("toString");
+    let mut expected = expected.clone();
+    expected.as_object_mut().unwrap().remove("toString");
+    assert_eq!(actual, expected);
 }
 
 fn attributes(entries: &[(&str, Option<&str>)]) -> TopicConfigAttributeMap {
@@ -223,6 +236,154 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
         (LITE_EXPIRATION_ATTRIBUTE, Some("not-an-int")),
     ])));
     assert_config(&invalid_expiration, &fixture["invalidExpiration"]);
+}
+
+#[test]
+fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
+    let fixture = fixture()["topicConfigAndQueueMappingApi"].clone();
+    let api: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    let api = &api["topicConfigAndQueueMappingApi"];
+    assert_eq!(api["declaredPublicMethodCount"], 5);
+    assert_eq!(api["publicMethodCount"], 27);
+    assert_eq!(
+        api["publicConstructors"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping()",
+            "org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(org.apache.rocketmq.common.TopicConfig,org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail)"
+        ])
+    );
+    for method in [
+        "equals",
+        "hashCode",
+        "toString",
+        "getMappingDetail",
+        "setMappingDetail",
+    ] {
+        assert!(
+            api["declaredPublicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|signature| signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{method}(")))),
+            "pinned TopicConfigAndQueueMapping lacks {method}"
+        );
+    }
+
+    let defaults = TopicConfigAndQueueMapping::default();
+    assert_config_fields(defaults.topic_config(), &fixture["default"]["topicConfig"]);
+    assert!(defaults.get_mapping_detail().is_none());
+    assert_eq!(
+        defaults.java_to_string(),
+        fixture["default"]["toString"].as_str().unwrap()
+    );
+
+    let mut source = TopicConfig::with_topic_sys_flag("source-topic", 3, 4, 6, 7);
+    let shared_attributes = SharedValue::new(attributes(&[("owner", Some("initial"))]));
+    source.set_attributes_shared(Some(shared_attributes.clone()));
+    let mapping_detail: TopicQueueMappingDetail =
+        serde_json::from_value(fixture["detailBefore"].clone()).unwrap();
+    let mapping_detail = SharedValue::new(mapping_detail);
+    let mut wrapper = TopicConfigAndQueueMapping::new(&source, Some(mapping_detail.clone()));
+
+    assert_config_fields(
+        wrapper.topic_config(),
+        &fixture["constructed"]["topicConfig"],
+    );
+    assert_eq!(
+        serde_json::to_value(mapping_detail.snapshot()).unwrap(),
+        fixture["constructed"]["mappingDetail"]
+    );
+    assert_eq!(
+        wrapper.java_to_string(),
+        fixture["constructed"]["toString"].as_str().unwrap()
+    );
+    assert_eq!(
+        wrapper
+            .get_mapping_detail()
+            .unwrap()
+            .ptr_eq(&mapping_detail),
+        fixture["getterPreservesMappingIdentity"]
+    );
+
+    source.set_topic_name(Some("source-mutated".to_owned()));
+    source.set_read_queue_nums(99);
+    shared_attributes.with_mut(|values| {
+        values.insert("owner".to_owned(), Some("updated".to_owned()));
+    });
+    assert_config_fields(
+        wrapper.topic_config(),
+        &fixture["afterSourceMutation"]["topicConfig"],
+    );
+    assert_eq!(
+        wrapper.java_to_string(),
+        fixture["afterSourceMutation"]["toString"].as_str().unwrap()
+    );
+
+    mapping_detail.with_mut(|detail| detail.set_topic(Some("mapping-mutated".to_owned())));
+    assert_eq!(
+        wrapper.java_to_string(),
+        fixture["afterMappingMutation"]["toString"]
+            .as_str()
+            .unwrap()
+    );
+
+    let replacement = SharedValue::new(TopicQueueMappingDetail::new(
+        Some("replacement".to_owned()),
+        1,
+        Some("broker-2".to_owned()),
+        1,
+    ));
+    wrapper.set_mapping_detail(Some(replacement.clone()));
+    assert_eq!(
+        wrapper.get_mapping_detail().unwrap().ptr_eq(&replacement),
+        fixture["setterPreservesMappingIdentity"]
+    );
+    wrapper.set_mapping_detail(None);
+    assert_eq!(
+        wrapper.get_mapping_detail().is_none(),
+        fixture["setterAcceptsNull"]
+    );
+
+    assert!(matches!(
+        TopicConfigAndQueueMapping::new_nullable(None, None),
+        Err(TopicConfigError::NullInput)
+    ));
+    assert_eq!(
+        fixture["nullConfigConstructorError"],
+        "NullPointerException"
+    );
+
+    for case in fixture["equality"].as_array().unwrap() {
+        let left: TopicConfigAndQueueMapping =
+            serde_json::from_value(case["left"].clone()).unwrap();
+        let right: TopicConfigAndQueueMapping =
+            serde_json::from_value(case["right"].clone()).unwrap();
+        let expected_equals = case["equals"].as_bool().unwrap();
+        assert_eq!(left == right, expected_equals, "{}", case["case"]);
+        assert_eq!(
+            left.java_to_string(),
+            case["leftToString"].as_str().unwrap(),
+            "{} left text",
+            case["case"]
+        );
+        assert_eq!(
+            right.java_to_string(),
+            case["rightToString"].as_str().unwrap(),
+            "{} right text",
+            case["case"]
+        );
+        if expected_equals {
+            assert_eq!(case["hashCodeEqual"], true, "{}", case["case"]);
+            let mut left_hash = DefaultHasher::new();
+            left.hash(&mut left_hash);
+            let mut right_hash = DefaultHasher::new();
+            right.hash(&mut right_hash);
+            assert_eq!(left_hash.finish(), right_hash.finish(), "{}", case["case"]);
+        }
+    }
 }
 
 #[test]
