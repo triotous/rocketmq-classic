@@ -2635,7 +2635,7 @@ as Common module functions and types. The method groups map as follows:
 | --- | --- | --- |
 | `encode(MessageExt,boolean)`, `encodeUniquely(MessageExt,boolean)` | `encode_message_ext`, `encode_message_ext_uniquely` | MessageExt encoder fixture covers V1/V2 hosts, standard/unique output, compression, padding and short store size. |
 | `decode(ByteBuffer,...)`, `clientDecode(ByteBuffer,boolean)` | `decode_one`, `decode_one_as_client`, `client_decode`, `DecodeOptions` | Invoked overload snapshots cover body, decompression, properties-string, CRC and client-ID choices; malformed store-size and nonpositive-length branches are recorded above. |
-| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `decode_many_compatible`, `decode_many_as_client_compatible`, `client_decodes`, `client_decodes_with_body` | Concatenated fixtures compare per-record data and consumed boundaries. Invoked malformed-tail fixtures cover `decodes` and `decodesBatch` with both client modes and both `readBody` settings; compatible Rust paths return the valid prefix while strict `decode_many` APIs retain error reporting. |
+| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `decode_many_compatible`, `decode_many_as_client_compatible`, `client_decodes`, `client_decodes_with_body` | Concatenated fixtures compare per-record data and consumed boundaries. Invoked malformed-tail fixtures cover the no-argument and `readBody` overloads of `decodes`, plus `decodesBatch` with both client modes and both `readBody` settings; compatible Rust paths return the valid prefix while strict `decode_many` APIs retain error reporting. |
 | `encodeMessage`, `encodeMessages`, `decodeMessage(ByteBuffer)`, `decodeMessages(ByteBuffer)`, `decodeMessage(MessageExt,List)` | `encode_compact_message(s)`, `decode_compact_message(s)`, `decode_inner_batch` | Compact API fixture covers single/batch bytes, decode results, batch expansion and malformed inputs. `decode_inner_batch` marks each expanded `MessageExt` as Java's runtime `MessageClientExt`, preserving virtual message-ID lookup, no-op `setMsgId`, offset-ID fallback and `UNIQ_KEY` precedence. The invoked fixture compares these inherited/subtype outcomes. |
 | `messageProperties2String`, `string2messageProperties`, `decodeProperties(ByteBuffer)` | `encode_properties_nullable`, `encode_nullable_property_entries`, `decode_properties_nullable`, `decode_record_properties` | Direct fixture covers null/empty/malformed property text, record offsets, cursor positions and truncation. |
 | `createMessageId(SocketAddress,...)`, `decodeMessageId(String)` | `create_message_id`, `decode_message_id` | Message ID API fixture compares IPv4/IPv6 output, setters, malformed hex, short values and ports. |
@@ -2674,6 +2674,22 @@ scenarios, 36 route/VIP cases, 106 typed headers, 19 typed bodies, and all 11
 message decode fixtures. This closes the batch malformed-tail control-flow
 slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
 native Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 `MessageDecoder.decodes(ByteBuffer)` default overload — 2026-10-22 (`2c1cd60a`)
+
+The malformed-tail oracle now directly invokes Java's no-argument
+`decodes(ByteBuffer)` overload. It records the one-message client prefix,
+`MessageClientExt` runtime class, and final buffer position/limit; Common tests
+compare that result with Rust `client_decodes`, the corresponding default
+body-reading helper. Fixture SHA-256:
+`46a18677fc673222639e53ee2871f4836fa427f97d284f918c1bdeb57129beb0`.
+
+The Common crate test suite, Common all-target/all-feature strict Clippy,
+format/diff checks, and pinned Maven verify pass. This closes the no-argument
+`decodes` malformed-tail overload slice only; broad P18-V01 API/settings/source/
+input/error/control-flow/reverse-export reconciliation, current-revision
+remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
+remain open.
 
 ## P18-V01 Java `decodes` and both `decodesBatch` modes — 2026-10-22 (`2c1f0a73`)
 

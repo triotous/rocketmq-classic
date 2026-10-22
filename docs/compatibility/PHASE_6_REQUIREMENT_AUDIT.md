@@ -3086,6 +3086,20 @@ and Consumer test cross-compilation pass. This closes this decoder behavior
 slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
 native Windows runtime, and Phase 19 Broker/Docker evidence remain open.
 
+## P18-V01 `MessageDecoder.decodes(ByteBuffer)` default overload — 2026-10-22 (`2c1cd60a`)
+
+The invoked Java malformed-tail fixture directly calls the no-argument
+`decodes(ByteBuffer)` overload and records its valid prefix count, first result
+class, and final cursor. The Common regression verifies the Java count, the
+`MessageClientExt` type, and the cursor-at-limit outcome, then checks Rust
+`client_decodes` returns the same prefix. Fixture SHA-256:
+`46a18677fc673222639e53ee2871f4836fa427f97d284f918c1bdeb57129beb0`.
+
+Common crate tests, Common all-target/all-feature strict Clippy, format/diff
+checks, and pinned Maven verify pass. This closes this no-argument overload
+slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
+native Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
 ## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)
 
 The invoked Java fixture additionally runs `decodes(..., false)` and
