@@ -2559,3 +2559,27 @@ No client behavior changed. The focused Lite/POP integration target passes,
 and the full `cargo test --workspace --all-features --locked` gate passes
 after the observer update. This closes the test-observer flake only; full
 P18-V02 fuzz/performance checks and platform CI evidence remain open.
+
+## P18-V01 `listUser` object-root result parity — 2026-10-22 (`c6ffd6bf`)
+
+Follow-up to the `listUser` entry above: pinned Fastjson 2.0.63's
+`RemotingSerializable.decodeList` returns the original object-root JSON text as
+a String element, so the `{}` fixture result serializes as `["{}"]`. Rust now
+carries that opaque value through the `UserInfo` Java serialization adapter.
+The ordinary `UserInfo` fields, camelCase names, and omission behavior are
+unchanged. The Core loopback differential now compares the Java result for all
+eight fixture outcomes, including this object-root case. Fixture
+`fixtures/producer/core.json` SHA-256:
+`ae8e09607bfaac817640a03dc596675757a511c26e03e7d9f0ca7e8a51201cd8`.
+
+The focused Core differential, full Protocol all-feature tests, default and
+all-feature workspace tests, strict workspace Clippy, formatting, and diff
+checks pass. The pinned Maven verification (37 scenarios, fixture drift and
+Java/Rust cross-decodes), differential self-test/manifest (37 scenarios),
+fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations), race/leak
+smoke (16 cases × 3), release examples, offline benchmark build, workspace
+metadata/package checks, and Consumer Windows GNU cross-check also pass on
+this source revision. Native Windows execution and current-revision Ubuntu CI
+remain unverified. This closes the object-root response-result mismatch only;
+broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+reconciliation and Phase 19 Broker/Docker validation remain open.

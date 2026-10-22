@@ -2068,11 +2068,14 @@ unchanged when VIP channels are enabled. Invoked Java fixtures and Rust
 loopback tests compare nullable filters, request framing, populated/empty/null
 lists, null members, success and Broker errors, timeout, typed-header
 cross-decode, and unchanged-address behavior. Fastjson's object-root input
-produces a list containing the string `{}`; Rust reports that root as malformed
-instead of returning a value that violates the `UserInfo` element type. The
-auth-method review added the previously omitted `getUser` and `getAcl` RPCs to
-the direct audit, which now has six open APIs; broader P18-V01 reconciliation
-remains open.
+produces a list containing the original object-root text as a String, despite
+the declared `List<UserInfo>` type. Rust now preserves this Java result as an
+opaque serialized list value within its `UserInfo` adapter; the loopback
+fixture compares the resulting `["{}"]` value while keeping ordinary
+`UserInfo` decode and serialization behavior unchanged. The auth-method review
+added the previously omitted `getUser` and `getAcl` RPCs, and the subsequent
+direct User/ACL rows complete that operation inventory. Broad P18-V01
+reconciliation remains open.
 
 ## P18-V01 direct `getUser` Broker API — 2026-10-22
 
