@@ -2887,3 +2887,26 @@ scenarios, 36 route/VIP cases, and Java decoding of 106 typed headers and 19
 typed bodies. This closes only the tested casing-context and segment-padding
 slice. Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
 Windows execution, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 TopicConfig HashMap collision order — 2026-10-22 (`2f4daa9a`)
+
+Pinned Java 5.5.1 `TopicConfig.encode()` and `toString()` iterate the supplied
+attributes map. For Java `HashMap` keys `"BB"` and `"Aa"`, whose Java string
+hashes collide, the observable output retains their bucket insertion order.
+Rust's previous `BTreeMap` sorted them lexically and emitted a different
+encoded string. `TopicConfigAttributeMap` now preserves insertion order with
+`IndexMap`; serialization applies Java's hash spreading and bucket ordering,
+with stable insertion order inside a bucket. The Java fixture covers both
+insertion orders, direct `setAttributes`, `decode`, `encode`, and `toString`.
+Rust equality/hash checks also confirm that map equality stays independent of
+insertion order. Fixture SHA-256:
+`1382505e8f49138746501dd77760358ae286e285f762b152f2223b912c8e6167`.
+
+The focused TopicConfig API suite, locked default/all-feature workspace tests,
+strict all-target/all-feature Clippy, pinned Maven `verify` (37 scenarios, 36
+route/VIP cases, 106 typed-header cross-decodes, and 19 typed-body
+cross-decodes), formatting/diff checks, workspace metadata/license checks,
+and all seven product package listings pass. This closes only the tested
+TopicConfig attribute-order slice. Broad P18-V01 reconciliation, current
+Ubuntu/native Windows P18-V04 evidence, and Phase 19 Broker/Docker validation
+remain open.

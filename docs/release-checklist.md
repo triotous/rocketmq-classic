@@ -7894,3 +7894,22 @@ owner-specific checks belong in the manual handoff.
   external CI was run; protected Phase 19 worktree files remain unstaged.
   Detailed run record:
   `rlogs/2026/10/22-phase-18-acl-lithuanian-locale-gate__20261022T180412Z.rlog`.
+
+## P18-V01 TopicConfig attribute iteration parity — 2026-10-22 (`2f4daa9a`)
+
+- [x] Pinned Java `TopicConfig.encode()` and `toString()` retain Java
+  `HashMap` bucket insertion order for colliding keys `BB` and `Aa`; Rust's
+  prior lexical `BTreeMap` order differed. `TopicConfigAttributeMap` now
+  preserves input order and serializes by Java hash bucket. The fixture covers
+  forward/reverse insertion, setter and decode paths. SHA-256:
+  `1382505e8f49138746501dd77760358ae286e285f762b152f2223b912c8e6167`.
+- [x] Focused TopicConfig API tests, locked default/all-feature workspace
+  tests, strict all-target/all-feature Clippy, pinned Maven `verify` (37
+  scenarios, 36 route/VIP cases, 106 typed headers, 19 typed bodies), fmt/diff,
+  metadata/license checks, and all seven product package listings pass.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision remote Ubuntu CI, native Windows
+  execution, and Phase 19 Broker/Docker validation remain open. No push or
+  external CI was run; the four protected Phase 19 worktree paths remain
+  unstaged. Detailed run record:
+  `rlogs/2026/10/22-phase-18-topic-config-hash-order-gate__20261022T183948Z.rlog`.
