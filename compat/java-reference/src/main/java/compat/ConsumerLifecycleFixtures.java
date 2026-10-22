@@ -27,6 +27,7 @@ import java.util.TreeMap;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.MessageQueueListener;
 import org.apache.rocketmq.client.consumer.MessageSelector;
 import org.apache.rocketmq.client.consumer.TopicMessageQueueChangeListener;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
@@ -90,6 +91,15 @@ public final class ConsumerLifecycleFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("start", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("start").getModifiers()));
+        result.put("subscribeExpression", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
+                String.class, String.class).getModifiers()));
+        result.put("subscribeSelector", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
+                String.class, MessageSelector.class).getModifiers()));
+        result.put("subscribeWithListener", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
+                String.class, String.class, MessageQueueListener.class).getModifiers()));
         result.put("shutdown", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("shutdown").getModifiers()));
         result.put("registerTopicMessageQueueChangeListener", Modifier.isSynchronized(

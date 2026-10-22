@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -195,13 +195,53 @@ async fn start_scripted_nameserver(route: Vec<u8>) -> (String, tokio::task::Join
     (address, task)
 }
 
+async fn start_observed_scripted_nameserver(
+    route: Vec<u8>,
+) -> (
+    String,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (route_tx, route_rx) = mpsc::unbounded_channel();
+    let task = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let route = route.clone();
+            let route_tx = route_tx.clone();
+            tokio::spawn(async move {
+                while let Some(command) = read_command(&mut stream).await {
+                    let body = if command.code == request::GET_ROUTEINFO_BY_TOPIC {
+                        let _ = route_tx.send(command.clone());
+                        Some(route.clone())
+                    } else {
+                        None
+                    };
+                    write_reply(
+                        &mut stream,
+                        command.opaque,
+                        ScriptedReply {
+                            code: response::SUCCESS,
+                            fields: None,
+                            body,
+                        },
+                    )
+                    .await;
+                }
+            });
+        }
+    });
+    (address, route_rx, task)
+}
+
 fn start_scripted_broker(
     listener: TcpListener,
 ) -> (
     mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
     tokio::task::JoinHandle<()>,
 ) {
-    let (requests, task, _) =
+    let (requests, task, _, _) =
         start_scripted_broker_with_check_response(listener, response::SUCCESS);
     (requests, task)
 }
@@ -213,14 +253,17 @@ fn start_scripted_broker_with_check_response(
     mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
     tokio::task::JoinHandle<()>,
     mpsc::UnboundedReceiver<RemotingCommand>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
 ) {
     let (request_tx, request_rx) = mpsc::unbounded_channel::<ScriptedBrokerRequest>();
     let (check_tx, check_rx) = mpsc::unbounded_channel::<RemotingCommand>();
+    let (heartbeat_tx, heartbeat_rx) = mpsc::unbounded_channel::<RemotingCommand>();
     let task = tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.unwrap();
             let request_tx = request_tx.clone();
             let check_tx = check_tx.clone();
+            let heartbeat_tx = heartbeat_tx.clone();
             tokio::spawn(async move {
                 let (mut reader, writer) = stream.into_split();
                 let writer = Arc::new(tokio::sync::Mutex::new(writer));
@@ -232,6 +275,8 @@ fn start_scripted_broker_with_check_response(
                     {
                         if command.code == request::CHECK_CLIENT_CONFIG {
                             let _ = check_tx.send(command.clone());
+                        } else if command.code == request::HEART_BEAT {
+                            let _ = heartbeat_tx.send(command.clone());
                         }
                         let writer = writer.clone();
                         let opaque = command.opaque;
@@ -275,7 +320,7 @@ fn start_scripted_broker_with_check_response(
             });
         }
     });
-    (request_rx, task, check_rx)
+    (request_rx, task, check_rx, heartbeat_rx)
 }
 
 fn start_paused_check_broker(
@@ -890,6 +935,7 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
                 let _ = assignment_tx.send((topic.to_owned(), all.cloned(), assigned.clone()));
             }),
         )
+        .await
         .unwrap();
     let (metadata_tx, mut metadata_rx) = mpsc::unbounded_channel();
     consumer
@@ -902,7 +948,7 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
         .await
         .unwrap();
 
-    assert!(consumer.subscribe_with_expression("", "*").is_err());
+    assert!(consumer.subscribe_with_expression("", "*").await.is_err());
     consumer.start().await.unwrap();
     let initial_pull = next_lite_pull_request(&mut requests, &consumer_id).await;
     assert_eq!(
@@ -964,6 +1010,110 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
     nameserver_task.abort();
     updated_nameserver_task.abort();
     broker_task.abort();
+}
+
+#[tokio::test]
+async fn running_lite_subscribe_sends_updated_heartbeat_and_refreshes_all_routes() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, mut route_requests, nameserver_task) =
+        start_observed_scripted_nameserver(broker_route(&broker_address)).await;
+    let (mut requests, broker_task, _, mut heartbeats) =
+        start_scripted_broker_with_check_response(broker_listener, response::SUCCESS);
+    let mut config = lite_config_with_store(
+        "lite-running-subscribe-refresh",
+        "lite-running-subscribe-refresh-client",
+        &nameserver,
+        Arc::new(LiteScriptedOffsetStore::default()),
+    );
+    config.set_message_model(MessageModel::Broadcasting);
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    consumer
+        .subscribe_with_expression("orders", "green")
+        .await
+        .unwrap();
+
+    let broker_service = tokio::spawn(async move {
+        while let Some(broker_request) = requests.recv().await {
+            let reply = match broker_request.command.code {
+                request::LITE_PULL_MESSAGE => ScriptedReply {
+                    code: response::PULL_NOT_FOUND,
+                    fields: Some(HeaderMap::from([
+                        ("suggestWhichBrokerId".into(), "0".into()),
+                        ("nextBeginOffset".into(), "0".into()),
+                        ("minOffset".into(), "0".into()),
+                        ("maxOffset".into(), "1".into()),
+                    ])),
+                    body: None,
+                },
+                request::QUERY_CONSUMER_OFFSET
+                | request::GET_MIN_OFFSET
+                | request::GET_MAX_OFFSET => ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: Some(HeaderMap::from([("offset".into(), "0".into())])),
+                    body: None,
+                },
+                _ => ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: None,
+                    body: None,
+                },
+            };
+            let _ = broker_request.reply.send(reply);
+        }
+    });
+
+    consumer.start().await.unwrap();
+    while route_requests.try_recv().is_ok() {}
+    while heartbeats.try_recv().is_ok() {}
+
+    consumer
+        .subscribe_with_expression("invoices", "paid")
+        .await
+        .unwrap();
+
+    let heartbeat = timeout(Duration::from_secs(2), async {
+        loop {
+            let command = heartbeats
+                .recv()
+                .await
+                .expect("broker heartbeat observation channel closed");
+            let body = command.body.as_deref().unwrap_or_default();
+            if String::from_utf8_lossy(body).contains("\"topic\":\"invoices\"") {
+                break command;
+            }
+        }
+    })
+    .await
+    .expect("running subscribe did not send a heartbeat with the new subscription");
+    assert_eq!(heartbeat.code, request::HEART_BEAT);
+
+    let mut refreshed_topics = BTreeSet::new();
+    for _ in 0..2 {
+        let command = timeout(Duration::from_secs(2), route_requests.recv())
+            .await
+            .expect("running subscribe did not immediately refresh every subscribed route")
+            .expect("NameServer route observation channel closed");
+        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+        refreshed_topics.insert(
+            command
+                .ext_fields
+                .as_ref()
+                .expect("route query omitted its header")
+                .get("topic")
+                .expect("route query omitted its topic")
+                .to_owned(),
+        );
+    }
+    assert_eq!(
+        refreshed_topics,
+        BTreeSet::from(["invoices".to_owned(), "orders".to_owned()])
+    );
+
+    consumer.shutdown().await.unwrap();
+    broker_service.abort();
+    broker_task.abort();
+    nameserver_task.abort();
 }
 
 #[tokio::test]
@@ -1048,7 +1198,7 @@ async fn lite_sql_subscription_broker_check_failure_matches_java_startup() {
     let broker_address = broker_listener.local_addr().unwrap().to_string();
     let (nameserver, nameserver_task) =
         start_scripted_nameserver(broker_route(&broker_address)).await;
-    let (mut requests, broker_task, mut check_requests) =
+    let (mut requests, broker_task, mut check_requests, _) =
         start_scripted_broker_with_check_response(broker_listener, 44);
     let mut config = lite_config_with_store(
         "consumer-broker-check-lite",
@@ -1066,6 +1216,7 @@ async fn lite_sql_subscription_broker_check_failure_matches_java_startup() {
     let selector = rocketmq_classic_consumer::pull::MessageSelector::by_sql("a > 1");
     consumer
         .subscribe_with_selector("lite-broker-check", &selector)
+        .await
         .unwrap();
 
     let request_service = tokio::spawn(async move {
@@ -1144,6 +1295,9 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
         serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
     let java = &fixture["litePullMethodSynchronization"];
     assert_eq!(java["start"], true);
+    assert_eq!(java["subscribeExpression"], true);
+    assert_eq!(java["subscribeSelector"], true);
+    assert_eq!(java["subscribeWithListener"], true);
     assert_eq!(java["shutdown"], true);
     assert_eq!(java["registerTopicMessageQueueChangeListener"], true);
 
@@ -1165,6 +1319,7 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
     let selector = rocketmq_classic_consumer::pull::MessageSelector::by_sql("a > 1");
     consumer
         .subscribe_with_selector("lite-listener-registration-start-lock", &selector)
+        .await
         .unwrap();
 
     let start_consumer = consumer.clone();
@@ -1190,6 +1345,18 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .is_err(),
         "listener registration must wait for the Java-equivalent synchronized start"
     );
+    let subscribe_consumer = consumer.clone();
+    let mut subscription = tokio::spawn(async move {
+        subscribe_consumer
+            .subscribe_with_expression("subscription-during-start", "*")
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(100), &mut subscription)
+            .await
+            .is_err(),
+        "subscription must wait for the Java-equivalent synchronized start"
+    );
 
     release_check
         .send(())
@@ -1203,6 +1370,11 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
         .await
         .expect("listener registration did not resume after start")
         .expect("listener registration task failed")
+        .unwrap();
+    timeout(Duration::from_secs(4), &mut subscription)
+        .await
+        .expect("subscription did not resume after start")
+        .expect("subscription task failed")
         .unwrap();
     assert!(consumer.is_running().await);
 
@@ -1471,8 +1643,8 @@ fn pinned_java_pop_settings_result_status_and_receipt_fields_are_recorded() {
     );
 }
 
-#[test]
-fn lite_config_defaults_and_mode_exclusivity_match_java() {
+#[tokio::test]
+async fn lite_config_defaults_and_mode_exclusivity_match_java() {
     let config = LitePullConsumerConfig::new("lite-workers").unwrap();
     assert!(config.auto_commit());
     assert_eq!(config.pull_thread_nums(), 20);
@@ -1497,7 +1669,10 @@ fn lite_config_defaults_and_mode_exclusivity_match_java() {
     assert!(config.consume_timestamp().len() >= 14);
 
     let consumer = LitePullConsumer::new(config).unwrap();
-    consumer.subscribe_with_expression("orders", "*").unwrap();
+    consumer
+        .subscribe_with_expression("orders", "*")
+        .await
+        .unwrap();
     assert!(
         consumer
             .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
@@ -1509,7 +1684,12 @@ fn lite_config_defaults_and_mode_exclusivity_match_java() {
     consumer
         .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
         .unwrap();
-    assert!(consumer.subscribe_with_expression("orders", "*").is_err());
+    assert!(
+        consumer
+            .subscribe_with_expression("orders", "*")
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]

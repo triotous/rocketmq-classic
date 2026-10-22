@@ -374,22 +374,46 @@ impl LitePullConsumer {
         Ok(())
     }
 
-    pub fn subscribe(&self, topic: &str) -> Result<(), LitePullConsumerError> {
+    pub async fn subscribe(&self, topic: &str) -> Result<(), LitePullConsumerError> {
         self.subscribe_with_selector(topic, &MessageSelector::by_tag("*"))
+            .await
     }
 
-    pub fn subscribe_with_expression(
+    pub async fn subscribe_with_expression(
         &self,
         topic: &str,
         expression: &str,
     ) -> Result<(), LitePullConsumerError> {
         self.subscribe_with_selector(topic, &MessageSelector::by_tag(expression))
+            .await
     }
 
-    pub fn subscribe_with_selector(
+    pub async fn subscribe_with_selector(
         &self,
         topic: &str,
         selector: &MessageSelector,
+    ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
+        self.subscribe_with_selector_locked(topic, selector, None)
+            .await
+    }
+
+    pub async fn subscribe_with_listener(
+        &self,
+        topic: &str,
+        selector: &MessageSelector,
+        listener: MessageQueueListener,
+    ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
+        self.subscribe_with_selector_locked(topic, selector, Some(listener))
+            .await
+    }
+
+    async fn subscribe_with_selector_locked(
+        &self,
+        topic: &str,
+        selector: &MessageSelector,
+        listener: Option<MessageQueueListener>,
     ) -> Result<(), LitePullConsumerError> {
         if topic.is_empty() {
             return Err(PullConsumerError::InvalidSubscription(
@@ -414,24 +438,46 @@ impl LitePullConsumer {
             engine.register_topic(&normalized_topic)?;
             engine.add_register_subscriptions(&normalized_topic, Some(selector))?;
         }
-        self.reconcile.notify_one();
-        Ok(())
-    }
-
-    pub fn subscribe_with_listener(
-        &self,
-        topic: &str,
-        selector: &MessageSelector,
-        listener: MessageQueueListener,
-    ) -> Result<(), LitePullConsumerError> {
-        self.subscribe_with_selector(topic, selector)?;
-        *self
-            .message_queue_listener
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(listener.clone());
-        if let Some(engine) = self.engine() {
-            engine.set_message_queue_listener(Some(listener));
+        if let Some(listener) = listener {
+            *self
+                .message_queue_listener
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(listener.clone());
+            if let Some(engine) = self.engine() {
+                engine.set_message_queue_listener(Some(listener));
+            }
         }
+        if self.running.load(Ordering::Acquire) {
+            if let Some(engine) = self.engine() {
+                if let Some(runtime) = engine.get_client_runtime().await {
+                    // Java's sendHeartbeatToAllBrokerWithLock() logs and
+                    // suppresses errors and lock contention. Its V1 fallback
+                    // is serial even when concurrent heartbeat is configured.
+                    let _ = runtime
+                        .send_heartbeat_to_all_brokers_with_rebalance(false)
+                        .await;
+                }
+                let subscribed_topics = self
+                    .subscriptions
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for topic in subscribed_topics {
+                    match engine.refresh_topic_route(&topic).await {
+                        Ok(())
+                        | Err(PullConsumerError::Runtime(
+                            rocketmq_classic_core::runtime::RuntimeError::Rpc(
+                                rocketmq_classic_core::error::RpcError::Response { .. },
+                            ),
+                        )) => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+            }
+        }
+        self.reconcile.notify_one();
         Ok(())
     }
 
@@ -2199,10 +2245,10 @@ mod tests {
         assert!(retained.read().unwrap().is_empty());
     }
 
-    #[test]
-    fn default_subscribe_uses_java_tag_all_subscription() {
+    #[tokio::test]
+    async fn default_subscribe_uses_java_tag_all_subscription() {
         let consumer = consumer();
-        consumer.subscribe("orders").unwrap();
+        consumer.subscribe("orders").await.unwrap();
         assert_eq!(
             consumer.subscriptions.read().unwrap().get("orders"),
             Some(&MessageSelector::by_tag("*"))
