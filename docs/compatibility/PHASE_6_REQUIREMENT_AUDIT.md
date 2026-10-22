@@ -2866,3 +2866,24 @@ pass on the source tree committed as `505bbe97`. This closes the observed
 Lithuanian input slice only; broad P18-V01 reconciliation, current-revision
 remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V01 Lithuanian ACL casing context and UTF-16 segment padding — 2026-10-22 (`e6b31e97`)
+
+The pinned Java Lithuanian uppercase rule removes U+0307 after any Unicode
+`Soft_Dotted` character unless an intervening canonical combining class 0 or
+230 blocks the context. Rust now uses ICU4X's `Soft_Dotted` and canonical
+combining-class properties for this context. Invoked cases cover `i`/`j`,
+precomposed `į`, Cyrillic `і`, nonblocking marks, blocking acute/CGJ marks,
+repeated dots, and `x`/dotless-`ı` controls. The same direct `expandIP` fixture
+also covers a supplementary character: Java pads by UTF-16 `String.length`,
+so Rust now measures segment length in UTF-16 code units. The fixture restores
+the original JVM locale. Fixture SHA-256:
+`3364a617fc25de94be5ef2bae8342de404b48f9c7eb1548d20fcf13e6dc5412`.
+
+Both Turkish and Lithuanian ACL locale subprocess tests pass. Default and
+all-feature locked workspace tests, strict all-target/all-feature Clippy,
+format/diff checks, and pinned Maven `verify` pass; Maven verifies 37
+scenarios, 36 route/VIP cases, and Java decoding of 106 typed headers and 19
+typed bodies. This closes only the tested casing-context and segment-padding
+slice. Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+Windows execution, and Phase 19 Broker/Docker evidence remain open.

@@ -7854,6 +7854,24 @@ owner-specific checks belong in the manual handoff.
   CI was run; protected Phase 19 files remain unstaged. Run record:
   `rlogs/2026/10/22-phase-18-acl-lithuanian-locale-gate__20261022T180412Z.rlog`.
 
+## P18-V01 Lithuanian ACL context and segment-width parity — 2026-10-22 (`e6b31e97`)
+
+- [x] `AclUtils.expandIP` now applies the full Lithuanian `After_Soft_Dotted`
+  context for U+0307 and preserves blocking combining marks. The oracle covers
+  Latin/Cyrillic soft-dotted letters, nonblocking and blocking marks, repeated
+  dots, and control letters. Segment padding now uses Java UTF-16 length; a
+  supplementary-character case verifies the width boundary. ACL fixture
+  SHA-256: `3364a617fc25de94be5ef2bae8342de404b48f9c7eb1548d20fcf13e6dc5412`.
+- [x] Turkish and Lithuanian ACL locale subprocess tests, locked default and
+  all-feature workspace tests, strict all-target/all-feature Clippy,
+  formatting/diff checks, and pinned Maven `verify` pass (37 scenarios, 36
+  route/VIP cases, 106 typed headers, and 19 typed bodies).
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+  Windows execution, and Phase 19 Broker/Docker validation remain open. The
+  live-runner check still reports 30 scenarios without local runners. No push
+  or external CI was run; protected Phase 19 files remain unstaged. Run record:
+  `rlogs/2026/10/22-phase-18-lithuanian-acl-context-gate__20261022T182318Z.rlog`.
+
 ## P18-V02 current local server-free gate refresh — 2026-10-22 (`505bbe97`)
 
 - [x] On the source tree committed as `505bbe97`, locked default and
