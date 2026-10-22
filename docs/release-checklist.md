@@ -7804,3 +7804,29 @@ owner-specific checks belong in the manual handoff.
   runners. No push or external CI was run; protected Phase 19 worktree files
   remain unstaged. Run details:
   `rlogs/2026/10/22-phase-18-compression-locale-gate__20261022T172709Z.rlog`.
+
+## P18-V01 locale-sensitive ACL IPv6 expansion and current local gate — 2026-10-22 (`6155f4cc`)
+
+- [x] `AclUtils.expandIP` now follows pinned Java default-locale uppercase
+  behavior under Turkish/Azeri locale selectors. The Java fixture covers
+  `i::1`, `ı::1`, and a valid IPv6 input under `tr-TR`; Rust subprocess and
+  existing ACL utility fixture tests pass. ACL fixture SHA-256:
+  `eaaa69bf97320ab0eb4b957415effe0c6b06e9d55ab0c5ec642e46f8ec3a1e94`.
+- [x] On `6155f4cc`, locked default and all-feature workspace tests, strict
+  all-target/all-feature Clippy, formatting/diff checks, and pinned Maven
+  `verify` pass. Maven verifies 37 scenarios, 36 route/VIP cases, 106 typed
+  headers, and 19 typed bodies; direct ACL fixture verification passes.
+- [x] Differential comparator self-test and 37-scenario manifest validation,
+  fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations), and
+  deterministic race/leak smoke (16 cases × 3) pass. Release examples,
+  offline benchmark and strict benchmark Clippy, metadata/license/dependency
+  checks, and all seven product package listings pass.
+- [x] Four Core Unique ID tests pass under each of `TZ=UTC` and
+  `TZ=Asia/Taipei`. Windows GNU Core all-target checking and Consumer test
+  cross-compilation pass; these are compile checks only.
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+  Windows execution, and Phase 19 Broker/Docker validation remain open. The
+  differential `--check-all` still reports 30 manifest scenarios without
+  live runners. No push or external CI was run; protected Phase 19 worktree
+  files remain unstaged. Run details:
+  `rlogs/2026/10/22-phase-18-acl-locale-gate__20261022T174131Z.rlog`.

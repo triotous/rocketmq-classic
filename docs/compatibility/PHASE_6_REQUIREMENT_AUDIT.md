@@ -2828,3 +2828,21 @@ pass. Maven verifies 37 scenarios, 36 route/VIP cases, and Java decoding of
 locale slice only. Broad P18-V01 API/settings/input/error/control-flow and
 reverse-export reconciliation remains open, along with current-revision
 remote Ubuntu CI and native Windows runtime evidence.
+
+## P18-V01 `AclUtils.expandIP` default-locale parity — 2026-10-22 (`6155f4cc`)
+
+Pinned Java 5.5.1 `AclUtils.expandIP` applies no-argument
+`String.toUpperCase()` before expanding address segments. The public helper
+does not validate input first, so Turkish locale changes direct calls such as
+`expandIP("i::1", 8)` to contain dotted `İ`; dotless `ı` maps to `I`. Rust
+uses the same `LC_ALL`, `LC_CTYPE`, then `LANG` locale selection and casing
+rules. The Java fixture sets `tr-TR`, records two Turkish-letter cases plus a
+valid IPv6 case, and restores the previous locale in `finally`.
+
+Focused ACL utility and locale subprocess tests, locked default/all-feature
+workspace suites, strict all-target Clippy, formatting/diff checks, and pinned
+Maven `verify` pass. Maven verifies 37 scenarios, 36 route/VIP cases, and Java
+decoding of 106 typed headers and 19 typed bodies. This closes only the ACL
+helper locale slice; broad P18-V01 API/settings/input/error/control-flow and
+reverse-export reconciliation, remote Ubuntu CI, and native Windows runtime
+evidence remain open.
