@@ -53,6 +53,7 @@ sha1 = "0.10.7"
 sha2 = "0.10.9"
 base64 = "0.22.1"
 icu_properties = "2.1.2"
+indexmap = { version = "2.14.2", features = ["serde"] }
 time = { version = "0.3.45", features = ["local-offset"] }
 cbc = { version = "0.1.2", features = ["alloc", "block-padding"] }
 cipher = "0.4.4"

@@ -6,6 +6,7 @@ use crate::{
     serde_fastjson,
     subscription::SubscriptionGroupConfig,
 };
+use indexmap::IndexMap;
 use rocketmq_classic_common::{
     message::MessageQueue,
     permission::PermName,
@@ -20,7 +21,7 @@ use serde::{
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    hash::Hash,
+    hash::{Hash, Hasher},
     sync::atomic::{AtomicI32, Ordering},
 };
 
@@ -2522,7 +2523,7 @@ pub struct TopicConfig {
 }
 
 /// Java `TopicConfig.attributes`, including nullable map values.
-pub type TopicConfigAttributeMap = BTreeMap<String, Option<String>>;
+pub type TopicConfigAttributeMap = IndexMap<String, Option<String>>;
 
 fn java_topic_attribute_bucket(key: &str, capacity: usize) -> usize {
     let hash = key.encode_utf16().fold(0_u32, |hash, unit| {
@@ -2581,7 +2582,7 @@ fn deserialize_topic_config_attributes<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    serde_fastjson::deserialize_optional_nullable_string_map(deserializer)
+    serde_fastjson::deserialize_optional_nullable_string_index_map(deserializer)
         .map(|attributes| attributes.map(SharedValue::new))
 }
 
@@ -2623,7 +2624,7 @@ impl_java_enum_api!(
 impl Default for TopicConfig {
     fn default() -> Self {
         Self {
-            attributes: Some(SharedValue::new(BTreeMap::new())),
+            attributes: Some(SharedValue::new(IndexMap::new())),
             order: false,
             perm: 6,
             read_queue_nums: DEFAULT_READ_QUEUE_NUMS.load(Ordering::Acquire),
@@ -2959,10 +2960,21 @@ impl Eq for TopicConfig {}
 
 impl std::hash::Hash for TopicConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.attributes
-            .as_ref()
-            .map(SharedValue::snapshot)
-            .hash(state);
+        let attribute_entry_hashes = self.attributes.as_ref().map(|attributes| {
+            let mut hashes = attributes
+                .snapshot()
+                .iter()
+                .map(|(key, value)| {
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    key.hash(&mut hasher);
+                    value.hash(&mut hasher);
+                    hasher.finish()
+                })
+                .collect::<Vec<_>>();
+            hashes.sort_unstable();
+            hashes
+        });
+        attribute_entry_hashes.hash(state);
         self.order.hash(state);
         self.perm.hash(state);
         self.read_queue_nums.hash(state);
@@ -4077,7 +4089,7 @@ pub struct TopicConfigAndQueueMapping {
 struct TopicConfigAndQueueMappingFields {
     #[serde(
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map"
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_index_map"
     )]
     attributes: Option<TopicConfigAttributeMap>,
     #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
@@ -4101,7 +4113,7 @@ impl Default for TopicConfigAndQueueMappingFields {
     fn default() -> Self {
         let config = TopicConfig::default();
         Self {
-            attributes: Some(BTreeMap::new()),
+            attributes: Some(IndexMap::new()),
             order: config.order,
             perm: config.perm,
             read_queue_nums: config.read_queue_nums,

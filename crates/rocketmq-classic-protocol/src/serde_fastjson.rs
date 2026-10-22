@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fmt;
 
+use indexmap::IndexMap;
 use serde::de::{MapAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::DeserializeOwned};
@@ -1180,6 +1181,28 @@ where
             fastjson_nullable_string_from_raw::<D::Error>(value.get()).map(|value| (key, value))
         })
         .collect::<Result<NullableStringMap, _>>()
+        .map(Some)
+}
+
+pub fn deserialize_optional_nullable_string_index_map<'de, D>(
+    deserializer: D,
+) -> Result<Option<IndexMap<String, Option<String>>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let entries =
+        serde_json::from_str::<IndexMap<String, Box<serde_json::value::RawValue>>>(raw.get())
+            .map_err(de::Error::custom)?;
+    entries
+        .into_iter()
+        .map(|(key, value)| {
+            fastjson_nullable_string_from_raw::<D::Error>(value.get()).map(|value| (key, value))
+        })
+        .collect::<Result<IndexMap<_, _>, _>>()
         .map(Some)
 }
 

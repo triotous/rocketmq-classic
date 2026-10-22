@@ -2916,6 +2916,23 @@ public final class ProducerCoreFixtures {
         lite.setLiteTopicExpiration(23);
         result.put("lite", topicConfigModelState(lite));
         result.put("liteEncoded", lite.encode());
+
+        Map<String, String> hashCollisionAttributes = new HashMap<>();
+        hashCollisionAttributes.put("BB", "second");
+        hashCollisionAttributes.put("Aa", "first");
+        TopicConfig hashCollision = new TopicConfig("collision");
+        hashCollision.setAttributes(hashCollisionAttributes);
+        result.put("hashCollisionEncoded", hashCollision.encode());
+        result.put("hashCollisionToString", hashCollision.toString());
+        result.put("hashCollisionDecodeInput",
+            "collision 16 16 6 SINGLE_TAG {\"BB\":\"second\",\"Aa\":\"first\"}");
+        Map<String, String> reverseHashCollisionAttributes = new HashMap<>();
+        reverseHashCollisionAttributes.put("Aa", "first");
+        reverseHashCollisionAttributes.put("BB", "second");
+        TopicConfig reverseHashCollision = new TopicConfig("collision");
+        reverseHashCollision.setAttributes(reverseHashCollisionAttributes);
+        result.put("hashCollisionReverseEncoded", reverseHashCollision.encode());
+
         TopicConfig copied = new TopicConfig(lite);
         result.put("copyEquals", lite.equals(copied));
         result.put("copyHashEqual", lite.hashCode() == copied.hashCode());

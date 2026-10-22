@@ -111,6 +111,47 @@ fn topic_config_methods_and_type_helpers_match_invoked_java_551() {
         fixture["liteEncoded"].as_str().unwrap()
     );
 
+    let mut collision_attributes = TopicConfigAttributeMap::new();
+    collision_attributes.insert("BB".into(), Some("second".into()));
+    collision_attributes.insert("Aa".into(), Some("first".into()));
+    let mut collision = TopicConfig::new("collision");
+    collision.set_attributes(Some(collision_attributes));
+    assert_eq!(
+        collision.encode().unwrap(),
+        fixture["hashCollisionEncoded"].as_str().unwrap()
+    );
+    assert_eq!(
+        collision.java_to_string(),
+        fixture["hashCollisionToString"].as_str().unwrap()
+    );
+
+    let mut reverse_collision_attributes = TopicConfigAttributeMap::new();
+    reverse_collision_attributes.insert("Aa".into(), Some("first".into()));
+    reverse_collision_attributes.insert("BB".into(), Some("second".into()));
+    let mut reverse_collision = TopicConfig::new("collision");
+    reverse_collision.set_attributes(Some(reverse_collision_attributes));
+    assert_eq!(
+        reverse_collision.encode().unwrap(),
+        fixture["hashCollisionReverseEncoded"].as_str().unwrap()
+    );
+    assert_eq!(collision, reverse_collision);
+    let mut collision_hash = DefaultHasher::new();
+    collision.hash(&mut collision_hash);
+    let mut reverse_collision_hash = DefaultHasher::new();
+    reverse_collision.hash(&mut reverse_collision_hash);
+    assert_eq!(collision_hash.finish(), reverse_collision_hash.finish());
+
+    let mut collision_decoded = TopicConfig::new("before");
+    assert!(
+        collision_decoded
+            .decode(fixture["hashCollisionDecodeInput"].as_str().unwrap())
+            .unwrap()
+    );
+    assert_eq!(
+        collision_decoded.encode().unwrap(),
+        fixture["hashCollisionEncoded"].as_str().unwrap()
+    );
+
     let copied = TopicConfig::copy_from(&lite);
     assert_eq!(lite, copied);
     assert_eq!(fixture["copyEquals"], true);
