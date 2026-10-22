@@ -2755,4 +2755,5 @@ This closes the local server-free P18-V02 gate on `91f842f4`. Broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open. Current-revision Ubuntu CI and native Windows execution remain
 unverified. No push or external CI was run; Phase 19 Broker/Docker validation
-remains separate.
+remains separate. Run details are in
+`rlogs/2026/10/22-phase-18-metadata-wrapper-identity-gate__20261022T163414Z.rlog`.

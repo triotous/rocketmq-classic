@@ -7728,4 +7728,5 @@ owner-specific checks belong in the manual handoff.
   `--no-run` cross-compilation pass. This is compile evidence only.
 - [ ] Broad P18-V01 reconciliation, current-revision Ubuntu CI, native Windows
   execution, and Phase 19 Broker/Docker validation remain open. No push or
-  external CI was run; protected Phase 19 files remain unstaged.
+  external CI was run; protected Phase 19 files remain unstaged. Detailed run
+  record: `rlogs/2026/10/22-phase-18-metadata-wrapper-identity-gate__20261022T163414Z.rlog`.
