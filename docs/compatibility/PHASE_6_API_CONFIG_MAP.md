@@ -2556,6 +2556,18 @@ earlier count of 357. The current name inventory also provides the baseline for
 the Common owner crosswalk above. These counts establish exported-name scope;
 they do not establish behavior coverage or close broad P18-V01 reconciliation.
 
+## P18-V01 Rustdoc export count refresh — 2026-10-22 (`4248ce38`)
+
+Rebuilt all-feature Rustdoc JSON after the Remoting shutdown and decoder API
+corrections. Distinct exported names excluding the generated crate-root marker
+remain Common 439, Consumer 445, Core 682, Producer 362, Protocol 1,524, and
+Remoting 337. The generated Remoting export has no public `decode_many` or
+`decode_many_as_client`; the Java-mapped `decode_many_compatible` and
+`decode_many_as_client_compatible` remain. This verifies the current scope count
+and the decoder export correction; it does not establish behavior coverage or
+close broad P18-V01 reconciliation. The doc build passes with the existing
+workspace `publish` and Consumer `AtomicU64::fetch_update` warnings.
+
 ## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` record-input parity — 2026-10-22 (`67d0d049`)
 
 Pinned Java 5.5.1 reads the system flag, magic code, host-width flags, body
