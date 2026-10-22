@@ -828,7 +828,7 @@ public final class MessageDecodeFixtures {
         }
     }
 
-    private static Map<String, Object> messageDecoderPropertiesApi() {
+    private static Map<String, Object> messageDecoderPropertiesApi() throws Exception {
         Map<String, Object> expected = new TreeMap<>();
         expected.put("nullMapEncoded", MessageDecoder.messageProperties2String(null));
         expected.put("emptyMapEncoded", MessageDecoder.messageProperties2String(new HashMap<>()));
@@ -843,6 +843,37 @@ public final class MessageDecodeFixtures {
         String encoded = "a\u0001one\u0002a\u0001two\u0002broken\u0002\u0001empty-key\u0002";
         expected.put("encodedInput", encoded);
         expected.put("encodedInputDecoded", new TreeMap<>(MessageDecoder.string2messageProperties(encoded)));
+
+        MessageExt recordSource = message("properties-only", "body", 4, 9,
+            InetAddress.getByName("192.0.2.44"), 10911,
+            InetAddress.getByName("198.51.100.44"), 10912, 0, Map.of("key", "value"));
+        byte[] record = MessageDecoder.encode(recordSource, false);
+        ByteBuffer malformedStoreSize = ByteBuffer.wrap(record);
+        malformedStoreSize.putInt(0, 0);
+        Map<String, String> propertiesFromZeroStoreSize =
+            MessageDecoder.decodeProperties(malformedStoreSize);
+        expected.put("zeroStoreSizeRecordBase64", Base64.getEncoder().encodeToString(record));
+        expected.put("zeroStoreSizeRecordProperties", propertiesFromZeroStoreSize == null
+            ? null : new TreeMap<>(propertiesFromZeroStoreSize));
+
+        byte[] malformedPropertiesRecord = record.clone();
+        ByteBuffer malformedPropertiesBuffer = ByteBuffer.wrap(malformedPropertiesRecord);
+        int sysFlag = malformedPropertiesBuffer.getInt(36);
+        int bornHostLength = (sysFlag & MessageSysFlag.BORNHOST_V6_FLAG) == 0 ? 8 : 20;
+        int storeHostLength = (sysFlag & MessageSysFlag.STOREHOSTADDRESS_V6_FLAG) == 0 ? 8 : 20;
+        int bodySizePosition = 68 + bornHostLength + storeHostLength;
+        int topicLengthPosition = bodySizePosition + 4 + malformedPropertiesBuffer.getInt(bodySizePosition);
+        int topicLength = malformedPropertiesBuffer.get(topicLengthPosition);
+        int propertiesPosition = topicLengthPosition + 1 + topicLength;
+        malformedPropertiesBuffer.putShort(propertiesPosition, (short) 6);
+        malformedPropertiesBuffer.position(propertiesPosition + 2);
+        malformedPropertiesBuffer.put("broken".getBytes(StandardCharsets.UTF_8));
+        Map<String, String> malformedProperties =
+            MessageDecoder.decodeProperties(ByteBuffer.wrap(malformedPropertiesRecord));
+        expected.put("malformedPropertiesRecordBase64",
+            Base64.getEncoder().encodeToString(malformedPropertiesRecord));
+        expected.put("malformedPropertiesRecordProperties", malformedProperties == null
+            ? null : new TreeMap<>(malformedProperties));
         return expected;
     }
 

@@ -1835,6 +1835,27 @@ fn message_decoder_property_map_methods_match_java_551() {
         serde_json::to_value(decode_properties_nullable(Some(encoded))).unwrap(),
         expected["encodedInputDecoded"]
     );
+
+    let zero_store_size_record = base64::engine::general_purpose::STANDARD
+        .decode(expected["zeroStoreSizeRecordBase64"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(decode_record_properties(&zero_store_size_record).unwrap()).unwrap(),
+        expected["zeroStoreSizeRecordProperties"]
+    );
+
+    let malformed_properties_record = base64::engine::general_purpose::STANDARD
+        .decode(
+            expected["malformedPropertiesRecordBase64"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(decode_record_properties(&malformed_properties_record).unwrap())
+            .unwrap(),
+        expected["malformedPropertiesRecordProperties"]
+    );
 }
 
 #[test]

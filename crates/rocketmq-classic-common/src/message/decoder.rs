@@ -289,19 +289,128 @@ pub fn client_decode(record: &[u8], read_body: bool) -> Result<(MessageExt, usiz
 }
 
 /// Decode only the property map from a Broker message record, matching Java's
-/// `MessageDecoder.decodeProperties(ByteBuffer)` return of null for no entries.
+/// `MessageDecoder.decodeProperties(ByteBuffer)` null result for nonpositive property lengths.
+/// A positive property length that parses no entries returns an empty map.
 pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessageProperties>, DecodeError> {
-    let (message, _) = decode_one(
-        record,
-        DecodeOptions {
-            read_body: false,
-            decompress_body: false,
-            set_properties_string: false,
-            verify_crc: false,
-        },
-    )?;
-    let properties = message.properties();
-    Ok((!properties.is_empty()).then(|| properties.clone()))
+    let sys_flag = read_i32_at(record, SYSFLAG_POSITION, "system flag")?;
+    let magic_code = read_i32_at(record, MESSAGE_MAGIC_CODE_POSITION, "magic code")?;
+    let version =
+        MessageVersion::value_of_magic_code(magic_code).map_err(|_| DecodeError::UnknownMagic {
+            offset: MESSAGE_MAGIC_CODE_POSITION,
+            magic_code,
+        })?;
+
+    let born_host_length = if sys_flag & message::BORNHOST_V6_FLAG == 0 {
+        8
+    } else {
+        20
+    };
+    let store_host_length = if sys_flag & message::STOREHOSTADDRESS_V6_FLAG == 0 {
+        8
+    } else {
+        20
+    };
+    let body_size_position = 68_usize
+        .checked_add(born_host_length)
+        .and_then(|offset| offset.checked_add(store_host_length))
+        .ok_or(DecodeError::Truncated {
+            offset: record.len(),
+            field: "body size",
+        })?;
+    let body_size = read_i32_at(record, body_size_position, "body size")?;
+    let topic_length_base = body_size_position
+        .checked_add(4)
+        .ok_or(DecodeError::Truncated {
+            offset: body_size_position,
+            field: "topic length",
+        })?;
+    let topic_length_position =
+        offset_by_signed_length(topic_length_base, body_size, "topic length")?;
+    let topic_length = version
+        .get_topic_length_at(record, topic_length_position)
+        .map_err(|_| DecodeError::Truncated {
+            offset: topic_length_position,
+            field: "topic length",
+        })?;
+    let properties_length_base = topic_length_position
+        .checked_add(version.topic_length_size())
+        .ok_or(DecodeError::Truncated {
+            offset: topic_length_position,
+            field: "properties length",
+        })?;
+    let properties_length_position =
+        offset_by_signed_length(properties_length_base, topic_length, "properties length")?;
+    let properties_length = read_i16_at(record, properties_length_position, "properties length")?;
+    if properties_length <= 0 {
+        return Ok(None);
+    }
+
+    let properties_start =
+        properties_length_position
+            .checked_add(2)
+            .ok_or(DecodeError::Truncated {
+                offset: properties_length_position,
+                field: "properties",
+            })?;
+    let properties_end = properties_start
+        .checked_add(properties_length as usize)
+        .ok_or(DecodeError::Truncated {
+            offset: properties_start,
+            field: "properties",
+        })?;
+    let properties_bytes =
+        record
+            .get(properties_start..properties_end)
+            .ok_or(DecodeError::Truncated {
+                offset: properties_start,
+                field: "properties",
+            })?;
+    let properties_string = String::from_utf8_lossy(properties_bytes);
+    Ok(Some(decode_properties(&properties_string)))
+}
+
+fn read_i16_at(record: &[u8], offset: usize, field: &'static str) -> Result<i16, DecodeError> {
+    let end = offset
+        .checked_add(2)
+        .ok_or(DecodeError::Truncated { offset, field })?;
+    let bytes = record
+        .get(offset..end)
+        .ok_or(DecodeError::Truncated { offset, field })?;
+    Ok(i16::from_be_bytes(
+        bytes
+            .try_into()
+            .map_err(|_| DecodeError::Truncated { offset, field })?,
+    ))
+}
+
+fn read_i32_at(record: &[u8], offset: usize, field: &'static str) -> Result<i32, DecodeError> {
+    let end = offset
+        .checked_add(4)
+        .ok_or(DecodeError::Truncated { offset, field })?;
+    let bytes = record
+        .get(offset..end)
+        .ok_or(DecodeError::Truncated { offset, field })?;
+    Ok(i32::from_be_bytes(
+        bytes
+            .try_into()
+            .map_err(|_| DecodeError::Truncated { offset, field })?,
+    ))
+}
+
+fn offset_by_signed_length(
+    offset: usize,
+    length: i32,
+    field: &'static str,
+) -> Result<usize, DecodeError> {
+    if length >= 0 {
+        offset
+            .checked_add(length as usize)
+            .ok_or(DecodeError::Truncated { offset, field })
+    } else {
+        offset
+            .checked_sub(length.unsigned_abs() as usize)
+            .ok_or(DecodeError::Truncated { offset, field })
+    }
 }
 
 fn decode_one_with_limits(
