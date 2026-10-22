@@ -1,8 +1,10 @@
 //! Client-side topic classification matching RocketMQ Java 5.5.1.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::{OnceLock, RwLock};
+
+use thiserror::Error;
 
 pub const AUTO_CREATE_TOPIC_KEY_TOPIC: &str = "TBW102";
 pub const RMQ_SYS_SCHEDULE_TOPIC: &str = "SCHEDULE_TOPIC_XXXX";
@@ -18,6 +20,137 @@ pub const RMQ_SYS_OFFSET_MOVED_EVENT: &str = "OFFSET_MOVED_EVENT";
 pub const RMQ_SYS_ROCKSDB_OFFSET_TOPIC: &str = "CHECKPOINT_TOPIC";
 pub const SYSTEM_TOPIC_PREFIX: &str = "rmq_sys_";
 pub const SYNC_BROKER_MEMBER_GROUP_PREFIX: &str = "rmq_sys_SYNC_BROKER_MEMBER_";
+pub const TOPIC_MESSAGE_TYPE_ATTRIBUTE: &str = "message.type";
+pub const LITE_EXPIRATION_ATTRIBUTE: &str = "lite.topic.expiration";
+pub type TopicMessagePropertyMap = HashMap<String, Option<String>>;
+
+/// Java `org.apache.rocketmq.common.attribute.TopicMessageType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TopicMessageType {
+    Unspecified,
+    Normal,
+    Fifo,
+    Delay,
+    Transaction,
+    Priority,
+    Lite,
+    Mixed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TopicMessageTypeError {
+    #[error("Name is null")]
+    NullName,
+    #[error("No enum constant org.apache.rocketmq.common.attribute.TopicMessageType.{0}")]
+    UnknownName(String),
+    #[error("java.lang.NullPointerException")]
+    NullMessageProperties,
+}
+
+impl TopicMessageType {
+    pub const fn values() -> [Self; 8] {
+        [
+            Self::Unspecified,
+            Self::Normal,
+            Self::Fifo,
+            Self::Delay,
+            Self::Transaction,
+            Self::Priority,
+            Self::Lite,
+            Self::Mixed,
+        ]
+    }
+
+    pub const fn get_value(self) -> &'static str {
+        self.name()
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Unspecified => "UNSPECIFIED",
+            Self::Normal => "NORMAL",
+            Self::Fifo => "FIFO",
+            Self::Delay => "DELAY",
+            Self::Transaction => "TRANSACTION",
+            Self::Priority => "PRIORITY",
+            Self::Lite => "LITE",
+            Self::Mixed => "MIXED",
+        }
+    }
+
+    pub fn value_of_name(name: Option<&str>) -> Result<Self, TopicMessageTypeError> {
+        match name {
+            None => Err(TopicMessageTypeError::NullName),
+            Some("UNSPECIFIED") => Ok(Self::Unspecified),
+            Some("NORMAL") => Ok(Self::Normal),
+            Some("FIFO") => Ok(Self::Fifo),
+            Some("DELAY") => Ok(Self::Delay),
+            Some("TRANSACTION") => Ok(Self::Transaction),
+            Some("PRIORITY") => Ok(Self::Priority),
+            Some("LITE") => Ok(Self::Lite),
+            Some("MIXED") => Ok(Self::Mixed),
+            Some(other) => Err(TopicMessageTypeError::UnknownName(other.to_owned())),
+        }
+    }
+
+    pub fn topic_message_type_set() -> HashSet<String> {
+        Self::values()
+            .into_iter()
+            .map(|value| value.get_value().to_owned())
+            .collect()
+    }
+
+    pub fn parse_from_message_property(
+        message_property: Option<&TopicMessagePropertyMap>,
+    ) -> Result<Self, TopicMessageTypeError> {
+        let message_property =
+            message_property.ok_or(TopicMessageTypeError::NullMessageProperties)?;
+        if message_property
+            .get(crate::message::constants::PROPERTY_TRANSACTION_PREPARED)
+            .and_then(Option::as_deref)
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+        {
+            Ok(Self::Transaction)
+        } else if [
+            crate::message::constants::PROPERTY_DELAY_TIME_LEVEL,
+            crate::message::constants::PROPERTY_TIMER_DELIVER_MS,
+            crate::message::constants::PROPERTY_TIMER_DELAY_SEC,
+            crate::message::constants::PROPERTY_TIMER_DELAY_MS,
+        ]
+        .iter()
+        .any(|key| message_property.get(*key).is_some_and(Option::is_some))
+        {
+            Ok(Self::Delay)
+        } else if message_property
+            .get(crate::message::constants::PROPERTY_SHARDING_KEY)
+            .is_some_and(Option::is_some)
+        {
+            Ok(Self::Fifo)
+        } else if message_property
+            .get(crate::message::constants::PROPERTY_PRIORITY)
+            .is_some_and(Option::is_some)
+        {
+            Ok(Self::Priority)
+        } else if message_property
+            .get(crate::message::constants::PROPERTY_LITE_TOPIC)
+            .is_some_and(Option::is_some)
+        {
+            Ok(Self::Lite)
+        } else {
+            Ok(Self::Normal)
+        }
+    }
+
+    pub fn metrics_value(self) -> String {
+        self.name().to_ascii_lowercase()
+    }
+}
+
+impl fmt::Display for TopicMessageType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.name())
+    }
+}
 
 const INITIAL_SYSTEM_TOPICS: &[&str] = &[
     AUTO_CREATE_TOPIC_KEY_TOPIC,

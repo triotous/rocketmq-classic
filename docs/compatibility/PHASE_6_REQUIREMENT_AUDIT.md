@@ -2105,3 +2105,24 @@ also cross-compiles successfully with
 --no-run --locked`. These are compile checks; the stack-capture assertion
 still requires execution on Windows. Broad P18-V01 and native Windows
 P18-V04 evidence remain open.
+
+## P18-V01 TopicConfig and TopicMessageType model API — 2026-10-22
+
+Pinned Java 5.5.1 `TopicConfig` and `TopicMessageType` source and reflected
+public API surfaces exposed model methods missing from the Rust protocol
+surface. Added the TopicConfig constructor variants and mutable default queue
+counts; permission/system-flag setters; copy, equality, hash, and string
+behavior; semicolon encoding/decoding; nullable attribute values with shared
+reference identity; topic-message-type and Lite-expiration helpers; and the
+`TopicConfigFilterType` enum methods. Added `TopicMessageType` values, metrics
+labels, nullable message-property lookup, and Java precedence among transaction,
+delay, FIFO, priority, Lite, and normal messages. Java fixtures and Rust tests
+pin defaults, mutation, copy aliasing, encoded attribute order, malformed and
+partial decode behavior, trailing values, Unicode decimal integers, null
+attributes, enum errors, expiration parsing, and message-type precedence.
+Protocol tests and strict Common/Protocol Clippy pass for this slice.
+
+This closes the TopicConfig/TopicMessageType model-method slice only. Other
+Protocol DTO source/default/validation/error/control-flow families remain
+under the P18-V01 audit; P18-V01 and native Windows runtime evidence remain
+open.

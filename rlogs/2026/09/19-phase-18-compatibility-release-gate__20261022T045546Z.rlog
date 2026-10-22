@@ -203,3 +203,31 @@ P18-V01 Protocol DTO/identity crosswalk follow-up — 2026-10-22 06:10 UTC
   ownership adapters require owner-level mapping.
 - P18-V01 remains open for full DTO/body source and control-flow reconciliation.
   No tests were added or run for this documentation-only continuation.
+
+P18-V01 TopicConfig model API and verification — 2026-10-22 06:42 UTC
+- Closed the pinned Java 5.5.1 `TopicConfig` / `TopicMessageType` model-method
+  slice. Added Java reflection and operation cases to
+  `fixtures/producer/core.json`, Rust API coverage for mutable defaults,
+  nullable/shared attributes, copy/equality/hash/string behavior, encoding and
+  partial decoding, enum errors, Lite expiration, Unicode decimal parsing,
+  and message-property precedence. Updated the Protocol API crosswalk and
+  requirement audit; the broader DTO/control-flow P18-V01 audit remains open.
+- `cargo fmt --all -- --check`, strict Common/Protocol Clippy, and
+  `cargo test -p rocketmq-classic-protocol --locked` passed. The latter ran
+  156 unit tests, all Protocol integration suites including both new
+  `topic_config_public_api` tests, and 157 doctests. The earlier
+  `cargo test -p rocketmq-classic-core --test admin_rpc --locked` run passed
+  all 120 tests.
+- Java producer-core fixture generation and verification passed using Azul
+  JDK 21. A first full Maven verify under JDK 21 stopped at the strict runtime
+  address oracle, which is checked in from Homebrew JDK 27. For a complete
+  local run, generated that address oracle temporarily under JDK 21, ran
+  `mvn -q -f compat/java-reference/pom.xml verify`, and restored the original
+  `fixtures/runtime/address.json` byte-for-byte in a `finally` block. The full
+  Maven verify passed, including Java producer-core and runtime fixtures,
+  Rust-to-Java decode fixtures, and Java self-tests. Maven-generated changes
+  to the two `body-subscription-group-wrapper` remoting fixtures were reverted
+  as unrelated output. `git diff --check` passed after documentation updates.
+- Phase 19 protected worktree files remain untouched and unstaged. No live
+  Broker, Docker validation, or release action was performed. Broad P18-V01
+  and native Windows P18-V04 runtime evidence remain open.

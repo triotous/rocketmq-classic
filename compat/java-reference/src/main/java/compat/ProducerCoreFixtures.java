@@ -45,6 +45,7 @@ import org.apache.rocketmq.client.producer.MQProducer;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.ServiceState;
 import org.apache.rocketmq.common.TopicConfig;
+import org.apache.rocketmq.common.attribute.TopicMessageType;
 import org.apache.rocketmq.common.constant.PermName;
 import org.apache.rocketmq.common.compression.Compressor;
 import org.apache.rocketmq.common.compression.CompressionType;
@@ -320,6 +321,9 @@ public final class ProducerCoreFixtures {
         result.put("createStaticTopicRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader.class));
         result.put("staticTopicConfigApi", publicApiSurface(TopicConfig.class));
+        result.put("staticTopicConfigPublicFields", publicFieldSignatures(TopicConfig.class));
+        result.put("topicMessageTypeApi", publicApiSurface(TopicMessageType.class));
+        result.put("topicConfigModelOperations", topicConfigModelOperations());
         result.put("createStaticTopicOperations", createStaticTopicOperations());
         result.put("createUserApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
@@ -2864,6 +2868,168 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{"));
         Map<String, Object> result = new TreeMap<>();
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> topicConfigModelOperations() {
+        Map<String, Object> result = new TreeMap<>();
+        TopicConfig defaults = new TopicConfig();
+        result.put("default", topicConfigModelState(defaults));
+        result.put("defaultEncoded", defaults.encode());
+        result.put("constructors", Arrays.asList(
+            topicConfigModelState(new TopicConfig("orders")),
+            topicConfigModelState(new TopicConfig("orders", 2, 3)),
+            topicConfigModelState(new TopicConfig("orders", 2, 3, 7)),
+            topicConfigModelState(new TopicConfig("orders", 2, 3, 7, 11))));
+        int defaultReadQueueNums = TopicConfig.defaultReadQueueNums;
+        int defaultWriteQueueNums = TopicConfig.defaultWriteQueueNums;
+        try {
+            TopicConfig.defaultReadQueueNums = 27;
+            TopicConfig.defaultWriteQueueNums = 29;
+            result.put("mutableStaticDefaults", topicConfigModelState(new TopicConfig("dynamic")));
+        } finally {
+            TopicConfig.defaultReadQueueNums = defaultReadQueueNums;
+            TopicConfig.defaultWriteQueueNums = defaultWriteQueueNums;
+        }
+
+        TopicConfig setterState = new TopicConfig();
+        setterState.setTopicName("setter-topic");
+        setterState.setReadQueueNums(31);
+        setterState.setWriteQueueNums(32);
+        setterState.setPerm(7);
+        setterState.setTopicFilterType(org.apache.rocketmq.common.TopicFilterType.MULTI_TAG);
+        setterState.setTopicSysFlag(33);
+        setterState.setOrder(true);
+        setterState.setAttributes(new HashMap<>(Map.of("message.type", "FIFO")));
+        result.put("setterState", topicConfigModelState(setterState));
+
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("lite.topic.expiration", "17");
+        attributes.put("message.type", "NORMAL");
+        TopicConfig lite = new TopicConfig("lite-orders", 4, 5, 6, 8);
+        lite.setAttributes(attributes);
+        lite.setTopicMessageType(TopicMessageType.LITE);
+        lite.setLiteTopicExpiration(23);
+        result.put("lite", topicConfigModelState(lite));
+        result.put("liteEncoded", lite.encode());
+        TopicConfig copied = new TopicConfig(lite);
+        result.put("copyEquals", lite.equals(copied));
+        result.put("copyHashEqual", lite.hashCode() == copied.hashCode());
+        copied.getAttributes().put("lite.topic.expiration", "29");
+        result.put("copyRetainsAttributeAlias", lite.getLiteTopicExpiration() == 29);
+
+        TopicConfig decoded = new TopicConfig("before");
+        decoded.setReadQueueNums(40);
+        String decodeInput = "wire-topic 7 8 6 MULTI_TAG {\"lite.topic.expiration\":\"31\",\"message.type\":\"LITE\"}";
+        result.put("decodeInput", decodeInput);
+        result.put("decodeResult", decoded.decode(decodeInput));
+        result.put("decoded", topicConfigModelState(decoded));
+        result.put("decodedEncoded", decoded.encode());
+
+        TopicConfig trailing = new TopicConfig("retained");
+        String trailingInput = "trailing 1 2 6 SINGLE_TAG ";
+        result.put("trailingInput", trailingInput);
+        result.put("trailingResult", trailing.decode(trailingInput));
+        result.put("trailingState", topicConfigModelState(trailing));
+
+        TopicConfig unicodeNumbers = new TopicConfig("retained");
+        String unicodeNumberInput = "unicode ١ ٢ ٦ SINGLE_TAG";
+        result.put("unicodeNumberInput", unicodeNumberInput);
+        result.put("unicodeNumberResult", unicodeNumbers.decode(unicodeNumberInput));
+        result.put("unicodeNumberState", topicConfigModelState(unicodeNumbers));
+
+        TopicConfig invalidFilter = new TopicConfig("retained");
+        String invalidFilterInput = "filter 1 2 6 bad-filter";
+        result.put("invalidFilterInput", invalidFilterInput);
+        try {
+            invalidFilter.decode(invalidFilterInput);
+            result.put("invalidFilterError", "none");
+        } catch (RuntimeException error) {
+            result.put("invalidFilterError", error.getClass().getSimpleName());
+        }
+        result.put("invalidFilterState", topicConfigModelState(invalidFilter));
+
+        TopicConfig tooShort = new TopicConfig("retained");
+        result.put("tooShortInput", "ignored 1 2");
+        result.put("tooShortResult", tooShort.decode((String) result.get("tooShortInput")));
+        result.put("tooShortState", topicConfigModelState(tooShort));
+
+        TopicConfig malformedAttributes = new TopicConfig("retained");
+        malformedAttributes.setAttributes(new HashMap<>(Map.of("message.type", "LITE")));
+        result.put("malformedAttributesInput", "changed 1 2 6 SINGLE_TAG {bad");
+        result.put("malformedAttributesResult", malformedAttributes.decode(
+            (String) result.get("malformedAttributesInput")));
+        result.put("malformedAttributesState", topicConfigModelState(malformedAttributes));
+
+        TopicConfig partial = new TopicConfig("retained");
+        partial.setReadQueueNums(90);
+        result.put("partialDecodeInput", "partial 12 invalid 6 SINGLE_TAG");
+        try {
+            partial.decode((String) result.get("partialDecodeInput"));
+            result.put("partialDecodeError", "none");
+        } catch (RuntimeException error) {
+            result.put("partialDecodeError", error.getClass().getSimpleName());
+        }
+        result.put("partialDecodeState", topicConfigModelState(partial));
+
+        TopicConfig unknownType = new TopicConfig("orders");
+        unknownType.setAttributes(new HashMap<>(Map.of("message.type", "unknown")));
+        try {
+            unknownType.getTopicMessageType();
+            result.put("unknownMessageTypeError", "none");
+        } catch (RuntimeException error) {
+            result.put("unknownMessageTypeError", error.getClass().getSimpleName());
+        }
+        TopicConfig nullAttributes = new TopicConfig("orders");
+        nullAttributes.setAttributes(null);
+        result.put("nullAttributesMessageType", nullAttributes.getTopicMessageType().getValue());
+        result.put("nullAttributesLiteExpiration", nullAttributes.getLiteTopicExpiration());
+
+        TopicConfig invalidExpiration = new TopicConfig("orders");
+        Map<String, String> invalidExpirationAttributes = new HashMap<>();
+        invalidExpirationAttributes.put("lite.topic.expiration", "not-an-int");
+        invalidExpirationAttributes.put("message.type", "LITE");
+        invalidExpiration.setAttributes(invalidExpirationAttributes);
+        result.put("invalidExpiration", topicConfigModelState(invalidExpiration));
+
+        Map<String, Object> precedence = new TreeMap<>();
+        Map<String, String> transaction = new HashMap<>();
+        transaction.put(MessageConst.PROPERTY_TRANSACTION_PREPARED, "TrUe");
+        transaction.put(MessageConst.PROPERTY_DELAY_TIME_LEVEL, "1");
+        precedence.put("transaction", TopicMessageType.parseFromMessageProperty(transaction).getValue());
+        Map<String, String> fifo = new HashMap<>();
+        fifo.put(MessageConst.PROPERTY_SHARDING_KEY, "key");
+        fifo.put(MessageConst.PROPERTY_PRIORITY, "1");
+        precedence.put("fifo", TopicMessageType.parseFromMessageProperty(fifo).getValue());
+        Map<String, String> liteProperty = new HashMap<>();
+        liteProperty.put(MessageConst.PROPERTY_LITE_TOPIC, "orders");
+        precedence.put("lite", TopicMessageType.parseFromMessageProperty(liteProperty).getValue());
+        precedence.put("normal", TopicMessageType.parseFromMessageProperty(new HashMap<>()).getValue());
+        Map<String, String> nullProperty = new HashMap<>();
+        nullProperty.put(MessageConst.PROPERTY_DELAY_TIME_LEVEL, null);
+        precedence.put("nullDelay", TopicMessageType.parseFromMessageProperty(nullProperty).getValue());
+        result.put("messageTypePrecedence", precedence);
+        result.put("messageTypeValues", Arrays.stream(TopicMessageType.values())
+            .map(TopicMessageType::getValue).collect(java.util.stream.Collectors.toList()));
+        result.put("messageTypeMetrics", TopicMessageType.LITE.getMetricsValue());
+        return result;
+    }
+
+    private static Map<String, Object> topicConfigModelState(TopicConfig config) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("topicName", config.getTopicName());
+        result.put("readQueueNums", config.getReadQueueNums());
+        result.put("writeQueueNums", config.getWriteQueueNums());
+        result.put("perm", config.getPerm());
+        result.put("topicFilterType", config.getTopicFilterType() == null
+            ? null : config.getTopicFilterType().name());
+        result.put("topicSysFlag", config.getTopicSysFlag());
+        result.put("order", config.isOrder());
+        result.put("attributes", config.getAttributes() == null
+            ? null : new TreeMap<>(config.getAttributes()));
+        result.put("topicMessageType", config.getTopicMessageType().getValue());
+        result.put("liteTopicExpiration", config.getLiteTopicExpiration());
+        result.put("toString", config.toString());
         return result;
     }
 

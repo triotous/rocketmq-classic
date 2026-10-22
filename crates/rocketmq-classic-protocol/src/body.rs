@@ -6,7 +6,14 @@ use crate::{
     serde_fastjson,
     subscription::SubscriptionGroupConfig,
 };
-use rocketmq_classic_common::message::MessageQueue;
+use rocketmq_classic_common::{
+    message::MessageQueue,
+    permission::PermName,
+    topic::{
+        LITE_EXPIRATION_ATTRIBUTE, TOPIC_MESSAGE_TYPE_ATTRIBUTE, TopicMessageType,
+        TopicMessageTypeError,
+    },
+};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer, de,
     ser::{SerializeMap, SerializeStruct},
@@ -14,6 +21,7 @@ use serde::{
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::Hash,
+    sync::atomic::{AtomicI32, Ordering},
 };
 
 macro_rules! impl_java_enum_api {
@@ -2477,11 +2485,15 @@ pub struct SubscriptionGroupList {
 
 /// Java `TopicConfig`, encoded in `CreateTopicListRequestBody` for batch topic
 /// creation. The field order matches Fastjson's alphabetic bean-property order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TopicConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    attributes: Option<BTreeMap<String, String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_topic_config_attributes",
+        deserialize_with = "deserialize_topic_config_attributes"
+    )]
+    attributes: Option<SharedValue<TopicConfigAttributeMap>>,
     #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
     order: bool,
     #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
@@ -2498,34 +2510,188 @@ pub struct TopicConfig {
     write_queue_nums: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Java `TopicConfig.attributes`, including nullable map values.
+pub type TopicConfigAttributeMap = BTreeMap<String, Option<String>>;
+
+fn java_topic_attribute_bucket(key: &str, capacity: usize) -> usize {
+    let hash = key.encode_utf16().fold(0_u32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+    });
+    ((hash ^ (hash >> 16)) as usize) & (capacity - 1)
+}
+
+fn java_topic_attribute_entries(
+    attributes: &TopicConfigAttributeMap,
+) -> Vec<(&String, &Option<String>)> {
+    let mut capacity = 16_usize;
+    while attributes.len() > (capacity * 3) / 4 {
+        capacity *= 2;
+    }
+    let mut entries = attributes.iter().collect::<Vec<_>>();
+    entries.sort_by_key(|(key, _)| java_topic_attribute_bucket(key, capacity));
+    entries
+}
+
+struct JavaTopicAttributes<'a>(&'a TopicConfigAttributeMap);
+
+impl Serialize for JavaTopicAttributes<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let entries = java_topic_attribute_entries(self.0);
+        let mut map = serializer.serialize_map(Some(entries.len()))?;
+        for (key, value) in entries {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+fn serialize_topic_config_attributes<S>(
+    attributes: &Option<SharedValue<TopicConfigAttributeMap>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match attributes {
+        Some(attributes) => JavaTopicAttributes(&attributes.snapshot()).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+static DEFAULT_READ_QUEUE_NUMS: AtomicI32 = AtomicI32::new(16);
+static DEFAULT_WRITE_QUEUE_NUMS: AtomicI32 = AtomicI32::new(16);
+
+fn deserialize_topic_config_attributes<'de, D>(
+    deserializer: D,
+) -> Result<Option<SharedValue<TopicConfigAttributeMap>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    serde_fastjson::deserialize_optional_nullable_string_map(deserializer)
+        .map(|attributes| attributes.map(SharedValue::new))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TopicConfigError {
+    #[error("java.lang.NullPointerException")]
+    NullInput,
+    #[error("java.lang.NullPointerException")]
+    NullAttributes,
+    #[error("java.lang.NullPointerException")]
+    NullTopicMessageType,
+    #[error("java.lang.NumberFormatException: For input string: \"{input}\"")]
+    InvalidInteger { input: String },
+    #[error(
+        "java.lang.IllegalArgumentException: No enum constant org.apache.rocketmq.common.TopicFilterType.{0}"
+    )]
+    InvalidFilterType(String),
+    #[error(transparent)]
+    InvalidTopicMessageType(#[from] TopicMessageTypeError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TopicConfigFilterType {
     SingleTag,
     MultiTag,
 }
 
+impl_java_enum_api!(
+    TopicConfigFilterType,
+    "org.apache.rocketmq.common.TopicFilterType",
+    2,
+    SingleTag => "SINGLE_TAG" = 0,
+    MultiTag => "MULTI_TAG" = 1,
+);
+
 impl Default for TopicConfig {
     fn default() -> Self {
         Self {
-            attributes: Some(BTreeMap::new()),
+            attributes: Some(SharedValue::new(BTreeMap::new())),
             order: false,
             perm: 6,
-            read_queue_nums: 16,
+            read_queue_nums: DEFAULT_READ_QUEUE_NUMS.load(Ordering::Acquire),
             topic_filter_type: Some(TopicConfigFilterType::SingleTag),
             topic_name: None,
             topic_sys_flag: 0,
-            write_queue_nums: 16,
+            write_queue_nums: DEFAULT_WRITE_QUEUE_NUMS.load(Ordering::Acquire),
         }
     }
 }
 
 impl TopicConfig {
+    pub fn default_read_queue_nums() -> i32 {
+        DEFAULT_READ_QUEUE_NUMS.load(Ordering::Acquire)
+    }
+
+    pub fn set_default_read_queue_nums(value: i32) {
+        DEFAULT_READ_QUEUE_NUMS.store(value, Ordering::Release);
+    }
+
+    pub fn default_write_queue_nums() -> i32 {
+        DEFAULT_WRITE_QUEUE_NUMS.load(Ordering::Acquire)
+    }
+
+    pub fn set_default_write_queue_nums(value: i32) {
+        DEFAULT_WRITE_QUEUE_NUMS.store(value, Ordering::Release);
+    }
+
     pub fn new(topic_name: impl Into<String>) -> Self {
         Self {
             topic_name: Some(topic_name.into()),
             ..Self::default()
         }
+    }
+
+    /// Java's `(String, int, int)` constructor.
+    pub fn with_queue_counts(
+        topic_name: impl Into<String>,
+        read_queue_nums: i32,
+        write_queue_nums: i32,
+    ) -> Self {
+        Self {
+            topic_name: Some(topic_name.into()),
+            read_queue_nums,
+            write_queue_nums,
+            ..Self::default()
+        }
+    }
+
+    /// Java's `(String, int, int, int)` constructor.
+    pub fn with_perm(
+        topic_name: impl Into<String>,
+        read_queue_nums: i32,
+        write_queue_nums: i32,
+        perm: i32,
+    ) -> Self {
+        Self {
+            perm,
+            ..Self::with_queue_counts(topic_name, read_queue_nums, write_queue_nums)
+        }
+    }
+
+    /// Java's `(String, int, int, int, int)` constructor.
+    pub fn with_topic_sys_flag(
+        topic_name: impl Into<String>,
+        read_queue_nums: i32,
+        write_queue_nums: i32,
+        perm: i32,
+        topic_sys_flag: i32,
+    ) -> Self {
+        Self {
+            topic_sys_flag,
+            ..Self::with_perm(topic_name, read_queue_nums, write_queue_nums, perm)
+        }
+    }
+
+    /// Java's copy constructor retains the same mutable attributes map.
+    pub fn copy_from(other: &Self) -> Self {
+        other.clone()
     }
 
     pub fn topic_name(&self) -> Option<&str> {
@@ -2584,12 +2750,215 @@ impl TopicConfig {
         self.order = order;
     }
 
-    pub fn attributes(&self) -> Option<&BTreeMap<String, String>> {
-        self.attributes.as_ref()
+    pub fn attributes(&self) -> Option<SharedValue<TopicConfigAttributeMap>> {
+        self.attributes.clone()
     }
 
-    pub fn set_attributes(&mut self, attributes: Option<BTreeMap<String, String>>) {
+    pub fn set_attributes(&mut self, attributes: Option<TopicConfigAttributeMap>) {
+        self.attributes = attributes.map(SharedValue::new);
+    }
+
+    /// Sets the same live attributes map handle that Java's setter retains.
+    pub fn set_attributes_shared(
+        &mut self,
+        attributes: Option<SharedValue<TopicConfigAttributeMap>>,
+    ) {
         self.attributes = attributes;
+    }
+
+    pub fn topic_message_type(&self) -> Result<TopicMessageType, TopicConfigError> {
+        let Some(attributes) = &self.attributes else {
+            return Ok(TopicMessageType::Normal);
+        };
+        attributes
+            .with(|values| values.get(TOPIC_MESSAGE_TYPE_ATTRIBUTE).cloned())
+            .flatten()
+            .map_or(Ok(TopicMessageType::Normal), |value| {
+                TopicMessageType::value_of_name(Some(&value))
+                    .map_err(TopicConfigError::InvalidTopicMessageType)
+            })
+    }
+
+    pub fn set_topic_message_type(
+        &mut self,
+        topic_message_type: Option<TopicMessageType>,
+    ) -> Result<(), TopicConfigError> {
+        let topic_message_type =
+            topic_message_type.ok_or(TopicConfigError::NullTopicMessageType)?;
+        let attributes = self
+            .attributes
+            .as_ref()
+            .ok_or(TopicConfigError::NullAttributes)?;
+        attributes.with_mut(|values| {
+            values.insert(
+                TOPIC_MESSAGE_TYPE_ATTRIBUTE.to_owned(),
+                Some(topic_message_type.get_value().to_owned()),
+            );
+        });
+        Ok(())
+    }
+
+    pub fn set_lite_topic_expiration(
+        &mut self,
+        lite_topic_expiration: i32,
+    ) -> Result<(), TopicConfigError> {
+        if self.topic_message_type()? != TopicMessageType::Lite {
+            return Ok(());
+        }
+        let attributes = self
+            .attributes
+            .as_ref()
+            .ok_or(TopicConfigError::NullAttributes)?;
+        attributes.with_mut(|values| {
+            values.insert(
+                LITE_EXPIRATION_ATTRIBUTE.to_owned(),
+                Some(lite_topic_expiration.to_string()),
+            );
+        });
+        Ok(())
+    }
+
+    pub fn lite_topic_expiration(&self) -> Result<i32, TopicConfigError> {
+        if self.topic_message_type()? != TopicMessageType::Lite {
+            return Ok(-1);
+        }
+        let attributes = self
+            .attributes
+            .as_ref()
+            .ok_or(TopicConfigError::NullAttributes)?;
+        Ok(attributes
+            .with(|values| values.get(LITE_EXPIRATION_ATTRIBUTE).cloned())
+            .flatten()
+            .as_deref()
+            .and_then(crate::header::parse_java_i32)
+            .unwrap_or(-1))
+    }
+
+    /// Encodes the whitespace-separated Java `TopicConfig` form.
+    pub fn encode(&self) -> Result<String, TopicConfigError> {
+        let attributes = match &self.attributes {
+            Some(attributes) => {
+                serde_json::to_string(&JavaTopicAttributes(&attributes.snapshot()))?
+            }
+            None => String::new(),
+        };
+        Ok(format!(
+            "{} {} {} {} {} {}",
+            self.topic_name.as_deref().unwrap_or("null"),
+            self.read_queue_nums,
+            self.write_queue_nums,
+            self.perm,
+            self.topic_filter_type
+                .map_or("null", |topic_filter_type| topic_filter_type.name()),
+            attributes,
+        ))
+    }
+
+    /// Java's mutating decode operation; fields are applied in source order.
+    pub fn decode(&mut self, input: &str) -> Result<bool, TopicConfigError> {
+        let mut fields = input.split(' ').collect::<Vec<_>>();
+        while fields.last() == Some(&"") {
+            fields.pop();
+        }
+        if fields.len() < 5 {
+            return Ok(false);
+        }
+        self.topic_name = Some(fields[0].to_owned());
+        self.read_queue_nums = crate::header::parse_java_i32(fields[1]).ok_or_else(|| {
+            TopicConfigError::InvalidInteger {
+                input: fields[1].to_owned(),
+            }
+        })?;
+        self.write_queue_nums = crate::header::parse_java_i32(fields[2]).ok_or_else(|| {
+            TopicConfigError::InvalidInteger {
+                input: fields[2].to_owned(),
+            }
+        })?;
+        self.perm = crate::header::parse_java_i32(fields[3]).ok_or_else(|| {
+            TopicConfigError::InvalidInteger {
+                input: fields[3].to_owned(),
+            }
+        })?;
+        self.topic_filter_type = Some(match fields[4] {
+            "SINGLE_TAG" => TopicConfigFilterType::SingleTag,
+            "MULTI_TAG" => TopicConfigFilterType::MultiTag,
+            other => return Err(TopicConfigError::InvalidFilterType(other.to_owned())),
+        });
+        if fields.len() >= 6 {
+            if let Ok(attributes) =
+                serde_fastjson::from_fastjson_str::<TopicConfigAttributeMap>(fields[5])
+            {
+                self.attributes = Some(SharedValue::new(attributes));
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn decode_nullable(input: Option<&str>) -> Result<bool, TopicConfigError> {
+        let input = input.ok_or(TopicConfigError::NullInput)?;
+        let mut config = Self::default();
+        config.decode(input)
+    }
+
+    pub fn java_to_string(&self) -> String {
+        let attributes = self.attributes.as_ref().map_or_else(
+            || "null".to_owned(),
+            |attributes| {
+                let values = attributes.snapshot();
+                format!(
+                    "{{{}}}",
+                    java_topic_attribute_entries(&values)
+                        .iter()
+                        .map(|(key, value)| format!("{key}={}", value.as_deref().unwrap_or("null")))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )
+            },
+        );
+        format!(
+            "TopicConfig [topicName={}, readQueueNums={}, writeQueueNums={}, perm={}, topicFilterType={}, topicSysFlag={}, order={}, attributes={}]",
+            self.topic_name.as_deref().unwrap_or("null"),
+            self.read_queue_nums,
+            self.write_queue_nums,
+            PermName::perm_to_string(self.perm),
+            self.topic_filter_type
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+            self.topic_sys_flag,
+            self.order,
+            attributes,
+        )
+    }
+}
+
+impl PartialEq for TopicConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.attributes.as_ref().map(SharedValue::snapshot)
+            == other.attributes.as_ref().map(SharedValue::snapshot)
+            && self.order == other.order
+            && self.perm == other.perm
+            && self.read_queue_nums == other.read_queue_nums
+            && self.topic_filter_type == other.topic_filter_type
+            && self.topic_name == other.topic_name
+            && self.topic_sys_flag == other.topic_sys_flag
+            && self.write_queue_nums == other.write_queue_nums
+    }
+}
+
+impl Eq for TopicConfig {}
+
+impl std::hash::Hash for TopicConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.attributes
+            .as_ref()
+            .map(SharedValue::snapshot)
+            .hash(state);
+        self.order.hash(state);
+        self.perm.hash(state);
+        self.read_queue_nums.hash(state);
+        self.topic_filter_type.hash(state);
+        self.topic_name.hash(state);
+        self.topic_sys_flag.hash(state);
+        self.write_queue_nums.hash(state);
     }
 }
 
@@ -3369,8 +3738,11 @@ pub struct TopicConfigAndQueueMapping {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct TopicConfigAndQueueMappingFields {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    attributes: Option<BTreeMap<String, String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "serde_fastjson::deserialize_optional_nullable_string_map"
+    )]
+    attributes: Option<TopicConfigAttributeMap>,
     #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
     order: bool,
     #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
@@ -3392,7 +3764,7 @@ impl Default for TopicConfigAndQueueMappingFields {
     fn default() -> Self {
         let config = TopicConfig::default();
         Self {
-            attributes: config.attributes,
+            attributes: Some(BTreeMap::new()),
             order: config.order,
             perm: config.perm,
             read_queue_nums: config.read_queue_nums,
@@ -3416,7 +3788,7 @@ impl<'de> Deserialize<'de> for TopicConfigAndQueueMapping {
             .map_err(de::Error::custom)?;
         Ok(Self {
             topic_config: TopicConfig {
-                attributes: fields.attributes,
+                attributes: fields.attributes.map(SharedValue::new),
                 order: fields.order,
                 perm: fields.perm,
                 read_queue_nums: fields.read_queue_nums,

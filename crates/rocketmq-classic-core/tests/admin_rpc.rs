@@ -2798,7 +2798,7 @@ async fn get_topic_config_matches_java_request_and_static_mapping_fixtures() {
                     assert_eq!(config.read_queue_nums(), 0);
                     assert_eq!(config.write_queue_nums(), 0);
                     assert_eq!(config.perm(), 0);
-                    assert_eq!(config.attributes(), None);
+                    assert!(config.attributes().is_none());
                 }
                 if case["name"] == "config-mapping-defaults" {
                     let detail = config.get_mapping_detail().unwrap();
