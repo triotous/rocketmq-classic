@@ -707,8 +707,38 @@ fn ipv6_address_check(address: &str) -> Result<(), AclUtilsError> {
     Ok(())
 }
 
+fn java_default_locale_language() -> Option<String> {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(|locale| locale.to_string_lossy().into_owned())
+        .find(|locale| !locale.is_empty())
+        .map(|locale| {
+            locale
+                .split(['_', '-', '.', '@'])
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+        })
+}
+
+fn java_default_locale_uppercase(value: &str) -> String {
+    if matches!(java_default_locale_language().as_deref(), Some("tr" | "az")) {
+        value
+            .chars()
+            .flat_map(|character| match character {
+                'i' => 'İ'.to_uppercase(),
+                'ı' => 'I'.to_uppercase(),
+                _ => character.to_uppercase(),
+            })
+            .collect()
+    } else {
+        value.to_uppercase()
+    }
+}
+
 fn expand_ip(address: &str, part: i32) -> String {
-    let mut expanded = address.to_uppercase();
+    let mut expanded = java_default_locale_uppercase(address);
     let separator_count = expanded.matches(':').count() as i32;
     let pad_count = part - separator_count;
     if pad_count > 0 {
@@ -1683,6 +1713,37 @@ mod tests {
             mutable.code(),
             cases["mutable"]["code"].as_i64().unwrap() as i32
         );
+    }
+
+    #[test]
+    fn acl_expand_ip_matches_turkish_java_default_locale() {
+        const CHILD_MARKER: &str = "ROCKETMQ_CLASSIC_TURKISH_ACL_EXPAND_IP_TEST";
+
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "auth::tests::acl_expand_ip_matches_turkish_java_default_locale",
+                ])
+                .env("LC_ALL", "tr_TR.UTF-8")
+                .env(CHILD_MARKER, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Turkish-locale child test failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let cases = &fixture()["utilityCases"]["expandedIpTurkishLocaleCases"];
+        for case in cases.as_array().expect("Java Turkish expandIP cases") {
+            let input = case["input"].as_str().unwrap();
+            let part = case["part"].as_i64().unwrap() as i32;
+            let expected = case["output"].as_str().unwrap();
+            assert_eq!(AclUtils::expand_ip(input, part), expected, "{case}");
+        }
     }
 
     fn credential_fields(credentials: &SessionCredentials) -> Value {

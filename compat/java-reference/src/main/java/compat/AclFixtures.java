@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -203,6 +204,7 @@ public final class AclFixtures {
             "ipv6", AclUtils.isIPv6Scope(new String[] {"2001", "DB8", "FFFF"}, 3),
             "ipv6Bad", AclUtils.isIPv6Scope(new String[] {"2001", "10000"}, 2)));
         cases.put("expandedIp", AclUtils.expandIP("2001:db8::1", 8));
+        cases.put("expandedIpTurkishLocaleCases", expandedIpTurkishLocaleCases());
         cases.put("processedIp", AclUtils.v6ipProcess("2::ac5:78:1-200:*"));
         cases.put("braceAddresses", AclUtils.getAddresses("192.168.{1,2}", "{1,2}"));
         cases.put("validIpv6Check", addressCheck("2::ac5:78:1-200:*"));
@@ -224,6 +226,24 @@ public final class AclFixtures {
             Files.deleteIfExists(yamlPath);
         }
         return cases;
+    }
+
+    private static List<Object> expandedIpTurkishLocaleCases() {
+        Locale originalLocale = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            List<Object> cases = new ArrayList<>();
+            for (String input : new String[] {"i::1", "ı::1", "2001:db8::1"}) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("input", input);
+                item.put("part", 8);
+                item.put("output", AclUtils.expandIP(input, 8));
+                cases.add(item);
+            }
+            return cases;
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
     }
 
     private static Map<String, Object> customRequestContent() {
