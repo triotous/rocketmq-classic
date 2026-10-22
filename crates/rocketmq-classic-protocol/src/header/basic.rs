@@ -7612,7 +7612,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 42);
+        assert_eq!(cases.len(), 44);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -7622,6 +7622,9 @@ mod tests {
                     .to_owned()
             } else if rust_name == "SendMessageRequestHeaderV1" {
                 "org.apache.rocketmq.remoting.protocol.header.SendMessageRequestHeader".to_owned()
+            } else if rust_name == "QueryCorrectionOffsetRequestHeader" {
+                "org.apache.rocketmq.remoting.protocol.header.QueryCorrectionOffsetHeader"
+                    .to_owned()
             } else {
                 format!("org.apache.rocketmq.remoting.protocol.header.{rust_name}")
             };
