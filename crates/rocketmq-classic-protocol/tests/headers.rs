@@ -48,7 +48,7 @@ use rocketmq_classic_protocol::{
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        UnregisterClientResponseHeader, UpdateAclRequestHeader, UpdateConsumerOffsetRequestHeader,
         UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
         ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
         WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
@@ -2334,6 +2334,15 @@ fn header_validation_matrix() {
         row!(
             CreateAclRequestHeader,
             "create-acl-request",
+            "",
+            "",
+            "",
+            "subject",
+            ""
+        ),
+        row!(
+            UpdateAclRequestHeader,
+            "update-acl-request",
             "",
             "",
             "",

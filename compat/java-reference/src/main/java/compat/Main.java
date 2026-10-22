@@ -512,6 +512,10 @@ public final class Main {
             new org.apache.rocketmq.remoting.protocol.header.CreateAclRequestHeader("subject");
         writeTypedHeaderFixture(output, "create-acl-request", 3006, createAcl);
 
+        org.apache.rocketmq.remoting.protocol.header.UpdateAclRequestHeader updateAcl =
+            new org.apache.rocketmq.remoting.protocol.header.UpdateAclRequestHeader("subject");
+        writeTypedHeaderFixture(output, "update-acl-request", 3007, updateAcl);
+
         org.apache.rocketmq.remoting.protocol.header.UpdateUserRequestHeader updateUser =
             new org.apache.rocketmq.remoting.protocol.header.UpdateUserRequestHeader("alice");
         writeTypedHeaderFixture(output, "update-user-request", 3002, updateUser);
@@ -1322,7 +1326,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 103, "all Rust typed header fixtures were supplied");
+            require(count == 104, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1334,6 +1338,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-create-topic-request.bin", 17);
             assertAllExtFields(byName, "typed-create-user-request.bin", 3001);
             assertAllExtFields(byName, "typed-create-acl-request.bin", 3006);
+            assertAllExtFields(byName, "typed-update-acl-request.bin", 3007);
             assertAllExtFields(byName, "typed-update-user-request.bin", 3002);
             assertAllExtFields(byName, "typed-delete-user-request.bin", 3003);
             assertAllExtFields(byName, "typed-get-user-request.bin", 3004);
@@ -1437,6 +1442,7 @@ public final class Main {
             assertExtField(byName, "typed-create-topic-request.bin", 17, "defaultTopic", "TBW102");
             assertExtField(byName, "typed-create-user-request.bin", 3001, "username", "alice");
             assertExtField(byName, "typed-create-acl-request.bin", 3006, "subject", "subject");
+            assertExtField(byName, "typed-update-acl-request.bin", 3007, "subject", "subject");
             assertExtField(byName, "typed-update-user-request.bin", 3002, "username", "alice");
             assertExtField(byName, "typed-delete-user-request.bin", 3003, "username", "alice");
             assertExtField(byName, "typed-get-user-request.bin", 3004, "username", "alice");
@@ -1582,6 +1588,7 @@ public final class Main {
             case "typed-create-topic-request.bin": fixtureStem = "header-create-topic-request"; break;
             case "typed-create-user-request.bin": fixtureStem = "header-create-user-request"; break;
             case "typed-create-acl-request.bin": fixtureStem = "header-create-acl-request"; break;
+            case "typed-update-acl-request.bin": fixtureStem = "header-update-acl-request"; break;
             case "typed-update-user-request.bin": fixtureStem = "header-update-user-request"; break;
             case "typed-delete-user-request.bin": fixtureStem = "header-delete-user-request"; break;
             case "typed-get-user-request.bin": fixtureStem = "header-get-user-request"; break;

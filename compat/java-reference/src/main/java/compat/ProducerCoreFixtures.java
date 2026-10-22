@@ -392,6 +392,15 @@ public final class ProducerCoreFixtures {
         result.put("createAclRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.CreateAclRequestHeader.class));
         result.put("createAclOperations", createAclOperations());
+        result.put("updateAclApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("updateAcl"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("updateAclRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.UpdateAclRequestHeader.class));
+        result.put("updateAclOperations", updateAclOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -3436,6 +3445,14 @@ public final class ProducerCoreFixtures {
     }
 
     private static Map<String, Object> createAclOperations() throws Exception {
+        return aclOperations(false);
+    }
+
+    private static Map<String, Object> updateAclOperations() throws Exception {
+        return aclOperations(true);
+    }
+
+    private static Map<String, Object> aclOperations(boolean update) throws Exception {
         org.apache.rocketmq.remoting.protocol.body.AclInfo populated =
             org.apache.rocketmq.remoting.protocol.body.AclInfo.of(
                 "subject", Arrays.asList("topic-a", "topic-b"),
@@ -3451,26 +3468,28 @@ public final class ProducerCoreFixtures {
                 "nullable-members", Arrays.asList("topic-c", null),
                 Arrays.asList("PUB", null), null, "ALLOW");
         List<Map<String, Object>> cases = new ArrayList<>();
-        cases.add(createAclCase("populated", populated, false,
+        cases.add(aclOperationCase(update, "populated", populated, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
-        cases.add(createAclCase("defaults", new org.apache.rocketmq.remoting.protocol.body.AclInfo(), false,
+        cases.add(aclOperationCase(update, "defaults", new org.apache.rocketmq.remoting.protocol.body.AclInfo(), false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
-        cases.add(createAclCase("null-subject", nullSubject, false,
+        cases.add(aclOperationCase(update, "null-subject", nullSubject, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
-        cases.add(createAclCase("empty-subject", emptySubject, false,
+        cases.add(aclOperationCase(update, "empty-subject", emptySubject, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
-        cases.add(createAclCase("nullable-members", nullableMembers, false,
+        cases.add(aclOperationCase(update, "nullable-members", nullableMembers, false,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
-        cases.add(createAclCase("broker-error", populated, false,
-            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "ACL creation rejected"));
-        cases.add(createAclCase("vip-enabled-address-unchanged", populated, true,
+        cases.add(aclOperationCase(update, "broker-error", populated, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            update ? "ACL update rejected" : "ACL creation rejected"));
+        cases.add(aclOperationCase(update, "vip-enabled-address-unchanged", populated, true,
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
         Map<String, Object> result = new TreeMap<>();
         result.put("cases", cases);
         return result;
     }
 
-    private static Map<String, Object> createAclCase(
+    private static Map<String, Object> aclOperationCase(
+        boolean update,
         String name,
         org.apache.rocketmq.remoting.protocol.body.AclInfo aclInfo,
         boolean vipEnabled,
@@ -3479,7 +3498,7 @@ public final class ProducerCoreFixtures {
         Map<String, Object> result = new TreeMap<>();
         List<Map<String, Object>> requests = new ArrayList<>();
         org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
-        config.setClientIP("create-acl-api");
+        config.setClientIP(update ? "update-acl-api" : "create-acl-api");
         config.setVipChannelEnabled(vipEnabled);
         MQClientAPIImpl api = new MQClientAPIImpl(
             new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
@@ -3512,7 +3531,11 @@ public final class ProducerCoreFixtures {
         result.put("responseCode", responseCode);
         result.put("responseRemark", responseRemark);
         try {
-            api.createAcl("broker-a:10911", aclInfo, 2345L);
+            if (update) {
+                api.updateAcl("broker-a:10911", aclInfo, 2345L);
+            } else {
+                api.createAcl("broker-a:10911", aclInfo, 2345L);
+            }
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());

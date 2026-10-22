@@ -44,9 +44,9 @@ pub use basic::{
     ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
     SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
     UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader, UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
-    ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-    WipeWritePermOfBrokerResponseHeader,
+    UpdateAclRequestHeader, UpdateConsumerOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
+    UpdateUserRequestHeader, ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
+    WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

@@ -2108,3 +2108,14 @@ subjects and policy data, exact request body bytes, success and Broker errors,
 timeout, typed-header cross-decode, and unchanged-address behavior. The auth
 reverse audit now has three open APIs; broader P18-V01 reconciliation remains
 open.
+
+## P18-V01 direct `updateAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.updateAcl` sends request 3007 with an
+`UpdateAclRequestHeader`, an `AclInfo` body, and the caller timeout. Core
+exposes `MQClientApi::update_acl`, preserves nullable subjects and ACL policy
+data, and leaves the supplied Broker address unchanged with VIP channels
+enabled. Invoked Java fixtures and Rust loopback tests compare exact body
+bytes, nullable fields, success and Broker errors, timeout, typed-header
+cross-decode, and unchanged-address behavior. The auth reverse audit now has
+two open APIs; broader P18-V01 reconciliation remains open.

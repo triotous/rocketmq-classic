@@ -51,7 +51,7 @@ use rocketmq_classic_protocol::{
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
-        UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
+        UnregisterClientResponseHeader, UpdateAclRequestHeader, UpdateConsumerOffsetRequestHeader,
         UpdateGroupForbiddenRequestHeader, UpdateUserRequestHeader,
         ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
         WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
@@ -120,6 +120,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-create-acl-request.bin",
         "header-create-acl-request",
         3006,
+    );
+    write_oracle_header::<UpdateAclRequestHeader>(
+        output,
+        "typed-update-acl-request.bin",
+        "header-update-acl-request",
+        3007,
     );
     write_oracle_header::<UpdateUserRequestHeader>(
         output,

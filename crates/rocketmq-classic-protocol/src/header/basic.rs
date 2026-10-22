@@ -3535,6 +3535,33 @@ impl_header_field_accessors!(
     [set_subject]
 );
 
+/// Pinned Java auth `UpdateAclRequestHeader`. Java's `checkFields()` is a no-op,
+/// so `subject` remains nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateAclRequestHeader {
+    subject: Option<String>,
+}
+
+impl CommandHeader for UpdateAclRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "subject", self.subject.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            subject: optional_string(fields, "subject"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    UpdateAclRequestHeader,
+    optional_string,
+    subject,
+    [get_subject],
+    [set_subject]
+);
+
 /// Pinned Java auth `ListUsersRequestHeader`. Java's `checkFields()` is a no-op,
 /// so `filter` remains nullable at the command-header boundary.
 #[derive(Debug, Clone, Default)]
