@@ -477,6 +477,41 @@ def self_test():
     assert compare({"queue": [1, 2]}, {"queue": [2, 1]}, frozenset({"$.queue"}))
     assert not compare({"code": 10}, {"code": 11})
     assert compare({"opaque": 1}, {"opaque": 2}, ignored=frozenset({"opaque"}))
+    delivery = {
+        "status": "SEND_OK",
+        "attempts": ["broker-a", "broker-b"],
+        "retry_count": 1,
+        "messages": [
+            {"business_key": "order-7", "queue_offset": 41},
+            {"business_key": "order-7", "queue_offset": 42},
+        ],
+    }
+    assert not compare(delivery, {**delivery, "status": "SEND_FAILED"})
+    assert not compare(
+        delivery,
+        {**delivery, "attempts": ["broker-b", "broker-a"]},
+    )
+    assert not compare(delivery, {**delivery, "retry_count": 2})
+    assert not compare(
+        delivery,
+        {
+            **delivery,
+            "messages": [
+                delivery["messages"][0],
+                {"business_key": "order-8", "queue_offset": 42},
+            ],
+        },
+    )
+    assert not compare(
+        delivery,
+        {
+            **delivery,
+            "messages": [
+                delivery["messages"][0],
+                {"business_key": "order-7", "queue_offset": 41},
+            ],
+        },
+    )
     manifest = {
         "java_client_version": "5.5.1",
         "server_version": "5.3.4",

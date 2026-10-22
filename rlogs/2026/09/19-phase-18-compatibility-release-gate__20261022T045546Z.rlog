@@ -231,3 +231,35 @@ P18-V01 TopicConfig model API and verification — 2026-10-22 06:42 UTC
 - Phase 19 protected worktree files remain untouched and unstaged. No live
   Broker, Docker validation, or release action was performed. Broad P18-V01
   and native Windows P18-V04 runtime evidence remain open.
+
+P18-V02/V03 server-free gate and benchmark run — 2026-10-22 06:55 UTC
+- Current workspace revision passed `cargo fmt --all -- --check`,
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D
+  warnings`, `cargo test --workspace --locked`, and
+  `cargo test --workspace --all-features --locked`. The Java 5.5.1-specific
+  `TZ=Asia/Taipei` unique-ID test passed.
+- Differential comparator self-test and `--validate-manifest` passed; the
+  manifest contains 37 validated Phase 19 handoff scenarios. Expanded the
+  comparator self-test to reject changed result status, attempt ordering,
+  retry count, duplicate business-key relationship, and queue-offset
+  relationship; the updated self-test passes.
+- Fuzz smoke passed with 163 frame seeds, 11 message seeds, 2,784 bounded
+  mutations, 245 frame decodes, and 112 message decodes. The offline race/leak
+  smoke passed 16 cases at three repetitions each. Workspace metadata,
+  license files, and dependency direction passed `scripts/check-workspace-
+  metadata.py`.
+- Facade examples compiled in release mode. The offline benchmark compiled
+  and ran on macOS ARM64, Apple M5 Max, 18 logical CPUs, `rustc 1.85.0`,
+  release profile. Fixed inputs/iterations and observations: remoting frame
+  encode/decode 20,000 x 427 B, 2,285 ns/op, 40 allocations and 4,676 B/op;
+  Zstd message decode 10,000 x 146 B, 1,662 ns/op, 17 allocations and
+  197,493 B/op; send request construction 20,000 x 512 B, 1,789 ns/op,
+  54 allocations and 3,665 B/op; route lookup (128 entries) 100,000 x 10 B,
+  19 ns/op, zero allocations; loopback pending completion 500 x 128 B,
+  61,802 ns/op, 81 allocations and 9,546 B/op. These are local measurements,
+  not performance thresholds.
+- The Phase 19 handoff manifest is locally complete and validated; actual
+  Windows stack-capture execution and current-revision remote GitHub CI evidence
+  still require their respective Windows/CI environments. Broad P18-V01 audit
+  remains open. Phase 19 protected worktree changes remain unstaged; no live
+  Broker, Docker, publication, or release action was performed.
