@@ -300,3 +300,17 @@ P18-V01 direct derived Message getter overrides and full local gates — 2026-10
   execution and current-revision remote GitHub CI remain pending. Broad
   P18-V01 remains open. Phase 19 protected worktree files remain unstaged;
   no Broker, Docker, publication, or release action was performed.
+
+P18-V01 nullable direct getter results — 2026-10-22 07:19 UTC
+- Commit `d4f1a4f1` adds invoked Java/Rust direct getter cases for explicit
+  null from `getTags`, `getKeys`, `getBuyerId`, `getTopicSysFlag`, and
+  `getGroupSysFlag`. The fixture returns conflicting non-null and malformed
+  `getProperty` values to verify direct null precedence and skipped sysflag
+  parsing. Fixture SHA-256:
+  `8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
+- Java fixture `--verify`, all six `runtime_direct_consume` tests, focused
+  Common/Consumer strict Clippy, format, and `git diff --check` pass. This
+  continuation changes fixture, tests and compatibility docs only; full
+  workspace and Maven gates for the production hooks passed at `2f65745b`.
+- Broad P18-V01, current-revision remote Ubuntu CI and native Windows stack
+  execution remain open. Phase 19 protected worktree files remain unstaged.

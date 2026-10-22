@@ -7072,3 +7072,16 @@ owner-specific checks belong in the manual handoff.
   reconciliation remains open. Current-revision remote Ubuntu CI and native
   Windows stack-capture execution also remain pending. No Broker, Docker,
   publication, or release action was performed.
+
+## P18-V01 nullable subtype getter continuation — 2026-10-22 (`d4f1a4f1`)
+
+- [x] An invoked Java subtype returns null from five overridden getters while
+  `getProperty` returns non-null or malformed values. Rust `Some(None)` results
+  preserve direct nulls and skip malformed transient sysflag parsing. Fixture
+  SHA-256: `8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
+- [x] Java fixture verification, all six direct-consume tests, focused
+  Common/Consumer strict Clippy, formatting, and `git diff --check` passed.
+  Production code is unchanged since `2f65745b`, whose full workspace/Maven
+  gates are recorded above.
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, and
+  native Windows stack execution remain pending.
