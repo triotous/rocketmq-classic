@@ -1064,8 +1064,6 @@ impl Producer {
         };
         if start_factory {
             if let Err(error) = runtime.start().await {
-                let deadline = self.unregister_deadline();
-                let _ = runtime.unregister_producer(&lease, deadline).await;
                 return Err(error.into());
             }
         }
@@ -1665,7 +1663,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_start_failure_unregisters_the_producer_lease() {
+    async fn runtime_start_failure_preserves_java_factory_registration() {
+        let java_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
+                .unwrap();
+        let java_failure = &java_fixture["startupFactoryStartFailure"];
+        assert_eq!(java_failure["exception"], "IllegalArgumentException");
+        assert_eq!(java_failure["producerRegistered"], true);
+        assert_eq!(java_failure["producerServiceState"], "START_FAILED");
+        assert_eq!(java_failure["factoryServiceState"], "START_FAILED");
+
         let manager = ClientRuntimeManager::new();
         let mut config = ProducerConfig::new("start-rollback-producer").unwrap();
         config
@@ -1673,7 +1680,10 @@ mod tests {
             .set_namesrv_addr(Some(String::new()));
         config.client_config_mut().set_poll_name_server_interval(0);
         let runtime = manager.get_or_create(config.client_config()).await.unwrap();
-        let producer = Arc::new(Producer::with_runtime_manager(config, manager));
+        let producer = Arc::new(Producer::with_runtime_manager(
+            config.clone(),
+            manager.clone(),
+        ));
 
         assert!(matches!(
             producer.start().await,
@@ -1681,7 +1691,13 @@ mod tests {
                 rocketmq_classic_core::runtime::RuntimeError::InvalidSchedule
             ))
         ));
-        assert_eq!(runtime.producer_table().len().unwrap(), 0);
+        assert_eq!(runtime.producer_table().len().unwrap(), 1);
+        assert!(
+            runtime
+                .select_producer("start-rollback-producer")
+                .unwrap()
+                .is_some()
+        );
         assert_eq!(
             producer.service_state(),
             Some(ProducerServiceState::StartFailed)
@@ -1690,6 +1706,19 @@ mod tests {
             producer.started_runtime().await,
             Err(ProducerError::NotStarted)
         ));
+        assert!(Arc::ptr_eq(
+            &runtime,
+            &manager.get_or_create(config.client_config()).await.unwrap()
+        ));
+        assert!(
+            runtime
+                .unregister_producer_by_group(
+                    "start-rollback-producer",
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

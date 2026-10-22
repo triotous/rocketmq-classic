@@ -977,6 +977,9 @@ impl ClientRuntime {
             .table_mutation_gate(super::tables::TableKind::Producer, group)?
             .lock_owned()
             .await;
+        if self.state() == RuntimeState::Failed {
+            return self.groups.register_producer(group, handle);
+        }
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
@@ -1025,6 +1028,9 @@ impl ClientRuntime {
             .table_mutation_gate(super::tables::TableKind::Consumer, group)?
             .lock_owned()
             .await;
+        if self.state() == RuntimeState::Failed {
+            return self.groups.register_consumer(group, handle);
+        }
         let (reply, receive) = tokio::sync::oneshot::channel();
         self.control
             .sender(self)?
@@ -1604,7 +1610,10 @@ impl ClientRuntime {
             ),
             None => None,
         };
-        if matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+        if self.state() == RuntimeState::Failed {
+            return self.groups.unregister(lease, kind);
+        }
+        if self.state() == RuntimeState::Stopped {
             return Ok(false);
         }
         let (reply, receive) = tokio::sync::oneshot::channel();

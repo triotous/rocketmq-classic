@@ -762,6 +762,7 @@ impl GroupRegistry {
                 .any(|group| group != inner_producer))
     }
 
+    #[allow(dead_code)]
     pub fn clear(&self) -> Result<(), RuntimeError> {
         let (previous, producer_ids) = {
             let mut entries = self

@@ -231,6 +231,47 @@ public final class ProducerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> failedStartupFactoryStart() throws Exception {
+        String group = "producer-start-factory-" + System.nanoTime();
+        DefaultMQProducer producer = new DefaultMQProducer(group);
+        producer.setInstanceName("phase18-start-factory-" + System.nanoTime());
+        producer.setNamesrvAddr("");
+        producer.setPollNameServerInterval(0);
+        Throwable startFailure = null;
+        try {
+            producer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        Field factoryField = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
+        factoryField.setAccessible(true);
+        MQClientInstance factory = (MQClientInstance) factoryField.get(implementation);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+        result.put("producerRegistered", factory != null
+            && factory.getProducerTable().containsKey(group));
+        result.put("producerServiceState", implementation.getServiceState().name());
+        result.put("factoryServiceState", factory == null ? "" : factoryServiceState(factory));
+
+        if (factory != null) {
+            factory.unregisterProducer(group);
+            prepareFactoryForShutdown(factory);
+            factory.shutdown();
+            MQClientManager.getInstance().removeClientFactory(factory.getClientId());
+        }
+        if (startFailure == null || !"IllegalArgumentException".equals(
+            startFailure.getClass().getSimpleName())
+            || !Boolean.TRUE.equals(result.get("producerRegistered"))
+            || !"START_FAILED".equals(result.get("producerServiceState"))
+            || !"START_FAILED".equals(result.get("factoryServiceState"))) {
+            throw new IllegalStateException("Unexpected Producer factory-start failure outcome: " + result,
+                startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> produce() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("sameGroup", shutdownCase("same-group", "same-group", null));
@@ -241,6 +282,7 @@ public final class ProducerLifecycleFixtures {
         result.put("changedToNullGroup",
             shutdownCase("original-null-group", null, null));
         result.put("requestFutureShutdown", requestFutureShutdown());
+        result.put("startupFactoryStartFailure", failedStartupFactoryStart());
         result.put("startupRouteTransportFailure", failedStartupRouteTransport());
         return result;
     }

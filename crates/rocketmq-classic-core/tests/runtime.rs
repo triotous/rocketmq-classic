@@ -755,7 +755,7 @@ async fn concurrent_heartbeat_pool_constructor_matches_pinned_java_boundaries() 
 }
 
 #[tokio::test]
-async fn invalid_periodic_intervals_match_java_start_failure_and_rollback() {
+async fn invalid_periodic_intervals_retain_java_failed_factory_identity() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/client-config.json")).unwrap();
     let cases = fixture["runtimeStartScheduleCases"].as_array().unwrap();
@@ -785,7 +785,7 @@ async fn invalid_periodic_intervals_match_java_start_failure_and_rollback() {
         ));
         assert_eq!(runtime.state(), RuntimeState::Failed);
         let replacement = manager.get_or_create(&config).await.unwrap();
-        assert!(!Arc::ptr_eq(&runtime, &replacement));
+        assert!(Arc::ptr_eq(&runtime, &replacement));
     }
 }
 

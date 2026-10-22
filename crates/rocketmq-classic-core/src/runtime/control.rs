@@ -510,9 +510,10 @@ async fn run(
                         runtime.remoting().shutdown().await;
                         let _ = runtime.inbound.shutdown_executor().await;
                         inbound.clear();
-                        let _ = runtime.groups.clear();
+                        if let Some(lease) = inner_lease.take() {
+                            let _ = runtime.groups.unregister(&lease, GroupKind::Producer);
+                        }
                         runtime.control.set_state(RuntimeState::Failed);
-                        let _ = runtime.remove_from_manager();
                         let _ = reply.send(Err(error));
                         break;
                     }
@@ -691,7 +692,7 @@ mod tests {
                     .with(|producers| producers.is_empty())
             );
             let replacement = manager.get_or_create(&config).await.unwrap();
-            assert!(!Arc::ptr_eq(&runtime, &replacement));
+            assert!(Arc::ptr_eq(&runtime, &replacement));
         }
     }
 
@@ -1107,7 +1108,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_initial_startup_failure_cleans_transport_groups_control_and_manager_identity() {
+    async fn every_initial_startup_failure_keeps_factory_tables_and_cleans_transport_control() {
         for point in [1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 22] {
             let manager = ClientRuntimeManager::new();
             let mut config = ClientConfig::new(format!("failure-{point}"));
@@ -1146,17 +1147,9 @@ mod tests {
                 runtime.remoting().with_processor_table(|table| table.len()),
                 0
             );
+            assert!(runtime.select_producer("producer").unwrap().is_some());
             assert!(
                 runtime
-                    .prepare_heartbeat_data(false)
-                    .unwrap()
-                    .producer_data_set
-                    .as_ref()
-                    .unwrap()
-                    .with(|producers| producers.is_empty())
-            );
-            assert!(
-                !runtime
                     .unregister_producer(&lease, Instant::now())
                     .await
                     .unwrap()
@@ -1165,8 +1158,10 @@ mod tests {
                 runtime.start().await,
                 Err(RuntimeError::InvalidState(RuntimeState::Failed))
             ));
-            let replacement = manager.get_or_create(&config).await.unwrap();
-            assert!(!Arc::ptr_eq(&runtime, &replacement));
+            assert!(Arc::ptr_eq(
+                &runtime,
+                &manager.get_or_create(&config).await.unwrap()
+            ));
         }
     }
 
@@ -1316,23 +1311,33 @@ mod tests {
                     0
                 );
                 assert!(Arc::ptr_eq(&snapshot, &runtime.route_snapshot().unwrap()));
-                assert!(runtime.select_producer("producer").unwrap().is_none());
-                assert!(runtime.select_consumer("consumer").unwrap().is_none());
-                assert!(!runtime.groups.has_active_users(INNER_PRODUCER).unwrap());
+                assert!(runtime.select_producer("producer").unwrap().is_some());
+                assert!(runtime.select_consumer("consumer").unwrap().is_some());
+                assert!(runtime.groups.has_active_users(INNER_PRODUCER).unwrap());
                 assert!(
-                    !runtime
+                    runtime
                         .unregister_producer(&producer_lease, Instant::now())
                         .await
                         .unwrap()
                 );
                 assert!(
-                    !runtime
+                    runtime
                         .unregister_consumer(&consumer_lease, Instant::now())
                         .await
                         .unwrap()
                 );
-                assert!(!runtime.unregister_admin(&admin_lease).await.unwrap());
+                assert!(runtime.unregister_admin(&admin_lease).await.unwrap());
+                assert!(!runtime.groups.has_active_users(INNER_PRODUCER).unwrap());
                 assert_eq!(runtime.remoting().start(), Err(TransportError::Shutdown));
+                assert!(Arc::ptr_eq(
+                    &runtime,
+                    &manager.get_or_create(&config).await.unwrap()
+                ));
+                assert!(
+                    manager
+                        .remove_client_factory(runtime.client_id(), &runtime)
+                        .unwrap()
+                );
                 let replacement = manager.get_or_create(&config).await.unwrap();
                 assert!(!Arc::ptr_eq(&runtime, &replacement));
                 // Old failure/removal identity cannot evict that replacement.
