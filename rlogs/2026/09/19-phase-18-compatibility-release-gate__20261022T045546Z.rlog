@@ -263,3 +263,14 @@ P18-V02/V03 server-free gate and benchmark run — 2026-10-22 06:55 UTC
   still require their respective Windows/CI environments. Broad P18-V01 audit
   remains open. Phase 19 protected worktree changes remain unstaged; no live
   Broker, Docker, publication, or release action was performed.
+
+P18-V04 Windows current-tree compile refresh — 2026-10-22 06:59 UTC
+- On current code revision `8215f1d9`,
+  `cargo check -p rocketmq-classic-core --all-targets --target
+  x86_64-pc-windows-gnu --locked` passed, and the exact native stack test
+  cross-compiled with
+  `cargo test --target x86_64-pc-windows-gnu -p rocketmq-classic-consumer
+  --lib stack::tests::jstack_includes_current_and_other_named_threads
+  --no-run --locked`.
+- These are compile checks on macOS. The stack assertion still needs execution
+  on Windows; current-revision remote GitHub CI evidence remains pending.

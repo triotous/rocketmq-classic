@@ -7032,3 +7032,15 @@ owner-specific checks belong in the manual handoff.
   export reconciliation remains open. Current-revision remote Ubuntu CI and
   native Windows stack-capture execution also remain pending; no Broker,
   Docker, publication, or release action was performed.
+
+## P18-V04 current-tree Windows compile refresh — 2026-10-22 (`8215f1d9`)
+
+- [x] `cargo check -p rocketmq-classic-core --all-targets --target
+  x86_64-pc-windows-gnu --locked` passed. The exact consumer stack-capture test
+  cross-compiled with `cargo test --target x86_64-pc-windows-gnu -p
+  rocketmq-classic-consumer --lib
+  stack::tests::jstack_includes_current_and_other_named_threads --no-run
+  --locked`.
+- [ ] The cross-target compile does not execute the Windows stack assertion.
+  Native Windows test execution and current-revision GitHub CI evidence remain
+  pending; broad P18-V01 remains open.
