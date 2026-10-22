@@ -2504,3 +2504,15 @@ Windows GNU Core all-target checking and Consumer stack-capture `--no-run`
 cross-compilation pass; native Windows execution and remote Ubuntu CI remain
 unverified. The single-run P18-05 benchmark is unchanged by this DTO-only
 source slice. Broad P18-V01 reconciliation remains open.
+
+## P18-V01 NamespaceUtil reverse-export correction — 2026-10-22 (`5024360d`)
+
+The pinned Java `NamespaceUtil` declares four public constants on the class
+and nine public method signatures. Rust retains the four Java-shaped
+`NamespaceUtil` associated constants and methods. Four duplicate
+module-level constants in `rocketmq_classic_protocol::namespace` had been
+public aliases without workspace callers; they are now private, with
+compile-fail rustdoc coverage preventing imports through that path. This
+removes four Rust exports that had no Java counterpart and does not alter the
+Java-shaped facade. Broad P18-V01 source/API/settings/input/error/control-flow
+and reverse-export reconciliation remains open.

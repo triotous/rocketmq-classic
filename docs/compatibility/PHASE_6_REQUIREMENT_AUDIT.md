@@ -2599,3 +2599,21 @@ all-feature tests, strict Protocol Clippy, formatting, and Maven verification
 (37 scenarios and fixture cross-decodes) pass. This closes those two named
 writer/API rows only; broad P18-V01 reconciliation, current-revision Ubuntu CI,
 native Windows execution, and Phase 19 Broker/Docker validation remain open.
+
+## P18-V01 NamespaceUtil reverse-export correction — 2026-10-22 (`5024360d`)
+
+Pinned-source inspection found four Java public constants and nine declared
+public method signatures on `NamespaceUtil`. Rust's Java-shaped associated
+constants and methods match that declaration inventory, but the Rust module
+also made the same four constants public at
+`rocketmq_classic_protocol::namespace::{...}`. No workspace caller used those
+aliases. They are private now, and compile-fail rustdoc cases guard against
+reintroducing those unmatched exports. The direct namespace behavior and
+associated constants remain unchanged.
+
+On code revision `5024360d`, default and all-feature locked workspace tests,
+strict all-target/all-feature workspace Clippy, formatting/diff checks, and
+pinned Maven `verify` pass. The Maven run covers 37 scenarios, 36 runtime
+route/VIP cases, and Java cross-decodes 106 typed headers and 19 typed bodies.
+This closes the four extra module exports only; broad P18-V01 reconciliation,
+current-revision Ubuntu CI, and native Windows execution remain open.

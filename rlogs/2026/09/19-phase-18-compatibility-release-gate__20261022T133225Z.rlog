@@ -178,3 +178,26 @@ This closes only inherited setter dispatch for the static-topic wrapper. Broad P
 P18-V01 inherited-setter validation follow-up — 2026-10-22 15:19 UTC
 
 The first Maven `verify` correctly detected producer-fixture drift after the Java oracle gained `inheritedSetters`; regenerated `fixtures/producer/core.json` through the configured `verify-java-producer-core-fixtures` execution with `producer.core.fixture.verify=false`. The first Protocol all-feature run then exposed a Rust test-input mismatch: it reused the existing `mapping-topic` detail while Java used `inherited-mapping`. Updated only the Rust test setup to align that oracle input. The focused target, Protocol all-feature suite, strict Protocol Clippy, formatting/diff checks, and full pinned Maven `verify` then passed. No production code changed in this extension.
+
+P18-V01 NamespaceUtil reverse-export correction — 2026-10-22 15:28 UTC
+
+Pinned Java `NamespaceUtil` declares four public constants and nine public
+method signatures. Rust retains the matching constants as `NamespaceUtil`
+associated constants and the matching methods, while four duplicate
+module-level constants had been exposed without Java counterparts. Workspace
+search found no callers of those aliases. Made them private and added
+compile-fail rustdoc guards for module-root imports. Code commit: `5024360d`.
+
+Validation on `5024360d`:
+- `cargo test --workspace --locked`: PASS.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36
+  runtime route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
+
+This closes the four unmatched module exports only. Broad P18-V01
+source/API/settings/input/error/control-flow/reverse-export reconciliation,
+current-revision remote Ubuntu CI, and native Windows execution remain open.
+No push or external CI was run; protected Phase 19 worktree files remain
+untouched and unstaged.

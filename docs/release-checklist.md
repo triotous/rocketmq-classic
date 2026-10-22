@@ -7606,3 +7606,17 @@ owner-specific checks belong in the manual handoff.
   P18-V01 source/API/settings/input/error/control-flow and reverse-export
   reconciliation, current-revision remote Ubuntu CI, and native Windows
   stack-capture execution remain open.
+
+## P18-V01 NamespaceUtil reverse-export correction — 2026-10-22 (`5024360d`)
+
+- [x] Remove four duplicate public module-level constants that were not part
+  of the pinned Java `NamespaceUtil` surface. Keep its four Java-shaped
+  associated constants and nine declared method signatures. Add compile-fail
+  rustdoc guards for the module-root imports.
+- [x] Locked default and all-feature workspace tests, strict workspace
+  all-target/all-feature Clippy, format/diff checks, and pinned Maven `verify`
+  pass. Maven reports 37 scenarios, 36 runtime route/VIP cases, and 106 typed
+  headers plus 19 typed bodies decoded by Java.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation, current-revision remote Ubuntu CI, and
+  native Windows execution remain open. No push or external CI was run.
