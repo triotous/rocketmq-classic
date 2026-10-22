@@ -601,13 +601,6 @@ impl LitePullConsumer {
             *self.lifecycle.lock().await = Lifecycle::StartFailed;
             return Err(LitePullConsumerError::InvalidPullThreadCount);
         }
-        let topic_metadata_check_interval_millis = self
-            .topic_metadata_check_interval_millis
-            .load(Ordering::Acquire);
-        if topic_metadata_check_interval_millis <= 0 {
-            *self.lifecycle.lock().await = Lifecycle::StartFailed;
-            return Err(LitePullConsumerError::InvalidTopicMetadataCheckInterval);
-        }
         let consumer_timeout_millis = self
             .consumer_timeout_millis_when_suspend
             .load(Ordering::Acquire);
@@ -670,10 +663,18 @@ impl LitePullConsumer {
         // checks. Keep its initial delay anchored to that point even though
         // this Rust task is spawned after post-start initialization.
         let metadata_schedule_started_at = Instant::now();
-        let metadata_period = Duration::from_millis(
-            self.topic_metadata_check_interval_millis
-                .load(Ordering::Acquire) as u64,
-        );
+        let topic_metadata_check_interval_millis = self
+            .topic_metadata_check_interval_millis
+            .load(Ordering::Acquire);
+        if topic_metadata_check_interval_millis <= 0 {
+            *self
+                .engine
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(engine);
+            *self.lifecycle.lock().await = Lifecycle::StartFailed;
+            return Err(LitePullConsumerError::InvalidTopicMetadataCheckInterval);
+        }
+        let metadata_period = Duration::from_millis(topic_metadata_check_interval_millis as u64);
         {
             let mut lifecycle = self.lifecycle.lock().await;
             if !matches!(*lifecycle, Lifecycle::Starting) {
@@ -1958,6 +1959,84 @@ mod tests {
         assert_eq!(
             runtime.state(),
             rocketmq_classic_core::runtime::RuntimeState::Failed
+        );
+        assert!(runtime.select_consumer(&group).unwrap().is_some());
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::StartFailed)
+        ));
+        consumer.shutdown().await.unwrap();
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::StartFailed
+        ));
+
+        assert!(
+            runtime
+                .unregister_consumer_by_group(
+                    &group,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .unwrap()
+        );
+        runtime.shutdown().await.unwrap();
+        manager
+            .remove_client_factory(runtime.client_id(), &runtime)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn metadata_schedule_failure_preserves_started_java_factory() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["litePullMetadataScheduleFailure"];
+        assert_eq!(java["exception"], "IllegalArgumentException");
+        assert_eq!(java["retryException"], "MQClientException");
+        assert_eq!(java["consumerRegistered"], true);
+        assert_eq!(java["consumerServiceState"], "START_FAILED");
+        assert_eq!(java["factoryServiceState"], "RUNNING");
+
+        let group = format!(
+            "lite-metadata-schedule-failure-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut config = LitePullConsumerConfig::new(&group).unwrap();
+        config.set_topic_metadata_check_interval_millis(0);
+        config
+            .client_config_mut()
+            .set_instance_name(Some(group.clone()));
+        let client_config = config.client_config().clone();
+        let client_id = client_config.build_client_id();
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::shared_default();
+        let expected_runtime = manager.get_or_create(&client_config).await.unwrap();
+        let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::InvalidTopicMetadataCheckInterval)
+        ));
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::StartFailed
+        ));
+        assert!(!consumer.is_running().await);
+        assert!(consumer.engine().is_some());
+
+        let runtime = manager
+            .factory_table()
+            .get(&client_id)
+            .unwrap()
+            .expect("LitePull runtime remains in the shared factory table");
+        assert!(Arc::ptr_eq(&expected_runtime, &runtime));
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Running
         );
         assert!(runtime.select_consumer(&group).unwrap().is_some());
 

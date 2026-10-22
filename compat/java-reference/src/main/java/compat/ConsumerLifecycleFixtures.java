@@ -287,6 +287,48 @@ public final class ConsumerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> failedLitePullMetadataSchedule() throws Exception {
+        String group = "consumer-start-lite-metadata-schedule-" + System.nanoTime();
+        DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setTopicMetadataCheckIntervalMillis(0);
+        Throwable startFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+
+        DefaultLitePullConsumerImpl implementation = liteImplementation(consumer);
+        MQClientInstance factory = factory(implementation);
+        Throwable retryFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            retryFailure = failure;
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+        result.put("retryException", retryFailure == null ? "" : retryFailure.getClass().getSimpleName());
+        result.put("consumerRegistered", factory != null
+            && factory.getConsumerTable().containsKey(group));
+        result.put("consumerServiceState", consumerServiceState(implementation));
+        result.put("factoryServiceState", factory == null ? "" : factoryServiceState(factory));
+        closeFactory(factory, group);
+
+        if (startFailure == null || !"IllegalArgumentException".equals(
+            startFailure.getClass().getSimpleName())
+            || retryFailure == null || !"MQClientException".equals(
+                retryFailure.getClass().getSimpleName())
+            || !Boolean.TRUE.equals(result.get("consumerRegistered"))
+            || !"START_FAILED".equals(result.get("consumerServiceState"))
+            || !"RUNNING".equals(result.get("factoryServiceState"))) {
+            throw new IllegalStateException("Unexpected LitePullConsumer metadata-schedule outcome: "
+                + result, startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> failedLitePullListenerRouteLookup() throws Exception {
         String group = "consumer-start-lite-listener-" + System.nanoTime();
         DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
@@ -471,6 +513,7 @@ public final class ConsumerLifecycleFixtures {
         result.put("pushFactoryStartFailure", failedPushFactoryStart());
         result.put("pullFactoryStartFailure", failedPullFactoryStart());
         result.put("litePullFactoryStartFailure", failedLitePullFactoryStart());
+        result.put("litePullMetadataScheduleFailure", failedLitePullMetadataSchedule());
         result.put("litePullListenerRouteFailure", failedLitePullListenerRouteLookup());
         result.put("litePullListenerRegistrationRouteFailure",
             failedLitePullListenerRegistrationRouteLookup());
