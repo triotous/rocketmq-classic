@@ -3388,7 +3388,10 @@ fn header_validation_matrix() {
                 name != "topicFilterType"
             } else if matches!(
                 case.model,
-                "PopMessageResponseHeader" | "PopLiteMessageResponseHeader"
+                "PopMessageResponseHeader"
+                    | "PopLiteMessageResponseHeader"
+                    | "GetAllSubscriptionGroupRequestHeader"
+                    | "GetAllSubscriptionGroupResponseHeader"
             ) {
                 true
             } else {
@@ -3429,6 +3432,8 @@ fn header_validation_matrix() {
                             | "ResetMasterFlushOffsetHeader"
                             | "WipeWritePermOfBrokerResponseHeader"
                             | "AddWritePermOfBrokerResponseHeader"
+                            | "GetAllSubscriptionGroupRequestHeader"
+                            | "GetAllSubscriptionGroupResponseHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

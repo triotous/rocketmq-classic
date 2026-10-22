@@ -1170,12 +1170,14 @@ mod tests {
         use rocketmq_classic_protocol::header::{
             AddWritePermOfBrokerRequestHeader, AddWritePermOfBrokerResponseHeader,
             CheckRocksdbCqWriteProgressRequestHeader, CommandHeader, DeleteKvConfigRequestHeader,
-            ExportRocksDBConfigToJsonRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-            QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader,
-            QueryMessageResponseHeader, QuerySubscriptionByConsumerRequestHeader,
-            QueryTopicConsumeByWhoRequestHeader, QueryTopicsByConsumerRequestHeader,
-            ResetMasterFlushOffsetHeader, ViewMessageRequestHeader,
-            WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+            ExportRocksDBConfigToJsonRequestHeader, GetAllSubscriptionGroupRequestHeader,
+            GetAllSubscriptionGroupResponseHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+            QueryConsumeQueueRequestHeader, QueryConsumeTimeSpanRequestHeader,
+            QueryMessageRequestHeader, QueryMessageResponseHeader,
+            QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
+            QueryTopicsByConsumerRequestHeader, ResetMasterFlushOffsetHeader,
+            ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+            WipeWritePermOfBrokerResponseHeader,
         };
 
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1274,6 +1276,74 @@ mod tests {
                                 "bname": header.get_broker_name(),
                                 "oway": header.get_oneway(),
                                 "lo": header.get_lo(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "query-consume-queue" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<QueryConsumeQueueRequestHeader>(
+                                use_fast_encode,
+                            )
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "topic": header.get_topic(),
+                                "queueId": header.get_queue_id(),
+                                "index": header.get_index(),
+                                "count": header.get_count(),
+                                "consumerGroup": header.get_consumer_group(),
+                                "bname": header.get_broker_name(),
+                                "ns": header.get_namespace(),
+                                "nsd": header.get_namespaced(),
+                                "lo": header.get_lo(),
+                                "oway": header.get_oneway(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "get-all-subscription-group-request" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                GetAllSubscriptionGroupRequestHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "groupSeq": header.get_group_seq(),
+                                "dataVersion": header.get_data_version(),
+                                "maxGroupNum": header.get_max_group_num(),
+                            }),
+                            encoded,
+                        )
+                    }
+                    "get-all-subscription-group-response" => {
+                        let header = command
+                            .decode_command_custom_header_directly::<
+                                GetAllSubscriptionGroupResponseHeader,
+                            >(use_fast_encode)
+                            .unwrap_or_else(|error| {
+                                panic!(
+                                    "{case_name}/{mode}: Java returned OK, Rust returned {error}"
+                                )
+                            });
+                        let mut encoded = HeaderMap::new();
+                        CommandHeader::encode_fields(&header, &mut encoded);
+                        (
+                            serde_json::json!({
+                                "totalGroupNum": header.get_total_group_num(),
                             }),
                             encoded,
                         )

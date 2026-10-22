@@ -1204,9 +1204,9 @@ impl CommandHeader for GetAllSubscriptionGroupRequestHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            group_seq: optional_i32(fields, "groupSeq")?,
+            group_seq: optional_i32(fields, "groupSeq").unwrap_or(None),
             data_version: optional_string(fields, "dataVersion"),
-            max_group_num: optional_i32(fields, "maxGroupNum")?,
+            max_group_num: optional_i32(fields, "maxGroupNum").unwrap_or(None),
         })
     }
 }
@@ -1218,7 +1218,7 @@ impl CommandHeader for GetAllSubscriptionGroupResponseHeader {
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
-            total_group_num: optional_i32(fields, "totalGroupNum")?,
+            total_group_num: optional_i32(fields, "totalGroupNum").unwrap_or(None),
         })
     }
 }

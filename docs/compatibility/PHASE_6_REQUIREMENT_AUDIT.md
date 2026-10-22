@@ -2073,3 +2073,20 @@ response error, nullable list members, success, Broker rejection, timeout,
 typed-header inventory/cross-decode, and unchanged-address behavior. This
 closes the final direct auth API/header slice; the broader P18-V01 audit
 remains open.
+
+## P18-V01 Query Admin typed-header decode continuation — 2026-10-22
+
+The current Remoting library test run exposed that the expanded pinned Java
+`query-admin-header-decode-modes.json` fixture included three header families
+not dispatched by `query_admin_header_reflection_modes_match_invoked_java_551`:
+`GetAllSubscriptionGroupRequestHeader`,
+`GetAllSubscriptionGroupResponseHeader`, and `QueryConsumeQueueRequestHeader`.
+The test now decodes and re-encodes all three in both fast and reflection modes.
+Those cases also showed that malformed optional integer fields on the two
+subscription-group headers decode as null in Java; Rust now preserves that
+behavior. Fixture SHA-256:
+`ce98f356e351ec5028e8f01f2ba36612306a4559278006599e8c44ff125b9766`.
+`cargo test -p rocketmq-classic-remoting --lib
+query_admin_header_reflection_modes_match_invoked_java_551 --locked` passes.
+This closes the surfaced header decode slice only; full P18-V01 and current
+revision CI verification remain open.

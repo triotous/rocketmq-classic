@@ -1,0 +1,74 @@
+Phase 18 compatibility closure session
+Started: 2026-10-22 04:55:46 UTC
+Branch: phase/18-phase-18-compatibility-closure
+Baseline revision: d030c74d2be4404db8ee2ac5323ab6bc44f5d8ff
+
+Initial state
+- Preserved the user's existing Phase 19 worktree files without staging or editing them:
+  integration-tests/README.md, tests/differential/run.sh,
+  integration-tests/run-local.sh, and
+  rlogs/2026/09/20-phase-19-docker-local-validation__20261017T224455Z.rlog.
+- The previously closed direct ACL RPC slice remains committed at the baseline.
+- Re-read the Phase 18 plan and current compatibility audit summaries.
+- P18-V01 is explicitly still open: the broad Java source/API/input/error/flow
+  reconciliation and reverse-export audit has not been closed. Existing scoped
+  notes explicitly leave this work open, so Phase 18 cannot yet be accepted.
+- Five named 5.5.1 regressions in the plan are request/reply, runtime
+  construction, blank address, header encoding, and batch validation. Their
+  current evidence needs a direct inventory check.
+
+Actions and evidence will be appended below; this log is append-only.
+
+P18-05 current-revision benchmark
+- `cargo bench -p rocketmq-classic --bench offline --locked` passed on
+  `d030c74d2be4404db8ee2ac5323ab6bc44f5d8ff`.
+- Environment: macOS AArch64, Apple M5 Max, 18 logical CPUs, Rust 1.85.0.
+- Timings (ns/op): frame encode/decode 2692.2; zstd message decode 1993.0;
+  producer request construction 2182.5; 128-entry route lookup 27.9; loopback
+  pending completion 81564.5. Allocation observations are respectively
+  40/4676, 17/197493, 54/3665, 0/0, and 81/9546 calls/bytes per operation.
+- Appended the measurement to
+  `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; timings are
+  observations only, not acceptance thresholds.
+
+P18-02 typed-header regression found during full test refresh
+- `mvn -o -q -f compat/java-reference/pom.xml verify` passed at baseline
+  `d030c74d2be4404db8ee2ac5323ab6bc44f5d8ff`: 37 scenarios, Java decoded 106
+  Rust-generated frames and 19 Rust typed body fixtures.
+- Default workspace tests at that baseline exposed an unhandled header family
+  in `query_admin_header_reflection_modes_match_invoked_java_551` and malformed
+  optional integer behavior for GetAllSubscriptionGroup headers.
+- Added fast/reflection decode-and-reencode checks for GetAllSubscriptionGroup
+  request/response and QueryConsumeQueue request headers. Updated malformed
+  optional integer decoding to match the pinned Java fixture. Fixture SHA-256:
+  `ce98f356e351ec5028e8f01f2ba36612306a4559278006599e8c44ff125b9766`.
+- Focused regression now passes:
+  `cargo test -p rocketmq-classic-remoting --lib
+  query_admin_header_reflection_modes_match_invoked_java_551 --locked`.
+- Full default/all-feature workspace refresh is running again after this fix.
+
+Header validation-matrix follow-up
+- The next workspace run found one older Protocol validation matrix still
+  classified malformed `GetAllSubscriptionGroup` optional integers as errors.
+- Updated its expected behavior to match the pinned Java decode fixture for
+  empty, malformed and out-of-range values. The focused check passes:
+  `cargo test -p rocketmq-classic-protocol --test headers
+  header_validation_matrix --locked`.
+- Full workspace and all-feature refresh remain pending.
+
+P18-V02 current server-free workspace refresh
+- After the typed-header fix, the full command sequence passed:
+  `cargo fmt --all -- --check`; strict workspace/all-target/all-feature
+  Clippy; `cargo test --workspace --locked --quiet`;
+  `cargo test --workspace --all-features --locked --quiet`; Core unique-ID
+  fixture test under UTC and Asia/Taipei; remoting fixed-budget fuzz smoke;
+  offline race/leak smoke (16 cases x 3); release facade examples; and
+  workspace bench compilation.
+- Fuzz smoke result: 163 frame seeds, 11 message seeds, 2,784 bounded
+  mutations, 245 frame decodes, and 112 message decodes.
+- The manifest has 37 scenarios; differential comparator self-test and
+  manifest validation passed. Workspace metadata, license-file and dependency
+  direction checks passed.
+- `git diff --check` passed. This refresh is from the working tree based on
+  `d030c74d2be4404db8ee2ac5323ab6bc44f5d8ff`; Maven verify and benchmark will
+  be rerun after the fix is committed.
