@@ -1069,11 +1069,7 @@ impl Producer {
                 return Err(error.into());
             }
         }
-        if let Err(error) = self.initialize_configured_topic_routes(&runtime).await {
-            let deadline = self.unregister_deadline();
-            let _ = runtime.unregister_producer(&lease, deadline).await;
-            return Err(error);
-        }
+        self.initialize_configured_topic_routes(&runtime).await?;
         *state = State::Started {
             runtime: Arc::downgrade(&runtime),
             lease,
@@ -2002,7 +1998,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn producer_start_propagates_route_transport_failure_and_releases_lease() {
+    async fn producer_start_preserves_java_registration_after_route_transport_failure() {
         use bytes::BytesMut;
         use rocketmq_classic_protocol::codes::request;
         use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
@@ -2010,6 +2006,16 @@ mod tests {
             io::AsyncReadExt,
             net::{TcpListener, TcpStream},
         };
+
+        let java_fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
+                .unwrap();
+        let java_failure = &java_fixture["startupRouteTransportFailure"];
+        assert_eq!(java_failure["exception"], "IllegalStateException");
+        assert_eq!(java_failure["cause"], "RemotingSendRequestException");
+        assert_eq!(java_failure["requestCount"], 1);
+        assert_eq!(java_failure["producerRegistered"], true);
+        assert_eq!(java_failure["producerServiceState"], "START_FAILED");
 
         async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
             let mut length = [0; 4];
@@ -2041,11 +2047,24 @@ mod tests {
         let producer = Arc::new(Producer::with_runtime_manager(config, manager));
         assert!(producer.start_with_factory(false).await.is_err());
         nameserver_peer.await.unwrap();
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::StartFailed)
+        );
         assert!(
             runtime
                 .select_producer("startup-route-transport-failure")
                 .unwrap()
-                .is_none()
+                .is_some()
+        );
+        assert!(
+            runtime
+                .unregister_producer_by_group(
+                    "startup-route-transport-failure",
+                    tokio::time::Instant::now() + Duration::from_secs(2),
+                )
+                .await
+                .unwrap()
         );
         assert!(runtime.shutdown().await.unwrap());
     }

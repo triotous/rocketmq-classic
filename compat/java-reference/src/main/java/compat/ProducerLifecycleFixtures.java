@@ -17,13 +17,20 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.io.DataInputStream;
 import java.lang.reflect.Field;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.rocketmq.client.ClientConfig;
+import org.apache.rocketmq.client.impl.MQClientManager;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.client.impl.producer.DefaultMQProducerImpl;
 import org.apache.rocketmq.client.producer.DefaultMQProducer;
@@ -150,7 +157,81 @@ public final class ProducerLifecycleFixtures {
         return result;
     }
 
-    private static Map<String, Object> produce() {
+    private static Map<String, Object> failedStartupRouteTransport() throws Exception {
+        String group = "producer-start-route-transport-" + System.nanoTime();
+        Map<String, Object> result = new TreeMap<>();
+        AtomicInteger requestCount = new AtomicInteger();
+        AtomicReference<Throwable> peerFailure = new AtomicReference<>();
+        try (ServerSocket nameserver = new ServerSocket(0, 1,
+            InetAddress.getByName("127.0.0.1"))) {
+            nameserver.setSoTimeout(10_000);
+            Thread peer = new Thread(() -> {
+                try (Socket socket = nameserver.accept();
+                    DataInputStream input = new DataInputStream(socket.getInputStream())) {
+                    int length = input.readInt();
+                    if (length < 0 || length > 16 * 1024 * 1024) {
+                        throw new IllegalStateException("invalid route request frame length " + length);
+                    }
+                    byte[] frame = new byte[length];
+                    input.readFully(frame);
+                    requestCount.incrementAndGet();
+                    // Closing without a response causes the Java remoting path
+                    // to throw from initTopicRoute().
+                } catch (Throwable failure) {
+                    peerFailure.set(failure);
+                }
+            }, "producer-start-route-transport-fixture");
+            peer.setDaemon(true);
+            peer.start();
+
+            DefaultMQProducer producer = new DefaultMQProducer(group);
+            producer.setInstanceName("phase18-start-route-" + System.nanoTime());
+            producer.setNamesrvAddr("127.0.0.1:" + nameserver.getLocalPort());
+            producer.setTopics(Collections.singletonList("startup-topic"));
+            Throwable startFailure = null;
+            try {
+                producer.start();
+            } catch (Throwable failure) {
+                startFailure = failure;
+            }
+            peer.join(12_000);
+            if (peer.isAlive()) {
+                throw new IllegalStateException("NameServer fixture did not finish");
+            }
+            if (peerFailure.get() != null) {
+                throw new IllegalStateException("NameServer fixture failed", peerFailure.get());
+            }
+
+            DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+            Field factoryField = DefaultMQProducerImpl.class.getDeclaredField("mQClientFactory");
+            factoryField.setAccessible(true);
+            MQClientInstance factory = (MQClientInstance) factoryField.get(implementation);
+            result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+            result.put("cause", startFailure == null || startFailure.getCause() == null
+                ? "" : startFailure.getCause().getClass().getSimpleName());
+            result.put("requestCount", requestCount.get());
+            boolean producerRegistered = factory != null
+                && factory.getProducerTable().containsKey(group);
+            String producerServiceState = implementation.getServiceState().name();
+            String factoryState = factory == null ? "" : factoryServiceState(factory);
+            result.put("producerRegistered", producerRegistered);
+            result.put("producerServiceState", producerServiceState);
+            result.put("factoryServiceState", factoryState);
+
+            if (factory != null) {
+                factory.unregisterProducer(group);
+                factory.shutdown();
+                MQClientManager.getInstance().removeClientFactory(factory.getClientId());
+            }
+            if (startFailure == null || requestCount.get() != 1 || !producerRegistered
+                || !"START_FAILED".equals(producerServiceState)) {
+                throw new IllegalStateException("Unexpected Producer start route failure outcome: " + result);
+            }
+        }
+        return result;
+    }
+
+    private static Map<String, Object> produce() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("sameGroup", shutdownCase("same-group", "same-group", null));
         result.put("changedToMissingGroup",
@@ -160,6 +241,7 @@ public final class ProducerLifecycleFixtures {
         result.put("changedToNullGroup",
             shutdownCase("original-null-group", null, null));
         result.put("requestFutureShutdown", requestFutureShutdown());
+        result.put("startupRouteTransportFailure", failedStartupRouteTransport());
         return result;
     }
 
