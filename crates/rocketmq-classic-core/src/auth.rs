@@ -723,17 +723,27 @@ fn java_default_locale_language() -> Option<String> {
 }
 
 fn java_default_locale_uppercase(value: &str) -> String {
-    if matches!(java_default_locale_language().as_deref(), Some("tr" | "az")) {
-        value
+    match java_default_locale_language().as_deref() {
+        Some("tr" | "az") => value
             .chars()
             .flat_map(|character| match character {
                 'i' => 'İ'.to_uppercase(),
                 'ı' => 'I'.to_uppercase(),
                 _ => character.to_uppercase(),
             })
-            .collect()
-    } else {
-        value.to_uppercase()
+            .collect(),
+        Some("lt") => {
+            let mut result = String::new();
+            let mut characters = value.chars().peekable();
+            while let Some(character) = characters.next() {
+                result.extend(character.to_uppercase());
+                if matches!(character, 'i' | 'j') && characters.peek() == Some(&'\u{0307}') {
+                    characters.next();
+                }
+            }
+            result
+        }
+        _ => value.to_uppercase(),
     }
 }
 
@@ -1739,6 +1749,37 @@ mod tests {
 
         let cases = &fixture()["utilityCases"]["expandedIpTurkishLocaleCases"];
         for case in cases.as_array().expect("Java Turkish expandIP cases") {
+            let input = case["input"].as_str().unwrap();
+            let part = case["part"].as_i64().unwrap() as i32;
+            let expected = case["output"].as_str().unwrap();
+            assert_eq!(AclUtils::expand_ip(input, part), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn acl_expand_ip_matches_lithuanian_java_default_locale() {
+        const CHILD_MARKER: &str = "ROCKETMQ_CLASSIC_LITHUANIAN_ACL_EXPAND_IP_TEST";
+
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "auth::tests::acl_expand_ip_matches_lithuanian_java_default_locale",
+                ])
+                .env("LC_ALL", "lt_LT.UTF-8")
+                .env(CHILD_MARKER, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Lithuanian-locale child test failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let cases = &fixture()["utilityCases"]["expandedIpLithuanianLocaleCases"];
+        for case in cases.as_array().expect("Java Lithuanian expandIP cases") {
             let input = case["input"].as_str().unwrap();
             let part = case["part"].as_i64().unwrap() as i32;
             let expected = case["output"].as_str().unwrap();

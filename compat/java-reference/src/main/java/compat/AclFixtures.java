@@ -205,6 +205,7 @@ public final class AclFixtures {
             "ipv6Bad", AclUtils.isIPv6Scope(new String[] {"2001", "10000"}, 2)));
         cases.put("expandedIp", AclUtils.expandIP("2001:db8::1", 8));
         cases.put("expandedIpTurkishLocaleCases", expandedIpTurkishLocaleCases());
+        cases.put("expandedIpLithuanianLocaleCases", expandedIpLithuanianLocaleCases());
         cases.put("processedIp", AclUtils.v6ipProcess("2::ac5:78:1-200:*"));
         cases.put("braceAddresses", AclUtils.getAddresses("192.168.{1,2}", "{1,2}"));
         cases.put("validIpv6Check", addressCheck("2::ac5:78:1-200:*"));
@@ -234,6 +235,24 @@ public final class AclFixtures {
             Locale.setDefault(Locale.forLanguageTag("tr-TR"));
             List<Object> cases = new ArrayList<>();
             for (String input : new String[] {"i::1", "ı::1", "2001:db8::1"}) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("input", input);
+                item.put("part", 8);
+                item.put("output", AclUtils.expandIP(input, 8));
+                cases.add(item);
+            }
+            return cases;
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
+    }
+
+    private static List<Object> expandedIpLithuanianLocaleCases() {
+        Locale originalLocale = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("lt-LT"));
+            List<Object> cases = new ArrayList<>();
+            for (String input : new String[] {"i\u0307::1", "j\u0307::1", "x\u0307::1", "ı\u0307::1"}) {
                 Map<String, Object> item = new TreeMap<>();
                 item.put("input", input);
                 item.put("part", 8);
