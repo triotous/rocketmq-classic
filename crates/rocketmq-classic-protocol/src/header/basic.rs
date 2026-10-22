@@ -182,6 +182,7 @@ impl_rpc_request_header_semantics!(
     QueryTopicConsumeByWhoRequestHeader,
     QueryCorrectionOffsetRequestHeader,
     GetTopicStatsInfoRequestHeader,
+    GetTopicConfigRequestHeader,
     GetSubscriptionGroupConfigRequestHeader,
     GetConsumerListByGroupRequestHeader,
     LockBatchMqRequestHeader,
@@ -690,6 +691,19 @@ pub struct GetTopicStatsInfoRequestHeader {
     pub(crate) logical: Option<bool>,
 }
 
+/// Java `GetTopicConfigRequestHeader`; annotated `topic` remains nullable
+/// because `checkFields()` is a no-op, and `lo` is inherited from
+/// `TopicRequestHeader`.
+#[derive(Debug, Clone, Default)]
+pub struct GetTopicConfigRequestHeader {
+    topic: Option<String>,
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    broker_name: Option<String>,
+    oneway: Option<bool>,
+    logical: Option<bool>,
+}
+
 /// Java `GetTopicsByClusterRequestHeader` carries the target cluster name.
 #[derive(Debug, Clone, Default)]
 pub struct GetTopicsByClusterRequestHeader {
@@ -838,9 +852,42 @@ impl GetTopicStatsInfoRequestHeader {
     }
 }
 
+impl GetTopicConfigRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+}
+
 impl_topic_request_header_accessors!(GetTopicStatsInfoRequestHeader);
+impl_topic_request_header_accessors!(GetTopicConfigRequestHeader);
 
 impl CommandHeader for GetTopicStatsInfoRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+impl CommandHeader for GetTopicConfigRequestHeader {
     fn encode_fields(&self, fields: &mut HeaderMap) {
         put_optional(fields, "topic", self.topic.as_deref());
         put_optional(fields, "ns", self.namespace.as_deref());
@@ -7681,7 +7728,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 44);
+        assert_eq!(cases.len(), 45);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"

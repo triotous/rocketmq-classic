@@ -261,7 +261,7 @@ impl Serialize for FastjsonStringValue {
 }
 
 /// Normalizes Fastjson's invoked JSON syntax, whitespace, and numeric tokens
-/// before Serde parsing. Quoted text and numeric object keys are kept.
+/// before Serde parsing.
 pub fn normalize_json_input(input: &str) -> String {
     let input = input.strip_prefix('\u{feff}').unwrap_or(input);
     let syntax_normalized = normalize_fastjson_syntax(input);
@@ -270,7 +270,11 @@ pub fn normalize_json_input(input: &str) -> String {
         .strip_suffix('\u{001a}')
         .unwrap_or(&whitespace_normalized);
     let comma_normalized = normalize_fastjson_trailing_commas(eof_normalized);
-    normalize_fastjson_number_tokens(&comma_normalized)
+    normalize_fastjson_number_tokens(&comma_normalized, false)
+}
+
+pub(crate) fn normalize_fastjson_integer_map_keys(input: &str) -> String {
+    normalize_fastjson_number_tokens(input, true)
 }
 
 fn normalize_fastjson_syntax(input: &str) -> String {
@@ -757,7 +761,7 @@ fn fastjson_nonbreaking_space_allowed(previous: Option<char>, next: Option<char>
     }
 }
 
-fn normalize_fastjson_number_tokens(input: &str) -> String {
+fn normalize_fastjson_number_tokens(input: &str, quote_integer_keys: bool) -> String {
     let bytes = input.as_bytes();
     let mut output = String::with_capacity(input.len());
     let mut index = 0;
@@ -800,6 +804,15 @@ fn normalize_fastjson_number_tokens(input: &str) -> String {
             while bytes.get(next).is_some_and(u8::is_ascii_whitespace) {
                 next += 1;
             }
+            if quote_integer_keys
+                && bytes.get(next) == Some(&b':')
+                && is_fastjson_integer_key(token)
+            {
+                output.push('"');
+                output.push_str(token);
+                output.push('"');
+                continue;
+            }
             if bytes.get(next) != Some(&b':') {
                 if let Some(normalized) = normalize_fastjson_number_token(token) {
                     output.push_str(&normalized);
@@ -814,6 +827,11 @@ fn normalize_fastjson_number_tokens(input: &str) -> String {
         index += character.len_utf8();
     }
     output
+}
+
+fn is_fastjson_integer_key(token: &str) -> bool {
+    let digits = token.strip_prefix(['+', '-']).unwrap_or(token);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn normalize_fastjson_number_token(token: &str) -> Option<String> {
@@ -960,8 +978,9 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
+    let normalized = normalize_fastjson_integer_map_keys(raw.get());
     let FastjsonRawEntries(entries) =
-        serde_json::from_str::<FastjsonRawEntries>(raw.get()).map_err(de::Error::custom)?;
+        serde_json::from_str::<FastjsonRawEntries>(&normalized).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key = if key == "null" {
@@ -997,8 +1016,9 @@ where
     if raw.get().trim() == "null" {
         return Ok(None);
     }
+    let normalized = normalize_fastjson_integer_map_keys(raw.get());
     let FastjsonRawEntries(entries) =
-        serde_json::from_str::<FastjsonRawEntries>(raw.get()).map_err(de::Error::custom)?;
+        serde_json::from_str::<FastjsonRawEntries>(&normalized).map_err(de::Error::custom)?;
     let mut result = BTreeMap::new();
     for (key, value) in entries {
         let key =
@@ -1502,6 +1522,14 @@ mod syntax_compat_tests {
     fn does_not_treat_comment_markers_inside_double_quoted_strings_as_comments() {
         let decoded = from_fastjson_str::<Value>(r#"{"topic":"/* text */ // text"}"#).unwrap();
         assert_eq!(decoded["topic"], "/* text */ // text");
+    }
+
+    #[test]
+    fn quotes_fastjson_integer_object_keys_for_serde() {
+        let normalized = super::normalize_fastjson_integer_map_keys("{2:1,-1:4}");
+        let decoded =
+            serde_json::from_str::<std::collections::BTreeMap<i32, i32>>(&normalized).unwrap();
+        assert_eq!(decoded, std::collections::BTreeMap::from([(2, 1), (-1, 4)]));
     }
 
     #[test]

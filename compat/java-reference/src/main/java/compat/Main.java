@@ -629,6 +629,15 @@ public final class Main {
         topicStatsInfo.setOneway(false);
         topicStatsInfo.setLo(true);
         writeTypedHeaderFixture(output, "topic-stats-info-request", 202, topicStatsInfo);
+        org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader topicConfig =
+            new org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader();
+        topicConfig.setTopic("orders");
+        topicConfig.setLo(true);
+        topicConfig.setNamespace("tenant");
+        topicConfig.setNamespaced(true);
+        topicConfig.setBrokerName("broker-a");
+        topicConfig.setOneway(false);
+        writeTypedHeaderFixture(output, "topic-config-request", 351, topicConfig);
         org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader
             subscriptionGroupConfig =
                 new org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader();
@@ -1184,7 +1193,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 90, "all Rust typed header fixtures were supplied");
+            require(count == 91, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1273,6 +1282,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-consume-stats-request.bin", 208);
             assertAllExtFields(byName, "typed-consume-stats-in-broker-request.bin", 317);
             assertAllExtFields(byName, "typed-view-broker-stats-data-request.bin", 315);
+            assertAllExtFields(byName, "typed-topic-config-request.bin", 351);
             assertAllExtFields(byName, "typed-consumer-running-info-request.bin", 307);
             assertAllExtFields(byName, "typed-heartbeat-request.bin", 34);
             assertAllExtFields(byName, "typed-polling-request.bin", 200055);
@@ -1502,6 +1512,7 @@ public final class Main {
             case "typed-consume-stats-request.bin": fixtureStem = "header-consume-stats-request"; break;
             case "typed-consume-stats-in-broker-request.bin": fixtureStem = "header-consume-stats-in-broker-request"; break;
             case "typed-view-broker-stats-data-request.bin": fixtureStem = "header-view-broker-stats-data-request"; break;
+            case "typed-topic-config-request.bin": fixtureStem = "header-topic-config-request"; break;
             case "typed-consumer-running-info-request.bin": fixtureStem = "header-consumer-running-info-request"; break;
             case "typed-heartbeat-request.bin": fixtureStem = "header-heartbeat-request"; break;
             case "typed-polling-request.bin": fixtureStem = "header-polling-request"; break;

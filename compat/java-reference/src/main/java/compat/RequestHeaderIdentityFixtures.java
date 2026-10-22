@@ -56,6 +56,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("GetMaxOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader"),
         Map.entry("GetMinOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader"),
         Map.entry("GetTopicStatsInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader"),
+        Map.entry("GetTopicConfigRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader"),
         Map.entry("GetRouteInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"),
         Map.entry("LockBatchMqRequestHeader", "org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader"),
         Map.entry("NotificationRequestHeader", "org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader"),

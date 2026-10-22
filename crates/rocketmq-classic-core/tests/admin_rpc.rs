@@ -12,7 +12,10 @@ use rocketmq_classic_core::{
 };
 use rocketmq_classic_protocol::{
     SharedValue,
-    body::{CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, TopicConfig},
+    body::{
+        CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, TopicConfig,
+        TopicConfigAndQueueMapping,
+    },
     codes::{request, response},
     header::{
         BoundaryType, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
@@ -2612,6 +2615,215 @@ async fn view_broker_stats_data_honors_the_java_timeout_argument() {
     let result = client_api
         .view_broker_stats_data(&addr, Some("SNDBYTES"), Some("orders@0"), 25)
         .await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn get_topic_config_matches_java_request_and_static_mapping_fixtures() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getTopicConfigApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping org.apache.rocketmq.client.impl.MQClientAPIImpl.getTopicConfig(java.lang.String,java.lang.String,long)"
+        ])
+    );
+    for (surface, expected_methods) in [
+        (
+            "getTopicConfigRequestHeaderApi",
+            vec!["getTopic", "setTopic", "checkFields"],
+        ),
+        (
+            "topicConfigAndQueueMappingApi",
+            vec!["getMappingDetail", "setMappingDetail"],
+        ),
+        (
+            "topicQueueMappingDetailApi",
+            vec!["getHostedQueues", "setHostedQueues"],
+        ),
+        (
+            "logicQueueMappingItemApi",
+            vec![
+                "getGen",
+                "getQueueId",
+                "getBname",
+                "getLogicOffset",
+                "getStartOffset",
+                "getEndOffset",
+                "getTimeOfStart",
+                "getTimeOfEnd",
+                "setGen",
+                "setQueueId",
+                "setBname",
+                "setLogicOffset",
+                "setStartOffset",
+                "setEndOffset",
+                "setTimeOfStart",
+                "setTimeOfEnd",
+            ],
+        ),
+    ] {
+        let declared = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in expected_methods {
+            assert!(declared.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+            }));
+        }
+        assert_eq!(
+            fixture[surface]["declaredPublicMethodCount"]
+                .as_u64()
+                .unwrap(),
+            declared.len() as u64
+        );
+    }
+
+    let mut response = TopicConfigAndQueueMapping::default();
+    let detail =
+        SharedValue::new(rocketmq_classic_protocol::body::TopicQueueMappingDetail::default());
+    response.set_mapping_detail(Some(detail.clone()));
+    assert!(response.get_mapping_detail().unwrap().ptr_eq(&detail));
+
+    let cases = fixture["getTopicConfigOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 11);
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .get_topic_config(
+                &addr,
+                case["topic"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let config = result.unwrap();
+            assert_eq!(config.is_none(), case["resultIsNull"]);
+            if let Some(config) = config {
+                if case["name"] != "config-null-primitives" {
+                    assert_eq!(
+                        config,
+                        TopicConfigAndQueueMapping::java_decode(
+                            case["resultJson"].as_str().unwrap().as_bytes()
+                        )
+                        .unwrap(),
+                        "{}",
+                        case["name"]
+                    );
+                }
+                if case["name"] == "config-populated" {
+                    assert_eq!(config.topic_name(), Some("orders"));
+                    assert_eq!(config.read_queue_nums(), 8);
+                    assert_eq!(config.write_queue_nums(), 6);
+                    let detail = config.get_mapping_detail().unwrap();
+                    detail.with(|detail| {
+                        assert_eq!(
+                            detail.topic_queue_mapping_info().topic.as_deref(),
+                            Some("orders")
+                        );
+                        let hosted = detail.get_hosted_queues().unwrap();
+                        hosted.with(|queues| {
+                            let items = queues.get(&2).unwrap().as_ref().unwrap();
+                            items.with(|items| {
+                                let item = items[0].as_ref().unwrap();
+                                assert_eq!(item.generation(), 1);
+                                assert_eq!(item.queue_id(), 1);
+                                assert_eq!(item.compute_max_static_queue_offset(), 160);
+                            });
+                        });
+                    });
+                }
+                if case["name"] == "config-null-primitives" {
+                    assert_eq!(config.read_queue_nums(), 0);
+                    assert_eq!(config.write_queue_nums(), 0);
+                    assert_eq!(config.perm(), 0);
+                    assert_eq!(config.attributes(), None);
+                }
+                if case["name"] == "config-mapping-defaults" {
+                    let detail = config.get_mapping_detail().unwrap();
+                    detail.with(|detail| {
+                        assert_eq!(
+                            detail.topic_queue_mapping_info().scope.as_deref(),
+                            Some("__global__")
+                        );
+                        assert!(
+                            detail
+                                .get_hosted_queues()
+                                .unwrap()
+                                .with(|queues| queues.is_empty())
+                        );
+                    });
+                }
+            }
+        } else if case["outcome"] == "MQBrokerException" {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse { request_code, peer: error_peer, .. })
+                    if request_code == request::GET_TOPIC_CONFIG && error_peer == addr
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+        );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn get_topic_config_honors_the_java_timeout_argument() {
+    let (addr, peer) = scripted_peer_after(
+        response::SUCCESS,
+        None,
+        Some(b"{}".to_vec()),
+        Duration::from_millis(150),
+    )
+    .await;
+    let (client_api, client) = api().await;
+    let result = client_api.get_topic_config(&addr, Some("orders"), 25).await;
     assert!(matches!(
         result,
         Err(RpcError::Transport(ref error)) if error.is_timeout()

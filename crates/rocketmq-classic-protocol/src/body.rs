@@ -1,4 +1,4 @@
-use crate::route::{BrokerData, SharedBrokerDataHandle};
+use crate::route::{BrokerData, SharedBrokerDataHandle, TopicQueueMappingInfo};
 use crate::{
     JavaJsonWriterFeature, SharedValue,
     codes::{JavaEnumLookupError, LanguageCode},
@@ -129,6 +129,113 @@ macro_rules! impl_java_remoting_serializable_adapters {
             }
         )+
     };
+}
+
+macro_rules! impl_java_static_topic_serializable_adapters {
+    ($($dto:ty),+ $(,)?) => {
+        $(
+            impl $dto {
+                pub fn java_encode_optional(
+                    value: Option<&Self>,
+                ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+                    value.map(Self::java_encode).transpose()
+                }
+
+                pub fn java_to_json_optional(
+                    value: Option<&Self>,
+                    pretty_format: bool,
+                ) -> Result<String, serde_json::Error> {
+                    value.map_or_else(
+                        || Ok("null".to_owned()),
+                        |value| value.java_to_json(pretty_format),
+                    )
+                }
+
+                pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+                    crate::route::java_fastjson_json(self, pretty_format)
+                }
+
+                pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(self.java_to_json(false)?.into_bytes())
+                }
+
+                pub fn java_encode_with_features(
+                    &self,
+                    features: &[JavaJsonWriterFeature],
+                ) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(crate::route::java_fastjson_json_with_features(
+                        self, false, features,
+                    )?.into_bytes())
+                }
+
+                pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+                    decode_static_topic_json(data)
+                }
+
+                pub fn java_decode_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    let Some(data) = data else {
+                        return Ok(None);
+                    };
+                    decode_static_topic_json_nullable(data)
+                }
+
+                pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+                    decode_static_topic_json(data)
+                }
+
+                pub fn java_decode_list_nullable(
+                    data: Option<&[u8]>,
+                ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+                    let Some(data) = data else {
+                        return Ok(None);
+                    };
+                    decode_static_topic_json_list_nullable(data)
+                }
+
+                pub fn java_from_json(json: &str) -> Result<Self, serde_json::Error> {
+                    decode_static_topic_json(json.as_bytes())
+                }
+
+                pub fn java_from_json_nullable(
+                    json: Option<&str>,
+                ) -> Result<Option<Self>, serde_json::Error> {
+                    let Some(json) = json else {
+                        return Ok(None);
+                    };
+                    decode_static_topic_json_nullable(json.as_bytes())
+                }
+            }
+        )+
+    };
+}
+
+fn decode_static_topic_json<T: serde::de::DeserializeOwned>(
+    input: &[u8],
+) -> Result<T, serde_json::Error> {
+    let normalized = normalize_static_topic_json(input);
+    serde_json::from_str(&normalized)
+}
+
+fn decode_static_topic_json_nullable<T: serde::de::DeserializeOwned>(
+    input: &[u8],
+) -> Result<Option<T>, serde_json::Error> {
+    let normalized = normalize_static_topic_json(input);
+    serde_json::from_str(&normalized)
+}
+
+fn decode_static_topic_json_list_nullable<T: serde::de::DeserializeOwned>(
+    input: &[u8],
+) -> Result<Option<Vec<Option<T>>>, serde_json::Error> {
+    let normalized = normalize_static_topic_json(input);
+    serde_json::from_str(&normalized)
+}
+
+fn normalize_static_topic_json(input: &[u8]) -> String {
+    let input = String::from_utf8_lossy(input);
+    let normalized = serde_fastjson::normalize_json_input(&input);
+    serde_fastjson::normalize_fastjson_integer_map_keys(&normalized)
 }
 
 /// Status names and integer values of Java
@@ -2375,14 +2482,19 @@ pub struct SubscriptionGroupList {
 pub struct TopicConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     attributes: Option<BTreeMap<String, String>>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
     order: bool,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
     perm: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
     read_queue_nums: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     topic_filter_type: Option<TopicConfigFilterType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     topic_name: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
     topic_sys_flag: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
     write_queue_nums: i32,
 }
 
@@ -2478,6 +2590,549 @@ impl TopicConfig {
 
     pub fn set_attributes(&mut self, attributes: Option<BTreeMap<String, String>>) {
         self.attributes = attributes;
+    }
+}
+
+/// One physical generation in Java's `LogicQueueMappingItem` static-topic
+/// metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LogicQueueMappingItem {
+    #[serde(rename = "gen", deserialize_with = "serde_fastjson::deserialize_i32")]
+    generation: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    queue_id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bname: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    logic_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    start_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    end_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    time_of_start: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    time_of_end: i64,
+}
+
+impl Default for LogicQueueMappingItem {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            queue_id: 0,
+            bname: None,
+            logic_offset: 0,
+            start_offset: 0,
+            end_offset: -1,
+            time_of_start: -1,
+            time_of_end: -1,
+        }
+    }
+}
+
+impl LogicQueueMappingItem {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        generation: i32,
+        queue_id: i32,
+        bname: Option<String>,
+        logic_offset: i64,
+        start_offset: i64,
+        end_offset: i64,
+        time_of_start: i64,
+        time_of_end: i64,
+    ) -> Self {
+        Self {
+            generation,
+            queue_id,
+            bname,
+            logic_offset,
+            start_offset,
+            end_offset,
+            time_of_start,
+            time_of_end,
+        }
+    }
+
+    pub fn generation(&self) -> i32 {
+        self.generation
+    }
+
+    pub fn get_gen(&self) -> i32 {
+        self.generation
+    }
+
+    pub fn set_generation(&mut self, value: i32) {
+        self.generation = value;
+    }
+
+    pub fn set_gen(&mut self, value: i32) {
+        self.generation = value;
+    }
+
+    pub fn queue_id(&self) -> i32 {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: i32) {
+        self.queue_id = value;
+    }
+
+    pub fn bname(&self) -> Option<&str> {
+        self.bname.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.bname = value;
+    }
+
+    pub fn logic_offset(&self) -> i64 {
+        self.logic_offset
+    }
+
+    pub fn set_logic_offset(&mut self, value: i64) {
+        self.logic_offset = value;
+    }
+
+    pub fn start_offset(&self) -> i64 {
+        self.start_offset
+    }
+
+    pub fn set_start_offset(&mut self, value: i64) {
+        self.start_offset = value;
+    }
+
+    pub fn end_offset(&self) -> i64 {
+        self.end_offset
+    }
+
+    pub fn set_end_offset(&mut self, value: i64) {
+        self.end_offset = value;
+    }
+
+    pub fn time_of_start(&self) -> i64 {
+        self.time_of_start
+    }
+
+    pub fn set_time_of_start(&mut self, value: i64) {
+        self.time_of_start = value;
+    }
+
+    pub fn time_of_end(&self) -> i64 {
+        self.time_of_end
+    }
+
+    pub fn set_time_of_end(&mut self, value: i64) {
+        self.time_of_end = value;
+    }
+
+    pub fn compute_static_queue_offset_loosely(&self, physical_queue_offset: i64) -> i64 {
+        if self.logic_offset < 0 {
+            return -1;
+        }
+        if physical_queue_offset < self.start_offset {
+            return self.logic_offset;
+        }
+        if self.end_offset >= self.start_offset && self.end_offset < physical_queue_offset {
+            return self
+                .logic_offset
+                .wrapping_add(self.end_offset.wrapping_sub(self.start_offset));
+        }
+        self.logic_offset
+            .wrapping_add(physical_queue_offset.wrapping_sub(self.start_offset))
+    }
+
+    pub fn compute_static_queue_offset_strictly(&self, physical_queue_offset: i64) -> i64 {
+        if physical_queue_offset < self.start_offset {
+            return self.logic_offset;
+        }
+        self.logic_offset
+            .wrapping_add(physical_queue_offset.wrapping_sub(self.start_offset))
+    }
+
+    pub fn compute_physical_queue_offset(&self, static_queue_offset: i64) -> i64 {
+        static_queue_offset
+            .wrapping_sub(self.logic_offset)
+            .wrapping_add(self.start_offset)
+    }
+
+    pub fn compute_max_static_queue_offset(&self) -> i64 {
+        if self.end_offset >= self.start_offset {
+            self.logic_offset
+                .wrapping_add(self.end_offset.wrapping_sub(self.start_offset))
+        } else {
+            self.logic_offset
+        }
+    }
+
+    pub fn check_if_end_offset_decided(&self) -> bool {
+        self.end_offset > self.start_offset
+    }
+
+    pub fn check_if_logic_offset_decided(&self) -> bool {
+        self.logic_offset >= 0
+    }
+
+    pub fn compute_offset_delta(&self) -> i64 {
+        self.logic_offset.wrapping_sub(self.start_offset)
+    }
+}
+
+pub type HostedQueueMappingItems = SharedValue<Vec<Option<LogicQueueMappingItem>>>;
+pub type HostedQueues = BTreeMap<i32, Option<HostedQueueMappingItems>>;
+pub type SharedHostedQueues = SharedValue<HostedQueues>;
+
+fn hosted_queues_snapshot(
+    value: &SharedHostedQueues,
+) -> BTreeMap<i32, Option<Vec<Option<LogicQueueMappingItem>>>> {
+    value.with(|queues| {
+        queues
+            .iter()
+            .map(|(queue_id, items)| (*queue_id, items.as_ref().map(SharedValue::snapshot)))
+            .collect()
+    })
+}
+
+fn default_hosted_queues() -> Option<SharedHostedQueues> {
+    Some(SharedValue::new(BTreeMap::new()))
+}
+
+fn deserialize_hosted_queues<'de, D>(
+    deserializer: D,
+) -> Result<Option<SharedHostedQueues>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    if raw.get().trim() == "null" {
+        return Ok(None);
+    }
+    let normalized = serde_fastjson::normalize_fastjson_integer_map_keys(raw.get());
+    let queues = serde_json::from_str::<HostedQueues>(&normalized).map_err(de::Error::custom)?;
+    Ok(Some(SharedValue::new(queues)))
+}
+
+/// Java `TopicQueueMappingDetail`, including its inherited mapping fields and
+/// broker-local hosted queue generations.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicQueueMappingDetail {
+    #[serde(flatten)]
+    mapping_info: TopicQueueMappingInfo,
+    #[serde(
+        default = "default_hosted_queues",
+        deserialize_with = "deserialize_hosted_queues",
+        skip_serializing_if = "Option::is_none"
+    )]
+    hosted_queues: Option<SharedHostedQueues>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct TopicQueueMappingDetailFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    topic: Option<String>,
+    #[serde(
+        default = "default_topic_mapping_scope",
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    scope: Option<String>,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_i32")]
+    total_queues: i32,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    bname: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    epoch: i64,
+    #[serde(default, deserialize_with = "serde_fastjson::deserialize_bool")]
+    dirty: bool,
+    #[serde(
+        default = "default_topic_mapping_ids",
+        deserialize_with = "serde_fastjson::deserialize_optional_int_map"
+    )]
+    curr_id_map: Option<BTreeMap<i32, i32>>,
+    #[serde(
+        default = "default_hosted_queues",
+        deserialize_with = "deserialize_hosted_queues"
+    )]
+    hosted_queues: Option<SharedHostedQueues>,
+}
+
+impl Default for TopicQueueMappingDetailFields {
+    fn default() -> Self {
+        Self {
+            topic: None,
+            scope: default_topic_mapping_scope(),
+            total_queues: 0,
+            bname: None,
+            epoch: 0,
+            dirty: false,
+            curr_id_map: default_topic_mapping_ids(),
+            hosted_queues: default_hosted_queues(),
+        }
+    }
+}
+
+fn default_topic_mapping_scope() -> Option<String> {
+    Some("__global__".to_owned())
+}
+
+fn default_topic_mapping_ids() -> Option<BTreeMap<i32, i32>> {
+    Some(BTreeMap::new())
+}
+
+impl<'de> Deserialize<'de> for TopicQueueMappingDetail {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let normalized = serde_fastjson::normalize_fastjson_integer_map_keys(raw.get());
+        let fields = serde_json::from_str::<TopicQueueMappingDetailFields>(&normalized)
+            .map_err(de::Error::custom)?;
+        Ok(Self {
+            mapping_info: TopicQueueMappingInfo {
+                topic: fields.topic,
+                total_queues: fields.total_queues,
+                bname: fields.bname,
+                epoch: fields.epoch,
+                dirty: fields.dirty,
+                scope: fields.scope,
+                curr_id_map: fields.curr_id_map.map(SharedValue::new),
+            },
+            hosted_queues: fields.hosted_queues,
+        })
+    }
+}
+
+impl Default for TopicQueueMappingDetail {
+    fn default() -> Self {
+        Self {
+            mapping_info: TopicQueueMappingInfo::default(),
+            hosted_queues: default_hosted_queues(),
+        }
+    }
+}
+
+impl TopicQueueMappingDetail {
+    pub fn topic_queue_mapping_info(&self) -> &TopicQueueMappingInfo {
+        &self.mapping_info
+    }
+
+    pub fn topic_queue_mapping_info_mut(&mut self) -> &mut TopicQueueMappingInfo {
+        &mut self.mapping_info
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.mapping_info.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.mapping_info.topic = value;
+    }
+
+    pub fn get_scope(&self) -> Option<&str> {
+        self.mapping_info.scope.as_deref()
+    }
+
+    pub fn set_scope(&mut self, value: Option<String>) {
+        self.mapping_info.scope = value;
+    }
+
+    pub fn get_total_queues(&self) -> i32 {
+        self.mapping_info.total_queues
+    }
+
+    pub fn set_total_queues(&mut self, value: i32) {
+        self.mapping_info.total_queues = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.mapping_info.bname.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.mapping_info.bname = value;
+    }
+
+    pub fn get_epoch(&self) -> i64 {
+        self.mapping_info.epoch
+    }
+
+    pub fn set_epoch(&mut self, value: i64) {
+        self.mapping_info.epoch = value;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.mapping_info.dirty
+    }
+
+    pub fn set_dirty(&mut self, value: bool) {
+        self.mapping_info.dirty = value;
+    }
+
+    pub fn get_curr_id_map(&self) -> Option<SharedValue<BTreeMap<i32, i32>>> {
+        self.mapping_info.get_curr_id_map()
+    }
+
+    pub fn set_curr_id_map(&mut self, value: Option<SharedValue<BTreeMap<i32, i32>>>) {
+        self.mapping_info.set_curr_id_map(value);
+    }
+
+    pub fn set_curr_id_map_owned(&mut self, value: Option<BTreeMap<i32, i32>>) {
+        self.mapping_info.set_curr_id_map_owned(value);
+    }
+
+    pub fn get_hosted_queues(&self) -> Option<SharedHostedQueues> {
+        self.hosted_queues.clone()
+    }
+
+    pub fn set_hosted_queues(&mut self, value: Option<SharedHostedQueues>) {
+        self.hosted_queues = value;
+    }
+
+    pub fn set_hosted_queues_owned(&mut self, value: Option<HostedQueues>) {
+        self.hosted_queues = value.map(SharedValue::new);
+    }
+}
+
+impl PartialEq for TopicQueueMappingDetail {
+    fn eq(&self, other: &Self) -> bool {
+        self.mapping_info == other.mapping_info
+            && self.hosted_queues.as_ref().map(hosted_queues_snapshot)
+                == other.hosted_queues.as_ref().map(hosted_queues_snapshot)
+    }
+}
+
+impl Eq for TopicQueueMappingDetail {}
+
+/// Java `TopicConfigAndQueueMapping`, a `TopicConfig` with optional static
+/// queue mapping metadata.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicConfigAndQueueMapping {
+    #[serde(flatten)]
+    topic_config: TopicConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mapping_detail: Option<SharedValue<TopicQueueMappingDetail>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct TopicConfigAndQueueMappingFields {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attributes: Option<BTreeMap<String, String>>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
+    order: bool,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    perm: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    read_queue_nums: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_filter_type: Option<TopicConfigFilterType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_name: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    topic_sys_flag: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    write_queue_nums: i32,
+    mapping_detail: Option<SharedValue<TopicQueueMappingDetail>>,
+}
+
+impl Default for TopicConfigAndQueueMappingFields {
+    fn default() -> Self {
+        let config = TopicConfig::default();
+        Self {
+            attributes: config.attributes,
+            order: config.order,
+            perm: config.perm,
+            read_queue_nums: config.read_queue_nums,
+            topic_filter_type: config.topic_filter_type,
+            topic_name: config.topic_name,
+            topic_sys_flag: config.topic_sys_flag,
+            write_queue_nums: config.write_queue_nums,
+            mapping_detail: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TopicConfigAndQueueMapping {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let normalized = serde_fastjson::normalize_fastjson_integer_map_keys(raw.get());
+        let fields = serde_json::from_str::<TopicConfigAndQueueMappingFields>(&normalized)
+            .map_err(de::Error::custom)?;
+        Ok(Self {
+            topic_config: TopicConfig {
+                attributes: fields.attributes,
+                order: fields.order,
+                perm: fields.perm,
+                read_queue_nums: fields.read_queue_nums,
+                topic_filter_type: fields.topic_filter_type,
+                topic_name: fields.topic_name,
+                topic_sys_flag: fields.topic_sys_flag,
+                write_queue_nums: fields.write_queue_nums,
+            },
+            mapping_detail: fields.mapping_detail,
+        })
+    }
+}
+
+impl TopicConfigAndQueueMapping {
+    pub fn topic_config(&self) -> &TopicConfig {
+        &self.topic_config
+    }
+
+    pub fn topic_config_mut(&mut self) -> &mut TopicConfig {
+        &mut self.topic_config
+    }
+
+    pub fn get_mapping_detail(&self) -> Option<SharedValue<TopicQueueMappingDetail>> {
+        self.mapping_detail.clone()
+    }
+
+    pub fn set_mapping_detail(&mut self, value: Option<SharedValue<TopicQueueMappingDetail>>) {
+        self.mapping_detail = value;
+    }
+
+    pub fn set_mapping_detail_owned(&mut self, value: Option<TopicQueueMappingDetail>) {
+        self.mapping_detail = value.map(SharedValue::new);
+    }
+}
+
+impl PartialEq for TopicConfigAndQueueMapping {
+    fn eq(&self, other: &Self) -> bool {
+        self.topic_config == other.topic_config
+            && self.mapping_detail.as_ref().map(SharedValue::snapshot)
+                == other.mapping_detail.as_ref().map(SharedValue::snapshot)
+    }
+}
+
+impl Eq for TopicConfigAndQueueMapping {}
+
+impl std::ops::Deref for TopicConfigAndQueueMapping {
+    type Target = TopicConfig;
+
+    fn deref(&self) -> &Self::Target {
+        &self.topic_config
+    }
+}
+
+impl std::ops::DerefMut for TopicConfigAndQueueMapping {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.topic_config
     }
 }
 
@@ -8911,6 +9566,7 @@ fn default_auto_commit() -> bool {
 impl_java_remoting_serializable_adapters!(
     CheckClientRequestBody,
     CheckRocksdbCqWriteResult,
+    LogicQueueMappingItem,
     LiteSubscriptionCtlRequestBody,
     QueryAssignmentRequestBody,
     QueryAssignmentResponseBody,
@@ -8933,6 +9589,8 @@ impl_java_remoting_serializable_adapters!(
     TopicList,
     SubscriptionGroupList,
 );
+
+impl_java_static_topic_serializable_adapters!(TopicConfigAndQueueMapping, TopicQueueMappingDetail);
 
 macro_rules! impl_java_remoting_serializable_body_adapters {
     ($($dto:ty),+ $(,)?) => {

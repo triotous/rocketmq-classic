@@ -1740,10 +1740,11 @@ The pinned Java 5.5.1 `MQClientAPIImpl` public surface was checked with
 `javap -public` against the current Rust APIs and compatibility evidence.
 The initial candidate list contained 18 direct operations with no mapped Rust
 operation or fixture-backed owner path. Since this list was captured,
-`queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`, and
-`fetchConsumeStatsInBroker` and `viewBrokerStatsData` have been implemented and
-checked against the pinned Java fixture. Thirteen direct operations from the
-initial list remain implementation work rather than approved differences:
+`queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`,
+`fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
+been implemented and checked against the pinned Java fixture. Twelve direct
+operations from the initial list remain implementation work rather than
+approved differences:
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
@@ -1753,7 +1754,7 @@ initial list remain implementation work rather than approved differences:
 | Broker statistics view | `viewBrokerStatsData` | 315 | Closed by `view_broker_stats_data` |
 | Consume-queue query | `queryConsumeQueue` | 321 | Open |
 | Correction-offset query | `queryCorrectionOffset` | 308 | Closed by `query_correction_offset` |
-| Static-topic configuration lookup | `getTopicConfig` | 351 | Open |
+| Static-topic configuration lookup | `getTopicConfig` | 351 | Closed by `get_topic_config` |
 | Group-forbidden update/read | `updateAndGetGroupForbidden` | 353 | Closed by `update_and_get_group_forbidden` |
 | Broker HA status | `getBrokerHAStatus` | 907 | Closed by `get_broker_ha_status` |
 | Static-topic creation/update | `createStaticTopic` | 513 | Open |
@@ -1769,7 +1770,7 @@ initial list remain implementation work rather than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 13 open rows, but their Rust DTO and RPC owners are still
+already exist for the 12 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to

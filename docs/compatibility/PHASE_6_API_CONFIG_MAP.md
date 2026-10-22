@@ -1941,3 +1941,20 @@ request fields, success without a body, Broker errors, and the request
 envelope. The focused Core unit test also checks configured VIP routing.
 Producer core fixture SHA-256 is recorded in the execution log. This closes
 this direct RPC/header/DTO slice only; broad P18-V01 remains open.
+
+## P18-V01 direct `getTopicConfig` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.getTopicConfig(String,String,long)` sends request 351
+with nullable `topic`, inherited `lo=true`, and no-op header validation. Core
+exposes `MQClientApi::get_topic_config`, applies configured VIP conversion, and
+uses the caller timeout. `TopicConfigAndQueueMapping` preserves `TopicConfig`
+defaults and primitive null-to-zero behavior, plus `TopicQueueMappingDetail`,
+its inherited mapping fields, integer-keyed `hostedQueues`, and nested
+`LogicQueueMappingItem` values. The decoder handles Fastjson's unquoted integer
+map keys. Invoked Java fixtures and the Rust loopback test cover populated and
+default responses, null primitive fields, missing and JSON-null bodies, null
+and empty topics, topic-not-found and generic Broker errors, and malformed
+JSON. A focused Core test also checks VIP routing; a delayed-peer test checks
+the supplied timeout. Producer core fixture SHA-256 is recorded in the
+execution log. This closes this direct RPC/header/DTO slice only; broad
+P18-V01 remains open.

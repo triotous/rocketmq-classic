@@ -12,8 +12,8 @@ use rocketmq_classic_protocol::{
         CreateTopicListRequestBody, DeleteSubscriptionGroupListRequestBody,
         DeleteTopicListRequestBody, GroupList, HaRuntimeInfo, KvTable, ProducerConnection,
         ProducerTableInfo, QueryCorrectionOffsetBody, QuerySubscriptionResponseBody, QueueTimeSpan,
-        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList,
-        TopicStatsTable,
+        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig,
+        TopicConfigAndQueueMapping, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -26,9 +26,10 @@ use rocketmq_classic_protocol::{
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
-        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicConfigRequestHeader,
+        GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
@@ -1392,6 +1393,50 @@ impl MQClientApi {
         let reply = self.request(addr, code, header, None, deadline).await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Reads one Broker's topic configuration and static-queue mapping through
+    /// Java `MQClientAPIImpl.getTopicConfig`.
+    pub async fn get_topic_config(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<TopicConfigAndQueueMapping>, RpcError> {
+        let code = request::GET_TOPIC_CONFIG;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = GetTopicConfigRequestHeader::default();
+        header.set_topic(topic.map(str::to_owned));
+        header.set_lo(Some(true));
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        TopicConfigAndQueueMapping::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
     }
 
     /// Reads a Broker's subscription-group configuration through Java
@@ -3161,6 +3206,11 @@ mod tests {
                     &[("statsName", "SNDBYTES"), ("statsKey", "orders@0")][..],
                     b"{\"statsMinute\":{\"sum\":1,\"tps\":1.0,\"avgpt\":1.0}}".as_slice(),
                 ),
+                (
+                    request::GET_TOPIC_CONFIG,
+                    &[("topic", "orders"), ("lo", "true")][..],
+                    b"{}".as_slice(),
+                ),
             ] {
                 let mut length = [0_u8; 4];
                 stream.read_exact(&mut length).await.unwrap();
@@ -3208,6 +3258,9 @@ mod tests {
             .await
             .unwrap();
         api.view_broker_stats_data(&advertised_addr, Some("SNDBYTES"), Some("orders@0"), 2000)
+            .await
+            .unwrap();
+        api.get_topic_config(&advertised_addr, Some("orders"), 2000)
             .await
             .unwrap();
         peer.await.unwrap();
