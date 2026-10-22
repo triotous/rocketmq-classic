@@ -2331,3 +2331,23 @@ The header crosswalk is a reflection-backed method-name join, not proof of all
 input/error branches. The DTO/body, route, heartbeat, enum, configuration,
 and subscription entries still require the full source/default/validation/
 error/control-flow audit called for by P18-V01; that audit remains open.
+
+## P18-V01 direct derived-getter override follow-up — 2026-10-22
+
+The pinned Java `Message` getters `getTags`, `getKeys`, `isWaitStoreMsgOK`,
+`getBuyerId`, `getDelayTimeLevel`, `getDelayTimeSec`, `getDelayTimeMs`,
+`getDeliverTimeMs`, `getTopicSysFlag`, and `getGroupSysFlag` are individually
+virtual. Property hooks preserve the base implementation's delegation through
+`getProperty`, but do not represent a subtype that overrides one of these
+getters directly. `MessageExtSubtype` now has explicit hooks for all ten, and
+the corresponding Rust getters prefer a direct subtype override before using
+the base property path.
+
+The invoked `DerivedGetterMessageExt` fixture returns values that differ from
+its overridden `getProperty` values and counts all ten virtual getter calls;
+the Rust direct-consume test matches each result, property fallback, and call
+count. `fixtures/runtime/consumer-operations.json` SHA-256:
+`0d818f3b8a711661a382de19a07db7292c5976f20ddee9a6106b78b9e8860f82`.
+This closes the direct-override slice only; broad P18-V01 settings, other
+Java classes, input/error/control-flow, and reverse-export reconciliation
+remain open.

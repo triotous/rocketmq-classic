@@ -1931,43 +1931,99 @@ impl MessageExt {
     /// Java's virtual `Message.getTags()` view, routed through the virtual
     /// `getProperty(String)` implementation.
     pub fn tags(&self) -> Option<String> {
+        if let Some(tags) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.tags())
+        {
+            return tags;
+        }
         self.get_property(crate::message::constants::PROPERTY_TAGS)
     }
 
     /// Java's virtual `Message.getKeys()` view, routed through the virtual
     /// `getProperty(String)` implementation.
     pub fn keys(&self) -> Option<String> {
+        if let Some(keys) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.keys())
+        {
+            return keys;
+        }
         self.get_property(crate::message::constants::PROPERTY_KEYS)
     }
 
     /// Java `Message.isWaitStoreMsgOK()`, including subtype `getProperty`
     /// overrides.
     pub fn is_wait_store_msg_ok(&self) -> bool {
+        if let Some(wait) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.wait_store_msg_ok())
+        {
+            return wait;
+        }
         self.get_property(crate::message::constants::PROPERTY_WAIT_STORE_MSG_OK)
             .is_none_or(|value| value.eq_ignore_ascii_case("true"))
     }
 
     /// Java `Message.getBuyerId()`, including subtype `getProperty` overrides.
     pub fn buyer_id(&self) -> Option<String> {
+        if let Some(buyer_id) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.buyer_id())
+        {
+            return buyer_id;
+        }
         self.get_property(crate::message::constants::PROPERTY_BUYER_ID)
     }
 
     pub fn delay_time_level(&self) -> Result<i32, MessagePropertyParseError> {
+        if let Some(level) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.delay_time_level())
+        {
+            return Ok(level);
+        }
         let property = crate::message::constants::PROPERTY_DELAY_TIME_LEVEL;
         parse_i32_property_value(property, self.get_property(property))
     }
 
     pub fn delay_time_sec(&self) -> Result<i64, MessagePropertyParseError> {
+        if let Some(seconds) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.delay_time_sec())
+        {
+            return Ok(seconds);
+        }
         let property = crate::message::constants::PROPERTY_TIMER_DELAY_SEC;
         parse_i64_property_value(property, self.get_property(property))
     }
 
     pub fn delay_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
+        if let Some(milliseconds) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.delay_time_ms())
+        {
+            return Ok(milliseconds);
+        }
         let property = crate::message::constants::PROPERTY_TIMER_DELAY_MS;
         parse_i64_property_value(property, self.get_property(property))
     }
 
     pub fn deliver_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
+        if let Some(milliseconds) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.deliver_time_ms())
+        {
+            return Ok(milliseconds);
+        }
         let property = crate::message::constants::PROPERTY_TIMER_DELIVER_MS;
         parse_i64_property_value(property, self.get_property(property))
     }
@@ -2759,6 +2815,13 @@ impl MessageExt {
     /// Read Java's transient topic system flag property. An empty property is
     /// treated as absent; malformed decimal input is returned as a parse error.
     pub fn topic_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
+        if let Some(value) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.topic_sys_flag())
+        {
+            return Ok(value);
+        }
         parse_transient_sys_flag(
             self.get_property(crate::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG)
                 .as_deref(),
@@ -2781,6 +2844,13 @@ impl MessageExt {
     /// Read Java's transient group system flag property. An empty property is
     /// treated as absent; malformed decimal input is returned as a parse error.
     pub fn group_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
+        if let Some(value) = self
+            .runtime_subtype
+            .as_ref()
+            .and_then(|subtype| subtype.group_sys_flag())
+        {
+            return Ok(value);
+        }
         parse_transient_sys_flag(
             self.get_property(crate::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG)
                 .as_deref(),
@@ -2856,6 +2926,56 @@ pub trait MessageExtSubtype: Any + Send + Sync {
     }
 
     fn topic(&self) -> Option<Option<&str>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getTags()` independently of
+    /// `getProperty(String)`.
+    fn tags(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getKeys()` independently of
+    /// `getProperty(String)`.
+    fn keys(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual `Message.isWaitStoreMsgOK()`.
+    fn wait_store_msg_ok(&self) -> Option<bool> {
+        None
+    }
+
+    /// Override Java's virtual `Message.getBuyerId()` independently of
+    /// `getProperty(String)`.
+    fn buyer_id(&self) -> Option<Option<String>> {
+        None
+    }
+
+    /// Override Java's virtual property-derived delay getters.
+    fn delay_time_level(&self) -> Option<i32> {
+        None
+    }
+
+    fn delay_time_sec(&self) -> Option<i64> {
+        None
+    }
+
+    fn delay_time_ms(&self) -> Option<i64> {
+        None
+    }
+
+    fn deliver_time_ms(&self) -> Option<i64> {
+        None
+    }
+
+    /// Override Java's virtual `MessageExt.getTopicSysFlag()` and
+    /// `getGroupSysFlag()` accessors. `Some(None)` represents Java `null`.
+    fn topic_sys_flag(&self) -> Option<Option<i32>> {
+        None
+    }
+
+    fn group_sys_flag(&self) -> Option<Option<i32>> {
         None
     }
 

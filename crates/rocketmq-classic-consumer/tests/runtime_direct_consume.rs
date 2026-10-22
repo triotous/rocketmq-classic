@@ -45,6 +45,85 @@ impl MessageExtSubtype for PriorityPropertyOnlySubtype {
 }
 
 #[derive(Default)]
+struct DerivedGetterSubtype {
+    getter_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl MessageExtSubtype for DerivedGetterSubtype {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn tags(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(Some("override-tags".to_owned()))
+    }
+
+    fn keys(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(Some("override-keys".to_owned()))
+    }
+
+    fn wait_store_msg_ok(&self) -> Option<bool> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(true)
+    }
+
+    fn buyer_id(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(Some("override-buyer".to_owned()))
+    }
+
+    fn delay_time_level(&self) -> Option<i32> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(31)
+    }
+
+    fn delay_time_sec(&self) -> Option<i64> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(32)
+    }
+
+    fn delay_time_ms(&self) -> Option<i64> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(33)
+    }
+
+    fn deliver_time_ms(&self) -> Option<i64> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(34)
+    }
+
+    fn topic_sys_flag(&self) -> Option<Option<i32>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(Some(35))
+    }
+
+    fn group_sys_flag(&self) -> Option<Option<i32>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(Some(36))
+    }
+
+    fn property(&self, key: Option<&str>) -> Option<Option<String>> {
+        use rocketmq_classic_common::message::constants as property;
+        let value = match key {
+            Some(property::PROPERTY_TAGS) => "property-tags",
+            Some(property::PROPERTY_KEYS) => "property-keys",
+            Some(property::PROPERTY_WAIT_STORE_MSG_OK) => "false",
+            Some(property::PROPERTY_BUYER_ID) => "property-buyer",
+            Some(property::PROPERTY_DELAY_TIME_LEVEL) => "9",
+            Some(property::PROPERTY_TIMER_DELAY_SEC) => "123",
+            Some(property::PROPERTY_TIMER_DELAY_MS) => "456",
+            Some(property::PROPERTY_TIMER_DELIVER_MS) => "789",
+            Some(property::PROPERTY_TRANSIENT_TOPIC_CONFIG) => "73",
+            Some(property::PROPERTY_TRANSIENT_GROUP_CONFIG) => "-19",
+            _ => return None,
+        };
+        Some(Some(value.to_owned()))
+    }
+}
+
+#[derive(Default)]
 struct CustomDirectMessageClientExt {
     offset_message_id: Mutex<Option<String>>,
 }
@@ -897,6 +976,68 @@ fn inherited_priority_methods_use_subtype_property_and_base_setter_semantics() {
         Err(rocketmq_classic_common::message::MessagePropertyError::NegativePriority)
     );
     assert_eq!(expected["negativePriorityRejected"], true);
+}
+
+#[test]
+fn direct_subtype_overrides_win_over_property_derived_message_getters() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/runtime/consumer-operations.json"
+    ))
+    .unwrap();
+    let expected = &fixture["derivedGetterSubtype"];
+    let mut message = MessageExt::default();
+    message.set_runtime_subtype(Arc::new(DerivedGetterSubtype::default()));
+
+    assert_eq!(message.tags(), expected["tags"].as_str().map(str::to_owned));
+    assert_eq!(message.keys(), expected["keys"].as_str().map(str::to_owned));
+    assert_eq!(
+        message.is_wait_store_msg_ok(),
+        expected["waitStore"].as_bool().unwrap()
+    );
+    assert_eq!(
+        message.buyer_id(),
+        expected["buyerId"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message.delay_time_level().unwrap(),
+        expected["delayTimeLevel"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        message.delay_time_sec().unwrap(),
+        expected["delayTimeSec"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.delay_time_ms().unwrap(),
+        expected["delayTimeMs"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.deliver_time_ms().unwrap(),
+        expected["deliverTimeMs"].as_i64().unwrap()
+    );
+    assert_eq!(
+        message.topic_sys_flag().unwrap(),
+        Some(expected["topicSysFlag"].as_i64().unwrap() as i32)
+    );
+    assert_eq!(
+        message.group_sys_flag().unwrap(),
+        Some(expected["groupSysFlag"].as_i64().unwrap() as i32)
+    );
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_TAGS),
+        expected["propertyTags"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_KEYS),
+        expected["propertyKeys"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message
+            .runtime_subtype::<DerivedGetterSubtype>()
+            .unwrap()
+            .getter_calls
+            .load(Ordering::SeqCst),
+        expected["getterCalls"].as_u64().unwrap() as usize
+    );
 }
 
 #[test]

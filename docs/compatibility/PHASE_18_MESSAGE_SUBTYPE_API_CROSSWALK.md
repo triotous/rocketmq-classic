@@ -51,6 +51,22 @@ detached property snapshot.
 to `MessageExt` retains the runtime client/subtype state, as a Java subclass
 passed through a base-typed parameter does.
 
+## P18-V01 direct derived-getter overrides — 2026-10-22
+
+`MessageExtSubtype` now separately represents direct overrides of Java's
+`getTags`, `getKeys`, `isWaitStoreMsgOK`, `getBuyerId`, the three delay
+getters, `getDeliverTimeMs`, `getTopicSysFlag`, and `getGroupSysFlag`. These
+hooks take precedence over the equivalent base getters' `getProperty` path;
+without a direct override the inherited property lookup and parsing behavior
+is unchanged. The `DerivedGetterMessageExt` Java oracle returns values distinct
+from its property values and records all ten calls. The Rust test compares all
+ten outputs, property lookups, and the call count. Fixture SHA-256:
+`0d818f3b8a711661a382de19a07db7292c5976f20ddee9a6106b78b9e8860f82`.
+Common tests, the direct-consume suite, full default/all-feature workspace
+tests, strict Clippy, and pinned Maven verification pass for this tree. The
+direct-override case closes only this virtual-getter slice; the broader
+Phase 18 audit remains open.
+
 ## Override and flow evidence
 
 The complete subtype adapter lives in

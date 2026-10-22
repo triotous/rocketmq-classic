@@ -2126,3 +2126,20 @@ This closes the TopicConfig/TopicMessageType model-method slice only. Other
 Protocol DTO source/default/validation/error/control-flow families remain
 under the P18-V01 audit; P18-V01 and native Windows runtime evidence remain
 open.
+
+## P18-V01 direct derived-getter subtype overrides — 2026-10-22
+
+`MessageExtSubtype` now dispatches direct caller overrides of Java's
+`getTags`, `getKeys`, `isWaitStoreMsgOK`, `getBuyerId`, `getDelayTimeLevel`,
+`getDelayTimeSec`, `getDelayTimeMs`, `getDeliverTimeMs`, `getTopicSysFlag`,
+and `getGroupSysFlag`. The inherited Rust methods first use these hooks, then
+retain the existing virtual-property behavior when a hook is absent. This
+fills the difference between overriding `getProperty` and directly
+overriding each public getter. The invoked Java fixture assigns different
+getter and property results and checks all ten getter calls; the Rust test
+compares those results, property fallback, and call count. Fixture SHA-256:
+`0d818f3b8a711661a382de19a07db7292c5976f20ddee9a6106b78b9e8860f82`.
+Common tests, direct-consume tests, full default/all-feature workspace tests,
+strict workspace Clippy, and the pinned Maven verify passed. This closes only
+the named subtype getter slice; full P18-V01 reconciliation and native
+Windows execution remain open.

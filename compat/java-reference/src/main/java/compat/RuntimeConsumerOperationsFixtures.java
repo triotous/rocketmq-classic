@@ -58,6 +58,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("directConsumeEntrypoint", "MQClientInstance.consumeMessageDirectly(MessageExt,String,String)");
         fixture.put("directConsume", direct);
         fixture.put("customSubtypeProcessQueue", customSubtypeProcessQueue());
+        fixture.put("derivedGetterSubtype", derivedGetterSubtype());
         fixture.put("priorityPropertySubtype", priorityPropertySubtype());
         fixture.put("resetOffsetEntrypoint", "MQClientInstance.resetOffset(String,String,Map<MessageQueue,Long>)");
         fixture.put("resetOffset", reset);
@@ -1083,6 +1084,59 @@ public final class RuntimeConsumerOperationsFixtures {
         }
         result.put("negativePriorityRejected", negativeRejected);
         return result;
+    }
+
+    private static Map<String, Object> derivedGetterSubtype() {
+        var message = new DerivedGetterMessageExt();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("tags", message.getTags());
+        result.put("keys", message.getKeys());
+        result.put("waitStore", message.isWaitStoreMsgOK());
+        result.put("buyerId", message.getBuyerId());
+        result.put("delayTimeLevel", message.getDelayTimeLevel());
+        result.put("delayTimeSec", message.getDelayTimeSec());
+        result.put("delayTimeMs", message.getDelayTimeMs());
+        result.put("deliverTimeMs", message.getDeliverTimeMs());
+        result.put("topicSysFlag", message.getTopicSysFlag());
+        result.put("groupSysFlag", message.getGroupSysFlag());
+        result.put("propertyTags", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_TAGS));
+        result.put("propertyKeys", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS));
+        result.put("getterCalls", message.getGetterCalls());
+        return result;
+    }
+
+    private static final class DerivedGetterMessageExt extends org.apache.rocketmq.common.message.MessageExt {
+        private int getterCalls;
+
+        @Override public String getTags() { getterCalls++; return "override-tags"; }
+        @Override public String getKeys() { getterCalls++; return "override-keys"; }
+        @Override public boolean isWaitStoreMsgOK() { getterCalls++; return true; }
+        @Override public String getBuyerId() { getterCalls++; return "override-buyer"; }
+        @Override public int getDelayTimeLevel() { getterCalls++; return 31; }
+        @Override public long getDelayTimeSec() { getterCalls++; return 32L; }
+        @Override public long getDelayTimeMs() { getterCalls++; return 33L; }
+        @Override public long getDeliverTimeMs() { getterCalls++; return 34L; }
+        @Override public Integer getTopicSysFlag() { getterCalls++; return 35; }
+        @Override public Integer getGroupSysFlag() { getterCalls++; return 36; }
+
+        @Override
+        public String getProperty(String name) {
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TAGS.equals(name)) return "property-tags";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS.equals(name)) return "property-keys";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_WAIT_STORE_MSG_OK.equals(name)) return "false";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_BUYER_ID.equals(name)) return "property-buyer";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_DELAY_TIME_LEVEL.equals(name)) return "9";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELAY_SEC.equals(name)) return "123";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELAY_MS.equals(name)) return "456";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELIVER_MS.equals(name)) return "789";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG.equals(name)) return "73";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG.equals(name)) return "-19";
+            return super.getProperty(name);
+        }
+
+        private int getGetterCalls() { return getterCalls; }
     }
 
     private static final class PriorityPropertyMessageExt extends org.apache.rocketmq.common.message.MessageExt {
