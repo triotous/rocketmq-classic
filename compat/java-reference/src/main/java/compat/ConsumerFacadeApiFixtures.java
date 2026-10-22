@@ -329,6 +329,20 @@ public final class ConsumerFacadeApiFixtures {
         malformedMaxOffset.put("finalTreeKeys", new ArrayList<>(malformedMaxOffsetQueue.getMsgTreeMap().keySet()));
         result.put("malformedMaxOffset", malformedMaxOffset);
 
+        ProcessQueue emptyCommitQueue = new ProcessQueue();
+        String emptyCommitError = "";
+        try {
+            emptyCommitQueue.commit();
+        } catch (java.util.NoSuchElementException e) {
+            emptyCommitError = e.getClass().getName();
+        }
+        Map<String, Object> emptyCommit = new TreeMap<>();
+        emptyCommit.put("errorClass", emptyCommitError);
+        emptyCommit.put("count", emptyCommitQueue.getMsgCount().get());
+        emptyCommit.put("size", emptyCommitQueue.getMsgSize().get());
+        emptyCommit.put("treeKeys", new ArrayList<>(emptyCommitQueue.getMsgTreeMap().keySet()));
+        result.put("emptyCommit", emptyCommit);
+
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
         MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});

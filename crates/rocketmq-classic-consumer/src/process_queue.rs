@@ -437,6 +437,8 @@ pub enum ProcessQueueError {
     Dropped,
     #[error("consume batch does not belong to this process queue")]
     UnknownBatch,
+    #[error("java.lang.NoSuchElementException: no orderly messages are available to commit")]
+    EmptyOrderedConsumeSet,
     #[error("consume batch no longer owns all of its messages")]
     BatchOwnershipLost,
     #[error("java.lang.NumberFormatException parsing MAX_OFFSET property: {value:?}")]
@@ -772,7 +774,7 @@ impl ProcessQueue {
             .any(|message| message.state == MessageState::Ready);
     }
 
-    pub fn commit(&self) -> i64 {
+    pub fn commit(&self) -> Result<i64, ProcessQueueError> {
         let mut state = self.lock_state();
         let consuming_offsets = state
             .messages
@@ -786,7 +788,7 @@ impl ProcessQueue {
             .map(|(offset, _)| *offset)
             .collect::<Vec<_>>();
         let Some(last_offset) = consuming_offsets.last().copied() else {
-            return -1;
+            return Err(ProcessQueueError::EmptyOrderedConsumeSet);
         };
         for offset in &consuming_offsets {
             if let Some(message) = state.messages.remove(offset) {
@@ -803,7 +805,7 @@ impl ProcessQueue {
             .values()
             .any(|message| message.state == MessageState::Ready);
         state.last_consume_timestamp_millis = epoch_millis();
-        last_offset.wrapping_add(1)
+        Ok(last_offset.wrapping_add(1))
     }
 
     pub fn make_message_to_consume_again(&self, messages: &[MessageExt]) {
@@ -1704,7 +1706,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [11]
         );
-        assert_eq!(process_queue.commit(), 11);
+        assert_eq!(process_queue.commit(), Ok(11));
         assert_eq!(process_queue.get_msg_count().get(), 1);
         assert_eq!(process_queue.get_msg_size().get(), 3);
     }

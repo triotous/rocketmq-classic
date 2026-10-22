@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use rocketmq_classic_common::message::{MessageExt, MessageQueue};
 use rocketmq_classic_consumer::process_queue::ProcessQueueError;
 use rocketmq_classic_consumer::{
@@ -643,7 +645,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     queue.rollback();
     let after_rollback_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
     queue.take_messages(1);
-    let committed_offset = queue.commit();
+    let committed_offset = queue.commit().expect("non-empty ordered consume set");
     let after_commit_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
     let next_offset = queue.remove_message(&[std::sync::Arc::new(second)]);
     let final_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
@@ -725,7 +727,9 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         .collect::<Vec<_>>();
     let remove_in_flight_count_before_commit = in_flight_removal_queue.get_msg_count().get();
     let remove_in_flight_size_before_commit = in_flight_removal_queue.get_msg_size().get();
-    let remove_in_flight_commit_offset = in_flight_removal_queue.commit();
+    let remove_in_flight_commit_offset = in_flight_removal_queue
+        .commit()
+        .expect("in-flight message remains committable");
 
     let mut removed_message = MessageExt::new();
     removed_message.set_queue_offset(60);
@@ -807,6 +811,35 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let empty_commit_queue = ProcessQueue::new();
+    let empty_commit_error = empty_commit_queue
+        .commit()
+        .expect_err("empty Java consuming map should throw NoSuchElementException");
+    assert!(matches!(
+        empty_commit_error,
+        ProcessQueueError::EmptyOrderedConsumeSet
+    ));
+    let empty_commit_result = serde_json::json!({
+        "errorClass": "java.util.NoSuchElementException",
+        "count": empty_commit_queue.get_msg_count().get(),
+        "size": empty_commit_queue.get_msg_size().get(),
+        "treeKeys": empty_commit_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
+    let info_result = serde_json::json!({
+        "cachedMsgCount": info.get_cached_msg_count(),
+        "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
+        "locked": info.is_locked(),
+        "tryUnlockTimes": info.get_try_unlock_times(),
+        "lastLockTimestamp": info.get_last_lock_timestamp(),
+        "droped": info.is_droped(),
+        "lastPullTimestamp": info.get_last_pull_timestamp(),
+        "lastConsumeTimestamp": info.get_last_consume_timestamp(),
+    });
     let actual = serde_json::json!({
         "dispatch": dispatch,
         "initialTreeKeys": initial_tree_keys,
@@ -834,16 +867,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "dropped": queue.is_dropped(),
         "locked": queue.is_locked(),
         "consumeLockPresent": true,
-        "info": {
-            "cachedMsgCount": info.get_cached_msg_count(),
-            "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
-            "locked": info.is_locked(),
-            "tryUnlockTimes": info.get_try_unlock_times(),
-            "lastLockTimestamp": info.get_last_lock_timestamp(),
-            "droped": info.is_droped(),
-            "lastPullTimestamp": info.get_last_pull_timestamp(),
-            "lastConsumeTimestamp": info.get_last_consume_timestamp(),
-        },
+        "info": info_result,
         "directMapKeys": direct_map_keys,
         "counterPrevious": counter_previous,
         "counterSizeAfterAdd": counter_size_after_add,
@@ -858,6 +882,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "removeInFlight": remove_in_flight,
         "dispatchAfterRemove": dispatch_after_remove_result,
         "malformedMaxOffset": malformed_max_offset_result,
+        "emptyCommit": empty_commit_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

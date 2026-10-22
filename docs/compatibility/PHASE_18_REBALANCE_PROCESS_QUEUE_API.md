@@ -57,7 +57,18 @@ insertion. Java also updates `lastPullTimestamp` at the pull-request boundary,
 not from `ProcessQueue.putMessage`; the Rust owner does the same, and the
 fixture checks that direct insertion preserves a caller-set timestamp. Fixture
 SHA-256:
-`a334ff119c014259676917531ce4032160b10209cdac027d9963d2c1327d5d6a`.
+`aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`.
+
+### Empty `commit` input
+
+Java invokes `consumingMsgOrderlyTreeMap.lastKey()` before mutating counters,
+so calling `commit` without a preceding non-empty `takeMessages` throws
+`NoSuchElementException` and leaves the queue unchanged. Rust's public
+`commit` now returns `Err(ProcessQueueError::EmptyOrderedConsumeSet)` for this
+case instead of returning `-1`; successful commits return the committed offset
+in `Ok`. The invoked facade fixture compares the Java exception class and the
+unchanged tree/count/size. Fixture SHA-256:
+`aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`.
 
 ### POP assignment retention
 
@@ -189,6 +200,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `a334ff119c014259676917531ce4032160b10209cdac027d9963d2c1327d5d6a`
+  `aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`
