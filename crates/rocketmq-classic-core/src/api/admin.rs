@@ -22,19 +22,20 @@ use rocketmq_classic_protocol::{
         AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
         CloneGroupOffsetRequestHeader, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
-        CreateTopicRequestHeader, CreateUserRequestHeader, DeleteKvConfigRequestHeader,
-        DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
-        DeleteTopicRequestHeader, DeleteUserRequestHeader, ExportRocksDBConfigToJsonRequestHeader,
-        ExportRocksDBConfigType, GetAclRequestHeader, GetAllSubscriptionGroupRequestHeader,
-        GetAllSubscriptionGroupResponseHeader, GetAllTopicConfigRequestHeader,
-        GetAllTopicConfigResponseHeader, GetConsumeStatsInBrokerRequestHeader,
-        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
-        GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
-        GetTopicConfigRequestHeader, GetTopicStatsInfoRequestHeader, GetUserRequestHeader,
-        HeaderMap, ListUsersRequestHeader, PutKvConfigRequestHeader,
-        QueryConsumeQueueRequestHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        CreateAclRequestHeader, CreateTopicRequestHeader, CreateUserRequestHeader,
+        DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
+        DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader, DeleteUserRequestHeader,
+        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, GetAclRequestHeader,
+        GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
+        GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
+        GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
+        GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
+        GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicConfigRequestHeader,
+        GetTopicStatsInfoRequestHeader, GetUserRequestHeader, HeaderMap, ListUsersRequestHeader,
+        PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
@@ -1613,6 +1614,38 @@ impl MQClientApi {
                 reason: error.to_string(),
             }
         })
+    }
+
+    /// Creates a Broker ACL through Java `MQClientAPIImpl.createAcl`
+    /// (request 3006). The ACL body and nullable subject use the pinned Java
+    /// DTO shape; the supplied Broker address is unchanged with VIP enabled.
+    pub async fn create_acl(
+        &self,
+        addr: &str,
+        acl_info: &AclInfo,
+        timeout_millis: i64,
+    ) -> Result<(), RpcError> {
+        let code = request::AUTH_CREATE_ACL;
+        let mut header = CreateAclRequestHeader::default();
+        header.set_subject(acl_info.get_subject().map(str::to_owned));
+        header.check_fields()?;
+        let body = acl_info
+            .java_encode()
+            .map_err(|source| RpcError::RequestSerialization {
+                request_code: code,
+                source,
+            })?;
+        let reply = self
+            .request(
+                addr,
+                code,
+                &header,
+                Some(body),
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
     }
 
     /// Lists Broker auth users through Java `MQClientAPIImpl.listUser`
@@ -4082,6 +4115,94 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(serde_json::to_value(result).unwrap(), expected_result);
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn create_acl_keeps_supplied_address_with_vip_enabled() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use base64::Engine as _;
+        use rocketmq_classic_protocol::{
+            body::AclInfo,
+            codes::{LanguageCode, request, response},
+        };
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let case = fixture["createAclOperations"]["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "vip-enabled-address-unchanged")
+            .unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(case["vipEnabled"], true);
+        assert_eq!(expected_request["address"], case["address"]);
+        let expected_fields = expected_request["extFields"].clone();
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(expected_request["requestBodyBase64"].as_str().unwrap())
+            .unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request_command.code, request::AUTH_CREATE_ACL);
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert_eq!(
+                request_command.body.as_deref(),
+                Some(expected_body.as_slice())
+            );
+            assert_eq!(
+                request_command
+                    .ext_fields
+                    .as_ref()
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                expected_fields
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let acl_info: AclInfo =
+            serde_json::from_str(case["aclInfoJson"].as_str().unwrap()).unwrap();
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("create-acl-vip-enabled");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        api.create_acl(&address, &acl_info, case["timeoutMillis"].as_i64().unwrap())
+            .await
+            .unwrap();
         peer.await.unwrap();
         remoting.shutdown().await;
     }

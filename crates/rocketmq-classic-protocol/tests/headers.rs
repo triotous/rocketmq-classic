@@ -15,8 +15,8 @@ use rocketmq_classic_protocol::{
         ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
         CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader,
         CloneGroupOffsetRequestHeader, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
-        ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader, CreateUserRequestHeader,
-        DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
+        ConsumerSendMsgBackRequestHeader, CreateAclRequestHeader, CreateTopicRequestHeader,
+        CreateUserRequestHeader, DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader, DeleteUserRequestHeader,
         EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, FastCodesHeader,
@@ -2329,6 +2329,15 @@ fn header_validation_matrix() {
             "",
             "",
             "username",
+            ""
+        ),
+        row!(
+            CreateAclRequestHeader,
+            "create-acl-request",
+            "",
+            "",
+            "",
+            "subject",
             ""
         ),
         row!(

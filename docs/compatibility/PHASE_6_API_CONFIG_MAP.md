@@ -2096,3 +2096,15 @@ Rust loopback tests compare nullable subjects, default/populated/null/empty
 responses, null policy members, success and Broker errors, timeout,
 typed-header cross-decode, and unchanged-address behavior. The auth reverse
 audit now has four open APIs; broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `createAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.createAcl` sends request 3006 with a
+`CreateAclRequestHeader`, a serialized `AclInfo` body, and the caller timeout.
+Core exposes `MQClientApi::create_acl`, derives the nullable header subject
+from `AclInfo`, and preserves the supplied Broker address when VIP channels
+are enabled. Invoked Java fixtures and Rust loopback tests compare nullable
+subjects and policy data, exact request body bytes, success and Broker errors,
+timeout, typed-header cross-decode, and unchanged-address behavior. The auth
+reverse audit now has three open APIs; broader P18-V01 reconciliation remains
+open.
