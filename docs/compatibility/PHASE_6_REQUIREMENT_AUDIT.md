@@ -2480,3 +2480,25 @@ integration tests, strict Consumer Clippy, formatting, and diff checks pass.
 This closes the Lite metadata timer registration-point slice only; broad
 P18-V01 source/API/settings/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 LitePull metadata schedule validation and failure lifecycle — 2026-10-22 (`b8626d35`)
+
+Pinned Java does not validate `topicMetadataCheckIntervalMillis` in
+`checkConfig()`. It starts and registers the consumer runtime, then
+`scheduleAtFixedRate` throws `IllegalArgumentException` for a nonpositive
+period. The Lite consumer remains `START_FAILED`, the consumer registration is
+retained, the client factory remains `RUNNING`, and a retry throws
+`MQClientException`.
+
+Rust now checks the interval at that scheduling point after engine startup,
+retains the started engine and registration on failure, and preserves the
+failed lifecycle for retry and shutdown behavior. The pinned Java lifecycle
+fixture records all four observed states; its SHA-256 is
+`c1c4a4dde2987f7d2d1c077e739847c79392ae57d34d218d6036ece550120013`.
+The fixture-driven Rust regression verifies runtime state, registration,
+retry, and cleanup. Full locked Consumer tests (252 unit tests plus all
+integration tests and doctests), strict Core/Consumer Clippy, formatting/diff
+checks, and Java lifecycle fixture drift verification pass. This closes this
+LitePull startup-failure slice only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
