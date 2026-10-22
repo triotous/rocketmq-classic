@@ -2795,9 +2795,12 @@ impl MessageExt {
         offset_message_id: Option<String>,
         client_message_id: Option<String>,
     ) {
-        self.client_ext = true;
+        self.mark_client_ext();
         self.offset_message_id = offset_message_id;
         self.message_id = client_message_id;
+    }
+    pub(crate) fn mark_client_ext(&mut self) {
+        self.client_ext = true;
     }
     pub fn set_offset_message_id(&mut self, value: Option<String>) {
         if self

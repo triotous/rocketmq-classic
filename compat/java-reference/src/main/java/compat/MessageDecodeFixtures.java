@@ -998,12 +998,32 @@ public final class MessageDecodeFixtures {
         expected.put("expanded", expanded.stream()
             .map(MessageDecodeFixtures::compactMessageExtSnapshot)
             .collect(java.util.stream.Collectors.toList()));
+        expected.put("expandedClientExtApi", expandedClientExtApi(expanded.get(0)));
         expected.put("nullBodyEncodeThrows", throwsNullPointer(
             () -> MessageDecoder.encodeMessage(new Message())));
         expected.put("shortDecodeThrowsBufferUnderflow", throwsCompactDecodeBufferUnderflow());
         expected.put("negativeBodyDecodeThrows", throwsNegativeCompactBodyLength());
         expected.put("incompleteCountThrowsIllegalArgument", throwsIncompleteCompactCount());
         return expected;
+    }
+
+    private static Map<String, Object> expandedClientExtApi(MessageExt message) {
+        MessageClientExt clientExt = (MessageClientExt) message;
+        Map<String, Object> result = new TreeMap<>();
+        result.put("runtimeClass", message.getClass().getSimpleName());
+        result.put("initialMessageId", clientExt.getMsgId());
+        result.put("initialOffsetMessageId", clientExt.getOffsetMsgId());
+        clientExt.setMsgId("ignored-message-id");
+        result.put("messageIdAfterSetMessageId", clientExt.getMsgId());
+        result.put("offsetMessageIdAfterSetMessageId", clientExt.getOffsetMsgId());
+        clientExt.setOffsetMsgId("physical-offset-id");
+        result.put("messageIdAfterSetOffsetMessageId", clientExt.getMsgId());
+        result.put("offsetMessageIdAfterSetOffsetMessageId", clientExt.getOffsetMsgId());
+        MessageAccessor.putProperty(clientExt,
+            MessageConst.PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX, "unique-id");
+        result.put("messageIdWithUniqueKey", clientExt.getMsgId());
+        result.put("offsetMessageIdWithUniqueKey", clientExt.getOffsetMsgId());
+        return result;
     }
 
     private static Map<String, Object> compactMessageSnapshot(Message message) {

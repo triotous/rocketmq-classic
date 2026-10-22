@@ -2045,7 +2045,7 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
     outer.set_store_host(Some(MessageHostAddress::new("198.51.100.20", 10912)));
     outer.set_commit_log_offset(13);
     outer.set_wait_store_msg_ok(false).unwrap();
-    let expanded = decode_inner_batch(&outer).unwrap();
+    let mut expanded = decode_inner_batch(&outer).unwrap();
     assert_eq!(expanded.len(), 2);
     for (message, case) in expanded
         .iter()
@@ -2070,7 +2070,63 @@ fn compact_message_codec_and_inner_batch_match_java_551() {
         assert_eq!(message.store_timestamp(), case["storeTimestamp"]);
         assert_eq!(message.store_host().unwrap().to_string(), case["storeHost"]);
         assert_eq!(message.commit_log_offset(), case["commitLogOffset"]);
+        assert!(message.is_message_client_ext());
     }
+
+    let runtime_api = &expected["expandedClientExtApi"];
+    let first_expanded = &mut expanded[0];
+    assert_eq!(
+        first_expanded.is_message_client_ext(),
+        runtime_api["runtimeClass"] == "MessageClientExt"
+    );
+    assert_eq!(
+        first_expanded.message_id_for_runtime_type().as_deref(),
+        runtime_api["initialMessageId"].as_str()
+    );
+    assert_eq!(
+        first_expanded
+            .offset_message_id_for_runtime_type()
+            .as_deref(),
+        runtime_api["initialOffsetMessageId"].as_str()
+    );
+    first_expanded.set_message_id(Some("ignored-message-id".to_owned()));
+    assert_eq!(
+        first_expanded.message_id_for_runtime_type().as_deref(),
+        runtime_api["messageIdAfterSetMessageId"].as_str()
+    );
+    assert_eq!(
+        first_expanded
+            .offset_message_id_for_runtime_type()
+            .as_deref(),
+        runtime_api["offsetMessageIdAfterSetMessageId"].as_str()
+    );
+    first_expanded.set_offset_message_id(Some("physical-offset-id".to_owned()));
+    assert_eq!(
+        first_expanded.message_id_for_runtime_type().as_deref(),
+        runtime_api["messageIdAfterSetOffsetMessageId"].as_str()
+    );
+    assert_eq!(
+        first_expanded
+            .offset_message_id_for_runtime_type()
+            .as_deref(),
+        runtime_api["offsetMessageIdAfterSetOffsetMessageId"].as_str()
+    );
+    first_expanded
+        .set_system_property(
+            rocketmq_classic_common::message::constants::PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX,
+            "unique-id",
+        )
+        .unwrap();
+    assert_eq!(
+        first_expanded.message_id_for_runtime_type().as_deref(),
+        runtime_api["messageIdWithUniqueKey"].as_str()
+    );
+    assert_eq!(
+        first_expanded
+            .offset_message_id_for_runtime_type()
+            .as_deref(),
+        runtime_api["offsetMessageIdWithUniqueKey"].as_str()
+    );
 
     assert_eq!(
         encode_compact_message(&Message::default()),
