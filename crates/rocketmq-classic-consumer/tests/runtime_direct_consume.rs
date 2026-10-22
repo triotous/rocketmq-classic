@@ -124,6 +124,55 @@ impl MessageExtSubtype for DerivedGetterSubtype {
 }
 
 #[derive(Default)]
+struct ExplicitNullGetterSubtype {
+    getter_calls: std::sync::atomic::AtomicUsize,
+}
+
+impl MessageExtSubtype for ExplicitNullGetterSubtype {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn tags(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(None)
+    }
+
+    fn keys(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(None)
+    }
+
+    fn buyer_id(&self) -> Option<Option<String>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(None)
+    }
+
+    fn topic_sys_flag(&self) -> Option<Option<i32>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(None)
+    }
+
+    fn group_sys_flag(&self) -> Option<Option<i32>> {
+        self.getter_calls.fetch_add(1, Ordering::SeqCst);
+        Some(None)
+    }
+
+    fn property(&self, key: Option<&str>) -> Option<Option<String>> {
+        use rocketmq_classic_common::message::constants as property;
+        let value = match key {
+            Some(property::PROPERTY_TAGS) => "property-tags",
+            Some(property::PROPERTY_KEYS) => "property-keys",
+            Some(property::PROPERTY_BUYER_ID) => "property-buyer",
+            Some(property::PROPERTY_TRANSIENT_TOPIC_CONFIG) => "malformed-topic",
+            Some(property::PROPERTY_TRANSIENT_GROUP_CONFIG) => "malformed-group",
+            _ => return None,
+        };
+        Some(Some(value.to_owned()))
+    }
+}
+
+#[derive(Default)]
 struct CustomDirectMessageClientExt {
     offset_message_id: Mutex<Option<String>>,
 }
@@ -1033,6 +1082,62 @@ fn direct_subtype_overrides_win_over_property_derived_message_getters() {
     assert_eq!(
         message
             .runtime_subtype::<DerivedGetterSubtype>()
+            .unwrap()
+            .getter_calls
+            .load(Ordering::SeqCst),
+        expected["getterCalls"].as_u64().unwrap() as usize
+    );
+}
+
+#[test]
+fn direct_subtype_nullable_getter_overrides_preserve_java_null() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/runtime/consumer-operations.json"
+    ))
+    .unwrap();
+    let expected = &fixture["derivedGetterNullSubtype"];
+    let mut message = MessageExt::default();
+    message.set_runtime_subtype(Arc::new(ExplicitNullGetterSubtype::default()));
+
+    assert_eq!(message.tags(), expected["tags"].as_str().map(str::to_owned));
+    assert_eq!(message.keys(), expected["keys"].as_str().map(str::to_owned));
+    assert_eq!(
+        message.buyer_id(),
+        expected["buyerId"].as_str().map(str::to_owned)
+    );
+    assert_eq!(message.topic_sys_flag().unwrap(), None);
+    assert_eq!(message.group_sys_flag().unwrap(), None);
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_TAGS),
+        expected["propertyTags"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_KEYS),
+        expected["propertyKeys"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message.get_property(rocketmq_classic_common::message::constants::PROPERTY_BUYER_ID),
+        expected["propertyBuyerId"].as_str().map(str::to_owned)
+    );
+    assert_eq!(
+        message
+            .get_property(
+                rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_TOPIC_CONFIG
+            )
+            .as_deref(),
+        expected["propertyTopicSysFlag"].as_str()
+    );
+    assert_eq!(
+        message
+            .get_property(
+                rocketmq_classic_common::message::constants::PROPERTY_TRANSIENT_GROUP_CONFIG
+            )
+            .as_deref(),
+        expected["propertyGroupSysFlag"].as_str()
+    );
+    assert_eq!(
+        message
+            .runtime_subtype::<ExplicitNullGetterSubtype>()
             .unwrap()
             .getter_calls
             .load(Ordering::SeqCst),

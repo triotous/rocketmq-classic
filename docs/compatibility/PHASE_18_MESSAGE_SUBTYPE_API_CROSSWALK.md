@@ -96,3 +96,11 @@ for these three message classes. It supersedes earlier notes that left other
 `Message`/`MessageExt` overrides or the live subtype properties-map identity
 open. It does not close the broader Phase 18 audit of client settings, other
 Java classes, call flows, inputs/errors, or reverse Rust exports.
+
+The nullable-getter continuation adds direct Java overrides that return null
+for `getTags`, `getKeys`, `getBuyerId`, `getTopicSysFlag`, and
+`getGroupSysFlag`, despite non-null or malformed values from `getProperty`.
+The Rust fixture confirms explicit null wins over the property path and avoids
+parsing malformed transient sysflags. It also compares the five override-call
+count. The updated runtime fixture SHA-256 is
+`8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.

@@ -59,6 +59,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("directConsume", direct);
         fixture.put("customSubtypeProcessQueue", customSubtypeProcessQueue());
         fixture.put("derivedGetterSubtype", derivedGetterSubtype());
+        fixture.put("derivedGetterNullSubtype", derivedGetterNullSubtype());
         fixture.put("priorityPropertySubtype", priorityPropertySubtype());
         fixture.put("resetOffsetEntrypoint", "MQClientInstance.resetOffset(String,String,Map<MessageQueue,Long>)");
         fixture.put("resetOffset", reset);
@@ -1133,6 +1134,50 @@ public final class RuntimeConsumerOperationsFixtures {
             if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TIMER_DELIVER_MS.equals(name)) return "789";
             if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG.equals(name)) return "73";
             if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG.equals(name)) return "-19";
+            return super.getProperty(name);
+        }
+
+        private int getGetterCalls() { return getterCalls; }
+    }
+
+    private static Map<String, Object> derivedGetterNullSubtype() {
+        var message = new DerivedGetterNullMessageExt();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("tags", message.getTags());
+        result.put("keys", message.getKeys());
+        result.put("buyerId", message.getBuyerId());
+        result.put("topicSysFlag", message.getTopicSysFlag());
+        result.put("groupSysFlag", message.getGroupSysFlag());
+        result.put("propertyTags", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_TAGS));
+        result.put("propertyKeys", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS));
+        result.put("propertyBuyerId", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_BUYER_ID));
+        result.put("propertyTopicSysFlag", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG));
+        result.put("propertyGroupSysFlag", message.getProperty(
+            org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG));
+        result.put("getterCalls", message.getGetterCalls());
+        return result;
+    }
+
+    private static final class DerivedGetterNullMessageExt extends org.apache.rocketmq.common.message.MessageExt {
+        private int getterCalls;
+
+        @Override public String getTags() { getterCalls++; return null; }
+        @Override public String getKeys() { getterCalls++; return null; }
+        @Override public String getBuyerId() { getterCalls++; return null; }
+        @Override public Integer getTopicSysFlag() { getterCalls++; return null; }
+        @Override public Integer getGroupSysFlag() { getterCalls++; return null; }
+
+        @Override
+        public String getProperty(String name) {
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TAGS.equals(name)) return "property-tags";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_KEYS.equals(name)) return "property-keys";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_BUYER_ID.equals(name)) return "property-buyer";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_TOPIC_CONFIG.equals(name)) return "malformed-topic";
+            if (org.apache.rocketmq.common.message.MessageConst.PROPERTY_TRANSIENT_GROUP_CONFIG.equals(name)) return "malformed-group";
             return super.getProperty(name);
         }
 

@@ -2351,3 +2351,17 @@ count. `fixtures/runtime/consumer-operations.json` SHA-256:
 This closes the direct-override slice only; broad P18-V01 settings, other
 Java classes, input/error/control-flow, and reverse-export reconciliation
 remain open.
+
+### Nullable direct-getter return continuation — 2026-10-22
+
+An invoked Java subtype returns explicit null from `getTags`, `getKeys`,
+`getBuyerId`, `getTopicSysFlag`, and `getGroupSysFlag` while its
+`getProperty` override supplies non-null strings; the sysflag property strings
+are malformed. Rust's nested-Option getter hooks preserve Java null and skip
+property parsing when the direct override is present. The fixture compares
+all five null results, retained property results, and virtual-call count.
+`fixtures/runtime/consumer-operations.json` SHA-256:
+`8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
+Focused Common/Consumer Clippy, formatting, the six-test direct-consume suite,
+and Java fixture verification pass. This closes nullable direct results for
+these getters only; broader P18-V01 remains open.

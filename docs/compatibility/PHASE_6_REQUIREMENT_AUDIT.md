@@ -2143,3 +2143,14 @@ Common tests, direct-consume tests, full default/all-feature workspace tests,
 strict workspace Clippy, and the pinned Maven verify passed. This closes only
 the named subtype getter slice; full P18-V01 reconciliation and native
 Windows execution remain open.
+
+Nullable subtype getter continuation (2026-10-22): the invoked Java fixture
+adds direct overrides returning null for `getTags`, `getKeys`, `getBuyerId`,
+`getTopicSysFlag`, and `getGroupSysFlag`, while `getProperty` returns non-null
+values and malformed sysflag text. Rust's `Some(None)` hooks preserve those
+direct nulls and avoid parsing the malformed fallback values. The test also
+compares all five property values and the virtual-call count. Fixture
+SHA-256: `8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
+The six direct-consume tests, focused Common/Consumer Clippy, formatting and
+Java fixture verification pass. Broad P18-V01 and native Windows execution
+remain open.
