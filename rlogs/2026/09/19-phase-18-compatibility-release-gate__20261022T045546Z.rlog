@@ -339,3 +339,20 @@ P18-V01 Producer topic-list alias semantics — 2026-10-22 07:44 UTC
 - Added public `ProducerTopicList` shared handle and re-exported it from Producer and facade crates. `Producer` and `ProducerConfig` retain/list getters preserve aliases; `ProducerConfig::clone` makes a detached list snapshot. Rust tests cover caller mutation, config clone independence and startup route retention. Fixture SHA-256: `ae8e09607bfaac817640a03dc596675757a511c26e03e7d9f0ca7e8a51201cd8`.
 - `cargo test -p rocketmq-classic-producer -p rocketmq-classic --locked` passes (Producer 150 unit tests and all integration/doctest targets; facade tests all pass); strict Producer/facade Clippy, formatting, `git diff --check`, and pinned Maven `verify` pass.
 - This closes the named topic-list alias slice only. The 2026-10-14 audit statement that producer sends used the startup VIP snapshot is superseded: Java send flow reads the live facade flag; runtime `ClientConfig` remains a separate startup clone. Broad P18-V01 reconciliation and native Windows execution remain open. Protected Phase 19 files remain unstaged.
+
+
+P18-V01 Producer factory lifecycle overloads — 2026-10-22 07:54 UTC
+- Commit `aa634c47` adds `Producer::start_with_factory(bool)` and
+  `shutdown_with_factory(bool)`; the no-argument methods delegate with `true`.
+  The Java lifecycle fixture records that `shutdown(false)` leaves a RUNNING
+  client factory untouched. Its setup explicitly places the factory in RUNNING
+  state before the call. Fixture SHA-256:
+  `ec75f9a8fb8eec074f63ea1f26dabb87547bce1960376b0d7c72f85614713a98`.
+- `factory_lifecycle_overloads_leave_runtime_control_to_the_caller` exercises
+  the Rust false branches and outer runtime start/shutdown. Producer/facade
+  tests pass (151 Producer unit tests plus all integration and doctest targets);
+  strict Clippy, formatting, `git diff --check`, and pinned Maven `verify`
+  pass (37 scenarios and Java/Rust cross-decodes).
+- This closes the Producer start/shutdown factory-control slice only. Broad
+  P18-V01 reconciliation, current-revision remote Ubuntu CI, and native Windows
+  execution remain open. Protected Phase 19 worktree files remain unstaged.
