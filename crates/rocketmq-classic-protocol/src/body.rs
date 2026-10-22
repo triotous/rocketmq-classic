@@ -3704,6 +3704,9 @@ impl Default for TopicQueueMappingDetail {
 }
 
 impl TopicQueueMappingDetail {
+    /// Inherited pinned Java `TopicQueueMappingInfo.LEVEL_0` constant.
+    pub const LEVEL_0: i32 = TopicQueueMappingInfo::LEVEL_0;
+
     /// Constructs a detail using the pinned Java constructor defaults.
     pub fn new(
         topic: Option<String>,
@@ -11689,6 +11692,112 @@ mod tests {
         version.set_counter(None);
         assert!(!version.next_version());
         assert_eq!(version.compare(&DataVersion::new(9, 0, Some(1))), None);
+    }
+
+    #[test]
+    fn logic_queue_mapping_item_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["logicQueueMappingItemMethods"].as_array().unwrap() {
+            let item: LogicQueueMappingItem =
+                serde_json::from_value(case["value"].clone()).unwrap();
+            let getters = &case["getters"];
+            assert_eq!(item.get_gen(), getters["gen"].as_i64().unwrap() as i32);
+            assert_eq!(item.queue_id(), getters["queueId"].as_i64().unwrap() as i32);
+            assert_eq!(item.bname(), getters["bname"].as_str());
+            assert_eq!(
+                item.logic_offset(),
+                getters["logicOffset"].as_i64().unwrap()
+            );
+            assert_eq!(
+                item.start_offset(),
+                getters["startOffset"].as_i64().unwrap()
+            );
+            assert_eq!(item.end_offset(), getters["endOffset"].as_i64().unwrap());
+            assert_eq!(
+                item.time_of_start(),
+                getters["timeOfStart"].as_i64().unwrap()
+            );
+            assert_eq!(item.time_of_end(), getters["timeOfEnd"].as_i64().unwrap());
+
+            for conversion in case["conversions"].as_array().unwrap() {
+                if let Some(physical_offset) = conversion["physicalOffset"].as_i64() {
+                    if let Some(loose) = conversion["looseStaticOffset"].as_i64() {
+                        assert_eq!(
+                            item.compute_static_queue_offset_loosely(physical_offset),
+                            loose,
+                            "{} loose offset at {physical_offset}",
+                            case["case"]
+                        );
+                    }
+                    if let Some(strict) = conversion["strictStaticOffset"].as_i64() {
+                        assert_eq!(
+                            item.compute_static_queue_offset_strictly(physical_offset),
+                            strict,
+                            "{} strict offset at {physical_offset}",
+                            case["case"]
+                        );
+                    }
+                    if let Some(static_offset) = conversion["staticOffset"].as_i64() {
+                        assert_eq!(
+                            item.compute_physical_queue_offset(static_offset),
+                            physical_offset,
+                            "{} physical offset at {static_offset}",
+                            case["case"]
+                        );
+                    }
+                }
+            }
+            assert_eq!(
+                item.compute_max_static_queue_offset(),
+                case["maxStaticQueueOffset"].as_i64().unwrap()
+            );
+            assert_eq!(item.check_if_end_offset_decided(), case["endOffsetDecided"]);
+            assert_eq!(
+                item.check_if_logic_offset_decided(),
+                case["logicOffsetDecided"]
+            );
+            assert_eq!(
+                item.compute_offset_delta(),
+                case["offsetDelta"].as_i64().unwrap()
+            );
+            assert_eq!(
+                item.java_hash_code(),
+                case["hashCode"].as_i64().unwrap() as i32
+            );
+            assert_eq!(item.java_to_string(), case["toString"]);
+        }
+
+        let setters = &fixture["logicQueueMappingItemSetters"];
+        let mut item = LogicQueueMappingItem::default();
+        item.set_gen(setters["generation"].as_i64().unwrap() as i32);
+        item.set_queue_id(setters["queueId"].as_i64().unwrap() as i32);
+        item.set_bname(setters["bname"].as_str().map(str::to_owned));
+        item.set_logic_offset(setters["logicOffset"].as_i64().unwrap());
+        item.set_start_offset(setters["startOffset"].as_i64().unwrap());
+        item.set_end_offset(setters["endOffset"].as_i64().unwrap());
+        item.set_time_of_start(setters["timeOfStart"].as_i64().unwrap());
+        item.set_time_of_end(setters["timeOfEnd"].as_i64().unwrap());
+        assert_eq!(
+            item.get_gen(),
+            setters["generation"].as_i64().unwrap() as i32
+        );
+        assert_eq!(item.queue_id(), setters["queueId"].as_i64().unwrap() as i32);
+        assert_eq!(item.bname(), setters["bname"].as_str());
+        assert_eq!(
+            item.logic_offset(),
+            setters["logicOffset"].as_i64().unwrap()
+        );
+        assert_eq!(
+            item.start_offset(),
+            setters["startOffset"].as_i64().unwrap()
+        );
+        assert_eq!(item.end_offset(), setters["endOffset"].as_i64().unwrap());
+        assert_eq!(
+            item.time_of_start(),
+            setters["timeOfStart"].as_i64().unwrap()
+        );
+        assert_eq!(item.time_of_end(), setters["timeOfEnd"].as_i64().unwrap());
     }
 
     #[test]

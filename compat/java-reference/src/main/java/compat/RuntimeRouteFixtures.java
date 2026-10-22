@@ -2955,6 +2955,107 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static Map<String, Object> topicQueueMappingConstants() {
+        Map<String, Object> constants = new TreeMap<>();
+        constants.put("infoLevel0",
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.LEVEL_0);
+        constants.put("detailLevel0",
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.LEVEL_0);
+        return constants;
+    }
+
+    private static Map<String, Object> logicQueueMappingItemCase(
+            String name,
+            org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem item,
+            long[] physicalOffsets,
+            long[] staticOffsets) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("case", name);
+        result.put("value", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(item,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        Map<String, Object> getters = new TreeMap<>();
+        getters.put("gen", item.getGen());
+        getters.put("queueId", item.getQueueId());
+        getters.put("bname", item.getBname());
+        getters.put("logicOffset", item.getLogicOffset());
+        getters.put("startOffset", item.getStartOffset());
+        getters.put("endOffset", item.getEndOffset());
+        getters.put("timeOfStart", item.getTimeOfStart());
+        getters.put("timeOfEnd", item.getTimeOfEnd());
+        result.put("getters", getters);
+        List<Object> conversions = new ArrayList<>();
+        for (long physicalOffset : physicalOffsets) {
+            Map<String, Object> conversion = new TreeMap<>();
+            conversion.put("physicalOffset", physicalOffset);
+            conversion.put("looseStaticOffset",
+                item.computeStaticQueueOffsetLoosely(physicalOffset));
+            conversion.put("strictStaticOffset",
+                item.computeStaticQueueOffsetStrictly(physicalOffset));
+            conversions.add(conversion);
+        }
+        for (long staticOffset : staticOffsets) {
+            Map<String, Object> conversion = new TreeMap<>();
+            conversion.put("staticOffset", staticOffset);
+            conversion.put("physicalOffset", item.computePhysicalQueueOffset(staticOffset));
+            conversions.add(conversion);
+        }
+        result.put("conversions", conversions);
+        result.put("maxStaticQueueOffset", item.computeMaxStaticQueueOffset());
+        result.put("endOffsetDecided", item.checkIfEndOffsetDecided());
+        result.put("logicOffsetDecided", item.checkIfLogicoffsetDecided());
+        result.put("offsetDelta", item.computeOffsetDelta());
+        result.put("hashCode", item.hashCode());
+        result.put("toString", item.toString());
+        return result;
+    }
+
+    private static Map<String, Object> logicQueueMappingItemSetterCase() {
+        org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem item =
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem();
+        item.setGen(7);
+        item.setQueueId(9);
+        item.setBname("setter-broker");
+        item.setLogicOffset(-11);
+        item.setStartOffset(13);
+        item.setEndOffset(17);
+        item.setTimeOfStart(19);
+        item.setTimeOfEnd(23);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("value", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(item,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("generation", item.getGen());
+        result.put("queueId", item.getQueueId());
+        result.put("bname", item.getBname());
+        result.put("logicOffset", item.getLogicOffset());
+        result.put("startOffset", item.getStartOffset());
+        result.put("endOffset", item.getEndOffset());
+        result.put("timeOfStart", item.getTimeOfStart());
+        result.put("timeOfEnd", item.getTimeOfEnd());
+        return result;
+    }
+
+    private static List<Object> logicQueueMappingItemMethodCases() {
+        long[] physicalOffsets = new long[] {-1, 0, 1, 2, 3, 8, 9, Long.MAX_VALUE};
+        long[] staticOffsets = new long[] {-1, 0, 10, Long.MAX_VALUE};
+        List<Object> cases = new ArrayList<>();
+        cases.add(logicQueueMappingItemCase("default",
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(),
+            physicalOffsets, staticOffsets));
+        cases.add(logicQueueMappingItemCase("populated",
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 8, 100, 200),
+            physicalOffsets, staticOffsets));
+        cases.add(logicQueueMappingItemCase("undecided",
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                2, 4, null, -5, 3, -1, -1, -1),
+            physicalOffsets, staticOffsets));
+        return cases;
+    }
+
     private static List<Object> topicQueueMappingDetailMethodCases() {
         String mappingItem = "{\"gen\":1,\"queueId\":3,\"bname\":\"broker\","
             + "\"logicOffset\":10,\"startOffset\":0,\"endOffset\":-1,"
@@ -4304,6 +4405,9 @@ public final class RuntimeRouteFixtures {
         fixture.put("brokerDataToString", brokerDataToStringCases());
         fixture.put("queueDataMethods", queueDataMethodCases());
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
+        fixture.put("topicQueueMappingConstants", topicQueueMappingConstants());
+        fixture.put("logicQueueMappingItemMethods", logicQueueMappingItemMethodCases());
+        fixture.put("logicQueueMappingItemSetters", logicQueueMappingItemSetterCase());
         fixture.put("topicQueueMappingDetailMethods", topicQueueMappingDetailMethodCases());
         fixture.put("topicQueueMappingDetailOperations", topicQueueMappingDetailOperationCase());
         fixture.put("topicQueueMappingDetailNullOperations", topicQueueMappingDetailNullOperationCases());

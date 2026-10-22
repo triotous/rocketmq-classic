@@ -48,3 +48,20 @@ Refreshed after code commit `4a0074f6` and documentation commit `60c12c63`:
 - Windows GNU compile checks pass: `cargo check -p rocketmq-classic-core --all-targets --target x86_64-pc-windows-gnu --locked` and the Consumer stack-capture test `--no-run` cross-compile.
 
 Broad P18-V01 bidirectional source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows stack-capture execution remain unverified. Phase 19 Broker/Docker validation is separate. No push or remote CI was run; the protected Phase 19 worktree files remain unstaged.
+
+Phase 18 API surface audit continuation — static-topic constant and method matrix — 2026-10-22 14:17 UTC
+
+Pinned Java 5.5.1 `javap -public` audit follow-up:
+- Found and added `TopicQueueMappingInfo.LEVEL_0` and the inherited `TopicQueueMappingDetail.LEVEL_0` Rust constants, checked against the Java oracle.
+- Added the direct `LogicQueueMappingItem` public-method matrix, including getters, setters, offset conversion and decision helpers, delta, hash code, and `toString`; Java and Rust compare default, populated, and undecided values.
+- Java spells `checkIfLogicoffsetDecided`; Rust exposes the idiomatic `check_if_logic_offset_decided` name for the same method.
+
+Validation after this code slice:
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: PASS (159 unit tests, 163 doctests, integration targets).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- Direct Java runtime route fixture generation: PASS (36 invoked cases).
+- `mvn -f compat/java-reference/pom.xml verify`: PASS (BUILD SUCCESS at 2026-10-22 14:16:32 UTC; Java decoded 106 typed headers and 19 typed bodies).
+- `fixtures/runtime/route.json` SHA-256: `e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
+
+The earlier full workspace/release gate in this log predates these final constant and method-matrix additions and will need refreshing before they can be used as current-revision evidence. Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, and native Windows execution remain open. Protected Phase 19 files remain unstaged and untouched.

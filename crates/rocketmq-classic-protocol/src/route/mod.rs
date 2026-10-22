@@ -3622,6 +3622,9 @@ impl Default for TopicQueueMappingInfo {
 }
 
 impl TopicQueueMappingInfo {
+    /// Pinned Java `TopicQueueMappingInfo.LEVEL_0` static-topic generation.
+    pub const LEVEL_0: i32 = 0;
+
     /// Constructs a static-topic mapping using Java's constructor defaults.
     pub fn new(
         topic: Option<String>,
@@ -3831,6 +3834,12 @@ mod topic_queue_mapping_method_tests {
     fn topic_queue_mapping_methods_match_invoked_java() {
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../../fixtures/runtime/route.json")).unwrap();
+        let constants = &fixture["topicQueueMappingConstants"];
+        assert_eq!(TopicQueueMappingInfo::LEVEL_0, constants["infoLevel0"]);
+        assert_eq!(
+            crate::body::TopicQueueMappingDetail::LEVEL_0,
+            constants["detailLevel0"]
+        );
         for case in fixture["topicQueueMappingMethods"].as_array().unwrap() {
             let left: TopicQueueMappingInfo = serde_json::from_value(case["left"].clone()).unwrap();
             let right: TopicQueueMappingInfo =
