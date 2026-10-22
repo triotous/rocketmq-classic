@@ -35,6 +35,16 @@
 //! use rocketmq_classic_core::auth::AclException;
 //! let _ = AclException::with_status_code_and_cause("denied", 1, "request failed", "cause");
 //! ```
+//!
+//! Java credentials expose these values on `SessionCredentials`, not as
+//! module-level constants:
+//!
+//! ```compile_fail
+//! use rocketmq_classic_core::auth::{
+//!     ACCESS_KEY, CHARSET, KEY_FILE_PROPERTY, SECRET_KEY, SECURITY_TOKEN, SIGNATURE,
+//! };
+//! # fn main() {}
+//! ```
 
 use std::{
     borrow::Cow,
@@ -56,12 +66,12 @@ use rocketmq_classic_remoting::{
 use sha1::Sha1;
 use sha2::Sha256;
 
-pub const ACCESS_KEY: &str = "AccessKey";
-pub const SECRET_KEY: &str = "SecretKey";
-pub const CHARSET: &str = "UTF-8";
-pub const KEY_FILE_PROPERTY: &str = "rocketmq.client.keyFile";
-pub const SECURITY_TOKEN: &str = "SecurityToken";
-pub const SIGNATURE: &str = "Signature";
+const ACCESS_KEY: &str = "AccessKey";
+const SECRET_KEY: &str = "SecretKey";
+const CHARSET: &str = "UTF-8";
+const KEY_FILE_PROPERTY: &str = "rocketmq.client.keyFile";
+const SECURITY_TOKEN: &str = "SecurityToken";
+const SIGNATURE: &str = "Signature";
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum AclUtilsError {

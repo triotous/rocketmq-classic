@@ -1,9 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use bytes::BytesMut;
-use rocketmq_classic_core::auth::{
-    ACCESS_KEY, AclClientRpcHook, AclSigner, AclUtils, SIGNATURE, SessionCredentials,
-};
+use rocketmq_classic_core::auth::{AclClientRpcHook, AclSigner, AclUtils, SessionCredentials};
 use rocketmq_classic_remoting::{
     RemotingCommand,
     client::{RemotingClient, TransportMode},
@@ -60,7 +58,9 @@ async fn scripted_acl_profile_rejects_wrong_secret_and_tampered_body() {
                 request.body = Some(b"tampered request body".to_vec());
             }
             let fields = request.ext_fields.as_ref().unwrap();
-            let actual_signature = fields.get(SIGNATURE).map(String::as_str);
+            let actual_signature = fields
+                .get(SessionCredentials::SIGNATURE)
+                .map(String::as_str);
             let ordered_fields = fields
                 .iter()
                 .map(|(key, value)| (key.as_str(), value.as_str()))
@@ -68,7 +68,10 @@ async fn scripted_acl_profile_rejects_wrong_secret_and_tampered_body() {
             let canonical_content =
                 AclUtils::combine_request_content_with_fields(&request, ordered_fields);
             let expected_signature = AclSigner::cal_signature(&canonical_content, SERVER_SECRET);
-            let accepted = fields.get(ACCESS_KEY).map(String::as_str) == Some(ACCESS_KEY_VALUE)
+            let accepted = fields
+                .get(SessionCredentials::ACCESS_KEY)
+                .map(String::as_str)
+                == Some(ACCESS_KEY_VALUE)
                 && actual_signature == Some(expected_signature.as_str());
             decisions.push(accepted);
             write_response(&mut stream, &request, accepted).await;
