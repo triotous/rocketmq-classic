@@ -356,3 +356,22 @@ P18-V01 Producer factory lifecycle overloads — 2026-10-22 07:54 UTC
 - This closes the Producer start/shutdown factory-control slice only. Broad
   P18-V01 reconciliation, current-revision remote Ubuntu CI, and native Windows
   execution remain open. Protected Phase 19 worktree files remain unstaged.
+
+
+P18-V01 Producer startup heartbeat flow — 2026-10-22 08:16 UTC
+- Commit `5f634435` mirrors pinned `DefaultMQProducerImpl.start(boolean)`'s
+  unconditional post-start `sendHeartbeatToAllBrokerWithLock()` call. Rust
+  sets Producer state to RUNNING, sends a heartbeat over cached runtime routes,
+  then starts the request-future scanner. The local scripted test preloads a
+  Broker route, starts an already-running shared runtime with
+  `start_with_factory(false)`, and verifies the heartbeat includes the new
+  Producer group.
+- `cargo test -p rocketmq-classic-producer -p rocketmq-classic --locked`
+  passes (152 Producer unit tests plus all integration/doctest and facade
+  targets); strict Producer/facade Clippy, formatting, and `git diff --check`
+  pass. The focused heartbeat test uses live local TCP because paused Tokio
+  time can expire connection setup before the peer is polled.
+- Java's synchronous `initTopicRoute()` for configured startup topics remains
+  open for the broader P18-V01 startup-flow audit. Current-revision remote
+  Ubuntu CI and native Windows execution remain open. Protected Phase 19
+  worktree files remain unstaged.
