@@ -7472,3 +7472,17 @@ owner-specific checks belong in the manual handoff.
   export reconciliation remains open. Current-revision GitHub Ubuntu CI and
   native Windows stack-capture execution remain unverified. No push or remote
   CI was run; Phase 19 worktree changes remain unstaged.
+
+## P18-V01 direct static mapping equality probe — 2026-10-22 (`70671a33`)
+
+- [x] Added direct Java `LogicQueueMappingItem.equals` outcomes for equal
+  defaults/populated values, differences in each stored field, and null versus
+  empty `bname`. The focused Protocol test, strict Protocol Clippy,
+  formatting/diff checks, and pinned Maven `verify` pass. The route fixture
+  SHA-256 is
+  `0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.
+- [ ] The full workspace gate was last refreshed after the preceding API
+  update, before this fixture/test-only extension. Broad P18-V01
+  source/API/settings/input/error/control-flow and reverse-export
+  reconciliation, current-revision GitHub Ubuntu CI, and native Windows
+  stack-capture execution remain open. Phase 19 changes remain unstaged.

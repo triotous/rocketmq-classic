@@ -272,3 +272,10 @@ undecided objects. Java's `checkIfLogicoffsetDecided` is represented by Rust's
 `check_if_logic_offset_decided`. The updated `fixtures/runtime/route.json`
 SHA-256 is
 `e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
+
+### Direct `LogicQueueMappingItem.equals` cases — 2026-10-22 (`70671a33`)
+
+The Java method fixture compares `equals` for default/equal values, changes to
+each of the eight stored properties, and null-versus-empty broker names.
+Rust's derived equality matches all 11 outcomes. Route fixture SHA-256:
+`0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.

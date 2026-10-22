@@ -2453,3 +2453,14 @@ cases), and pinned Maven `verify` pass on this revision. The full workspace
 gate documented for the preceding revision has not yet been refreshed.
 Broader P18-V01 reconciliation and current-revision remote Ubuntu and native
 Windows execution remain open.
+
+## P18-V01 `LogicQueueMappingItem.equals` direct probe — 2026-10-22 (`70671a33`)
+
+The direct Java fixture now invokes `LogicQueueMappingItem.equals` for equal
+default and populated values, each of the eight field differences, and a null
+versus empty `bname`. Rust's `PartialEq` result matches all 11 Java outcomes.
+The refreshed `fixtures/runtime/route.json` SHA-256 is
+`0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.
+The focused Protocol differential, strict Protocol Clippy, format/diff checks,
+and pinned Maven `verify` pass. This closes the direct equality probe only;
+broad P18-V01 reconciliation remains open.
