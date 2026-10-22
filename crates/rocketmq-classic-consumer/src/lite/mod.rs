@@ -665,6 +665,15 @@ impl LitePullConsumer {
             self.record_start_failure(&error).await;
             return Err(error);
         }
+        // Java registers LitePull's metadata task immediately after the client
+        // runtime starts, before the remaining post-start route and Broker
+        // checks. Keep its initial delay anchored to that point even though
+        // this Rust task is spawned after post-start initialization.
+        let metadata_schedule_started_at = Instant::now();
+        let metadata_period = Duration::from_millis(
+            self.topic_metadata_check_interval_millis
+                .load(Ordering::Acquire) as u64,
+        );
         {
             let mut lifecycle = self.lifecycle.lock().await;
             if !matches!(*lifecycle, Lifecycle::Starting) {
@@ -746,12 +755,7 @@ impl LitePullConsumer {
         }
         let consumer = self.clone();
         let task = tokio::spawn(async move {
-            let metadata_period = Duration::from_millis(
-                consumer
-                    .topic_metadata_check_interval_millis
-                    .load(Ordering::Acquire) as u64,
-            );
-            let mut next_metadata_refresh = Instant::now() + Duration::from_secs(10);
+            let mut next_metadata_refresh = metadata_schedule_started_at + Duration::from_secs(10);
             loop {
                 if !consumer.running.load(Ordering::Acquire) {
                     break;

@@ -1530,6 +1530,83 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
 }
 
 #[tokio::test]
+async fn lite_metadata_schedule_deadline_anchors_before_post_start_checks() {
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route(&broker_address)).await;
+    let (updated_nameserver, updated_nameserver_task) =
+        start_scripted_nameserver(broker_route_with(&broker_address, "broker-a", 2)).await;
+    let (mut check_requests, release_check, broker_task) =
+        start_paused_check_broker(broker_listener);
+    let mut config = lite_config_with_store(
+        "lite-metadata-start-deadline",
+        "lite-metadata-start-deadline-client",
+        &nameserver,
+        Arc::new(LiteScriptedOffsetStore::default()),
+    );
+    config.client_config_mut().set_mq_client_api_timeout(30_000);
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let selector = rocketmq_classic_consumer::pull::MessageSelector::by_sql("a > 1");
+    consumer
+        .subscribe_with_selector("orders", &selector)
+        .await
+        .unwrap();
+    let (metadata_tx, mut metadata_rx) = mpsc::unbounded_channel();
+    consumer
+        .register_topic_message_queue_change_listener(
+            "orders",
+            Arc::new(move |topic, queues| {
+                let _ = metadata_tx.send((topic.to_owned(), queues.clone()));
+            }),
+        )
+        .await
+        .unwrap();
+
+    let start_consumer = consumer.clone();
+    let mut start = tokio::spawn(async move { start_consumer.start().await });
+    let check = timeout(Duration::from_secs(4), check_requests.recv())
+        .await
+        .expect("LitePull start did not reach the Broker subscription check")
+        .expect("Broker check request stream closed");
+    assert_eq!(check.code, request::CHECK_CLIENT_CONFIG);
+
+    consumer
+        .update_name_server_address(updated_nameserver)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(10_100)).await;
+    release_check
+        .send(())
+        .expect("paused Broker check was already released");
+    timeout(Duration::from_secs(4), &mut start)
+        .await
+        .expect("LitePull start did not finish after the Broker check")
+        .expect("LitePull start task failed")
+        .unwrap();
+
+    let (topic, queues) = timeout(Duration::from_secs(2), metadata_rx.recv())
+        .await
+        .expect("metadata timer restarted its initial delay after startup")
+        .expect("metadata listener channel closed");
+    assert_eq!(topic, "orders");
+    assert_eq!(
+        queues,
+        [
+            MessageQueue::new("orders", "broker-a", 0),
+            MessageQueue::new("orders", "broker-a", 1),
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    updated_nameserver_task.abort();
+    broker_task.abort();
+}
+
+#[tokio::test]
 async fn committed_reads_use_broker_offsets_and_preserve_rpc_errors() {
     let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let broker_address = broker_listener.local_addr().unwrap().to_string();
