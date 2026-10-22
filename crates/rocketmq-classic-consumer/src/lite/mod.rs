@@ -753,26 +753,29 @@ impl LitePullConsumer {
                     .topic_metadata_check_interval_millis
                     .load(Ordering::Acquire) as u64,
             );
-            let mut next_metadata_refresh = Instant::now() + metadata_period;
+            let mut next_metadata_refresh = Instant::now() + Duration::from_secs(10);
             loop {
                 if !consumer.running.load(Ordering::Acquire) {
                     break;
                 }
                 consumer.sync_workers().await;
                 if Instant::now() >= next_metadata_refresh {
-                    if let Some(engine) = consumer.engine() {
-                        let topics = consumer
-                            .subscriptions
-                            .read()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .keys()
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        for topic in topics {
-                            let _ = engine.refresh_topic_route(&topic).await;
+                    let _lifecycle_gate = consumer.lifecycle_gate.lock().await;
+                    if consumer.running.load(Ordering::Acquire) {
+                        if let Some(engine) = consumer.engine() {
+                            let topics = consumer
+                                .queue_change_listeners
+                                .read()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .keys()
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            for topic in topics {
+                                consumer.update_topic_queue_change(&engine, &topic).await;
+                            }
                         }
                     }
-                    next_metadata_refresh = Instant::now() + metadata_period;
+                    next_metadata_refresh += metadata_period;
                 }
                 tokio::select! {
                     _ = consumer.reconcile.notified() => {}
@@ -1319,6 +1322,7 @@ impl LitePullConsumer {
         &self,
         address: impl Into<String>,
     ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let address = address.into();
         *self
             .name_server_address
@@ -1326,6 +1330,29 @@ impl LitePullConsumer {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(address.clone());
         if let Some(engine) = self.engine() {
             engine.update_name_server_address(&address).await?;
+            if self.running.load(Ordering::Acquire) {
+                let subscription_topics = self
+                    .subscriptions
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for topic in subscription_topics {
+                    let _ = engine.refresh_topic_route(&topic).await;
+                }
+                let topics = self
+                    .queue_change_listeners
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for topic in topics {
+                    self.update_topic_queue_change(&engine, &topic).await;
+                }
+                self.reconcile.notify_one();
+            }
         }
         Ok(())
     }
@@ -1395,19 +1422,6 @@ impl LitePullConsumer {
                 }
             }
         }
-        if let Some(engine) = self.engine() {
-            let listener_topics = self
-                .queue_change_listeners
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>();
-            for topic in listener_topics {
-                self.update_topic_queue_change(&engine, &topic).await;
-            }
-        }
-
         let current = self
             .queue_states
             .lock()

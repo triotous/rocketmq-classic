@@ -1159,25 +1159,17 @@ impl PullConsumer {
     ) -> Result<BTreeSet<MessageQueue>, PullConsumerError> {
         let (runtime, _) = self.started_runtime().await?;
         let topic = self.topic_with_namespace(input_topic)?;
-        if !runtime.route_snapshot()?.topics.contains_key(&topic) {
-            let timeout = i64::from(self.config.client_config().mq_client_api_timeout()).max(0);
-            runtime
-                .update_topic_route(
-                    &topic,
-                    Instant::now() + Duration::from_millis(timeout as u64),
-                )
-                .await?;
-        }
-        // The consumer's topic_queues table is populated by subscription
-        // rebalance callbacks. Lite's fetchMessageQueues API also accepts
-        // topics this consumer has not subscribed to, so read the complete
-        // converted route snapshot instead of the rebalance table.
+        let timeout = i64::from(self.config.client_config().mq_client_api_timeout()).max(0);
         let queues = runtime
-            .route_snapshot()?
-            .topics
-            .get(&topic)
-            .map(|snapshot| snapshot.subscribe_queues.clone())
-            .unwrap_or_default();
+            .get_topic_subscribe_queues(
+                &topic,
+                Instant::now() + Duration::from_millis(timeout as u64),
+            )
+            .await?
+            .filter(|queues| !queues.is_empty())
+            .ok_or_else(|| PullConsumerError::EmptyMessageQueues(topic.clone()))?;
+        // Java MQAdminImpl.fetchSubscribeMessageQueues queries NameServer on
+        // each call and does not publish this route into the shared cache.
         let mut client_config = self.config.client_config().clone();
         queues
             .into_iter()

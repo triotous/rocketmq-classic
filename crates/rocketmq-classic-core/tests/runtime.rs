@@ -964,6 +964,94 @@ async fn json_null_route_response_returns_false_and_preserves_cached_snapshot() 
 }
 
 #[tokio::test]
+async fn direct_subscribe_queue_lookup_observes_route_change_without_publishing_cache() {
+    fn route(read_queue_nums: i32) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [{
+                "brokerName": "broker",
+                "readQueueNums": read_queue_nums,
+                "writeQueueNums": read_queue_nums,
+                "perm": 6,
+                "topicSysFlag": 0
+            }],
+            "brokerDatas": [{
+                "cluster": "cluster",
+                "brokerName": "broker",
+                "brokerAddrs": {"0": "127.0.0.1:10911"}
+            }],
+            "filterServerTable": {}
+        }))
+        .unwrap()
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = ClientConfig::new("direct-subscribe-queues");
+    config.set_namesrv_addr(Some(listener.local_addr().unwrap().to_string()));
+    let initial_route = route(1);
+    let refreshed_route = route(2);
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        for body in [initial_route, refreshed_route] {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            let command = frame::decode_next(&mut bytes).unwrap().unwrap();
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            let mut reply = RemotingCommand {
+                code: 0,
+                opaque: command.opaque,
+                body: Some(body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        }
+    });
+
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.remoting().start().unwrap();
+    assert!(
+        runtime
+            .update_topic_route("topic", Instant::now() + Duration::from_secs(2))
+            .await
+            .unwrap()
+    );
+    let cached_before_lookup = runtime.route_snapshot().unwrap();
+    assert_eq!(
+        cached_before_lookup.topics["topic"].subscribe_queues.len(),
+        1
+    );
+
+    let queues = runtime
+        .get_topic_subscribe_queues("topic", Instant::now() + Duration::from_secs(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(queues.len(), 2);
+    assert!(Arc::ptr_eq(
+        &cached_before_lookup,
+        &runtime.route_snapshot().unwrap()
+    ));
+    assert_eq!(
+        runtime.route_snapshot().unwrap().topics["topic"]
+            .subscribe_queues
+            .len(),
+        1
+    );
+
+    peer.await.unwrap();
+    runtime.remoting().shutdown().await;
+}
+
+#[tokio::test]
 async fn route_refresh_failure_preserves_last_coherent_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut config = ClientConfig::new("192.0.2.6");

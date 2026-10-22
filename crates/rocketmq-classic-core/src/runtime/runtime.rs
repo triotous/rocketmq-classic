@@ -741,6 +741,23 @@ impl ClientRuntime {
         Ok(Some(snapshot.publish_queues))
     }
 
+    /// Queries NameServer for the current subscribe queues without publishing
+    /// the route into the shared runtime cache, like Java MQAdminImpl.
+    pub async fn get_topic_subscribe_queues(
+        &self,
+        topic: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<
+        Option<std::collections::BTreeSet<rocketmq_classic_common::message::MessageQueue>>,
+        RuntimeError,
+    > {
+        let Some(route) = self.api.get_topic_route(topic, deadline).await? else {
+            return Ok(None);
+        };
+        let snapshot = crate::route::TopicSnapshot::from_route_data(topic, &route)?;
+        Ok(Some(snapshot.subscribe_queues))
+    }
+
     /// Nullable Java entry point for `updateTopicRouteInfoFromNameServer`.
     /// Java sends the null topic to NameServer first: a missing route returns
     /// false, while a returned route reaches the null-key map lookup and fails.
