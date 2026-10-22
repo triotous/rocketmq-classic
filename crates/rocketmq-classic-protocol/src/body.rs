@@ -4878,6 +4878,12 @@ impl ProducerConnection {
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// requires_java_identity::<UserInfo>();
 /// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::UserInfo;
+/// let user = UserInfo::default();
+/// user.java_encode_with_features(&[]).unwrap();
+/// ```
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInfo {
@@ -5012,13 +5018,6 @@ impl UserInfo {
         value: Option<&Self>,
     ) -> Result<Option<Vec<u8>>, serde_json::Error> {
         value.map(Self::java_encode).transpose()
-    }
-
-    pub fn java_encode_with_features(
-        &self,
-        features: &[JavaJsonWriterFeature],
-    ) -> Result<Vec<u8>, serde_json::Error> {
-        Ok(crate::route::java_fastjson_json_with_features(self, false, features)?.into_bytes())
     }
 
     pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {

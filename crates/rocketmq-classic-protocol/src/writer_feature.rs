@@ -316,6 +316,11 @@ mod tests {
         for (ordinal, (java_name, feature)) in java_names.iter().zip(rust_features).enumerate() {
             assert_eq!(feature.name(), java_name.as_str().unwrap());
             assert_eq!(feature.ordinal(), ordinal as i32);
+            assert!(
+                feature.is_implemented(),
+                "pinned Java writer feature {} must have a mapped Rust implementation",
+                feature.name()
+            );
         }
     }
 
