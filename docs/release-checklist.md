@@ -7085,3 +7085,30 @@ owner-specific checks belong in the manual handoff.
   gates are recorded above.
 - [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, and
   native Windows stack execution remain pending.
+
+## P18-V02 full current-revision server-free refresh — 2026-10-22 (`af04d054`; docs `5400211e`)
+
+- [x] `cargo fmt --all -- --check`, strict all-target/all-feature workspace
+  Clippy, default locked workspace tests, and all-feature locked workspace
+  tests pass. The full test run includes the new Producer startup-route and
+  cache-hit regressions. The Unique ID fixture passes under both UTC and
+  `TZ=Asia/Taipei`.
+- [x] Differential comparator self-test and 37-scenario handoff manifest
+  validation pass. Fixed-seed fuzz smoke covers 163 frame seeds, 11 message
+  seeds, 2,784 bounded mutations, 245 frame decodes, and 112 message decodes.
+  The deterministic race/leak smoke passes all 16 cases three times.
+- [x] Pinned `mvn -f compat/java-reference/pom.xml verify` passes on Java 27,
+  including fixture self-tests, runtime config/route/heartbeat probes, 37
+  scenarios, Java decoding of 106 Rust-generated typed headers and 19 typed
+  bodies. Maven regenerated no tracked fixture changes.
+- [x] Workspace metadata/license/dependency-direction checks pass. Facade
+  examples build in release mode; the offline benchmark compiles and runs.
+  Measurements are recorded in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md)
+  for macOS AArch64 / Apple M5 Max / Rust 1.85.0; no performance threshold is
+  asserted.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision GitHub Ubuntu CI and
+  native Windows stack-capture execution remain pending. No Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.
