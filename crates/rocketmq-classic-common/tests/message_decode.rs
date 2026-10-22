@@ -1890,6 +1890,24 @@ fn message_decoder_property_map_methods_match_java_551() {
             .collect::<Vec<_>>(),
         [0, -1]
     );
+    for key in [
+        "negativeBodyLengthFullDecode",
+        "negativePropertiesLengthFullDecode",
+    ] {
+        let decoded_case = &expected[key];
+        let record = base64::engine::general_purpose::STANDARD
+            .decode(decoded_case["recordBase64"].as_str().unwrap())
+            .unwrap();
+        let (decoded, consumed) = decode_one(&record, DecodeOptions::default()).unwrap();
+        assert_eq!(
+            decoded_snapshot(&decoded, consumed),
+            decoded_case["decoded"]
+        );
+        assert_eq!(
+            decoded.store_size(),
+            decoded_case["decodedStoreSize"].as_i64().unwrap() as i32
+        );
+    }
 
     let malformed_properties_record = base64::engine::general_purpose::STANDARD
         .decode(
@@ -3664,13 +3682,10 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
     let properties_length_offset = topic_length_offset + 1 + topic_length;
     bad_properties_length[properties_length_offset..properties_length_offset + 2]
         .copy_from_slice(&(-1_i16).to_be_bytes());
-    assert!(matches!(
-        decode_one(&bad_properties_length, DecodeOptions::default()),
-        Err(DecodeError::NegativeLength {
-            field: "properties",
-            ..
-        })
-    ));
+    let (decoded_without_properties, consumed) =
+        decode_one(&bad_properties_length, DecodeOptions::default()).unwrap();
+    assert!(decoded_without_properties.properties_nullable().is_none());
+    assert_eq!(consumed, properties_length_offset + 2);
     let compressed = record(
         fixture()["cases"]
             .as_array()

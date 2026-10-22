@@ -881,6 +881,35 @@ public final class MessageDecodeFixtures {
         int topicLengthPosition = bodySizePosition + 4 + malformedPropertiesBuffer.getInt(bodySizePosition);
         int topicLength = malformedPropertiesBuffer.get(topicLengthPosition);
         int propertiesPosition = topicLengthPosition + 1 + topicLength;
+
+        int declaredBodyLength = malformedPropertiesBuffer.getInt(bodySizePosition);
+        byte[] negativeBodyLengthRecord = new byte[record.length - declaredBodyLength];
+        System.arraycopy(record, 0, negativeBodyLengthRecord, 0, bodySizePosition);
+        ByteBuffer.wrap(negativeBodyLengthRecord).putInt(bodySizePosition, -1);
+        int bodyTailOffset = bodySizePosition + 4 + declaredBodyLength;
+        System.arraycopy(record, bodyTailOffset, negativeBodyLengthRecord, bodySizePosition + 4,
+            record.length - bodyTailOffset);
+        ByteBuffer negativeBodyDecodeInput = ByteBuffer.wrap(negativeBodyLengthRecord);
+        MessageExt negativeBodyDecoded = MessageDecoder.decode(negativeBodyDecodeInput);
+        Map<String, Object> negativeBodyDecode = new TreeMap<>();
+        negativeBodyDecode.put("recordBase64",
+            Base64.getEncoder().encodeToString(negativeBodyLengthRecord));
+        negativeBodyDecode.put("decoded", decodeSnapshot(negativeBodyDecoded, negativeBodyDecodeInput));
+        negativeBodyDecode.put("decodedStoreSize", negativeBodyDecoded.getStoreSize());
+        expected.put("negativeBodyLengthFullDecode", negativeBodyDecode);
+
+        byte[] negativePropertiesLengthFullRecord = record.clone();
+        ByteBuffer.wrap(negativePropertiesLengthFullRecord).putShort(propertiesPosition, (short) -1);
+        ByteBuffer negativePropertiesDecodeInput = ByteBuffer.wrap(negativePropertiesLengthFullRecord);
+        MessageExt negativePropertiesDecoded = MessageDecoder.decode(negativePropertiesDecodeInput);
+        Map<String, Object> negativePropertiesDecode = new TreeMap<>();
+        negativePropertiesDecode.put("recordBase64",
+            Base64.getEncoder().encodeToString(negativePropertiesLengthFullRecord));
+        negativePropertiesDecode.put("decoded",
+            decodeSnapshot(negativePropertiesDecoded, negativePropertiesDecodeInput));
+        negativePropertiesDecode.put("decodedStoreSize", negativePropertiesDecoded.getStoreSize());
+        expected.put("negativePropertiesLengthFullDecode", negativePropertiesDecode);
+
         malformedPropertiesBuffer.putShort(propertiesPosition, (short) 6);
         malformedPropertiesBuffer.position(propertiesPosition + 2);
         malformedPropertiesBuffer.put("broken".getBytes(StandardCharsets.UTF_8));

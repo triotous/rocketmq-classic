@@ -458,9 +458,12 @@ fn decode_one_with_limits(
     let reconsume_times = input.i32("reconsume count")?;
     let prepared_transaction_offset = input.i64("prepared transaction offset")?;
 
-    let body_length_offset = input.position();
-    let body_length = input.i32("body length")?;
-    let body_length = nonnegative_length(body_length_offset, "body", body_length)?;
+    let declared_body_length = input.i32("body length")?;
+    let body_length = if declared_body_length > 0 {
+        declared_body_length as usize
+    } else {
+        0
+    };
     ensure_record_limit(input.position(), body_length, limits.max_record_bytes)?;
     let encoded_body = input.bytes(body_length, "body")?;
     let mut body = (options.read_body && body_length > 0).then(|| encoded_body.to_vec());
@@ -514,10 +517,12 @@ fn decode_one_with_limits(
     ensure_record_limit(input.position(), topic_length, limits.max_record_bytes)?;
     let topic = String::from_utf8_lossy(input.bytes(topic_length, "topic")?).into_owned();
 
-    let properties_length_offset = input.position();
-    let properties_length = input.i16("properties length")? as i32;
-    let properties_length =
-        nonnegative_length(properties_length_offset, "properties", properties_length)?;
+    let declared_properties_length = input.i16("properties length")? as i32;
+    let properties_length = if declared_properties_length > 0 {
+        declared_properties_length as usize
+    } else {
+        0
+    };
     ensure_record_limit(input.position(), properties_length, limits.max_record_bytes)?;
     let properties = String::from_utf8_lossy(input.bytes(properties_length, "properties")?);
     ensure_record_limit(input.position(), 0, limits.max_record_bytes)?;
