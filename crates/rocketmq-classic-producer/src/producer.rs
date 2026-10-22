@@ -1073,13 +1073,17 @@ impl Producer {
             runtime: Arc::downgrade(&runtime),
             lease,
         };
-        RequestFutureHolder::get_instance()
-            .start_scheduled_task(self)
-            .await;
         self.start_trace_dispatcher(&runtime, &producer_group).await;
         let task = self.spawn_detector_task(Arc::downgrade(&runtime));
         *self.detector_task.lock().await = Some(task);
         self.set_service_state(Some(ProducerServiceState::Running));
+        // Java sends a heartbeat after every Producer start, including when
+        // the enclosing client factory was already running and its start is
+        // intentionally skipped.
+        let _ = runtime.send_heartbeat_to_all_brokers().await;
+        RequestFutureHolder::get_instance()
+            .start_scheduled_task(self)
+            .await;
         Ok(())
     }
 
@@ -1730,6 +1734,120 @@ mod tests {
             producer.service_state(),
             Some(ProducerServiceState::ShutdownAlready)
         );
+        assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn producer_start_sends_a_heartbeat_to_cached_brokers() {
+        use bytes::BytesMut;
+        use rocketmq_classic_protocol::codes::{request, response};
+        use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::{TcpListener, TcpStream},
+        };
+
+        async fn read_command(stream: &mut TcpStream) -> RemotingCommand {
+            let mut length = [0; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.unwrap();
+            frame::decode_next(&mut bytes).unwrap().unwrap()
+        }
+
+        async fn write_response(
+            stream: &mut TcpStream,
+            command: &RemotingCommand,
+            code: i32,
+            body: Option<Vec<u8>>,
+        ) {
+            let mut reply = RemotingCommand {
+                code,
+                opaque: command.opaque,
+                body,
+                ..RemotingCommand::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        }
+
+        let broker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let broker_address = broker.local_addr().unwrap().to_string();
+        let broker_peer = tokio::spawn(async move {
+            let (mut stream, _) = broker.accept().await.unwrap();
+            let command = read_command(&mut stream).await;
+            assert_eq!(command.code, request::HEART_BEAT);
+            let heartbeat: serde_json::Value =
+                serde_json::from_slice(command.body.as_ref().unwrap()).unwrap();
+            write_response(&mut stream, &command, response::SUCCESS, None).await;
+            heartbeat
+        });
+
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let route = serde_json::to_vec(&serde_json::json!({
+            "queueDatas": [{
+                "brokerName": "startup-broker",
+                "readQueueNums": 1,
+                "writeQueueNums": 1,
+                "perm": 6,
+                "topicSysFlag": 0
+            }],
+            "brokerDatas": [{
+                "cluster": "DefaultCluster",
+                "brokerName": "startup-broker",
+                "brokerAddrs": {"0": broker_address}
+            }],
+            "filterServerTable": {}
+        }))
+        .unwrap();
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            let command = read_command(&mut stream).await;
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            write_response(&mut stream, &command, response::SUCCESS, Some(route)).await;
+        });
+
+        let manager = ClientRuntimeManager::new();
+        let mut config = ProducerConfig::new("startup-heartbeat-producer").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config
+            .client_config_mut()
+            .set_enable_heartbeat_channel_event_listener(false);
+        let runtime = manager.get_or_create(config.client_config()).await.unwrap();
+        runtime.start().await.unwrap();
+        assert!(
+            runtime
+                .update_topic_route(
+                    "existing-topic",
+                    tokio::time::Instant::now() + Duration::from_secs(2)
+                )
+                .await
+                .unwrap()
+        );
+        nameserver_peer.await.unwrap();
+
+        let producer = Arc::new(Producer::with_runtime_manager(config, manager));
+        producer.start_with_factory(false).await.unwrap();
+        let heartbeat = tokio::time::timeout(Duration::from_secs(2), broker_peer)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            heartbeat["producerDataSet"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|producer| producer["groupName"] == "startup-heartbeat-producer")
+        );
+
+        producer.shutdown_with_factory(false).await.unwrap();
         assert!(runtime.shutdown().await.unwrap());
     }
 
