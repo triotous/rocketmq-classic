@@ -2911,3 +2911,20 @@ and all seven product package listings pass. This closes only the tested
 TopicConfig attribute-order slice. Broad P18-V01 reconciliation, current
 Ubuntu/native Windows P18-V04 evidence, and Phase 19 Broker/Docker validation
 remain open.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` input boundary — 2026-10-22 (`67d0d049`)
+
+Pinned Java extracts properties using record offsets and ignores the declared
+total store size. Rust now does the same instead of requiring full-record
+validation first. Direct Java fixtures verify extraction when the stored size
+is zero and verify that a positive-length malformed property string yields an
+empty map. Fixture SHA-256:
+`e2fab00b22e5954f54095fe7215848e4e317d6f62461cea166b5cd8be715b317`.
+
+The focused Common differential, Common suite, default/all-feature workspace
+tests, strict all-target/all-feature Clippy, format/diff checks, and pinned
+Maven `verify` pass (37 scenarios, 36 route/VIP cases, 106 typed headers, 19
+typed bodies). This closes this method's record-position and malformed-property
+slice only. Broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation, current-revision remote Ubuntu CI, native
+Windows runtime, and Phase 19 Broker/Docker evidence remain open.

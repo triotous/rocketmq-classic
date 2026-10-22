@@ -7962,3 +7962,19 @@ owner-specific checks belong in the manual handoff.
   the existing workspace-manifest and Consumer `fetch_update` warnings. No
   external CI or push was run. Run record:
   `rlogs/2026/10/22-phase-18-rustdoc-export-inventory__20261022T190913Z.rlog`.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` record-input parity — 2026-10-22 (`67d0d049`)
+
+- [x] Rust now matches Java's direct property extraction when declared store
+  size is zero and returns an empty map for a positive-length malformed
+  property string. Invoked fixture SHA-256:
+  `e2fab00b22e5954f54095fe7215848e4e317d6f62461cea166b5cd8be715b317`.
+- [x] Focused differential and Common tests, locked default/all-feature
+  workspace tests, strict all-target/all-feature Clippy, fmt/diff checks, and
+  pinned Maven `verify` pass (37 scenarios, 36 route/VIP cases, 106 typed
+  headers, 19 typed bodies).
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+  Windows runtime, and Phase 19 Broker/Docker validation remain open. No push
+  or external CI was run; the four protected Phase 19 worktree paths remain
+  unstaged. Run record:
+  `rlogs/2026/10/22-phase-18-message-decoder-properties-gate__20261022T192507Z.rlog`.

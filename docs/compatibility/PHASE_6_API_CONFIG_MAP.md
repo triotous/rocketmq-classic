@@ -2555,3 +2555,23 @@ Consumer, Core, Protocol, and Remoting, and supersedes the Producer scan's
 earlier count of 357. The current name inventory also provides the baseline for
 the Common owner crosswalk above. These counts establish exported-name scope;
 they do not establish behavior coverage or close broad P18-V01 reconciliation.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` record-input parity — 2026-10-22 (`67d0d049`)
+
+Pinned Java 5.5.1 reads the system flag, magic code, host-width flags, body
+length, topic length, and property length directly. This method does not check
+the record's declared total store size. Rust previously delegated to full
+record decoding and rejected a zero store size before reading properties; it
+now follows the direct field offsets. A positive property length whose text
+parses no entries returns an empty map, while a nonpositive length returns
+null. Invoked Java fixtures cover both boundaries. The refreshed
+`fixtures/messages/records.json` SHA-256 is
+`e2fab00b22e5954f54095fe7215848e4e317d6f62461cea166b5cd8be715b317`.
+
+The focused Common differential, Common suite, locked default and all-feature
+workspace tests, strict all-target/all-feature Clippy, formatting/diff checks,
+and pinned Maven `verify` pass. Maven verifies 37 scenarios, 36 route/VIP
+cases, 106 typed headers, and 19 typed bodies. This closes the
+`decodeProperties` record-position and positive-length empty-map slice only;
+broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
+reconciliation remains open.
