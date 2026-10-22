@@ -75,3 +75,15 @@ Refreshed after code commit `e415be18` (documentation follow-up `62a17ecf` only)
 - `cargo fmt --all -- --check` and `git diff --check`: PASS.
 
 The protocol-specific and pinned Maven results for `e415be18` are recorded above. This refresh does not complete the broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation. Current-revision remote Ubuntu CI and native Windows stack-capture execution remain unverified. The separate Phase 19 worktree files remain unstaged.
+
+Phase 18 static-topic direct equality probe — 2026-10-22 14:28 UTC
+
+The static-topic public method crosswalk listed `LogicQueueMappingItem.equals`, but the direct Java method fixture only asserted its hash/text operations (nested equality was exercised indirectly by TopicQueueMappingDetail cases). Added 11 direct Java equality pairs: defaults, equal populated items, one changed pair for each of the eight fields, and null-versus-empty broker name. The existing Rust equality implementation is compared against the actual Java `equals` outcomes.
+
+Validation:
+- Focused `cargo test -p rocketmq-classic-protocol --all-features --locked logic_queue_mapping_item_methods_match_invoked_java`: PASS.
+- Strict all-target/all-feature Protocol Clippy, `cargo fmt --all -- --check`, and `git diff --check`: PASS.
+- Pinned `mvn -f compat/java-reference/pom.xml verify`: PASS (BUILD SUCCESS at 2026-10-22 14:27:21 UTC, 37 scenario cases, 36 route/VIP invoked cases, Java decoded 106 typed headers and 19 typed bodies).
+- Route fixture SHA-256: `0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.
+
+The broad P18-V01 source/API/settings/input/error/control-flow/reverse-export audit remains open; remote Ubuntu CI and native Windows execution are still unverified. Protected Phase 19 worktree files remain unstaged.

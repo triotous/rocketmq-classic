@@ -3038,6 +3038,67 @@ public final class RuntimeRouteFixtures {
         return result;
     }
 
+    private static Map<String, Object> logicQueueMappingItemEqualityPair(
+            String name,
+            org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem left,
+            org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem right) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("case", name);
+        result.put("left", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(left,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("right", com.alibaba.fastjson2.JSON.parseObject(
+            com.alibaba.fastjson2.JSON.toJSONString(right,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        result.put("equals", left.equals(right));
+        return result;
+    }
+
+    private static List<Object> logicQueueMappingItemEqualityCases() {
+        org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem base =
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 8, 100, 200);
+        List<Object> cases = new ArrayList<>();
+        cases.add(logicQueueMappingItemEqualityPair("default",
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(),
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem()));
+        cases.add(logicQueueMappingItemEqualityPair("same-populated", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("generation", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                2, 3, "broker", 10, 2, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("queueId", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 4, "broker", 10, 2, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("bname", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "other", 10, 2, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("logicOffset", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 11, 2, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("startOffset", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 3, 8, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("endOffset", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 9, 100, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("timeOfStart", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 8, 101, 200)));
+        cases.add(logicQueueMappingItemEqualityPair("timeOfEnd", base,
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "broker", 10, 2, 8, 100, 201)));
+        cases.add(logicQueueMappingItemEqualityPair("null-vs-empty-bname",
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, null, 10, 2, 8, 100, 200),
+            new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+                1, 3, "", 10, 2, 8, 100, 200)));
+        return cases;
+    }
+
     private static List<Object> logicQueueMappingItemMethodCases() {
         long[] physicalOffsets = new long[] {-1, 0, 1, 2, 3, 8, 9, Long.MAX_VALUE};
         long[] staticOffsets = new long[] {-1, 0, 10, Long.MAX_VALUE};
@@ -4407,6 +4468,7 @@ public final class RuntimeRouteFixtures {
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
         fixture.put("topicQueueMappingConstants", topicQueueMappingConstants());
         fixture.put("logicQueueMappingItemMethods", logicQueueMappingItemMethodCases());
+        fixture.put("logicQueueMappingItemEquality", logicQueueMappingItemEqualityCases());
         fixture.put("logicQueueMappingItemSetters", logicQueueMappingItemSetterCase());
         fixture.put("topicQueueMappingDetailMethods", topicQueueMappingDetailMethodCases());
         fixture.put("topicQueueMappingDetailOperations", topicQueueMappingDetailOperationCase());

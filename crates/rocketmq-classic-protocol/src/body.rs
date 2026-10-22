@@ -11768,6 +11768,13 @@ mod tests {
             assert_eq!(item.java_to_string(), case["toString"]);
         }
 
+        for case in fixture["logicQueueMappingItemEquality"].as_array().unwrap() {
+            let left: LogicQueueMappingItem = serde_json::from_value(case["left"].clone()).unwrap();
+            let right: LogicQueueMappingItem =
+                serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"], "{}", case["case"]);
+        }
+
         let setters = &fixture["logicQueueMappingItemSetters"];
         let mut item = LogicQueueMappingItem::default();
         item.set_gen(setters["generation"].as_i64().unwrap() as i32);
