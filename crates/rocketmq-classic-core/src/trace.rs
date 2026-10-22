@@ -435,6 +435,7 @@ impl TraceContext {
     }
 
     /// Returns Java trace transfer keys: message IDs and each nonempty message key.
+    #[doc(hidden)]
     pub fn transfer_keys(&self) -> BTreeSet<String> {
         let mut keys = BTreeSet::new();
         for bean in self.trace_beans.iter().flatten() {

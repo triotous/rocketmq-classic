@@ -109,3 +109,28 @@ P18-V04 Windows cross-compilation follow-up
   `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md`: current Windows GNU
   cross-compilation supersedes the older missing-linker note, while native
   Windows execution remains outstanding.
+
+P18-V01 Rustdoc export reverse-name pass — 2026-10-22
+- `cargo +nightly rustdoc -p rocketmq-classic-core --lib --locked -- -Z
+  unstable-options --output-format json` passed after hiding internal
+  cross-crate adapters from generated API docs. Common, Protocol, and Remoting
+  Rustdoc JSON generation also passed. Producer and Consumer JSON came from
+  the prior successful rustdoc pass; no code in those crates changed here.
+- Exact Rustdoc-name joins now account for Core (682 named public items),
+  Producer (357), and Consumer (445) with zero exact-name omissions. A source
+  scan of `crates/rocketmq-classic/src/lib.rs` accounted for all 125 direct
+  facade re-exports with zero omissions. Generated crate-root module markers
+  were excluded from the counts.
+- Added Java crosswalks for the previously omitted Rust Core API, Producer
+  hook/table/trace/request-future names, and Consumer ProcessQueue/POP/listener/
+  offset/trace names in `docs/compatibility/PHASE_6_API_CONFIG_MAP.md`.
+- Verified `getBrokerLiteInfo` and `triggerLiteDispatch` directly in pinned
+  Java source commit `efa1be59d6fc747ad220f036c86030f05f0419f9`; both are
+  present there with request codes 200074 and 200079. The separate Java
+  checkout's current HEAD differs, so source checks used the pinned commit.
+- Remaining exact-name join gaps: Common 127, Protocol 908, Remoting 65. Most
+  are message properties, generated protocol DTO/header methods, request/
+  response codes, route collection aliases, and remoting metrics/helpers;
+  broad P18-V01 behavior/control-flow reconciliation remains open.
+- `git diff --check` passed. No tests were added or run in this documentation
+  pass. Protected Phase 19 worktree changes remain untouched and unstaged.

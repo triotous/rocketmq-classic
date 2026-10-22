@@ -444,6 +444,7 @@ pub struct PendingReplyControl {
 }
 
 impl PendingReplyControl {
+    #[doc(hidden)]
     pub fn mark_send_succeeded(&self) {
         if let Ok(mut entries) = self.table.entries.lock() {
             if let Some(entry) = entries.get_mut(&self.correlation_id) {
@@ -456,6 +457,7 @@ impl PendingReplyControl {
     }
 
     /// Returns false when another terminal path already claimed the entry.
+    #[doc(hidden)]
     pub fn fail_send(&self, cause: String) -> bool {
         let entry = {
             let Ok(mut entries) = self.table.entries.lock() else {
@@ -485,6 +487,7 @@ impl PendingReplyControl {
         })
     }
 
+    #[doc(hidden)]
     pub fn cancel(&self) -> bool {
         let Ok(mut entries) = self.table.entries.lock() else {
             return false;
@@ -506,6 +509,7 @@ impl PendingReplyControl {
 
     /// Complete the owned entry with timeout only when its monotonic deadline
     /// has elapsed. A reply or shared-scheduler scan may already own it.
+    #[doc(hidden)]
     pub fn expire_if_due(&self, now: Instant) -> bool {
         let expired = {
             let Ok(mut entries) = self.table.entries.lock() else {

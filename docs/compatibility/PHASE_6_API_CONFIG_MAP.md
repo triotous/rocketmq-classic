@@ -2144,3 +2144,98 @@ null list members, Fastjson object-root behavior, success and Broker errors,
 timeout, typed-header cross-decode, and unchanged-address behavior. The auth
 reverse audit has no remaining direct RPC rows; broader P18-V01 reconciliation
 remains open.
+
+## P18-V01 Rustdoc core-export reverse scan — 2026-10-22
+
+An exact-name scan of the `rocketmq-classic-core` Rustdoc JSON export found
+several public identifiers whose Java mapping was already recorded under its
+Java name or in a different phase matrix. The generated crate-root module
+marker is excluded from the symbol count. These entries make the reverse
+links explicit; they add no client setting or operation.
+
+| Rust export | Pinned Java counterpart / disposition |
+| --- | --- |
+| `ACCESS_KEY`, `SECRET_KEY`, `SECURITY_TOKEN`, `SIGNATURE`, `CHARSET`, `KEY_FILE_PROPERTY` | `SessionCredentials` constants and `KEY_FILE`; `AclUtils` uses the same signing field names and UTF-8 charset. |
+| `DEFAULT_CHARSET`, `DEFAULT_ALGORITHM` | `AclSigner.DEFAULT_CHARSET` and `AclSigner.DEFAULT_ALGORITHM`. |
+| `AclUtilsError`, `is_asterisk`, `is_colon`, `is_comma`, `is_minus`, `with_status_code`, `with_status_code_and_message`, `with_cause`, `with_status_code_and_source`, `set_code` | `AclUtils` scope helpers and `AclException` constructors/accessors. Rust uses typed errors and `Error::source()` for the Java `AclException`/`Throwable` paths; the exact Java helper signature and invoked behavior are in the Phase 16 ACL matrix. |
+| `AdminQueryError`, `query_message_across_brokers` | Java `MQAdminImpl.queryMessage` aggregation and its route/RPC failures; Phase 17 pins the facade calls, result order and failure handling. |
+| `NameServerConfigs` | The Java `MQClientAPIImpl.getNameServerConfig` map from NameServer addresses to nullable property tables. |
+| `export_rocksdb_config_to_json_nullable`, `get_producer_connection_list_nullable` | Nullable Rust adapters for Java methods whose list/group inputs may be null; these preserve the Java wire omission and validation branches. |
+| `NotifyResult::{is_has_msg,set_has_msg,is_polling_full,set_polling_full}` | Java `MQClientAPIExt.NotifyResult` accessors and stable `toString()`. |
+| `LocalTransactionState` | Java `client.producer.LocalTransactionState`, including declaration order and lookup behavior. |
+| `TraceBean` fields `topic`, `message_id`, `offset_message_id`, `tags`, `keys`, `store_host`, `client_host`, `store_time_millis`, `body_length`, `retry_times`, `message_type`, `transaction_id`, `transaction_state`, `from_transaction_check` | Java `TraceBean` fields/accessors; `store_time_millis` is retained although the 5.5.1 wire encoder omits it. Phase 16 trace fixtures cover defaults, field order and encoding. |
+| `TraceContext` fields `trace_type`, `timestamp_millis`, `region_id`, `region_name`, `group_name`, `cost_time_millis`, `success`, `request_id`, `context_code`, `access_channel`, `trace_beans`; `compare_to` | Java `TraceContext` fields/accessors and `Comparable<TraceContext>`; the Phase 16 trace matrix and encoder fixtures cover the observable state. |
+| `TRACE_FIELD_SEPARATOR`, `TRACE_RECORD_SEPARATOR` | Java `TraceConstants.CONTENT_SPLITOR` (`U+0001`) and `FIELD_SPLITOR` (`U+0002`) respectively. Rust names describe their record roles. |
+| `RequestResponseCallback`, `RequestTimeoutCause`, `RequestSendFailureCause` | Java `RequestCallback` and the timeout/send-failure `Throwable` values delivered through `RequestResponseFuture`; Rust exposes typed error causes. |
+| `UniqueIdError` | Checked error carrier for the pinned `MessageClientIDSetter` decoding helpers; valid IDs and accepted layouts are covered by the Phase 7 unique-ID fixture. |
+| `expire_if_due`, `fail_send`, `mark_send_succeeded`, `register_reply_request_with_future` | Rust cross-crate request/reply lifecycle adapters for the Java `RequestFutureHolder` correlation table and `RequestResponseFuture` completion paths. Their hidden owner methods do not add a user-facing request/reply mode. |
+| `get_or_create_with_hook_and_tls_config` | Rust cross-crate runtime-construction adapter that carries the Java-mapped TLS settings into Producer/Consumer construction. It is hidden from generated public API documentation; Java configuration remains on the mapped ClientConfig/transport settings. |
+| `transfer_keys` | Rust trace-encoder helper used by the Producer crate; it is hidden from generated public API documentation. Java exposes the resulting transfer-key data through its trace encoder flow. |
+| `RequestFutureTable` | Java `RequestFutureHolder.getRequestFutureTable()` returns the live `ConcurrentHashMap`; Rust wraps the same process-wide correlation table and exposes map operations (`get`/`insert`/`remove`/`clear`/`contains_key`/`len`/`is_empty`/`keys`/`values`). `shared()` and `Default` return the same table view. |
+| `RequestFutureError` | Rust typed result for the pinned Java `RequestResponseFuture` null-latch failure: Java stores the response, then throws `NullPointerException` from `putResponseMessage` or wait; Rust stores first and returns `MissingCountDownLatch`. The behavior and error-type adaptation are recorded in the Phase 15 request/reply matrix. |
+| `add_write_perm_of_broker`, `wipe_write_perm_of_broker` | Java `MQClientAPIImpl.addWritePermOfBroker` and `wipeWritePermOfBroker`; both send their direct NameServer RPC and return the response topic count. Rust keeps nullable Broker-name inputs and the caller deadline. |
+| `delete_subscription_group` | Java `MQClientAPIImpl.deleteSubscriptionGroup` and `MqClientAdminImpl.deleteSubscriptionGroup`; Rust sends the equivalent typed header request and classifies the Broker response. |
+| `get_all_producer_info`, `get_broker_runtime_info`, `get_producer_connection_list` | Java `MQClientAPIImpl.getAllProducerInfo`, `getBrokerRuntimeInfo`, and `getProducerConnectionList`; Rust uses the same request codes and nullable response DTOs, and applies the configured VIP address transform to Broker RPCs. |
+| `invoke_broker_to_reset_offset` | Java `MqClientAdminImpl.invokeBrokerToResetOffset` typed-header RPC; Rust decodes the Java `ResetOffsetBody` queue-offset response and maps missing/malformed bodies and Broker failures. |
+| `get_broker_lite_info`, `trigger_lite_dispatch` | Java `MQClientAPIImpl.getBrokerLiteInfo` and `triggerLiteDispatch` at the pinned 5.5.1 source revision, using request codes 200074 and 200079. Rust preserves Java's VIP transform, nullable response body/header fields, and Broker response classification. |
+
+With the generated crate-root module marker excluded, the Core scan covered
+682 named public items and left zero exact-name omissions. It found no
+additional Core public setting or client operation beyond
+these Java-mapped APIs and the hidden cross-crate adapters. It checks exported
+names and their mappings; behavior acceptance remains in the named fixture
+and phase-matrix evidence above.
+
+## P18-V01 Rustdoc Producer-export reverse scan — 2026-10-22
+
+The exact-name scan of the `rocketmq-classic-producer` Rustdoc JSON export
+covered 357 named public items and found these names without an exact mention
+in the compatibility docs.
+They are Rust names for pinned Java hooks, contexts, table views, callbacks,
+trace dispatch, and request-future lifecycle operations.
+
+| Rust export | Pinned Java counterpart / disposition |
+| --- | --- |
+| `HookException` | Borrowed Rust `Error` view of Java hook-context `Throwable`; the concrete Rust cause remains downcastable. |
+| `broker_addr`, `name_srv_addr`, `communication_mode`, `send_result`, `trace_context` | Fields in Rust `SendMessageContext` / `CheckForbiddenContext`, mapped to Java `SendMessageContext` and `CheckForbiddenContext` fields (`brokerAddr`, `nameSrvAddr`, `communicationMode`, `sendResult`, `traceContext`). `communication_mode` maps Java `CommunicationMode` values and ordinals. |
+| `local_transaction_state` | `TransactionSendResult.local_transaction_state` maps Java `TransactionSendResult.getLocalTransactionState()`. |
+| `get_instance`, `get_request_future_table`, `start_scheduled_task` | `RequestFutureHolder.getInstance()`, `getRequestFutureTable()`, and `startScheduledTask()`. Rust's async scheduler preserves Java's initial three-second delay and one-second scan period; shutdown ownership is mapped in Phase 15. |
+| `TopicPublishInfoEntryHandle` | Write-through Rust entry view for Java `DefaultMQProducerImpl.getTopicPublishInfoTable().entrySet()` entries and `Map.Entry.setValue`; iteration returns detached handles while updates target the live table. |
+| `TopicPublishInfoTableError` | Typed Rust errors for Java `ConcurrentHashMap` null key/value/map/callback and null remapping-result failures. Java throws `NullPointerException`; the Phase 7 producer-table matrix records this typed-error adaptation and collection behavior. |
+| `TraceProducerKind` | Java `TraceDispatcher.Type` (`PRODUCE`, `CONSUME`), with matching names, order, ordinals, and lookup behavior. |
+| `TraceDispatcherError` | Rust `Result` carrier for the Java `AsyncTraceDispatcher` startup, worker, and shutdown lifecycle. It represents Rust worker/lifecycle failures and does not add a trace mode. |
+| `TransactionCallbackError` | Typed Rust callback failure for Java `TransactionListener` / `TransactionCheckListener` calls. Java callback exceptions and null-like results resolve to `UNKNOW`; Rust error, panic, and `None` paths preserve that decision, as recorded in the Phase 14 transaction matrix. |
+
+## P18-V01 Rustdoc Consumer-export reverse scan — 2026-10-22
+
+The exact-name scan of the `rocketmq-classic-consumer` Rustdoc JSON export
+covered 445 named public items. Its initial name join found public names for
+Java consumer types and methods, plus Rust ownership, async, and typed-error
+adapters. The table groups the names by the Java owner whose API they expose.
+
+| Rust export | Pinned Java counterpart / disposition |
+| --- | --- |
+| `ConsumeConcurrentlyStatus` | `consumer.listener.ConsumeConcurrentlyStatus`, including `CONSUME_SUCCESS` and `RECONSUME_LATER`. |
+| `PushMessageListener` | Rust enum selecting Java `MessageListenerConcurrently` or `MessageListenerOrderly`; the selected callback receives the corresponding Java context and status. |
+| `TopicMessageQueueChangeListener` | Java `consumer.TopicMessageQueueChangeListener`; Rust stores the listener as a shared callback and preserves queue-change delivery. |
+| `SharedFilterMessageHooks` | Shared live Rust hook-list handle for Java `FilterMessageHook` registration. Replacing the handle preserves Java `registerFilterMessageHook(ArrayList)` alias behavior. |
+| `ConsumeMessageServiceFuture` | Boxed asynchronous return carrier for the Rust `ConsumeMessageService` extension point; the operation maps to Java `impl.consumer.ConsumeMessageService` lifecycle, direct-consume, and submission methods. |
+| `OffsetStoreFuture`, `OffsetStoreError` | Async result and typed failure carrier for Java `consumer.store.OffsetStore` operations; remote RPC and local-file failures map to the existing Java client exception paths. |
+| `PullConsumerError`, `LitePullConsumerError` | Rust public error enums for Java Pull/Lite Pull operations. They wrap the Java configuration, client, Broker, offset, and lifecycle failure branches recorded in the Phase 13/14 consumer matrices. |
+| `ProcessPullError` | Typed Rust failures for the Java `PullAPIWrapper.processPullResult` FOUND-message decode and inner-batch paths; accepted data and failure order are covered by the Phase 14 pull-result fixtures. |
+| `PopProcessError`, `PopReceiptError` | Typed Rust error carriers for Java POP response decoding and `ExtraInfoUtil` receipt parsing. `PopReceiptError` keeps malformed numeric and missing-field outcomes distinct while the original receipt remains available for forward-compatible fields. |
+| `ProcessQueueAtomicLong` | Rust operation view for Java `ProcessQueue.getMsgCount()` / `getMsgSize()` `AtomicLong` values, including `get_and_add`, `add_and_get`, `get_and_set`, increment/decrement, and `compare_and_set` operations with Java wrapping arithmetic. |
+| `ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, `ProcessQueueMessageTreeWriteGuard` | Lock-backed Rust views for Java `ProcessQueue.getMsgTreeMap()`'s live `TreeMap`. Read/write guards preserve direct map edits while keeping independent count and byte counters unchanged, matching Java's separate fields. |
+| `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `has_temp_message`, `put_message`, `take_messages`, `remove_message`, `make_message_to_consume_again`, `clean_expired_msg`, `fill_process_queue_info` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
+| `is_dropped`, `set_dropped`, `is_locked`, `set_locked`, `is_lock_expired`, `is_pull_expired`, `get_last_lock_timestamp`, `set_last_lock_timestamp`, `get_last_pull_timestamp`, `set_last_pull_timestamp`, `get_last_consume_timestamp`, `set_last_consume_timestamp`, `get_msg_acc_cnt`, `set_msg_acc_cnt`, `get_try_unlock_times`, `inc_try_unlock_times`, `get_consume_lock` | Java `ProcessQueue` state/accessor methods (`isDropped`, `setDropped`, lock/pull expiration, timestamp, accumulated-count, unlock-attempt, and orderly-consume lock accessors). `PopProcessQueue.is_pull_expired` maps to the corresponding Java POP queue check. |
+| `get_and_add`, `add_and_get`, `get_and_set`, `get_and_increment`, `increment_and_get`, `get_and_decrement`, `decrement_and_get`, `compare_and_set` | Java `AtomicLong` methods returned from `ProcessQueue.getMsgCount()` / `getMsgSize()`; operations mutate the same cached counters. |
+| `get_last_pop_timestamp`, `set_last_pop_timestamp`, `get_wai_ack_msg_count`, `inc_found_msg`, `dec_found_msg`, `fill_pop_process_queue_info` | Java `PopProcessQueue` getters, setters, found-message counter methods, and `fillPopProcessQueueInfo`; the Rust spelling `wai` retains Java's declared `getWaiAckMsgCount` typo. |
+| `trace_context` | `ConsumeMessageContext.trace_context` maps Java `ConsumeMessageContext.traceContext` and carries hook-owned trace state between before/after callbacks. |
+| `LiteTraceKind`, `trace_kind`, `LiteTraceDispatcher`, `LiteTraceError` | Consumer trace kinds map Java `TraceType.SubBefore` / `SubAfter`; `LiteTraceDispatcher` is the Rust async owner for Java `AsyncTraceDispatcher` consume-trace records, and `LiteTraceError` carries Rust producer/worker lifecycle failures. The encoded control-character format is covered by the Phase 16 trace fixtures. |
+
+The root façade source scan covered all 125 direct re-exports with zero
+exact-name omissions after these crosswalks. Together, these Rustdoc/source
+reverse scans account for the exact-name omissions from the Core, Producer,
+Consumer, and façade exports. They do not replace P18-V01's complete
+Java source, settings, inherited API, validation, error, and control-flow
+reconciliation; that broader audit remains open.

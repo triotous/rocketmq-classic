@@ -246,6 +246,7 @@ impl ClientRuntimeManager {
     /// Creates a shared runtime with an explicit Rust TLS configuration.
     /// The first configuration used for a Java-compatible client identity owns
     /// that shared runtime, including its transport settings.
+    #[doc(hidden)]
     pub async fn get_or_create_with_hook_and_tls_config(
         &self,
         config: &ClientConfig,

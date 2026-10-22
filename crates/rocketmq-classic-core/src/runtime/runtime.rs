@@ -1356,6 +1356,7 @@ impl ClientRuntime {
         Ok(pending)
     }
 
+    #[doc(hidden)]
     pub async fn register_reply_request_with_future(
         &self,
         lease: &GroupLease,
