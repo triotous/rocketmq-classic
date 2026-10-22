@@ -25,6 +25,7 @@ import java.util.TreeMap;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.TopicMessageQueueChangeListener;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.impl.MQClientManager;
@@ -86,8 +87,10 @@ public final class ConsumerLifecycleFixtures {
         factory.unregisterConsumer(group);
         Field state = MQClientInstance.class.getDeclaredField("serviceState");
         state.setAccessible(true);
-        state.set(factory, ServiceState.RUNNING);
-        factory.shutdown();
+        if (factoryServiceState(factory) != ServiceState.SHUTDOWN_ALREADY.name()) {
+            state.set(factory, ServiceState.RUNNING);
+            factory.shutdown();
+        }
         MQClientManager.getInstance().removeClientFactory(factory.getClientId());
     }
 
@@ -214,11 +217,57 @@ public final class ConsumerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> failedLitePullListenerRouteLookup() throws Exception {
+        String group = "consumer-start-lite-listener-" + System.nanoTime();
+        DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setNamesrvAddr("127.0.0.1:1");
+        consumer.setMqClientApiTimeout(100);
+        consumer.registerTopicMessageQueueChangeListener("listener-route-failure",
+            (TopicMessageQueueChangeListener) (topic, queues) -> { });
+        Throwable startFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+
+        DefaultLitePullConsumerImpl implementation = liteImplementation(consumer);
+        MQClientInstance factory = factory(implementation);
+        Throwable retryFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            retryFailure = failure;
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+        result.put("retryException", retryFailure == null ? "" : retryFailure.getClass().getSimpleName());
+        result.put("consumerRegistered", factory != null
+            && factory.getConsumerTable().containsKey(group));
+        result.put("consumerServiceState", consumerServiceState(implementation));
+        result.put("factoryServiceState", factory == null ? "" : factoryServiceState(factory));
+        closeFactory(factory, group);
+
+        if (startFailure == null || !"MQClientException".equals(
+            startFailure.getClass().getSimpleName())
+            || retryFailure == null || !"MQClientException".equals(
+                retryFailure.getClass().getSimpleName())
+            || !Boolean.FALSE.equals(result.get("consumerRegistered"))
+            || !"SHUTDOWN_ALREADY".equals(result.get("consumerServiceState"))
+            || !"SHUTDOWN_ALREADY".equals(result.get("factoryServiceState"))) {
+            throw new IllegalStateException("Unexpected LitePull listener-route failure: " + result,
+                startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> produce() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("pushFactoryStartFailure", failedPushFactoryStart());
         result.put("pullFactoryStartFailure", failedPullFactoryStart());
         result.put("litePullFactoryStartFailure", failedLitePullFactoryStart());
+        result.put("litePullListenerRouteFailure", failedLitePullListenerRouteLookup());
         return result;
     }
 

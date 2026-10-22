@@ -640,11 +640,21 @@ impl LitePullConsumer {
             .cloned()
             .collect::<Vec<_>>();
         for topic in listener_topics {
-            if let Ok(queues) = engine.fetch_message_queues(&topic).await {
-                self.last_topic_queues
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .insert(topic, queues);
+            match engine.fetch_message_queues(&topic).await {
+                Ok(queues) => {
+                    self.last_topic_queues
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .insert(topic, queues);
+                }
+                Err(error) => {
+                    self.running.store(false, Ordering::Release);
+                    self.ready.notify_waiters();
+                    self.reconcile.notify_waiters();
+                    *self.lifecycle.lock().await = Lifecycle::Shutdown;
+                    let _ = engine.shutdown().await;
+                    return Err(error.into());
+                }
             }
         }
         self.sync_workers().await;
@@ -1826,6 +1836,7 @@ mod tests {
         let client_config = config.client_config().clone();
         let client_id = client_config.build_client_id();
         let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::shared_default();
+        let expected_runtime = manager.get_or_create(&client_config).await.unwrap();
         let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
 
         assert!(matches!(
@@ -1845,6 +1856,7 @@ mod tests {
             .get(&client_id)
             .unwrap()
             .expect("LitePull runtime remains in the shared factory table");
+        assert!(Arc::ptr_eq(&expected_runtime, &runtime));
         assert_eq!(
             runtime.state(),
             rocketmq_classic_core::runtime::RuntimeState::Failed
@@ -1871,6 +1883,71 @@ mod tests {
                 .unwrap()
         );
         runtime.shutdown().await.unwrap();
+        manager
+            .remove_client_factory(runtime.client_id(), &runtime)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn listener_route_failure_shuts_down_java_lite_consumer_startup() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["litePullListenerRouteFailure"];
+        assert_eq!(java["exception"], "MQClientException");
+        assert_eq!(java["retryException"], "MQClientException");
+        assert_eq!(java["consumerRegistered"], false);
+        assert_eq!(java["consumerServiceState"], "SHUTDOWN_ALREADY");
+        assert_eq!(java["factoryServiceState"], "SHUTDOWN_ALREADY");
+
+        let group = format!(
+            "lite-listener-route-failure-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut config = LitePullConsumerConfig::new(&group).unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some("127.0.0.1:1".into()));
+        config
+            .client_config_mut()
+            .set_instance_name(Some(group.clone()));
+        config.client_config_mut().set_mq_client_api_timeout(100);
+        let client_config = config.client_config().clone();
+        let client_id = client_config.build_client_id();
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::shared_default();
+        let runtime = manager.get_or_create(&client_config).await.unwrap();
+        let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+        consumer
+            .register_topic_message_queue_change_listener(
+                "listener-route-failure",
+                Arc::new(|_, _| {}),
+            )
+            .unwrap();
+
+        let start_error = consumer.start().await.unwrap_err();
+        assert!(matches!(start_error, LitePullConsumerError::Pull(_)));
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::Shutdown
+        ));
+        assert!(!consumer.is_running().await);
+
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Stopped
+        );
+        assert!(runtime.select_consumer(&group).unwrap().is_none());
+        if let Some(mapped) = manager.factory_table().get(&client_id).unwrap() {
+            assert!(Arc::ptr_eq(&runtime, &mapped));
+        }
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::Shutdown)
+        ));
+
         manager
             .remove_client_factory(runtime.client_id(), &runtime)
             .unwrap();
