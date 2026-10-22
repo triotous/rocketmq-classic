@@ -832,6 +832,7 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
                 let _ = metadata_tx.send((topic.to_owned(), queues.clone()));
             }),
         )
+        .await
         .unwrap();
 
     assert!(consumer.subscribe_with_expression("", "*").is_err());
@@ -896,6 +897,73 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
     nameserver_task.abort();
     updated_nameserver_task.abort();
     broker_task.abort();
+}
+
+#[tokio::test]
+async fn lite_queue_listener_registration_preserves_java_route_failure_semantics() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
+    let java = &fixture["litePullListenerRegistrationRouteFailure"];
+    assert_eq!(java["exception"], "MQClientException");
+    assert_eq!(java["retryException"], "MQClientException");
+    assert_eq!(java["listenerRegistered"], true);
+    assert_eq!(java["consumerServiceState"], "RUNNING");
+    assert_eq!(java["factoryServiceState"], "RUNNING");
+
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route("127.0.0.1:1")).await;
+    let mut config = lite_config_with_store(
+        "lite-listener-registration-route-failure",
+        "lite-listener-registration-route-failure-client",
+        "127.0.0.1:1",
+        Arc::new(LiteScriptedOffsetStore::default()),
+    );
+    config.client_config_mut().set_mq_client_api_timeout(100);
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    consumer.start().await.unwrap();
+
+    let (callback_tx, mut callback_rx) = mpsc::unbounded_channel();
+    let listener = Arc::new(
+        move |topic: &str, queues: &std::collections::BTreeSet<MessageQueue>| {
+            let _ = callback_tx.send((topic.to_owned(), queues.clone()));
+        },
+    );
+    let registration_error = consumer
+        .register_topic_message_queue_change_listener(
+            "listener-registration-route-failure",
+            listener.clone(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(registration_error, LitePullConsumerError::Pull(_)));
+    let retry_error = consumer
+        .register_topic_message_queue_change_listener(
+            "listener-registration-route-failure",
+            listener,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(retry_error, LitePullConsumerError::Pull(_)));
+    assert!(consumer.is_running().await);
+
+    consumer
+        .update_name_server_address(nameserver.clone())
+        .await
+        .unwrap();
+    let (topic, queues) = timeout(Duration::from_secs(4), callback_rx.recv())
+        .await
+        .expect("retained listener was not called after route recovery")
+        .expect("queue listener channel closed");
+    assert_eq!(topic, "listener-registration-route-failure");
+    assert_eq!(
+        queues,
+        [MessageQueue::new(topic, "broker-a", 0)]
+            .into_iter()
+            .collect()
+    );
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
 }
 
 #[tokio::test]
@@ -1501,6 +1569,7 @@ async fn lite_metadata_offset_and_seek_helpers_report_not_started_errors() {
     assert!(
         consumer
             .register_topic_message_queue_change_listener("", Arc::new(|_, _| {}))
+            .await
             .is_ok()
     );
 }

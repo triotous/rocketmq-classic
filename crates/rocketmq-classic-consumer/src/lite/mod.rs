@@ -7,7 +7,7 @@ pub use trace::{
 };
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     panic::AssertUnwindSafe,
     sync::{
         Arc, Mutex, RwLock,
@@ -108,7 +108,6 @@ pub struct LitePullConsumer {
     heartbeat_subscriptions: Arc<RwLock<ConsumerSubscriptionDataSet>>,
     queue_change_listeners: RwLock<HashMap<String, TopicMessageQueueChangeListener>>,
     last_topic_queues: Mutex<HashMap<String, BTreeSet<MessageQueue>>>,
-    pending_topic_listener_seed: Mutex<HashSet<String>>,
     message_queue_listener: RwLock<Option<MessageQueueListener>>,
     name_server_address: RwLock<Option<String>>,
     trace_dispatcher: RwLock<Option<Arc<LiteTraceDispatcher>>>,
@@ -195,7 +194,6 @@ impl LitePullConsumer {
             heartbeat_subscriptions: Arc::new(RwLock::new(ConsumerSubscriptionDataSet::new())),
             queue_change_listeners: RwLock::new(HashMap::new()),
             last_topic_queues: Mutex::new(HashMap::new()),
-            pending_topic_listener_seed: Mutex::new(HashSet::new()),
             message_queue_listener: RwLock::new(message_queue_listener),
             name_server_address: RwLock::new(None),
             trace_dispatcher: RwLock::new(None),
@@ -1180,22 +1178,30 @@ impl LitePullConsumer {
         self.heartbeat_subscriptions.clone()
     }
 
-    pub fn register_topic_message_queue_change_listener(
+    /// Registers a queue metadata listener. When the consumer is already
+    /// running, the current route is fetched before this call succeeds, as in
+    /// Java LitePullConsumer; a failed fetch leaves the listener registered.
+    pub async fn register_topic_message_queue_change_listener(
         &self,
         topic: &str,
         listener: TopicMessageQueueChangeListener,
     ) -> Result<(), LitePullConsumerError> {
         let topic = self.normalized_topic(topic)?;
-        if self.running.load(Ordering::Acquire) {
-            self.pending_topic_listener_seed
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(topic.clone());
-        }
+        let _gate = self.reconcile_gate.lock().await;
         self.queue_change_listeners
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(topic, listener);
+            .insert(topic.clone(), listener);
+        if self.running.load(Ordering::Acquire) {
+            self.reconcile.notify_one();
+            if let Some(engine) = self.engine() {
+                let queues = engine.fetch_message_queues(&topic).await?;
+                self.last_topic_queues
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(topic, queues);
+            }
+        }
         self.reconcile.notify_one();
         Ok(())
     }
@@ -1277,8 +1283,19 @@ impl LitePullConsumer {
                     if let Ok(queues) = engine.fetch_message_queues_in_balance(&topic).await {
                         desired.extend(queues);
                     }
-                    self.update_topic_queue_change(&engine, &topic).await;
                 }
+            }
+        }
+        if let Some(engine) = self.engine() {
+            let listener_topics = self
+                .queue_change_listeners
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            for topic in listener_topics {
+                self.update_topic_queue_change(&engine, &topic).await;
             }
         }
 
@@ -1368,19 +1385,11 @@ impl LitePullConsumer {
             return;
         };
         let changed = {
-            let should_seed = self
-                .pending_topic_listener_seed
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .remove(topic);
             let mut known = self
                 .last_topic_queues
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if should_seed {
-                known.insert(topic.to_owned(), queues.clone());
-                false
-            } else if known.get(topic) == Some(&queues) {
+            if known.get(topic) == Some(&queues) {
                 false
             } else {
                 known.insert(topic.to_owned(), queues.clone());
@@ -1925,6 +1934,7 @@ mod tests {
                 "listener-route-failure",
                 Arc::new(|_, _| {}),
             )
+            .await
             .unwrap();
 
         let start_error = consumer.start().await.unwrap_err();
