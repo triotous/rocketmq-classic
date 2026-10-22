@@ -2437,3 +2437,26 @@ unchanged; no Java fixture was regenerated for this source-level control-flow
 correction. This closes the LitePull metadata polling and direct queue-lookup
 slice only; broad P18-V01 source/API/settings/input/error/control-flow and
 reverse-export reconciliation remains open.
+
+## P18-V01 LitePull NameServer address update flow — 2026-10-22
+
+The pinned Java `DefaultLitePullConsumerImpl.updateNameServerAddr(String)` is
+not synchronized; it only replaces the NameServer address list on the client
+API. The Lite metadata callback and the shared runtime route-refresh schedule
+observe that update on their own timers. Java also has the runtime object only
+after startup.
+
+Rust `LitePullConsumer::update_name_server_address` now updates the running
+engine's NameServer list without taking the lifecycle gate, refreshing routes,
+or invoking listeners immediately. Before an engine exists, Rust returns its
+typed `NotStarted` error in place of Java's null-factory failure. The lifecycle
+fixture records the unsynchronized modifier (`fixtures/consumer/lifecycle.json`
+SHA-256 `a7c5e13bf3d67ec8402082800068ded16d49893c51eac9123fb3fa8776482a36`).
+The regression verifies the update completes while synchronized `poll` is
+waiting, no listener runs on the update call, and the registered callback sees
+the route change at Java's scheduled metadata check. The full locked Lite/POP
+integration target (23 tests), strict Consumer Clippy, formatting/diff checks,
+and pinned Java lifecycle fixture verification pass. This closes the LitePull
+NameServer update concurrency and callback-timing slice only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
