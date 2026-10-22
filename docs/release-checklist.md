@@ -7383,3 +7383,22 @@ owner-specific checks belong in the manual handoff.
   validation remains separate. No push, remote CI, Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V01 writer-feature inventory and `UserInfo` surface — 2026-10-22 (`c5892d2c`)
+
+- [x] Reconciled the stale `47/48` inventory: Rust implements all 48 pinned
+  Fastjson writer features for the mapped body, route, and heartbeat adapters.
+  Java fixture differentials compare feature output across 41 body, 8 route,
+  and 3 heartbeat cases; the enum test asserts all pinned variants are mapped.
+- [x] Removed `UserInfo::java_encode_with_features`, which has no matching
+  pinned Java instance API because `UserInfo` is not a `RemotingSerializable`
+  subclass. A compile-fail Rustdoc guard protects the public surface. Protocol
+  all-feature tests pass (156 unit tests, all integration targets, 158
+  doctests), as do strict Protocol Clippy, formatting, and Maven `verify`
+  (37 scenarios, Java fixture checks, and Rust/Java cross-decodes).
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. Phase 19 Broker/Docker
+  validation remains separate. No push, remote CI, Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.

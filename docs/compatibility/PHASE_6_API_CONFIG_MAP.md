@@ -2373,3 +2373,24 @@ all five null results, retained property results, and virtual-call count.
 Focused Common/Consumer Clippy, formatting, the six-test direct-consume suite,
 and Java fixture verification pass. This closes nullable direct results for
 these getters only; broader P18-V01 remains open.
+
+## P18-V01 writer-feature inventory and `UserInfo` surface follow-up — 2026-10-22 (`c5892d2c`)
+
+The older writer-feature continuation in this map reports `47/48` and says
+`WriteClassName` is unmapped. That status is superseded by the current Rust
+adapter implementation: all 48 pinned `JSONWriter.Feature` values are marked
+implemented and compared against Java fixture output across 41 body cases, 8
+route cases, and 3 heartbeat cases. `WriteClassName` covers root and typed
+nested DTO names, map and Set markers, and Java `long` suffixes. The Rust enum
+inventory test now fails if any pinned value is not marked implemented.
+
+The pinned Java `UserInfo` class is a plain DTO, not a
+`RemotingSerializable` subclass. It has generic static serialization utility
+methods but no instance `encode(JSONWriter.Feature...)` method. Rust removed
+the unmatched public `UserInfo::java_encode_with_features` method and added a
+compile-fail guard. Protocol all-feature tests (156 unit tests, all integration
+targets, 158 doctests), strict Protocol Clippy, formatting, and pinned Maven
+verification (37 scenarios, invoked fixtures, and Java/Rust cross-decodes)
+pass. This closes the `WriteClassName` inventory discrepancy and this
+`UserInfo` over-export only; broader P18-V01 settings/API/input/error/control-
+flow/reverse-export reconciliation remains open.

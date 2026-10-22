@@ -2583,3 +2583,19 @@ this source revision. Native Windows execution and current-revision Ubuntu CI
 remain unverified. This closes the object-root response-result mismatch only;
 broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
 reconciliation and Phase 19 Broker/Docker validation remain open.
+
+## P18-V01 Fastjson writer-feature inventory and `UserInfo` surface — 2026-10-22 (`c5892d2c`)
+
+The older writer-feature note that lists `WriteClassName` as unmapped is stale:
+the current body, route, and heartbeat adapters implement all 48 pinned
+Fastjson writer features. The enum-to-fixture test now asserts every feature is
+implemented, and Java differential tests compare each feature's output across
+41 body, 8 route, and 3 heartbeat cases.
+
+Pinned Java `UserInfo` is not a `RemotingSerializable` subclass and does not
+have the instance `encode(JSONWriter.Feature...)` overload. Rust removed that
+unmatched public method and added a compile-fail API guard. Full Protocol
+all-feature tests, strict Protocol Clippy, formatting, and Maven verification
+(37 scenarios and fixture cross-decodes) pass. This closes those two named
+writer/API rows only; broad P18-V01 reconciliation, current-revision Ubuntu CI,
+native Windows execution, and Phase 19 Broker/Docker validation remain open.
