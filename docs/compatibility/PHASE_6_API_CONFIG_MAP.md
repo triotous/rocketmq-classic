@@ -2544,3 +2544,14 @@ encoded bytes, distinct-object and same-reference equality, and the declaring
 owners of both methods. `fixtures/producer/core.json` SHA-256:
 `f0b625d90d319a81070a3cc342f1e655c67d74aa747e0934f12c4b5ed0911095`.
 Code commit: `91f842f4`.
+
+## P18-V01 current Rustdoc export inventory — 2026-10-22 (`1dc3a7e2`)
+
+Regenerated all-feature Rustdoc JSON from the current source tree and counted
+distinct public item names in each product library, excluding the generated
+crate-root marker: Common 439, Consumer 445, Core 682, Producer 362, Protocol
+1,524, and Remoting 337. This confirms the previously recorded counts for
+Consumer, Core, Protocol, and Remoting, and supersedes the Producer scan's
+earlier count of 357. The current name inventory also provides the baseline for
+the Common owner crosswalk above. These counts establish exported-name scope;
+they do not establish behavior coverage or close broad P18-V01 reconciliation.

@@ -7948,3 +7948,17 @@ owner-specific checks belong in the manual handoff.
   validation remain open. No external CI or push was run. The protected Phase
   19 worktree files remain unstaged. Run record:
   `rlogs/2026/10/22-phase-18-windows-gnu-cross-compile-refresh__20261022T190406Z.rlog`.
+
+## P18-V01 current Rustdoc export inventory — 2026-10-22 (`1dc3a7e2`)
+
+- [x] All-feature Rustdoc JSON generation passes on the current tree. The
+  refreshed distinct public-name counts, excluding each generated crate-root
+  marker, are Common 439, Consumer 445, Core 682, Producer 362, Protocol
+  1,524, and Remoting 337. The Producer count supersedes the earlier 357-name
+  record; this is an inventory correction, not a behavior-coverage claim.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision remote Ubuntu CI, native Windows
+  runtime, and Phase 19 Broker/Docker validation remain open. Rustdoc emitted
+  the existing workspace-manifest and Consumer `fetch_update` warnings. No
+  external CI or push was run. Run record:
+  `rlogs/2026/10/22-phase-18-rustdoc-export-inventory__20261022T190913Z.rlog`.
