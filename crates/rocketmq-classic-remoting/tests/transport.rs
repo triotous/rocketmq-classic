@@ -2729,9 +2729,10 @@ async fn p18_idle_timeout_setting_applies_to_new_channels_only() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_shutdown() {
+async fn p16_slow_channel_observer_does_not_block_transport_and_drains_before_shutdown_returns() {
     struct Listener {
         entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
         live: Arc<AtomicUsize>,
     }
     struct Live(Arc<AtomicUsize>);
@@ -2750,7 +2751,7 @@ async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_
                 self.live.fetch_add(1, Ordering::SeqCst);
                 let _live = Live(self.live.clone());
                 self.entered.notify_one();
-                std::future::pending::<()>().await;
+                self.release.notified().await;
             })
         }
     }
@@ -2767,6 +2768,7 @@ async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_
     });
     let observer = Arc::new(Listener {
         entered: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
         live: Arc::new(AtomicUsize::new(0)),
     });
     let client = RemotingClient::with_config_and_channel_event_listener(
@@ -2798,16 +2800,17 @@ async fn p16_slow_channel_observer_does_not_block_transport_and_is_cancelled_on_
         .await
         .expect("the observer should receive the active event");
     assert_eq!(observer.live.load(Ordering::SeqCst), 1);
+    observer.release.notify_one();
     tokio::time::timeout(Duration::from_secs(1), client.shutdown())
         .await
-        .expect("shutdown should cancel the pending observer");
+        .expect("shutdown should wait for the active observer");
     tokio::time::timeout(Duration::from_secs(1), async {
         while observer.live.load(Ordering::SeqCst) != 0 {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
     })
     .await
-    .expect("the async observer should finish cancellation after shutdown");
+    .expect("the active observer should finish before shutdown returns");
     assert_eq!(observer.live.load(Ordering::SeqCst), 0);
     peer.await.unwrap();
 }

@@ -770,7 +770,9 @@ pub trait ChannelEventListener: Send + Sync + 'static {
     fn on_idle(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
     fn on_active(&self, _remote_addr: &str, _channel: &ChannelHandle) {}
     /// Borrowed async work stays in the owned event worker; existing sync
-    /// listeners use the default adapter without spawning detached tasks.
+    /// listeners use the default adapter without spawning detached tasks. The
+    /// worker awaits this callback like Java's synchronous listener, so shutdown
+    /// can wait up to 90 seconds and cannot cancel an in-flight callback.
     fn on_active_async<'a>(
         &'a self,
         remote_addr: &'a str,
@@ -2674,7 +2676,6 @@ fn start_channel_event_worker(
             };
             let Some(listener) = &listener else { continue };
             let listener = listener.clone();
-            let callback_shutdown = shutdown.clone();
             let runtime = tokio::runtime::Handle::current();
             let callback = tokio::task::spawn_blocking(move || {
                 let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2685,14 +2686,8 @@ fn start_channel_event_worker(
                         listener.on_active_async(&event.remote_addr, &event.channel)
                     }));
                     if let Ok(operation) = operation {
-                        let mut callback_shutdown = callback_shutdown;
                         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            runtime.block_on(async move {
-                                tokio::select! { biased;
-                                    _ = callback_shutdown.changed() => {},
-                                    _ = operation => {},
-                                }
-                            })
+                            runtime.block_on(operation)
                         }));
                     }
                 }
@@ -3199,12 +3194,13 @@ mod tests {
     use tokio::sync::Notify;
 
     #[tokio::test]
-    async fn async_active_listener_is_owned_panic_isolated_and_cancelled_on_shutdown() {
+    async fn async_active_listener_is_owned_panic_isolated_and_drained_after_shutdown() {
         struct Listener {
             calls: std::sync::atomic::AtomicUsize,
             live: Arc<std::sync::atomic::AtomicUsize>,
             entered: Notify,
             exited: Arc<Notify>,
+            release: Arc<Notify>,
         }
         struct Live {
             live: Arc<std::sync::atomic::AtomicUsize>,
@@ -3231,15 +3227,17 @@ mod tests {
                         exited: self.exited.clone(),
                     };
                     self.entered.notify_one();
-                    std::future::pending::<()>().await;
+                    self.release.notified().await;
                 })
             }
         }
+        let release = Arc::new(Notify::new());
         let listener = Arc::new(Listener {
             calls: std::sync::atomic::AtomicUsize::new(0),
             live: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             entered: Notify::new(),
             exited: Arc::new(Notify::new()),
+            release: release.clone(),
         });
         let (sender, receiver) = mpsc::channel(2);
         let (stop, shutdown) = tokio::sync::watch::channel(false);
@@ -3266,6 +3264,13 @@ mod tests {
         assert_eq!(listener.calls.load(Ordering::SeqCst), 2);
         assert_eq!(listener.live.load(Ordering::SeqCst), 1);
         stop.send_replace(true);
+        let mut worker = worker;
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(30), &mut worker)
+                .await
+                .is_err()
+        );
+        release.notify_one();
         worker.await.unwrap();
         if listener.live.load(Ordering::SeqCst) != 0 {
             tokio::time::timeout(
@@ -3273,7 +3278,7 @@ mod tests {
                 listener.exited.notified(),
             )
             .await
-            .expect("active listener future was not dropped after shutdown");
+            .expect("active listener future did not finish after release");
         }
         assert_eq!(listener.live.load(Ordering::SeqCst), 0);
     }
