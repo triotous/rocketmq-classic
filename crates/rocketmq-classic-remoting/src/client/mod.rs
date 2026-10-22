@@ -164,7 +164,10 @@ struct ClientInner {
     shutdown: tokio::sync::watch::Sender<bool>,
     callback_shutdown: tokio::sync::watch::Sender<bool>,
     callback_workers: Mutex<Vec<JoinHandle<()>>>,
-    shutdown_complete: tokio::sync::OnceCell<()>,
+    channel_event_stopped: tokio::sync::watch::Sender<bool>,
+    channel_event_worker: Mutex<Option<JoinHandle<()>>>,
+    shutdown_cleanup_stopped: tokio::sync::watch::Sender<bool>,
+    shutdown_started: tokio::sync::OnceCell<()>,
     closed: AtomicBool,
     tasks: Mutex<Vec<JoinHandle<()>>>,
     security: TransportMode,
@@ -838,6 +841,8 @@ impl RemotingClient {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
+        let (channel_event_stopped, _) = tokio::sync::watch::channel(false);
+        let (shutdown_cleanup_stopped, _) = tokio::sync::watch::channel(false);
         let (callback_sender, callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -858,7 +863,10 @@ impl RemotingClient {
             shutdown,
             callback_shutdown,
             callback_workers: Mutex::new(Vec::new()),
-            shutdown_complete: tokio::sync::OnceCell::new(),
+            channel_event_stopped,
+            channel_event_worker: Mutex::new(None),
+            shutdown_cleanup_stopped,
+            shutdown_started: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: config.transport.clone(),
@@ -1118,6 +1126,8 @@ impl RemotingClient {
         let (inbound, inbound_rx) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
+        let (channel_event_stopped, _) = tokio::sync::watch::channel(false);
+        let (shutdown_cleanup_stopped, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -1134,7 +1144,10 @@ impl RemotingClient {
             shutdown,
             callback_shutdown,
             callback_workers: Mutex::new(Vec::new()),
-            shutdown_complete: tokio::sync::OnceCell::new(),
+            channel_event_stopped,
+            channel_event_worker: Mutex::new(None),
+            shutdown_cleanup_stopped,
+            shutdown_started: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             public_executor: Arc::new(TokioRequestExecutor {
@@ -1246,10 +1259,11 @@ impl RemotingClient {
         ) {
             self.inner.spawn(task);
         }
-        self.inner.spawn(start_channel_event_worker(
+        *self.inner.channel_event_worker.lock().unwrap() = Some(start_channel_event_worker(
             self.inner.channel_listener.clone(),
             startup_state.channel_event_receiver,
             self.inner.shutdown.subscribe(),
+            self.inner.channel_event_stopped.clone(),
         ));
         let callback_workers = callback_worker_limit(self.inner.config.callback_executor_threads);
         *self.inner.callback_workers.lock().unwrap() = start_callback_workers(
@@ -2233,16 +2247,17 @@ impl RemotingClient {
         Ok(())
     }
 
-    /// Closes connections, fails pending calls, and drains client-owned tasks for up to 90 seconds.
+    /// Closes connections, fails pending calls, and waits for the channel event worker for up to
+    /// 90 seconds. Other owned workers and callbacks continue draining in the background.
     pub async fn shutdown(&self) {
         self.shutdown_with_timeout(SHUTDOWN_TIMEOUT).await;
     }
 
     async fn shutdown_with_timeout(&self, timeout: std::time::Duration) {
+        let deadline = Instant::now() + timeout;
         self.inner
-            .shutdown_complete
+            .shutdown_started
             .get_or_init(|| async {
-                let deadline = Instant::now() + timeout;
                 {
                     let mut startup = self.inner.startup.lock().unwrap();
                     self.inner.shutdown();
@@ -2267,50 +2282,113 @@ impl RemotingClient {
                     connection.close();
                 }
                 self.inner.fail_all_pending();
-                let mut tasks = std::mem::take(&mut *self.inner.tasks.lock().unwrap());
-                let mut timed_out = false;
-                for task in &mut tasks {
-                    if tokio::time::timeout_at(deadline, task).await.is_err() {
-                        timed_out = true;
-                        break;
-                    }
+                let tasks = std::mem::take(&mut *self.inner.tasks.lock().unwrap());
+                let event_worker = self.inner.channel_event_worker.lock().unwrap().take();
+                if event_worker.is_none() {
+                    self.inner.channel_event_stopped.send_replace(true);
                 }
-                if timed_out {
-                    for task in &tasks {
-                        task.abort();
-                    }
-                    for connection in &connections {
-                        connection.abort_task().await;
-                    }
-                } else {
-                    for connection in &connections {
-                        if !connection.join_until(deadline).await {
-                            timed_out = true;
-                            break;
-                        }
-                    }
-                    if timed_out {
-                        for connection in &connections {
-                            connection.abort_task().await;
-                        }
-                    }
-                }
-                let _ = self.inner.callback_shutdown.send(true);
-                let mut callback_workers =
+                let callback_workers =
                     std::mem::take(&mut *self.inner.callback_workers.lock().unwrap());
-                for worker in &mut callback_workers {
-                    if tokio::time::timeout_at(deadline, worker).await.is_err() {
-                        timed_out = true;
-                        break;
-                    }
-                }
-                if timed_out {
-                    for worker in &callback_workers {
-                        worker.abort();
-                    }
+                if let Some(runtime) = self.inner.runtime.lock().unwrap().clone() {
+                    runtime.spawn(
+                        ShutdownCleanup {
+                            tasks,
+                            connections,
+                            event_worker,
+                            channel_event_stopped: self.inner.channel_event_stopped.clone(),
+                            shutdown_cleanup_stopped: self.inner.shutdown_cleanup_stopped.clone(),
+                            callback_shutdown: self.inner.callback_shutdown.clone(),
+                            callback_workers,
+                            deadline,
+                        }
+                        .run(),
+                    );
+                } else {
+                    drop((tasks, connections, event_worker, callback_workers));
+                    self.inner.callback_shutdown.send_replace(true);
+                    self.inner.shutdown_cleanup_stopped.send_replace(true);
                 }
             })
             .await;
+
+        let mut channel_event_stopped = self.inner.channel_event_stopped.subscribe();
+        if !*channel_event_stopped.borrow() {
+            let _ = tokio::time::timeout_at(deadline, channel_event_stopped.changed()).await;
+        }
+    }
+}
+
+struct ShutdownCleanup {
+    tasks: Vec<JoinHandle<()>>,
+    connections: Vec<Arc<connection::Connection>>,
+    event_worker: Option<JoinHandle<()>>,
+    channel_event_stopped: tokio::sync::watch::Sender<bool>,
+    shutdown_cleanup_stopped: tokio::sync::watch::Sender<bool>,
+    callback_shutdown: tokio::sync::watch::Sender<bool>,
+    callback_workers: Vec<JoinHandle<()>>,
+    deadline: Instant,
+}
+
+impl ShutdownCleanup {
+    async fn run(self) {
+        let Self {
+            tasks,
+            connections,
+            event_worker,
+            channel_event_stopped,
+            shutdown_cleanup_stopped,
+            callback_shutdown,
+            callback_workers,
+            deadline,
+        } = self;
+        let transport_cleanup = async move {
+            let mut tasks = tasks;
+            let mut timed_out = false;
+            for task in &mut tasks {
+                if tokio::time::timeout_at(deadline, task).await.is_err() {
+                    timed_out = true;
+                    break;
+                }
+            }
+            if timed_out {
+                for task in &tasks {
+                    task.abort();
+                }
+                for connection in &connections {
+                    connection.abort_task().await;
+                }
+            } else {
+                for connection in &connections {
+                    if !connection.join_until(deadline).await {
+                        timed_out = true;
+                        break;
+                    }
+                }
+                if timed_out {
+                    for connection in &connections {
+                        connection.abort_task().await;
+                    }
+                }
+            }
+        };
+        let event_worker_cleanup = async move {
+            let mut stopped = channel_event_stopped.subscribe();
+            if !*stopped.borrow() {
+                let _ = tokio::time::timeout_at(deadline, stopped.changed()).await;
+            }
+            if let Some(worker) = event_worker {
+                if *stopped.borrow() {
+                    let _ = worker.await;
+                }
+            }
+        };
+        tokio::join!(transport_cleanup, event_worker_cleanup);
+
+        callback_shutdown.send_replace(true);
+        for worker in callback_workers {
+            let _ = worker.await;
+        }
+        shutdown_cleanup_stopped.send_replace(true);
     }
 }
 
@@ -2580,18 +2658,19 @@ fn start_channel_event_worker(
     listener: Option<Arc<dyn ChannelEventListener>>,
     mut receiver: mpsc::Receiver<ChannelEvent>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
+    worker_stopped: tokio::sync::watch::Sender<bool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             let event = tokio::select! {
                 event = receiver.recv() => event,
                 result = shutdown.changed() => {
-                    if result.is_err() || *shutdown.borrow() { return }
+                    if result.is_err() || *shutdown.borrow() { break }
                     continue;
                 },
             };
             let Some(event) = event else {
-                return;
+                break;
             };
             let Some(listener) = &listener else { continue };
             let listener = listener.clone();
@@ -2618,14 +2697,9 @@ fn start_channel_event_worker(
                     }
                 }
             });
-            let shutdown_requested = tokio::select! { biased;
-                result = shutdown.changed() => result.is_err() || *shutdown.borrow(),
-                _ = callback => false,
-            };
-            if shutdown_requested {
-                return;
-            }
+            let _ = callback.await;
         }
+        worker_stopped.send_replace(true);
     })
 }
 
@@ -3169,7 +3243,9 @@ mod tests {
         });
         let (sender, receiver) = mpsc::channel(2);
         let (stop, shutdown) = tokio::sync::watch::channel(false);
-        let worker = start_channel_event_worker(Some(listener.clone()), receiver, shutdown);
+        let (worker_stopped, _) = tokio::sync::watch::channel(false);
+        let worker =
+            start_channel_event_worker(Some(listener.clone()), receiver, shutdown, worker_stopped);
         sender
             .send(ChannelEvent {
                 remote_addr: "broker".into(),
@@ -4279,9 +4355,10 @@ mod tests {
         client.set_client_worker_threads(3);
         client.start().unwrap();
         assert_eq!(client.get_client_worker_threads(), 3);
-        // Processor start owns one dispatcher plus three workers. The other two
-        // client tasks are the channel-event worker and timeout scheduler.
-        assert_eq!(client.inner.tasks.lock().unwrap().len(), 6);
+        // Processor start owns one dispatcher plus three workers. The remaining
+        // tracked task is the timeout scheduler; shutdown joins the event worker separately.
+        assert_eq!(client.inner.tasks.lock().unwrap().len(), 5);
+        assert!(client.inner.channel_event_worker.lock().unwrap().is_some());
         assert_eq!(client.inner.callback_workers.lock().unwrap().len(), 1);
         client.shutdown().await;
     }
@@ -4580,6 +4657,8 @@ mod tests {
         let (inbound, receiver) = mpsc::unbounded_channel();
         let (shutdown, _) = tokio::sync::watch::channel(false);
         let (callback_shutdown, _) = tokio::sync::watch::channel(false);
+        let (channel_event_stopped, _) = tokio::sync::watch::channel(false);
+        let (shutdown_cleanup_stopped, _) = tokio::sync::watch::channel(false);
         let (callback_sender, _callback_receiver) = mpsc::unbounded_channel();
         let (channel_event_sender, _channel_event_receiver) =
             mpsc::channel(CHANNEL_EVENT_QUEUE_CAPACITY);
@@ -4604,7 +4683,10 @@ mod tests {
             shutdown,
             callback_shutdown,
             callback_workers: Mutex::new(Vec::new()),
-            shutdown_complete: tokio::sync::OnceCell::new(),
+            channel_event_stopped,
+            channel_event_worker: Mutex::new(None),
+            shutdown_cleanup_stopped,
+            shutdown_started: tokio::sync::OnceCell::new(),
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             security: TransportMode::Plain,
@@ -5273,7 +5355,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_bounds_wait_for_a_blocking_callback() {
+    async fn shutdown_returns_while_owned_blocking_callback_drains() {
         let client = RemotingClient::new(TransportMode::Plain);
         client.start().unwrap();
         let started = Arc::new(AtomicBool::new(false));
@@ -5309,15 +5391,82 @@ mod tests {
         .unwrap();
 
         let started_at = Instant::now();
-        client
-            .shutdown_with_timeout(std::time::Duration::from_millis(30))
-            .await;
+        client.shutdown().await;
         assert!(started_at.elapsed() < std::time::Duration::from_millis(250));
         assert!(!finished.load(Ordering::Acquire));
         release_tx.send(()).unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             while !finished.load(Ordering::Acquire) {
                 tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let mut cleanup_stopped = client.inner.shutdown_cleanup_stopped.subscribe();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !*cleanup_stopped.borrow() {
+                cleanup_stopped.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_channel_event_worker_only_until_java_join_limit() {
+        struct SlowListener {
+            entered: Notify,
+            release: Mutex<std::sync::mpsc::Receiver<()>>,
+            finished: AtomicBool,
+        }
+        impl ChannelEventListener for SlowListener {
+            fn on_connect(&self, _: &str, _: &ChannelHandle) {
+                self.entered.notify_one();
+                self.release.lock().unwrap().recv().unwrap();
+                self.finished.store(true, Ordering::Release);
+            }
+        }
+
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let listener = Arc::new(SlowListener {
+            entered: Notify::new(),
+            release: Mutex::new(release_rx),
+            finished: AtomicBool::new(false),
+        });
+        let client = RemotingClient::with_config_and_channel_event_listener(
+            ClientConfig::default(),
+            Some(listener.clone()),
+        )
+        .unwrap();
+        client.start().unwrap();
+        client
+            .inner
+            .notify_channel(NettyEventType::Connect, ChannelHandle::pending("peer"));
+        listener.entered.notified().await;
+
+        let started_at = Instant::now();
+        client
+            .shutdown_with_timeout(std::time::Duration::from_millis(30))
+            .await;
+        assert!(started_at.elapsed() >= std::time::Duration::from_millis(20));
+        assert!(started_at.elapsed() < std::time::Duration::from_millis(250));
+        assert!(!listener.finished.load(Ordering::Acquire));
+        assert!(!*client.inner.channel_event_stopped.subscribe().borrow());
+
+        release.send(()).unwrap();
+        let mut stopped = client.inner.channel_event_stopped.subscribe();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !*stopped.borrow() {
+                stopped.changed().await.unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        assert!(listener.finished.load(Ordering::Acquire));
+        let mut cleanup_stopped = client.inner.shutdown_cleanup_stopped.subscribe();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !*cleanup_stopped.borrow() {
+                cleanup_stopped.changed().await.unwrap();
             }
         })
         .await
