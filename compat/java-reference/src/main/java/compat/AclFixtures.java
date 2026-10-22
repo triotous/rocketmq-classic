@@ -252,7 +252,21 @@ public final class AclFixtures {
         try {
             Locale.setDefault(Locale.forLanguageTag("lt-LT"));
             List<Object> cases = new ArrayList<>();
-            for (String input : new String[] {"i\u0307::1", "j\u0307::1", "x\u0307::1", "ı\u0307::1"}) {
+            for (String input : new String[] {
+                "i\u0307::1",
+                "j\u0307::1",
+                "x\u0307::1",
+                "ı\u0307::1",
+                "i\u0323\u0307::1",
+                "i\u0315\u0307::1",
+                "i\u0334\u0307::1",
+                "i\u0301\u0307::1",
+                "i\u034f\u0307::1",
+                "i\u0307\u0307::1",
+                "į\u0307::1",
+                "і\u0307::1",
+                "\uD83D\uDE00::1"
+            }) {
                 Map<String, Object> item = new TreeMap<>();
                 item.put("input", input);
                 item.put("part", 8);

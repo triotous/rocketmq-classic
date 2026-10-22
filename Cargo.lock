@@ -1093,6 +1093,7 @@ dependencies = [
  "bytes",
  "hmac",
  "hostname",
+ "icu_properties",
  "libc",
  "md-5",
  "rand",

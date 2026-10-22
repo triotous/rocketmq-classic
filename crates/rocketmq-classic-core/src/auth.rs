@@ -58,6 +58,10 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, Mac};
+use icu_properties::{
+    CodePointMapData, CodePointSetData,
+    props::{CanonicalCombiningClass, SoftDotted},
+};
 use md5::Md5;
 use rocketmq_classic_remoting::{
     RemotingCommand,
@@ -734,11 +738,22 @@ fn java_default_locale_uppercase(value: &str) -> String {
             .collect(),
         Some("lt") => {
             let mut result = String::new();
-            let mut characters = value.chars().peekable();
-            while let Some(character) = characters.next() {
-                result.extend(character.to_uppercase());
-                if matches!(character, 'i' | 'j') && characters.peek() == Some(&'\u{0307}') {
-                    characters.next();
+            let soft_dotted = CodePointSetData::new::<SoftDotted>();
+            let combining_class = CodePointMapData::<CanonicalCombiningClass>::new();
+            let mut after_soft_dotted = false;
+            for character in value.chars() {
+                let class = combining_class.get(character);
+                // Java's Lithuanian `After_Soft_Dotted` rule removes the
+                // combining dot, but that dot still blocks a following
+                // dot because its combining class is 230.
+                if character != '\u{0307}' || !after_soft_dotted {
+                    result.extend(character.to_uppercase());
+                }
+
+                if class == CanonicalCombiningClass::NotReordered {
+                    after_soft_dotted = soft_dotted.contains(character);
+                } else if class == CanonicalCombiningClass::Above {
+                    after_soft_dotted = false;
                 }
             }
             result
@@ -757,8 +772,9 @@ fn expand_ip(address: &str, part: i32) -> String {
     expanded
         .split(':')
         .map(|segment| {
-            if segment.len() < 4 {
-                format!("{segment:0>4}")
+            let java_length = segment.encode_utf16().count();
+            if java_length < 4 {
+                format!("{}{segment}", "0".repeat(4 - java_length))
             } else {
                 segment.to_owned()
             }
