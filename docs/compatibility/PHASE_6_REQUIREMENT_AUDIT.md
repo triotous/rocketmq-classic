@@ -2985,3 +2985,17 @@ smoke, release examples and benchmark, workspace/package checks, timezone
 tests, and Windows GNU cross-compiles pass. Broad P18-V01 reconciliation,
 remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V01 Common `MessageDecoder` public-method surface crosswalk — 2026-10-22
+
+Compared the fixture's 26 pinned Java `MessageDecoder` public signatures with
+the Common module surface. The methods map to Rust's wire/compact encoders,
+record and batch decoders, property helpers, message ID helpers, CRC helper,
+and inner-message counter as summarized in
+`docs/compatibility/PHASE_6_API_CONFIG_MAP.md`. The Java no-state utility
+constructor is represented by Rust module functions. This is a signature
+crosswalk only; existing invoked tests cover mapped cases, but broad input,
+error, control-flow, settings and reverse-export reconciliation remains open.
+The `createMessageId(ByteBuffer,ByteBuffer,long)` helper's mutable scratch-buffer
+positions are not represented by the immutable Rust host-byte slice; review of
+that caller-visible side effect remains open.

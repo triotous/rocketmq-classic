@@ -2624,3 +2624,27 @@ decoded values and final positions match Rust. Fixture SHA-256:
 This closes the tested nonpositive body/property length behavior only; broad
 P18-V01 API/settings/source/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 `MessageDecoder` method-surface crosswalk — 2026-10-22
+
+The pinned Java 5.5.1 `MessageDecoder` declares 26 public method signatures and
+one public no-argument constructor. Rust represents this stateless Java helper
+as Common module functions and types. The method groups map as follows:
+
+| Pinned Java methods | Rust Common mapping | Direct evidence |
+| --- | --- | --- |
+| `encode(MessageExt,boolean)`, `encodeUniquely(MessageExt,boolean)` | `encode_message_ext`, `encode_message_ext_uniquely` | MessageExt encoder fixture covers V1/V2 hosts, standard/unique output, compression, padding and short store size. |
+| `decode(ByteBuffer,...)`, `clientDecode(ByteBuffer,boolean)` | `decode_one`, `decode_one_as_client`, `client_decode`, `DecodeOptions` | Invoked overload snapshots cover body, decompression, properties-string, CRC and client-ID choices; malformed store-size and nonpositive-length branches are recorded above. |
+| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `client_decodes`, `client_decodes_with_body` | Concatenated fixture cases compare per-record decoded data and consumed boundaries. |
+| `encodeMessage`, `encodeMessages`, `decodeMessage(ByteBuffer)`, `decodeMessages(ByteBuffer)`, `decodeMessage(MessageExt,List)` | `encode_compact_message(s)`, `decode_compact_message(s)`, `decode_inner_batch` | Compact API fixture covers single/batch bytes, decode results, batch expansion and malformed inputs. |
+| `messageProperties2String`, `string2messageProperties`, `decodeProperties(ByteBuffer)` | `encode_properties_nullable`, `encode_nullable_property_entries`, `decode_properties_nullable`, `decode_record_properties` | Direct fixture covers null/empty/malformed property text, record offsets, cursor positions and truncation. |
+| `createMessageId(SocketAddress,...)`, `decodeMessageId(String)` | `create_message_id`, `decode_message_id` | Message ID API fixture compares IPv4/IPv6 output, setters, malformed hex, short values and ports. |
+| `createMessageId(ByteBuffer,ByteBuffer,...)` | `create_message_id_from_host_bytes` | Rust accepts immutable 8- or 20-byte host-address data and matches the returned Java ID. The Java scratch/output buffer positions are not represented by this Rust slice API; whether those helper-only cursor side effects belong to the public contract remains an explicit P18-V01 review item. |
+| `createCrc32(ByteBuffer,int)`, `createCrc32(ByteBuf,int)` | `append_crc32_property` | Fixture compares both Java buffer overloads' emitted bytes. |
+| `countInnerMsgNum(ByteBuffer)` | `count_inner_messages` | Compact API fixture compares valid counts and malformed-size rejection. |
+
+The no-argument Java constructor has no state or instance methods; Rust exposes
+these operations directly as module functions. The fixture records the complete
+26-signature Java surface in `fixtures/messages/records.json`. This crosswalk
+accounts for the callable surface but does not close P18-V01 behavior, error,
+control-flow, settings, or reverse-export reconciliation.
