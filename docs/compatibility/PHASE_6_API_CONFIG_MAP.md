@@ -1710,7 +1710,9 @@ strict boundary. Invalid Push-start values return the typed
 removal; parser, cache-lifetime, and boundary tests cover the timeout
 arithmetic. The `popUnsubscribedTruncation` Java/Rust fixture also verifies
 that rebalance marks an unsubscribed POP queue dropped, removes it from the
-table, and stops its worker. Remaining POP assignment branches, the public
+table, and stops its worker. The `popToPullTransition` fixture verifies that a
+PULL assignment removes the old POP state and worker while retaining its
+existing PULL queue. Remaining POP assignment branches, the public
 Rebalance/ProcessQueue API audit, and the broader P18-V01 audit remain open.
 
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21

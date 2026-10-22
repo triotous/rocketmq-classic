@@ -3183,3 +3183,19 @@ typed headers and 19 typed bodies. Workspace formatting and `git diff
 P18-V01 source/API/configuration/flow and reverse-export reconciliation,
 current-revision remote Ubuntu CI, native Windows execution, and Phase 19
 Broker/Docker evidence remain open.
+
+## P18-V01 POP-to-PULL assignment transition — 2026-10-22
+
+The pinned Java 5.5.1 assignment updater treats a PULL assignment as no longer
+assigned to the POP table. The invoked `popToPullTransition` fixture seeds the
+same queue in both owner tables, applies a PULL assignment, and records that
+Java drops/removes the POP state while retaining the existing PULL queue. The
+Rust rebalance regression checks those table outcomes and verifies POP worker
+cancellation. The combined `consumer-operations.json` fixture SHA-256 is
+`b414477a4a64b2c252d704704a70c7b1a89f2b6a5b1014531ca0200690edda36`.
+
+All 256 Consumer library tests pass, pinned Maven verify passes with Java
+fixture drift checks and Java cross-decodes of 106 typed headers and 19 typed
+bodies, and formatting/diff checks pass. This closes the tested POP-to-PULL
+cleanup branch only; broad P18-V01 reconciliation and Phase 19 live/platform
+evidence remain open.

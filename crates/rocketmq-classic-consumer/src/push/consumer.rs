@@ -9660,6 +9660,89 @@ mod tests {
         runtime.shutdown().await.unwrap();
     }
 
+    #[tokio::test]
+    async fn rebalance_switch_to_pull_removes_pop_queue_and_stops_worker() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let expected = &fixture["popToPullTransition"];
+
+        let mut config = PushConsumerConfig::new("pop-to-pull").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config.set_message_model(rocketmq_classic_protocol::heartbeat::MessageModel::Broadcasting);
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        write_lock(&consumer.subscriptions).insert(
+            "orders".to_owned(),
+            SubscriptionData::new(Some("orders".to_owned()), Some("*".to_owned())),
+        );
+        write_lock(&consumer.topic_queues)
+            .insert("orders".to_owned(), BTreeSet::from([queue.clone()]));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let pull_process_queue = Arc::new(ProcessQueue::new_for_assignment(queue.clone(), 2));
+        let pop_process_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 3));
+        write_lock(&consumer.process_queues).insert(queue.clone(), pull_process_queue.clone());
+        write_lock(&consumer.pop_process_queues).insert(queue.clone(), pop_process_queue.clone());
+        let worker_stopped = Arc::new(AtomicBool::new(false));
+        struct WorkerDropSignal(Arc<AtomicBool>);
+        impl Drop for WorkerDropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let drop_signal = WorkerDropSignal(worker_stopped.clone());
+        let worker = tokio::spawn(async move {
+            let _drop_signal = drop_signal;
+            std::future::pending::<()>().await;
+        });
+        consumer
+            .pop_workers
+            .lock()
+            .unwrap()
+            .insert(queue.clone(), worker);
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert_eq!(
+            pop_process_queue.is_dropped(),
+            expected["popDropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            expected["popPresent"].as_bool().unwrap()
+        );
+        let retained_pull_queue = read_lock(&consumer.process_queues)
+            .get(&queue)
+            .cloned()
+            .expect("PULL assignment retains its active process queue");
+        assert_eq!(
+            read_lock(&consumer.process_queues).contains_key(&queue),
+            expected["pullPresent"].as_bool().unwrap()
+        );
+        assert_eq!(
+            Arc::ptr_eq(&pull_process_queue, &retained_pull_queue),
+            expected["pullSame"].as_bool().unwrap()
+        );
+        assert!(!retained_pull_queue.is_dropped());
+        assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
+        assert!(worker_stopped.load(Ordering::Acquire));
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
     fn retry_test_message(offset: i64) -> MessageExt {
         // Java 5.5.1 producer-produced `ipv4-v1` record from
         // fixtures/messages/records.json (SHA-256 2F93B0A748E645D8AD2CEA027ABDF2C356ED16B74CEAF70A63D97B0A04861BD0CF).

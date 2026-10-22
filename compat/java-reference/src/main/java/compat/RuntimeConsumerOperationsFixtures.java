@@ -68,6 +68,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("resume", resume());
         fixture.put("popRebalance", popRebalance());
         fixture.put("popUnsubscribedTruncation", popUnsubscribedTruncation());
+        fixture.put("popToPullTransition", popToPullTransition());
         fixture.put("popRetryTransitions", popRetryTransitions());
         fixture.put("pullMaxIdleTimeMillis", Long.parseLong(
             System.getProperty("rocketmq.client.pull.pullMaxIdleTime", "120000")));
@@ -181,6 +182,34 @@ public final class RuntimeConsumerOperationsFixtures {
         row.put("case", "unsubscribed-pop");
         row.put("dropped", processQueue.isDropped());
         row.put("present", table.containsKey(queue));
+        return row;
+    }
+
+    private static Map<String, Object> popToPullTransition() throws Exception {
+        var facade = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("pop-to-pull");
+        var consumer = new org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl(facade, null);
+        var rebalance = consumer.getRebalanceImpl();
+        rebalance.setConsumerGroup("pop-to-pull");
+        var queue = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
+        var popProcessQueue = new org.apache.rocketmq.client.impl.consumer.PopProcessQueue();
+        var pullProcessQueue = new org.apache.rocketmq.client.impl.consumer.ProcessQueue();
+        rebalance.getPopProcessQueueTable().put(queue, popProcessQueue);
+        rebalance.getProcessQueueTable().put(queue, pullProcessQueue);
+
+        var assignment = new org.apache.rocketmq.common.message.MessageQueueAssignment();
+        assignment.setMessageQueue(queue);
+        assignment.setMode(org.apache.rocketmq.common.message.MessageRequestMode.PULL);
+        var update = org.apache.rocketmq.client.impl.consumer.RebalanceImpl.class
+            .getDeclaredMethod("updateMessageQueueAssignment", String.class, java.util.Set.class, boolean.class);
+        update.setAccessible(true);
+        update.invoke(rebalance, "orders", java.util.Set.of(assignment), false);
+
+        Map<String, Object> row = new TreeMap<>();
+        row.put("case", "pop-to-pull");
+        row.put("popDropped", popProcessQueue.isDropped());
+        row.put("popPresent", rebalance.getPopProcessQueueTable().containsKey(queue));
+        row.put("pullPresent", rebalance.getProcessQueueTable().containsKey(queue));
+        row.put("pullSame", rebalance.getProcessQueueTable().get(queue) == pullProcessQueue);
         return row;
     }
 
