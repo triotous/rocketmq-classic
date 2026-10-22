@@ -67,6 +67,7 @@ public final class RuntimeConsumerOperationsFixtures {
         fixture.put("unsubscribedTruncation", reset("rebalance-unsubscribed"));
         fixture.put("resume", resume());
         fixture.put("popRebalance", popRebalance());
+        fixture.put("popUnsubscribedTruncation", popUnsubscribedTruncation());
         fixture.put("popRetryTransitions", popRetryTransitions());
         fixture.put("pullMaxIdleTimeMillis", Long.parseLong(
             System.getProperty("rocketmq.client.pull.pullMaxIdleTime", "120000")));
@@ -160,6 +161,27 @@ public final class RuntimeConsumerOperationsFixtures {
             Method cleanup = MQClientInstance.class.getDeclaredMethod("cleanupAfterConstructionFailure", MQClientAPIImpl.class, Throwable.class);
             cleanup.setAccessible(true); cleanup.invoke(runtime, runtime.getMQClientAPIImpl(), new IllegalStateException("POP rebalance fixture teardown"));
         }
+    }
+
+    private static Map<String, Object> popUnsubscribedTruncation() throws Exception {
+        var facade = new org.apache.rocketmq.client.consumer.DefaultMQPushConsumer("pop-unsubscribed");
+        var consumer = new org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl(facade, null);
+        var rebalance = consumer.getRebalanceImpl();
+        var queue = new org.apache.rocketmq.common.message.MessageQueue("orders", "broker-a", 0);
+        var processQueue = new org.apache.rocketmq.client.impl.consumer.PopProcessQueue();
+        var table = rebalance.getPopProcessQueueTable();
+        table.put(queue, processQueue);
+
+        var truncate = org.apache.rocketmq.client.impl.consumer.RebalanceImpl.class
+            .getDeclaredMethod("truncateMessageQueueNotMyTopic");
+        truncate.setAccessible(true);
+        truncate.invoke(rebalance);
+
+        Map<String, Object> row = new TreeMap<>();
+        row.put("case", "unsubscribed-pop");
+        row.put("dropped", processQueue.isDropped());
+        row.put("present", table.containsKey(queue));
+        return row;
     }
 
     private static List<Object> popRetryTransitions() throws Exception {

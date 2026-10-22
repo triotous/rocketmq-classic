@@ -36,11 +36,15 @@ records four POP table outcomes: an expired assigned queue is dropped and
 replaced; an active assigned queue remains the same object; a dropped assigned
 queue remains present; and an empty assignment drops and removes the queue.
 `fixtures/runtime/consumer-operations.json` records these rows in
-`popRebalance` (current SHA-256
-`a8d82baca384b9b7932b4961b051902336155543428047d891eb9f84052d166d`). Rust's
+`popRebalance` and separately records an unsubscribed POP queue being dropped
+and removed by Java's topic-truncation helper. The matching Rust rebalance
+regression also checks worker cancellation. The fixture SHA-256 is
+`a40640a3ee3a5e17d6845421ffd9808e0cad6152ac2952c8c8002fc168cb6aa1`. Rust's
 `broker_assignment_error_preserves_worker_until_empty_assignment` exercises
 the owner flow against the same four expected states, including preserving the
 active worker across an assignment error and stopping it after empty assignment.
+`rebalance_truncates_unsubscribed_pop_queue_and_stops_worker` covers the
+unsubscribed queue cleanup branch.
 
 ## Local rebalance route selection and lookup order
 

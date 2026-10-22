@@ -286,10 +286,13 @@ The `popRebalance` fixture invokes the Java assignment update for an expired
 assigned POP queue, a dropped queue that remains assigned, and an authoritative
 empty assignment. Rust compares table presence, old-generation dropped state
 and identity replacement, then also scripts a failed assignment lookup to
-verify the current queue and worker are retained without authority. This covers
-the recorded POP expiry/retention branches; other POP assignment branches and
-the public Rebalance/ProcessQueue API audit remain open. Fixture SHA-256 is the
-same `3d7af953b38b28a742a0d3eeb2671e8484066203f06ade2c829e2485ead1de4f`.
+verify the current queue and worker are retained without authority. The added
+`popUnsubscribedTruncation` fixture invokes Java's topic-truncation helper with
+an unsubscribed POP queue; the Rust rebalance regression checks that it marks
+the queue dropped, removes its table entry, and stops its worker. Other POP
+assignment branches and the public Rebalance/ProcessQueue API audit remain
+open. Fixture SHA-256 after this addition is
+`a40640a3ee3a5e17d6845421ffd9808e0cad6152ac2952c8c8002fc168cb6aa1`.
 
 The `popRetryTransitions` fixture now invokes Java's actual
 `RebalanceImpl.updateMessageQueueAssignment` for pop-to-push, push-to-pop,

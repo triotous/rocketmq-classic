@@ -3165,3 +3165,21 @@ were rechecked afterward. This is current-revision evidence for the affected
 shutdown boundary, not a full P18-V02 refresh. Broad P18-V01 reconciliation,
 remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker
 validation remain open.
+
+## P18-V01 POP unsubscribe truncation — 2026-10-22
+
+The pinned Java 5.5.1 `RebalanceImpl.truncateMessageQueueNotMyTopic` marks an
+unsubscribed `PopProcessQueue` dropped and removes it from the POP table. The
+invoked `popUnsubscribedTruncation` fixture records both outcomes. Rust's
+rebalance regression compares those states and verifies the associated POP
+worker is cancelled and removed from the worker map. The
+`consumer-operations.json` fixture SHA-256 is
+`a40640a3ee3a5e17d6845421ffd9808e0cad6152ac2952c8c8002fc168cb6aa1`.
+
+The focused regression and all 255 Consumer library tests pass. Pinned Maven
+verify passes, including Java fixture drift checks and Java decoding of 106
+typed headers and 19 typed bodies. Workspace formatting and `git diff
+--check` pass. This closes the unsubscribed POP cleanup branch only; broad
+P18-V01 source/API/configuration/flow and reverse-export reconciliation,
+current-revision remote Ubuntu CI, native Windows execution, and Phase 19
+Broker/Docker evidence remain open.

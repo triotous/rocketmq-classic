@@ -9599,6 +9599,67 @@ mod tests {
         broker_peer.abort();
     }
 
+    #[tokio::test]
+    async fn rebalance_truncates_unsubscribed_pop_queue_and_stops_worker() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/consumer-operations.json"
+        ))
+        .unwrap();
+        let expected = &fixture["popUnsubscribedTruncation"];
+
+        let mut config = PushConsumerConfig::new("pop-unsubscribed-truncation").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        let manager = ClientRuntimeManager::new();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        let runtime = install_started_consumer(
+            &consumer,
+            &manager,
+            Arc::new(RecordingOffsetStore::default()),
+            idle_consume_service(),
+            Arc::new(PullScheduler::new()),
+            Arc::new(PullRpcWorkers::new()),
+        )
+        .await;
+
+        let queue = MessageQueue::new("orders", "broker-a", 0);
+        let process_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 1));
+        let worker_stopped = Arc::new(AtomicBool::new(false));
+        struct WorkerDropSignal(Arc<AtomicBool>);
+        impl Drop for WorkerDropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let drop_signal = WorkerDropSignal(worker_stopped.clone());
+        let worker = tokio::spawn(async move {
+            let _drop_signal = drop_signal;
+            std::future::pending::<()>().await;
+        });
+        write_lock(&consumer.pop_process_queues).insert(queue.clone(), process_queue.clone());
+        consumer
+            .pop_workers
+            .lock()
+            .unwrap()
+            .insert(queue.clone(), worker);
+
+        assert!(consumer.rebalance_service.rebalance(&consumer).await);
+        assert_eq!(
+            process_queue.is_dropped(),
+            expected["dropped"].as_bool().unwrap()
+        );
+        assert_eq!(
+            read_lock(&consumer.pop_process_queues).contains_key(&queue),
+            expected["present"].as_bool().unwrap()
+        );
+        assert!(!consumer.pop_workers.lock().unwrap().contains_key(&queue));
+        assert!(worker_stopped.load(Ordering::Acquire));
+
+        consumer.shutdown().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
     fn retry_test_message(offset: i64) -> MessageExt {
         // Java 5.5.1 producer-produced `ipv4-v1` record from
         // fixtures/messages/records.json (SHA-256 2F93B0A748E645D8AD2CEA027ABDF2C356ED16B74CEAF70A63D97B0A04861BD0CF).

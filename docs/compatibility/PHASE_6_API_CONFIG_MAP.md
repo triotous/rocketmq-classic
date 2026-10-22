@@ -1708,7 +1708,10 @@ strict boundary. Invalid Push-start values return the typed
 `PushConsumerError::PullIdleTimeSettings`. The
 `subscribed-pull-expired` Java/Rust runtime comparison checks Push queue
 removal; parser, cache-lifetime, and boundary tests cover the timeout
-arithmetic. POP assignment branches and the broader P18-V01 audit remain open.
+arithmetic. The `popUnsubscribedTruncation` Java/Rust fixture also verifies
+that rebalance marks an unsubscribed POP queue dropped, removes it from the
+table, and stops its worker. Remaining POP assignment branches, the public
+Rebalance/ProcessQueue API audit, and the broader P18-V01 audit remain open.
 
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
