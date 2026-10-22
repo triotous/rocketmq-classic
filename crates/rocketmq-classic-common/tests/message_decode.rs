@@ -731,6 +731,15 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
         expected["inputPosition"], expected["inputLimit"],
         "pinned Java moves its ByteBuffer to the limit after the malformed tail"
     );
+    assert_eq!(expected["decodesDefaultCount"], expected["decodedCount"]);
+    assert_eq!(
+        expected["decodesDefaultInputPosition"],
+        expected["decodesDefaultInputLimit"]
+    );
+    assert_eq!(
+        expected["decodesDefaultFirstMessageClass"],
+        "MessageClientExt"
+    );
     assert_eq!(
         expected["decodesCount"], expected["decodedCount"],
         "Java decodes(ByteBuffer, readBody) also keeps the valid prefix"
@@ -747,7 +756,7 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
     let client_decoded = client_decodes(&bytes).unwrap();
     assert_eq!(
         client_decoded.len(),
-        expected["decodesCount"].as_u64().unwrap() as usize
+        expected["decodesDefaultCount"].as_u64().unwrap() as usize
     );
     assert_eq!(client_decoded.len(), 1);
     assert!(client_decoded[0].is_message_client_ext());

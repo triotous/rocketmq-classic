@@ -1022,6 +1022,16 @@ public final class MessageDecodeFixtures {
         expected.put("decodedCount", decoded.size());
         expected.put("inputPosition", input.position());
         expected.put("inputLimit", input.limit());
+        ByteBuffer clientDecodesDefaultInput = ByteBuffer.wrap(malformedBatch);
+        List<MessageExt> clientDecodedDefault =
+            MessageDecoder.decodes(clientDecodesDefaultInput);
+        expected.put("decodesDefaultCount", clientDecodedDefault.size());
+        expected.put("decodesDefaultInputPosition", clientDecodesDefaultInput.position());
+        expected.put("decodesDefaultInputLimit", clientDecodesDefaultInput.limit());
+        if (!clientDecodedDefault.isEmpty()) {
+            expected.put("decodesDefaultFirstMessageClass",
+                clientDecodedDefault.get(0).getClass().getSimpleName());
+        }
         ByteBuffer clientDecodesInput = ByteBuffer.wrap(malformedBatch);
         List<MessageExt> clientDecoded = MessageDecoder.decodes(clientDecodesInput, true);
         expected.put("decodesCount", clientDecoded.size());
