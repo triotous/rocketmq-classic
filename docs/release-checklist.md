@@ -7360,3 +7360,26 @@ owner-specific checks belong in the manual handoff.
   native Windows stack-capture execution remain open. No Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V01 `listUser` object-root parity and package recheck — 2026-10-22 (`c6ffd6bf`; docs `ae8854f3`)
+
+- [x] Rust preserves pinned Fastjson 2.0.63's `decodeList` object-root
+  behavior as a serialized String list element. The Core loopback differential
+  compares all eight Java fixture outcomes, including `{}` -> `["{}"]`.
+  `fixtures/producer/core.json` SHA-256:
+  `ae8e09607bfaac817640a03dc596675757a511c26e03e7d9f0ca7e8a51201cd8`.
+- [x] The focused Core differential, Protocol all-feature tests, locked
+  default/all-feature workspace tests, strict all-target/all-feature Clippy,
+  formatting/diff checks, pinned Maven verify (37 scenarios), differential
+  self-test/manifest, fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+  mutations), race/leak smoke (16 cases × 3), release examples, and offline
+  benchmark build pass on source revision `c6ffd6bf`.
+- [x] Workspace metadata/dependency/license checks and all seven locked
+  product package listings pass; each package includes `LICENSE` and
+  `NOTICE`. Consumer all-target/all-feature Windows GNU cross-check passes.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. Phase 19 Broker/Docker
+  validation remains separate. No push, remote CI, Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.
