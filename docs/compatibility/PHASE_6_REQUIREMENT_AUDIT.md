@@ -2283,3 +2283,23 @@ method is now async and callers must `.await` it. This closes the LitePull
 post-start listener route and retry branch only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull broker subscription-check startup failure — 2026-10-22 (`c04e57ee`)
+
+Pinned Java 5.5.1 LitePull startup refreshes routes for subscribed topics,
+then calls `MQClientInstance.checkClientInBroker()`. For a SQL92 subscription,
+the invoked fixture returns Broker response code 44 to `CHECK_CLIENT_CONFIG`;
+`start()` throws `MQClientException`, shuts down the Consumer and factory to
+`SHUTDOWN_ALREADY`, and removes the group registration. Fixture
+`litePullBrokerSubscriptionCheckFailure` in
+`fixtures/consumer/lifecycle.json` has SHA-256
+`0087e05cd0480a8a6cc6b993324f0ee8ad2ce6d8f58ab8ef8175813908023369`.
+
+Rust now refreshes subscription routes before checking the Broker, invokes
+the runtime's Java-compatible client check, and shuts down the Lite engine
+and any started workers when the Broker rejects the subscription. The
+integration regression uses a SQL92 subscription without a queue listener,
+checks the emitted request against the Java fixture, and verifies terminal
+state and removed registration. This closes the LitePull broker subscription
+check failure slice only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains open.

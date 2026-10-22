@@ -7316,3 +7316,26 @@ owner-specific checks belong in the manual handoff.
   Windows stack-capture execution remain open. No Broker, Docker, publication
   or release action was performed; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 LitePull broker subscription-check parity and gate refresh — 2026-10-22 (`c04e57ee`)
+
+- [x] The invoked Java 5.5.1 SQL92 startup probe returns Broker response code
+  44 to `CHECK_CLIENT_CONFIG`. Java throws `MQClientException`, shuts down
+  Consumer and factory, and removes the group. Fixture
+  `litePullBrokerSubscriptionCheckFailure` in
+  `fixtures/consumer/lifecycle.json` has SHA-256
+  `0087e05cd0480a8a6cc6b993324f0ee8ad2ce6d8f58ab8ef8175813908023369`.
+  Rust refreshes subscription routes before the check and matches the
+  shutdown and registration result.
+- [x] `cargo test -p rocketmq-classic-consumer --locked` passes (251 unit
+  tests, package integration tests and 13 doctests); strict Consumer
+  all-target/all-feature Clippy, formatting, diff checks, and the exact
+  SQL92 regression cross-compile for `x86_64-pc-windows-gnu` pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes,
+  including lifecycle fixture verification, 37 scenarios, and Java decoding
+  of 106 typed headers and 19 typed bodies.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. No Broker, Docker, publication
+  or release action was performed; protected Phase 19 worktree files remain
+  unstaged.
