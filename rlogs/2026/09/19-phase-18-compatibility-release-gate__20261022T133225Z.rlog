@@ -161,3 +161,16 @@ Validation on test/fixture commit `c8356edf`:
 - Pinned `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36 route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
 
 Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Protected Phase 19 files remain untouched and unstaged; no push or external CI was run.
+
+Phase 18 static-topic wrapper inherited-setter differential — 2026-10-22 15:17 UTC
+
+The direct Java wrapper probe now calls inherited `TopicConfig` setters on `TopicConfigAndQueueMapping` itself. It records updated topic name, queue counts, permissions, filter type, system flag, order, and the retained mapping detail. Rust invokes the inherited setters through its `DerefMut` surface and matches copied fields and full `toString`. The semantic fixture diff adds only `topicConfigModelOperations.topicConfigAndQueueMappingApi.inheritedSetters`. `fixtures/producer/core.json` SHA-256: `f46d7f15b0a1425822af97c42b9d639f82bb287f1a4d604e19db2edf150c3186`.
+
+Validation on test/fixture commit `ab46b125`:
+- Focused `cargo test -p rocketmq-classic-protocol --test topic_config_public_api --all-features --locked`: PASS.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: PASS (159 unit tests, all integration targets, 163 doctests).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- Pinned `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36 route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
+
+This closes only inherited setter dispatch for the static-topic wrapper. Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Protected Phase 19 files remain untouched and unstaged; no push or external CI was run.

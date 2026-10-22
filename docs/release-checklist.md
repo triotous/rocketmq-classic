@@ -7535,8 +7535,9 @@ owner-specific checks belong in the manual handoff.
   Producer core fixture SHA-256:
   `39cf5836801a5d5664a61199200dd96b77084cdec557bcc6581eee353967bb39`.
 - [x] The full workspace P18-V02 gate was refreshed after the wrapper source
-  change below and again after the null-field fixture extension in the latest
-  entry. Broad P18-V01 source/API/settings/input/error/control-flow and
+  change below and after the null-field extension. The focused Protocol gate
+  and Maven oracle were refreshed again after the inherited-setter extension
+  in the latest entry. Broad P18-V01 source/API/settings/input/error/control-flow and
   reverse-export reconciliation, current-revision remote Ubuntu CI, and native
   Windows stack-capture execution remain open. No push or external CI was run;
   protected Phase 19 files remain unstaged.
@@ -7589,3 +7590,19 @@ owner-specific checks belong in the manual handoff.
   export reconciliation remains open. Current-revision remote Ubuntu CI and
   native Windows stack-capture execution remain unverified. No push or
   external CI was run; protected Phase 19 files remain unstaged.
+
+## P18-V01 static-topic wrapper inherited-setter differential — 2026-10-22 (`ab46b125`)
+
+- [x] Invoked the inherited `TopicConfig` setters directly through Java
+  `TopicConfigAndQueueMapping`; the Rust wrapper's inherited setters produce
+  the same copied fields and complete `toString`, including the retained
+  mapping detail. Producer core fixture SHA-256:
+  `f46d7f15b0a1425822af97c42b9d639f82bb287f1a4d604e19db2edf150c3186`.
+- [x] Protocol all-feature tests pass (159 unit tests, all integration
+  targets, 163 doctests); strict all-target/all-feature Protocol Clippy,
+  formatting, and diff checks pass. Pinned Maven `verify` passes (37 scenarios,
+  36 route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
+- [ ] This closes only inherited setter dispatch for this wrapper. Broad
+  P18-V01 source/API/settings/input/error/control-flow and reverse-export
+  reconciliation, current-revision remote Ubuntu CI, and native Windows
+  stack-capture execution remain open.
