@@ -7935,3 +7935,16 @@ owner-specific checks belong in the manual handoff.
   runners. No push or external CI was run; protected Phase 19 files remain
   unstaged. Detailed run record:
   `rlogs/2026/10/22-phase-18-consumer-stats-sampling-gate__20261022T190117Z.rlog`.
+
+## P18-V04 current-tree Windows GNU cross-compilation refresh — 2026-10-22 (`5965b62f`)
+
+- [x] On `5965b62f402a2e56ddf82870a771832569d390ff`,
+  `cargo check -p rocketmq-classic-core --all-targets --target
+  x86_64-pc-windows-gnu --locked` passes, and the Consumer
+  `stack::tests::jstack_includes_current_and_other_named_threads` test binary
+  cross-compiles with `--no-run` for the same target.
+- [ ] These are compile checks only. Native Windows execution, current-revision
+  remote Ubuntu CI, broad P18-V01 reconciliation, and Phase 19 Broker/Docker
+  validation remain open. No external CI or push was run. The protected Phase
+  19 worktree files remain unstaged. Run record:
+  `rlogs/2026/10/22-phase-18-windows-gnu-cross-compile-refresh__20261022T190406Z.rlog`.
