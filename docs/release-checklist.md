@@ -7402,3 +7402,24 @@ owner-specific checks belong in the manual handoff.
   validation remains separate. No push, remote CI, Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V01 inherited writer API and static-topic mapping — 2026-10-22 (`4a0074f6`)
+
+- [x] Pinned Java inheritance review removed the feature-aware instance
+  encoder from five plain Java classes and added compile-fail API guards.
+  `TopicQueueMappingDetail` and nested/direct-root `LogicQueueMappingItem`
+  now use their inherited RemotingSerializable writer-feature schema; Java
+  fixtures compare default, populated, and all 48 writer-feature outputs.
+- [x] `TopicQueueMappingDetail` equality/hash behavior and public mapping
+  helpers now match Java for metadata exclusion, collection aliasing,
+  defaults, and null boundaries. Protocol all-feature tests pass (158 unit
+  tests, all integration targets, 163 doctests), as do strict Protocol
+  Clippy, format/diff checks, and pinned Maven `verify` (37 scenarios,
+  runtime route fixture checks, and Java decoding of 106 typed headers and
+  19 typed bodies). Runtime route/VIP fixture cases verified: 36.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. Phase 19 Broker/Docker
+  validation remains separate. No push, remote CI, Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.
