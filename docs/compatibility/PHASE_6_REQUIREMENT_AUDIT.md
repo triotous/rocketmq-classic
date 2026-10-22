@@ -2,41 +2,51 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-22
 
-At code revision `60238931`, the current server-free gates pass on macOS
-AArch64 with Rust 1.85.0 and the pinned Java 5.5.1 artifact. Default and
-all-feature locked workspace tests, strict all-target/all-feature workspace
-Clippy, `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
-`verify` passes 37 differential scenarios, 11 message fixtures and runtime
+At code revision `aa3cec73`, the server-free gates pass on macOS AArch64 with
+Rust 1.85.0 and the pinned Java 5.5.1 artifact. Default and all-feature locked
+workspace tests, strict all-target/all-feature workspace Clippy,
+`cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
+`verify` passes 37 differential scenarios and 11 message fixtures/runtime
 cases; Java cross-decodes 106 typed headers and 19 typed bodies produced by
-Rust. Differential self-test and 37-scenario manifest validation pass.
-Fuzz smoke covers 163 frame seeds, 11 message seeds and 2,784 bounded
-mutations, yielding 245 frame decodes and 192 message decodes. Deterministic
-race/leak smoke passes 17 cases repeated three times. Release facade examples,
-offline benchmark execution, locked Cargo metadata, workspace metadata/license/
-dependency checks, seven package-content listings with `LICENSE`/`NOTICE`, and
-UTC plus Asia/Taipei Unique ID fixtures pass. The benchmark was measured at
-`ead33f69`; `60238931` contains only test and documentation changes after that
-production-code revision. Observations are recorded in the [Phase 18 benchmark
-baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+Rust. Differential self-test and 37-scenario manifest validation pass. Fuzz
+smoke covers 163 frame seeds, 11 message seeds and 2,784 bounded mutations,
+yielding 245 frame decodes and 192 message decodes. Deterministic race/leak
+smoke passes 17 cases repeated three times. Release examples and the offline
+benchmark execute successfully; the current benchmark observation is recorded
+in the [Phase 18 benchmark baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+Locked Cargo metadata, workspace metadata/license/dependency checks, seven
+package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
+Unique ID fixtures passed at the preceding server-free revision `60238931`.
 
-The Consumer library passes Windows GNU cross-target `cargo check
---all-targets --all-features`, `cargo test --all-features --no-run`, and strict
-target Clippy. The MSVC cross-check was retried after installing the pinned
-Rust 1.85 target, then stopped at missing Windows SDK headers (`stdlib.h` and
-`windows.h`). Native Windows runtime execution and current-revision remote
-Ubuntu CI remain unverified. The referenced external Java checkout is at
+At `60238931`, the Consumer library also passed Windows GNU cross-target
+all-target/all-feature check, test executable linking, and strict target Clippy.
+The MSVC cross-check was retried after installing the pinned Rust 1.85 target,
+then stopped at missing Windows SDK headers (`stdlib.h` and `windows.h`). Native
+Windows runtime execution and current-revision remote Ubuntu CI remain
+unverified. The referenced external Java checkout is at
 `2238256de1d227a4384ba969dfa31473187b4d08` (RocketMQ 5.3.3) and contains a
 pre-existing untracked `broker/src/test/java/org/apache/rocketmq/broker/aaaa.java`;
 it was left untouched. Compatibility source review and fixtures use the
-pinned 5.5.1 commit `efa1be59d6fc747ad220f036c86030f05f0419f9` and the pinned
-5.5.1 artifacts instead.
+pinned 5.5.1 commit `efa1be59d6fc747ad220f036c86030f05f0419f9` and pinned
+5.5.1 artifacts.
 
 The broad P18-V01 Java source/API/settings/input/error/control-flow and Rust
 reverse-export reconciliation remains PARTIAL. The manifest registers 37
 scenarios, with 30 live handoff scenarios still `PENDING_PHASE_19`; native
 Windows, current remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
-open. This rerun records local P18-V02 gates only and is not a phase-closure or
+open. This rerun records server-free gates only and is not a phase-closure or
 compatibility claim.
+
+P18-V01 `ProcessQueue.removeMessage` in-flight and dispatch-state parity
+(`aa3cec73`): the invoked Java 5.5.1 fixture exposed that removal only mutates
+the ready message map, leaving in-flight count/size available to `commit`, and
+that removing the last ready entry does not clear the `consuming` dispatch
+flag. Rust now preserves both state transitions. The expanded `processQueue`
+fixture SHA-256 is
+`67aac16425d8ac98e2d2cde4ff53a91e68b080b429711852979eb302d173dc5e`; the
+Consumer facade comparison and two focused regressions pass. This closes the
+two named removal flows only; broad P18-V01 source and reverse-export review
+remains open.
 
 ## Direct runtime API reconciliation — 2026-10-20
 
