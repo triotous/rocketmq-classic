@@ -1734,6 +1734,50 @@ Producer core fixture SHA-256:
 This closes this surfaced operation only; the remaining direct client API,
 settings, input/error, control-flow and reverse-export audit remains open.
 
+## P18-V01 pinned `MQClientAPIImpl` reverse-audit remainder — 2026-10-22
+
+The pinned Java 5.5.1 `MQClientAPIImpl` public surface was checked with
+`javap -public` against the current Rust APIs and compatibility evidence.
+The initial candidate list contained 18 direct operations with no mapped Rust
+operation or fixture-backed owner path. Since this list was captured,
+`queryCorrectionOffset` and `updateAndGetGroupForbidden` have been implemented
+and checked against the pinned Java fixture. Sixteen direct operations from
+the initial list remain implementation work rather than approved differences:
+
+| Request | Java method | Code | Status |
+| --- | --- | ---: | --- |
+| Topic configuration snapshot | `getAllTopicConfig` | 21 | Open |
+| Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Open |
+| Broker consume statistics | `fetchConsumeStatsInBroker` | 317 | Open |
+| Broker statistics view | `viewBrokerStatsData` | 315 | Open |
+| Consume-queue query | `queryConsumeQueue` | 321 | Open |
+| Correction-offset query | `queryCorrectionOffset` | 308 | Closed by `query_correction_offset` |
+| Static-topic configuration lookup | `getTopicConfig` | 351 | Open |
+| Group-forbidden update/read | `updateAndGetGroupForbidden` | 353 | Closed by `update_and_get_group_forbidden` |
+| Broker HA status | `getBrokerHAStatus` | 907 | Open |
+| Static-topic creation/update | `createStaticTopic` | 513 | Open |
+| User creation | `createUser` | 3001 | Open |
+| User update | `updateUser` | 3002 | Open |
+| User deletion | `deleteUser` | 3003 | Open |
+| User listing | `listUser` | 3005 | Open |
+| ACL creation | `createAcl` | 3006 | Open |
+| ACL update | `updateAcl` | 3007 | Open |
+| ACL deletion | `deleteAcl` | 3008 | Open |
+| ACL listing | `listAcl` | 3010 | Open |
+
+The audited Java declarations are in
+`org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
+already exist for the 16 open rows, but their Rust DTO and RPC owners are still
+missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
+`invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
+`delete_topic_in_nameserver`; `getRemotingClient` maps to
+`ClientRuntime::remoting`; and `recallMessageAsync` maps to the Future-based
+recall path. The `GroupForbidden` DTO also matches Java's nullable accessors,
+value equality, `hashCode`, and `toString` behavior. This inventory narrows the
+direct-operation gap; it does not close P18-V01's broader settings, inputs,
+errors, control flows or reverse-export audit.
+
 ## P18-V01 `MessageClientExt` inherited offset-ID overrides — 2026-10-21
 
 Rust now dispatches Java `MessageClientExt` subclasses' virtual
@@ -1788,3 +1832,27 @@ Common message tests pass (26), direct-consume tests pass (4), and pinned Maven
 closes the declared message-family method and selected virtual-override slice;
 the broader P18-V01 settings/API/flow/input/error/reverse-export audit and
 current GitHub Ubuntu/native Windows P18-V04 evidence remain open.
+
+## P18-V01 direct `queryCorrectionOffset` Broker API — 2026-10-22
+
+The pinned `MQClientAPIImpl.queryCorrectionOffset(String,String,String,Set,long)`
+path now maps to `MQClientApi::query_correction_offset` for request 308. Its
+typed `QueryCorrectionOffsetRequestHeader` preserves nullable topic, compared
+group, filter set and inherited request fields; the response DTO retains the
+default empty map and nullable map/value behavior. The Java oracle fixture and
+Rust loopback test cover six cases, including null arguments, empty filter
+value, absent default map, null map, null Long value, Broker rejection and a
+successful reply without a body. Protocol header inventory and wire-field
+matrix checks pass. This closes only this direct method/header/body slice;
+broad P18-V01 remains open.
+
+## P18-V01 direct `updateAndGetGroupForbidden` Broker API — 2026-10-22
+
+The pinned `MQClientAPIImpl.updateAndGetGroupForbidden` path now maps to
+`MQClientApi::update_and_get_group_forbidden` for request 353. Rust adds the
+typed request header and nullable `GroupForbidden` response DTO. The Java
+fixture and Rust loopback test cover nullable header fields, inherited RPC
+fields, populated and default-null result objects, a success without a body,
+and Broker rejection. Header inventory and field-validation matrix checks
+pass. This closes only this direct API/header/DTO slice; broad P18-V01 remains
+open.

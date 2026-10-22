@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rocketmq_classic_common::{
     message::{DecodeOptions, MessageExt, constants, decode_many, decode_one},
@@ -10,9 +10,9 @@ use rocketmq_classic_protocol::{
         CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
         ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
         DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList, KvTable,
-        ProducerConnection, ProducerTableInfo, QuerySubscriptionResponseBody, QueueTimeSpan,
-        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList,
-        TopicStatsTable,
+        ProducerConnection, ProducerTableInfo, QueryCorrectionOffsetBody,
+        QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
+        SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -26,15 +26,17 @@ use rocketmq_classic_protocol::{
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
         GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
         GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
-        ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, ViewMessageRequestHeader,
-        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+        ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
-    subscription::SubscriptionGroupConfig,
+    subscription::{GroupForbidden, SubscriptionGroupConfig},
 };
 use rocketmq_classic_remoting::RemotingCommand;
 use tokio::{
@@ -1131,6 +1133,72 @@ impl MQClientApi {
         })
     }
 
+    /// Queries a Broker's correction offsets through Java
+    /// `MQClientAPIImpl.queryCorrectionOffset`. The filter set is serialized
+    /// as Java's comma-separated `filterGroups` header value; its iteration
+    /// order is unspecified just as it is for the Java `Set` input.
+    pub async fn query_correction_offset(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        compare_group: Option<&str>,
+        filter_groups: Option<&HashSet<String>>,
+        timeout_millis: i64,
+    ) -> Result<Option<HashMap<i32, Option<i64>>>, RpcError> {
+        let code = request::QUERY_CORRECTION_OFFSET;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = QueryCorrectionOffsetRequestHeader::default();
+        header.set_topic(topic.map(str::to_owned));
+        header.set_compare_group(compare_group.map(str::to_owned));
+        header.set_filter_groups(filter_groups.map(|groups| {
+            groups
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(",")
+        }));
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let Some(body) = reply.body else {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        };
+        let body = QueryCorrectionOffsetBody::java_decode(&body).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })?;
+        Ok(body
+            .get_correction_offsets()
+            .map(|correction_offsets| correction_offsets.snapshot()))
+    }
+
     /// Returns the direct admin adapter exposed by Java's `MQClientAPIExt`.
     pub fn mq_client_admin(&self) -> MqClientAdmin {
         MqClientAdmin { api: self.clone() }
@@ -1368,6 +1436,41 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: error.to_string(),
             })
+    }
+
+    /// Updates and reads a Broker's group-forbidden flag through Java
+    /// `MQClientAPIImpl.updateAndGetGroupForbidden`. The request preserves the
+    /// nullable header fields and applies the configured VIP address mapping.
+    pub async fn update_and_get_group_forbidden(
+        &self,
+        addr: &str,
+        header: &UpdateGroupForbiddenRequestHeader,
+        timeout_millis: i64,
+    ) -> Result<Option<GroupForbidden>, RpcError> {
+        let code = request::UPDATE_AND_GET_GROUP_FORBIDDEN;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        GroupForbidden::java_decode_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
     }
 
     /// Creates or updates one Broker's subscription group through Java

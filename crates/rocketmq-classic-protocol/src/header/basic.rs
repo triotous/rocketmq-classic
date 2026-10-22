@@ -180,6 +180,7 @@ impl_rpc_request_header_semantics!(
     QueryTopicsByConsumerRequestHeader,
     QuerySubscriptionByConsumerRequestHeader,
     QueryTopicConsumeByWhoRequestHeader,
+    QueryCorrectionOffsetRequestHeader,
     GetTopicStatsInfoRequestHeader,
     GetSubscriptionGroupConfigRequestHeader,
     GetConsumerListByGroupRequestHeader,
@@ -198,6 +199,7 @@ impl_rpc_request_header_semantics!(
     GetConsumeStatsRequestHeader,
     GetConsumerRunningInfoRequestHeader,
     CloneGroupOffsetRequestHeader,
+    UpdateGroupForbiddenRequestHeader,
     PopMessageRequestHeader,
     PopLiteMessageRequestHeader,
     AckMessageRequestHeader,
@@ -755,6 +757,73 @@ impl CommandHeader for GetSubscriptionGroupConfigRequestHeader {
             namespaced: optional_java_boolean(fields, "nsd"),
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
+        })
+    }
+}
+
+/// Pinned Java `UpdateGroupForbiddenRequestHeader`. Its `checkFields()` is a
+/// no-op despite non-null annotations, so group and topic remain nullable at
+/// this request boundary.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateGroupForbiddenRequestHeader {
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    broker_name: Option<String>,
+    oneway: Option<bool>,
+    topic: Option<String>,
+    logical: Option<bool>,
+    group: Option<String>,
+    readable: Option<bool>,
+}
+
+impl UpdateGroupForbiddenRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_readable(&self) -> Option<bool> {
+        self.readable
+    }
+
+    pub fn set_readable(&mut self, value: Option<bool>) {
+        self.readable = value;
+    }
+}
+
+impl CommandHeader for UpdateGroupForbiddenRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "group", self.group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "readable", self.readable);
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            logical: optional_java_boolean(fields, "lo"),
+            group: optional_string(fields, "group"),
+            readable: optional_java_boolean(fields, "readable"),
         })
     }
 }
@@ -1731,6 +1800,73 @@ impl CommandHeader for QueryTopicConsumeByWhoRequestHeader {
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
             logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+/// Pinned Java `QueryCorrectionOffsetHeader` for `QUERY_CORRECTION_OFFSET`.
+/// Java's `checkFields()` is a no-op, so the compared group, topic, filter
+/// groups, and inherited request fields all remain nullable.
+#[derive(Debug, Clone, Default)]
+pub struct QueryCorrectionOffsetRequestHeader {
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    broker_name: Option<String>,
+    oneway: Option<bool>,
+    topic: Option<String>,
+    logical: Option<bool>,
+    filter_groups: Option<String>,
+    compare_group: Option<String>,
+}
+
+impl QueryCorrectionOffsetRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_filter_groups(&self) -> Option<&str> {
+        self.filter_groups.as_deref()
+    }
+
+    pub fn set_filter_groups(&mut self, value: Option<String>) {
+        self.filter_groups = value;
+    }
+
+    pub fn get_compare_group(&self) -> Option<&str> {
+        self.compare_group.as_deref()
+    }
+
+    pub fn set_compare_group(&mut self, value: Option<String>) {
+        self.compare_group = value;
+    }
+}
+
+impl CommandHeader for QueryCorrectionOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "filterGroups", self.filter_groups.as_deref());
+        put_optional(fields, "compareGroup", self.compare_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+        put_optional(fields, "lo", self.logical);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            topic: optional_string(fields, "topic"),
+            logical: optional_java_boolean(fields, "lo"),
+            filter_groups: optional_string(fields, "filterGroups"),
+            compare_group: optional_string(fields, "compareGroup"),
         })
     }
 }
@@ -6005,6 +6141,8 @@ impl_topic_request_header_accessors!(
     PullMessageRequestHeader,
     CreateTopicRequestHeader,
     QueryMessageRequestHeader,
+    QueryCorrectionOffsetRequestHeader,
+    UpdateGroupForbiddenRequestHeader,
     RecallMessageRequestHeader,
     SendMessageRequestHeaderV2,
     SendMessageRequestHeaderV1

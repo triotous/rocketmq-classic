@@ -599,6 +599,28 @@ public final class Main {
         queryTopicConsumeByWho.setOneway(false);
         queryTopicConsumeByWho.setLo(true);
         writeTypedHeaderFixture(output, "query-topic-consume-by-who-request", 300, queryTopicConsumeByWho);
+        org.apache.rocketmq.remoting.protocol.header.QueryCorrectionOffsetHeader queryCorrectionOffset =
+            new org.apache.rocketmq.remoting.protocol.header.QueryCorrectionOffsetHeader();
+        queryCorrectionOffset.setTopic("orders");
+        queryCorrectionOffset.setCompareGroup("workers");
+        queryCorrectionOffset.setFilterGroups("ignored-group");
+        queryCorrectionOffset.setNamespace("tenant");
+        queryCorrectionOffset.setNamespaced(true);
+        queryCorrectionOffset.setBrokerName("broker-a");
+        queryCorrectionOffset.setOneway(false);
+        queryCorrectionOffset.setLo(true);
+        writeTypedHeaderFixture(output, "query-correction-offset-request", 308, queryCorrectionOffset);
+        org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader groupForbidden =
+            new org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader();
+        groupForbidden.setTopic("orders");
+        groupForbidden.setGroup("workers");
+        groupForbidden.setReadable(true);
+        groupForbidden.setNamespace("tenant");
+        groupForbidden.setNamespaced(true);
+        groupForbidden.setBrokerName("broker-a");
+        groupForbidden.setOneway(false);
+        groupForbidden.setLo(true);
+        writeTypedHeaderFixture(output, "update-group-forbidden-request", 353, groupForbidden);
         GetTopicStatsInfoRequestHeader topicStatsInfo = new GetTopicStatsInfoRequestHeader();
         topicStatsInfo.setTopic("orders");
         topicStatsInfo.setNamespace("tenant");
@@ -1176,6 +1198,8 @@ public final class Main {
             assertAllExtFields(byName, "typed-query-topics-by-consumer-request.bin", 343);
             assertAllExtFields(byName, "typed-query-subscription-by-consumer-request.bin", 345);
             assertAllExtFields(byName, "typed-query-topic-consume-by-who-request.bin", 300);
+            assertAllExtFields(byName, "typed-query-correction-offset-request.bin", 308);
+            assertAllExtFields(byName, "typed-update-group-forbidden-request.bin", 353);
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
             assertAllExtFields(byName, "typed-topics-by-cluster-request.bin", 224);
             assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
@@ -1401,6 +1425,8 @@ public final class Main {
             case "typed-query-topics-by-consumer-request.bin": fixtureStem = "header-query-topics-by-consumer-request"; break;
             case "typed-query-subscription-by-consumer-request.bin": fixtureStem = "header-query-subscription-by-consumer-request"; break;
             case "typed-query-topic-consume-by-who-request.bin": fixtureStem = "header-query-topic-consume-by-who-request"; break;
+            case "typed-query-correction-offset-request.bin": fixtureStem = "header-query-correction-offset-request"; break;
+            case "typed-update-group-forbidden-request.bin": fixtureStem = "header-update-group-forbidden-request"; break;
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
             case "typed-topics-by-cluster-request.bin": fixtureStem = "header-topics-by-cluster-request"; break;
             case "typed-get-subscription-group-config-request.bin": fixtureStem = "header-get-subscription-group-config-request"; break;

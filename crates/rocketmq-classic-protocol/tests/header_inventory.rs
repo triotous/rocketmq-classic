@@ -44,6 +44,8 @@ macro_rules! inventory {
             QueryTopicsByConsumerRequestHeader => ("header-query-topics-by-consumer-request", "typed-query-topics-by-consumer-request.bin"),
             QuerySubscriptionByConsumerRequestHeader => ("header-query-subscription-by-consumer-request", "typed-query-subscription-by-consumer-request.bin"),
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
+            QueryCorrectionOffsetRequestHeader => ("header-query-correction-offset-request", "typed-query-correction-offset-request.bin"),
+            UpdateGroupForbiddenRequestHeader => ("header-update-group-forbidden-request", "typed-update-group-forbidden-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
             GetSubscriptionGroupConfigRequestHeader => ("header-get-subscription-group-config-request", "typed-get-subscription-group-config-request.bin"),

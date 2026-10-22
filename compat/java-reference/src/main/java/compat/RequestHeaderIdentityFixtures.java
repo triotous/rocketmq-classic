@@ -65,6 +65,8 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("PullMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PullMessageRequestHeader"),
         Map.entry("QueryConsumeTimeSpanRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader"),
         Map.entry("QueryConsumerOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetRequestHeader"),
+        Map.entry("QueryCorrectionOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryCorrectionOffsetHeader"),
+        Map.entry("UpdateGroupForbiddenRequestHeader", "org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader"),
         Map.entry("QueryMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader"),
         Map.entry("QuerySubscriptionByConsumerRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader"),
         Map.entry("QueryTopicConsumeByWhoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.QueryTopicConsumeByWhoRequestHeader"),

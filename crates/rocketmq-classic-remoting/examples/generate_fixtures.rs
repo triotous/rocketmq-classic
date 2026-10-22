@@ -38,7 +38,7 @@ use rocketmq_classic_protocol::{
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
         PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
@@ -46,8 +46,8 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -130,6 +130,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-query-topic-consume-by-who-request.bin",
         "header-query-topic-consume-by-who-request",
         300,
+    );
+    write_oracle_header::<QueryCorrectionOffsetRequestHeader>(
+        output,
+        "typed-query-correction-offset-request.bin",
+        "header-query-correction-offset-request",
+        308,
+    );
+    write_oracle_header::<UpdateGroupForbiddenRequestHeader>(
+        output,
+        "typed-update-group-forbidden-request.bin",
+        "header-update-group-forbidden-request",
+        353,
     );
     write_oracle_header::<GetTopicStatsInfoRequestHeader>(
         output,

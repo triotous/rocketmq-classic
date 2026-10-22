@@ -2052,6 +2052,67 @@ impl Default for QueryConsumeTimeSpanBody {
     }
 }
 
+/// Java `QueryCorrectionOffsetBody`, carrying queue IDs to corrected offsets.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryCorrectionOffsetBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correction_offsets: Option<SharedValue<HashMap<i32, Option<i64>>>>,
+}
+
+fn default_correction_offsets() -> Option<HashMap<i32, Option<i64>>> {
+    Some(HashMap::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct QueryCorrectionOffsetBodyFields {
+    #[serde(default = "default_correction_offsets")]
+    correction_offsets: Option<HashMap<i32, Option<i64>>>,
+}
+
+impl Default for QueryCorrectionOffsetBodyFields {
+    fn default() -> Self {
+        Self {
+            correction_offsets: default_correction_offsets(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for QueryCorrectionOffsetBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: QueryCorrectionOffsetBodyFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            correction_offsets: fields.correction_offsets.map(SharedValue::new),
+        })
+    }
+}
+
+impl Default for QueryCorrectionOffsetBody {
+    fn default() -> Self {
+        Self {
+            correction_offsets: default_correction_offsets().map(SharedValue::new),
+        }
+    }
+}
+
+impl QueryCorrectionOffsetBody {
+    pub fn get_correction_offsets(&self) -> Option<SharedValue<HashMap<i32, Option<i64>>>> {
+        self.correction_offsets.clone()
+    }
+
+    pub fn set_correction_offsets(
+        &mut self,
+        value: Option<SharedValue<HashMap<i32, Option<i64>>>>,
+    ) {
+        self.correction_offsets = value;
+    }
+}
+
 impl QueryConsumeTimeSpanBody {
     pub fn get_consume_time_span_set(
         &self,
@@ -8312,6 +8373,7 @@ impl_java_remoting_serializable_adapters!(
     QueryAssignmentRequestBody,
     QueryAssignmentResponseBody,
     QueryConsumeTimeSpanBody,
+    QueryCorrectionOffsetBody,
     SetMessageRequestModeRequestBody,
     MessageRequestModeSerializeWrapper,
     LockBatchRequestBody,

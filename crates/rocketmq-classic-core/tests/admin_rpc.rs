@@ -25,7 +25,7 @@ use rocketmq_classic_protocol::{
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, ResetOffsetRequestHeader, SearchOffsetRequestHeader,
-        ViewMessageRequestHeader,
+        UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
     },
     heartbeat::HeartbeatData,
     heartbeat::SubscriptionData,
@@ -1432,7 +1432,7 @@ async fn broker_maintenance_operations_match_java_requests_and_outcomes() {
     let cases = fixture["brokerMaintenanceOperations"]["cases"]
         .as_array()
         .unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 5);
     for case in cases {
         let operation = case["operation"].as_str().unwrap();
         let expected = &case["requests"][0];
@@ -1654,7 +1654,7 @@ async fn create_topic_list_matches_java_requests_and_outcomes() {
     let cases = fixture["createTopicListOperations"]["cases"]
         .as_array()
         .unwrap();
-    assert_eq!(cases.len(), 5);
+    assert_eq!(cases.len(), 6);
 
     let (client_api, client) = api().await;
     for case in cases {
@@ -2092,6 +2092,180 @@ async fn invoke_broker_to_get_consumer_status_matches_java_fixture() {
             .unwrap()
             .unwrap_or_else(|| json!({}));
         assert_eq!(actual_fields, expected_request["extFields"]);
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn query_correction_offset_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["queryCorrectionOffsetApi"],
+        json!([
+            "java.util.Map org.apache.rocketmq.client.impl.MQClientAPIImpl.queryCorrectionOffset(java.lang.String,java.lang.String,java.lang.String,java.util.Set,long)"
+        ])
+    );
+    let cases = fixture["queryCorrectionOffsetOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let filter_groups = case["filterGroup"]
+            .as_str()
+            .map(|group| HashSet::from([group.to_owned()]));
+        let result = client_api
+            .query_correction_offset(
+                &addr,
+                case["topic"].as_str(),
+                case["group"].as_str(),
+                filter_groups.as_ref(),
+                timeout_millis,
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let offsets = result.unwrap();
+            let null_offset_present = offsets
+                .as_ref()
+                .is_some_and(|offsets| offsets.get(&5) == Some(&None));
+            assert_eq!(null_offset_present, case["nullOffsetPresent"]);
+            let normalized_offsets = offsets.map(|offsets| {
+                offsets
+                    .into_iter()
+                    .filter_map(|(queue_id, offset)| offset.map(|offset| (queue_id, offset)))
+                    .collect::<HashMap<_, _>>()
+            });
+            assert_eq!(
+                serde_json::to_value(normalized_offsets).unwrap(),
+                case["correctionOffsets"]
+            );
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+        );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn update_and_get_group_forbidden_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["updateAndGetGroupForbiddenApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden org.apache.rocketmq.client.impl.MQClientAPIImpl.updateAndGetGroupForbidden(java.lang.String,org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader,long)"
+        ])
+    );
+    let cases = fixture["updateAndGetGroupForbiddenOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let mut header = UpdateGroupForbiddenRequestHeader::default();
+        header.set_topic(case["topic"].as_str().map(str::to_owned));
+        header.set_group(case["group"].as_str().map(str::to_owned));
+        header.set_readable(case["readable"].as_bool());
+        if case["withInheritedFields"].as_bool().unwrap() {
+            header.set_namespace(Some("tenant".to_owned()));
+            header.set_namespaced(Some(true));
+            header.set_broker_name(Some("broker-a".to_owned()));
+            header.set_oneway(Some(false));
+            header.set_lo(Some(true));
+        }
+        let result = client_api
+            .update_and_get_group_forbidden(&addr, &header, timeout_millis)
+            .await;
+        if case["outcome"] == "returned" {
+            let forbidden = result.unwrap();
+            if case["resultIsNull"].as_bool().unwrap() {
+                assert!(forbidden.is_none());
+            } else {
+                let forbidden = forbidden.unwrap();
+                assert_eq!(forbidden.get_topic(), case["resultTopic"].as_str());
+                assert_eq!(forbidden.get_group(), case["resultGroup"].as_str());
+                assert_eq!(forbidden.get_readable(), case["resultReadable"].as_bool());
+            }
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+        );
         client.shutdown().await;
     }
 }

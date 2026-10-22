@@ -377,6 +377,28 @@ public final class ProducerCoreFixtures {
                 .collect(java.util.stream.Collectors.toList()));
         result.put("invokeBrokerToGetConsumerStatusOperations",
             invokeBrokerToGetConsumerStatusOperations());
+        result.put("queryCorrectionOffsetApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("queryCorrectionOffset"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("queryCorrectionOffsetRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.QueryCorrectionOffsetHeader.class));
+        result.put("queryCorrectionOffsetOperations", queryCorrectionOffsetOperations());
+        result.put("updateAndGetGroupForbiddenApi",
+            Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+                .filter(method -> Modifier.isPublic(method.getModifiers()))
+                .filter(method -> method.getName().equals("updateAndGetGroupForbidden"))
+                .map(ProducerCoreFixtures::methodSignature)
+                .sorted()
+                .collect(java.util.stream.Collectors.toList()));
+        result.put("updateGroupForbiddenRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader.class));
+        result.put("groupForbiddenDtoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden.class));
+        result.put("groupForbiddenDtoOperations", groupForbiddenDtoOperations());
+        result.put("updateAndGetGroupForbiddenOperations", updateAndGetGroupForbiddenOperations());
         result.put("addBrokerRequestHeaderApi",
             publicApiSurface(org.apache.rocketmq.remoting.protocol.header.AddBrokerRequestHeader.class));
         result.put("removeBrokerRequestHeaderApi",
@@ -2923,6 +2945,212 @@ public final class ProducerCoreFixtures {
             "workers", "consumer-a", org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
             null, null));
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> queryCorrectionOffsetOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(queryCorrectionOffsetCase("correction-success", "orders", "workers",
+            "ignored-group", 0, null, "{\"correctionOffsets\":{\"1\":7,\"3\":11,\"5\":null}}"));
+        cases.add(queryCorrectionOffsetCase("correction-empty-filter", "orders", "workers",
+            "", 0, null, "{}"));
+        cases.add(queryCorrectionOffsetCase("correction-null-inputs", null, null,
+            null, 0, null, "{\"correctionOffsets\":{}}"));
+        cases.add(queryCorrectionOffsetCase("correction-error", "orders", "workers",
+            null, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "correction offset query rejected", null));
+        cases.add(queryCorrectionOffsetCase("correction-success-no-body", "orders", "workers",
+            null, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(queryCorrectionOffsetCase("correction-null-map", "orders", "workers",
+            null, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, "{\"correctionOffsets\":null}"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> queryCorrectionOffsetCase(
+        String name, String topic, String group, String filterGroup, int responseCode,
+        String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("query-correction-offset-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("topic", topic);
+        result.put("group", group);
+        result.put("filterGroup", filterGroup);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            java.util.Set<String> filterGroups = filterGroup == null
+                ? null : new java.util.LinkedHashSet<>(java.util.Collections.singletonList(filterGroup));
+            Map<Integer, Long> offsets = api.queryCorrectionOffset(
+                "broker-a:10911", topic, group, filterGroups, 2345L);
+            result.put("outcome", "returned");
+            result.put("nullOffsetPresent", offsets != null
+                && offsets.containsKey(5) && offsets.get(5) == null);
+            Map<String, Long> jsonOffsets = new TreeMap<>();
+            if (offsets != null) {
+                offsets.forEach((queueId, offset) -> jsonOffsets.put(
+                    Integer.toString(queueId), offset));
+            }
+            result.put("correctionOffsets", offsets == null ? null : jsonOffsets);
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> updateAndGetGroupForbiddenOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(updateAndGetGroupForbiddenCase("forbidden-success", "orders", "workers",
+            true, true, 0, null,
+            "{\"topic\":\"orders\",\"group\":\"workers\",\"readable\":false}"));
+        cases.add(updateAndGetGroupForbiddenCase("forbidden-null-header", null, null,
+            null, false, 0, null, "{}"));
+        cases.add(updateAndGetGroupForbiddenCase("forbidden-no-body", "orders", "workers",
+            false, false, 0, null, null));
+        cases.add(updateAndGetGroupForbiddenCase("forbidden-error", "orders", "workers",
+            true, false, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "group forbidden update rejected", null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> groupForbiddenDtoOperations() {
+        org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden populated =
+            new org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden();
+        populated.setTopic("orders");
+        populated.setGroup("workers");
+        populated.setReadable(false);
+        org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden defaultValue =
+            new org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden();
+        Map<String, Object> result = new TreeMap<>();
+        result.put("populatedHashCode", populated.hashCode());
+        result.put("populatedToString", populated.toString());
+        result.put("populatedJson", populated.toJson());
+        result.put("populatedEqualsDefault", populated.equals(defaultValue));
+        result.put("defaultHashCode", defaultValue.hashCode());
+        result.put("defaultToString", defaultValue.toString());
+        result.put("defaultJson", defaultValue.toJson());
+        return result;
+    }
+
+    private static Map<String, Object> updateAndGetGroupForbiddenCase(
+        String name, String topic, String group, Boolean readable, boolean withInheritedFields,
+        int responseCode, String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("group-forbidden-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("topic", topic);
+        result.put("group", group);
+        result.put("readable", readable);
+        result.put("withInheritedFields", withInheritedFields);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader header =
+                new org.apache.rocketmq.remoting.protocol.header.UpdateGroupForbiddenRequestHeader();
+            header.setTopic(topic);
+            header.setGroup(group);
+            header.setReadable(readable);
+            if (withInheritedFields) {
+                header.setNamespace("tenant");
+                header.setNamespaced(true);
+                header.setBrokerName("broker-a");
+                header.setOneway(false);
+                header.setLo(true);
+            }
+            org.apache.rocketmq.remoting.protocol.subscription.GroupForbidden forbidden =
+                api.updateAndGetGroupForbidden("broker-a:10911", header, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", forbidden == null);
+            if (forbidden != null) {
+                result.put("resultTopic", forbidden.getTopic());
+                result.put("resultGroup", forbidden.getGroup());
+                result.put("resultReadable", forbidden.getReadable());
+            }
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

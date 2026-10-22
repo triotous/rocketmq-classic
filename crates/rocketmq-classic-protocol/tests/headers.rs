@@ -35,7 +35,7 @@ use rocketmq_classic_protocol::{
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
         PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
         QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
@@ -43,8 +43,8 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
 };
 
@@ -157,6 +157,32 @@ fn java_request_and_response_header_fixtures_decode() {
     .unwrap();
     assert_eq!(query_time_span.get_topic(), Some("orders"));
     assert_eq!(query_time_span.get_group(), Some("workers"));
+
+    let correction = QueryCorrectionOffsetRequestHeader::decode_fields(&java_ext_fields(
+        "header-query-correction-offset-request",
+    ))
+    .unwrap();
+    assert_eq!(correction.get_topic(), Some("orders"));
+    assert_eq!(correction.get_compare_group(), Some("workers"));
+    assert_eq!(correction.get_filter_groups(), Some("ignored-group"));
+    assert_eq!(correction.get_namespace(), Some("tenant"));
+    assert_eq!(correction.get_namespaced(), Some(true));
+    assert_eq!(correction.get_broker_name(), Some("broker-a"));
+    assert_eq!(correction.get_oneway(), Some(false));
+    assert_eq!(correction.get_lo(), Some(true));
+
+    let group_forbidden = UpdateGroupForbiddenRequestHeader::decode_fields(&java_ext_fields(
+        "header-update-group-forbidden-request",
+    ))
+    .unwrap();
+    assert_eq!(group_forbidden.get_topic(), Some("orders"));
+    assert_eq!(group_forbidden.get_group(), Some("workers"));
+    assert_eq!(group_forbidden.get_readable(), Some(true));
+    assert_eq!(group_forbidden.get_namespace(), Some("tenant"));
+    assert_eq!(group_forbidden.get_namespaced(), Some(true));
+    assert_eq!(group_forbidden.get_broker_name(), Some("broker-a"));
+    assert_eq!(group_forbidden.get_oneway(), Some(false));
+    assert_eq!(group_forbidden.get_lo(), Some(true));
 
     let update = UpdateConsumerOffsetRequestHeader::decode_fields(&java_ext_fields(
         "header-update-offset-request",
@@ -2265,6 +2291,24 @@ fn header_validation_matrix() {
             "",
             "topic ns nsd bname oway lo",
             "nsd oway lo"
+        ),
+        row!(
+            QueryCorrectionOffsetRequestHeader,
+            "query-correction-offset-request",
+            "",
+            "",
+            "",
+            "filterGroups compareGroup topic ns nsd bname oway lo",
+            "nsd oway lo"
+        ),
+        row!(
+            UpdateGroupForbiddenRequestHeader,
+            "update-group-forbidden-request",
+            "",
+            "",
+            "",
+            "group topic readable ns nsd bname oway lo",
+            "readable nsd oway lo"
         ),
         row!(
             GetTopicStatsInfoRequestHeader,

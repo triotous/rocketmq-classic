@@ -1870,3 +1870,31 @@ changing the physical offset ID. `MessageExtSubtype::message_id` and
 `set_message_id` match those virtual calls. The Common message API test file
 passes all 26 cases; current `records.json` SHA-256 is
 `d0cdfbf2599adb0242a1df0dfa8523818a018c35cb34dac2b8418f8ce4bc972d`.
+
+## P18-V01 direct `queryCorrectionOffset` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.queryCorrectionOffset(String,String,String,Set,long)`
+sends request 308 with a `QueryCorrectionOffsetHeader`; its annotated
+compare-group/topic fields are still nullable because `checkFields()` is a
+no-op. `MQClientApi::query_correction_offset` keeps nullable inputs, joins the
+optional filter set as Java does, applies configured VIP conversion, and uses
+the caller timeout. `QueryCorrectionOffsetBody` preserves Java's default
+empty map, explicit null map and nullable Long values. Invoked Java fixtures
+and a Rust loopback test cover six cases, including Broker error and
+`SUCCESS` without a body. Header inventory and validation-matrix coverage
+include the new public header. Producer core fixture SHA-256 is recorded with
+the execution log. This closes this direct API slice only; broad P18-V01
+settings/API/flow/input/error/reverse-export reconciliation remains open.
+
+## P18-V01 direct `updateAndGetGroupForbidden` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.updateAndGetGroupForbidden(String,
+UpdateGroupForbiddenRequestHeader,long)` sends request 353 with nullable
+group/topic/readable and inherited RPC fields. Core exposes
+`MQClientApi::update_and_get_group_forbidden`, preserves the caller timeout,
+applies configured VIP conversion, and decodes a nullable `GroupForbidden`
+response. A missing success body returns `None` as in Java. Four invoked Java
+cases and the Rust loopback test cover populated/null headers and results,
+success and Broker rejection. The header inventory and field validation
+matrix include every request field. This closes this direct API/header/DTO
+slice only; broad P18-V01 remains open.

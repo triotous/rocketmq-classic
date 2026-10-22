@@ -31,14 +31,15 @@ pub use basic::{
     PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
     PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
     PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
-    QueryConsumerOffsetResponseHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+    QueryConsumerOffsetResponseHeader, QueryCorrectionOffsetRequestHeader,
+    QueryMessageRequestHeader, QueryMessageResponseHeader,
     QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
     QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader, RecallMessageResponseHeader,
     RemoveBrokerRequestHeader, ReplyMessageRequestHeader, ResetMasterFlushOffsetHeader,
     ResetOffsetRequestHeader, SearchOffsetRequestHeader, SearchOffsetResponseHeader,
     SendMessageRequestHeaderV1, SendMessageRequestHeaderV2, SendMessageResponseHeader,
     UnlockBatchMqRequestHeader, UnregisterClientRequestHeader, UnregisterClientResponseHeader,
-    UpdateConsumerOffsetRequestHeader, ViewMessageRequestHeader,
+    UpdateConsumerOffsetRequestHeader, UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
     WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
 };
 

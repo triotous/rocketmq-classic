@@ -14,6 +14,86 @@ use std::{
 
 pub type SubscriptionGroupAttributeMap = HashMap<String, Option<String>>;
 
+/// Java `remoting.protocol.subscription.GroupForbidden` response DTO.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupForbidden {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    readable: Option<bool>,
+}
+
+impl GroupForbidden {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    pub fn set_group(&mut self, value: Option<String>) {
+        self.group = value;
+    }
+
+    pub fn get_readable(&self) -> Option<bool> {
+        self.readable
+    }
+
+    pub fn set_readable(&mut self, value: Option<bool>) {
+        self.readable = value;
+    }
+
+    /// Returns Java `GroupForbidden.hashCode()` using Java string and Boolean
+    /// hash values and the field order in the pinned implementation.
+    pub fn java_hash_code(&self) -> i32 {
+        [
+            java_optional_string_hash(self.group.as_deref()),
+            self.readable.map_or(0, java_boolean_hash),
+            java_optional_string_hash(self.topic.as_deref()),
+        ]
+        .into_iter()
+        .fold(1_i32, |hash, value| {
+            hash.wrapping_mul(31).wrapping_add(value)
+        })
+    }
+
+    /// Returns Java `GroupForbidden.toString()` output.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "GroupForbidden [topic={}, group={}, readable={}]",
+            self.topic.as_deref().unwrap_or("null"),
+            self.group.as_deref().unwrap_or("null"),
+            self.readable
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "null".to_owned()),
+        )
+    }
+
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        crate::route::java_fastjson_json(self, pretty_format)
+    }
+
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice_nullable(data)
+    }
+}
+
 /// An insertion-ordered Rust representation of Java's `Set<SimpleSubscriptionData>`.
 /// Insertion and equality use Java element equality, which ignores `version`.
 #[derive(Debug, Clone, Default)]
@@ -1126,8 +1206,9 @@ fn display_nullable(value: &Option<String>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        CustomizedRetryPolicy, ExponentialRetryPolicy, GroupRetryPolicy, GroupRetryPolicyType,
-        RetryPolicy, SimpleSubscriptionData, SubscriptionDataSet, SubscriptionGroupConfig,
+        CustomizedRetryPolicy, ExponentialRetryPolicy, GroupForbidden, GroupRetryPolicy,
+        GroupRetryPolicyType, RetryPolicy, SimpleSubscriptionData, SubscriptionDataSet,
+        SubscriptionGroupConfig,
     };
     use crate::SharedValue;
     use serde_json::{Value, json};
@@ -1138,6 +1219,41 @@ mod tests {
             "../../../fixtures/admin/query-consume-time-span.json"
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn group_forbidden_java_object_methods_match_pinned_fixture() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["groupForbiddenDtoOperations"];
+
+        let mut populated = GroupForbidden::default();
+        populated.set_topic(Some("orders".to_owned()));
+        populated.set_group(Some("workers".to_owned()));
+        populated.set_readable(Some(false));
+        assert_eq!(populated.java_hash_code(), expected["populatedHashCode"]);
+        assert_eq!(populated.java_to_string(), expected["populatedToString"]);
+        assert_eq!(
+            populated.java_to_json(false).unwrap(),
+            expected["populatedJson"]
+        );
+        assert_eq!(
+            populated.java_encode().unwrap(),
+            expected["populatedJson"].as_str().unwrap().as_bytes()
+        );
+        assert_eq!(populated, populated.clone());
+        assert_eq!(
+            populated == GroupForbidden::default(),
+            expected["populatedEqualsDefault"]
+        );
+
+        let default = GroupForbidden::default();
+        assert_eq!(default.java_hash_code(), expected["defaultHashCode"]);
+        assert_eq!(default.java_to_string(), expected["defaultToString"]);
+        assert_eq!(
+            default.java_to_json(false).unwrap(),
+            expected["defaultJson"]
+        );
     }
 
     fn populated_config() -> SubscriptionGroupConfig {
