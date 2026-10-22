@@ -7009,3 +7009,26 @@ owner-specific checks belong in the manual handoff.
   settings, input/error, control-flow and reverse-export reconciliation
   remains open. Current remote Ubuntu/native Windows CI evidence is also
   pending; no Broker, Docker or remote CI run was performed.
+
+## P18-V02 current-revision verification — 2026-10-22 (`7bca8336`)
+
+- [x] On the current Phase 18 branch, `cargo fmt --all -- --check`, strict
+  workspace/all-feature Clippy, default and all-feature locked workspace
+  tests, the Asia/Taipei Unique ID regression, comparator self-test,
+  37-scenario handoff validation, bounded fuzz smoke, and 16-case × 3
+  deterministic race/leak smoke passed. Workspace metadata, license and
+  dependency-direction checks passed.
+- [x] Maven `verify` passed under the pinned local Azul JDK 21 after the
+  JDK-27-specific runtime address oracle was temporarily regenerated for the
+  local host; the checked-in oracle was restored byte-for-byte. Producer
+  fixtures, Java self-tests, and Java decoding of Rust-generated headers and
+  bodies passed. The execution log records the JDK handling and full command
+  output.
+- [x] Facade examples build in release mode. The offline benchmark compiles
+  and runs; its fixed inputs, iteration counts, Apple M5 Max / ARM64 / rustc
+  1.85.0 environment and measured timings/allocation observations are in the
+  Phase 18 execution log. No throughput acceptance threshold was introduced.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision remote Ubuntu CI and
+  native Windows stack-capture execution also remain pending; no Broker,
+  Docker, publication, or release action was performed.
