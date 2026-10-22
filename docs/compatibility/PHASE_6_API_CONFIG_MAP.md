@@ -2343,6 +2343,11 @@ getters directly. `MessageExtSubtype` now has explicit hooks for all ten, and
 the corresponding Rust getters prefer a direct subtype override before using
 the base property path.
 
+The exact new public Rust hook names are
+`MessageExtSubtype::{tags,keys,wait_store_msg_ok,buyer_id,delay_time_level,
+delay_time_sec,delay_time_ms,deliver_time_ms,topic_sys_flag,group_sys_flag}`;
+each maps to the corresponding Java virtual getter in this list.
+
 The invoked `DerivedGetterMessageExt` fixture returns values that differ from
 its overridden `getProperty` values and counts all ten virtual getter calls;
 the Rust direct-consume test matches each result, property fallback, and call
