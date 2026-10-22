@@ -1928,8 +1928,8 @@ impl MessageExt {
             .unwrap_or_else(|| self.message.has_nullable_property(key))
     }
 
-    /// Java's virtual `Message.getTags()` view, routed through the virtual
-    /// `getProperty(String)` implementation.
+    /// Java's virtual `Message.getTags()` view. A direct subtype override takes
+    /// precedence; the inherited getter reads through virtual `getProperty`.
     pub fn tags(&self) -> Option<String> {
         if let Some(tags) = self
             .runtime_subtype
@@ -1941,8 +1941,8 @@ impl MessageExt {
         self.get_property(crate::message::constants::PROPERTY_TAGS)
     }
 
-    /// Java's virtual `Message.getKeys()` view, routed through the virtual
-    /// `getProperty(String)` implementation.
+    /// Java's virtual `Message.getKeys()` view. A direct subtype override takes
+    /// precedence; the inherited getter reads through virtual `getProperty`.
     pub fn keys(&self) -> Option<String> {
         if let Some(keys) = self
             .runtime_subtype
@@ -1954,8 +1954,8 @@ impl MessageExt {
         self.get_property(crate::message::constants::PROPERTY_KEYS)
     }
 
-    /// Java `Message.isWaitStoreMsgOK()`, including subtype `getProperty`
-    /// overrides.
+    /// Java `Message.isWaitStoreMsgOK()`, including direct subtype and
+    /// subtype-`getProperty` overrides.
     pub fn is_wait_store_msg_ok(&self) -> bool {
         if let Some(wait) = self
             .runtime_subtype
@@ -1968,7 +1968,8 @@ impl MessageExt {
             .is_none_or(|value| value.eq_ignore_ascii_case("true"))
     }
 
-    /// Java `Message.getBuyerId()`, including subtype `getProperty` overrides.
+    /// Java `Message.getBuyerId()`, including direct subtype and
+    /// subtype-`getProperty` overrides.
     pub fn buyer_id(&self) -> Option<String> {
         if let Some(buyer_id) = self
             .runtime_subtype
@@ -1980,6 +1981,8 @@ impl MessageExt {
         self.get_property(crate::message::constants::PROPERTY_BUYER_ID)
     }
 
+    /// Java `Message.getDelayTimeLevel()`, including direct subtype overrides
+    /// and the inherited `getProperty` parsing path.
     pub fn delay_time_level(&self) -> Result<i32, MessagePropertyParseError> {
         if let Some(level) = self
             .runtime_subtype
@@ -1992,6 +1995,8 @@ impl MessageExt {
         parse_i32_property_value(property, self.get_property(property))
     }
 
+    /// Java `Message.getDelayTimeSec()`, including direct subtype overrides
+    /// and the inherited `getProperty` parsing path.
     pub fn delay_time_sec(&self) -> Result<i64, MessagePropertyParseError> {
         if let Some(seconds) = self
             .runtime_subtype
@@ -2004,6 +2009,8 @@ impl MessageExt {
         parse_i64_property_value(property, self.get_property(property))
     }
 
+    /// Java `Message.getDelayTimeMs()`, including direct subtype overrides and
+    /// the inherited `getProperty` parsing path.
     pub fn delay_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
         if let Some(milliseconds) = self
             .runtime_subtype
@@ -2016,6 +2023,8 @@ impl MessageExt {
         parse_i64_property_value(property, self.get_property(property))
     }
 
+    /// Java `Message.getDeliverTimeMs()`, including direct subtype overrides
+    /// and the inherited `getProperty` parsing path.
     pub fn deliver_time_ms(&self) -> Result<i64, MessagePropertyParseError> {
         if let Some(milliseconds) = self
             .runtime_subtype
@@ -2812,8 +2821,9 @@ impl MessageExt {
             self.prepared_transaction_offset = value;
         }
     }
-    /// Read Java's transient topic system flag property. An empty property is
-    /// treated as absent; malformed decimal input is returned as a parse error.
+    /// Read Java `MessageExt.getTopicSysFlag()`. A direct subtype override has
+    /// precedence; the inherited property path treats empty text as absent and
+    /// reports malformed decimal input as a parse error.
     pub fn topic_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         if let Some(value) = self
             .runtime_subtype
@@ -2841,8 +2851,9 @@ impl MessageExt {
             );
         }
     }
-    /// Read Java's transient group system flag property. An empty property is
-    /// treated as absent; malformed decimal input is returned as a parse error.
+    /// Read Java `MessageExt.getGroupSysFlag()`. A direct subtype override has
+    /// precedence; the inherited property path treats empty text as absent and
+    /// reports malformed decimal input as a parse error.
     pub fn group_sys_flag(&self) -> Result<Option<i32>, MessageSysFlagParseError> {
         if let Some(value) = self
             .runtime_subtype
