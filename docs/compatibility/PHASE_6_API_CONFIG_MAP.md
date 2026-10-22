@@ -2575,3 +2575,20 @@ cases, 106 typed headers, and 19 typed bodies. This closes the
 `decodeProperties` record-position and positive-length empty-map slice only;
 broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` cursor and truncation parity — 2026-10-22 (`2e1122cf`)
+
+Pinned Java 5.5.1 advances the supplied buffer through the property bytes on a
+positive length. Zero or negative property lengths return null with the
+position just after the length field. A truncated positive-length value throws
+`BufferUnderflowException` and leaves the position at the property start.
+Rust's mapped decoder now returns both the decoded properties and consumed
+byte count, preserving these observable cursor and truncation outcomes. The
+invoked Java fixture covers ordinary records, zero declared store size,
+positive malformed text, nonpositive lengths, and truncated property bytes.
+The refreshed `fixtures/messages/records.json` SHA-256 is
+`699dfaae816b753105119193e3b268fe16fb2b83ad0199473a5665a7d6b76436`.
+
+This closes the tested `decodeProperties` cursor and truncation slice only;
+broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
+reconciliation remains open.

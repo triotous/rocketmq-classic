@@ -844,3 +844,14 @@ and the effective client ID, including after conversion to the base type.
 The follow-up fixture also overrides `getMsgId` and `setMsgId` on a custom
 `MessageClientExt`: the override bypasses the base unique-key fallback, setter
 dispatch updates only subtype state, and a null setter result remains null.
+
+Phase 18 `MessageDecoder.decodeProperties(ByteBuffer)` cursor behavior
+(2026-10-22): pinned Java consumes positive-length property bytes, leaves the
+cursor immediately after the length field for zero/negative lengths, and
+throws `BufferUnderflowException` at the property start when a positive-length
+block is truncated. Rust now returns the matching byte count with the decoded
+properties. The invoked record fixture covers ordinary and boundary inputs;
+its SHA-256 is
+`699dfaae816b753105119193e3b268fe16fb2b83ad0199473a5665a7d6b76436`. This
+closes the tested decoder cursor/error slice only; broad P18-V01 reconciliation
+remains open.

@@ -2928,3 +2928,24 @@ typed bodies). This closes this method's record-position and malformed-property
 slice only. Broad P18-V01 source/API/settings/input/error/control-flow and
 reverse-export reconciliation, current-revision remote Ubuntu CI, native
 Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` cursor and truncation — 2026-10-22 (`2e1122cf`)
+
+Java advances a positive-length property buffer to the end of its bytes,
+returns null for zero or negative lengths with the cursor after the length
+field, and throws `BufferUnderflowException` for truncated positive input with
+the cursor at the property start. Rust now preserves the byte count alongside
+the decoded map and matches these outcomes. Invoked fixtures cover the normal
+record inputs and the zero-store-size, malformed text, nonpositive-length,
+and truncated boundaries. Fixture SHA-256:
+`699dfaae816b753105119193e3b268fe16fb2b83ad0199473a5665a7d6b76436`.
+
+The Common suite, locked default/all-feature workspace tests, strict
+all-target/all-feature Clippy, format/diff checks, and pinned Maven `verify`
+pass. Maven verified 37 scenarios, 11 Java message-decoder fixtures, 106 typed
+headers, and 19 typed bodies. Differential self-test and 37-scenario manifest,
+bounded fuzz smoke, race/leak smoke, release examples, benchmark execution,
+workspace metadata/license/package checks, UTC and Asia/Taipei Unique ID tests,
+and Windows GNU cross-compiles also pass on this source revision. Broad P18-V01
+reconciliation, remote Ubuntu CI, native Windows runtime, and Phase 19
+Broker/Docker evidence remain open.

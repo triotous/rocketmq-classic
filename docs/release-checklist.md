@@ -7978,3 +7978,20 @@ owner-specific checks belong in the manual handoff.
   or external CI was run; the four protected Phase 19 worktree paths remain
   unstaged. Run record:
   `rlogs/2026/10/22-phase-18-message-decoder-properties-gate__20261022T192507Z.rlog`.
+
+## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` cursor parity — 2026-10-22 (`2e1122cf`)
+
+- [x] Match Java buffer advancement for positive, zero, and negative property
+  lengths, and match the cursor position and typed truncation outcome for a
+  short positive-length block. Invoked fixture SHA-256:
+  `699dfaae816b753105119193e3b268fe16fb2b83ad0199473a5665a7d6b76436`.
+- [x] Common tests, locked default/all-feature workspace tests, strict
+  all-target/all-feature Clippy, formatting/diff checks, pinned Maven `verify`,
+  differential manifest/self-test, fuzz and race/leak smoke, release examples,
+  offline benchmark, metadata/package checks, timezone checks and Windows GNU
+  cross-compiles pass on this source revision.
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+  Windows runtime, and Phase 19 Broker/Docker validation remain open. Windows
+  results are cross-compilation only. No push or external CI was run; the four
+  protected Phase 19 worktree paths remain unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T194830Z.rlog`.
