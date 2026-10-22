@@ -2433,3 +2433,23 @@ the current P18-V02 server-free checks pass. This closes the named
 writer-feature inheritance and static-topic method slices; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 static-topic API surface follow-up — 2026-10-22 (`e415be18`)
+
+The pinned public API comparison adds `TopicQueueMappingInfo::LEVEL_0` and
+the inherited `TopicQueueMappingDetail::LEVEL_0` constants. Direct-root
+`LogicQueueMappingItem` fixtures now compare its getters and setters, strict
+and loose physical/static offset conversions, maximum static offset,
+end-offset and logical-offset decisions, offset delta, hash code, and text
+against Java for default, populated, and undecided values. Java spells the
+logical-offset predicate `checkIfLogicoffsetDecided`; Rust exposes the same
+operation as `check_if_logic_offset_decided`.
+
+The refreshed route fixture has SHA-256:
+`e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
+Protocol all-feature tests (159 unit tests and 163 doctests), strict Protocol
+Clippy, format/diff checks, direct Java runtime route generation (36 invoked
+cases), and pinned Maven `verify` pass on this revision. The full workspace
+gate documented for the preceding revision has not yet been refreshed.
+Broader P18-V01 reconciliation and current-revision remote Ubuntu and native
+Windows execution remain open.

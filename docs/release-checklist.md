@@ -7441,3 +7441,23 @@ owner-specific checks belong in the manual handoff.
   export reconciliation remains open. Current-revision GitHub Ubuntu CI and
   native Windows stack-capture execution remain pending. Phase 19 Broker/
   Docker validation remains separate; no push or remote CI was run.
+
+## P18-V01 static-topic public API continuation — 2026-10-22 (`e415be18`)
+
+- [x] Added and Java-checked `LEVEL_0` on `TopicQueueMappingInfo` and
+  `TopicQueueMappingDetail`. The `LogicQueueMappingItem` Java method matrix
+  now covers properties, setters, offset conversion and decision helpers,
+  offset delta, hash, and text for default, populated, and undecided cases.
+  Java's `checkIfLogicoffsetDecided` maps to Rust's
+  `check_if_logic_offset_decided`.
+- [x] Protocol all-feature tests pass (159 unit tests, all integration
+  targets, 163 doctests); strict Protocol Clippy and format/diff checks pass.
+  Direct Java route generation verifies 36 invoked cases. Pinned Maven
+  `verify` passes, including Java decoding 106 typed headers and 19 typed
+  bodies. Route fixture SHA-256:
+  `e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
+- [ ] The full workspace gate from the preceding revision is stale for this
+  code change and has not yet been rerun. Broad P18-V01 source/API/settings/
+  input/error/control-flow and reverse-export reconciliation, current-revision
+  GitHub Ubuntu CI, and native Windows stack-capture execution remain open.
+  No push or external CI was run; protected Phase 19 files remain unstaged.

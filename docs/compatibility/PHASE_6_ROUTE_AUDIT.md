@@ -261,3 +261,14 @@ RemotingSerializable static utility adapters remain. Protocol and full
 workspace gates plus pinned Maven verification pass on this revision. This
 closes these static-topic API and serializer rows only; the broader Phase 6
 and P18-V01 source/API/input/control-flow reconciliation remains open.
+
+### Static-topic public API continuation — 2026-10-22 (`e415be18`)
+
+The inherited `LEVEL_0` constant is exposed from both Rust mapping-info types
+and compared with the pinned Java values. The direct `LogicQueueMappingItem`
+method fixture now exercises getters, setters, all offset conversion and
+decision helpers, delta, hash code, and text for default, populated, and
+undecided objects. Java's `checkIfLogicoffsetDecided` is represented by Rust's
+`check_if_logic_offset_decided`. The updated `fixtures/runtime/route.json`
+SHA-256 is
+`e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
