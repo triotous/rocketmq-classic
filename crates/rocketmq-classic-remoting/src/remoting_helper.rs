@@ -1,14 +1,16 @@
 //! Java-compatible request and response code descriptions.
 //!
 //! Java's `RemotingHelper` lowercases the corresponding `RequestCode` or
-//! `ResponseCode` field name and falls back to the decimal code for unknown
-//! values.
+//! `ResponseCode` field name with the process default locale and falls back to
+//! the decimal code for unknown values.
 
 use rocketmq_classic_protocol::codes;
+use std::sync::OnceLock;
 
-/// Returns the lowercase Java `RequestCode` field name, or the decimal code.
+/// Returns the Java default-locale lowercase `RequestCode` field name, or the
+/// decimal code.
 pub fn get_request_code_desc(code: i32) -> String {
-    match code {
+    let description = match code {
         codes::request::SEND_MESSAGE => "send_message",
         codes::request::PULL_MESSAGE => "pull_message",
         codes::request::QUERY_MESSAGE => "query_message",
@@ -182,13 +184,14 @@ pub fn get_request_code_desc(code: i32) -> String {
         codes::request::DELETE_TOPIC_IN_BROKER_LIST => "delete_topic_in_broker_list",
         codes::request::DELETE_SUBSCRIPTION_GROUP_LIST => "delete_subscription_group_list",
         _ => return code.to_string(),
-    }
-    .to_owned()
+    };
+    java_default_locale_lowercase(description)
 }
 
-/// Returns the lowercase Java `ResponseCode` field name, or the decimal code.
+/// Returns the Java default-locale lowercase `ResponseCode` field name, or the
+/// decimal code.
 pub fn get_response_code_desc(code: i32) -> String {
-    match code {
+    let description = match code {
         codes::response::SUCCESS => "success",
         codes::response::SYSTEM_ERROR => "system_error",
         codes::response::SYSTEM_BUSY => "system_busy",
@@ -270,8 +273,37 @@ pub fn get_response_code_desc(code: i32) -> String {
         codes::response::USER_NOT_EXIST => "user_not_exist",
         codes::response::POLICY_NOT_EXIST => "policy_not_exist",
         _ => return code.to_string(),
+    };
+    java_default_locale_lowercase(description)
+}
+
+fn java_default_locale_lowercase(value: &str) -> String {
+    static TURKIC_DEFAULT_LOCALE: OnceLock<bool> = OnceLock::new();
+    let is_turkic = *TURKIC_DEFAULT_LOCALE.get_or_init(|| {
+        ["LC_ALL", "LC_CTYPE", "LANG"]
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .map(|locale| locale.to_string_lossy().into_owned())
+            .find(|locale| !locale.is_empty())
+            .map(|locale| {
+                matches!(
+                    locale
+                        .split(['_', '-', '.', '@'])
+                        .next()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .as_str(),
+                    "tr" | "az"
+                )
+            })
+            .unwrap_or(false)
+    });
+
+    if is_turkic {
+        value.replace('i', "ı")
+    } else {
+        value.to_owned()
     }
-    .to_owned()
 }
 
 #[cfg(test)]
@@ -303,6 +335,65 @@ mod tests {
                     describe(code),
                     case["description"].as_str().unwrap(),
                     "code description for {code}"
+                );
+            }
+        }
+
+        assert_eq!(
+            get_request_code_desc(i32::MAX),
+            fixture["unknownRequestCodeDescription"]
+        );
+        assert_eq!(
+            get_response_code_desc(i32::MIN),
+            fixture["unknownResponseCodeDescription"]
+        );
+    }
+
+    #[test]
+    fn code_descriptions_match_java_turkish_default_locale() {
+        const CHILD_MARKER: &str = "ROCKETMQ_CLASSIC_TURKISH_LOCALE_TEST";
+
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "remoting_helper::tests::code_descriptions_match_java_turkish_default_locale",
+                ])
+                .env("LC_ALL", "tr_TR.UTF-8")
+                .env(CHILD_MARKER, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Turkish-locale child test failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/remoting/code-descriptions-turkish.json"
+        ))
+        .unwrap();
+
+        for (cases, describe) in [
+            (
+                &fixture["requestCodeDescriptions"],
+                get_request_code_desc as fn(i32) -> String,
+            ),
+            (
+                &fixture["responseCodeDescriptions"],
+                get_response_code_desc as fn(i32) -> String,
+            ),
+        ] {
+            let cases = cases.as_array().expect("Java code-description cases");
+            assert!(!cases.is_empty());
+            for case in cases {
+                let code = case["code"].as_i64().unwrap() as i32;
+                assert_eq!(
+                    describe(code),
+                    case["description"].as_str().unwrap(),
+                    "Turkish code description for {code}"
                 );
             }
         }

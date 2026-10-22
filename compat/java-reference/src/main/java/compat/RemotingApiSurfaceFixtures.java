@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -87,7 +88,15 @@ public final class RemotingApiSurfaceFixtures {
         if (args.length == 0) throw new IllegalArgumentException("expected fixture path");
         Path path = Path.of(args[0]);
         boolean verify = args.length > 1 && "--verify".equals(args[1]);
-        String json = JSON.toJSONString(render()) + "\n";
+        boolean turkish = Arrays.asList(args).contains("--turkish");
+        Locale originalLocale = Locale.getDefault();
+        String json;
+        try {
+            if (turkish) Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            json = JSON.toJSONString(turkish ? renderTurkishCodeDescriptions() : render()) + "\n";
+        } finally {
+            if (turkish) Locale.setDefault(originalLocale);
+        }
         if (verify) {
             if (!Files.exists(path) || !json.equals(Files.readString(path))) {
                 throw new IllegalStateException("Java remoting API fixture drift: " + path);
@@ -96,6 +105,19 @@ public final class RemotingApiSurfaceFixtures {
             Files.createDirectories(path.getParent());
             Files.writeString(path, json);
         }
+    }
+
+    private static Map<String, Object> renderTurkishCodeDescriptions() throws Exception {
+        Map<String, Object> fixture = new TreeMap<>();
+        fixture.put("artifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
+        fixture.put("sourceCommit", SOURCE_COMMIT);
+        fixture.put("requestCodeDescriptions", codeDescriptions(RequestCode.class,
+            RemotingHelper::getRequestCodeDesc));
+        fixture.put("responseCodeDescriptions", codeDescriptions(ResponseCode.class,
+            RemotingHelper::getResponseCodeDesc));
+        fixture.put("unknownRequestCodeDescription", RemotingHelper.getRequestCodeDesc(Integer.MAX_VALUE));
+        fixture.put("unknownResponseCodeDescription", RemotingHelper.getResponseCodeDesc(Integer.MIN_VALUE));
+        return fixture;
     }
 
     private static Map<String, Object> render() throws Exception {

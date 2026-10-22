@@ -792,6 +792,19 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-remoting-code-description-turkish-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RemotingApiSurfaceFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/remoting/code-descriptions-turkish.json</argument>
+                <argument>--verify</argument>
+                <argument>--turkish</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-acl-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>
