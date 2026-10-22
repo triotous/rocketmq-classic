@@ -368,6 +368,21 @@ public final class ProducerCoreFixtures {
         result.put("getUserRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetUserRequestHeader.class));
         result.put("getUserOperations", getUserOperations());
+        result.put("getAclApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getAcl"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("getAclRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.GetAclRequestHeader.class));
+        result.put("aclInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.AclInfo.class));
+        result.put("aclPolicyInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.AclInfo.PolicyInfo.class));
+        result.put("aclPolicyEntryInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.AclInfo.PolicyEntryInfo.class));
+        result.put("getAclOperations", getAclOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -3277,6 +3292,126 @@ public final class ProducerCoreFixtures {
             result.put("outcome", "returned");
             result.put("resultIsNull", user == null);
             result.put("resultJson", JSON.toJSONString(user));
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> getAclOperations() throws Exception {
+        org.apache.rocketmq.remoting.protocol.body.AclInfo populated =
+            org.apache.rocketmq.remoting.protocol.body.AclInfo.of(
+                "subject", Arrays.asList("topic-a", "topic-b"),
+                Arrays.asList("PUB", "SUB"), Arrays.asList("127.0.0.1", "::1"), "ALLOW");
+        org.apache.rocketmq.remoting.protocol.body.AclInfo nullPolicies =
+            new org.apache.rocketmq.remoting.protocol.body.AclInfo();
+        nullPolicies.setSubject("null-policies");
+        org.apache.rocketmq.remoting.protocol.body.AclInfo emptyPolicies =
+            new org.apache.rocketmq.remoting.protocol.body.AclInfo();
+        emptyPolicies.setSubject("empty-policies");
+        emptyPolicies.setPolicies(new ArrayList<>());
+        org.apache.rocketmq.remoting.protocol.body.AclInfo nullPolicyMember =
+            new org.apache.rocketmq.remoting.protocol.body.AclInfo();
+        nullPolicyMember.setSubject("null-policy-member");
+        nullPolicyMember.setPolicies(java.util.Collections.singletonList(null));
+        byte[] populatedBody = JSON.toJSONString(populated)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] nullPoliciesBody = JSON.toJSONString(nullPolicies)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] emptyPoliciesBody = JSON.toJSONString(emptyPolicies)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] nullPolicyMemberBody = JSON.toJSONString(nullPolicyMember)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] nullBody = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(getAclCase("populated", "subject", populatedBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("defaults", "subject", "{}".getBytes(
+            java.nio.charset.StandardCharsets.UTF_8), false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("null-subject", null, populatedBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("empty-subject", "", emptyPoliciesBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("null-policies", "null-policies", nullPoliciesBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("empty-policies", "empty-policies", emptyPoliciesBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("null-policy-member", "null-policy-member", nullPolicyMemberBody,
+            false, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("null-body", "subject", null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("json-null", "subject", nullBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(getAclCase("broker-error", "subject", null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "ACL lookup rejected"));
+        cases.add(getAclCase("vip-enabled-address-unchanged", "subject", populatedBody, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> getAclCase(
+        String name,
+        String subject,
+        byte[] responseBody,
+        boolean vipEnabled,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("get-acl-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            RemotingCommand reply = RemotingCommand.createResponseCommand(
+                                responseCode, responseRemark);
+                            reply.setBody(responseBody);
+                            return reply;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("subject", subject);
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyBase64", responseBody == null ? null
+            : java.util.Base64.getEncoder().encodeToString(responseBody));
+        try {
+            org.apache.rocketmq.remoting.protocol.body.AclInfo aclInfo =
+                api.getAcl("broker-a:10911", subject, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", aclInfo == null);
+            result.put("resultJson", JSON.toJSONString(aclInfo));
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());

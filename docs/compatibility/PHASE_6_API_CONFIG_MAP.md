@@ -2084,3 +2084,15 @@ are enabled. Invoked Java fixtures and Rust loopback tests compare request
 headers, populated/default/null responses, success and Broker errors, timeout,
 typed-header cross-decode, and unchanged-address behavior. The auth reverse
 audit now has five open APIs; broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `getAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAcl` sends request 3009 with a
+`GetAclRequestHeader`, no body, and the caller timeout. Core exposes
+`MQClientApi::get_acl` and nullable `AclInfo`, including nested policy and
+entry DTOs that retain null collections and null members. The supplied Broker
+address is unchanged when VIP channels are enabled. Invoked Java fixtures and
+Rust loopback tests compare nullable subjects, default/populated/null/empty
+responses, null policy members, success and Broker errors, timeout,
+typed-header cross-decode, and unchanged-address behavior. The auth reverse
+audit now has four open APIs; broader P18-V01 reconciliation remains open.

@@ -1748,7 +1748,7 @@ of 12 direct operations has since been reduced by the `getAllTopicConfig`,
 `createUser`, `updateUser`, `deleteUser`, and `listUser` slices below; 4 of
 that original candidate list remain implementation work. A pinned-source
 review of the adjacent auth methods also found `getUser` and `getAcl` were
-omitted from the candidate list; the current table now has 5 open operations.
+omitted from the candidate list; the current table now has 4 open operations.
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
@@ -1770,13 +1770,13 @@ omitted from the candidate list; the current table now has 5 open operations.
 | ACL creation | `createAcl` | 3006 | Open |
 | ACL update | `updateAcl` | 3007 | Open |
 | ACL deletion | `deleteAcl` | 3008 | Open |
-| ACL retrieval | `getAcl` | 3009 | Open |
+| ACL retrieval | `getAcl` | 3009 | Closed by `get_acl` |
 | ACL listing | `listAcl` | 3010 | Open |
 
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 5 open rows, but their Rust DTO and RPC owners are still
+already exist for the 4 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -2004,3 +2004,16 @@ usernames, success, Broker rejection, timeout, typed-header inventory and
 cross-decode, and the VIP-enabled unchanged address. This closes one direct
 API/header slice and reduces the auth reverse-audit list from six to five open
 rows; broad P18-V01 remains open.
+
+## P18-V01 direct `getAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAcl(String,String,long)` sends request
+3009 with `GetAclRequestHeader.subject`, no body, and the caller timeout. Core
+exposes `MQClientApi::get_acl`, returns nullable `AclInfo`, and leaves the
+supplied Broker address unchanged with VIP channels enabled. `AclInfo` and its
+nested policy and entry DTOs preserve nullable lists and list members. Invoked
+Java fixtures and Rust loopback tests cover populated/default/null/empty
+policies, null nested members, null and empty subjects, success, Broker
+rejection, timeout, typed-header inventory/cross-decode, and unchanged-address
+behavior. This closes one direct API/header/DTO slice and reduces the auth
+reverse-audit list from five to four open rows; broad P18-V01 remains open.

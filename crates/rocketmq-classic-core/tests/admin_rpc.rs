@@ -3999,6 +3999,186 @@ async fn get_user_honors_the_java_timeout_argument() {
 }
 
 #[tokio::test]
+async fn get_acl_matches_java_requests_responses_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getAclApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.AclInfo org.apache.rocketmq.client.impl.MQClientAPIImpl.getAcl(java.lang.String,java.lang.String,long)"
+        ])
+    );
+    let header_methods = fixture["getAclRequestHeaderApi"]["declaredPublicMethods"]
+        .as_array()
+        .unwrap();
+    for method in ["getSubject", "setSubject", "checkFields"] {
+        assert!(header_methods.iter().any(|signature| {
+            signature
+                .as_str()
+                .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+        }));
+    }
+    assert_eq!(
+        fixture["getAclRequestHeaderApi"]["publicConstructors"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.header.GetAclRequestHeader()",
+            "org.apache.rocketmq.remoting.protocol.header.GetAclRequestHeader(java.lang.String)"
+        ])
+    );
+    for (surface, methods) in [
+        (
+            "aclInfoApi",
+            [
+                "getSubject",
+                "setSubject",
+                "getPolicies",
+                "setPolicies",
+                "of",
+            ]
+            .as_slice(),
+        ),
+        (
+            "aclPolicyInfoApi",
+            [
+                "getPolicyType",
+                "setPolicyType",
+                "getEntries",
+                "setEntries",
+                "of",
+            ]
+            .as_slice(),
+        ),
+        (
+            "aclPolicyEntryInfoApi",
+            [
+                "getResource",
+                "setResource",
+                "getActions",
+                "setActions",
+                "getSourceIps",
+                "setSourceIps",
+                "getDecision",
+                "setDecision",
+                "of",
+            ]
+            .as_slice(),
+        ),
+    ] {
+        let actual = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in methods {
+            assert!(
+                actual.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+                }),
+                "{surface} lacks {method}"
+            );
+        }
+        assert_eq!(
+            fixture[surface]["publicConstructors"],
+            json!([format!(
+                "{}()",
+                fixture[surface]["className"].as_str().unwrap()
+            )])
+        );
+    }
+
+    let cases = fixture["getAclOperations"]["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 11);
+    let (client_api, client) = api().await;
+    for case in cases
+        .iter()
+        .filter(|case| !case["vipEnabled"].as_bool().unwrap())
+    {
+        let name = case["name"].as_str().unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(expected_request["requestCode"], request::AUTH_GET_ACL);
+        assert_eq!(expected_request["timeoutMillis"], case["timeoutMillis"]);
+        assert_eq!(expected_request["requestBodyPresent"], false);
+        let expected_body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, expected_body)
+                .await;
+        let result = client_api
+            .get_acl(
+                &addr,
+                case["subject"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let received = result.unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert_eq!(case["resultIsNull"], received.is_none(), "{name}");
+            assert_eq!(
+                serde_json::to_value(received).unwrap(),
+                serde_json::from_str::<Value>(case["resultJson"].as_str().unwrap()).unwrap(),
+                "{name}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(RpcError::Response {
+                        request_code: request::AUTH_GET_ACL,
+                        peer: error_peer,
+                        code,
+                        remark: Some(remark),
+                    }) if error_peer == addr
+                        && code == response_code
+                        && response_remark.as_deref() == Some(remark.as_str())
+                ),
+                "{name}"
+            );
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::AUTH_GET_ACL, "{name}");
+        assert!(request.body.is_none(), "{name}");
+        assert_eq!(
+            request
+                .ext_fields
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+                .as_object()
+                .map_or_else(|| json!({}), |fields| json!(fields)),
+            "{name}"
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn get_acl_honors_the_java_timeout_argument() {
+    let (addr, peer) =
+        scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;
+    let (client_api, client) = api().await;
+    let result = client_api.get_acl(&addr, Some("subject"), 25).await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn get_all_topic_config_matches_java_pagination_and_version_fixtures() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

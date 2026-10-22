@@ -23,7 +23,7 @@ use rocketmq_classic_protocol::{
         DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
         DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader, DeleteUserRequestHeader,
         EndTransactionRequestHeader, EndTransactionResponseHeader,
-        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, GetAclRequestHeader,
         GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
         GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
@@ -132,6 +132,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-get-user-request.bin",
         "header-get-user-request",
         3004,
+    );
+    write_oracle_header::<GetAclRequestHeader>(
+        output,
+        "typed-get-acl-request.bin",
+        "header-get-acl-request",
+        3009,
     );
     write_oracle_header::<ListUsersRequestHeader>(
         output,

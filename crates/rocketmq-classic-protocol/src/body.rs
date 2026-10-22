@@ -4580,6 +4580,163 @@ impl UserInfo {
     }
 }
 
+/// Java `AclInfo` body DTO used by Broker ACL operations. The Java class uses
+/// identity equality and keeps its policy list nullable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policies: Option<Vec<Option<AclPolicyInfo>>>,
+}
+
+/// Java `AclInfo.PolicyInfo` nested body DTO.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclPolicyInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    policy_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Vec<Option<AclPolicyEntryInfo>>>,
+}
+
+/// Java `AclInfo.PolicyEntryInfo` nested body DTO.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclPolicyEntryInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    resource: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actions: Option<Vec<Option<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_ips: Option<Vec<Option<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decision: Option<String>,
+}
+
+impl AclInfo {
+    pub fn of(
+        subject: Option<String>,
+        resources: Vec<Option<String>>,
+        actions: Option<Vec<Option<String>>>,
+        source_ips: Option<Vec<Option<String>>>,
+        decision: Option<String>,
+    ) -> Self {
+        Self {
+            subject,
+            policies: Some(vec![Some(AclPolicyInfo::of(
+                resources, actions, source_ips, decision,
+            ))]),
+        }
+    }
+
+    pub fn get_subject(&self) -> Option<&str> {
+        self.subject.as_deref()
+    }
+
+    pub fn set_subject(&mut self, value: Option<String>) {
+        self.subject = value;
+    }
+
+    pub fn get_policies(&self) -> Option<&[Option<AclPolicyInfo>]> {
+        self.policies.as_deref()
+    }
+
+    pub fn set_policies(&mut self, value: Option<Vec<Option<AclPolicyInfo>>>) {
+        self.policies = value;
+    }
+}
+
+impl AclPolicyInfo {
+    pub fn of(
+        resources: Vec<Option<String>>,
+        actions: Option<Vec<Option<String>>>,
+        source_ips: Option<Vec<Option<String>>>,
+        decision: Option<String>,
+    ) -> Self {
+        let entries = resources
+            .into_iter()
+            .map(|resource| {
+                Some(AclPolicyEntryInfo::of(
+                    resource,
+                    actions.clone(),
+                    source_ips.clone(),
+                    decision.clone(),
+                ))
+            })
+            .collect();
+        Self {
+            policy_type: None,
+            entries: Some(entries),
+        }
+    }
+
+    pub fn get_policy_type(&self) -> Option<&str> {
+        self.policy_type.as_deref()
+    }
+
+    pub fn set_policy_type(&mut self, value: Option<String>) {
+        self.policy_type = value;
+    }
+
+    pub fn get_entries(&self) -> Option<&[Option<AclPolicyEntryInfo>]> {
+        self.entries.as_deref()
+    }
+
+    pub fn set_entries(&mut self, value: Option<Vec<Option<AclPolicyEntryInfo>>>) {
+        self.entries = value;
+    }
+}
+
+impl AclPolicyEntryInfo {
+    pub fn of(
+        resource: Option<String>,
+        actions: Option<Vec<Option<String>>>,
+        source_ips: Option<Vec<Option<String>>>,
+        decision: Option<String>,
+    ) -> Self {
+        Self {
+            resource,
+            actions,
+            source_ips,
+            decision,
+        }
+    }
+
+    pub fn get_resource(&self) -> Option<&str> {
+        self.resource.as_deref()
+    }
+
+    pub fn set_resource(&mut self, value: Option<String>) {
+        self.resource = value;
+    }
+
+    pub fn get_actions(&self) -> Option<&[Option<String>]> {
+        self.actions.as_deref()
+    }
+
+    pub fn set_actions(&mut self, value: Option<Vec<Option<String>>>) {
+        self.actions = value;
+    }
+
+    pub fn get_source_ips(&self) -> Option<&[Option<String>]> {
+        self.source_ips.as_deref()
+    }
+
+    pub fn set_source_ips(&mut self, value: Option<Vec<Option<String>>>) {
+        self.source_ips = value;
+    }
+
+    pub fn get_decision(&self) -> Option<&str> {
+        self.decision.as_deref()
+    }
+
+    pub fn set_decision(&mut self, value: Option<String>) {
+        self.decision = value;
+    }
+}
+
 /// Java `KVTable` response DTO returned by Broker runtime and query RPCs.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10207,6 +10364,9 @@ impl_java_remoting_serializable_adapters!(
     ConsumerListByGroupResponseBody,
     ProducerConnection,
     ProducerTableInfo,
+    AclInfo,
+    AclPolicyInfo,
+    AclPolicyEntryInfo,
     UserInfo,
     KvTable,
     ConsumerConnection,
@@ -10718,6 +10878,55 @@ mod tests {
         version.set_counter(None);
         assert!(!version.next_version());
         assert_eq!(version.compare(&DataVersion::new(9, 0, Some(1))), None);
+    }
+
+    #[test]
+    fn acl_info_preserves_nullable_nested_java_policy_fields() {
+        let defaults = AclInfo::java_decode(b"{}").unwrap();
+        assert_eq!(defaults.get_subject(), None);
+        assert!(defaults.get_policies().is_none());
+
+        let decoded = AclInfo::java_decode(
+            br#"{"subject":"subject","policies":[null,{"policyType":"CUSTOM","entries":[null,{"resource":"topic-a","actions":["PUB",null],"sourceIps":[],"decision":"ALLOW"}]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(decoded.get_subject(), Some("subject"));
+        let policies = decoded.get_policies().unwrap();
+        assert!(policies[0].is_none());
+        let policy = policies[1].as_ref().unwrap();
+        assert_eq!(policy.get_policy_type(), Some("CUSTOM"));
+        let entries = policy.get_entries().unwrap();
+        assert!(entries[0].is_none());
+        let entry = entries[1].as_ref().unwrap();
+        assert_eq!(entry.get_resource(), Some("topic-a"));
+        assert_eq!(entry.get_actions().unwrap(), &[Some("PUB".into()), None]);
+        assert!(entry.get_source_ips().unwrap().is_empty());
+        assert_eq!(entry.get_decision(), Some("ALLOW"));
+
+        let encoded: serde_json::Value =
+            serde_json::from_slice(&decoded.java_encode().unwrap()).unwrap();
+        assert_eq!(encoded["policies"][0], serde_json::Value::Null);
+        assert_eq!(
+            encoded["policies"][1]["entries"][0],
+            serde_json::Value::Null
+        );
+        assert_eq!(encoded["policies"][1]["entries"][1]["sourceIps"], json!([]));
+
+        let generated = AclInfo::of(
+            Some("subject".into()),
+            vec![Some("topic-b".into())],
+            Some(vec![Some("SUB".into())]),
+            Some(vec![Some("127.0.0.1".into())]),
+            Some("ALLOW".into()),
+        );
+        let policy = generated.get_policies().unwrap()[0].as_ref().unwrap();
+        assert_eq!(
+            policy.get_entries().unwrap()[0]
+                .as_ref()
+                .unwrap()
+                .get_resource(),
+            Some("topic-b")
+        );
     }
 
     #[test]
