@@ -2361,3 +2361,20 @@ format/diff checks, and Java lifecycle fixture verification pass. This closes
 only the LitePull unsubscribe synchronization slice; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull assignment lifecycle serialization — 2026-10-22 (`e41e6aab`)
+
+Pinned Java 5.5.1 synchronizes `assign(Collection)` and
+`setSubExpressionForAssign(String,String)` on the same implementation monitor
+as `start`. Fixture `litePullMethodSynchronization` now records both reflected
+modifiers and has SHA-256
+`3ebb12d617b9cc73a1be52cf3469323ada4c83aa4b1a9c494a5d0899080f8fd6`.
+
+Rust `assign` and `set_sub_expression_for_assign` now take the lifecycle gate,
+so their async entry points serialize with startup and shutdown. The paused
+Broker-check regression proves both remain pending during startup and then
+return the expected subscription-mode and post-start validation errors. All
+LitePull integration tests, strict Clippy, format/diff checks, and Java
+lifecycle fixture verification pass. This closes these assignment
+synchronization branches only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains open.
