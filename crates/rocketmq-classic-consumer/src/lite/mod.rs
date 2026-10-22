@@ -482,6 +482,8 @@ impl LitePullConsumer {
     }
 
     pub async fn unsubscribe(&self, topic: &str) -> Result<bool, LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
+        let _reconcile_gate = self.reconcile_gate.lock().await;
         let normalized_topic = self.normalized_topic(topic)?;
         let removed = self
             .subscriptions

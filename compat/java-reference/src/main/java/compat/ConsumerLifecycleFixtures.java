@@ -100,6 +100,9 @@ public final class ConsumerLifecycleFixtures {
         result.put("subscribeWithListener", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
                 String.class, String.class, MessageQueueListener.class).getModifiers()));
+        result.put("unsubscribe", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("unsubscribe",
+                String.class).getModifiers()));
         result.put("shutdown", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("shutdown").getModifiers()));
         result.put("registerTopicMessageQueueChangeListener", Modifier.isSynchronized(

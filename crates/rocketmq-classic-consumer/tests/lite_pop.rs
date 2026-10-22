@@ -1298,6 +1298,7 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
     assert_eq!(java["subscribeExpression"], true);
     assert_eq!(java["subscribeSelector"], true);
     assert_eq!(java["subscribeWithListener"], true);
+    assert_eq!(java["unsubscribe"], true);
     assert_eq!(java["shutdown"], true);
     assert_eq!(java["registerTopicMessageQueueChangeListener"], true);
 
@@ -1357,6 +1358,18 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .is_err(),
         "subscription must wait for the Java-equivalent synchronized start"
     );
+    let unsubscribe_consumer = consumer.clone();
+    let mut unsubscription = tokio::spawn(async move {
+        unsubscribe_consumer
+            .unsubscribe("lite-listener-registration-start-lock")
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(100), &mut unsubscription)
+            .await
+            .is_err(),
+        "unsubscription must wait for the Java-equivalent synchronized start"
+    );
 
     release_check
         .send(())
@@ -1376,6 +1389,13 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
         .expect("subscription did not resume after start")
         .expect("subscription task failed")
         .unwrap();
+    assert!(
+        timeout(Duration::from_secs(4), &mut unsubscription)
+            .await
+            .expect("unsubscription did not resume after start")
+            .expect("unsubscription task failed")
+            .unwrap()
+    );
     assert!(consumer.is_running().await);
 
     consumer.shutdown().await.unwrap();
