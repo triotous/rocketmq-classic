@@ -1027,11 +1027,23 @@ public final class MessageDecodeFixtures {
         expected.put("decodesCount", clientDecoded.size());
         expected.put("decodesInputPosition", clientDecodesInput.position());
         expected.put("decodesInputLimit", clientDecodesInput.limit());
+        ByteBuffer clientDecodesNoBodyInput = ByteBuffer.wrap(malformedBatch);
+        List<MessageExt> clientDecodedNoBody =
+            MessageDecoder.decodes(clientDecodesNoBodyInput, false);
+        expected.put("decodesNoBodyCount", clientDecodedNoBody.size());
+        expected.put("decodesNoBodyInputPosition", clientDecodesNoBodyInput.position());
+        expected.put("decodesNoBodyInputLimit", clientDecodesNoBodyInput.limit());
         ByteBuffer genericInput = ByteBuffer.wrap(malformedBatch);
         List<MessageExt> genericDecoded = MessageDecoder.decodesBatch(genericInput, true, true, false);
         expected.put("genericBatchCount", genericDecoded.size());
         expected.put("genericBatchInputPosition", genericInput.position());
         expected.put("genericBatchInputLimit", genericInput.limit());
+        ByteBuffer genericNoBodyInput = ByteBuffer.wrap(malformedBatch);
+        List<MessageExt> genericDecodedNoBody =
+            MessageDecoder.decodesBatch(genericNoBodyInput, false, true, false);
+        expected.put("genericBatchNoBodyCount", genericDecodedNoBody.size());
+        expected.put("genericBatchNoBodyInputPosition", genericNoBodyInput.position());
+        expected.put("genericBatchNoBodyInputLimit", genericNoBodyInput.limit());
         if (!genericDecoded.isEmpty()) {
             expected.put("genericBatchFirstMessageClass",
                 genericDecoded.get(0).getClass().getSimpleName());

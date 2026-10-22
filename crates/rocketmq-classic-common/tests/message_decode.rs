@@ -739,6 +739,11 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
         expected["decodesInputPosition"],
         expected["decodesInputLimit"]
     );
+    assert_eq!(expected["decodesNoBodyCount"], expected["decodesCount"]);
+    assert_eq!(
+        expected["decodesNoBodyInputPosition"],
+        expected["decodesNoBodyInputLimit"]
+    );
     let client_decoded = client_decodes(&bytes).unwrap();
     assert_eq!(
         client_decoded.len(),
@@ -748,6 +753,7 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
     assert!(client_decoded[0].is_message_client_ext());
     let client_without_body = client_decodes_with_body(&bytes, false).unwrap();
     assert_eq!(client_without_body.len(), client_decoded.len());
+    assert!(client_without_body[0].is_message_client_ext());
     assert!(client_without_body[0].body().is_empty());
 
     let generic_batch = decode_many_compatible(&bytes, DecodeOptions::default());
@@ -761,6 +767,24 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
         expected["genericBatchInputPosition"],
         expected["genericBatchInputLimit"]
     );
+    assert_eq!(
+        expected["genericBatchNoBodyCount"],
+        expected["genericBatchCount"]
+    );
+    assert_eq!(
+        expected["genericBatchNoBodyInputPosition"],
+        expected["genericBatchNoBodyInputLimit"]
+    );
+    let generic_batch_without_body = decode_many_compatible(
+        &bytes,
+        DecodeOptions {
+            read_body: false,
+            ..DecodeOptions::default()
+        },
+    );
+    assert_eq!(generic_batch_without_body.len(), generic_batch.len());
+    assert!(!generic_batch_without_body[0].is_message_client_ext());
+    assert!(generic_batch_without_body[0].body().is_empty());
 
     assert!(decode_many(&bytes, DecodeOptions::default()).is_err());
     assert!(decode_many_as_client(&bytes, DecodeOptions::default()).is_err());
