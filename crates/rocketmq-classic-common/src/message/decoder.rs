@@ -255,8 +255,11 @@ pub enum DecodeError {
     AggregateLimitExceeded { limit: usize },
 }
 
-/// Decode one complete Broker message record at the start of `record`.
-/// Returns the decoded message and number of consumed bytes.
+/// Decode one Broker message record from the start of `record`.
+///
+/// Returns the decoded message and the number of bytes consumed from its
+/// fields. The declared store size is retained on `MessageExt` but does not
+/// bound parsing, matching Java `MessageDecoder.decode`.
 pub fn decode_one(
     record: &[u8],
     options: DecodeOptions,
@@ -425,30 +428,7 @@ fn decode_one_with_limits(
     limits: DecodeLimits,
 ) -> Result<(MessageExt, usize), DecodeError> {
     let mut input = Cursor::new(record);
-    let start = input.position();
     let store_size = input.i32("store size")?;
-    if store_size < 8 {
-        return Err(DecodeError::InvalidStoreSize {
-            offset: start,
-            size: store_size,
-        });
-    }
-    let record_size = store_size as usize;
-    if record_size > limits.max_record_bytes {
-        return Err(DecodeError::LimitExceeded {
-            field: "record",
-            length: record_size,
-            limit: limits.max_record_bytes,
-        });
-    }
-    if record.len() < record_size {
-        return Err(DecodeError::IncompleteRecord {
-            record_size,
-            available: record.len(),
-        });
-    }
-    let mut input = Cursor::new(&record[..record_size]);
-    let _store_size = input.i32("store size")?;
     let magic_offset = input.position();
     let magic_code = input.i32("magic code")?;
     let topic_width = match magic_code {
@@ -481,6 +461,7 @@ fn decode_one_with_limits(
     let body_length_offset = input.position();
     let body_length = input.i32("body length")?;
     let body_length = nonnegative_length(body_length_offset, "body", body_length)?;
+    ensure_record_limit(input.position(), body_length, limits.max_record_bytes)?;
     let encoded_body = input.bytes(body_length, "body")?;
     let mut body = (options.read_body && body_length > 0).then(|| encoded_body.to_vec());
     if options.verify_crc
@@ -530,18 +511,16 @@ fn decode_one_with_limits(
         input.i16("topic length")? as i32
     };
     let topic_length = nonnegative_length(topic_length_offset, "topic", topic_length)?;
+    ensure_record_limit(input.position(), topic_length, limits.max_record_bytes)?;
     let topic = String::from_utf8_lossy(input.bytes(topic_length, "topic")?).into_owned();
 
     let properties_length_offset = input.position();
     let properties_length = input.i16("properties length")? as i32;
     let properties_length =
         nonnegative_length(properties_length_offset, "properties", properties_length)?;
+    ensure_record_limit(input.position(), properties_length, limits.max_record_bytes)?;
     let properties = String::from_utf8_lossy(input.bytes(properties_length, "properties")?);
-    if input.remaining() != 0 {
-        return Err(DecodeError::TrailingBytes {
-            remaining: input.remaining(),
-        });
-    }
+    ensure_record_limit(input.position(), 0, limits.max_record_bytes)?;
 
     let decoded_properties = (properties_length > 0).then(|| {
         let mut decoded_properties = decode_properties(&properties);
@@ -569,7 +548,29 @@ fn decode_one_with_limits(
     message.set_born_host(Some(born_host));
     message.set_store_host(Some(store_host.clone()));
     message.set_message_id(Some(message_id_from_record(&input, commit_log_offset)));
-    Ok((message, record_size))
+    Ok((message, input.position()))
+}
+
+fn ensure_record_limit(
+    position: usize,
+    additional: usize,
+    limit: usize,
+) -> Result<(), DecodeError> {
+    let length = position
+        .checked_add(additional)
+        .ok_or(DecodeError::LimitExceeded {
+            field: "record",
+            length: usize::MAX,
+            limit,
+        })?;
+    if length > limit {
+        return Err(DecodeError::LimitExceeded {
+            field: "record",
+            length,
+            limit,
+        });
+    }
+    Ok(())
 }
 
 /// Decode concatenated Broker records, requiring each iteration to progress.
@@ -714,10 +715,6 @@ impl<'a> Cursor<'a> {
 
     fn position(&self) -> usize {
         self.position
-    }
-
-    fn remaining(&self) -> usize {
-        self.record.len().saturating_sub(self.position)
     }
 
     fn bytes(&mut self, count: usize, field: &'static str) -> Result<&'a [u8], DecodeError> {

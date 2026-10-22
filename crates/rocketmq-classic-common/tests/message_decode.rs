@@ -1856,6 +1856,40 @@ fn message_decoder_property_map_methods_match_java_551() {
         zero_store_position,
         expected["zeroStoreSizeRecordPosition"].as_u64().unwrap() as usize
     );
+    for decoded_case in expected["malformedStoreSizeFullDecodes"]
+        .as_array()
+        .unwrap()
+    {
+        let record = base64::engine::general_purpose::STANDARD
+            .decode(decoded_case["recordBase64"].as_str().unwrap())
+            .unwrap();
+        let (decoded, consumed) = decode_one(&record, DecodeOptions::default()).unwrap();
+        let snapshot = decoded_snapshot(&decoded, consumed);
+        assert_eq!(snapshot, decoded_case["decoded"]);
+        assert_eq!(
+            decoded.store_size(),
+            decoded_case["decodedStoreSize"].as_i64().unwrap() as i32
+        );
+    }
+    let malformed_store_size_cases = expected["malformedStoreSizeFullDecodes"]
+        .as_array()
+        .unwrap();
+    let mut malformed_store_size_batch = Vec::new();
+    for decoded_case in &malformed_store_size_cases[..2] {
+        malformed_store_size_batch.extend(
+            base64::engine::general_purpose::STANDARD
+                .decode(decoded_case["recordBase64"].as_str().unwrap())
+                .unwrap(),
+        );
+    }
+    let decoded_batch = decode_many(&malformed_store_size_batch, DecodeOptions::default()).unwrap();
+    assert_eq!(
+        decoded_batch
+            .iter()
+            .map(MessageExt::store_size)
+            .collect::<Vec<_>>(),
+        [0, -1]
+    );
 
     let malformed_properties_record = base64::engine::general_purpose::STANDARD
         .decode(
@@ -3605,15 +3639,14 @@ fn malformed_magic_lengths_and_crc_fail_as_structured_errors() {
         decode_one(&bad_magic, DecodeOptions::default()),
         Err(DecodeError::UnknownMagic { .. })
     ));
-    let mut bad_store_size = valid.clone();
-    bad_store_size[..4].copy_from_slice(&i32::MAX.to_be_bytes());
-    assert!(matches!(
-        decode_one(&bad_store_size, DecodeOptions::default()),
-        Err(DecodeError::LimitExceeded {
-            field: "record",
-            ..
-        })
-    ));
+    for declared_store_size in [0, -1, i32::MAX] {
+        let mut malformed_store_size = valid.clone();
+        malformed_store_size[..4].copy_from_slice(&declared_store_size.to_be_bytes());
+        let (decoded, consumed) =
+            decode_one(&malformed_store_size, DecodeOptions::default()).unwrap();
+        assert_eq!(decoded.store_size(), declared_store_size);
+        assert_eq!(consumed, valid.len());
+    }
     let mut bad_body_length = valid.clone();
     let body_length_offset = 4 + 4 + 4 + 4 + 4 + 8 + 8 + 4 + 8 + 8 + 8 + 8 + 4 + 8;
     bad_body_length[body_length_offset..body_length_offset + 4]

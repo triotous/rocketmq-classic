@@ -857,6 +857,21 @@ public final class MessageDecodeFixtures {
             ? null : new TreeMap<>(propertiesFromZeroStoreSize));
         expected.put("zeroStoreSizeRecordPosition", malformedStoreSize.position());
 
+        List<Map<String, Object>> malformedStoreSizeDecodes = new ArrayList<>();
+        for (int declaredStoreSize : new int[] {0, -1, Integer.MAX_VALUE}) {
+            byte[] malformedRecord = record.clone();
+            ByteBuffer.wrap(malformedRecord).putInt(0, declaredStoreSize);
+            ByteBuffer decodeInput = ByteBuffer.wrap(malformedRecord);
+            MessageExt decoded = MessageDecoder.decode(decodeInput);
+            Map<String, Object> decodedCase = new TreeMap<>();
+            decodedCase.put("declaredStoreSize", declaredStoreSize);
+            decodedCase.put("recordBase64", Base64.getEncoder().encodeToString(malformedRecord));
+            decodedCase.put("decoded", decodeSnapshot(decoded, decodeInput));
+            decodedCase.put("decodedStoreSize", decoded.getStoreSize());
+            malformedStoreSizeDecodes.add(decodedCase);
+        }
+        expected.put("malformedStoreSizeFullDecodes", malformedStoreSizeDecodes);
+
         byte[] malformedPropertiesRecord = record.clone();
         ByteBuffer malformedPropertiesBuffer = ByteBuffer.wrap(malformedPropertiesRecord);
         int sysFlag = malformedPropertiesBuffer.getInt(36);
