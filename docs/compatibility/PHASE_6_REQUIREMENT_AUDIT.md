@@ -2239,3 +2239,21 @@ runtime state, runtime-manager identity and explicit terminal cleanup. This
 closes the LitePull factory-start failure slice; post-start Consumer failures
 and broad P18-V01 input/error/control-flow and reverse-export reconciliation
 remain open.
+
+## P18-V01 LitePull startup listener-route failure — 2026-10-22 (`aab73bb3`)
+
+Pinned Java 5.5.1 `operateAfterRunning()` synchronously fetches message queues
+for listeners registered before start. A route transport failure makes
+`DefaultLitePullConsumer.start()` throw `MQClientException`; its implementation
+shuts down, moves to `SHUTDOWN_ALREADY`, removes the Consumer registration and
+rejects retry with `MQClientException`. The invoked case is
+`litePullListenerRouteFailure` in `fixtures/consumer/lifecycle.json` (SHA-256
+`841aac58bbeaf12908aebc79796f75885f00e5356ad61dd06aed4cbf4e0ef9f3`).
+
+Rust previously ignored this route lookup error and continued startup. It now
+returns the error, shuts down the started pull engine, removes the group and
+retains a terminal LitePull lifecycle. The regression compares retry and
+registration outcomes with the fixture and verifies the runtime stops. This
+closes the pre-registered listener route-failure branch only; post-start
+Consumer failures and broad P18-V01 input/error/control-flow and reverse-export
+reconciliation remain open.

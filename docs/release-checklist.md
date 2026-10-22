@@ -7262,3 +7262,33 @@ owner-specific checks belong in the manual handoff.
   Windows stack-capture execution remain open. No Broker, Docker, publication
   or release action was performed; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 LitePull listener-route failure parity and gate refresh — 2026-10-22 (`aab73bb3`)
+
+- [x] The invoked Java 5.5.1 probe confirms that a route failure while loading
+  pre-registered LitePull listener queues throws `MQClientException`, shuts
+  down Consumer and factory to `SHUTDOWN_ALREADY`, removes the Consumer group,
+  and rejects retry. Fixture: `litePullListenerRouteFailure` in
+  `fixtures/consumer/lifecycle.json` (SHA-256
+  `841aac58bbeaf12908aebc79796f75885f00e5356ad61dd06aed4cbf4e0ef9f3`). Rust
+  now propagates the route error and rolls back runtime and registration.
+- [x] Default and all-feature locked workspace tests and strict workspace
+  all-target/all-feature Clippy pass. Formatting, diff checks, differential
+  comparator self-test, all 37 manifest scenarios, and workspace
+  metadata/license/dependency checks pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes,
+  including all Producer and Consumer lifecycle fixtures, 37 scenarios, Java
+  decoding of 106 typed headers and 19 typed bodies. Fixed-seed fuzz smoke
+  passes (163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame
+  decodes and 112 message decodes). Deterministic race/leak smoke passes all
+  16 cases × 3 repetitions.
+- [x] Release facade examples build; the offline benchmark compiles and runs.
+  Its current sample is recorded in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+  Core all-target Windows checking and the exact LitePull route-failure
+  regression cross-compile for `x86_64-pc-windows-gnu`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. No Broker, Docker, publication
+  or release action was performed; protected Phase 19 worktree files remain
+  unstaged.
