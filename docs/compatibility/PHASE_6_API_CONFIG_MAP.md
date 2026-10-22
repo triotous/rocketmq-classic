@@ -2464,3 +2464,25 @@ The refreshed `fixtures/runtime/route.json` SHA-256 is
 The focused Protocol differential, strict Protocol Clippy, format/diff checks,
 and pinned Maven `verify` pass. This closes the direct equality probe only;
 broad P18-V01 reconciliation remains open.
+
+## P18-V01 `TopicConfigAndQueueMapping` direct API probe — 2026-10-22 (`7397bb16`)
+
+The pinned Java surface has two public constructors, five declared methods, and
+27 public methods including inherited `TopicConfig` behavior. The direct
+fixture compares wrapper defaults and `toString`, the copy constructor,
+configuration field copies, shared attribute aliasing, mapping-detail handle
+retention and mutation, nullable mapping setters, null-config failure, and
+equality/hash outcomes. The Java oracle confirms mapping metadata outside
+`hostedQueues` does not affect mapping-detail equality. Rust adds the matching
+constructor, `java_to_string`, and `Hash` implementations; the nullable
+constructor adapter maps Java's null dereference to `TopicConfigError`.
+
+Protocol all-feature tests pass (159 unit tests, all integration targets, and
+163 doctests), as do strict Protocol Clippy, formatting/diff checks, the
+focused wrapper test, and pinned Maven `verify` (37 scenarios, 36 runtime
+route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
+`fixtures/producer/core.json` SHA-256:
+`39cf5836801a5d5664a61199200dd96b77084cdec557bcc6581eee353967bb39`.
+The full workspace gate must be refreshed after this source change. Broad
+P18-V01 reconciliation and current-revision remote Ubuntu and native Windows
+execution remain open.

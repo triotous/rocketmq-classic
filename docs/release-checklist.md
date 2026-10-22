@@ -7519,3 +7519,23 @@ owner-specific checks belong in the manual handoff.
   reviewed but remote Ubuntu CI was not run; the Windows test cross-compiled
   but native Windows execution remains pending. No push or external CI was
   run; protected Phase 19 files remain unstaged.
+
+## P18-V01 `TopicConfigAndQueueMapping` direct API probe — 2026-10-22 (`7397bb16`)
+
+- [x] Matched the pinned wrapper's two public constructors, five declared
+  methods, and 27 public methods including inherited `TopicConfig` behavior.
+  The direct Java fixture covers defaults, copy and shared-alias behavior,
+  mapping handle identity/mutation, null handling, `equals`/`hashCode`, and
+  `toString`. Java confirms mapping metadata outside `hostedQueues` is excluded
+  from mapping equality.
+- [x] Protocol all-feature tests pass (159 unit tests, all integration
+  targets, 163 doctests), as do strict Protocol Clippy, formatting/diff checks,
+  the focused wrapper differential, and pinned Maven `verify` (37 scenarios,
+  36 route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
+  Producer core fixture SHA-256:
+  `39cf5836801a5d5664a61199200dd96b77084cdec557bcc6581eee353967bb39`.
+- [ ] The full workspace P18-V02 gate must be refreshed after this source
+  change. Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation, current-revision remote Ubuntu CI, and native
+  Windows stack-capture execution remain open. No push or external CI was run;
+  protected Phase 19 files remain unstaged.
