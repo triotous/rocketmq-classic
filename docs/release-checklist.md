@@ -7778,3 +7778,29 @@ owner-specific checks belong in the manual handoff.
   remains separate. No push or external CI was run; protected Phase 19 files
   remain unstaged. Run details:
   `rlogs/2026/10/22-phase-18-remoting-locale-gate__20261022T171233Z.rlog`.
+
+## P18-V01 locale-sensitive compression parsing and current local gate — 2026-10-22 (`c9a6f939`)
+
+- [x] `CompressionType.of` now follows pinned Java 5.5.1's default-locale
+  `String.toUpperCase()` behavior for Turkish/Azeri locale selectors. The Java
+  runtime fixture covers six inputs, including Turkish-specific acceptance of
+  `zlıb` and rejection of `zlib`/`zLiB`; the Rust subprocess test compares each
+  outcome and error message.
+- [x] On `c9a6f939`, default and all-feature locked workspace tests, strict
+  all-target/all-feature Clippy, formatting/diff checks, and pinned Maven
+  `verify` pass. Maven confirms 37 scenarios, 36 route/VIP cases, and Java
+  decoding of 106 typed headers and 19 typed bodies.
+- [x] Differential comparator self-test and 37-scenario manifest validation,
+  fixed-seed fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations),
+  and deterministic race/leak smoke (16 cases × 3) pass. Release examples,
+  offline benchmark and strict benchmark Clippy, metadata/license/dependency
+  checks, and all seven product package listings pass.
+- [x] Four Core Unique ID tests pass under each of `TZ=UTC` and
+  `TZ=Asia/Taipei`. Windows GNU Core all-target checking and Consumer test
+  cross-compilation pass; these are compile checks only.
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+  Windows execution, and Phase 19 Broker/Docker validation remain open. The
+  differential `--check-all` reports 30 manifest scenarios without live
+  runners. No push or external CI was run; protected Phase 19 worktree files
+  remain unstaged. Run details:
+  `rlogs/2026/10/22-phase-18-compression-locale-gate__20261022T172709Z.rlog`.

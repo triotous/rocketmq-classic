@@ -2809,3 +2809,22 @@ source/API/settings/input/error/control-flow and reverse-export
 reconciliation, current-revision remote Ubuntu CI, native Windows execution,
 and Phase 19 Broker/Docker validation remain open. No push or external CI was
 run.
+
+## P18-V01 `CompressionType.of` default-locale parity — 2026-10-22 (`c9a6f939`)
+
+Pinned Java 5.5.1 trims the compression name and applies no-argument
+`String.toUpperCase()`, which makes the public parser depend on the JVM default
+locale. Under Turkish locale, `zlib` and `zLiB` uppercase to strings that do
+not match `ZLIB`, while `zlıb` uppercases to `ZLIB`. Rust now applies the same
+Turkish/Azeri `i`/`ı` mappings through the shared default-locale helper. The
+Java runtime fixture records six inputs and their decoded values or exact
+runtime-error messages; a Rust child test runs with `LC_ALL=tr_TR.UTF-8` and
+compares each case.
+
+The focused compression tests, locked default and all-feature workspace tests,
+strict workspace Clippy, formatting/diff checks, and pinned Maven `verify`
+pass. Maven verifies 37 scenarios, 36 route/VIP cases, and Java decoding of
+106 typed headers and 19 typed bodies. This closes the compression parser
+locale slice only. Broad P18-V01 API/settings/input/error/control-flow and
+reverse-export reconciliation remains open, along with current-revision
+remote Ubuntu CI and native Windows runtime evidence.
