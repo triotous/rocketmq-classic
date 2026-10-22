@@ -926,6 +926,7 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
         store,
     );
     config.set_topic_metadata_check_interval_millis(10);
+    config.client_config_mut().set_poll_name_server_interval(10);
     config.set_auto_commit(false);
     let consumer_id = config.client_config().build_client_id();
     let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
@@ -983,9 +984,10 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
         .update_name_server_address(updated_nameserver.clone())
         .await
         .unwrap();
-    let (changed_topic, changed_queues) = timeout(Duration::from_secs(4), metadata_rx.recv())
+    assert!(metadata_rx.try_recv().is_err());
+    let (changed_topic, changed_queues) = timeout(Duration::from_secs(15), metadata_rx.recv())
         .await
-        .expect("topic metadata listener was not called after route change")
+        .expect("scheduled topic metadata listener was not called after route change")
         .expect("topic metadata listener channel closed");
     let second_queue = MessageQueue::new("orders", "broker-a", 1);
     assert_eq!(changed_topic, "orders");
@@ -1010,6 +1012,17 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
     let poll_consumer = consumer.clone();
     let mut poll = tokio::spawn(async move { poll_consumer.poll(Some(350)).await });
     tokio::time::sleep(Duration::from_millis(25)).await;
+    let address_update_consumer = consumer.clone();
+    let address_update = tokio::spawn(async move {
+        address_update_consumer
+            .update_name_server_address(updated_nameserver)
+            .await
+    });
+    timeout(Duration::from_millis(100), address_update)
+        .await
+        .expect("NameServer address update waited for synchronized poll")
+        .expect("NameServer address update task failed")
+        .unwrap();
     let unsubscribe_consumer = consumer.clone();
     let mut unsubscription =
         tokio::spawn(async move { unsubscribe_consumer.unsubscribe("orders").await });
@@ -1191,9 +1204,10 @@ async fn lite_queue_listener_registration_preserves_java_route_failure_semantics
         .update_name_server_address(nameserver.clone())
         .await
         .unwrap();
-    let (topic, queues) = timeout(Duration::from_secs(4), callback_rx.recv())
+    assert!(callback_rx.try_recv().is_err());
+    let (topic, queues) = timeout(Duration::from_secs(15), callback_rx.recv())
         .await
-        .expect("retained listener was not called after route recovery")
+        .expect("scheduled metadata check did not recover the retained listener")
         .expect("queue listener channel closed");
     assert_eq!(topic, "listener-registration-route-failure");
     assert_eq!(
@@ -1334,6 +1348,7 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
     assert_eq!(java["poll"], true);
     assert_eq!(java["shutdown"], true);
     assert_eq!(java["registerTopicMessageQueueChangeListener"], true);
+    assert_eq!(java["updateNameServerAddr"], false);
 
     let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let broker_address = broker_listener.local_addr().unwrap().to_string();
@@ -2107,6 +2122,10 @@ async fn lite_metadata_offset_and_seek_helpers_report_not_started_errors() {
     let queue = MessageQueue::new("orders", "broker-a", 0);
     assert!(matches!(
         consumer.fetch_message_queues("orders").await,
+        Err(LitePullConsumerError::NotStarted)
+    ));
+    assert!(matches!(
+        consumer.update_name_server_address("127.0.0.1:9876").await,
         Err(LitePullConsumerError::NotStarted)
     ));
     assert!(matches!(

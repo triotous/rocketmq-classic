@@ -132,6 +132,9 @@ public final class ConsumerLifecycleFixtures {
         result.put("registerTopicMessageQueueChangeListener", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("registerTopicMessageQueueChangeListener",
                 String.class, TopicMessageQueueChangeListener.class).getModifiers()));
+        result.put("updateNameServerAddr", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("updateNameServerAddr",
+                String.class).getModifiers()));
         return result;
     }
 

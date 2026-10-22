@@ -109,7 +109,6 @@ pub struct LitePullConsumer {
     queue_change_listeners: RwLock<HashMap<String, TopicMessageQueueChangeListener>>,
     last_topic_queues: Mutex<HashMap<String, BTreeSet<MessageQueue>>>,
     message_queue_listener: RwLock<Option<MessageQueueListener>>,
-    name_server_address: RwLock<Option<String>>,
     trace_dispatcher: RwLock<Option<Arc<LiteTraceDispatcher>>>,
 }
 
@@ -195,7 +194,6 @@ impl LitePullConsumer {
             queue_change_listeners: RwLock::new(HashMap::new()),
             last_topic_queues: Mutex::new(HashMap::new()),
             message_queue_listener: RwLock::new(message_queue_listener),
-            name_server_address: RwLock::new(None),
             trace_dispatcher: RwLock::new(None),
         })
     }
@@ -834,16 +832,6 @@ impl LitePullConsumer {
         let mut pull_config = PullConsumerConfig::new(self.config.consumer_group())?;
         *pull_config.client_config_mut() = self.config.client_config().clone();
         pull_config.set_tls_config(self.config.tls_config().cloned());
-        if let Some(address) = self
-            .name_server_address
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-        {
-            pull_config
-                .client_config_mut()
-                .set_namesrv_addr(Some(address));
-        }
         pull_config
             .set_broker_suspend_max_time_millis(self.config.broker_suspend_max_time_millis());
         pull_config.set_consumer_timeout_millis_when_suspend(
@@ -1322,38 +1310,8 @@ impl LitePullConsumer {
         &self,
         address: impl Into<String>,
     ) -> Result<(), LitePullConsumerError> {
-        let _lifecycle_gate = self.lifecycle_gate.lock().await;
-        let address = address.into();
-        *self
-            .name_server_address
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(address.clone());
-        if let Some(engine) = self.engine() {
-            engine.update_name_server_address(&address).await?;
-            if self.running.load(Ordering::Acquire) {
-                let subscription_topics = self
-                    .subscriptions
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for topic in subscription_topics {
-                    let _ = engine.refresh_topic_route(&topic).await;
-                }
-                let topics = self
-                    .queue_change_listeners
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for topic in topics {
-                    self.update_topic_queue_change(&engine, &topic).await;
-                }
-                self.reconcile.notify_one();
-            }
-        }
+        let engine = self.engine().ok_or(LitePullConsumerError::NotStarted)?;
+        engine.update_name_server_address(&address.into()).await?;
         Ok(())
     }
 
