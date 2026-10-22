@@ -2502,3 +2502,23 @@ checks, and Java lifecycle fixture drift verification pass. This closes this
 LitePull startup-failure slice only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull config validation before executor construction — 2026-10-22 (`9db5c40d`)
+
+Pinned Java `DefaultLitePullConsumerImpl.start()` runs `checkConfig()` before
+constructing its `ScheduledThreadPoolExecutor`. Its consumer-group and suspend
+timeout checks therefore take precedence over a negative `pullThreadNums`.
+Rust previously rejected the negative thread count first.
+
+Rust now validates the effective namespaced group and suspend timeout before
+checking the thread count, matching Java's start-failure order. The pinned
+Java lifecycle fixture combines an invalid suspend timeout and negative
+thread count, records that timeout validation wins, and confirms no runtime or
+consumer registration was created; fixture SHA-256:
+`706d8348e770dfedb5cf3759f22090e97d7f6c83a9817f7ec662a98c4f1d4fa0`.
+The fixture-driven regression passes alongside the full locked Consumer
+package tests (253 unit tests, all integration tests and doctests), strict
+Core/Consumer Clippy, formatting/diff checks, and Java lifecycle fixture drift
+verification. This closes this validation-order branch only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
