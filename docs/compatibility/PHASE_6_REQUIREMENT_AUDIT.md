@@ -1743,9 +1743,9 @@ operation or fixture-backed owner path. Since this list was captured,
 `queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`,
 `fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
 been implemented and checked against the pinned Java fixture. The initial list
-of 12 direct operations has since been reduced by the `getAllTopicConfig` and
-`getAllSubscriptionGroup` slices below; 10 remain implementation work rather
-than approved differences:
+of 12 direct operations has since been reduced by the `getAllTopicConfig`,
+`getAllSubscriptionGroup`, and `queryConsumeQueue` slices below; 9 remain
+implementation work rather than approved differences:
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
@@ -1753,7 +1753,7 @@ than approved differences:
 | Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Closed by `get_all_subscription_group` |
 | Broker consume statistics | `fetchConsumeStatsInBroker` | 317 | Closed by `fetch_consume_stats_in_broker` |
 | Broker statistics view | `viewBrokerStatsData` | 315 | Closed by `view_broker_stats_data` |
-| Consume-queue query | `queryConsumeQueue` | 321 | Open |
+| Consume-queue query | `queryConsumeQueue` | 321 | Closed by `query_consume_queue` |
 | Correction-offset query | `queryCorrectionOffset` | 308 | Closed by `query_correction_offset` |
 | Static-topic configuration lookup | `getTopicConfig` | 351 | Closed by `get_topic_config` |
 | Group-forbidden update/read | `updateAndGetGroupForbidden` | 353 | Closed by `update_and_get_group_forbidden` |
@@ -1771,7 +1771,7 @@ than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 10 open rows, but their Rust DTO and RPC owners are still
+already exist for the 9 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -1897,3 +1897,21 @@ the focused VIP routing test also checks request 201. This closes one direct
 API slice and reduces the reverse-audit list from 11 to 10 open rows; broad
 settings/API/input/error/control-flow/reverse-export reconciliation remains
 open.
+
+## P18-V01 direct `queryConsumeQueue` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.queryConsumeQueue(String,String,int,long,int,String,long)`
+sends request 321 with nullable topic and consumer group, primitive queue ID,
+index, and count, plus inherited RPC fields. Rust exposes
+`MQClientApi::query_consume_queue`, applies configured VIP conversion, uses the
+caller deadline, maps Broker rejection to `RpcError::Response`, and returns
+`None` for an absent or JSON-null body. `QueryConsumeQueueResponseBody` and
+`ConsumeQueueData` preserve Java field names, primitive defaults, nullable
+fields, nested `SubscriptionData`, and mutable object/list aliases. Invoked
+Java and Rust fixtures cover populated/default/null/missing/malformed body
+cases, null request strings, Broker rejection, and timeout; both typed header
+decode modes and bidirectional typed header/body fixtures pass. The configured
+VIP port transformation is checked by the core loopback test. This closes one
+direct API/header/DTO slice and reduces the reverse-audit list from 10 to 9
+open rows; broad settings/API/input/error/control-flow/reverse-export
+reconciliation remains open.

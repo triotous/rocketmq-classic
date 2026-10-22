@@ -36,9 +36,10 @@ use rocketmq_classic_protocol::{
         NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
         PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
         PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
-        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryCorrectionOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
@@ -440,6 +441,74 @@ fn reset_master_flush_offset_header_matches_java_nullable_long_and_reflection_de
             assert_eq!(encoded, expected_fields, "{case_name} {mode_name}");
         }
     }
+}
+
+#[test]
+fn query_consume_queue_header_matches_java_decode_modes() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    for case_name in [
+        "query-consume-queue-valid",
+        "query-consume-queue-missing",
+        "query-consume-queue-invalid-numbers",
+    ] {
+        let case = &fixture["cases"][case_name];
+        let fields: HeaderMap = serde_json::from_value(case["fields"].clone()).unwrap();
+        for (mode_name, use_fast_encode) in [("fast", true), ("reflection", false)] {
+            let expected = &case[mode_name];
+            let header =
+                QueryConsumeQueueRequestHeader::decode_fields_with_mode(&fields, use_fast_encode)
+                    .unwrap();
+            let decoded = &expected["decodedFields"];
+            assert_eq!(
+                header.get_topic(),
+                decoded["topic"].as_str(),
+                "{case_name} {mode_name}"
+            );
+            assert_eq!(
+                header.get_consumer_group(),
+                decoded["consumerGroup"].as_str(),
+                "{case_name} {mode_name}"
+            );
+            assert_eq!(
+                header.get_queue_id(),
+                decoded["queueId"].as_i64().unwrap() as i32
+            );
+            assert_eq!(header.get_index(), decoded["index"].as_i64().unwrap());
+            assert_eq!(
+                header.get_count(),
+                decoded["count"].as_i64().unwrap() as i32
+            );
+            assert_eq!(header.get_broker_name(), decoded["bname"].as_str());
+            assert_eq!(header.get_namespace(), decoded["ns"].as_str());
+            assert_eq!(header.get_namespaced(), decoded["nsd"].as_bool());
+            assert_eq!(header.get_lo(), decoded["lo"].as_bool());
+            assert_eq!(header.get_oneway(), decoded["oway"].as_bool());
+            let mut encoded = HeaderMap::new();
+            header.encode_fields(&mut encoded);
+            let expected_fields: HeaderMap =
+                serde_json::from_value(expected["encodedFields"].clone()).unwrap();
+            assert_eq!(encoded, expected_fields, "{case_name} {mode_name}");
+        }
+    }
+
+    let mut left = QueryConsumeQueueRequestHeader::default();
+    let mut right = QueryConsumeQueueRequestHeader::default();
+    right.set_topic(Some("orders".into()));
+    right.set_queue_id(2);
+    right.set_index(13);
+    right.set_count(4);
+    right.set_consumer_group(Some("workers".into()));
+    assert_eq!(
+        left, right,
+        "Java inherited equality ignores subclass fields"
+    );
+    right.set_namespace(Some("tenant".into()));
+    assert_ne!(left, right, "Java inherited equality includes RPC fields");
+    left.set_namespace(Some("tenant".into()));
+    assert_eq!(left, right);
 }
 
 #[test]
@@ -2360,6 +2429,15 @@ fn header_validation_matrix() {
             ""
         ),
         row!(
+            QueryConsumeQueueRequestHeader,
+            "query-consume-queue-request",
+            "",
+            "queueId count",
+            "index",
+            "topic consumerGroup bname ns nsd lo oway",
+            "nsd lo oway"
+        ),
+        row!(
             GetAllTopicConfigResponseHeader,
             "get-all-topic-config-response",
             "",
@@ -3274,6 +3352,7 @@ fn header_validation_matrix() {
                             | "PopMessageResponseHeader"
                             | "PopLiteMessageResponseHeader"
                             | "CheckRocksdbCqWriteProgressRequestHeader"
+                            | "QueryConsumeQueueRequestHeader"
                     ) {
                         let decoded = (case.decode)(&fields)
                             .unwrap_or_else(|e| panic!("{} {name}={value}: {e}", case.fixture));

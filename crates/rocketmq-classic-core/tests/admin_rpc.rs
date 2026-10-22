@@ -13,8 +13,8 @@ use rocketmq_classic_core::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, TopicConfig,
-        TopicConfigAndQueueMapping,
+        CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, ConsumeQueueData,
+        QueryConsumeQueueResponseBody, TopicConfig, TopicConfigAndQueueMapping,
     },
     codes::{request, response},
     header::{
@@ -2854,6 +2854,305 @@ async fn get_topic_config_matches_java_request_and_static_mapping_fixtures() {
         );
         client.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn query_consume_queue_matches_java_request_and_response_fixtures() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["queryConsumeQueueApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.QueryConsumeQueueResponseBody org.apache.rocketmq.client.impl.MQClientAPIImpl.queryConsumeQueue(java.lang.String,java.lang.String,int,long,int,java.lang.String,long)"
+        ])
+    );
+    for (surface, expected_methods) in [
+        (
+            "queryConsumeQueueRequestHeaderApi",
+            vec![
+                "getTopic",
+                "setTopic",
+                "getQueueId",
+                "setQueueId",
+                "getIndex",
+                "setIndex",
+                "getCount",
+                "setCount",
+                "getConsumerGroup",
+                "setConsumerGroup",
+                "checkFields",
+            ],
+        ),
+        (
+            "queryConsumeQueueResponseBodyApi",
+            vec![
+                "getSubscriptionData",
+                "setSubscriptionData",
+                "getFilterData",
+                "setFilterData",
+                "getQueueData",
+                "setQueueData",
+                "getMaxQueueIndex",
+                "setMaxQueueIndex",
+                "getMinQueueIndex",
+                "setMinQueueIndex",
+            ],
+        ),
+        (
+            "consumeQueueDataApi",
+            vec![
+                "getPhysicOffset",
+                "setPhysicOffset",
+                "getPhysicSize",
+                "setPhysicSize",
+                "getTagsCode",
+                "setTagsCode",
+                "getExtendDataJson",
+                "setExtendDataJson",
+                "getBitMap",
+                "setBitMap",
+                "isEval",
+                "setEval",
+                "getMsg",
+                "setMsg",
+                "toString",
+            ],
+        ),
+    ] {
+        let declared = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in expected_methods {
+            assert!(
+                declared.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+                }),
+                "{surface} lacks {method}"
+            );
+        }
+        assert_eq!(
+            fixture[surface]["declaredPublicMethodCount"]
+                .as_u64()
+                .unwrap(),
+            declared.len() as u64
+        );
+    }
+
+    let cases = fixture["queryConsumeQueueOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 9);
+    for case in cases
+        .iter()
+        .filter(|case| !case["vipEnabled"].as_bool().unwrap())
+    {
+        let name = case["name"].as_str().unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .query_consume_queue(
+                &addr,
+                case["topic"].as_str(),
+                case["queueId"].as_i64().unwrap() as i32,
+                case["index"].as_i64().unwrap(),
+                case["count"].as_i64().unwrap() as i32,
+                case["consumerGroup"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let value = result.unwrap_or_else(|error| panic!("{name}: {error}"));
+            assert_eq!(value.is_none(), case["resultIsNull"]);
+            if let Some(value) = value {
+                let actual: Value =
+                    serde_json::from_str(&value.java_to_json(false).unwrap()).unwrap();
+                let expected: Value =
+                    serde_json::from_str(case["resultJson"].as_str().unwrap()).unwrap();
+                assert_eq!(actual, expected, "{name}");
+                if name == "queue-populated" {
+                    assert_eq!(value.get_filter_data(), Some("filter-data"));
+                    assert_eq!(value.get_max_queue_index(), 20);
+                    assert_eq!(value.get_min_queue_index(), 4);
+                    let subscription = value.get_subscription_data().unwrap();
+                    assert_eq!(
+                        subscription
+                            .with(|subscription| subscription.get_sub_string().map(str::to_owned)),
+                        Some("*".to_owned())
+                    );
+                    let rows = value.get_queue_data().unwrap();
+                    assert!(rows.with(|rows| rows.len() == 1));
+                    let row = rows.with(|rows| rows[0].as_ref().unwrap().clone());
+                    row.with(|row| {
+                        assert_eq!(row.get_physic_offset(), 987_654_321);
+                        assert_eq!(row.get_physic_size(), 128);
+                        assert_eq!(row.get_tags_code(), 171_234);
+                        assert_eq!(row.get_bit_map(), Some("1010"));
+                        assert!(row.is_eval());
+                        assert_eq!(row.get_msg(), Some("message-body"));
+                    });
+                }
+                if name == "queue-defaults" {
+                    assert!(value.get_subscription_data().is_none());
+                    assert!(value.get_filter_data().is_none());
+                    assert!(value.get_queue_data().is_none());
+                    assert_eq!(value.get_max_queue_index(), 0);
+                    assert_eq!(value.get_min_queue_index(), 0);
+                }
+                if name == "queue-null-fields-and-row" {
+                    assert!(value.get_subscription_data().is_none());
+                    assert!(value.get_filter_data().is_none());
+                    assert_eq!(value.get_max_queue_index(), 0);
+                    assert_eq!(value.get_min_queue_index(), 0);
+                    let rows = value.get_queue_data().unwrap();
+                    rows.with(|rows| {
+                        assert_eq!(rows.len(), 2);
+                        assert!(rows[0].is_none());
+                        rows[1].as_ref().unwrap().with(|row| {
+                            assert_eq!(row.get_physic_offset(), 0);
+                            assert_eq!(row.get_physic_size(), 0);
+                            assert_eq!(row.get_tags_code(), 0);
+                            assert_eq!(row.get_extend_data_json(), None);
+                            assert_eq!(row.get_bit_map(), None);
+                            assert!(!row.is_eval());
+                            assert_eq!(row.get_msg(), None);
+                        });
+                    });
+                }
+            }
+        } else if case["outcome"] == "MQClientException" {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == request::QUERY_CONSUME_QUEUE
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse { request_code, peer: error_peer, .. })
+                    if request_code == request::QUERY_CONSUME_QUEUE && error_peer == addr
+            ));
+        }
+
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], case["address"], "{name}");
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::QUERY_CONSUME_QUEUE, "{name}");
+        assert_eq!(request.code, expected_request["requestCode"], "{name}");
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+            "{name}"
+        );
+        assert!(request.body.is_none(), "{name}");
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"],
+            "{name}"
+        );
+        client.shutdown().await;
+    }
+
+    let mut response_body = QueryConsumeQueueResponseBody::default();
+    let mut java_frame = BytesMut::from(
+        &include_bytes!("../../../fixtures/remoting/body-query-consume-queue.bin")[..],
+    );
+    let java_command = frame::decode_next(&mut java_frame).unwrap().unwrap();
+    assert_eq!(java_command.code, request::QUERY_CONSUME_QUEUE);
+    let java_body =
+        QueryConsumeQueueResponseBody::java_decode(java_command.body.as_deref().unwrap()).unwrap();
+    assert_eq!(java_body.get_max_queue_index(), 20);
+    assert_eq!(java_body.get_min_queue_index(), 4);
+    assert_eq!(java_body.get_filter_data(), Some("filter-data"));
+    assert_eq!(
+        java_body
+            .get_subscription_data()
+            .unwrap()
+            .with(|subscription| subscription.get_topic().map(str::to_owned)),
+        Some("orders".into())
+    );
+    assert!(
+        java_body
+            .get_queue_data()
+            .unwrap()
+            .with(|rows| rows.len() == 1)
+    );
+
+    let subscription = SharedValue::new(SubscriptionData::default());
+    response_body.set_subscription_data(Some(subscription.clone()));
+    assert!(
+        response_body
+            .get_subscription_data()
+            .unwrap()
+            .ptr_eq(&subscription)
+    );
+    let mut row = ConsumeQueueData::default();
+    row.set_physic_offset(987_654_321);
+    row.set_physic_size(128);
+    row.set_tags_code(171_234);
+    row.set_extend_data_json(Some("{\"filterBitMap\":\"AQID\"}".into()));
+    row.set_bit_map(Some("1010".into()));
+    row.set_eval(true);
+    row.set_msg(Some("message-body".into()));
+    let row = SharedValue::new(row);
+    let rows = SharedValue::new(vec![Some(row.clone())]);
+    response_body.set_queue_data(Some(rows.clone()));
+    assert!(response_body.get_queue_data().unwrap().ptr_eq(&rows));
+    assert!(
+        response_body
+            .get_queue_data()
+            .unwrap()
+            .with(|items| items[0].as_ref().unwrap().ptr_eq(&row))
+    );
+    assert_eq!(
+        row.with(|row| row.java_to_string()),
+        fixture["queryConsumeQueueOperations"]["consumeQueueDataToString"]
+    );
+    row.with_mut(|row| row.set_msg(Some("changed".into())));
+    assert_eq!(
+        row.with(|row| row.get_msg().map(str::to_owned)),
+        Some("changed".into())
+    );
+}
+
+#[tokio::test]
+async fn query_consume_queue_honors_the_java_timeout_argument() {
+    let (addr, peer) = scripted_peer_after(
+        response::SUCCESS,
+        None,
+        Some(b"{}".to_vec()),
+        Duration::from_millis(150),
+    )
+    .await;
+    let (client_api, client) = api().await;
+    let result = client_api
+        .query_consume_queue(&addr, Some("orders"), 2, 0, 16, Some("workers"), 25)
+        .await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
 }
 
 #[tokio::test]

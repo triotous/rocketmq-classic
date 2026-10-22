@@ -44,6 +44,7 @@ import org.apache.rocketmq.remoting.protocol.header.GetAllSubscriptionGroupRespo
 import org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.QueryConsumeQueueRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.QuerySubscriptionByConsumerRequestHeader;
@@ -151,6 +152,13 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("topic-stats-info-missing", decodeModes("topic-stats-info", fields()));
         cases.put("topic-stats-info-malformed-booleans", decodeModes("topic-stats-info", fields(
             "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
+        cases.put("query-consume-queue-valid", decodeModes("query-consume-queue", fields(
+            "topic", "orders", "queueId", "2", "index", "9876543210", "count", "16",
+            "consumerGroup", "workers", "ns", "tenant", "nsd", "true",
+            "bname", "broker-a", "oway", "false", "lo", "true")));
+        cases.put("query-consume-queue-missing", decodeModes("query-consume-queue", fields()));
+        cases.put("query-consume-queue-invalid-numbers", decodeModes("query-consume-queue", fields(
+            "queueId", "invalid", "index", "9223372036854775808", "count", "overflow")));
         cases.put("get-all-subscription-group-request-valid", decodeModes(
             "get-all-subscription-group-request", fields(
                 "groupSeq", "2", "dataVersion", "{\"counter\":4,\"stateVersion\":7,\"timestamp\":1712345678901}",
@@ -178,6 +186,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(QueryConsumeTimeSpanRequestHeader.class));
         apiInventories.put("GetTopicStatsInfoRequestHeader",
             apiInventory(GetTopicStatsInfoRequestHeader.class));
+        apiInventories.put("QueryConsumeQueueRequestHeader",
+            apiInventory(QueryConsumeQueueRequestHeader.class));
         apiInventories.put("GetTopicsByClusterRequestHeader",
             apiInventory(GetTopicsByClusterRequestHeader.class));
         apiInventories.put("GetSubscriptionGroupConfigRequestHeader",
@@ -250,6 +260,8 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             code = 300;
         } else if ("topic-stats-info".equals(type)) {
             code = 202;
+        } else if ("query-consume-queue".equals(type)) {
+            code = 321;
         } else if ("delete-kv-config".equals(type)) {
             code = 102;
         } else if ("reset-master-flush-offset".equals(type)) {
@@ -296,6 +308,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "topic-stats-info":
                     headerClass = GetTopicStatsInfoRequestHeader.class;
+                    break;
+                case "query-consume-queue":
+                    headerClass = QueryConsumeQueueRequestHeader.class;
                     break;
                 case "get-all-subscription-group-request":
                     headerClass = GetAllSubscriptionGroupRequestHeader.class;

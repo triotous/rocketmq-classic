@@ -3714,6 +3714,208 @@ impl QuerySubscriptionResponseBody {
     }
 }
 
+/// Java `ConsumeQueueData` row returned by a `QUERY_CONSUME_QUEUE` request.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ConsumeQueueData {
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    physic_offset: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i32")]
+    physic_size: i32,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    tags_code: i64,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    extend_data_json: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    bit_map: Option<String>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_bool")]
+    eval: bool,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string",
+        skip_serializing_if = "Option::is_none"
+    )]
+    msg: Option<String>,
+}
+
+impl ConsumeQueueData {
+    pub fn get_physic_offset(&self) -> i64 {
+        self.physic_offset
+    }
+
+    pub fn set_physic_offset(&mut self, value: i64) {
+        self.physic_offset = value;
+    }
+
+    pub fn get_physic_size(&self) -> i32 {
+        self.physic_size
+    }
+
+    pub fn set_physic_size(&mut self, value: i32) {
+        self.physic_size = value;
+    }
+
+    pub fn get_tags_code(&self) -> i64 {
+        self.tags_code
+    }
+
+    pub fn set_tags_code(&mut self, value: i64) {
+        self.tags_code = value;
+    }
+
+    pub fn get_extend_data_json(&self) -> Option<&str> {
+        self.extend_data_json.as_deref()
+    }
+
+    pub fn set_extend_data_json(&mut self, value: Option<String>) {
+        self.extend_data_json = value;
+    }
+
+    pub fn get_bit_map(&self) -> Option<&str> {
+        self.bit_map.as_deref()
+    }
+
+    pub fn set_bit_map(&mut self, value: Option<String>) {
+        self.bit_map = value;
+    }
+
+    pub fn is_eval(&self) -> bool {
+        self.eval
+    }
+
+    pub fn set_eval(&mut self, value: bool) {
+        self.eval = value;
+    }
+
+    pub fn get_msg(&self) -> Option<&str> {
+        self.msg.as_deref()
+    }
+
+    pub fn set_msg(&mut self, value: Option<String>) {
+        self.msg = value;
+    }
+
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "ConsumeQueueData{{physicOffset={}, physicSize={}, tagsCode={}, extendDataJson='{}', bitMap='{}', eval={}, msg='{}'}}",
+            self.physic_offset,
+            self.physic_size,
+            self.tags_code,
+            self.extend_data_json.as_deref().unwrap_or("null"),
+            self.bit_map.as_deref().unwrap_or("null"),
+            self.eval,
+            self.msg.as_deref().unwrap_or("null"),
+        )
+    }
+}
+
+/// Java `QueryConsumeQueueResponseBody`, including its nullable nested DTOs and
+/// mutable list/object aliases.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryConsumeQueueResponseBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscription_data: Option<SharedValue<SubscriptionData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    filter_data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    queue_data: Option<SharedValue<Vec<Option<SharedValue<ConsumeQueueData>>>>>,
+    max_queue_index: i64,
+    min_queue_index: i64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct QueryConsumeQueueResponseBodyFields {
+    subscription_data: Option<SubscriptionData>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_nullable_string")]
+    filter_data: Option<String>,
+    queue_data: Option<Vec<Option<ConsumeQueueData>>>,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    max_queue_index: i64,
+    #[serde(deserialize_with = "serde_fastjson::deserialize_i64_reject_object")]
+    min_queue_index: i64,
+}
+
+impl<'de> Deserialize<'de> for QueryConsumeQueueResponseBody {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        let fields: QueryConsumeQueueResponseBodyFields = fields;
+        Ok(Self {
+            subscription_data: fields.subscription_data.map(SharedValue::new),
+            filter_data: fields.filter_data,
+            queue_data: fields.queue_data.map(|items| {
+                SharedValue::new(
+                    items
+                        .into_iter()
+                        .map(|item| item.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+            max_queue_index: fields.max_queue_index,
+            min_queue_index: fields.min_queue_index,
+        })
+    }
+}
+
+impl QueryConsumeQueueResponseBody {
+    pub fn get_subscription_data(&self) -> Option<SharedValue<SubscriptionData>> {
+        self.subscription_data.clone()
+    }
+
+    pub fn set_subscription_data(&mut self, value: Option<SharedValue<SubscriptionData>>) {
+        self.subscription_data = value;
+    }
+
+    pub fn get_filter_data(&self) -> Option<&str> {
+        self.filter_data.as_deref()
+    }
+
+    pub fn set_filter_data(&mut self, value: Option<String>) {
+        self.filter_data = value;
+    }
+
+    pub fn get_queue_data(
+        &self,
+    ) -> Option<SharedValue<Vec<Option<SharedValue<ConsumeQueueData>>>>> {
+        self.queue_data.clone()
+    }
+
+    pub fn set_queue_data(
+        &mut self,
+        value: Option<SharedValue<Vec<Option<SharedValue<ConsumeQueueData>>>>>,
+    ) {
+        self.queue_data = value;
+    }
+
+    pub fn get_max_queue_index(&self) -> i64 {
+        self.max_queue_index
+    }
+
+    pub fn set_max_queue_index(&mut self, value: i64) {
+        self.max_queue_index = value;
+    }
+
+    pub fn get_min_queue_index(&self) -> i64 {
+        self.min_queue_index
+    }
+
+    pub fn set_min_queue_index(&mut self, value: i64) {
+        self.min_queue_index = value;
+    }
+}
+
 /// Java `GroupList` body returned by `QUERY_TOPIC_CONSUME_BY_WHO`.
 ///
 /// The Java DTO defaults to an empty mutable Set, permits a null Set and null
@@ -9912,6 +10114,7 @@ impl_java_remoting_serializable_adapters!(
     LiteSubscriptionCtlRequestBody,
     QueryAssignmentRequestBody,
     QueryAssignmentResponseBody,
+    QueryConsumeQueueResponseBody,
     QueryConsumeTimeSpanBody,
     QueryCorrectionOffsetBody,
     SetMessageRequestModeRequestBody,

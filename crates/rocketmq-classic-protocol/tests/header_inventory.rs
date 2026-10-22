@@ -45,6 +45,7 @@ macro_rules! inventory {
             QuerySubscriptionByConsumerRequestHeader => ("header-query-subscription-by-consumer-request", "typed-query-subscription-by-consumer-request.bin"),
             QueryTopicConsumeByWhoRequestHeader => ("header-query-topic-consume-by-who-request", "typed-query-topic-consume-by-who-request.bin"),
             QueryCorrectionOffsetRequestHeader => ("header-query-correction-offset-request", "typed-query-correction-offset-request.bin"),
+            QueryConsumeQueueRequestHeader => ("header-query-consume-queue-request", "typed-query-consume-queue-request.bin"),
             UpdateGroupForbiddenRequestHeader => ("header-update-group-forbidden-request", "typed-update-group-forbidden-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             GetTopicConfigRequestHeader => ("header-topic-config-request", "typed-topic-config-request.bin"),
@@ -459,6 +460,94 @@ fn get_all_subscription_group_headers_match_java_public_api_inventory() {
                 "Java {rust_type} lacks {java_method}"
             );
         }
+    }
+}
+
+#[test]
+fn query_consume_queue_header_matches_java_public_api_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let inventory = &fixture["apiInventories"]["QueryConsumeQueueRequestHeader"];
+    assert_eq!(inventory["publicFields"], serde_json::json!([]));
+    let declared = inventory["declaredPublicMethods"].as_array().unwrap();
+    for java_method in [
+        "getTopic",
+        "setTopic",
+        "getQueueId",
+        "setQueueId",
+        "getIndex",
+        "setIndex",
+        "getCount",
+        "setCount",
+        "getConsumerGroup",
+        "setConsumerGroup",
+        "checkFields",
+    ] {
+        assert!(
+            declared.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+            }),
+            "Java QueryConsumeQueueRequestHeader lacks {java_method}"
+        );
+    }
+    let callable = inventory["callablePublicMethods"].as_array().unwrap();
+    for java_method in [
+        "getNamespace",
+        "setNamespace",
+        "getNamespaced",
+        "setNamespaced",
+        "getBrokerName",
+        "setBrokerName",
+        "getOneway",
+        "setOneway",
+        "getLo",
+        "setLo",
+    ] {
+        assert!(
+            callable.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+            }),
+            "Java QueryConsumeQueueRequestHeader lacks inherited {java_method}"
+        );
+    }
+
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for method in [
+        "get_topic",
+        "set_topic",
+        "get_queue_id",
+        "set_queue_id",
+        "get_index",
+        "set_index",
+        "get_count",
+        "set_count",
+        "get_consumer_group",
+        "set_consumer_group",
+        "check_fields",
+        "get_namespace",
+        "set_namespace",
+        "get_namespaced",
+        "set_namespaced",
+        "get_broker_name",
+        "set_broker_name",
+        "get_oneway",
+        "set_oneway",
+        "get_lo",
+        "set_lo",
+    ] {
+        assert!(rust_header_method_exists(
+            source,
+            trait_source,
+            "QueryConsumeQueueRequestHeader",
+            method
+        ));
     }
 }
 

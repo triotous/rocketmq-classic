@@ -1995,3 +1995,19 @@ restart, legacy response, null/malformed bodies, Broker errors, timeout, and
 both wrapper tables. Bidirectional typed-header and body fixtures cover the
 new protocol models. This closes only this direct API/header/DTO slice; broad
 P18-V01 remains open.
+
+## P18-V01 direct `queryConsumeQueue` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.queryConsumeQueue(String,String,int,long,int,String,long)`
+sends request 321. Core exposes `MQClientApi::query_consume_queue`, sends the
+nullable topic and consumer group with primitive `queueId`, `index`, and
+`count`, applies configured VIP conversion, and uses the supplied timeout.
+`QueryConsumeQueueResponseBody` preserves nullable `SubscriptionData`, filter
+data, and queue rows plus Java's zero defaults for both queue indexes;
+`ConsumeQueueData` preserves all seven Java properties and nullable strings.
+Java and Rust offline fixtures cover populated/default/null/missing/malformed
+responses, nullable request strings, Broker rejection, timeout, and the
+configured VIP route. Header decode-mode checks and bidirectional typed header
+and body fixtures pass. This closes only this direct API/header/DTO slice;
+the broader P18-V01 settings/API/feature/input/error/control-flow/reverse-export
+audit remains open.

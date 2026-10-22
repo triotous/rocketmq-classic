@@ -4,12 +4,13 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        ConsumeStats, ConsumerListByGroupResponseBody, DataVersion, GetConsumerStatusBody,
-        GetLiteGroupInfoResponseBody, LiteLagInfo, LiteSubscriptionAction,
+        ConsumeQueueData, ConsumeStats, ConsumerListByGroupResponseBody, DataVersion,
+        GetConsumerStatusBody, GetLiteGroupInfoResponseBody, LiteLagInfo, LiteSubscriptionAction,
         LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
         LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType, OffsetWrapper,
-        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
-        SubscriptionGroupWrapper, TopicConfig, TopicConfigSerializeWrapper, UnlockBatchRequestBody,
+        QueryAssignmentRequestBody, QueryConsumeQueueResponseBody, ResetOffsetBody,
+        SetMessageRequestModeRequestBody, SubscriptionGroupWrapper, TopicConfig,
+        TopicConfigSerializeWrapper, UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
@@ -39,9 +40,10 @@ use rocketmq_classic_protocol::{
         NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
         PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
         PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
-        QueryConsumerOffsetRequestHeader, QueryConsumerOffsetResponseHeader,
-        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
+        PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
+        QueryConsumerOffsetResponseHeader, QueryCorrectionOffsetRequestHeader,
+        QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RecallMessageRequestHeader,
         RecallMessageResponseHeader, RemoveBrokerRequestHeader, ReplyMessageRequestHeader,
@@ -183,6 +185,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-get-all-subscription-group-response.bin",
         "header-get-all-subscription-group-response",
         0,
+    );
+    write_oracle_header::<QueryConsumeQueueRequestHeader>(
+        output,
+        "typed-query-consume-queue-request.bin",
+        "header-query-consume-queue-request",
+        321,
     );
     write_oracle_header::<GetTopicsByClusterRequestHeader>(
         output,
@@ -954,6 +962,34 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-subscription-group-wrapper.bin",
         201,
         &group_wrapper,
+    );
+
+    let mut subscription_data = rocketmq_classic_protocol::heartbeat::SubscriptionData::new(
+        Some("orders".into()),
+        Some("*".into()),
+    );
+    subscription_data.set_sub_version(1234);
+    let mut consume_queue_row = ConsumeQueueData::default();
+    consume_queue_row.set_physic_offset(987_654_321);
+    consume_queue_row.set_physic_size(128);
+    consume_queue_row.set_tags_code(171_234);
+    consume_queue_row.set_extend_data_json(Some("{\"filterBitMap\":\"AQID\"}".into()));
+    consume_queue_row.set_bit_map(Some("1010".into()));
+    consume_queue_row.set_eval(true);
+    consume_queue_row.set_msg(Some("message-body".into()));
+    let mut consume_queue_body = QueryConsumeQueueResponseBody::default();
+    consume_queue_body.set_subscription_data(Some(SharedValue::new(subscription_data)));
+    consume_queue_body.set_filter_data(Some("filter-data".into()));
+    consume_queue_body.set_queue_data(Some(SharedValue::new(vec![Some(SharedValue::new(
+        consume_queue_row,
+    ))])));
+    consume_queue_body.set_max_queue_index(20);
+    consume_queue_body.set_min_queue_index(4);
+    write_body(
+        output,
+        "body-query-consume-queue.bin",
+        321,
+        &consume_queue_body,
     );
 
     let mut request_mode = SetMessageRequestModeRequestBody::default();

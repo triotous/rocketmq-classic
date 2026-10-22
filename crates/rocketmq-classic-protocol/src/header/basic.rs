@@ -180,6 +180,7 @@ impl_rpc_request_header_semantics!(
     QueryTopicsByConsumerRequestHeader,
     QuerySubscriptionByConsumerRequestHeader,
     QueryTopicConsumeByWhoRequestHeader,
+    QueryConsumeQueueRequestHeader,
     QueryCorrectionOffsetRequestHeader,
     GetTopicStatsInfoRequestHeader,
     GetTopicConfigRequestHeader,
@@ -704,6 +705,114 @@ pub struct GetTopicConfigRequestHeader {
     logical: Option<bool>,
 }
 
+/// Java `QueryConsumeQueueRequestHeader`. Its primitive pagination values keep
+/// their zero defaults, while topic/group and inherited RPC fields stay nullable.
+#[derive(Debug, Clone, Default)]
+pub struct QueryConsumeQueueRequestHeader {
+    topic: Option<String>,
+    queue_id: i32,
+    index: i64,
+    count: i32,
+    consumer_group: Option<String>,
+    broker_name: Option<String>,
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    logical: Option<bool>,
+    oneway: Option<bool>,
+}
+
+impl QueryConsumeQueueRequestHeader {
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_queue_id(&self) -> i32 {
+        self.queue_id
+    }
+
+    pub fn set_queue_id(&mut self, value: i32) {
+        self.queue_id = value;
+    }
+
+    pub fn get_index(&self) -> i64 {
+        self.index
+    }
+
+    pub fn set_index(&mut self, value: i64) {
+        self.index = value;
+    }
+
+    pub fn get_count(&self) -> i32 {
+        self.count
+    }
+
+    pub fn set_count(&mut self, value: i32) {
+        self.count = value;
+    }
+
+    pub fn get_consumer_group(&self) -> Option<&str> {
+        self.consumer_group.as_deref()
+    }
+
+    pub fn set_consumer_group(&mut self, value: Option<String>) {
+        self.consumer_group = value;
+    }
+
+    pub fn get_broker_name(&self) -> Option<&str> {
+        self.broker_name.as_deref()
+    }
+
+    pub fn set_broker_name(&mut self, value: Option<String>) {
+        self.broker_name = value;
+    }
+
+    #[deprecated(note = "use get_broker_name")]
+    pub fn get_bname(&self) -> Option<&str> {
+        self.get_broker_name()
+    }
+
+    #[deprecated(note = "use set_broker_name")]
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.set_broker_name(value);
+    }
+
+    pub fn get_namespace(&self) -> Option<&str> {
+        self.namespace.as_deref()
+    }
+
+    pub fn set_namespace(&mut self, value: Option<String>) {
+        self.namespace = value;
+    }
+
+    pub fn get_namespaced(&self) -> Option<bool> {
+        self.namespaced
+    }
+
+    pub fn set_namespaced(&mut self, value: Option<bool>) {
+        self.namespaced = value;
+    }
+
+    pub fn get_lo(&self) -> Option<bool> {
+        self.logical
+    }
+
+    pub fn set_lo(&mut self, value: Option<bool>) {
+        self.logical = value;
+    }
+
+    pub fn get_oneway(&self) -> Option<bool> {
+        self.oneway
+    }
+
+    pub fn set_oneway(&mut self, value: Option<bool>) {
+        self.oneway = value;
+    }
+}
+
 /// Java `GetAllSubscriptionGroupRequestHeader`. Its annotated sequence remains
 /// nullable because `checkFields()` is a no-op.
 #[derive(Debug, Clone, Default)]
@@ -1037,6 +1146,51 @@ impl CommandHeader for GetAllTopicConfigResponseHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             total_topic_num: optional_i32(fields, "totalTopicNum")?,
+        })
+    }
+}
+
+impl CommandHeader for QueryConsumeQueueRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert("queueId".into(), self.queue_id.to_string());
+        fields.insert("index".into(), self.index.to_string());
+        fields.insert("count".into(), self.count.to_string());
+        put_optional(fields, "consumerGroup", self.consumer_group.as_deref());
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "lo", self.logical);
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Self::decode_fields_with_mode(fields, false)
+    }
+
+    fn decode_fields_with_mode(
+        fields: &HeaderMap,
+        _use_fast_encode: bool,
+    ) -> Result<Self, ProtocolError> {
+        // Java's reflective header decoder retains primitive zero defaults when
+        // an incoming numeric field is absent or malformed in either mode.
+        Ok(Self {
+            topic: optional_string(fields, "topic"),
+            queue_id: optional_i32(fields, "queueId")
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            index: optional_i64(fields, "index")
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            count: optional_i32(fields, "count")
+                .unwrap_or_default()
+                .unwrap_or_default(),
+            consumer_group: optional_string(fields, "consumerGroup"),
+            broker_name: optional_string(fields, "bname"),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            logical: optional_java_boolean(fields, "lo"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }

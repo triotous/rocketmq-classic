@@ -11,10 +11,10 @@ use rocketmq_classic_protocol::{
         ConsumeStats, ConsumeStatsList, ConsumerConnection, ConsumerRunningInfoBody,
         CreateTopicListRequestBody, DataVersion, DeleteSubscriptionGroupListRequestBody,
         DeleteTopicListRequestBody, GroupList, HaRuntimeInfo, KvTable, ProducerConnection,
-        ProducerTableInfo, QueryCorrectionOffsetBody, QuerySubscriptionResponseBody, QueueTimeSpan,
-        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, SubscriptionGroupWrapper,
-        TopicConfig, TopicConfigAndQueueMapping, TopicConfigSerializeWrapper, TopicList,
-        TopicStatsTable,
+        ProducerTableInfo, QueryConsumeQueueResponseBody, QueryCorrectionOffsetBody,
+        QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
+        SubscriptionGroupList, SubscriptionGroupWrapper, TopicConfig, TopicConfigAndQueueMapping,
+        TopicConfigSerializeWrapper, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -31,8 +31,8 @@ use rocketmq_classic_protocol::{
         GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
         GetSubscriptionGroupConfigRequestHeader, GetTopicConfigRequestHeader,
         GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        QueryConsumeQueueRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
@@ -1440,6 +1440,58 @@ impl MQClientApi {
                 reason: error.to_string(),
             }
         })
+    }
+
+    /// Reads a Broker's consume-queue entries through Java
+    /// `MQClientAPIImpl.queryConsumeQueue` (request 321).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn query_consume_queue(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        queue_id: i32,
+        index: i64,
+        count: i32,
+        consumer_group: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<QueryConsumeQueueResponseBody>, RpcError> {
+        let code = request::QUERY_CONSUME_QUEUE;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = QueryConsumeQueueRequestHeader::default();
+        header.set_topic(topic.map(str::to_owned));
+        header.set_queue_id(queue_id);
+        header.set_index(index);
+        header.set_count(count);
+        header.set_consumer_group(consumer_group.map(str::to_owned));
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        QueryConsumeQueueResponseBody::java_decode_nullable(reply.body.as_deref()).map_err(
+            |error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            },
+        )
     }
 
     /// Reads one Broker's complete topic configuration snapshot through Java
@@ -3064,6 +3116,16 @@ mod tests {
                         "clientAddr": "consumer-a"
                     }),
                 ),
+                (
+                    request::QUERY_CONSUME_QUEUE,
+                    serde_json::json!({
+                        "topic": "orders",
+                        "queueId": "2",
+                        "index": "13",
+                        "count": "4",
+                        "consumerGroup": "workers"
+                    }),
+                ),
             ] {
                 let mut length = [0_u8; 4];
                 stream.read_exact(&mut length).await.unwrap();
@@ -3084,8 +3146,13 @@ mod tests {
                 let mut reply = RemotingCommand {
                     code: response::SUCCESS,
                     opaque: command.opaque,
-                    body: (expected_code == request::INVOKE_BROKER_TO_GET_CONSUMER_STATUS)
-                        .then(|| br#"{"consumerTable":{"consumer-a":{}}}"#.to_vec()),
+                    body: match expected_code {
+                        request::INVOKE_BROKER_TO_GET_CONSUMER_STATUS => {
+                            Some(br#"{"consumerTable":{"consumer-a":{}}}"#.to_vec())
+                        }
+                        request::QUERY_CONSUME_QUEUE => Some(b"{}".to_vec()),
+                        _ => None,
+                    },
                     ..Default::default()
                 };
                 reply.mark_response();
@@ -3123,6 +3190,27 @@ mod tests {
             .await
             .unwrap();
         assert!(status.is_some());
+        let query_consume_queue_case = serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../../../fixtures/producer/core.json"
+        ))
+        .unwrap();
+        let vip_fixture_case = query_consume_queue_case["queryConsumeQueueOperations"]["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "queue-vip-address")
+            .unwrap();
+        assert_eq!(vip_fixture_case["vipEnabled"], true);
+        assert_eq!(
+            vip_fixture_case["requests"][0]["requestCode"],
+            request::QUERY_CONSUME_QUEUE
+        );
+        assert_eq!(vip_fixture_case["requests"][0]["address"], "broker-a:10909");
+        let queue = api
+            .query_consume_queue(&address, Some("orders"), 2, 13, 4, Some("workers"), 2000)
+            .await
+            .unwrap();
+        assert_eq!(queue.unwrap().get_max_queue_index(), 0);
         peer.await.unwrap();
         remoting.shutdown().await;
     }

@@ -298,6 +298,19 @@ public final class ProducerCoreFixtures {
         result.put("subscriptionGroupWrapperApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper.class));
         result.put("getAllSubscriptionGroupOperations", getAllSubscriptionGroupOperations());
+        result.put("queryConsumeQueueApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("queryConsumeQueue"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("queryConsumeQueueRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.QueryConsumeQueueRequestHeader.class));
+        result.put("queryConsumeQueueResponseBodyApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.QueryConsumeQueueResponseBody.class));
+        result.put("consumeQueueDataApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData.class));
+        result.put("queryConsumeQueueOperations", queryConsumeQueueOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -2743,6 +2756,133 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{"));
         Map<String, Object> result = new TreeMap<>();
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> queryConsumeQueueOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(queryConsumeQueueCase("queue-populated", "orders", 2, 9_876_543_210L,
+            16, "workers", false, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            queryConsumeQueueBodyJson()));
+        cases.add(queryConsumeQueueCase("queue-defaults", "orders", 0, 0, 0, "workers", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{}"));
+        cases.add(queryConsumeQueueCase("queue-null-result", "orders", 1, 4, 3, "workers", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "null"));
+        cases.add(queryConsumeQueueCase("queue-null-fields-and-row", "orders", 1, 4, 3, "workers",
+            false, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"subscriptionData\":null,\"filterData\":null,\"queueData\":[null,{}],"
+                + "\"maxQueueIndex\":null,\"minQueueIndex\":null}"));
+        cases.add(queryConsumeQueueCase("queue-success-no-body", "orders", 1, 4, 3, "workers", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(queryConsumeQueueCase("queue-null-topic-group", null, 0, 0, 0, null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{}"));
+        cases.add(queryConsumeQueueCase("queue-broker-error", "orders", 1, 4, 3, "workers", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "consume queue unavailable", null));
+        cases.add(queryConsumeQueueCase("queue-invalid-json", "orders", 1, 4, 3, "workers", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{"));
+        cases.add(queryConsumeQueueCase("queue-vip-address", "orders", 2, 13, 4, "workers", true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{}"));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        result.put("consumeQueueDataToString", queryConsumeQueueRowSample().toString());
+        return result;
+    }
+
+    private static String queryConsumeQueueBodyJson() {
+        org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData subscription =
+            new org.apache.rocketmq.remoting.protocol.heartbeat.SubscriptionData("orders", "*");
+        subscription.setSubVersion(1234L);
+        org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData row = queryConsumeQueueRowSample();
+        org.apache.rocketmq.remoting.protocol.body.QueryConsumeQueueResponseBody body =
+            new org.apache.rocketmq.remoting.protocol.body.QueryConsumeQueueResponseBody();
+        body.setSubscriptionData(subscription);
+        body.setFilterData("filter-data");
+        body.setQueueData(List.of(row));
+        body.setMaxQueueIndex(20L);
+        body.setMinQueueIndex(4L);
+        return JSON.toJSONString(body);
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData
+        queryConsumeQueueRowSample() {
+        org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData row =
+            new org.apache.rocketmq.remoting.protocol.body.ConsumeQueueData();
+        row.setPhysicOffset(987_654_321L);
+        row.setPhysicSize(128);
+        row.setTagsCode(171_234L);
+        row.setExtendDataJson("{\"filterBitMap\":\"AQID\"}");
+        row.setBitMap("1010");
+        row.setEval(true);
+        row.setMsg("message-body");
+        return row;
+    }
+
+    private static Map<String, Object> queryConsumeQueueCase(
+        String name, String topic, int queueId, long index, int count, String consumerGroup,
+        boolean vipEnabled, int responseCode, String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("query-consume-queue-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            RemotingCommand response = RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("topic", topic);
+        result.put("queueId", queueId);
+        result.put("index", index);
+        result.put("count", count);
+        result.put("consumerGroup", consumerGroup);
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.QueryConsumeQueueResponseBody received =
+                api.queryConsumeQueue("broker-a:10911", topic, queueId, index, count,
+                    consumerGroup, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", received == null);
+            if (received != null) result.put("resultJson", JSON.toJSONString(received));
+        } catch (MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 
