@@ -197,6 +197,7 @@ impl_rpc_request_header_semantics!(
     GetConsumerConnectionListRequestHeader,
     GetConsumeStatsRequestHeader,
     GetConsumerRunningInfoRequestHeader,
+    CloneGroupOffsetRequestHeader,
     PopMessageRequestHeader,
     PopLiteMessageRequestHeader,
     AckMessageRequestHeader,
@@ -1236,6 +1237,82 @@ impl CommandHeader for RemoveBrokerRequestHeader {
             broker_cluster_name: optional_string(fields, "brokerClusterName"),
             broker_name: optional_string(fields, "brokerName"),
             broker_id: optional_i64(fields, "brokerId")?,
+        })
+    }
+}
+
+/// Pinned Java `CloneGroupOffsetRequestHeader`. Its `checkFields()` is a
+/// no-op, so nullable source/destination groups and topic remain accepted at
+/// the client request boundary. The inherited `RpcRequestHeader` equality and
+/// hash contract considers only its four inherited fields.
+#[derive(Debug, Clone, Default)]
+pub struct CloneGroupOffsetRequestHeader {
+    pub(crate) namespace: Option<String>,
+    pub(crate) namespaced: Option<bool>,
+    pub(crate) broker_name: Option<String>,
+    pub(crate) oneway: Option<bool>,
+    pub(crate) src_group: Option<String>,
+    pub(crate) dest_group: Option<String>,
+    pub(crate) topic: Option<String>,
+    pub(crate) offline: bool,
+}
+
+impl CloneGroupOffsetRequestHeader {
+    pub fn get_src_group(&self) -> Option<&str> {
+        self.src_group.as_deref()
+    }
+
+    pub fn set_src_group(&mut self, value: Option<String>) {
+        self.src_group = value;
+    }
+
+    pub fn get_dest_group(&self) -> Option<&str> {
+        self.dest_group.as_deref()
+    }
+
+    pub fn set_dest_group(&mut self, value: Option<String>) {
+        self.dest_group = value;
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn is_offline(&self) -> bool {
+        self.offline
+    }
+
+    pub fn set_offline(&mut self, value: bool) {
+        self.offline = value;
+    }
+}
+
+impl CommandHeader for CloneGroupOffsetRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "srcGroup", self.src_group.as_deref());
+        put_optional(fields, "destGroup", self.dest_group.as_deref());
+        put_optional(fields, "topic", self.topic.as_deref());
+        fields.insert("offline".to_owned(), self.offline.to_string());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
+            src_group: optional_string(fields, "srcGroup"),
+            dest_group: optional_string(fields, "destGroup"),
+            topic: optional_string(fields, "topic"),
+            offline: optional_java_boolean(fields, "offline").unwrap_or_default(),
         })
     }
 }
@@ -5948,6 +6025,7 @@ impl_rpc_request_header_accessors!(
     GetConsumerConnectionListRequestHeader,
     GetConsumeStatsRequestHeader,
     GetConsumerRunningInfoRequestHeader,
+    CloneGroupOffsetRequestHeader,
     PopMessageRequestHeader,
     AckMessageRequestHeader,
     ChangeInvisibleTimeRequestHeader,

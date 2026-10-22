@@ -16,9 +16,9 @@ use rocketmq_classic_protocol::{
         AckMessageRequestHeader, AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
-        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
-        ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader,
+        CloneGroupOffsetRequestHeader, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
+        ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
@@ -238,6 +238,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-remove-broker-request.bin",
         "header-remove-broker-request",
         903,
+    );
+    write_oracle_header::<CloneGroupOffsetRequestHeader>(
+        output,
+        "typed-clone-group-offset-request.bin",
+        "header-clone-group-offset-request",
+        314,
     );
     write_oracle_header::<WipeWritePermOfBrokerResponseHeader>(
         output,

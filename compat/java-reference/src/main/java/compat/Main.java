@@ -691,6 +691,17 @@ public final class Main {
         removeBroker.setBrokerName("broker-a");
         removeBroker.setBrokerId(Long.MIN_VALUE);
         writeTypedHeaderFixture(output, "remove-broker-request", 903, removeBroker);
+        org.apache.rocketmq.remoting.protocol.header.CloneGroupOffsetRequestHeader cloneGroupOffset =
+            new org.apache.rocketmq.remoting.protocol.header.CloneGroupOffsetRequestHeader();
+        cloneGroupOffset.setSrcGroup("source");
+        cloneGroupOffset.setDestGroup("destination");
+        cloneGroupOffset.setTopic("orders");
+        cloneGroupOffset.setOffline(true);
+        cloneGroupOffset.setNamespace("tenant");
+        cloneGroupOffset.setNamespaced(true);
+        cloneGroupOffset.setBrokerName("broker-a");
+        cloneGroupOffset.setOneway(false);
+        writeTypedHeaderFixture(output, "clone-group-offset-request", 314, cloneGroupOffset);
         org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader wipeWritePermResponse =
             new org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader();
         wipeWritePermResponse.setWipeTopicCount(17);
@@ -1143,7 +1154,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 85, "all Rust typed header fixtures were supplied");
+            require(count == 86, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1182,6 +1193,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-add-write-perm-request.bin", 327);
             assertAllExtFields(byName, "typed-add-broker-request.bin", 902);
             assertAllExtFields(byName, "typed-remove-broker-request.bin", 903);
+            assertAllExtFields(byName, "typed-clone-group-offset-request.bin", 314);
             assertAllExtFields(byName, "typed-wipe-write-perm-response.bin", 0);
             assertAllExtFields(byName, "typed-add-write-perm-response.bin", 0);
             assertAllExtFields(byName, "typed-delete-subscription-group-request.bin", 207);
@@ -1407,6 +1419,7 @@ public final class Main {
             case "typed-add-write-perm-request.bin": fixtureStem = "header-add-write-perm-request"; break;
             case "typed-add-broker-request.bin": fixtureStem = "header-add-broker-request"; break;
             case "typed-remove-broker-request.bin": fixtureStem = "header-remove-broker-request"; break;
+            case "typed-clone-group-offset-request.bin": fixtureStem = "header-clone-group-offset-request"; break;
             case "typed-wipe-write-perm-response.bin": fixtureStem = "header-wipe-write-perm-response"; break;
             case "typed-add-write-perm-response.bin": fixtureStem = "header-add-write-perm-response"; break;
             case "typed-delete-subscription-group-request.bin": fixtureStem = "header-delete-subscription-group-request"; break;

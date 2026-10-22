@@ -1949,6 +1949,76 @@ async fn add_and_remove_broker_match_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn clone_group_offset_matches_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["cloneGroupOffsetApi"],
+        json!([
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.cloneGroupOffset(java.lang.String,java.lang.String,java.lang.String,java.lang.String,boolean,long)"
+        ])
+    );
+    let cases = fixture["cloneGroupOffsetOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 3);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(expected_request["timeoutMillis"], timeout_millis);
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, None).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .clone_group_offset(
+                &addr,
+                case["srcGroup"].as_str(),
+                case["destGroup"].as_str(),
+                case["topic"].as_str(),
+                case["offline"].as_bool().unwrap(),
+                timeout_millis,
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            result.unwrap();
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark: Some(error_remark),
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && Some(error_remark.as_str()) == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        let actual_fields = request
+            .ext_fields
+            .map(serde_json::to_value)
+            .transpose()
+            .unwrap()
+            .unwrap_or_else(|| json!({}));
+        assert_eq!(actual_fields, expected_request["extFields"]);
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn add_broker_honors_the_java_timeout_argument() {
     let (addr, peer) =
         scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;

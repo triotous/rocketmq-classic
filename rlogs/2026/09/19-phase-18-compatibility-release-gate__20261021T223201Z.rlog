@@ -124,3 +124,24 @@ remain untouched and unstaged.
   declared methods total, with constructors listed separately.
 - No implementation change was needed; the focused Rust tests and pinned Maven
   verification recorded in the preceding entry passed for these methods.
+
+## P18-V01 `cloneGroupOffset` direct RPC closure — 2026-10-22
+
+- Added the pinned Java 5.5.1 `CloneGroupOffsetRequestHeader` wire model and
+  `MQClientApi::clone_group_offset` for request 314, including inherited RPC
+  header fields, nullable string inputs, primitive `offline`, configured VIP
+  channel conversion, caller timeout, and response classification.
+- Added invoked Java fixtures for normal inputs, null string inputs, and an
+  error response; added typed Java↔Rust header fixtures and a Rust loopback RPC
+  test. Fixture hash: `fixtures/producer/core.json`
+  `c7895cfff96e0150878d761336c34b4ddfec8064249d4af994a3f6796959a8d9`.
+- `cargo test -p rocketmq-classic-core --test admin_rpc clone_group_offset
+  --locked` passed (1 test). `cargo test -p rocketmq-classic-protocol --test
+  header_inventory --locked` passed (13 tests). `cargo fmt --all -- --check`
+  and `git diff --check` passed. Pinned `mvn -f compat/java-reference/pom.xml
+  verify` passed: 37 scenarios, 86 typed headers, and 16 typed bodies.
+- The first Maven attempts exposed a duplicate accessor-macro invocation and
+  missing Java fixture routing for the new typed header. Both were fixed before
+  the successful run. Broad P18-V01 remains open; current-revision GitHub
+  Ubuntu/native Windows P18-V04 evidence remains open. No remote CI, Broker,
+  or Docker run was performed. Phase 19 worktree paths remain unstaged.

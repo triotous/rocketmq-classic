@@ -1817,6 +1817,21 @@ header fixtures are checked in. Producer core fixture SHA-256:
 `9510b46415e7f00c7932c95d9e33dbb02e9b9cc56d1afecec01dfede60ae5e6a`.
 This closes these direct API/header rows only; broad P18-V01 remains open.
 
+## Direct `cloneGroupOffset` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.cloneGroupOffset(String,String,String,String,boolean,long)`
+sends request 314 with nullable `srcGroup`, `destGroup`, and `topic`, plus the
+primitive `offline` flag. Core exposes `MQClientApi::clone_group_offset`, keeps
+the caller timeout, applies the configured Broker VIP address transform, and
+returns success or a Broker response error. The typed
+`CloneGroupOffsetRequestHeader` retains the four inherited `RpcRequestHeader`
+fields and Java's no-op `checkFields()` behavior. Invoked Java fixtures and
+Rust loopback cases cover ordinary and null string inputs, both `offline`
+values, exact wire fields, and an error response; typed Java↔Rust header
+fixtures cover all child and inherited fields. Producer core fixture SHA-256:
+`c7895cfff96e0150878d761336c34b4ddfec8064249d4af994a3f6796959a8d9`. This
+closes this direct RPC/header row only; broad P18-V01 remains open.
+
 ## `MessageClientExt` subtype offset-ID dispatch — 2026-10-21
 
 A caller-defined Java subclass of `MessageClientExt` can override

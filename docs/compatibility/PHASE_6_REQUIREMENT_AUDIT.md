@@ -1707,6 +1707,20 @@ pinned Maven `verify` passes with 37 scenarios, 85 typed headers, and 16 typed
 bodies. This closes the direct Broker registration slice; broad P18-V01
 remains open.
 
+## P18-V01 direct `cloneGroupOffset` Broker API — 2026-10-22
+
+The pinned Java client method sends request 314 using nullable source group,
+destination group, and topic fields, a primitive `offline` value, the configured
+VIP-channel transform, and the supplied timeout. Rust now provides
+`MQClientApi::clone_group_offset` and a typed request header preserving Java's
+inherited RPC fields and no-op validation. Java invocation fixtures and a Rust
+loopback test compare exact request fields, null inputs, success, and response
+errors; typed header cross-decodes cover all fields. Producer core fixture
+SHA-256: `c7895cfff96e0150878d761336c34b4ddfec8064249d4af994a3f6796959a8d9`.
+This closes this surfaced operation only; exhaustive P18-V01 API/input/reverse
+export reconciliation remains open, as do P18-V04 native Windows and current
+revision GitHub CI evidence.
+
 ## P18-V01 `MessageClientExt` inherited offset-ID overrides — 2026-10-21
 
 Rust now dispatches Java `MessageClientExt` subclasses' virtual

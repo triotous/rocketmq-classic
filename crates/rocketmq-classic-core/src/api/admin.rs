@@ -18,10 +18,10 @@ use rocketmq_classic_protocol::{
     header::{
         AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
-        CommandHeader, ConsumeMessageDirectlyResultRequestHeader, CreateTopicRequestHeader,
-        DeleteKvConfigRequestHeader, DeleteSubscriptionGroupRequestHeader,
-        DeleteTopicFromNamesrvRequestHeader, DeleteTopicRequestHeader,
-        ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        CloneGroupOffsetRequestHeader, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
+        CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
+        DeleteTopicRequestHeader, ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
         GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
@@ -583,6 +583,43 @@ impl MQClientApi {
         let reply = self
             .request(
                 addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        classify(reply, code, addr)?;
+        Ok(())
+    }
+
+    /// Clones one consumer group's offsets through Java
+    /// `MQClientAPIImpl.cloneGroupOffset`. It retains nullable Java string
+    /// inputs, configured VIP address conversion, and the caller's timeout.
+    pub async fn clone_group_offset(
+        &self,
+        addr: &str,
+        src_group: Option<&str>,
+        dest_group: Option<&str>,
+        topic: Option<&str>,
+        offline: bool,
+        timeout_millis: i64,
+    ) -> Result<(), RpcError> {
+        let code = request::CLONE_GROUP_OFFSET;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = CloneGroupOffsetRequestHeader::default();
+        header.set_src_group(src_group.map(str::to_owned));
+        header.set_dest_group(dest_group.map(str::to_owned));
+        header.set_topic(topic.map(str::to_owned));
+        header.set_offline(offline);
+        let reply = self
+            .request(
+                &broker_addr,
                 code,
                 &header,
                 None,

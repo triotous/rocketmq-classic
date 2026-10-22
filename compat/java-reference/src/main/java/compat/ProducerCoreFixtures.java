@@ -359,6 +359,15 @@ public final class ProducerCoreFixtures {
             .map(ProducerCoreFixtures::methodSignature)
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
+        result.put("cloneGroupOffsetApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("cloneGroupOffset"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("cloneGroupOffsetRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.CloneGroupOffsetRequestHeader.class));
+        result.put("cloneGroupOffsetOperations", cloneGroupOffsetOperations());
         result.put("addBrokerRequestHeaderApi",
             publicApiSurface(org.apache.rocketmq.remoting.protocol.header.AddBrokerRequestHeader.class));
         result.put("removeBrokerRequestHeaderApi",
@@ -2871,6 +2880,73 @@ public final class ProducerCoreFixtures {
             null, null, Long.MAX_VALUE, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
             "broker removal rejected"));
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> cloneGroupOffsetOperations() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(cloneGroupOffsetCase("clone-success", "source", "destination", "orders",
+            false, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(cloneGroupOffsetCase("clone-null-inputs", null, null, null,
+            true, org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(cloneGroupOffsetCase("clone-error", "source", "destination", "orders",
+            true, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "group offset clone rejected"));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> cloneGroupOffsetCase(
+        String name, String srcGroup, String destGroup, String topic, boolean offline,
+        int responseCode, String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("clone-group-offset-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            return org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                .createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("srcGroup", srcGroup);
+        result.put("destGroup", destGroup);
+        result.put("topic", topic);
+        result.put("offline", offline);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.cloneGroupOffset("broker-a:10911", srcGroup, destGroup, topic, offline, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 
