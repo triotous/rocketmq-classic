@@ -30,6 +30,8 @@ run_repeated remoting-connection-publication \
     cargo test --locked -p rocketmq-classic-remoting --lib connection_creation_racing_shutdown_closes_unpublished_or_published_socket
 run_repeated remoting-start-stop-ownership \
     cargo test --locked -p rocketmq-classic-remoting --lib start_and_shutdown_race_leaves_no_owned_tasks_or_connections
+run_repeated remoting-public-executor-shutdown-boundary \
+    cargo test --offline --locked -p rocketmq-classic-remoting --lib shutdown_waits_for_channel_event_worker_only_until_java_join_limit
 run_repeated remoting-reconnect \
     cargo test --locked -p rocketmq-classic-remoting --test transport p3_go_away_retries_once_on_a_new_connection
 run_repeated remoting-pending-callback-shutdown \
@@ -55,4 +57,4 @@ run_repeated consumer-stale-generation-fence \
 run_repeated orderly-slow-callback-shutdown \
     cargo test --locked -p rocketmq-classic-consumer --lib orderly_rebalance_bounds_slow_callback_wait_and_never_commits_dropped_work
 
-printf 'offline deterministic race/leak smoke passed: 16 cases x 3 repetitions\n'
+printf 'offline deterministic race/leak smoke passed: 17 cases x 3 repetitions\n'
