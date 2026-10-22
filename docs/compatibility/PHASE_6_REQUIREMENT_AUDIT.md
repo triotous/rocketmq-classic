@@ -3025,3 +3025,17 @@ route/VIP cases, 106 typed headers, 19 typed bodies) pass. This closes the
 compact expansion subtype slice only; broad P18-V01 reconciliation, current
 remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V01 `MessageDecoder.countInnerMsgNum` cursor disposition — 2026-10-22
+
+Pinned Java advances the supplied buffer while counting, leaving it at the
+limit for valid compact batches. The only pinned production caller in
+`SendMessageProcessor` wraps `messageExtBatch.getBody()` in a temporary
+`ByteBuffer`, uses the returned count to set `PROPERTY_INNER_NUM`, then drops
+the buffer; no production flow observes its final position. Rust's
+`count_inner_messages(&[u8])` preserves the count capability and uses an
+immutable slice, so the discarded Java cursor state is a source-confirmed
+API-shape adaptation. The compact API fixture already compares valid counts
+and malformed-size outcomes. This resolves the count-helper cursor review
+item; broad P18-V01 reconciliation remains open. No tests were run for this
+docs-only update.
