@@ -3086,6 +3086,14 @@ public final class ProducerCoreFixtures {
         result.put("constructed", topicConfigAndQueueMappingState(wrapper));
         result.put("getterPreservesMappingIdentity", wrapper.getMappingDetail() == detail);
 
+        TopicConfig nullFields = new TopicConfig();
+        nullFields.setTopicName(null);
+        nullFields.setTopicFilterType(null);
+        nullFields.setAttributes(null);
+        result.put("nullFields", topicConfigAndQueueMappingState(
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                nullFields, null)));
+
         source.setTopicName("source-mutated");
         source.setReadQueueNums(99);
         attributes.put("owner", "updated");

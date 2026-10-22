@@ -280,6 +280,20 @@ fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
         fixture["default"]["toString"].as_str().unwrap()
     );
 
+    let mut null_fields_config = TopicConfig::default();
+    null_fields_config.set_topic_name(None);
+    null_fields_config.set_topic_filter_type(None);
+    null_fields_config.set_attributes(None);
+    let null_fields_wrapper = TopicConfigAndQueueMapping::new(&null_fields_config, None);
+    assert_config_fields(
+        null_fields_wrapper.topic_config(),
+        &fixture["nullFields"]["topicConfig"],
+    );
+    assert_eq!(
+        null_fields_wrapper.java_to_string(),
+        fixture["nullFields"]["toString"].as_str().unwrap()
+    );
+
     let mut source = TopicConfig::with_topic_sys_flag("source-topic", 3, 4, 6, 7);
     let shared_attributes = SharedValue::new(attributes(&[("owner", Some("initial"))]));
     source.set_attributes_shared(Some(shared_attributes.clone()));
