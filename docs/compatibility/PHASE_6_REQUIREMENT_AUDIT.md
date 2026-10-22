@@ -3085,3 +3085,20 @@ tests pass under both UTC and Asia/Taipei; Windows GNU Core all-target check
 and Consumer test cross-compilation pass. This closes this decoder behavior
 slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
 native Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)
+
+The invoked Java fixture additionally runs `decodes(..., false)` and
+`decodesBatch(..., readBody=false, isClient=true/false)` on the valid-prefix
+plus malformed-tail input. The Rust regression compares those prefix counts
+with `client_decodes_with_body(false)` and `decode_many_compatible` configured
+with `read_body=false`, while asserting Java leaves each buffer at its limit.
+It also confirms the Rust client subtype and omitted body; Rust's byte-slice
+APIs expose no mutable cursor. Fixture SHA-256:
+`039d8dba7a268b43bc7e171f4f84bd739a0a3695c357e4ef7be35ded29c71a53`.
+
+The focused Common test, default and all-feature workspace tests, strict
+all-target/all-feature Clippy, formatting/diff checks, and pinned Maven verify
+pass. This closes only the body-skip dimension of this malformed-tail decoder
+slice; broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
+Windows runtime, and Phase 19 Broker/Docker evidence remain open.

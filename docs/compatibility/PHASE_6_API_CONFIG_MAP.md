@@ -2635,7 +2635,7 @@ as Common module functions and types. The method groups map as follows:
 | --- | --- | --- |
 | `encode(MessageExt,boolean)`, `encodeUniquely(MessageExt,boolean)` | `encode_message_ext`, `encode_message_ext_uniquely` | MessageExt encoder fixture covers V1/V2 hosts, standard/unique output, compression, padding and short store size. |
 | `decode(ByteBuffer,...)`, `clientDecode(ByteBuffer,boolean)` | `decode_one`, `decode_one_as_client`, `client_decode`, `DecodeOptions` | Invoked overload snapshots cover body, decompression, properties-string, CRC and client-ID choices; malformed store-size and nonpositive-length branches are recorded above. |
-| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `decode_many_compatible`, `decode_many_as_client_compatible`, `client_decodes`, `client_decodes_with_body` | Concatenated fixtures compare per-record data and consumed boundaries. Invoked malformed-tail fixtures cover `decodes` and `decodesBatch` with both client modes; compatible Rust paths return the valid prefix while strict `decode_many` APIs retain error reporting. |
+| `decodes`, `decodesBatch` | `decode_many`, `decode_many_as_client`, `decode_many_compatible`, `decode_many_as_client_compatible`, `client_decodes`, `client_decodes_with_body` | Concatenated fixtures compare per-record data and consumed boundaries. Invoked malformed-tail fixtures cover `decodes` and `decodesBatch` with both client modes and both `readBody` settings; compatible Rust paths return the valid prefix while strict `decode_many` APIs retain error reporting. |
 | `encodeMessage`, `encodeMessages`, `decodeMessage(ByteBuffer)`, `decodeMessages(ByteBuffer)`, `decodeMessage(MessageExt,List)` | `encode_compact_message(s)`, `decode_compact_message(s)`, `decode_inner_batch` | Compact API fixture covers single/batch bytes, decode results, batch expansion and malformed inputs. `decode_inner_batch` marks each expanded `MessageExt` as Java's runtime `MessageClientExt`, preserving virtual message-ID lookup, no-op `setMsgId`, offset-ID fallback and `UNIQ_KEY` precedence. The invoked fixture compares these inherited/subtype outcomes. |
 | `messageProperties2String`, `string2messageProperties`, `decodeProperties(ByteBuffer)` | `encode_properties_nullable`, `encode_nullable_property_entries`, `decode_properties_nullable`, `decode_record_properties` | Direct fixture covers null/empty/malformed property text, record offsets, cursor positions and truncation. |
 | `createMessageId(SocketAddress,...)`, `decodeMessageId(String)` | `create_message_id`, `decode_message_id` | Message ID API fixture compares IPv4/IPv6 output, setters, malformed hex, short values and ports. |
@@ -2694,3 +2694,22 @@ generic paths, subtype, body option, and strict errors. This closes the direct
 API/settings/source/input/error/control-flow/reverse-export reconciliation,
 current-revision remote Ubuntu CI, native Windows runtime, and Phase 19
 Broker/Docker evidence remain open.
+
+## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)
+
+The invoked malformed-tail fixture now also calls Java `decodes(..., false)`
+and `decodesBatch(..., readBody=false, isClient=true/false)`. It compares their
+prefix counts with Rust `client_decodes_with_body` and
+`decode_many_compatible` using `read_body=false`, and asserts Java leaves each
+buffer at its limit. Rust regressions confirm the client subtype is retained
+and the body is absent from the decoded value; Rust's byte-slice APIs expose no
+mutable cursor.
+The refreshed `fixtures/messages/records.json` SHA-256 is
+`039d8dba7a268b43bc7e171f4f84bd739a0a3695c357e4ef7be35ded29c71a53`.
+
+The focused Common regression, default and all-feature workspace tests,
+strict all-target/all-feature Clippy, formatting/diff checks, and pinned Maven
+verify pass. This closes the body-skip dimension of the malformed-tail
+decoder slice only; broad P18-V01 API/settings/source/input/error/control-flow/
+reverse-export reconciliation, current-revision remote Ubuntu CI, native
+Windows runtime, and Phase 19 Broker/Docker evidence remain open.
