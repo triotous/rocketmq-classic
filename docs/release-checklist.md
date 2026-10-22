@@ -7830,3 +7830,49 @@ owner-specific checks belong in the manual handoff.
   live runners. No push or external CI was run; protected Phase 19 worktree
   files remain unstaged. Run details:
   `rlogs/2026/10/22-phase-18-acl-locale-gate__20261022T174131Z.rlog`.
+
+## P18-V01 Lithuanian ACL IPv6 expansion locale parity — 2026-10-22 (`505bbe97`)
+
+- [x] `AclUtils.expandIP` now removes U+0307 after lowercase `i` and `j` under
+  Lithuanian locale casing, matching the pinned Java output before segment
+  padding. The oracle covers both triggering letters and `x`/dotless-`ı`
+  controls. ACL fixture SHA-256:
+  `da5c9ee1920ed89a997268afcc7eabd77fe53cb91315289179f5d305379ba340`.
+- [x] Focused locale tests and pinned Maven verification pass. The complete
+  locked default/all-feature workspace tests, strict workspace Clippy,
+  formatting/diff checks, differential self-test and 37-scenario manifest,
+  fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations), and
+  deterministic race/leak smoke (16 cases × 3) pass.
+- [x] Release examples, offline benchmark and strict benchmark Clippy pass.
+  Workspace metadata/dependency/license checks and all seven product package
+  listings pass; four Core Unique ID tests pass under UTC and Asia/Taipei.
+  Windows GNU Core checking and Consumer stack-capture cross-compilation pass.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision remote Ubuntu CI, native Windows
+  execution, and Phase 19 Broker/Docker validation remain open. The live-runner
+  check still reports 30 scenarios without local runners. No push or external
+  CI was run; protected Phase 19 files remain unstaged. Run record:
+  `rlogs/2026/10/22-phase-18-acl-lithuanian-locale-gate__20261022T180412Z.rlog`.
+
+## P18-V02 current local server-free gate refresh — 2026-10-22 (`505bbe97`)
+
+- [x] On the source tree committed as `505bbe97`, locked default and
+  all-feature workspace tests, strict all-target/all-feature Clippy,
+  formatting/diff checks, pinned Maven `verify` (37 scenarios, 36 route/VIP
+  cases, 106 typed headers and 19 typed bodies), differential self-test and
+  manifest validation pass.
+- [x] Fixed-seed fuzz smoke passes with 163 frame seeds, 11 message seeds,
+  2,784 mutations, 245 frame decodes and 112 message decodes. Deterministic
+  race/leak smoke passes 16 cases × 3. Release examples and offline benchmark
+  pass with strict benchmark Clippy.
+- [x] Workspace metadata/license/dependency checks and all seven product
+  package listings pass. Four Core Unique ID tests pass under UTC and
+  Asia/Taipei. Windows GNU Core all-target checking and Consumer stack-capture
+  `--no-run` cross-compilation pass; these do not establish native Windows
+  runtime behavior.
+- [ ] Broad P18-V01 reconciliation, remote Ubuntu CI, native Windows execution,
+  and Phase 19 Broker/Docker validation remain open. The differential live
+  runner check still reports 30 scenarios without local runners. No push or
+  external CI was run; protected Phase 19 worktree files remain unstaged.
+  Detailed run record:
+  `rlogs/2026/10/22-phase-18-acl-lithuanian-locale-gate__20261022T180412Z.rlog`.

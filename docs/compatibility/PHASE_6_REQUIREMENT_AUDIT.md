@@ -2846,3 +2846,23 @@ decoding of 106 typed headers and 19 typed bodies. This closes only the ACL
 helper locale slice; broad P18-V01 API/settings/input/error/control-flow and
 reverse-export reconciliation, remote Ubuntu CI, and native Windows runtime
 evidence remain open.
+
+## P18-V01 `AclUtils.expandIP` Lithuanian combining-dot parity — 2026-10-22 (`505bbe97`)
+
+Pinned Java `String.toUpperCase()` under `lt-LT` removes U+0307 immediately
+following lowercase `i` or `j`. Because public `AclUtils.expandIP` accepts
+unvalidated text and pads the resulting segments, this changes its returned
+string. Rust now reproduces those observed sequences. The invoked ACL fixture
+also checks `x` and dotless `ı` controls, where Java retains the combining dot;
+the fixture restores the prior JVM locale in `finally`. Fixture SHA-256:
+`da5c9ee1920ed89a997268afcc7eabd77fe53cb91315289179f5d305379ba340`.
+
+The focused ACL locale tests, pinned Maven `verify`, locked default and
+all-feature workspace tests, strict workspace Clippy, formatting/diff checks,
+differential self-test and 37-scenario manifest, fuzz smoke, race/leak smoke,
+release examples, offline benchmark and strict benchmark Clippy, workspace
+metadata/package checks, timezone Unique ID tests, and Windows GNU cross-checks
+pass on the source tree committed as `505bbe97`. This closes the observed
+Lithuanian input slice only; broad P18-V01 reconciliation, current-revision
+remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker evidence
+remain open.
