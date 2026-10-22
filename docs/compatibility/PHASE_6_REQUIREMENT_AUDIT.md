@@ -2220,3 +2220,22 @@ the invoked fixture; terminal cleanup removes the retained group. This closes
 the push/pull factory-start branch only. LitePull lifecycle, post-start
 consumer failures, and broad P18-V01 input/error/control-flow and
 reverse-export reconciliation remain open.
+
+## P18-V01 LitePull factory-start failure — 2026-10-22 (`ad7a0523`)
+
+Pinned Java 5.5.1 `DefaultLitePullConsumerImpl.start()` registers its group
+before starting `MQClientInstance`. With NameServer poll interval zero, the
+first start throws `IllegalArgumentException`; the LitePull Consumer and
+factory remain `START_FAILED`, the registration remains in the consumer table,
+and a retry throws `MQClientException`. The invoked oracle is
+`litePullFactoryStartFailure` in `fixtures/consumer/lifecycle.json` (SHA-256
+`26fadf1fbcc7b51c64e17c10626347dbc59a520279948f030ff6359b15195387`).
+
+Rust now keeps a distinct failed-start lifecycle for LitePull. A failed
+factory start retains the registered group, a later start reports the failed
+state, and shutdown leaves that failed state intact, matching the Java
+implementation's state transitions. The regression also checks the failed
+runtime state, runtime-manager identity and explicit terminal cleanup. This
+closes the LitePull factory-start failure slice; post-start Consumer failures
+and broad P18-V01 input/error/control-flow and reverse-export reconciliation
+remain open.

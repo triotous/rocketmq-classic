@@ -7230,3 +7230,35 @@ owner-specific checks belong in the manual handoff.
   Ubuntu CI, and native Windows stack-capture execution remain open. No Broker,
   Docker, publication or release action was performed; protected Phase 19
   worktree files remain unstaged.
+
+## P18-V01 LitePull factory-start parity and gate refresh — 2026-10-22 (`ad7a0523`)
+
+- [x] The invoked Java 5.5.1 LitePull probe confirms that an invalid factory
+  schedule throws `IllegalArgumentException`, leaves Consumer and factory in
+  `START_FAILED`, retains the consumer group, and makes a retry throw
+  `MQClientException`. Fixture:
+  `litePullFactoryStartFailure` in `fixtures/consumer/lifecycle.json` (SHA-256
+  `26fadf1fbcc7b51c64e17c10626347dbc59a520279948f030ff6359b15195387`). Rust
+  now preserves that failed lifecycle and registration; the regression checks
+  runtime identity and explicit cleanup.
+- [x] `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass. Strict workspace
+  all-target/all-feature Clippy, formatting, diff checks, differential
+  comparator self-test, all 37 manifest scenarios, and workspace
+  metadata/license/dependency checks pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes,
+  including Producer, push/pull Consumer and LitePull lifecycle fixtures,
+  37 scenarios, Java decoding of 106 typed headers and 19 typed bodies.
+  Fixed-seed fuzz smoke passes with 163 frame seeds, 11 message seeds, 2,784
+  mutations, 245 frame decodes and 112 message decodes. Deterministic
+  race/leak smoke passes all 16 cases × 3 repetitions.
+- [x] Release facade examples build; the offline benchmark compiles and runs.
+  Its current sample is recorded in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+  Core all-target Windows checking and the exact LitePull lifecycle regression
+  cross-compile for `x86_64-pc-windows-gnu`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. No Broker, Docker, publication
+  or release action was performed; protected Phase 19 worktree files remain
+  unstaged.
