@@ -2320,3 +2320,26 @@ tests, strict Clippy, formatting/diff checks, and pinned Maven verification
 pass. This closes the LitePull lifecycle/listener serialization race only;
 broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 LitePull running subscribe heartbeat and route refresh — 2026-10-22 (`f24f35d2`)
+
+Pinned Java 5.5.1 synchronizes all three `DefaultLitePullConsumerImpl.subscribe`
+overloads. When the Consumer is running, each overload stores the subscription,
+installs the relevant listener, sends a locked heartbeat, and immediately
+refreshes routes for every subscription. Fixture
+`litePullMethodSynchronization` now records all three synchronized overloads
+and has SHA-256
+`ec312b4648fc4942286ffbb1b329591e15327a9f43f27070b1a110048571d96a`.
+
+Rust LitePull subscription entry points are now async so they can complete the
+same runtime flow. They take the lifecycle gate, register the subscription and
+optional listener, suppress heartbeat failures like Java, then refresh every
+currently subscribed route before returning. The regression checks that the
+Broker heartbeat contains the added subscription and that NameServer receives
+route queries for both the original and added topic without waiting for the
+metadata poll. A lifecycle race regression also verifies subscriptions wait
+while startup holds the Java-equivalent monitor. Consumer package tests,
+strict Clippy, formatting/diff checks, and pinned Java Maven verification pass.
+This closes the LitePull live-subscription refresh slice only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
