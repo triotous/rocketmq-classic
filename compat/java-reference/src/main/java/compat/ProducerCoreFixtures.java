@@ -270,6 +270,21 @@ public final class ProducerCoreFixtures {
             .map(ProducerCoreFixtures::methodSignature)
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
+        result.put("getAllTopicConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("getAllTopicConfig"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("getAllTopicConfigRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigRequestHeader.class));
+        result.put("getAllTopicConfigResponseHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader.class));
+        result.put("dataVersionApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.DataVersion.class));
+        result.put("topicConfigSerializeWrapperApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper.class));
+        result.put("getAllTopicConfigOperations", getAllTopicConfigOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -2799,6 +2814,185 @@ public final class ProducerCoreFixtures {
             result.put("errorCode", error.getResponseCode());
             result.put("errorMessage", error.getMessage());
         } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> getAllTopicConfigOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(getAllTopicConfigCase("snapshot-single-page", 2345L, List.of(
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1000, 4,
+                "orders", "payments"), 2))));
+        cases.add(getAllTopicConfigCase("snapshot-multiple-pages", 2345L, List.of(
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1100, 5, "orders"), 3),
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1100, 5, "payments"), 3))));
+        cases.add(getAllTopicConfigCase("snapshot-version-changed", 2345L, List.of(
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1200, 6, "stale"), 3),
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(8, 1300, 7, "discarded"), 2),
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(8, 1300, 7,
+                "orders", "payments"), 2))));
+        cases.add(getAllTopicConfigCase("snapshot-legacy-no-total", 2345L, List.of(
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1400, 8,
+                "orders", "payments"), null))));
+        cases.add(getAllTopicConfigCase("snapshot-broker-error", 2345L, List.of(
+            allTopicConfigResponse(org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+                "topic snapshot unavailable", null, null))));
+        cases.add(getAllTopicConfigCase("snapshot-topic-not-exist", 2345L, List.of(
+            allTopicConfigResponse(org.apache.rocketmq.remoting.protocol.ResponseCode.TOPIC_NOT_EXIST,
+                "topic metadata unavailable", null, null))));
+        cases.add(getAllTopicConfigCase("snapshot-missing-body", 2345L, List.of(
+            allTopicConfigResponse(0, null, null, 1))));
+        cases.add(getAllTopicConfigCase("snapshot-null-table", 2345L, List.of(
+            allTopicConfigResponse(0, null,
+                "{\"dataVersion\":{\"counter\":1,\"stateVersion\":7,\"timestamp\":1500},\"topicConfigTable\":null}",
+                1))));
+        cases.add(getAllTopicConfigCase("snapshot-invalid-json", 2345L, List.of(
+            allTopicConfigResponse(0, null, "{", 1))));
+        cases.add(getAllTopicConfigCase("snapshot-invalid-total", 2345L, List.of(
+            allTopicConfigResponseWithFields(0, null, topicConfigWrapperJson(7, 1500, 9, "orders"),
+                Map.of("totalTopicNum", "invalid")))));
+        cases.add(getAllTopicConfigCase("snapshot-zero-timeout", 0L, List.of()));
+        cases.add(getAllTopicConfigCase("snapshot-timeout-after-page", 20L, List.of(
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1600, 10, "orders"), 3),
+            allTopicConfigResponse(0, null, topicConfigWrapperJson(7, 1600, 10, "payments"), 3)), 30));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static String topicConfigWrapperJson(
+        long stateVersion, long timestamp, long counter, String... topics) throws Exception {
+        org.apache.rocketmq.remoting.protocol.DataVersion dataVersion =
+            new org.apache.rocketmq.remoting.protocol.DataVersion();
+        dataVersion.setStateVersion(stateVersion);
+        dataVersion.setTimestamp(timestamp);
+        dataVersion.setCounter(new java.util.concurrent.atomic.AtomicLong(counter));
+        java.util.concurrent.ConcurrentMap<String, org.apache.rocketmq.common.TopicConfig> table =
+            new java.util.concurrent.ConcurrentHashMap<>();
+        for (String topic : topics) table.put(topic, new org.apache.rocketmq.common.TopicConfig(topic));
+        org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper wrapper =
+            new org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper();
+        wrapper.setDataVersion(dataVersion);
+        wrapper.setTopicConfigTable(table);
+        return new String(wrapper.encode(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.RemotingCommand allTopicConfigResponse(
+        int code, String remark, String body, Integer totalTopicNum) {
+        if (totalTopicNum == null) {
+            return allTopicConfigResponseWithFields(code, remark, body, null);
+        }
+        org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader header =
+            new org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader();
+        header.setTotalTopicNum(totalTopicNum);
+        org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommandWithHeader(code, header);
+        response.setRemark(remark);
+        if (body != null) response.setBody(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        response.makeCustomHeaderToNet();
+        return response;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.RemotingCommand allTopicConfigResponseWithFields(
+        int code, String remark, String body, Map<String, String> fields) {
+        org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+            org.apache.rocketmq.remoting.protocol.RemotingCommand.createResponseCommand(code, remark);
+        if (fields != null) response.setExtFields(new java.util.HashMap<>(fields));
+        if (body != null) response.setBody(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return response;
+    }
+
+    private static Map<String, Object> getAllTopicConfigCase(
+        String name, long timeoutMillis,
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> replyList) {
+        return getAllTopicConfigCase(name, timeoutMillis, replyList, 0);
+    }
+
+    private static Map<String, Object> getAllTopicConfigCase(
+        String name, long timeoutMillis,
+        List<org.apache.rocketmq.remoting.protocol.RemotingCommand> replyList,
+        long firstResponseDelayMillis) {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        List<Map<String, Object>> responses = new ArrayList<>();
+        java.util.ArrayDeque<org.apache.rocketmq.remoting.protocol.RemotingCommand> replies =
+            new java.util.ArrayDeque<>(replyList);
+        for (org.apache.rocketmq.remoting.protocol.RemotingCommand reply : replyList) {
+            Map<String, Object> row = new TreeMap<>();
+            row.put("code", reply.getCode());
+            row.put("remark", reply.getRemark());
+            row.put("extFields", reply.getExtFields());
+            row.put("body", reply.getBody() == null ? null
+                : new String(reply.getBody(), java.nio.charset.StandardCharsets.UTF_8));
+            row.put("delayMillis", responses.isEmpty() ? firstResponseDelayMillis : 0);
+            responses.add(row);
+        }
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("get-all-topic-config-api");
+        config.setVipChannelEnabled(false);
+        config.setMaxPageSizeInGetMetadata(2000);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response = replies.removeFirst();
+                            long delayMillis = ((Number) responses.get(requests.size() - 1).get("delayMillis")).longValue();
+                            if (delayMillis > 0) Thread.sleep(delayMillis);
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", timeoutMillis);
+        result.put("responses", responses);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper value =
+                api.getAllTopicConfig("broker-a:10911", timeoutMillis);
+            result.put("outcome", "returned");
+            result.put("resultJson", JSON.toJSONString(value));
+            Map<String, Integer> readQueueNums = new TreeMap<>();
+            for (Map.Entry<String, org.apache.rocketmq.common.TopicConfig> entry
+                    : value.getTopicConfigTable().entrySet()) {
+                readQueueNums.put(entry.getKey(), entry.getValue().getReadQueueNums());
+            }
+            result.put("resultReadQueueNums", readQueueNums);
+            result.put("resultTopics", new TreeSet<>(value.getTopicConfigTable().keySet()));
+            org.apache.rocketmq.remoting.protocol.DataVersion version = value.getDataVersion();
+            if (version == null) {
+                result.put("resultDataVersion", null);
+            } else {
+                Map<String, Object> versionFields = new TreeMap<>();
+                versionFields.put("stateVersion", version.getStateVersion());
+                versionFields.put("timestamp", version.getTimestamp());
+                versionFields.put("counter",
+                    version.getCounter() == null ? null : version.getCounter().get());
+                result.put("resultDataVersion", versionFields);
+            }
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (Throwable error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorMessage", error.getMessage());
         } finally {

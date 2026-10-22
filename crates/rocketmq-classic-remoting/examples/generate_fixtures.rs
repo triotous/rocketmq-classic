@@ -4,12 +4,12 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         BatchAck, BatchAckMessageRequestBody, ConsumeMessageDirectlyResult, ConsumeMessageResult,
-        ConsumeStats, ConsumerListByGroupResponseBody, GetConsumerStatusBody,
+        ConsumeStats, ConsumerListByGroupResponseBody, DataVersion, GetConsumerStatusBody,
         GetLiteGroupInfoResponseBody, LiteLagInfo, LiteSubscriptionAction,
         LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
         LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType, OffsetWrapper,
-        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
-        UnlockBatchRequestBody,
+        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody, TopicConfig,
+        TopicConfigSerializeWrapper, UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
@@ -22,6 +22,7 @@ use rocketmq_classic_protocol::{
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerListByGroupRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetConsumerStatusRequestHeader,
@@ -156,6 +157,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-topic-config-request.bin",
         "header-topic-config-request",
         351,
+    );
+    write_oracle_header::<GetAllTopicConfigRequestHeader>(
+        output,
+        "typed-get-all-topic-config-request.bin",
+        "header-get-all-topic-config-request",
+        21,
+    );
+    write_oracle_header::<GetAllTopicConfigResponseHeader>(
+        output,
+        "typed-get-all-topic-config-response.bin",
+        "header-get-all-topic-config-response",
+        0,
     );
     write_oracle_header::<GetTopicsByClusterRequestHeader>(
         output,
@@ -884,6 +897,19 @@ fn generate_p4_bodies(output: &std::path::Path) {
         rocketmq_classic_protocol::heartbeat::MessageModel::Clustering,
     ));
     write_body(output, "body-query-assignment.bin", 400, &query_assignment);
+
+    let topic_config = TopicConfig::new("orders");
+    let topic_configs = std::collections::BTreeMap::from([("orders".to_owned(), topic_config)]);
+    let topic_config_wrapper = TopicConfigSerializeWrapper::new(
+        Some(DataVersion::new(7, 1_712_345_678_901, Some(4))),
+        Some(topic_configs),
+    );
+    write_body(
+        output,
+        "body-topic-config-wrapper.bin",
+        21,
+        &topic_config_wrapper,
+    );
 
     let mut request_mode = SetMessageRequestModeRequestBody::default();
     request_mode.set_topic(Some("orders".into()));

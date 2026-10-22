@@ -48,6 +48,8 @@ macro_rules! inventory {
             UpdateGroupForbiddenRequestHeader => ("header-update-group-forbidden-request", "typed-update-group-forbidden-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             GetTopicConfigRequestHeader => ("header-topic-config-request", "typed-topic-config-request.bin"),
+            GetAllTopicConfigRequestHeader => ("header-get-all-topic-config-request", "typed-get-all-topic-config-request.bin"),
+            GetAllTopicConfigResponseHeader => ("header-get-all-topic-config-response", "typed-get-all-topic-config-response.bin"),
             GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
             GetSubscriptionGroupConfigRequestHeader => ("header-get-subscription-group-config-request", "typed-get-subscription-group-config-request.bin"),
             GetConsumeStatsRequestHeader => ("header-consume-stats-request", "typed-consume-stats-request.bin"),

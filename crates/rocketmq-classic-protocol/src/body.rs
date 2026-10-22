@@ -2593,6 +2593,235 @@ impl TopicConfig {
     }
 }
 
+/// Java's `DataVersion`, the version token carried by paginated metadata RPCs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DataVersion {
+    state_version: i64,
+    timestamp: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    counter: Option<i64>,
+}
+
+impl Default for DataVersion {
+    fn default() -> Self {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| {
+                duration.as_millis().min(i64::MAX as u128) as i64
+            });
+        Self {
+            state_version: 0,
+            timestamp,
+            counter: Some(0),
+        }
+    }
+}
+
+impl DataVersion {
+    pub fn new(state_version: i64, timestamp: i64, counter: Option<i64>) -> Self {
+        Self {
+            state_version,
+            timestamp,
+            counter,
+        }
+    }
+
+    pub fn state_version(&self) -> i64 {
+        self.state_version
+    }
+
+    pub fn get_state_version(&self) -> i64 {
+        self.state_version
+    }
+
+    pub fn set_state_version(&mut self, value: i64) {
+        self.state_version = value;
+    }
+
+    pub fn timestamp(&self) -> i64 {
+        self.timestamp
+    }
+
+    pub fn get_timestamp(&self) -> i64 {
+        self.timestamp
+    }
+
+    pub fn set_timestamp(&mut self, value: i64) {
+        self.timestamp = value;
+    }
+
+    /// Returns the current counter value, matching `AtomicLong.get()`.
+    pub fn counter(&self) -> Option<i64> {
+        self.counter
+    }
+
+    pub fn get_counter(&self) -> Option<i64> {
+        self.counter
+    }
+
+    pub fn set_counter(&mut self, value: Option<i64>) {
+        self.counter = value;
+    }
+
+    pub fn assign_new_one(&mut self, other: &Self) {
+        self.timestamp = other.timestamp;
+        self.state_version = other.state_version;
+        self.counter = other.counter;
+    }
+
+    pub fn next_version(&mut self) -> bool {
+        self.next_version_with_state(0)
+    }
+
+    /// Updates the timestamp and state version and increments the counter.
+    /// Returns `false` when the Java `AtomicLong` field has been set to null.
+    pub fn next_version_with_state(&mut self, state_version: i64) -> bool {
+        let Some(counter) = self.counter.as_mut() else {
+            return false;
+        };
+        self.timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| {
+                duration.as_millis().min(i64::MAX as u128) as i64
+            });
+        self.state_version = state_version;
+        *counter = counter.wrapping_add(1);
+        true
+    }
+
+    /// Compares state version, counter, then timestamp as Java does.
+    /// Returns `None` if either counter is null when the comparison reaches it.
+    pub fn compare(&self, other: &Self) -> Option<i32> {
+        let state_order = self.state_version.cmp(&other.state_version);
+        if state_order != std::cmp::Ordering::Equal {
+            return Some(ordering_to_i32(state_order));
+        }
+        let counter_order = self.counter?.cmp(&other.counter?);
+        if counter_order != std::cmp::Ordering::Equal {
+            return Some(ordering_to_i32(counter_order));
+        }
+        Some(ordering_to_i32(self.timestamp.cmp(&other.timestamp)))
+    }
+
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = fold_i64_hash(self.state_version);
+        result = result
+            .wrapping_mul(31)
+            .wrapping_add(fold_i64_hash(self.timestamp));
+        if let Some(counter) = self.counter {
+            result = result.wrapping_mul(31).wrapping_add(fold_i64_hash(counter));
+        }
+        result
+    }
+
+    pub fn java_to_string(&self) -> String {
+        let counter = self
+            .counter
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        format!(
+            "DataVersion[timestamp={}, counter={counter}]",
+            self.timestamp
+        )
+    }
+}
+
+fn ordering_to_i32(ordering: std::cmp::Ordering) -> i32 {
+    match ordering {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+fn fold_i64_hash(value: i64) -> i32 {
+    (value ^ (value >> 32)) as i32
+}
+
+/// Java's `TopicConfigSerializeWrapper` response model for Broker metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicConfigSerializeWrapper {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_version: Option<DataVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    topic_config_table: Option<BTreeMap<String, TopicConfig>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct TopicConfigSerializeWrapperFields {
+    data_version: Option<DataVersion>,
+    topic_config_table: Option<BTreeMap<String, TopicConfig>>,
+}
+
+impl Default for TopicConfigSerializeWrapperFields {
+    fn default() -> Self {
+        Self {
+            data_version: Some(DataVersion::default()),
+            topic_config_table: Some(BTreeMap::new()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TopicConfigSerializeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = TopicConfigSerializeWrapperFields::deserialize(deserializer)?;
+        Ok(Self {
+            data_version: fields.data_version,
+            topic_config_table: fields.topic_config_table,
+        })
+    }
+}
+
+impl Default for TopicConfigSerializeWrapper {
+    fn default() -> Self {
+        Self {
+            data_version: Some(DataVersion::default()),
+            topic_config_table: Some(BTreeMap::new()),
+        }
+    }
+}
+
+impl TopicConfigSerializeWrapper {
+    pub fn new(
+        data_version: Option<DataVersion>,
+        topic_config_table: Option<BTreeMap<String, TopicConfig>>,
+    ) -> Self {
+        Self {
+            data_version,
+            topic_config_table,
+        }
+    }
+
+    pub fn data_version(&self) -> Option<&DataVersion> {
+        self.data_version.as_ref()
+    }
+
+    pub fn get_data_version(&self) -> Option<&DataVersion> {
+        self.data_version()
+    }
+
+    pub fn set_data_version(&mut self, value: Option<DataVersion>) {
+        self.data_version = value;
+    }
+
+    pub fn topic_config_table(&self) -> Option<&BTreeMap<String, TopicConfig>> {
+        self.topic_config_table.as_ref()
+    }
+
+    pub fn get_topic_config_table(&self) -> Option<&BTreeMap<String, TopicConfig>> {
+        self.topic_config_table()
+    }
+
+    pub fn set_topic_config_table(&mut self, value: Option<BTreeMap<String, TopicConfig>>) {
+        self.topic_config_table = value;
+    }
+}
+
 /// One physical generation in Java's `LogicQueueMappingItem` static-topic
 /// metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -9564,6 +9793,7 @@ fn default_auto_commit() -> bool {
 }
 
 impl_java_remoting_serializable_adapters!(
+    DataVersion,
     CheckClientRequestBody,
     CheckRocksdbCqWriteResult,
     LogicQueueMappingItem,
@@ -9588,6 +9818,7 @@ impl_java_remoting_serializable_adapters!(
     DeleteSubscriptionGroupListRequestBody,
     TopicList,
     SubscriptionGroupList,
+    TopicConfigSerializeWrapper,
 );
 
 impl_java_static_topic_serializable_adapters!(TopicConfigAndQueueMapping, TopicQueueMappingDetail);
@@ -10064,6 +10295,48 @@ fn write_java_remoting_body_indent(output: &mut String, depth: usize, indent: Op
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn data_version_matches_java_comparison_and_copy_rules() {
+        let mut version = DataVersion::new(1, 10, Some(4));
+        assert_eq!(
+            version.java_to_string(),
+            "DataVersion[timestamp=10, counter=4]"
+        );
+        assert_eq!(DataVersion::new(1, 2, Some(3)).java_hash_code(), 1_026);
+        assert_eq!(version.compare(&DataVersion::new(2, 0, Some(0))), Some(-1));
+        assert_eq!(version.compare(&DataVersion::new(1, 0, Some(5))), Some(-1));
+        assert_eq!(version.compare(&DataVersion::new(1, 11, Some(4))), Some(-1));
+        assert_eq!(version.compare(&DataVersion::new(1, 10, Some(4))), Some(0));
+
+        let copied = DataVersion::new(7, 20, Some(8));
+        version.assign_new_one(&copied);
+        assert_eq!(version, copied);
+        assert!(version.next_version_with_state(9));
+        assert_eq!(version.state_version(), 9);
+        assert_eq!(version.counter(), Some(9));
+        assert!(version.timestamp() >= 20);
+
+        version.set_counter(None);
+        assert!(!version.next_version());
+        assert_eq!(version.compare(&DataVersion::new(9, 0, Some(1))), None);
+    }
+
+    #[test]
+    fn topic_config_serialize_wrapper_preserves_java_constructor_defaults() {
+        let defaults = TopicConfigSerializeWrapper::java_decode(b"{}").unwrap();
+        assert!(defaults.data_version().is_some());
+        assert!(defaults.data_version().unwrap().timestamp() > 0);
+        assert_eq!(defaults.data_version().unwrap().counter(), Some(0));
+        assert!(defaults.topic_config_table().unwrap().is_empty());
+
+        let explicit_nulls = TopicConfigSerializeWrapper::java_decode(
+            br#"{"dataVersion":null,"topicConfigTable":null}"#,
+        )
+        .unwrap();
+        assert!(explicit_nulls.data_version().is_none());
+        assert!(explicit_nulls.topic_config_table().is_none());
+    }
 
     #[test]
     fn query_subscription_response_body_matches_java_null_and_alias_semantics() {

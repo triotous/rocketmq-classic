@@ -1958,3 +1958,22 @@ JSON. A focused Core test also checks VIP routing; a delayed-peer test checks
 the supplied timeout. Producer core fixture SHA-256 is recorded in the
 execution log. This closes this direct RPC/header/DTO slice only; broad
 P18-V01 remains open.
+
+## P18-V01 direct `getAllTopicConfig` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAllTopicConfig(String,long)` sends
+request 21 with `GetAllTopicConfigRequestHeader` fields `topicSeq`,
+`dataVersion`, and `maxTopicNum`. Core exposes
+`MQClientApi::get_all_topic_config`; it uses the configured metadata page size
+(default 2000), configured VIP transformation, and one caller deadline across
+all pages. `DataVersion` and `TopicConfigSerializeWrapper` preserve Java JSON
+field names, defaults, and null states. Pagination appends topic configs while
+the version is stable; a changed version clears the collected table and starts
+again at page zero. A missing or reflectively invalid `totalTopicNum` follows
+the Java legacy-Broker path and accepts that page as complete. Invoked Java
+fixtures and the Rust loopback test cover single/multiple pages, version
+restart, legacy response, malformed/missing/null body cases, Broker errors,
+and timeout. Bidirectional typed-header and body fixtures cover both headers
+and the wrapper. This closes this direct RPC/header/DTO slice only; the broader
+P18-V01 API/config/feature/input/error/control-flow/reverse-export audit
+remains open.

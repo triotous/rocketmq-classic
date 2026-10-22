@@ -638,6 +638,17 @@ public final class Main {
         topicConfig.setBrokerName("broker-a");
         topicConfig.setOneway(false);
         writeTypedHeaderFixture(output, "topic-config-request", 351, topicConfig);
+        org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigRequestHeader allTopicConfig =
+            new org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigRequestHeader();
+        allTopicConfig.setTopicSeq(2);
+        allTopicConfig.setDataVersion("{\"counter\":4,\"stateVersion\":7,\"timestamp\":1712345678901}");
+        allTopicConfig.setMaxTopicNum(2000);
+        writeTypedHeaderFixture(output, "get-all-topic-config-request", 21, allTopicConfig);
+        org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader allTopicConfigResponse =
+            new org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader();
+        allTopicConfigResponse.setTotalTopicNum(5);
+        writeTypedHeaderFixture(output, "get-all-topic-config-response",
+            RemotingCommand.createResponseCommandWithHeader(0, allTopicConfigResponse));
         org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader
             subscriptionGroupConfig =
                 new org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader();
@@ -1102,6 +1113,20 @@ public final class Main {
         populated.setConsumerIdList(java.util.List.of("client-a", "client-b"));
         writeJsonBodyFixture(output, "body-consumer-list-populated", 38, populated.encode());
 
+        org.apache.rocketmq.remoting.protocol.DataVersion configVersion =
+            new org.apache.rocketmq.remoting.protocol.DataVersion();
+        configVersion.setStateVersion(7);
+        configVersion.setTimestamp(1_712_345_678_901L);
+        configVersion.setCounter(new java.util.concurrent.atomic.AtomicLong(4));
+        org.apache.rocketmq.common.TopicConfig topicConfig =
+            new org.apache.rocketmq.common.TopicConfig("orders");
+        org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper configWrapper =
+            new org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper();
+        configWrapper.setDataVersion(configVersion);
+        configWrapper.setTopicConfigTable(new java.util.concurrent.ConcurrentHashMap<>(
+            java.util.Map.of("orders", topicConfig)));
+        writeJsonBodyFixture(output, "body-topic-config-wrapper", 21, configWrapper.encode());
+
         GetLiteGroupInfoResponseBody liteGroupInfo = new GetLiteGroupInfoResponseBody();
         liteGroupInfo.setGroup("workers");
         liteGroupInfo.setParentTopic("lite-parent");
@@ -1193,7 +1218,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 91, "all Rust typed header fixtures were supplied");
+            require(count == 93, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1218,6 +1243,8 @@ public final class Main {
             assertAllExtFields(byName, "typed-query-correction-offset-request.bin", 308);
             assertAllExtFields(byName, "typed-update-group-forbidden-request.bin", 353);
             assertAllExtFields(byName, "typed-topic-stats-info-request.bin", 202);
+            assertAllExtFields(byName, "typed-get-all-topic-config-request.bin", 21);
+            assertAllExtFields(byName, "typed-get-all-topic-config-response.bin", 0);
             assertAllExtFields(byName, "typed-topics-by-cluster-request.bin", 224);
             assertAllExtFields(byName, "typed-lite-topic-info-request.bin", 200076);
             assertAllExtFields(byName, "typed-lite-client-info-request.bin", 200077);
@@ -1448,6 +1475,8 @@ public final class Main {
             case "typed-query-correction-offset-request.bin": fixtureStem = "header-query-correction-offset-request"; break;
             case "typed-update-group-forbidden-request.bin": fixtureStem = "header-update-group-forbidden-request"; break;
             case "typed-topic-stats-info-request.bin": fixtureStem = "header-topic-stats-info-request"; break;
+            case "typed-get-all-topic-config-request.bin": fixtureStem = "header-get-all-topic-config-request"; break;
+            case "typed-get-all-topic-config-response.bin": fixtureStem = "header-get-all-topic-config-response"; break;
             case "typed-topics-by-cluster-request.bin": fixtureStem = "header-topics-by-cluster-request"; break;
             case "typed-get-subscription-group-config-request.bin": fixtureStem = "header-get-subscription-group-config-request"; break;
             case "typed-lite-topic-info-request.bin": fixtureStem = "header-lite-topic-info-request"; break;
@@ -1539,7 +1568,7 @@ public final class Main {
                 decoded.put(file.getFileName().toString(), decode(Files.readAllBytes(file)));
             }
         }
-        require(decoded.size() == 16, "all Rust typed JSON body frames decoded");
+        require(decoded.size() == 17, "all Rust typed JSON body frames decoded");
         for (String name : decoded.keySet()) {
             String stem = name.replace(".bin", "");
             byte[] rustFrame = Files.readAllBytes(directory.resolve(name));
@@ -1563,6 +1592,7 @@ public final class Main {
         verifyJavaBodyAtPath("body-consumer-list-absent");
         verifyJavaBodyAtPath("body-consumer-list-empty");
         verifyJavaBodyAtPath("body-consumer-list-populated");
+        verifyJavaBodyAtPath("body-topic-config-wrapper");
         verifyJavaBodyAtPath("body-lite-group-info");
         verifyJavaBodyAtPath("body-lock-request");
         verifyJavaBodyAtPath("body-unlock-request");
@@ -1571,6 +1601,7 @@ public final class Main {
         verifyRustBodyAgainstJava(directory, "body-consumer-list-absent.bin");
         verifyRustBodyAgainstJava(directory, "body-consumer-list-empty.bin");
         verifyRustBodyAgainstJava(directory, "body-consumer-list-populated.bin");
+        verifyRustBodyAgainstJava(directory, "body-topic-config-wrapper.bin");
         verifyRustBodyAgainstJava(directory, "body-lite-group-info.bin");
         verifyRustBodyAgainstJava(directory, "body-lock-request.bin");
         verifyRustBodyAgainstJava(directory, "body-unlock-request.bin");
@@ -1586,6 +1617,7 @@ public final class Main {
         assertBodyField(directory, decoded, "body-lite-group-info.bin", 200078, "group", "workers");
         assertBodyField(directory, decoded, "body-lite-group-info.bin", 200078, "totalLagCount", "40");
         assertBodyField(directory, decoded, "body-consume-directly.bin", 309, "consumeResult", "CR_SUCCESS");
+        assertBodyField(directory, decoded, "body-topic-config-wrapper.bin", 21, "topicConfigTable", null);
         assertBodyField(directory, decoded, "body-consumer-list-empty.bin", 38, "consumerIdList", null);
         assertBodyField(directory, decoded, "body-consumer-list-populated.bin", 38, "consumerIdList", null);
         assertBodyField(directory, decoded, "body-lock-request.bin", 41, "mqSet", null);
@@ -1617,6 +1649,14 @@ public final class Main {
             if (stem.endsWith("absent")) require(decoded.getConsumerIdList() == null, "absent consumer list preserved");
             if (stem.endsWith("empty")) require(decoded.getConsumerIdList() != null && decoded.getConsumerIdList().isEmpty(), "empty consumer list preserved");
             if (stem.endsWith("populated")) require(decoded.getConsumerIdList().size() == 2, "populated consumer list preserved");
+        } else if (stem.equals("body-topic-config-wrapper")) {
+            org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper decoded =
+                com.alibaba.fastjson2.JSON.parseObject(frameBody(frame),
+                    org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper.class);
+            require(decoded.getDataVersion().getStateVersion() == 7, "topic config DataVersion decoded");
+            require(decoded.getDataVersion().getCounter().get() == 4, "topic config DataVersion counter decoded");
+            require(decoded.getTopicConfigTable().get("orders").getReadQueueNums() == 16,
+                "topic config table decodes Java defaults");
         } else if (stem.equals("body-lite-group-info")) {
             GetLiteGroupInfoResponseBody decoded = com.alibaba.fastjson2.JSON.parseObject(
                 frameBody(frame), GetLiteGroupInfoResponseBody.class);

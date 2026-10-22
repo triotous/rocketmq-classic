@@ -1742,13 +1742,13 @@ The initial candidate list contained 18 direct operations with no mapped Rust
 operation or fixture-backed owner path. Since this list was captured,
 `queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`,
 `fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
-been implemented and checked against the pinned Java fixture. Twelve direct
-operations from the initial list remain implementation work rather than
-approved differences:
+been implemented and checked against the pinned Java fixture. The initial list
+of 12 direct operations has since been reduced by the `getAllTopicConfig`
+slice below; 11 remain implementation work rather than approved differences:
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
-| Topic configuration snapshot | `getAllTopicConfig` | 21 | Open |
+| Topic configuration snapshot | `getAllTopicConfig` | 21 | Closed by `get_all_topic_config` |
 | Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Open |
 | Broker consume statistics | `fetchConsumeStatsInBroker` | 317 | Closed by `fetch_consume_stats_in_broker` |
 | Broker statistics view | `viewBrokerStatsData` | 315 | Closed by `view_broker_stats_data` |
@@ -1770,7 +1770,7 @@ approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 12 open rows, but their Rust DTO and RPC owners are still
+already exist for the 11 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -1779,6 +1779,25 @@ recall path. The `GroupForbidden` DTO also matches Java's nullable accessors,
 value equality, `hashCode`, and `toString` behavior. This inventory narrows the
 direct-operation gap; it does not close P18-V01's broader settings, inputs,
 errors, control flows or reverse-export audit.
+
+## P18-V01 direct `getAllTopicConfig` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAllTopicConfig(String,long)` sends
+request 21 with `GetAllTopicConfigRequestHeader` fields `topicSeq`,
+`dataVersion`, and `maxTopicNum`. Core exposes
+`MQClientApi::get_all_topic_config`; it uses the configured metadata page size
+(default 2000), configured VIP transformation, and one caller deadline across
+all pages. `DataVersion` and `TopicConfigSerializeWrapper` preserve Java JSON
+field names, defaults, and null states. Pagination appends topic configs while
+the version is stable; a changed version clears the collected table and starts
+again at page zero. A missing or reflectively invalid `totalTopicNum` follows
+the Java legacy-Broker path and accepts that page as complete. Java fixtures
+and the Rust loopback test cover one/multiple pages, version restart, legacy
+response, malformed/missing/null body cases, Broker errors and timeout.
+Bidirectional typed-header and body fixtures cover both headers and the
+wrapper. Producer core fixture SHA-256 is recorded in the Phase 18 execution
+log. This closes this direct RPC/header/DTO slice only; broad P18-V01 remains
+open.
 
 ## P18-V01 `MessageClientExt` inherited offset-ID overrides — 2026-10-21
 

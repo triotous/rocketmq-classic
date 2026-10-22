@@ -9,11 +9,11 @@ use rocketmq_classic_protocol::{
     body::{
         BrokerStatsData, CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult,
         ConsumeStats, ConsumeStatsList, ConsumerConnection, ConsumerRunningInfoBody,
-        CreateTopicListRequestBody, DeleteSubscriptionGroupListRequestBody,
+        CreateTopicListRequestBody, DataVersion, DeleteSubscriptionGroupListRequestBody,
         DeleteTopicListRequestBody, GroupList, HaRuntimeInfo, KvTable, ProducerConnection,
         ProducerTableInfo, QueryCorrectionOffsetBody, QuerySubscriptionResponseBody, QueueTimeSpan,
         ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig,
-        TopicConfigAndQueueMapping, TopicList, TopicStatsTable,
+        TopicConfigAndQueueMapping, TopicConfigSerializeWrapper, TopicList, TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -23,6 +23,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
@@ -1437,6 +1438,121 @@ impl MQClientApi {
                 reason: error.to_string(),
             }
         })
+    }
+
+    /// Reads one Broker's complete topic configuration snapshot through Java
+    /// `MQClientAPIImpl.getAllTopicConfig`, including its version-checked pages.
+    pub async fn get_all_topic_config(
+        &self,
+        addr: &str,
+        timeout_millis: i64,
+    ) -> Result<TopicConfigSerializeWrapper, RpcError> {
+        let code = request::GET_ALL_TOPIC_CONFIG;
+        let deadline = deadline_after_timeout_millis(timeout_millis);
+        let mut current_data_version: Option<DataVersion> = None;
+        let mut topic_seq = 0_i32;
+        let mut topic_config_table = HashMap::new();
+        let (vip_enabled, max_topic_num) = self
+            .config
+            .as_ref()
+            .map(|config| {
+                let config = read_shared_client_config(config);
+                (
+                    config.vip_channel_enabled(),
+                    config.max_page_size_in_get_metadata(),
+                )
+            })
+            .unwrap_or((false, 2_000));
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+
+        loop {
+            let data_version_json = match current_data_version.as_ref() {
+                Some(data_version) => data_version.java_to_json(false).map_err(|source| {
+                    RpcError::RequestSerialization {
+                        request_code: code,
+                        source,
+                    }
+                })?,
+                None => String::new(),
+            };
+            let mut header = GetAllTopicConfigRequestHeader::default();
+            header.set_topic_seq(Some(topic_seq));
+            header.set_data_version(Some(data_version_json));
+            header.set_max_topic_num(Some(max_topic_num));
+
+            let reply = self
+                .request(&broker_addr, code, &header, None, deadline)
+                .await?;
+            if reply.code != response::SUCCESS {
+                return Err(RpcError::Response {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    code: reply.code,
+                    remark: reply.remark,
+                });
+            }
+            let body = reply
+                .body
+                .as_deref()
+                .ok_or_else(|| RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: "missing response body".into(),
+                })?;
+            let page = TopicConfigSerializeWrapper::java_decode(body).map_err(|error| {
+                RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+            let page_table =
+                page.topic_config_table()
+                    .ok_or_else(|| RpcError::MalformedResponse {
+                        request_code: code,
+                        peer: addr.to_owned(),
+                        reason: "response field `topicConfigTable` is null".into(),
+                    })?;
+            topic_config_table.extend(
+                page_table
+                    .iter()
+                    .map(|(topic, config)| (topic.clone(), config.clone())),
+            );
+            topic_seq = topic_seq.wrapping_add(page_table.len() as i32);
+
+            let new_data_version = page.data_version().cloned();
+            if current_data_version.is_none() {
+                // Java captures the first version before checking the optional
+                // response total for compatibility with older Brokers.
+                current_data_version = new_data_version.clone();
+            }
+            let response_header = reply
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| GetAllTopicConfigResponseHeader::decode_fields(fields).ok())
+                .unwrap_or_default();
+            let Some(total_topic_num) = response_header.get_total_topic_num() else {
+                // Java 5.5.1 treats a response without totalTopicNum as a
+                // pre-pagination Broker and accepts this complete body.
+                break;
+            };
+
+            if current_data_version != new_data_version {
+                current_data_version = new_data_version;
+                topic_seq = 0;
+                topic_config_table.clear();
+                continue;
+            }
+
+            if topic_seq >= total_topic_num.wrapping_sub(1) {
+                break;
+            }
+        }
+
+        Ok(TopicConfigSerializeWrapper::new(
+            current_data_version,
+            Some(topic_config_table.into_iter().collect()),
+        ))
     }
 
     /// Reads a Broker's subscription-group configuration through Java
@@ -3211,6 +3327,16 @@ mod tests {
                     &[("topic", "orders"), ("lo", "true")][..],
                     b"{}".as_slice(),
                 ),
+                (
+                    request::GET_ALL_TOPIC_CONFIG,
+                    &[
+                        ("topicSeq", "0"),
+                        ("dataVersion", ""),
+                        ("maxTopicNum", "77"),
+                    ][..],
+                    b"{\"dataVersion\":{\"counter\":0,\"stateVersion\":0,\"timestamp\":0},\"topicConfigTable\":{}}"
+                        .as_slice(),
+                ),
             ] {
                 let mut length = [0_u8; 4];
                 stream.read_exact(&mut length).await.unwrap();
@@ -3244,6 +3370,7 @@ mod tests {
         remoting.start().unwrap();
         let mut config = ClientConfig::new("producer-diagnostics-vip");
         config.set_vip_channel_enabled(true);
+        config.set_max_page_size_in_get_metadata(77);
         let config = Arc::new(RwLock::new(config));
         let api = MQClientApi::with_config(remoting.clone(), config);
         let advertised_addr = format!("127.0.0.1:{advertised_port}");
@@ -3261,6 +3388,9 @@ mod tests {
             .await
             .unwrap();
         api.get_topic_config(&advertised_addr, Some("orders"), 2000)
+            .await
+            .unwrap();
+        api.get_all_topic_config(&advertised_addr, 2000)
             .await
             .unwrap();
         peer.await.unwrap();

@@ -19,6 +19,7 @@ use rocketmq_classic_protocol::{
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, FastCodesHeader,
+        GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerListByGroupRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetConsumerStatusRequestHeader,
@@ -2329,6 +2330,24 @@ fn header_validation_matrix() {
             "",
             "topic ns nsd bname oway lo",
             "nsd oway lo"
+        ),
+        row!(
+            GetAllTopicConfigRequestHeader,
+            "get-all-topic-config-request",
+            "",
+            "topicSeq maxTopicNum",
+            "",
+            "dataVersion",
+            ""
+        ),
+        row!(
+            GetAllTopicConfigResponseHeader,
+            "get-all-topic-config-response",
+            "",
+            "totalTopicNum",
+            "",
+            "",
+            ""
         ),
         row!(
             GetTopicsByClusterRequestHeader,

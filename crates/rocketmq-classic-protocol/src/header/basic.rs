@@ -704,6 +704,58 @@ pub struct GetTopicConfigRequestHeader {
     logical: Option<bool>,
 }
 
+/// Java `GetAllTopicConfigRequestHeader`. Its annotated sequence is nullable
+/// because `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct GetAllTopicConfigRequestHeader {
+    topic_seq: Option<i32>,
+    data_version: Option<String>,
+    max_topic_num: Option<i32>,
+}
+
+impl GetAllTopicConfigRequestHeader {
+    pub fn get_topic_seq(&self) -> Option<i32> {
+        self.topic_seq
+    }
+
+    pub fn set_topic_seq(&mut self, value: Option<i32>) {
+        self.topic_seq = value;
+    }
+
+    pub fn get_data_version(&self) -> Option<&str> {
+        self.data_version.as_deref()
+    }
+
+    pub fn set_data_version(&mut self, value: Option<String>) {
+        self.data_version = value;
+    }
+
+    pub fn get_max_topic_num(&self) -> Option<i32> {
+        self.max_topic_num
+    }
+
+    pub fn set_max_topic_num(&mut self, value: Option<i32>) {
+        self.max_topic_num = value;
+    }
+}
+
+/// Java `GetAllTopicConfigResponseHeader`; old Brokers omit this optional
+/// total so the client can treat the response body as the complete snapshot.
+#[derive(Debug, Clone, Default)]
+pub struct GetAllTopicConfigResponseHeader {
+    total_topic_num: Option<i32>,
+}
+
+impl GetAllTopicConfigResponseHeader {
+    pub fn get_total_topic_num(&self) -> Option<i32> {
+        self.total_topic_num
+    }
+
+    pub fn set_total_topic_num(&mut self, value: Option<i32>) {
+        self.total_topic_num = value;
+    }
+}
+
 /// Java `GetTopicsByClusterRequestHeader` carries the target cluster name.
 #[derive(Debug, Clone, Default)]
 pub struct GetTopicsByClusterRequestHeader {
@@ -905,6 +957,34 @@ impl CommandHeader for GetTopicConfigRequestHeader {
             broker_name: optional_string(fields, "bname"),
             oneway: optional_java_boolean(fields, "oway"),
             logical: optional_java_boolean(fields, "lo"),
+        })
+    }
+}
+
+impl CommandHeader for GetAllTopicConfigRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "topicSeq", self.topic_seq);
+        put_optional(fields, "dataVersion", self.data_version.as_deref());
+        put_optional(fields, "maxTopicNum", self.max_topic_num);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            topic_seq: optional_i32(fields, "topicSeq")?,
+            data_version: optional_string(fields, "dataVersion"),
+            max_topic_num: optional_i32(fields, "maxTopicNum")?,
+        })
+    }
+}
+
+impl CommandHeader for GetAllTopicConfigResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "totalTopicNum", self.total_topic_num);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            total_topic_num: optional_i32(fields, "totalTopicNum")?,
         })
     }
 }
