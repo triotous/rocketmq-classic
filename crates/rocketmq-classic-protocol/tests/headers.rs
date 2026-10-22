@@ -13,9 +13,9 @@ use rocketmq_classic_protocol::{
         AckMessageRequestHeader, AddBrokerRequestHeader, AddWritePermOfBrokerRequestHeader,
         AddWritePermOfBrokerResponseHeader, ChangeInvisibleTimeRequestHeader,
         ChangeInvisibleTimeResponseHeader, CheckRocksdbCqWriteProgressRequestHeader,
-        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader, CommandHeader,
-        ConsumeMessageDirectlyResultRequestHeader, ConsumerSendMsgBackRequestHeader,
-        CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
+        CheckTransactionStateRequestHeader, CheckTransactionStateResponseHeader,
+        CloneGroupOffsetRequestHeader, CommandHeader, ConsumeMessageDirectlyResultRequestHeader,
+        ConsumerSendMsgBackRequestHeader, CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, FastCodesHeader,
@@ -2391,6 +2391,15 @@ fn header_validation_matrix() {
             "brokerId",
             "brokerClusterName brokerName",
             ""
+        ),
+        row!(
+            CloneGroupOffsetRequestHeader,
+            "clone-group-offset-request",
+            "",
+            "",
+            "",
+            "srcGroup destGroup topic ns nsd bname oway",
+            "offline nsd oway"
         ),
         row!(
             WipeWritePermOfBrokerResponseHeader,

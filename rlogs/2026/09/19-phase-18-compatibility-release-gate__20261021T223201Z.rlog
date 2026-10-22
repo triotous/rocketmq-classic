@@ -166,3 +166,20 @@ remain untouched and unstaged.
   passed. Broad P18-V01 remains open; current-revision GitHub Ubuntu/native
   Windows P18-V04 evidence remains open. No remote CI, Broker, or Docker run
   was performed. Phase 19 worktree paths remain unstaged.
+
+## P18-V02 final local workspace gates after direct RPC additions — 2026-10-22
+
+- The first `cargo test --workspace --locked` run exposed that adding
+  `CloneGroupOffsetRequestHeader` also required a row in the exhaustive
+  `header_validation_matrix`. Added the wire-field classification and verified
+  the focused matrix test; reran the full default workspace suite successfully.
+- `cargo test --workspace --all-features --locked` passed. This includes the
+  bounded protocol fixture mutation regression. Strict
+  `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+  passed. `python3 tests/differential/compare.py --self-test`, formatting, and
+  `git diff --check` passed.
+- These local gates cover the current code through commit `d1b1da78` plus the
+  protocol header matrix follow-up. P18-V01 public method/API reconciliation
+  remains open; current-revision GitHub Ubuntu/native Windows P18-V04 evidence
+  remains open. No remote CI, Broker, or Docker run was performed. Phase 19
+  worktree paths remain unstaged.
