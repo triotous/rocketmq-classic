@@ -944,6 +944,7 @@ impl LitePullConsumer {
         &self,
         timeout_millis: Option<i64>,
     ) -> Result<Vec<rocketmq_classic_common::message::MessageExt>, LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         if !self.running.load(Ordering::Acquire) {
             return Err(LitePullConsumerError::NotStarted);
         }

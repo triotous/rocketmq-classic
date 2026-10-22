@@ -926,6 +926,7 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
         store,
     );
     config.set_topic_metadata_check_interval_millis(10);
+    config.set_auto_commit(false);
     let consumer_id = config.client_config().build_client_id();
     let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
     let selector = rocketmq_classic_consumer::pull::MessageSelector::by_tag("green");
@@ -1006,7 +1007,27 @@ async fn scripted_lite_subscription_unsubscribe_and_metadata_callbacks_match_jav
         [first_queue, second_queue].into_iter().collect()
     );
 
-    assert!(consumer.unsubscribe("orders").await.unwrap());
+    let poll_consumer = consumer.clone();
+    let mut poll = tokio::spawn(async move { poll_consumer.poll(Some(350)).await });
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    let unsubscribe_consumer = consumer.clone();
+    let mut unsubscription =
+        tokio::spawn(async move { unsubscribe_consumer.unsubscribe("orders").await });
+    assert!(
+        timeout(Duration::from_millis(100), &mut unsubscription)
+            .await
+            .is_err(),
+        "unsubscribe must wait while Java-equivalent synchronized poll is waiting"
+    );
+    assert!(
+        timeout(Duration::from_secs(1), &mut poll)
+            .await
+            .expect("poll did not finish at its timeout")
+            .expect("poll task failed")
+            .unwrap()
+            .is_empty()
+    );
+    assert!(unsubscription.await.unwrap().unwrap());
     assert!(consumer.assignment().await.unwrap().is_empty());
     assert!(!consumer.unsubscribe("orders").await.unwrap());
     consumer.shutdown().await.unwrap();
@@ -1304,6 +1325,7 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
     assert_eq!(java["subscribeSelector"], true);
     assert_eq!(java["subscribeWithListener"], true);
     assert_eq!(java["unsubscribe"], true);
+    assert_eq!(java["poll"], true);
     assert_eq!(java["shutdown"], true);
     assert_eq!(java["registerTopicMessageQueueChangeListener"], true);
 

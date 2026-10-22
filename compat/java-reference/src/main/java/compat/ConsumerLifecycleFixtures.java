@@ -97,6 +97,9 @@ public final class ConsumerLifecycleFixtures {
         result.put("setSubExpressionForAssign", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("setSubExpressionForAssign",
                 String.class, String.class).getModifiers()));
+        result.put("poll", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("poll",
+                long.class).getModifiers()));
         result.put("subscribeExpression", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
                 String.class, String.class).getModifiers()));
