@@ -2,20 +2,18 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-22
 
-At code revision `267173dd`, the server-free gates pass on macOS AArch64 with
+At code revision `e1b8ffdb`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
-`cargo fmt --all -- --check`, and `git diff --check` pass. The first default
-workspace run had a transient `UnexpectedEof` in Core's local
-`list_acl_honors_the_java_timeout_argument` peer; its isolated rerun and a full
-default workspace retry passed. Offline Maven `verify` passes 37 differential
-scenarios and 11 message fixtures/runtime cases; Java cross-decodes 106 typed
-headers and 19 typed bodies produced by Rust. Differential self-test and
-37-scenario manifest validation pass. Fuzz smoke covers 163 frame seeds, 11
-message seeds and 2,784 bounded mutations, yielding 245 frame decodes and 192
-message decodes. Deterministic race/leak smoke passes 17 cases repeated three
-times. Release examples build and the offline benchmark runs; its current
-observation is recorded in the [Phase 18 benchmark baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+`cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
+`verify` passes 37 differential scenarios, 11 message fixtures/runtime cases,
+36 route/VIP cases, and Java cross-decodes 106 typed headers and 19 typed
+bodies produced by Rust. Differential self-test and 37-scenario manifest
+validation pass. Fuzz smoke covers 163 frame seeds, 11 message seeds and 2,784
+bounded mutations, yielding 245 frame decodes and 192 message decodes.
+Deterministic race/leak smoke passes 17 cases repeated three times. Release
+examples build and the offline benchmark runs; its current observation is
+recorded in the [Phase 18 benchmark baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
 
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
@@ -63,6 +61,18 @@ boundary. Fixture SHA-256:
 facade comparison and both workspace test configurations pass. This closes
 these ProcessQueue input/timestamp cases only; broad P18-V01 review remains
 open.
+
+P18-V01 `ProcessQueue.commit` empty-input parity (`e1b8ffdb`): pinned Java
+calls `consumingMsgOrderlyTreeMap.lastKey()` before mutating the queue, so an
+empty ordered-consume set throws `NoSuchElementException` and leaves count,
+size, and tree unchanged. Rust now returns
+`ProcessQueueError::EmptyOrderedConsumeSet` rather than `-1`; successful commits
+return `Ok(offset)`. The invoked facade fixture records the Java exception
+class and unchanged queue state. Fixture SHA-256:
+`aa3a16d255ba6d331f5cb84e068db3b14e45f49c605671feebc97abc3aba8f81`. Default
+and all-feature workspace tests, strict Clippy, pinned Maven verify, and the
+focused facade comparison pass. This closes the empty-commit input only; broad
+P18-V01 reconciliation remains PARTIAL.
 
 ## Direct runtime API reconciliation — 2026-10-20
 
