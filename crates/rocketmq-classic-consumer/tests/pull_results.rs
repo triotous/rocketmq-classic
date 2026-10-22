@@ -132,6 +132,34 @@ fn found_results_filter_enrich_run_hooks_and_drop_raw_bytes() {
 }
 
 #[test]
+fn found_results_keep_the_decoded_prefix_when_the_batch_tail_is_malformed() {
+    let queue = MessageQueue::new("orders", "broker-a", 9);
+    let mut raw = record("ipv4-v1");
+    raw.push(0);
+    let processed = PullAPIWrapper::default()
+        .process_pull_result(
+            &queue,
+            result(PullStatus::Found, Some(raw)),
+            &SubscriptionData::default(),
+            DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(processed.result.raw_messages.is_none());
+    let messages = processed.messages.unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].topic(), "orders");
+    assert_eq!(
+        messages[0].message_id(),
+        Some(client_id("ipv4-v1", "msgId").as_str())
+    );
+    assert_eq!(
+        messages[0].offset_message_id(),
+        Some(client_id("ipv4-v1", "offsetMsgId").as_str())
+    );
+}
+
+#[test]
 fn prepared_transactions_get_the_producer_unique_id_as_transaction_id() {
     let queue = MessageQueue::new("orders", "broker-a", 3);
     let wrapper = PullAPIWrapper::new(false);

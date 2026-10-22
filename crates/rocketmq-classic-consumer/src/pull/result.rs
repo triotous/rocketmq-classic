@@ -8,7 +8,8 @@ use std::{
 use rand::Rng;
 use rocketmq_classic_common::{
     message::{
-        DecodeError, DecodeOptions, MessageExt, MessageQueue, decode_many, decode_properties,
+        DecodeError, DecodeOptions, MessageExt, MessageQueue, decode_many_as_client_compatible,
+        decode_properties,
     },
     sysflag::message::{INNER_BATCH_FLAG, NEED_UNWRAP_FLAG},
 };
@@ -175,7 +176,7 @@ impl PullAPIWrapper {
                 .raw_messages
                 .take()
                 .ok_or(ProcessPullError::MissingMessageBinary)?;
-            let mut messages = decode_many(&raw, options)?;
+            let mut messages = decode_many_as_client_compatible(&raw, options);
             if messages.iter().any(|message| {
                 message.sys_flag() & INNER_BATCH_FLAG != 0
                     && message.sys_flag() & NEED_UNWRAP_FLAG != 0
@@ -186,7 +187,6 @@ impl PullAPIWrapper {
             }
 
             attach_client_message_ids(&mut messages);
-
             filter_tags(&mut messages, subscription);
             let mut context = FilterMessageContext {
                 unit_mode: self.unit_mode.load(Ordering::Acquire),
@@ -287,7 +287,11 @@ fn filter_tags(messages: &mut Vec<MessageExt>, subscription: &SubscriptionData) 
 
 fn attach_client_message_ids(messages: &mut [MessageExt]) {
     for message in messages {
-        let offset_message_id = message.message_id().map(str::to_owned);
+        let offset_message_id = if message.is_message_client_ext() {
+            message.offset_message_id().map(str::to_owned)
+        } else {
+            message.message_id().map(str::to_owned)
+        };
         let message_id = message
             .properties()
             .get(

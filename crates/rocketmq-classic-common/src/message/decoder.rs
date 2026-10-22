@@ -595,6 +595,19 @@ pub fn decode_many_as_client(
     Ok(messages)
 }
 
+/// Decode a batch using Java `MessageDecoder.decodesBatch(..., isClient=true)`
+/// failure handling. Decoding stops at the first invalid or over-limit record
+/// and returns the successfully decoded prefix, matching Java's `null`-then-
+/// break behavior while retaining Rust's per-record safety limits.
+pub fn decode_many_as_client_compatible(records: &[u8], options: DecodeOptions) -> Vec<MessageExt> {
+    let (mut messages, _) =
+        decode_many_prefix_with_limits(records, options, DecodeLimits::default());
+    for message in &mut messages {
+        assign_client_message_ids(message);
+    }
+    messages
+}
+
 /// Java `MessageDecoder.decodes(ByteBuffer)` with the default body read enabled.
 pub fn client_decodes(records: &[u8]) -> Result<Vec<MessageExt>, DecodeError> {
     client_decodes_with_body(records, true)
@@ -629,13 +642,32 @@ fn decode_many_with_limits(
     options: DecodeOptions,
     limits: DecodeLimits,
 ) -> Result<Vec<MessageExt>, DecodeError> {
+    let (decoded, failure) = decode_many_prefix_with_limits(records, options, limits);
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(decoded),
+    }
+}
+
+fn decode_many_prefix_with_limits(
+    records: &[u8],
+    options: DecodeOptions,
+    limits: DecodeLimits,
+) -> (Vec<MessageExt>, Option<DecodeError>) {
     let mut decoded = Vec::new();
     let mut offset = 0usize;
     let mut decoded_bytes = 0usize;
     while offset < records.len() {
-        let (message, consumed) = decode_one_with_limits(&records[offset..], options, limits)?;
+        let (message, consumed) = match decode_one_with_limits(&records[offset..], options, limits)
+        {
+            Ok(decoded) => decoded,
+            Err(error) => return (decoded, Some(error)),
+        };
         if consumed == 0 {
-            return Err(DecodeError::InvalidStoreSize { offset, size: 0 });
+            return (
+                decoded,
+                Some(DecodeError::InvalidStoreSize { offset, size: 0 }),
+            );
         }
         let property_bytes = message
             .properties()
@@ -645,31 +677,49 @@ fn decode_many_with_limits(
                     .and_then(|size| size.checked_add(value.len()))
                     .and_then(|size| size.checked_add(2 * std::mem::size_of::<String>()))
                     .and_then(|size| size.checked_add(3 * std::mem::size_of::<usize>()))
-            })
-            .ok_or(DecodeError::AggregateLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
-            })?;
-        decoded_bytes = decoded_bytes
+            });
+        let Some(property_bytes) = property_bytes else {
+            return (
+                decoded,
+                Some(DecodeError::AggregateLimitExceeded {
+                    limit: limits.max_total_decoded_bytes,
+                }),
+            );
+        };
+        let Some(next_decoded_bytes) = decoded_bytes
             .checked_add(std::mem::size_of::<MessageExt>())
             .and_then(|size| size.checked_add(message.body().len()))
             .and_then(|size| size.checked_add(message.topic().len()))
             .and_then(|size| size.checked_add(property_bytes))
-            .ok_or(DecodeError::AggregateLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
-            })?;
-        if decoded_bytes > limits.max_total_decoded_bytes {
-            return Err(DecodeError::AggregateLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
-            });
+        else {
+            return (
+                decoded,
+                Some(DecodeError::AggregateLimitExceeded {
+                    limit: limits.max_total_decoded_bytes,
+                }),
+            );
+        };
+        if next_decoded_bytes > limits.max_total_decoded_bytes {
+            return (
+                decoded,
+                Some(DecodeError::AggregateLimitExceeded {
+                    limit: limits.max_total_decoded_bytes,
+                }),
+            );
         }
-        offset = offset
-            .checked_add(consumed)
-            .ok_or(DecodeError::AggregateLimitExceeded {
-                limit: limits.max_total_decoded_bytes,
-            })?;
+        let Some(next_offset) = offset.checked_add(consumed) else {
+            return (
+                decoded,
+                Some(DecodeError::AggregateLimitExceeded {
+                    limit: limits.max_total_decoded_bytes,
+                }),
+            );
+        };
+        decoded_bytes = next_decoded_bytes;
+        offset = next_offset;
         decoded.push(message);
     }
-    Ok(decoded)
+    (decoded, None)
 }
 
 fn nonnegative_length(

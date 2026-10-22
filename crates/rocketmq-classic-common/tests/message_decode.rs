@@ -10,10 +10,11 @@ use rocketmq_classic_common::{
         SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
         client_decodes_with_body, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
-        decode_inner_batch, decode_many, decode_many_as_client, decode_message_id, decode_one,
-        decode_one_as_client, decode_properties_nullable, decode_record_properties,
-        encode_compact_message, encode_compact_messages, encode_message_ext,
-        encode_message_ext_uniquely, encode_nullable_property_entries, encode_properties_nullable,
+        decode_inner_batch, decode_many, decode_many_as_client, decode_many_as_client_compatible,
+        decode_message_id, decode_one, decode_one_as_client, decode_properties_nullable,
+        decode_record_properties, encode_compact_message, encode_compact_messages,
+        encode_message_ext, encode_message_ext_uniquely, encode_nullable_property_entries,
+        encode_properties_nullable,
     },
     sysflag::{message, pull},
 };
@@ -701,6 +702,37 @@ fn client_message_decoder_apis_match_java_551() {
             .iter()
             .all(|message| message.body().is_empty())
     );
+}
+
+#[test]
+fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551() {
+    let fixture = fixture();
+    let expected = &fixture["messageBatchDecodeApi"];
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(expected["malformedBatchBase64"].as_str().unwrap())
+        .unwrap();
+
+    let decoded = decode_many_as_client_compatible(&bytes, DecodeOptions::default());
+    assert_eq!(
+        decoded.len(),
+        expected["decodedCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(expected["firstMessageClass"], "MessageClientExt");
+    assert!(decoded[0].is_message_client_ext());
+    assert_eq!(decoded[0].topic(), expected["firstTopic"]);
+    assert_eq!(decoded[0].message_id(), expected["firstMessageId"].as_str());
+    assert_eq!(
+        decoded[0].offset_message_id(),
+        expected["firstOffsetMessageId"].as_str()
+    );
+    assert_eq!(decoded[0].queue_offset(), expected["firstQueueOffset"]);
+    assert_eq!(
+        expected["inputPosition"], expected["inputLimit"],
+        "pinned Java moves its ByteBuffer to the limit after the malformed tail"
+    );
+
+    assert!(decode_many(&bytes, DecodeOptions::default()).is_err());
 }
 
 #[test]

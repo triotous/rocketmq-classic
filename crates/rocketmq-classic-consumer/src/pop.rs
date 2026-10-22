@@ -10,7 +10,9 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use rocketmq_classic_common::message::{DecodeError, DecodeOptions, MessageExt, decode_many};
+use rocketmq_classic_common::message::{
+    DecodeError, DecodeOptions, MessageExt, decode_many_as_client_compatible,
+};
 use rocketmq_classic_core::api::extensions::PopReply;
 use rocketmq_classic_protocol::header::{
     AckMessageRequestHeader, ChangeInvisibleTimeRequestHeader,
@@ -286,7 +288,7 @@ pub(crate) fn process_pop_reply(
         .raw_messages
         .take()
         .ok_or(PopProcessError::MissingResponseData)?;
-    let mut messages = decode_many(&raw, options)?;
+    let mut messages = decode_many_as_client_compatible(&raw, options);
     add_receipts(&mut messages, &header, request, broker_name)?;
     result.set_messages(Some(messages));
     Ok(result)
@@ -708,7 +710,22 @@ fn parse_i32(value: &str, field: &'static str, kind: &'static str) -> Result<i32
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
     use rocketmq_classic_common::message::Message;
+
+    fn java_message_record(name: &str) -> Vec<u8> {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/messages/records.json")).unwrap();
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap();
+        base64::engine::general_purpose::STANDARD
+            .decode(case["recordBase64"].as_str().unwrap())
+            .unwrap()
+    }
 
     fn message(topic: &str, queue_id: i32, queue_offset: i64) -> MessageExt {
         let mut message = crate::test_support::message_ext_from(Message::new(topic, Vec::new()));
@@ -836,6 +853,41 @@ mod tests {
         assert_eq!(first.checkpoint_queue_offset(), 5);
         assert_eq!(second.checkpoint_queue_offset(), 5);
         assert_eq!(second.queue_offset(), 6);
+    }
+
+    #[test]
+    fn pop_reply_keeps_decoded_prefix_when_batch_tail_is_malformed() {
+        let mut raw = java_message_record("ipv4-v1");
+        raw.push(0);
+        let request = {
+            let mut request = PopMessageRequestHeader::default();
+            request.set_topic(Some("orders".to_owned()));
+            request
+        };
+        let mut header = PopMessageResponseHeader::default();
+        header.set_pop_time(123);
+        header.set_invisible_time(456);
+        let reply = PopReply {
+            status: PopStatus::Found,
+            header: Some(header),
+            raw_messages: Some(raw),
+        };
+
+        let result =
+            process_pop_reply(reply, &request, "broker-a", DecodeOptions::default()).unwrap();
+        let messages = result.messages().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].is_message_client_ext());
+        assert_eq!(messages[0].topic(), "orders");
+        assert_eq!(messages[0].message_id(), Some("producer-unique-1"));
+        assert!(messages[0].offset_message_id().is_some());
+        assert_eq!(
+            messages[0]
+                .properties()
+                .get(PROPERTY_FIRST_POP_TIME)
+                .map(String::as_str),
+            Some("123")
+        );
     }
 
     #[test]

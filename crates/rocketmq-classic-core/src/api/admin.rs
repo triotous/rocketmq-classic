@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rocketmq_classic_common::{
-    message::{DecodeOptions, MessageExt, constants, decode_many, decode_one},
+    message::{DecodeOptions, MessageExt, constants, decode_many_as_client_compatible, decode_one},
     permission::PermName,
 };
 use rocketmq_classic_protocol::{
@@ -2930,16 +2930,7 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: "missing response body".into(),
             })?;
-        let mut message_list = decode_many(body, DecodeOptions::default()).map_err(|error| {
-            RpcError::MalformedResponse {
-                request_code: code,
-                peer: addr.to_owned(),
-                reason: error.to_string(),
-            }
-        })?;
-        for message in &mut message_list {
-            client_decode_message(message);
-        }
+        let message_list = decode_many_as_client_compatible(body, DecodeOptions::default());
         let index_last_update_timestamp = response_header
             .get_index_last_update_timestamp()
             .ok_or_else(|| RpcError::MalformedResponse {
@@ -3134,21 +3125,13 @@ impl MqClientAdmin {
                 peer: addr.to_owned(),
                 reason: "missing response body".into(),
             })?;
-        let mut messages = decode_many(
+        let mut messages = decode_many_as_client_compatible(
             body,
             DecodeOptions {
                 decompress_body,
                 ..DecodeOptions::default()
             },
-        )
-        .map_err(|error| RpcError::MalformedResponse {
-            request_code: code,
-            peer: addr.to_owned(),
-            reason: error.to_string(),
-        })?;
-        for message in &mut messages {
-            client_decode_message(message);
-        }
+        );
 
         let Some(topic) = header.get_topic() else {
             return Ok(Vec::new());

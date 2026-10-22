@@ -8026,12 +8026,14 @@ async fn query_message_unboxes_nullable_java_timestamp_at_the_result_boundary() 
 }
 
 #[tokio::test]
-async fn query_message_rejects_malformed_success_body() {
+async fn query_message_keeps_decoded_prefix_with_malformed_success_body_tail() {
     let mut fields = HeaderMap::new();
-    QueryMessageResponseHeader::default().encode_fields(&mut fields);
-    let (addr, peer) = scripted_peer(response::SUCCESS, Some(fields), Some(vec![0, 0, 0, 1])).await;
+    java_query_message_response_header(200, 1).encode_fields(&mut fields);
+    let mut body = java_message_record("ipv4-v1");
+    body.push(0);
+    let (addr, peer) = scripted_peer(response::SUCCESS, Some(fields), Some(body)).await;
     let (api, client) = api().await;
-    let error = api
+    let result = api
         .query_message(
             &addr,
             &QueryMessageRequestHeader::default(),
@@ -8039,15 +8041,15 @@ async fn query_message_rejects_malformed_success_body() {
             Instant::now() + Duration::from_secs(2),
         )
         .await
-        .unwrap_err();
+        .unwrap();
     peer.await.unwrap();
-    assert!(matches!(
-        error,
-        RpcError::MalformedResponse {
-            request_code: request::QUERY_MESSAGE,
-            ..
-        }
-    ));
+    let messages = result.get_message_list().unwrap().snapshot();
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].as_ref().unwrap().with(|message| {
+        message.is_message_client_ext()
+            && message.topic() == "orders"
+            && message.message_id() == Some("producer-unique-1")
+    }));
     client.shutdown().await;
 }
 

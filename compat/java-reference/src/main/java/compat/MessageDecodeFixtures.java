@@ -82,6 +82,7 @@ public final class MessageDecodeFixtures {
         root.put("messageDecoderPropertiesApi", messageDecoderPropertiesApi());
         root.put("messageDecoderCrcApi", messageDecoderCrcApi());
         root.put("messageCompactApi", messageCompactApi());
+        root.put("messageBatchDecodeApi", messageBatchDecodeApi());
         root.put("messageExtEncodeApi", messageExtEncodeApi());
         List<Map<String, Object>> cases = new ArrayList<>();
         cases.add(record("ipv4-v1", message("orders", "hello-v1", 17, 41,
@@ -1004,6 +1005,32 @@ public final class MessageDecodeFixtures {
         expected.put("shortDecodeThrowsBufferUnderflow", throwsCompactDecodeBufferUnderflow());
         expected.put("negativeBodyDecodeThrows", throwsNegativeCompactBodyLength());
         expected.put("incompleteCountThrowsIllegalArgument", throwsIncompleteCompactCount());
+        return expected;
+    }
+
+    private static Map<String, Object> messageBatchDecodeApi() throws Exception {
+        MessageExt message = messageExtForEncoding(0, "192.0.2.10", "198.51.100.20");
+        byte[] validRecord = MessageDecoder.encode(message, false);
+        byte[] malformedBatch = java.util.Arrays.copyOf(validRecord, validRecord.length + 1);
+        malformedBatch[malformedBatch.length - 1] = 0;
+        ByteBuffer input = ByteBuffer.wrap(malformedBatch);
+        List<MessageExt> decoded = MessageDecoder.decodesBatch(input, true, true, true);
+
+        Map<String, Object> expected = new TreeMap<>();
+        expected.put("validRecordBase64", Base64.getEncoder().encodeToString(validRecord));
+        expected.put("malformedBatchBase64", Base64.getEncoder().encodeToString(malformedBatch));
+        expected.put("decodedCount", decoded.size());
+        expected.put("inputPosition", input.position());
+        expected.put("inputLimit", input.limit());
+        if (!decoded.isEmpty()) {
+            MessageExt first = decoded.get(0);
+            MessageClientExt clientFirst = (MessageClientExt) first;
+            expected.put("firstMessageClass", first.getClass().getSimpleName());
+            expected.put("firstTopic", first.getTopic());
+            expected.put("firstMessageId", clientFirst.getMsgId());
+            expected.put("firstOffsetMessageId", clientFirst.getOffsetMsgId());
+            expected.put("firstQueueOffset", first.getQueueOffset());
+        }
         return expected;
     }
 
