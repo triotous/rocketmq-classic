@@ -2303,3 +2303,20 @@ checks the emitted request against the Java fixture, and verifies terminal
 state and removed registration. This closes the LitePull broker subscription
 check failure slice only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains open.
+
+## P18-V01 LitePull listener-registration lifecycle serialization — 2026-10-22 (`33b8084d`)
+
+Pinned Java 5.5.1 declares LitePull `start()`, `shutdown()`, and
+`registerTopicMessageQueueChangeListener()` synchronized on the same
+implementation monitor. `litePullMethodSynchronization` in
+`fixtures/consumer/lifecycle.json` records those reflected modifiers (fixture
+SHA-256 `4972ae18d32a4aa337b1c4aad81153b81fa86a28112e505bceab8a660693ac5b`).
+Rust listener registration now acquires the lifecycle gate before the
+reconciliation gate, matching the lifecycle-to-reconciliation lock order used
+by start. A scripted Broker holds startup inside `CHECK_CLIENT_CONFIG`; the
+regression verifies concurrent listener registration remains pending until
+start returns, then fetches and records the listener route. Consumer package
+tests, strict Clippy, formatting/diff checks, and pinned Maven verification
+pass. This closes the LitePull lifecycle/listener serialization race only;
+broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains open.

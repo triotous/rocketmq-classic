@@ -7339,3 +7339,24 @@ owner-specific checks belong in the manual handoff.
   Windows stack-capture execution remain open. No Broker, Docker, publication
   or release action was performed; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 LitePull listener-registration lifecycle serialization — 2026-10-22 (`33b8084d`)
+
+- [x] Pinned Java reflection confirms `start()`, `shutdown()`, and
+  `registerTopicMessageQueueChangeListener()` synchronize on the LitePull
+  implementation monitor. Fixture `litePullMethodSynchronization` is in
+  `fixtures/consumer/lifecycle.json` (SHA-256
+  `4972ae18d32a4aa337b1c4aad81153b81fa86a28112e505bceab8a660693ac5b`). Rust
+  listener registration now takes the lifecycle gate before the reconciliation
+  gate; a paused-Broker regression proves registration waits for startup to
+  finish.
+- [x] `cargo test -p rocketmq-classic-consumer --locked` passes (251 unit
+  tests, all package integration tests including 22 Lite/POP tests, and 13
+  doctests). Strict Consumer all-target/all-feature Clippy, formatting, and
+  diff checks pass. Pinned Java `mvn -f compat/java-reference/pom.xml verify`
+  passes with all 37 scenarios and Java decoding of 106 typed headers and 19
+  typed bodies.
+- [ ] Broad P18-V01 reconciliation, current-revision GitHub Ubuntu CI, and
+  native Windows stack-capture execution remain open. No Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.
