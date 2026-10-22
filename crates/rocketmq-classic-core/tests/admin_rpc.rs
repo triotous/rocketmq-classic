@@ -3787,55 +3787,39 @@ async fn list_user_matches_java_requests_responses_and_outcomes() {
                 case["timeoutMillis"].as_i64().unwrap(),
             )
             .await;
-        if name == "object-root" {
-            // Fastjson 2.0.63 decodes this malformed List<UserInfo> root as a
-            // list containing the string "{}". The typed Rust result reports
-            // the invalid root instead of returning a value of the wrong type.
-            assert_eq!(case["resultJson"], "[\"{}\"]");
-            assert!(matches!(
+        match case["outcome"].as_str().unwrap() {
+            "returned" => {
+                let received = result.unwrap_or_else(|error| panic!("{name}: {error}"));
+                let result_is_null = received.is_none();
+                assert_eq!(
+                    serde_json::to_value(received).unwrap(),
+                    serde_json::from_str::<Value>(case["resultJson"].as_str().unwrap()).unwrap(),
+                    "{name}"
+                );
+                assert_eq!(case["resultIsNull"], result_is_null, "{name}");
+            }
+            "MQBrokerException" => assert!(matches!(
                 result,
-                Err(RpcError::MalformedResponse {
+                Err(RpcError::Response {
                     request_code: request::AUTH_LIST_USER,
                     peer: error_peer,
-                    ..
+                    code,
+                    remark: Some(remark),
                 }) if error_peer == addr
-            ));
-        } else {
-            match case["outcome"].as_str().unwrap() {
-                "returned" => {
-                    let received = result.unwrap_or_else(|error| panic!("{name}: {error}"));
-                    let result_is_null = received.is_none();
-                    assert_eq!(
-                        serde_json::to_value(received).unwrap(),
-                        serde_json::from_str::<Value>(case["resultJson"].as_str().unwrap())
-                            .unwrap(),
-                        "{name}"
-                    );
-                    assert_eq!(case["resultIsNull"], result_is_null, "{name}");
-                }
-                "MQBrokerException" => assert!(matches!(
+                    && code == response_code
+                    && response_remark.as_deref() == Some(remark.as_str())
+            )),
+            _ => assert!(
+                matches!(
                     result,
-                    Err(RpcError::Response {
+                    Err(RpcError::MalformedResponse {
                         request_code: request::AUTH_LIST_USER,
                         peer: error_peer,
-                        code,
-                        remark: Some(remark),
+                        ..
                     }) if error_peer == addr
-                        && code == response_code
-                        && response_remark.as_deref() == Some(remark.as_str())
-                )),
-                _ => assert!(
-                    matches!(
-                        result,
-                        Err(RpcError::MalformedResponse {
-                            request_code: request::AUTH_LIST_USER,
-                            peer: error_peer,
-                            ..
-                        }) if error_peer == addr
-                    ),
-                    "{name}"
                 ),
-            }
+                "{name}"
+            ),
         }
         let request = peer.await.unwrap();
         assert_eq!(request.code, request::AUTH_LIST_USER, "{name}");

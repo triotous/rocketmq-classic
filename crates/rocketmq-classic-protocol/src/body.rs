@@ -4878,9 +4878,11 @@ impl ProducerConnection {
 /// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
 /// requires_java_identity::<UserInfo>();
 /// ```
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInfo {
+    #[serde(skip)]
+    java_list_raw_value: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     password: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4891,6 +4893,41 @@ pub struct UserInfo {
     username: Option<String>,
 }
 
+impl Serialize for UserInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Some(raw_value) = &self.java_list_raw_value {
+            return raw_value.serialize(serializer);
+        }
+
+        let field_count = [
+            self.password.is_some(),
+            self.user_status.is_some(),
+            self.user_type.is_some(),
+            self.username.is_some(),
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count();
+        let mut state = serializer.serialize_struct("UserInfo", field_count)?;
+        if let Some(value) = &self.password {
+            state.serialize_field("password", value)?;
+        }
+        if let Some(value) = &self.user_status {
+            state.serialize_field("userStatus", value)?;
+        }
+        if let Some(value) = &self.user_type {
+            state.serialize_field("userType", value)?;
+        }
+        if let Some(value) = &self.username {
+            state.serialize_field("username", value)?;
+        }
+        state.end()
+    }
+}
+
 impl UserInfo {
     pub fn of(
         username: Option<String>,
@@ -4898,6 +4935,7 @@ impl UserInfo {
         user_type: Option<String>,
     ) -> Self {
         Self {
+            java_list_raw_value: None,
             username,
             password,
             user_type,
@@ -4912,6 +4950,7 @@ impl UserInfo {
         user_status: Option<String>,
     ) -> Self {
         Self {
+            java_list_raw_value: None,
             username,
             password,
             user_type,
@@ -4949,6 +4988,77 @@ impl UserInfo {
 
     pub fn set_user_status(&mut self, value: Option<String>) {
         self.user_status = value;
+    }
+
+    pub fn java_to_json(&self, pretty_format: bool) -> Result<String, serde_json::Error> {
+        crate::route::java_fastjson_json(self, pretty_format)
+    }
+
+    pub fn java_to_json_optional(
+        value: Option<&Self>,
+        pretty_format: bool,
+    ) -> Result<String, serde_json::Error> {
+        value.map_or_else(
+            || Ok("null".to_owned()),
+            |value| value.java_to_json(pretty_format),
+        )
+    }
+
+    pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(self.java_to_json(false)?.into_bytes())
+    }
+
+    pub fn java_encode_optional(
+        value: Option<&Self>,
+    ) -> Result<Option<Vec<u8>>, serde_json::Error> {
+        value.map(Self::java_encode).transpose()
+    }
+
+    pub fn java_encode_with_features(
+        &self,
+        features: &[JavaJsonWriterFeature],
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        Ok(crate::route::java_fastjson_json_with_features(self, false, features)?.into_bytes())
+    }
+
+    pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    pub fn java_decode_nullable(data: Option<&[u8]>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice_nullable(data)
+    }
+
+    pub fn java_decode_list(data: &[u8]) -> Result<Vec<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_slice(data)
+    }
+
+    /// Decodes Java `RemotingSerializable.decodeList` results, including the
+    /// Fastjson object-root case that returns the original JSON text as a
+    /// String element despite the method's declared `List<UserInfo>` type.
+    pub fn java_decode_list_nullable(
+        data: Option<&[u8]>,
+    ) -> Result<Option<Vec<Option<Self>>>, serde_json::Error> {
+        let Some(data) = data else {
+            return Ok(None);
+        };
+        let root: serde_json::Value = serde_fastjson::from_fastjson_slice(data)?;
+        if root.is_object() {
+            let raw_text = String::from_utf8_lossy(data).into_owned();
+            return Ok(Some(vec![Some(Self {
+                java_list_raw_value: Some(serde_json::Value::String(raw_text)),
+                ..Self::default()
+            })]));
+        }
+        serde_fastjson::from_fastjson_list_nullable(Some(data))
+    }
+
+    pub fn java_from_json(input: &str) -> Result<Self, serde_json::Error> {
+        serde_fastjson::from_fastjson_str(input)
+    }
+
+    pub fn java_from_json_nullable(input: Option<&str>) -> Result<Option<Self>, serde_json::Error> {
+        serde_fastjson::from_fastjson_str_nullable(input)
     }
 }
 
@@ -10739,7 +10849,6 @@ impl_java_remoting_serializable_adapters!(
     AclInfo,
     AclPolicyInfo,
     AclPolicyEntryInfo,
-    UserInfo,
     KvTable,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
