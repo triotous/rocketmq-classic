@@ -7044,3 +7044,31 @@ owner-specific checks belong in the manual handoff.
 - [ ] The cross-target compile does not execute the Windows stack assertion.
   Native Windows test execution and current-revision GitHub CI evidence remain
   pending; broad P18-V01 remains open.
+
+## P18-V01 subtype getter and local gate refresh — 2026-10-22 (`2f65745b`)
+
+- [x] The direct Java `Message` derived-getter override slice is recorded in
+  the subtype crosswalk and API map. The invoked fixture and Rust differential
+  cover ten virtual getters and their call count.
+- [x] `cargo fmt --all -- --check`, strict workspace all-target/all-feature
+  Clippy, default and all-feature locked workspace tests, and `git diff --check`
+  passed. Common tests and the direct-consume integration suite also
+  passed.
+- [x] Pinned Maven `verify` passed under Azul JDK 21 after the runtime address
+  fixture was temporarily regenerated for that JDK. The original address
+  oracle and the two unrelated generated subscription-group wrapper fixtures
+  were restored byte-for-byte. Java fixture verification, Java self-tests,
+  37 differential scenarios, and Java decoding of Rust-generated headers and
+  bodies passed.
+- [x] Differential comparator self-test and the 37-scenario manifest passed;
+  deterministic race/leak smoke passed (16 cases × 3); fuzz smoke passed
+  (163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, 112
+  message decodes). Workspace metadata, package licenses, and dependency
+  direction passed.
+- [x] Facade examples built in release mode and the offline benchmark compiled.
+  Core and Consumer Windows cross-target checks passed; the exact stack test
+  cross-compiled. These checks do not execute the stack assertion on Windows.
+- [ ] Broad P18-V01 settings/source/input/error/control-flow and reverse-export
+  reconciliation remains open. Current-revision remote Ubuntu CI and native
+  Windows stack-capture execution also remain pending. No Broker, Docker,
+  publication, or release action was performed.

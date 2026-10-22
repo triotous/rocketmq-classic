@@ -274,3 +274,29 @@ P18-V04 Windows current-tree compile refresh — 2026-10-22 06:59 UTC
   --no-run --locked`.
 - These are compile checks on macOS. The stack assertion still needs execution
   on Windows; current-revision remote GitHub CI evidence remains pending.
+
+P18-V01 direct derived Message getter overrides and full local gates — 2026-10-22 07:16 UTC
+- Commit `2f65745b` adds direct subtype hooks for `getTags`, `getKeys`,
+  `isWaitStoreMsgOK`, `getBuyerId`, `getDelayTimeLevel`,
+  `getDelayTimeSec`, `getDelayTimeMs`, `getDeliverTimeMs`,
+  `getTopicSysFlag`, and `getGroupSysFlag`. The invoked Java oracle returns
+  values distinct from its `getProperty` override and records all ten calls;
+  `direct_subtype_overrides_win_over_property_derived_message_getters`
+  compares values, fallback properties, and call count. Fixture SHA-256:
+  `0d818f3b8a711661a382de19a07db7292c5976f20ddee9a6106b78b9e8860f82`.
+- Current-tree checks passed: format; strict workspace all-target/all-feature
+  Clippy; default and all-feature locked workspace tests; Common tests;
+  Consumer direct-consume tests; Java fixture verification; full pinned Maven
+  `verify`; differential self-test and 37-scenario manifest; 16 deterministic
+  race/leak cases x 3; fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+  mutations, 245 frame decodes, 112 message decodes); workspace metadata,
+  package-license and dependency-direction checks; release examples and
+  offline benchmark compilation.
+- Full Maven verification used Azul JDK 21 after temporarily regenerating
+  `fixtures/runtime/address.json` for that runtime. The saved address fixture
+  and initially clean `body-subscription-group-wrapper.json`/`.bin` files were
+  restored byte-for-byte in `finally`. Windows core and consumer cross-target
+  checks passed; the exact stack test compiled for Windows. Native Windows
+  execution and current-revision remote GitHub CI remain pending. Broad
+  P18-V01 remains open. Phase 19 protected worktree files remain unstaged;
+  no Broker, Docker, publication, or release action was performed.
