@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
@@ -201,6 +202,7 @@ public final class RuntimeConfigFixtures {
         fixture.put("languageCodeMethodCases", languageCodeMethodCases());
         fixture.put("serializeTypeMethodCases", serializeTypeMethodCases());
         fixture.put("compressionTypeMethodCases", compressionTypeMethodCases());
+        fixture.put("compressionTypeTurkishLocaleCases", compressionTypeTurkishLocaleCases());
         fixture.put("clientStatusEnumMethodCases", clientStatusEnumMethodCases());
         fixture.put("protocolEnumMethodCases", protocolEnumMethodCases());
         fixture.put("tlsModeMethodCases", tlsModeMethodCases());
@@ -3583,6 +3585,30 @@ public final class RuntimeConfigFixtures {
             cases.add(item);
         }
         return cases;
+    }
+
+    private static List<Object> compressionTypeTurkishLocaleCases() {
+        Locale originalLocale = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            List<Object> cases = new ArrayList<>();
+            for (String input : new String[] {"zlib", "zLiB", "zlıb", "ZLIB", "lz4", "zstd"}) {
+                Map<String, Object> item = new TreeMap<>();
+                item.put("input", input);
+                try {
+                    item.put("outcome", "OK");
+                    item.put("decoded",
+                        org.apache.rocketmq.common.compression.CompressionType.of(input).name());
+                } catch (RuntimeException error) {
+                    item.put("outcome", error.getClass().getSimpleName());
+                    item.put("message", error.getMessage());
+                }
+                cases.add(item);
+            }
+            return cases;
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
     }
 
     private static Map<String, Object> clientStatusEnumMethodCases() {

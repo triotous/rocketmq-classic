@@ -165,7 +165,7 @@ impl TopicMessageType {
     }
 }
 
-fn java_default_locale_language() -> Option<String> {
+pub(crate) fn java_default_locale_language() -> Option<String> {
     ["LC_ALL", "LC_CTYPE", "LANG"]
         .into_iter()
         .filter_map(std::env::var_os)
@@ -178,6 +178,21 @@ fn java_default_locale_language() -> Option<String> {
                 .unwrap_or_default()
                 .to_ascii_lowercase()
         })
+}
+
+pub(crate) fn java_default_locale_uppercase(value: &str) -> String {
+    if matches!(java_default_locale_language().as_deref(), Some("tr" | "az")) {
+        value
+            .chars()
+            .flat_map(|character| match character {
+                'i' => 'İ'.to_uppercase(),
+                'ı' => 'I'.to_uppercase(),
+                _ => character.to_uppercase(),
+            })
+            .collect()
+    } else {
+        value.to_uppercase()
+    }
 }
 
 impl fmt::Display for TopicMessageType {

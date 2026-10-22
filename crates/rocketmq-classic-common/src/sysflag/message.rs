@@ -52,11 +52,10 @@ impl CompressionType {
     pub fn of(name: Option<&str>) -> Result<Self, CompressionTypeError> {
         let name = name.ok_or(CompressionTypeError::NullName)?;
         // java.lang.String.trim() removes only UTF-16 code units <= U+0020.
-        match name
-            .trim_matches(|character: char| character <= '\u{0020}')
-            .to_uppercase()
-            .as_str()
-        {
+        let uppercase_name = crate::topic::java_default_locale_uppercase(
+            name.trim_matches(|character: char| character <= '\u{0020}'),
+        );
+        match uppercase_name.as_str() {
             "LZ4" => Ok(Self::Lz4),
             "ZSTD" => Ok(Self::Zstd),
             "ZLIB" => Ok(Self::Zlib),
@@ -237,6 +236,50 @@ mod tests {
                     if !matches!(error, CompressionTypeError::NullName) {
                         assert_eq!(case["message"], error.to_string(), "{case}");
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compression_type_of_matches_turkish_default_locale() {
+        const CHILD_MARKER: &str = "ROCKETMQ_CLASSIC_TURKISH_COMPRESSION_TEST";
+
+        if std::env::var_os(CHILD_MARKER).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "sysflag::message::tests::compression_type_of_matches_turkish_default_locale",
+                ])
+                .env("LC_ALL", "tr_TR.UTF-8")
+                .env(CHILD_MARKER, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Turkish-locale child test failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/client-config.json"
+        ))
+        .unwrap();
+        for case in fixture["compressionTypeTurkishLocaleCases"]
+            .as_array()
+            .expect("Java Turkish compression cases")
+        {
+            let input = case["input"].as_str().unwrap();
+            match CompressionType::of(Some(input)) {
+                Ok(value) => {
+                    assert_eq!(case["outcome"], "OK", "{case}");
+                    assert_eq!(case["decoded"], value.name(), "{case}");
+                }
+                Err(error) => {
+                    assert_eq!(case["outcome"], "RuntimeException", "{case}");
+                    assert_eq!(case["message"], error.to_string(), "{case}");
                 }
             }
         }
