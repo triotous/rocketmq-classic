@@ -595,13 +595,20 @@ pub fn decode_many_as_client(
     Ok(messages)
 }
 
+/// Decode a batch with Java `decodesBatch(..., isClient=false)` failure
+/// handling. Stops at the first invalid or over-limit record and returns the
+/// successfully decoded prefix; use [`decode_many`] when strict errors are
+/// required.
+pub fn decode_many_compatible(records: &[u8], options: DecodeOptions) -> Vec<MessageExt> {
+    decode_many_prefix_with_limits(records, options, DecodeLimits::default()).0
+}
+
 /// Decode a batch using Java `MessageDecoder.decodesBatch(..., isClient=true)`
 /// failure handling. Decoding stops at the first invalid or over-limit record
 /// and returns the successfully decoded prefix, matching Java's `null`-then-
 /// break behavior while retaining Rust's per-record safety limits.
 pub fn decode_many_as_client_compatible(records: &[u8], options: DecodeOptions) -> Vec<MessageExt> {
-    let (mut messages, _) =
-        decode_many_prefix_with_limits(records, options, DecodeLimits::default());
+    let mut messages = decode_many_compatible(records, options);
     for message in &mut messages {
         assign_client_message_ids(message);
     }
@@ -618,13 +625,13 @@ pub fn client_decodes_with_body(
     records: &[u8],
     read_body: bool,
 ) -> Result<Vec<MessageExt>, DecodeError> {
-    decode_many_as_client(
+    Ok(decode_many_as_client_compatible(
         records,
         DecodeOptions {
             read_body,
             ..DecodeOptions::default()
         },
-    )
+    ))
 }
 
 fn assign_client_message_ids(message: &mut MessageExt) {

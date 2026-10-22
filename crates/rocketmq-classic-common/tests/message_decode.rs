@@ -11,10 +11,10 @@ use rocketmq_classic_common::{
         client_decodes_with_body, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
         decode_inner_batch, decode_many, decode_many_as_client, decode_many_as_client_compatible,
-        decode_message_id, decode_one, decode_one_as_client, decode_properties_nullable,
-        decode_record_properties, encode_compact_message, encode_compact_messages,
-        encode_message_ext, encode_message_ext_uniquely, encode_nullable_property_entries,
-        encode_properties_nullable,
+        decode_many_compatible, decode_message_id, decode_one, decode_one_as_client,
+        decode_properties_nullable, decode_record_properties, encode_compact_message,
+        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
+        encode_nullable_property_entries, encode_properties_nullable,
     },
     sysflag::{message, pull},
 };
@@ -731,8 +731,39 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
         expected["inputPosition"], expected["inputLimit"],
         "pinned Java moves its ByteBuffer to the limit after the malformed tail"
     );
+    assert_eq!(
+        expected["decodesCount"], expected["decodedCount"],
+        "Java decodes(ByteBuffer, readBody) also keeps the valid prefix"
+    );
+    assert_eq!(
+        expected["decodesInputPosition"],
+        expected["decodesInputLimit"]
+    );
+    let client_decoded = client_decodes(&bytes).unwrap();
+    assert_eq!(
+        client_decoded.len(),
+        expected["decodesCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(client_decoded.len(), 1);
+    assert!(client_decoded[0].is_message_client_ext());
+    let client_without_body = client_decodes_with_body(&bytes, false).unwrap();
+    assert_eq!(client_without_body.len(), client_decoded.len());
+    assert!(client_without_body[0].body().is_empty());
+
+    let generic_batch = decode_many_compatible(&bytes, DecodeOptions::default());
+    assert_eq!(
+        generic_batch.len(),
+        expected["genericBatchCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(expected["genericBatchFirstMessageClass"], "MessageExt");
+    assert!(!generic_batch[0].is_message_client_ext());
+    assert_eq!(
+        expected["genericBatchInputPosition"],
+        expected["genericBatchInputLimit"]
+    );
 
     assert!(decode_many(&bytes, DecodeOptions::default()).is_err());
+    assert!(decode_many_as_client(&bytes, DecodeOptions::default()).is_err());
 }
 
 #[test]

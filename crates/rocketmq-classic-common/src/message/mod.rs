@@ -28,8 +28,8 @@ pub use decoder::{
     MESSAGE_PHYSIC_OFFSET_POSITION, MESSAGE_STORE_TIMESTAMP_POSITION, MessageVersion,
     MessageVersionError, PHY_POS_POSITION, QUEUE_OFFSET_POSITION, SYSFLAG_POSITION,
     append_crc32_property, client_decode, client_decodes, client_decodes_with_body, decode_many,
-    decode_many_as_client, decode_many_as_client_compatible, decode_one, decode_one_as_client,
-    decode_record_properties,
+    decode_many_as_client, decode_many_as_client_compatible, decode_many_compatible, decode_one,
+    decode_one_as_client, decode_record_properties,
 };
 pub use encoder::{MessageExtEncodeError, encode_message_ext, encode_message_ext_uniquely};
 pub use host_address::{MessageHostAddress, MessageHostAddressBytesError, MessageHostAddressError};
