@@ -1069,6 +1069,11 @@ impl Producer {
                 return Err(error.into());
             }
         }
+        if let Err(error) = self.initialize_configured_topic_routes(&runtime).await {
+            let deadline = self.unregister_deadline();
+            let _ = runtime.unregister_producer(&lease, deadline).await;
+            return Err(error);
+        }
         *state = State::Started {
             runtime: Arc::downgrade(&runtime),
             lease,
@@ -1085,6 +1090,71 @@ impl Producer {
             .start_scheduled_task(self)
             .await;
         Ok(())
+    }
+
+    async fn initialize_configured_topic_routes(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+    ) -> Result<(), ProducerError> {
+        let Some(topics) = self.started_topics.get().cloned().flatten() else {
+            return Ok(());
+        };
+        let timeout = Duration::from_millis(
+            self.config.client_config().mq_client_api_timeout().max(0) as u64,
+        );
+        let mut client_config = self.config.client_config().clone();
+        for topic in topics {
+            let topic = client_config.with_namespace(Some(&topic))?.unwrap_or(topic);
+            self.remember_publish_topic(&topic);
+            let cached_info = self.cached_publish_info_value(&topic);
+            if !cached_info.as_ref().is_some_and(TopicPublishInfo::ok) {
+                self.update_startup_topic_route(runtime, &topic, timeout, false)
+                    .await?;
+            }
+
+            let route_available = self
+                .cached_publish_info_value(&topic)
+                .is_some_and(|info| info.have_topic_router_info() || info.ok());
+            if !route_available {
+                self.update_startup_topic_route(runtime, &topic, timeout, true)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn update_startup_topic_route(
+        &self,
+        runtime: &ClientRuntime,
+        topic: &str,
+        timeout: Duration,
+        use_default_topic: bool,
+    ) -> Result<(), ProducerError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let result = if use_default_topic {
+            runtime
+                .update_topic_route_from_default(topic, self.default_topic_queue_nums(), deadline)
+                .await
+        } else {
+            runtime.update_topic_route(topic, deadline).await
+        };
+        match result {
+            Ok(_) => Ok(()),
+            Err(error)
+                if matches!(
+                    &error,
+                    rocketmq_classic_core::runtime::RuntimeError::Rpc(
+                        rocketmq_classic_core::error::RpcError::Transport(_)
+                    )
+                ) =>
+            {
+                Err(error.into())
+            }
+            Err(error) => {
+                tracing::warn!(topic, error = %error, "producer startup topic route update failed");
+                Ok(())
+            }
+        }
     }
 
     async fn start_trace_dispatcher(&self, runtime: &Arc<ClientRuntime>, producer_group: &str) {
@@ -1476,10 +1546,51 @@ mod tests {
 
     #[tokio::test]
     async fn topic_setter_after_start_changes_getter_but_not_runtime_topics() {
+        use bytes::BytesMut;
+        use rocketmq_classic_protocol::codes::{request, response};
+        use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::{TcpListener, TcpStream},
+        };
+
+        async fn read_command(stream: &mut TcpStream) -> Option<RemotingCommand> {
+            let mut length = [0; 4];
+            if stream.read_exact(&mut length).await.is_err() {
+                return None;
+            }
+            let mut bytes = BytesMut::from(&length[..]);
+            bytes.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut bytes[4..]).await.ok()?;
+            frame::decode_next(&mut bytes).ok().flatten()
+        }
+
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let nameserver_peer = tokio::spawn(async move {
+            let (mut stream, _) = nameserver.accept().await.unwrap();
+            while let Some(command) = read_command(&mut stream).await {
+                assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+                let mut reply = RemotingCommand {
+                    code: response::TOPIC_NOT_EXIST,
+                    opaque: command.opaque,
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+            }
+        });
+
         let fixture: serde_json::Value =
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
         let expected = &fixture["runtimeSetterFlows"];
         let mut config = ProducerConfig::new("topics-live-start-snapshot").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
         config.set_topics(Some(vec!["startup-topic".into()].into()));
         let producer = Arc::new(Producer::with_runtime_manager(
             config,
@@ -1517,6 +1628,7 @@ mod tests {
                 .collect()
         );
         producer.shutdown().await.unwrap();
+        nameserver_peer.abort();
     }
 
     #[tokio::test]
@@ -1849,6 +1961,44 @@ mod tests {
 
         producer.shutdown_with_factory(false).await.unwrap();
         assert!(runtime.shutdown().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn producer_start_skips_route_lookup_for_cached_publish_info() {
+        use tokio::net::TcpListener;
+
+        let nameserver = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let nameserver_address = nameserver.local_addr().unwrap().to_string();
+        let nameserver_peer = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_millis(250), nameserver.accept())
+                .await
+                .is_ok()
+        });
+
+        let mut config = ProducerConfig::new("startup-cached-route-producer").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(nameserver_address));
+        config.set_topics(Some(vec!["startup-cached-topic".into()].into()));
+        let producer = Arc::new(Producer::with_runtime_manager(
+            config,
+            ClientRuntimeManager::new(),
+        ));
+        let cached_info = TopicPublishInfo::default();
+        cached_info.set_message_queue_list(Some(crate::ProducerPublishQueueList::new(vec![
+            rocketmq_classic_common::message::MessageQueue::new(
+                "startup-cached-topic",
+                "cached-broker",
+                0,
+            ),
+        ])));
+        producer
+            .get_topic_publish_info_table()
+            .put("startup-cached-topic", cached_info);
+
+        producer.start_with_factory(false).await.unwrap();
+        assert!(!nameserver_peer.await.unwrap());
+        producer.shutdown_with_factory(false).await.unwrap();
     }
 
     #[tokio::test]

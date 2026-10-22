@@ -762,6 +762,56 @@ async fn default_topic_route_fallback_and_async_mode_response_policy_match_java(
 }
 
 #[tokio::test]
+async fn producer_start_initializes_configured_topic_routes_and_default_fallback() {
+    let route = serde_json::to_vec(&json!({
+        "orderTopicConf": null,
+        "queueDatas": [{
+            "brokerName": "startup-broker",
+            "readQueueNums": 8,
+            "writeQueueNums": 8,
+            "perm": 6,
+            "topicSysFlag": 0
+        }],
+        "brokerDatas": [{
+            "cluster": "DefaultCluster",
+            "brokerName": "startup-broker",
+            "brokerAddrs": {"0": null},
+            "enableActingMaster": false
+        }],
+        "filterServerTable": {},
+        "topicQueueMappingByBroker": {}
+    }))
+    .unwrap();
+    let missing_topics = BTreeSet::from(["startup-topic".to_owned()]);
+    let (nameserver, nameserver_task, route_requests) =
+        name_server_peer(route, missing_topics).await;
+    let mut config = producer_config("startup-route-init", &nameserver);
+    config.set_default_topic_queue_nums(2);
+    config.set_topics(Some(vec!["startup-topic".into()].into()));
+    let producer = Arc::new(Producer::new(config));
+
+    producer.start().await.unwrap();
+
+    let requests = route_requests.lock().unwrap().clone();
+    assert_eq!(requests.first().map(String::as_str), Some("startup-topic"));
+    assert!(requests.contains(&"TBW102".to_owned()));
+    assert!(producer.publish_topics().contains("startup-topic"));
+    assert_eq!(
+        producer
+            .get_topic_publish_info_table()
+            .get("startup-topic")
+            .unwrap()
+            .message_queue_list()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    producer.shutdown().await.unwrap();
+    nameserver_task.abort();
+}
+
+#[tokio::test]
 async fn topic_without_route_stays_in_producer_refresh_inventory() {
     let route = route_body(&[]);
     let missing_topics = BTreeSet::from(["orders".to_owned(), "TBW102".to_owned()]);
