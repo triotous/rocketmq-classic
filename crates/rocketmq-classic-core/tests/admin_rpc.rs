@@ -2019,6 +2019,84 @@ async fn clone_group_offset_matches_java_requests_and_outcomes() {
 }
 
 #[tokio::test]
+async fn invoke_broker_to_get_consumer_status_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["invokeBrokerToGetConsumerStatusApi"],
+        json!([
+            "java.util.Map org.apache.rocketmq.client.impl.MQClientAPIImpl.invokeBrokerToGetConsumerStatus(java.lang.String,java.lang.String,java.lang.String,java.lang.String,long)"
+        ])
+    );
+    let cases = fixture["invokeBrokerToGetConsumerStatusOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 4);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(expected_request["timeoutMillis"], timeout_millis);
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .invoke_broker_to_get_consumer_status(
+                &addr,
+                case["topic"].as_str(),
+                case["group"].as_str(),
+                case["clientAddr"].as_str(),
+                timeout_millis,
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let table = result.unwrap();
+            let consumer_ids =
+                table.map(|table| table.snapshot().keys().cloned().collect::<Vec<_>>());
+            assert_eq!(
+                serde_json::to_value(consumer_ids).unwrap(),
+                case["consumerIds"]
+            );
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        let actual_fields = request
+            .ext_fields
+            .map(serde_json::to_value)
+            .transpose()
+            .unwrap()
+            .unwrap_or_else(|| json!({}));
+        assert_eq!(actual_fields, expected_request["extFields"]);
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn add_broker_honors_the_java_timeout_argument() {
     let (addr, peer) =
         scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;

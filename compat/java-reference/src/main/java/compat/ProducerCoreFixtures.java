@@ -368,6 +368,15 @@ public final class ProducerCoreFixtures {
         result.put("cloneGroupOffsetRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.CloneGroupOffsetRequestHeader.class));
         result.put("cloneGroupOffsetOperations", cloneGroupOffsetOperations());
+        result.put("invokeBrokerToGetConsumerStatusApi",
+            Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+                .filter(method -> Modifier.isPublic(method.getModifiers()))
+                .filter(method -> method.getName().equals("invokeBrokerToGetConsumerStatus"))
+                .map(ProducerCoreFixtures::methodSignature)
+                .sorted()
+                .collect(java.util.stream.Collectors.toList()));
+        result.put("invokeBrokerToGetConsumerStatusOperations",
+            invokeBrokerToGetConsumerStatusOperations());
         result.put("addBrokerRequestHeaderApi",
             publicApiSurface(org.apache.rocketmq.remoting.protocol.header.AddBrokerRequestHeader.class));
         result.put("removeBrokerRequestHeaderApi",
@@ -2894,6 +2903,89 @@ public final class ProducerCoreFixtures {
             true, org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
             "group offset clone rejected"));
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> invokeBrokerToGetConsumerStatusOperations()
+        throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(invokeBrokerToGetConsumerStatusCase("status-success", "orders", "workers",
+            "consumer-a", org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, "{\"consumerTable\":{\"consumer-a\":{}}}"));
+        cases.add(invokeBrokerToGetConsumerStatusCase("status-null-inputs", null, null, null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"consumerTable\":{}}"));
+        cases.add(invokeBrokerToGetConsumerStatusCase("status-error", "orders", "workers",
+            "consumer-a", org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "consumer status rejected", null));
+        cases.add(invokeBrokerToGetConsumerStatusCase("status-success-no-body", "orders",
+            "workers", "consumer-a", org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, null));
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> invokeBrokerToGetConsumerStatusCase(
+        String name, String topic, String group, String clientAddr, int responseCode,
+        String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("broker-consumer-status-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("topic", topic);
+        result.put("group", group);
+        result.put("clientAddr", clientAddr);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyPresent", responseBody != null);
+        result.put("responseBody", responseBody);
+        try {
+            Map<String, Map<org.apache.rocketmq.common.message.MessageQueue, Long>> status =
+                api.invokeBrokerToGetConsumerStatus(
+                    "broker-a:10911", topic, group, clientAddr, 2345L);
+            result.put("outcome", "returned");
+            result.put("consumerIds", status == null ? null : new ArrayList<>(status.keySet()));
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

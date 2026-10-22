@@ -1832,6 +1832,19 @@ fixtures cover all child and inherited fields. Producer core fixture SHA-256:
 `c7895cfff96e0150878d761336c34b4ddfec8064249d4af994a3f6796959a8d9`. This
 closes this direct RPC/header row only; broad P18-V01 remains open.
 
+## Direct Broker consumer-status API — 2026-10-22
+
+Pinned `MQClientAPIImpl.invokeBrokerToGetConsumerStatus(String,String,String,String,long)`
+sends request 223 with nullable `topic`, `group`, and `clientAddr`, applies the
+configured VIP-channel transform, and decodes the `consumerTable` from
+`GetConsumerStatusBody`. Core exposes
+`MQClientApi::invoke_broker_to_get_consumer_status` and returns the nullable
+shared consumer-to-queue-offset table. Invoked Java fixtures and Rust loopback
+cases cover normal and null inputs, exact request fields, empty and populated
+tables, Broker errors, and a `SUCCESS` response without a body. Producer core
+fixture SHA-256: `7de333d7c61d4235a6e134e5bdf7dc97cf03c12024dd320b9b96ff3a02beb183`.
+This closes this direct RPC row only; broad P18-V01 remains open.
+
 ## `MessageClientExt` subtype offset-ID dispatch — 2026-10-21
 
 A caller-defined Java subclass of `MessageClientExt` can override

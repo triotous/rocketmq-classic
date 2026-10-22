@@ -1721,6 +1721,19 @@ This closes this surfaced operation only; exhaustive P18-V01 API/input/reverse
 export reconciliation remains open, as do P18-V04 native Windows and current
 revision GitHub CI evidence.
 
+## P18-V01 direct Broker consumer-status API — 2026-10-22
+
+`MQClientAPIImpl.invokeBrokerToGetConsumerStatus` now maps to
+`MQClientApi::invoke_broker_to_get_consumer_status`. The implementation keeps
+nullable request strings, request 223, the configured VIP conversion and
+caller timeout, and decodes the nullable `consumerTable` returned by
+`GetConsumerStatusBody`. Its invoked fixture and loopback test cover populated
+and empty results, null inputs, error responses, and success without a body.
+Producer core fixture SHA-256:
+`7de333d7c61d4235a6e134e5bdf7dc97cf03c12024dd320b9b96ff3a02beb183`.
+This closes this surfaced operation only; the remaining direct client API,
+settings, input/error, control-flow and reverse-export audit remains open.
+
 ## P18-V01 `MessageClientExt` inherited offset-ID overrides — 2026-10-21
 
 Rust now dispatches Java `MessageClientExt` subclasses' virtual

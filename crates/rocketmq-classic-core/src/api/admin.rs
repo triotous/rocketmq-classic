@@ -46,6 +46,37 @@ use super::{MQClientApi, classify, decode_body, decode_header};
 use crate::config::read_shared_client_config;
 use crate::error::RpcError;
 
+#[derive(Default)]
+struct InvokeBrokerToGetConsumerStatusHeader {
+    topic: Option<String>,
+    group: Option<String>,
+    client_addr: Option<String>,
+}
+
+impl CommandHeader for InvokeBrokerToGetConsumerStatusHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        if let Some(value) = &self.topic {
+            fields.insert("topic".to_owned(), value.clone());
+        }
+        if let Some(value) = &self.group {
+            fields.insert("group".to_owned(), value.clone());
+        }
+        if let Some(value) = &self.client_addr {
+            fields.insert("clientAddr".to_owned(), value.clone());
+        }
+    }
+
+    fn decode_fields(
+        fields: &HeaderMap,
+    ) -> Result<Self, rocketmq_classic_protocol::header::ProtocolError> {
+        Ok(Self {
+            topic: fields.get("topic").cloned(),
+            group: fields.get("group").cloned(),
+            client_addr: fields.get("clientAddr").cloned(),
+        })
+    }
+}
+
 /// Java `getNameServerConfig` results keyed by NameServer address. Each value
 /// is optional because Java returns a null `Properties` for malformed content.
 pub type NameServerConfigs = HashMap<String, Option<HashMap<String, String>>>;
@@ -628,6 +659,69 @@ impl MQClientApi {
             .await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Gets a consumer's queue offsets through Java
+    /// `MQClientAPIImpl.invokeBrokerToGetConsumerStatus`. Nullable header
+    /// strings are omitted exactly as Java's FastCodesHeader does, and a
+    /// successful response without a body follows Java's client-error path.
+    pub async fn invoke_broker_to_get_consumer_status(
+        &self,
+        addr: &str,
+        topic: Option<&str>,
+        group: Option<&str>,
+        client_addr: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<rocketmq_classic_protocol::body::SharedConsumerQueueOffsets>, RpcError> {
+        let code = request::INVOKE_BROKER_TO_GET_CONSUMER_STATUS;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let header = InvokeBrokerToGetConsumerStatusHeader {
+            topic: topic.map(str::to_owned),
+            group: group.map(str::to_owned),
+            client_addr: client_addr.map(str::to_owned),
+        };
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code != response::SUCCESS {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let Some(body) = reply.body else {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        };
+        let body = std::str::from_utf8(&body).map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer: addr.to_owned(),
+            reason: error.to_string(),
+        })?;
+        let status = rocketmq_classic_protocol::body::GetConsumerStatusBody::decode_java_json(body)
+            .map_err(|error| RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            })?;
+        Ok(status.get_consumer_table())
     }
 
     async fn broadcast_name_server_kv_request(
@@ -2409,6 +2503,108 @@ mod tests {
                 assert_eq!(actual, expected, "input {input:?}");
             }
         }
+    }
+
+    #[tokio::test]
+    async fn direct_broker_operations_apply_configured_vip_port_offset() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use rocketmq_classic_protocol::codes::{LanguageCode, request, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_addr = listener.local_addr().unwrap();
+        let advertised_port = peer_addr.port().checked_add(2).unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            for (expected_code, expected_fields) in [
+                (
+                    request::CLONE_GROUP_OFFSET,
+                    serde_json::json!({
+                        "srcGroup": "source",
+                        "destGroup": "destination",
+                        "topic": "orders",
+                        "offline": "true"
+                    }),
+                ),
+                (
+                    request::INVOKE_BROKER_TO_GET_CONSUMER_STATUS,
+                    serde_json::json!({
+                        "topic": "orders",
+                        "group": "workers",
+                        "clientAddr": "consumer-a"
+                    }),
+                ),
+            ] {
+                let mut length = [0_u8; 4];
+                stream.read_exact(&mut length).await.unwrap();
+                let mut encoded = bytes::BytesMut::from(&length[..]);
+                encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+                stream.read_exact(&mut encoded[4..]).await.unwrap();
+                let command = frame::decode_next(&mut encoded).unwrap().unwrap();
+                assert_eq!(command.code, expected_code);
+                assert_eq!(command.language, Some(LanguageCode::Java));
+                assert!(command.body.is_none());
+                let actual_fields = command
+                    .ext_fields
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                assert_eq!(actual_fields, expected_fields);
+                let mut reply = RemotingCommand {
+                    code: response::SUCCESS,
+                    opaque: command.opaque,
+                    body: (expected_code == request::INVOKE_BROKER_TO_GET_CONSUMER_STATUS)
+                        .then(|| br#"{"consumerTable":{"consumer-a":{}}}"#.to_vec()),
+                    ..Default::default()
+                };
+                reply.mark_response();
+                stream
+                    .write_all(&frame::encode(&reply).unwrap())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("direct-broker-operations-vip");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let address = format!("127.0.0.1:{advertised_port}");
+        api.clone_group_offset(
+            &address,
+            Some("source"),
+            Some("destination"),
+            Some("orders"),
+            true,
+            2000,
+        )
+        .await
+        .unwrap();
+        let status = api
+            .invoke_broker_to_get_consumer_status(
+                &address,
+                Some("orders"),
+                Some("workers"),
+                Some("consumer-a"),
+                2000,
+            )
+            .await
+            .unwrap();
+        assert!(status.is_some());
+        peer.await.unwrap();
+        remoting.shutdown().await;
     }
 
     #[tokio::test]

@@ -145,3 +145,24 @@ remain untouched and unstaged.
   the successful run. Broad P18-V01 remains open; current-revision GitHub
   Ubuntu/native Windows P18-V04 evidence remains open. No remote CI, Broker,
   or Docker run was performed. Phase 19 worktree paths remain unstaged.
+
+## P18-V01 `invokeBrokerToGetConsumerStatus` direct RPC closure — 2026-10-22
+
+- Added `MQClientApi::invoke_broker_to_get_consumer_status`, preserving Java's
+  nullable topic/group/client-address fields, request 223, configured VIP
+  conversion, timeout, nullable `consumerTable`, Broker errors, and the
+  success-without-body client-error branch.
+- Added Java invocation cases and Rust fixture-driven loopback coverage for
+  populated/empty tables, null inputs, Broker errors, and no response body.
+  A separate Core test verifies the configured VIP port offset for both this
+  operation and `clone_group_offset`. Producer core fixture SHA-256:
+  `7de333d7c61d4235a6e134e5bdf7dc97cf03c12024dd320b9b96ff3a02beb183`.
+- `cargo test -p rocketmq-classic-core --test admin_rpc
+  invoke_broker_to_get_consumer_status_matches_java_fixture --locked` passed
+  (1 test); `cargo test -p rocketmq-classic-core --lib
+  direct_broker_operations_apply_configured_vip_port_offset --locked` passed
+  (1 test). Pinned Maven `verify` passed for this fixture revision: 37
+  scenarios, 86 typed headers, and 16 typed bodies. Formatting and diff checks
+  passed. Broad P18-V01 remains open; current-revision GitHub Ubuntu/native
+  Windows P18-V04 evidence remains open. No remote CI, Broker, or Docker run
+  was performed. Phase 19 worktree paths remain unstaged.
