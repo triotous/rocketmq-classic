@@ -719,35 +719,38 @@ impl ProcessQueue {
         let now = epoch_millis();
         let mut state = self.lock_state();
         state.last_consume_timestamp_millis = now;
-        if state.messages.is_empty() {
+        if !state
+            .messages
+            .values()
+            .any(|entry| entry.state == MessageState::Ready)
+        {
             return -1;
         }
         let mut result = state.queue_offset_max.wrapping_add(1);
         for message in messages {
             let offset = message.queue_offset();
-            if state.messages.remove(&offset).is_some() {
+            let is_ready = state
+                .messages
+                .get(&offset)
+                .is_some_and(|entry| entry.state == MessageState::Ready);
+            if is_ready {
+                state.messages.remove(&offset);
                 state.cached_count = state.cached_count.wrapping_sub(1);
                 let body_bytes = message.body().len();
                 state.cached_bytes = state.cached_bytes.wrapping_sub(body_bytes as i64);
             }
         }
-        for offsets in state.in_flight_batches.values_mut() {
-            offsets.retain(|offset| {
-                !messages
-                    .iter()
-                    .any(|message| message.queue_offset() == *offset)
-            });
-        }
-        state
-            .in_flight_batches
-            .retain(|_, offsets| !offsets.is_empty());
-        if let Some((offset, _)) = state.messages.first_key_value() {
-            result = *offset;
+        if let Some(offset) = state
+            .messages
+            .iter()
+            .find(|(_, entry)| entry.state == MessageState::Ready)
+            .map(|(offset, _)| *offset)
+        {
+            result = offset;
         }
         if state.cached_count == 0 {
             state.cached_bytes = 0;
         }
-        state.consuming = !state.messages.is_empty();
         result
     }
 
@@ -1671,20 +1674,52 @@ mod tests {
     #[test]
     fn remove_message_matches_java_for_in_flight_entries() {
         let process_queue = process_queue(16);
-        process_queue
-            .insert_messages(16, vec![message(10, 2), message(11, 3)])
-            .unwrap();
-        let batch = process_queue.take_batch(16, 1).unwrap().unwrap();
+        let first = message(10, 2);
+        process_queue.put_message(&[first.clone(), message(11, 3)]);
+        let batch = process_queue.take_messages(1);
+        assert_eq!(batch[0].queue_offset(), 10);
         assert_eq!(process_queue.snapshot(16).unwrap().in_flight_count, 1);
 
-        let next_offset = process_queue.remove_message(batch.messages());
+        let next_offset = process_queue.remove_message(&batch);
 
         assert_eq!(next_offset, 11);
         let snapshot = process_queue.snapshot(16).unwrap();
-        assert_eq!(snapshot.cached_count, 1);
-        assert_eq!(snapshot.cached_bytes, 3);
-        assert_eq!(snapshot.in_flight_count, 0);
-        assert_eq!(process_queue.commit(), -1);
+        assert_eq!(snapshot.cached_count, 2);
+        assert_eq!(snapshot.cached_bytes, 5);
+        assert_eq!(snapshot.in_flight_count, 1);
+        assert_eq!(
+            process_queue
+                .get_msg_tree_map()
+                .read()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [11]
+        );
+        assert_eq!(process_queue.commit(), 11);
+        assert_eq!(process_queue.get_msg_count().get(), 1);
+        assert_eq!(process_queue.get_msg_size().get(), 3);
+    }
+
+    #[test]
+    fn remove_message_preserves_dispatch_state_until_empty_take() {
+        let process_queue = process_queue(17);
+        let first = message(10, 2);
+        assert!(process_queue.put_message(&[first.clone()]));
+        assert_eq!(process_queue.remove_message(&[Arc::new(first)]), 11);
+
+        assert!(!process_queue.put_message(&[message(11, 3)]));
+        assert_eq!(process_queue.get_msg_count().get(), 1);
+        assert_eq!(process_queue.get_msg_size().get(), 3);
+        assert_eq!(
+            process_queue
+                .get_msg_tree_map()
+                .read()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [11]
+        );
     }
 
     #[test]

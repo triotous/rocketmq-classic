@@ -272,6 +272,36 @@ public final class ConsumerFacadeApiFixtures {
         result.put("droppedDispatch", droppedDispatch);
         result.put("droppedQueueCount", droppedQueue.getMsgCount().get());
 
+        ProcessQueue inFlightRemovalQueue = new ProcessQueue();
+        MessageExt inFlightMessage = processQueueMessage(50L, new byte[] {1, 2});
+        inFlightRemovalQueue.putMessage(Arrays.asList(
+            inFlightMessage, processQueueMessage(51L, new byte[] {3, 4, 5})));
+        List<MessageExt> inFlightMessages = inFlightRemovalQueue.takeMessages(1);
+        long removeInFlightNextOffset = inFlightRemovalQueue.removeMessage(inFlightMessages);
+        Map<String, Object> removeInFlight = new TreeMap<>();
+        removeInFlight.put("nextOffset", removeInFlightNextOffset);
+        removeInFlight.put("readyTreeKeys", new ArrayList<>(inFlightRemovalQueue.getMsgTreeMap().keySet()));
+        removeInFlight.put("countBeforeCommit", inFlightRemovalQueue.getMsgCount().get());
+        removeInFlight.put("sizeBeforeCommit", inFlightRemovalQueue.getMsgSize().get());
+        removeInFlight.put("commitOffset", inFlightRemovalQueue.commit());
+        removeInFlight.put("countAfterCommit", inFlightRemovalQueue.getMsgCount().get());
+        removeInFlight.put("sizeAfterCommit", inFlightRemovalQueue.getMsgSize().get());
+        result.put("removeInFlight", removeInFlight);
+
+        ProcessQueue dispatchAfterRemoveQueue = new ProcessQueue();
+        MessageExt removedMessage = processQueueMessage(60L, new byte[] {6});
+        dispatchAfterRemoveQueue.putMessage(Arrays.asList(removedMessage));
+        long removeLastNextOffset = dispatchAfterRemoveQueue.removeMessage(Arrays.asList(removedMessage));
+        boolean dispatchAfterRemove = dispatchAfterRemoveQueue.putMessage(
+            Arrays.asList(processQueueMessage(61L, new byte[] {7, 8})));
+        Map<String, Object> dispatchAfterRemoveResult = new TreeMap<>();
+        dispatchAfterRemoveResult.put("removeNextOffset", removeLastNextOffset);
+        dispatchAfterRemoveResult.put("nextDispatch", dispatchAfterRemove);
+        dispatchAfterRemoveResult.put("count", dispatchAfterRemoveQueue.getMsgCount().get());
+        dispatchAfterRemoveResult.put("size", dispatchAfterRemoveQueue.getMsgSize().get());
+        dispatchAfterRemoveResult.put("treeKeys", new ArrayList<>(dispatchAfterRemoveQueue.getMsgTreeMap().keySet()));
+        result.put("dispatchAfterRemove", dispatchAfterRemoveResult);
+
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
         MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});

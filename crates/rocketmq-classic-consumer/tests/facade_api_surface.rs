@@ -695,6 +695,60 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     let dropped_queue = ProcessQueue::new();
     dropped_queue.set_dropped(true);
     let dropped_dispatch = dropped_queue.put_message(&[first.clone()]);
+
+    let mut in_flight_first = MessageExt::new();
+    in_flight_first.set_queue_offset(50);
+    in_flight_first.set_body(vec![1, 2]);
+    let mut in_flight_second = MessageExt::new();
+    in_flight_second.set_queue_offset(51);
+    in_flight_second.set_body(vec![3, 4, 5]);
+    let in_flight_removal_queue = ProcessQueue::new();
+    in_flight_removal_queue.put_message(&[in_flight_first, in_flight_second]);
+    let in_flight_batch = in_flight_removal_queue.take_messages(1);
+    let remove_in_flight_next_offset = in_flight_removal_queue.remove_message(&in_flight_batch);
+    let remove_in_flight_ready_tree_keys = in_flight_removal_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let remove_in_flight_count_before_commit = in_flight_removal_queue.get_msg_count().get();
+    let remove_in_flight_size_before_commit = in_flight_removal_queue.get_msg_size().get();
+    let remove_in_flight_commit_offset = in_flight_removal_queue.commit();
+
+    let mut removed_message = MessageExt::new();
+    removed_message.set_queue_offset(60);
+    removed_message.set_body(vec![6]);
+    let mut following_message = MessageExt::new();
+    following_message.set_queue_offset(61);
+    following_message.set_body(vec![7, 8]);
+    let dispatch_after_remove_queue = ProcessQueue::new();
+    dispatch_after_remove_queue.put_message(&[removed_message.clone()]);
+    let remove_last_next_offset =
+        dispatch_after_remove_queue.remove_message(&[std::sync::Arc::new(removed_message)]);
+    let dispatch_after_remove = dispatch_after_remove_queue.put_message(&[following_message]);
+    let dispatch_after_remove_tree_keys = dispatch_after_remove_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let remove_in_flight = serde_json::json!({
+        "nextOffset": remove_in_flight_next_offset,
+        "readyTreeKeys": remove_in_flight_ready_tree_keys,
+        "countBeforeCommit": remove_in_flight_count_before_commit,
+        "sizeBeforeCommit": remove_in_flight_size_before_commit,
+        "commitOffset": remove_in_flight_commit_offset,
+        "countAfterCommit": in_flight_removal_queue.get_msg_count().get(),
+        "sizeAfterCommit": in_flight_removal_queue.get_msg_size().get(),
+    });
+    let dispatch_after_remove_result = serde_json::json!({
+        "removeNextOffset": remove_last_next_offset,
+        "nextDispatch": dispatch_after_remove,
+        "count": dispatch_after_remove_queue.get_msg_count().get(),
+        "size": dispatch_after_remove_queue.get_msg_size().get(),
+        "treeKeys": dispatch_after_remove_tree_keys,
+    });
     let actual = serde_json::json!({
         "dispatch": dispatch,
         "initialTreeKeys": initial_tree_keys,
@@ -743,6 +797,8 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "duplicateBodySize": duplicate_body_size,
         "droppedDispatch": dropped_dispatch,
         "droppedQueueCount": dropped_queue.get_msg_count().get(),
+        "removeInFlight": remove_in_flight,
+        "dispatchAfterRemove": dispatch_after_remove_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

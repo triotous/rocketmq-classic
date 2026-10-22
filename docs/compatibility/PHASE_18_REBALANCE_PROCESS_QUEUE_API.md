@@ -29,6 +29,20 @@ declared method counts and callable method counts in
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
 | `RebalancePullImpl.clientRebalance`, consume type, pull-offset helpers, queue factories and POP init mode | Pull owner returns client rebalance `true`, `CONSUME_ACTIVELY`, offset `0`, creates a ProcessQueue and no POP queue, and reports the Java unsupported init-mode error. Its pull and POP dispatch hooks are no-ops; the Pull POP assignment table stays empty. | Direct behavior is compared with the pinned Java fixture. |
 
+### ProcessQueue removal and dispatch state
+
+The pinned Java `removeMessage` mutates only the ready `msgTreeMap`. A message
+already returned by `takeMessages` lives in the separate orderly in-flight map,
+so attempting to remove that message leaves the cached count and size intact;
+the subsequent `commit` still returns its offset and removes it. Removing the
+last ready message also leaves Java's `consuming` flag untouched, so the next
+`putMessage` does not report a second dispatch until an empty `takeMessages`
+clears that flag. Rust now follows both transitions while keeping its in-flight
+batch ownership internal. The invoked `processQueue` fixture and
+`process_queue::tests::remove_message_matches_java_for_in_flight_entries` plus
+`remove_message_preserves_dispatch_state_until_empty_take` cover the behavior.
+Fixture SHA-256: `67aac16425d8ac98e2d2cde4ff53a91e68b080b429711852979eb302d173dc5e`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -159,6 +173,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `7a7234d87c260b398f73bbf4b868714f87c5c9f27a6f0659cb0b93a7e9e834f0`
+  `67aac16425d8ac98e2d2cde4ff53a91e68b080b429711852979eb302d173dc5e`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`
