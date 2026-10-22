@@ -2289,13 +2289,11 @@ export names.
 | `MessageQueueRouteState::{values,value_of_name,name,ordinal,java_compare_to}` | Java `remoting.protocol.route.MessageQueueRouteState` enum operations. `client-config.json` records names, order, ordinals, comparison, lookup errors, and defensive-copy behavior. |
 | `downcast_ref`, `retried` | `ErrorSource::downcast_ref` walks Java-mapped cause chains; `GoAwayCause::retried` records whether Java's retry path has already received GO_AWAY. |
 
-The refreshed scan had 399 Rustdoc public item records and 338 distinct names,
-including the synthetic crate-root module marker; after excluding that marker
-there were 337 public identifiers. The static-topic wrapper API continuation
-adds three public associated functions, bringing the source-backed item count
-to 402; all three names (`new`, `new_nullable`, and `java_to_string`) already
-occur elsewhere, so the distinct-name count remains 338 and the non-marker
-identifier count remains 337.
+The current Remoting scan has 399 Rustdoc public item records and 338 distinct
+names, including the synthetic crate-root module marker; after excluding that
+marker there are 337 public identifiers. The Protocol `TopicConfigAndQueueMapping`
+wrapper belongs to the separate Protocol scan and does not change these
+Remoting counts.
 `GoAwayCause.connection_generation` was a Rust-only public field with no Java
 counterpart and was removed. `GoAwayCause` now retains the peer address and
 retry state; its text follows Java's GO_AWAY message shape and uses the peer
@@ -2308,11 +2306,14 @@ settings, and full control-flow remain part of the open P18-V01 audit.
 The Protocol Rustdoc name join is not a Java API matcher: Java bean methods
 use camelCase while Rust methods use snake_case, and Java exposes several
 collections through declared fields while Rust uses typed aliases and
-identity-preserving handles. The current exact-string scan records 1,499
-distinct names (including the synthetic crate-root marker) and 949 names
-without an exact mention in this map. Those are name-join diagnostics, not
-949 missing Java capabilities; the fixtures and owner-level crosswalk below
-identify the mapped API families.
+identity-preserving handles. The refreshed all-feature Rustdoc scan on code
+revision `5024360d` records 1,525 distinct names, including the synthetic
+crate-root module marker (1,524 excluding it). A raw substring join against
+this map leaves 966 names without a literal mention; these are name-join
+diagnostics, not missing Java capabilities. Java camelCase, inherited APIs,
+collection fields, and Rust ownership adapters require owner-level mapping.
+The crosswalk below records the mapped API families, while full
+source/default/input/error/control-flow reconciliation remains open.
 
 | Rust export family | Pinned Java counterpart / evidence |
 | --- | --- |

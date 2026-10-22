@@ -2617,3 +2617,18 @@ pinned Maven `verify` pass. The Maven run covers 37 scenarios, 36 runtime
 route/VIP cases, and Java cross-decodes 106 typed headers and 19 typed bodies.
 This closes the four extra module exports only; broad P18-V01 reconciliation,
 current-revision Ubuntu CI, and native Windows execution remain open.
+
+## P18-V01 Rustdoc reverse-scan count correction — 2026-10-22 (`5024360d`)
+
+Regenerated all-feature Rustdoc JSON after the Protocol static-topic wrapper
+and NamespaceUtil export changes. Remoting remains at 399 public item records,
+338 distinct names including its generated crate marker, and 337 actual
+identifiers; the earlier `399` to `402` change incorrectly added three
+Protocol wrapper functions to the Remoting count. Protocol has 1,525 distinct
+public names including its generated crate marker (1,524 without it). A raw
+substring join against `PHASE_6_API_CONFIG_MAP.md` leaves 966 names without a
+literal mention, excluding the generated crate marker. These counts are
+crosswalk diagnostics; Java naming, inherited methods, DTO fields, and Rust
+ownership adapters need semantic mapping. The static-topic wrapper's three
+associated functions are listed in the Protocol crosswalk; the four private
+namespace module constants no longer appear as public Rustdoc names.

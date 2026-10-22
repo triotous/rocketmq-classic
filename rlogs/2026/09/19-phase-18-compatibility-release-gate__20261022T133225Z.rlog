@@ -201,3 +201,22 @@ source/API/settings/input/error/control-flow/reverse-export reconciliation,
 current-revision remote Ubuntu CI, and native Windows execution remain open.
 No push or external CI was run; protected Phase 19 worktree files remain
 untouched and unstaged.
+
+P18-V01 Rustdoc reverse-scan count correction — 2026-10-22
+
+Regenerated all-feature workspace Rustdoc JSON on code revision `5024360d`.
+Remoting remains at 399 public item records / 338 distinct names, including
+the synthetic crate-root marker; its 337 actual identifiers are unchanged by
+the Protocol static-topic wrapper. Protocol currently has 1,525 distinct
+public names including its marker (1,524 excluding it). A raw substring join
+against `PHASE_6_API_CONFIG_MAP.md` finds 966 names without a literal mention,
+excluding the marker. The earlier `399` to `402` wording incorrectly added
+three Protocol wrapper functions to the Remoting count; the static-topic
+wrapper's three functions remain recorded in the Protocol crosswalk. Four
+module-level NamespaceUtil constants no longer appear as public Rustdoc items.
+These are name-join counts, not missing-feature counts.
+
+`RUSTDOCFLAGS='-Z unstable-options --output-format json' cargo +nightly doc
+--workspace --all-features --locked --no-deps`: PASS. Existing workspace
+manifest and Consumer `AtomicU64::fetch_update` warnings remain. No tests were
+run for this documentation and inventory correction.

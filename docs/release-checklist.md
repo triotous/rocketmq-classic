@@ -7567,9 +7567,8 @@ owner-specific checks belong in the manual handoff.
 
 - [x] Added `TopicConfigAndQueueMapping`'s new constructor, nullable adapter,
   string adapter, and Rust equality/hash implementations to the Rust-to-Java
-  API crosswalk. The public associated-function count rises from 399 to 402;
-  all three added function names already occur elsewhere in the API, so the
-  distinct-name totals do not change.
+  Protocol API crosswalk. Its three associated functions map to the Java
+  constructors and methods already listed in that Protocol family.
 - [ ] This records only the new exports from the static-topic wrapper slice;
   broad P18-V01 input/error/control-flow and whole-surface reverse-export
   reconciliation remains open.
