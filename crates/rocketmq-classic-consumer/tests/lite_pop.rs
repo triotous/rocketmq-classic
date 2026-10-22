@@ -1319,6 +1319,12 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
         serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
     let java = &fixture["litePullMethodSynchronization"];
     assert_eq!(java["assign"], true);
+    assert_eq!(java["isRunning"], true);
+    assert_eq!(java["assignment"], true);
+    assert_eq!(java["seek"], true);
+    assert_eq!(java["commitAll"], true);
+    assert_eq!(java["commitMap"], true);
+    assert_eq!(java["commitSet"], true);
     assert_eq!(java["start"], true);
     assert_eq!(java["setSubExpressionForAssign"], true);
     assert_eq!(java["subscribeExpression"], true);
@@ -1421,6 +1427,30 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .is_err(),
         "assignment expression changes must wait for the Java-equivalent synchronized start"
     );
+    let running_consumer = consumer.clone();
+    let mut running_state = tokio::spawn(async move { running_consumer.is_running().await });
+    assert!(
+        timeout(Duration::from_millis(100), &mut running_state)
+            .await
+            .is_err(),
+        "running-state inspection must wait for the Java-equivalent synchronized start"
+    );
+    let assigned_consumer = consumer.clone();
+    let mut assigned_state = tokio::spawn(async move { assigned_consumer.assignment().await });
+    assert!(
+        timeout(Duration::from_millis(100), &mut assigned_state)
+            .await
+            .is_err(),
+        "assignment inspection must wait for the Java-equivalent synchronized start"
+    );
+    let commit_consumer = consumer.clone();
+    let mut commit = tokio::spawn(async move { commit_consumer.commit().await });
+    assert!(
+        timeout(Duration::from_millis(100), &mut commit)
+            .await
+            .is_err(),
+        "commitAll must wait for the Java-equivalent synchronized start"
+    );
 
     release_check
         .send(())
@@ -1461,6 +1491,22 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .expect("assignment expression task failed"),
         Err(LitePullConsumerError::AssignmentExpressionAfterStartup)
     ));
+    assert!(
+        timeout(Duration::from_secs(4), &mut running_state)
+            .await
+            .expect("running-state inspection did not resume after start")
+            .expect("running-state task failed")
+    );
+    timeout(Duration::from_secs(4), &mut assigned_state)
+        .await
+        .expect("assignment inspection did not resume after start")
+        .expect("assignment inspection task failed")
+        .unwrap();
+    timeout(Duration::from_secs(4), &mut commit)
+        .await
+        .expect("commitAll did not resume after start")
+        .expect("commitAll task failed")
+        .unwrap();
     assert!(consumer.is_running().await);
 
     consumer.shutdown().await.unwrap();

@@ -332,6 +332,7 @@ impl LitePullConsumer {
     }
 
     pub async fn is_running(&self) -> bool {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         self.running.load(Ordering::Acquire)
     }
 
@@ -985,6 +986,7 @@ impl LitePullConsumer {
     }
 
     pub async fn assignment(&self) -> Result<BTreeSet<MessageQueue>, LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let mode = *self
             .mode
             .read()
@@ -1032,6 +1034,7 @@ impl LitePullConsumer {
         queue: &MessageQueue,
         offset: i64,
     ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let queue = self.normalized_queue(queue)?;
         self.require_assigned(&queue)?;
         let engine = self.engine().ok_or(LitePullConsumerError::NotStarted)?;
@@ -1127,6 +1130,7 @@ impl LitePullConsumer {
     }
 
     pub async fn commit(&self) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         self.commit_all_best_effort().await;
         Ok(())
     }
@@ -1143,6 +1147,7 @@ impl LitePullConsumer {
     where
         I: IntoIterator<Item = MessageQueue>,
     {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let queues = message_queues
             .into_iter()
             .map(|queue| self.normalized_queue(&queue))
@@ -1175,6 +1180,7 @@ impl LitePullConsumer {
     where
         I: IntoIterator<Item = (MessageQueue, i64)>,
     {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let offsets = offsets
             .into_iter()
             .map(|(queue, offset)| Ok((self.normalized_queue(&queue)?, offset)))
@@ -1849,7 +1855,11 @@ impl LitePullConsumer {
             })
             .collect::<Vec<_>>();
         for (queue, offset) in offsets {
-            if let Err(error) = self.commit_offsets([(queue, offset)], false).await {
+            let persist_queues = [queue.clone()];
+            if let Err(error) = self
+                .apply_commits(vec![(queue, offset)], &persist_queues, false)
+                .await
+            {
                 tracing::debug!(error = %error, "Lite automatic offset commit failed");
             }
         }

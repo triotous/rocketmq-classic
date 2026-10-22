@@ -91,6 +91,21 @@ public final class ConsumerLifecycleFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("start", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("start").getModifiers()));
+        result.put("isRunning", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("isRunning").getModifiers()));
+        result.put("assignment", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("assignment").getModifiers()));
+        result.put("seek", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("seek",
+                org.apache.rocketmq.common.message.MessageQueue.class, long.class).getModifiers()));
+        result.put("commitAll", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("commitAll").getModifiers()));
+        result.put("commitMap", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("commit",
+                java.util.Map.class, boolean.class).getModifiers()));
+        result.put("commitSet", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("commit",
+                java.util.Set.class, boolean.class).getModifiers()));
         result.put("assign", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("assign",
                 java.util.Collection.class).getModifiers()));
