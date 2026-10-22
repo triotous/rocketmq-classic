@@ -7620,6 +7620,23 @@ owner-specific checks belong in the manual handoff.
   reverse-export reconciliation, current-revision remote Ubuntu CI, and
   native Windows execution remain open. No push or external CI was run.
 
+## P18-V01 trace record identity equality — 2026-10-22 (`be37e031`)
+
+- [x] Removed structural `PartialEq`/`Eq` from `TraceBean` and `TraceContext`.
+  The pinned Java fixture confirms equal-value distinct objects compare
+  unequal, the same reference compares equal, and distinct equal-timestamp
+  contexts compare as zero. Compile-fail doctests guard the Rust API boundary.
+  Trace fixture SHA-256:
+  `f88931ceeca238b857ff1367ec846c4f7639da7e1ae43580e22611a12966ac43`.
+- [x] Locked default/all-feature workspace tests, Core tests, strict
+  all-target/all-feature workspace Clippy, formatting/diff checks, and pinned
+  Maven `verify` pass. Maven verifies 37 scenarios, 36 runtime route/VIP
+  cases, 106 typed headers and 19 typed bodies.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Full P18-V02 fuzz/race/benchmark refresh,
+  current-revision remote Ubuntu CI, native Windows execution, and Phase 19
+  Broker/Docker validation remain open. No push or external CI was run.
+
 ## P18-V01 TopicValidator and SessionCredentials export correction — 2026-10-22 (`87900fb8`)
 
 - [x] Keep the 14 Java TopicValidator constants public on `TopicValidator`

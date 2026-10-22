@@ -2652,3 +2652,23 @@ format/diff checks, pinned Maven `verify` (37 scenarios; 36 route/VIP cases;
 workspace Rustdoc JSON generation pass. Broad P18-V01 source/settings/input/
 error/control-flow reconciliation, current-revision Ubuntu CI, and native
 Windows execution remain open.
+
+## P18-V01 trace record identity equality — 2026-10-22 (`be37e031`)
+
+Pinned Java 5.5.1 `TraceBean` and `TraceContext` override neither
+`Object.equals` nor `Object.hashCode`. `TraceContext.compareTo` compares only
+timestamps, so distinct contexts with equal timestamps can compare as zero
+while remaining unequal. Rust no longer derives structural `PartialEq`/`Eq`
+for either trace record; compile-fail doctests protect the public boundary.
+The invoked trace fixture now checks equal-value distinct beans and contexts,
+same-reference equality, and the equal-timestamp `compareTo` result. Fixture
+SHA-256: `f88931ceeca238b857ff1367ec846c4f7639da7e1ae43580e22611a12966ac43`.
+
+Core tests, locked default and all-feature workspace tests, strict
+all-target/all-feature workspace Clippy, formatting/diff checks, and pinned
+Maven `verify` pass. Maven verifies 37 scenarios, 36 runtime route/VIP cases,
+and Java decoding of 106 typed headers and 19 typed bodies. This closes only
+the trace equality slice; broad P18-V01 source/API/input/error/flow and
+reverse-export reconciliation remains open. Full P18-V02 fuzz/race/benchmark
+refresh, current-revision Ubuntu CI, native Windows execution, and Phase 19
+Broker/Docker validation remain separate open gates.
