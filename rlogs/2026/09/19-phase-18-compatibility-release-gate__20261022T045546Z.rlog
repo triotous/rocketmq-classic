@@ -375,3 +375,9 @@ P18-V01 Producer startup heartbeat flow — 2026-10-22 08:16 UTC
   open for the broader P18-V01 startup-flow audit. Current-revision remote
   Ubuntu CI and native Windows execution remain open. Protected Phase 19
   worktree files remain unstaged.
+
+P18-V01 Producer configured-topic startup routing — 2026-10-22 08:14 UTC
+- Commit `af04d054` mirrors pinned `DefaultMQProducerImpl.initTopicRoute()`: startup snapshots configured topics, namespace-wraps them, reuses an already-usable cached publish route, tries the topic route otherwise, then falls back through `TBW102` when no publish route is available. The fallback uses the Producer's current `default_topic_queue_nums`; remoting transport failures still fail startup while route/client errors retain Java's warning-and-continue behavior.
+- The scripted NameServer test verifies the configured-topic request, missing-topic `TBW102` fallback, and queue-count cap (8 default queues reduced to 2). `producer_start_skips_route_lookup_for_cached_publish_info` verifies that a valid cached publish-info hit sends no NameServer request. The existing post-start topic-list snapshot test now serves route replies for its configured startup topic.
+- `cargo test -p rocketmq-classic-producer -p rocketmq-classic --locked` passes (153 Producer unit tests, 11 admin, 27 Producer API, 18 scripted-send, 7 transaction, facade, and doctest targets); strict all-target/all-feature Clippy, formatting, and `git diff --check` pass. The change is Rust-only and does not alter the pinned Java fixture, so Maven `verify` was not rerun for this slice; the last recorded Java verify passed 37 scenarios at the lifecycle slice.
+- This closes the configured-topic startup route-initialization slice only. Broad P18-V01 API/settings/flow reconciliation, P18-V02/V03/V04, current-revision remote Ubuntu CI, and native Windows execution remain open. Protected Phase 19 worktree files remain unstaged.
