@@ -7292,3 +7292,27 @@ owner-specific checks belong in the manual handoff.
   Windows stack-capture execution remain open. No Broker, Docker, publication
   or release action was performed; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 LitePull post-start listener-route parity and gate refresh — 2026-10-22 (`148308fb`)
+
+- [x] Pinned Java 5.5.1 confirms a failed route lookup during listener
+  registration throws `MQClientException`, retains the listener, leaves
+  Consumer and factory `RUNNING`, and throws again on retry. Fixture
+  `litePullListenerRegistrationRouteFailure` in
+  `fixtures/consumer/lifecycle.json` has SHA-256
+  `a17cfdae54f83a7a1ee3d1612f9bb5509175936da1adf289f799a48e232c4db5`.
+  Rust registration now returns the route error while retaining the listener;
+  the regression verifies retry and callback recovery after NameServer
+  recovery. The public method is now async, so callers need to `.await` it.
+- [x] `cargo test -p rocketmq-classic-consumer --locked` passes (251 unit
+  tests, package integration tests and 13 doctests); strict Consumer
+  all-target/all-feature Clippy, formatting, diff checks, and the exact
+  regression cross-compile for `x86_64-pc-windows-gnu` pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes,
+  including lifecycle fixture verification, 37 scenarios, and Java decoding
+  of 106 typed headers and 19 typed bodies.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. No Broker, Docker, publication
+  or release action was performed; protected Phase 19 worktree files remain
+  unstaged.

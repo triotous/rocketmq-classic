@@ -2257,3 +2257,29 @@ registration outcomes with the fixture and verifies the runtime stops. This
 closes the pre-registered listener route-failure branch only; post-start
 Consumer failures and broad P18-V01 input/error/control-flow and reverse-export
 reconciliation remain open.
+
+## P18-V01 LitePull post-start listener-route failure — 2026-10-22 (`148308fb`)
+
+Pinned Java 5.5.1 `registerTopicMessageQueueChangeListener()` stores the
+listener before fetching the topic route. If that fetch fails while the
+Consumer is running, the call throws `MQClientException`, the listener stays
+registered, and both Consumer and client factory remain `RUNNING`; another
+registration attempt also throws. The invoked case is
+`litePullListenerRegistrationRouteFailure` in
+`fixtures/consumer/lifecycle.json` (SHA-256
+`a17cfdae54f83a7a1ee3d1612f9bb5509175936da1adf289f799a48e232c4db5`). The
+pinned polling loop later compares all registered listener topics, including
+topics that are not subscribed, and calls a retained listener on its first
+successful route fetch after the failed registration.
+
+Rust now fetches the route during registration, keeps the listener on error,
+and scans every registered listener topic during reconciliation. A successful
+registration seeds the initial queue set; after a failed registration, the
+first successful fetch calls the listener. The regression checks the error on
+the first and repeated registration, verifies the Consumer remains running,
+then switches from an unreachable to a scripted NameServer and observes the
+callback. Since route fetching uses async I/O, the public Rust registration
+method is now async and callers must `.await` it. This closes the LitePull
+post-start listener route and retry branch only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
