@@ -278,6 +278,50 @@ fn start_scripted_broker_with_check_response(
     (request_rx, task, check_rx)
 }
 
+fn start_paused_check_broker(
+    listener: TcpListener,
+) -> (
+    mpsc::UnboundedReceiver<RemotingCommand>,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (check_tx, check_rx) = mpsc::unbounded_channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    let release_rx = Arc::new(Mutex::new(Some(release_rx)));
+    let task = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let check_tx = check_tx.clone();
+            let release_rx = release_rx.clone();
+            tokio::spawn(async move {
+                while let Some(command) = read_command(&mut stream).await {
+                    if command.code == request::CHECK_CLIENT_CONFIG {
+                        let _ = check_tx.send(command.clone());
+                        let wait = release_rx
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .take();
+                        if let Some(wait) = wait {
+                            let _ = wait.await;
+                        }
+                    }
+                    write_reply(
+                        &mut stream,
+                        command.opaque,
+                        ScriptedReply {
+                            code: response::SUCCESS,
+                            fields: None,
+                            body: None,
+                        },
+                    )
+                    .await;
+                }
+            });
+        }
+    });
+    (check_rx, release_tx, task)
+}
+
 async fn next_request(
     receiver: &mut mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
     code: i32,
@@ -1092,6 +1136,79 @@ async fn lite_sql_subscription_broker_check_failure_matches_java_startup() {
     request_service.abort();
     broker_task.abort();
     nameserver_task.abort();
+}
+
+#[tokio::test]
+async fn lite_listener_registration_waits_for_start_like_java_monitor() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
+    let java = &fixture["litePullMethodSynchronization"];
+    assert_eq!(java["start"], true);
+    assert_eq!(java["shutdown"], true);
+    assert_eq!(java["registerTopicMessageQueueChangeListener"], true);
+
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route(&broker_address)).await;
+    let (mut check_requests, release_check, broker_task) =
+        start_paused_check_broker(broker_listener);
+    let mut config = lite_config_with_store(
+        "lite-listener-registration-start-lock",
+        "lite-listener-registration-start-lock-client",
+        &nameserver,
+        Arc::new(LiteScriptedOffsetStore::default()),
+    );
+    config.set_message_model(MessageModel::Broadcasting);
+    config.client_config_mut().set_mq_client_api_timeout(5_000);
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let selector = rocketmq_classic_consumer::pull::MessageSelector::by_sql("a > 1");
+    consumer
+        .subscribe_with_selector("lite-listener-registration-start-lock", &selector)
+        .unwrap();
+
+    let start_consumer = consumer.clone();
+    let mut start = tokio::spawn(async move { start_consumer.start().await });
+    let check = timeout(Duration::from_secs(4), check_requests.recv())
+        .await
+        .expect("LitePull start did not reach the Broker subscription check")
+        .expect("Broker check request stream closed");
+    assert_eq!(check.code, request::CHECK_CLIENT_CONFIG);
+
+    let register_consumer = consumer.clone();
+    let mut registration = tokio::spawn(async move {
+        register_consumer
+            .register_topic_message_queue_change_listener(
+                "listener-registration-during-start",
+                Arc::new(|_, _| {}),
+            )
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(100), &mut registration)
+            .await
+            .is_err(),
+        "listener registration must wait for the Java-equivalent synchronized start"
+    );
+
+    release_check
+        .send(())
+        .expect("paused Broker check was already released");
+    timeout(Duration::from_secs(4), &mut start)
+        .await
+        .expect("LitePull start did not finish after the Broker check")
+        .expect("LitePull start task failed")
+        .unwrap();
+    timeout(Duration::from_secs(4), &mut registration)
+        .await
+        .expect("listener registration did not resume after start")
+        .expect("listener registration task failed")
+        .unwrap();
+    assert!(consumer.is_running().await);
+
+    consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+    broker_task.abort();
 }
 
 #[tokio::test]

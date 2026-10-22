@@ -18,6 +18,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -82,6 +83,19 @@ public final class ConsumerLifecycleFixtures {
             .getDeclaredField("topicMessageQueueChangeListenerMap");
         field.setAccessible(true);
         return ((Map<?, ?>) field.get(implementation)).containsKey(topic);
+    }
+
+    private static Map<String, Object> litePullMethodSynchronization()
+        throws ReflectiveOperationException {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("start", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("start").getModifiers()));
+        result.put("shutdown", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("shutdown").getModifiers()));
+        result.put("registerTopicMessageQueueChangeListener", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("registerTopicMessageQueueChangeListener",
+                String.class, TopicMessageQueueChangeListener.class).getModifiers()));
+        return result;
     }
 
     private static String consumerServiceState(Object implementation)
@@ -422,6 +436,7 @@ public final class ConsumerLifecycleFixtures {
             failedLitePullListenerRegistrationRouteLookup());
         result.put("litePullBrokerSubscriptionCheckFailure",
             failedLitePullBrokerSubscriptionCheck());
+        result.put("litePullMethodSynchronization", litePullMethodSynchronization());
         return result;
     }
 

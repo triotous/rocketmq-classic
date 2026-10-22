@@ -1237,6 +1237,7 @@ impl LitePullConsumer {
         topic: &str,
         listener: TopicMessageQueueChangeListener,
     ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let topic = self.normalized_topic(topic)?;
         let _gate = self.reconcile_gate.lock().await;
         self.queue_change_listeners
