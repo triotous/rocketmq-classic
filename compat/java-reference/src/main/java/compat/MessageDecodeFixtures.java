@@ -855,6 +855,7 @@ public final class MessageDecodeFixtures {
         expected.put("zeroStoreSizeRecordBase64", Base64.getEncoder().encodeToString(record));
         expected.put("zeroStoreSizeRecordProperties", propertiesFromZeroStoreSize == null
             ? null : new TreeMap<>(propertiesFromZeroStoreSize));
+        expected.put("zeroStoreSizeRecordPosition", malformedStoreSize.position());
 
         byte[] malformedPropertiesRecord = record.clone();
         ByteBuffer malformedPropertiesBuffer = ByteBuffer.wrap(malformedPropertiesRecord);
@@ -868,12 +869,45 @@ public final class MessageDecodeFixtures {
         malformedPropertiesBuffer.putShort(propertiesPosition, (short) 6);
         malformedPropertiesBuffer.position(propertiesPosition + 2);
         malformedPropertiesBuffer.put("broken".getBytes(StandardCharsets.UTF_8));
-        Map<String, String> malformedProperties =
-            MessageDecoder.decodeProperties(ByteBuffer.wrap(malformedPropertiesRecord));
+        ByteBuffer malformedPropertiesInput = ByteBuffer.wrap(malformedPropertiesRecord);
+        Map<String, String> malformedProperties = MessageDecoder.decodeProperties(malformedPropertiesInput);
         expected.put("malformedPropertiesRecordBase64",
             Base64.getEncoder().encodeToString(malformedPropertiesRecord));
         expected.put("malformedPropertiesRecordProperties", malformedProperties == null
             ? null : new TreeMap<>(malformedProperties));
+        expected.put("malformedPropertiesRecordPosition", malformedPropertiesInput.position());
+
+        byte[] zeroPropertiesLengthRecord = record.clone();
+        ByteBuffer zeroPropertiesLengthBuffer = ByteBuffer.wrap(zeroPropertiesLengthRecord);
+        zeroPropertiesLengthBuffer.putShort(propertiesPosition, (short) 0);
+        Map<String, String> zeroLengthProperties =
+            MessageDecoder.decodeProperties(zeroPropertiesLengthBuffer);
+        expected.put("zeroPropertiesLengthRecordBase64",
+            Base64.getEncoder().encodeToString(zeroPropertiesLengthRecord));
+        expected.put("zeroPropertiesLengthRecordProperties", zeroLengthProperties == null
+            ? null : new TreeMap<>(zeroLengthProperties));
+        expected.put("zeroPropertiesLengthRecordPosition", zeroPropertiesLengthBuffer.position());
+
+        byte[] negativePropertiesLengthRecord = record.clone();
+        ByteBuffer negativePropertiesLengthBuffer = ByteBuffer.wrap(negativePropertiesLengthRecord);
+        negativePropertiesLengthBuffer.putShort(propertiesPosition, (short) -1);
+        Map<String, String> negativeLengthProperties =
+            MessageDecoder.decodeProperties(negativePropertiesLengthBuffer);
+        expected.put("negativePropertiesLengthRecordBase64",
+            Base64.getEncoder().encodeToString(negativePropertiesLengthRecord));
+        expected.put("negativePropertiesLengthRecordProperties", negativeLengthProperties == null
+            ? null : new TreeMap<>(negativeLengthProperties));
+        expected.put("negativePropertiesLengthRecordPosition", negativePropertiesLengthBuffer.position());
+
+        byte[] truncatedPropertiesRecord = record.clone();
+        ByteBuffer truncatedPropertiesBuffer = ByteBuffer.wrap(truncatedPropertiesRecord);
+        truncatedPropertiesBuffer.putShort(propertiesPosition, (short) 2000);
+        String truncatedPropertiesError = exceptionName(
+            () -> MessageDecoder.decodeProperties(truncatedPropertiesBuffer));
+        expected.put("truncatedPropertiesRecordBase64",
+            Base64.getEncoder().encodeToString(truncatedPropertiesRecord));
+        expected.put("truncatedPropertiesRecordError", truncatedPropertiesError);
+        expected.put("truncatedPropertiesRecordPosition", truncatedPropertiesBuffer.position());
         return expected;
     }
 
@@ -1594,9 +1628,11 @@ public final class MessageDecodeFixtures {
         expected.put("msgId", decoded.getMsgId());
         expected.put("properties", decoded.getProperties() == null
             ? Map.of() : new TreeMap<>(decoded.getProperties()));
-        Map<String, String> propertiesDecodedDirectly = MessageDecoder.decodeProperties(ByteBuffer.wrap(encoded));
+        ByteBuffer propertiesBuffer = ByteBuffer.wrap(encoded);
+        Map<String, String> propertiesDecodedDirectly = MessageDecoder.decodeProperties(propertiesBuffer);
         expected.put("recordProperties", propertiesDecodedDirectly == null
             ? null : new TreeMap<>(propertiesDecodedDirectly));
+        expected.put("recordPropertiesPosition", propertiesBuffer.position());
 
         MessageExt propertiesStringDecoded = MessageDecoder.decode(
             ByteBuffer.wrap(encoded), true, true, false, true, true);

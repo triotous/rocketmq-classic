@@ -176,9 +176,16 @@ fn java_551_message_records_decode_to_the_pinned_results() {
         .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         let expected = &case["decoded"];
         assert_eq!(consumed, bytes.len(), "{}", case["name"]);
+        let (record_properties, properties_position) = decode_record_properties(&bytes).unwrap();
         assert_eq!(
-            serde_json::to_value(decode_record_properties(&bytes).unwrap()).unwrap(),
+            serde_json::to_value(record_properties).unwrap(),
             expected["recordProperties"],
+            "{}",
+            case["name"]
+        );
+        assert_eq!(
+            properties_position,
+            expected["recordPropertiesPosition"].as_u64().unwrap() as usize,
             "{}",
             case["name"]
         );
@@ -1839,9 +1846,15 @@ fn message_decoder_property_map_methods_match_java_551() {
     let zero_store_size_record = base64::engine::general_purpose::STANDARD
         .decode(expected["zeroStoreSizeRecordBase64"].as_str().unwrap())
         .unwrap();
+    let (zero_store_properties, zero_store_position) =
+        decode_record_properties(&zero_store_size_record).unwrap();
     assert_eq!(
-        serde_json::to_value(decode_record_properties(&zero_store_size_record).unwrap()).unwrap(),
+        serde_json::to_value(zero_store_properties).unwrap(),
         expected["zeroStoreSizeRecordProperties"]
+    );
+    assert_eq!(
+        zero_store_position,
+        expected["zeroStoreSizeRecordPosition"].as_u64().unwrap() as usize
     );
 
     let malformed_properties_record = base64::engine::general_purpose::STANDARD
@@ -1851,11 +1864,61 @@ fn message_decoder_property_map_methods_match_java_551() {
                 .unwrap(),
         )
         .unwrap();
+    let (malformed_properties, malformed_properties_position) =
+        decode_record_properties(&malformed_properties_record).unwrap();
     assert_eq!(
-        serde_json::to_value(decode_record_properties(&malformed_properties_record).unwrap())
-            .unwrap(),
+        serde_json::to_value(malformed_properties).unwrap(),
         expected["malformedPropertiesRecordProperties"]
     );
+    assert_eq!(
+        malformed_properties_position,
+        expected["malformedPropertiesRecordPosition"]
+            .as_u64()
+            .unwrap() as usize
+    );
+
+    for (base64_key, properties_key, position_key) in [
+        (
+            "zeroPropertiesLengthRecordBase64",
+            "zeroPropertiesLengthRecordProperties",
+            "zeroPropertiesLengthRecordPosition",
+        ),
+        (
+            "negativePropertiesLengthRecordBase64",
+            "negativePropertiesLengthRecordProperties",
+            "negativePropertiesLengthRecordPosition",
+        ),
+    ] {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(expected[base64_key].as_str().unwrap())
+            .unwrap();
+        let (properties, position) = decode_record_properties(&bytes).unwrap();
+        assert_eq!(
+            serde_json::to_value(properties).unwrap(),
+            expected[properties_key]
+        );
+        assert_eq!(position, expected[position_key].as_u64().unwrap() as usize);
+    }
+
+    let truncated_properties_record = base64::engine::general_purpose::STANDARD
+        .decode(
+            expected["truncatedPropertiesRecordBase64"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        expected["truncatedPropertiesRecordError"],
+        "BufferUnderflowException"
+    );
+    let error = decode_record_properties(&truncated_properties_record).unwrap_err();
+    assert!(matches!(
+        error,
+        DecodeError::Truncated {
+            offset,
+            field: "properties"
+        } if offset == expected["truncatedPropertiesRecordPosition"].as_u64().unwrap() as usize
+    ));
 }
 
 #[test]
@@ -2134,7 +2197,8 @@ fn nullable_message_property_keys_match_java_551() {
         10_912,
     )));
     let record = encode_message_ext(&message_ext, false).unwrap();
-    let record_properties = decode_record_properties(&record).unwrap().unwrap();
+    let (record_properties, _) = decode_record_properties(&record).unwrap();
+    let record_properties = record_properties.unwrap();
     assert_eq!(
         record_properties.get("null").map(String::as_str),
         Some("value")

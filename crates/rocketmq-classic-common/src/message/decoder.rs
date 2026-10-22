@@ -288,10 +288,16 @@ pub fn client_decode(record: &[u8], read_body: bool) -> Result<(MessageExt, usiz
     )
 }
 
-/// Decode only the property map from a Broker message record, matching Java's
-/// `MessageDecoder.decodeProperties(ByteBuffer)` null result for nonpositive property lengths.
-/// A positive property length that parses no entries returns an empty map.
-pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessageProperties>, DecodeError> {
+/// Decode the property map from a Broker message record and return Java's
+/// final `ByteBuffer` position as bytes consumed from the record start.
+///
+/// Java's `MessageDecoder.decodeProperties(ByteBuffer)` returns null for
+/// nonpositive property lengths and advances just past the length field. A
+/// positive length that parses no entries returns an empty map and consumes
+/// the property bytes.
+pub fn decode_record_properties(
+    record: &[u8],
+) -> Result<(Option<MessageProperties>, usize), DecodeError> {
     let sys_flag = read_i32_at(record, SYSFLAG_POSITION, "system flag")?;
     let magic_code = read_i32_at(record, MESSAGE_MAGIC_CODE_POSITION, "magic code")?;
     let version =
@@ -341,10 +347,6 @@ pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessagePropertie
     let properties_length_position =
         offset_by_signed_length(properties_length_base, topic_length, "properties length")?;
     let properties_length = read_i16_at(record, properties_length_position, "properties length")?;
-    if properties_length <= 0 {
-        return Ok(None);
-    }
-
     let properties_start =
         properties_length_position
             .checked_add(2)
@@ -352,6 +354,10 @@ pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessagePropertie
                 offset: properties_length_position,
                 field: "properties",
             })?;
+    if properties_length <= 0 {
+        return Ok((None, properties_start));
+    }
+
     let properties_end = properties_start
         .checked_add(properties_length as usize)
         .ok_or(DecodeError::Truncated {
@@ -366,7 +372,7 @@ pub fn decode_record_properties(record: &[u8]) -> Result<Option<MessagePropertie
                 field: "properties",
             })?;
     let properties_string = String::from_utf8_lossy(properties_bytes);
-    Ok(Some(decode_properties(&properties_string)))
+    Ok((Some(decode_properties(&properties_string)), properties_end))
 }
 
 fn read_i16_at(record: &[u8], offset: usize, field: &'static str) -> Result<i16, DecodeError> {
