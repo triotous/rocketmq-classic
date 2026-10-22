@@ -2073,3 +2073,14 @@ instead of returning a value that violates the `UserInfo` element type. The
 auth-method review added the previously omitted `getUser` and `getAcl` RPCs to
 the direct audit, which now has six open APIs; broader P18-V01 reconciliation
 remains open.
+
+## P18-V01 direct `getUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getUser` sends request 3004 with a
+`GetUserRequestHeader`, no body, and the caller timeout. Core exposes
+`MQClientApi::get_user`, preserves nullable usernames and nullable `UserInfo`
+results, and leaves the supplied Broker address unchanged when VIP channels
+are enabled. Invoked Java fixtures and Rust loopback tests compare request
+headers, populated/default/null responses, success and Broker errors, timeout,
+typed-header cross-decode, and unchanged-address behavior. The auth reverse
+audit now has five open APIs; broader P18-V01 reconciliation remains open.

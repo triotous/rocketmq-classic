@@ -31,10 +31,10 @@ use rocketmq_classic_protocol::{
         GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
         GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
         GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
-        GetTopicConfigRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
-        ListUsersRequestHeader, PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetTopicConfigRequestHeader, GetTopicStatsInfoRequestHeader, GetUserRequestHeader,
+        HeaderMap, ListUsersRequestHeader, PutKvConfigRequestHeader,
+        QueryConsumeQueueRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
@@ -1545,6 +1545,42 @@ impl MQClientApi {
             .await?;
         classify(reply, code, addr)?;
         Ok(())
+    }
+
+    /// Retrieves a Broker auth user through Java `MQClientAPIImpl.getUser`
+    /// (request 3004). Java accepts a nullable username and response body; the
+    /// supplied Broker address is preserved even when VIP channels are enabled.
+    pub async fn get_user(
+        &self,
+        addr: &str,
+        username: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<UserInfo>, RpcError> {
+        let code = request::AUTH_GET_USER;
+        let mut header = GetUserRequestHeader::default();
+        header.set_username(username.map(str::to_owned));
+        header.check_fields()?;
+        let reply = self
+            .request(
+                addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        let decoded = reply
+            .body
+            .as_deref()
+            .map(serde_json::from_slice::<Option<UserInfo>>)
+            .transpose()
+            .map(Option::flatten);
+        decoded.map_err(|error| RpcError::MalformedResponse {
+            request_code: code,
+            peer: addr.to_owned(),
+            reason: error.to_string(),
+        })
     }
 
     /// Lists Broker auth users through Java `MQClientAPIImpl.listUser`
@@ -3839,6 +3875,92 @@ mod tests {
         let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
         let result = api
             .list_user(&address, filter, case["timeoutMillis"].as_i64().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(serde_json::to_value(result).unwrap(), expected_result);
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn get_user_keeps_supplied_address_with_vip_enabled() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use base64::Engine as _;
+        use rocketmq_classic_protocol::codes::{LanguageCode, request, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let case = fixture["getUserOperations"]["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "vip-enabled-address-unchanged")
+            .unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(case["vipEnabled"], true);
+        assert_eq!(expected_request["address"], case["address"]);
+        let expected_fields = expected_request["extFields"].clone();
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(case["responseBodyBase64"].as_str().unwrap())
+            .unwrap();
+        let expected_result: serde_json::Value =
+            serde_json::from_str(case["resultJson"].as_str().unwrap()).unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request_command.code, request::AUTH_GET_USER);
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert!(request_command.body.is_none());
+            assert_eq!(
+                request_command
+                    .ext_fields
+                    .as_ref()
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                expected_fields
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                body: Some(expected_body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let username = case["username"].as_str();
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("get-user-vip-enabled");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let result = api
+            .get_user(&address, username, case["timeoutMillis"].as_i64().unwrap())
             .await
             .unwrap();
         assert_eq!(serde_json::to_value(result).unwrap(), expected_result);

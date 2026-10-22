@@ -3454,6 +3454,33 @@ impl_header_field_accessors!(
     [set_username]
 );
 
+/// Pinned Java auth `GetUserRequestHeader`. Java's `checkFields()` is a no-op,
+/// so `username` remains nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct GetUserRequestHeader {
+    username: Option<String>,
+}
+
+impl CommandHeader for GetUserRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "username", self.username.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            username: optional_string(fields, "username"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    GetUserRequestHeader,
+    optional_string,
+    username,
+    [get_username],
+    [set_username]
+);
+
 /// Pinned Java auth `ListUsersRequestHeader`. Java's `checkFields()` is a no-op,
 /// so `filter` remains nullable at the command-header boundary.
 #[derive(Debug, Clone, Default)]
