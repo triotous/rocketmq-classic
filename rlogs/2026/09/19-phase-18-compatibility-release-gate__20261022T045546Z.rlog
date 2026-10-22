@@ -151,3 +151,40 @@ P18-V01 Common public export reconciliation follow-up — 2026-10-22
 - Current remaining exact-name join gaps are Protocol (908 of 1,498 names) and
   Remoting (65 of 338 names). Most Protocol hits are Java DTO accessors and
   fields; the reverse semantic audit remains open.
+
+P18-V01 Remoting/Protocol export continuation — 2026-10-22 06:04 UTC
+- Pinned Java 5.5.1 `NettyRemotingClient` source confirms the GO_AWAY cause
+  text for first and repeated responses. Removed Rust-only public
+  `GoAwayCause.connection_generation`, removed the generation suffix from both
+  display branches, and updated the regression to assert both Java message
+  shapes. Rust still places the peer address in Java's `channelId` slot because
+  the Rust Tokio connection has no Netty channel ID.
+- Regenerated Remoting Rustdoc JSON. The current scan contains 399 public item
+  records / 338 distinct names, including the synthetic crate-root marker;
+  the 337 actual API identifiers are crosswalked to Java RemotingCommand,
+  RemotingClient, RequestPipeline, ResponseFuture, NettyClientConfig, TLS,
+  metrics, channel, helper, and error APIs. The only raw name miss is the
+  generated crate-root marker.
+- Added Protocol semantic crosswalks. Reflected Java request/response header
+  inventories cover 61 types. The owner-based join checked 1,011 Rust public
+  associated functions; 1,004 match through snake_case-to-camelCase and the
+  remaining seven are individually mapped to inherited Java methods, the V2
+  factory, and `ClientID` capitalization.
+- Protocol raw exact-string scan currently has 1,499 distinct names including
+  the crate-root marker, with 969 names not literally present in the map.
+  These are DTO field/accessor, code-constant, and Rust spelling differences;
+  the source/default/input/error/control-flow audit remains open. This current
+  measurement supersedes the earlier raw count in this log.
+- `cargo fmt --all -- --check`, focused GO_AWAY regression
+  `cargo test -p rocketmq-classic-remoting error::tests::go_away_cause_retains_address_and_retry_state_with_java_message_shape --locked`, and `git diff --check` passed. Remoting Rustdoc generation passed.
+- Protected Phase 19 worktree changes were left untouched and unstaged. No
+  live Broker, Docker validation, or release action was performed. P18-V01 and
+  native Windows runtime evidence remain open.
+
+P18-V01 Remoting crate verification follow-up — 2026-10-22 06:05 UTC
+- Full `cargo test -p rocketmq-classic-remoting --locked` passed: 138 unit,
+  8 codec, 1 bounded-fuzz regression, 7 security, 107 transport, and 20
+  rustdoc tests.
+- `cargo clippy -p rocketmq-classic-remoting --all-targets --all-features
+  --locked -- -D warnings` passed. Formatting, focused GO_AWAY regression,
+  and diff checks also passed.

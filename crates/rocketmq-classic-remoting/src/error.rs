@@ -142,7 +142,6 @@ impl Error for ContextError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoAwayCause {
-    pub connection_generation: u64,
     pub remote_addr: String,
     pub retried: bool,
 }
@@ -152,14 +151,14 @@ impl fmt::Display for GoAwayCause {
         if self.retried {
             write!(
                 formatter,
-                "Receive GO_AWAY twice in request from channelId={} (generation={})",
-                self.remote_addr, self.connection_generation
+                "Receive GO_AWAY twice in request from channelId={}",
+                self.remote_addr
             )
         } else {
             write!(
                 formatter,
-                "Receive GO_AWAY from channelId={} (generation={})",
-                self.remote_addr, self.connection_generation
+                "Receive GO_AWAY from channelId={}",
+                self.remote_addr
             )
         }
     }
@@ -343,20 +342,26 @@ mod tests {
     }
 
     #[test]
-    fn go_away_cause_retains_address_generation_and_retry_state() {
+    fn go_away_cause_retains_address_and_retry_state_with_java_message_shape() {
         let cause = ErrorSource::new(GoAwayCause {
-            connection_generation: 17,
             remote_addr: "127.0.0.1:10911".into(),
             retried: true,
         });
         let go_away = cause.downcast_ref::<GoAwayCause>().unwrap();
-        assert_eq!(go_away.connection_generation, 17);
         assert_eq!(go_away.remote_addr, "127.0.0.1:10911");
         assert!(go_away.retried);
-        assert!(
-            cause
-                .to_string()
-                .contains("channelId=127.0.0.1:10911 (generation=17)")
+        assert_eq!(
+            cause.to_string(),
+            "Receive GO_AWAY twice in request from channelId=127.0.0.1:10911"
+        );
+
+        let first_go_away = GoAwayCause {
+            remote_addr: "127.0.0.1:10911".into(),
+            retried: false,
+        };
+        assert_eq!(
+            first_go_away.to_string(),
+            "Receive GO_AWAY from channelId=127.0.0.1:10911"
         );
     }
 }

@@ -2100,13 +2100,11 @@ impl RemotingClient {
                         remote_addr: connection.address().to_owned(),
                         cause: Some(if options.retried_go_away {
                             crate::error::ErrorSource::new(crate::error::GoAwayCause {
-                                connection_generation: connection.generation,
                                 remote_addr: connection.address().to_owned(),
                                 retried: true,
                             })
                         } else {
                             crate::error::ErrorSource::new(crate::error::GoAwayCause {
-                                connection_generation: connection.generation,
                                 remote_addr: connection.address().to_owned(),
                                 retried: false,
                             })
