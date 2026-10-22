@@ -29,3 +29,22 @@ Validation:
 - `mvn -f compat/java-reference/pom.xml verify`: passed (BUILD SUCCESS, 2m23s; 37 scenario manifest cases, runtime route fixtures, and Java decoding of 106 typed headers and 19 typed bodies).
 
 The worktree still contains the unrelated Phase 19 changes to `integration-tests/README.md`, `tests/differential/run.sh`, `integration-tests/run-local.sh`, and its Phase 19 log. These remain untouched and must not be staged with this slice. The branch is 70 commits ahead of `origin/phase/18-phase-18-compatibility-closure` and has no upstream-only commits.
+
+Phase 18 current-revision server-free gate — 2026-10-22 14:07 UTC
+
+Refreshed after code commit `4a0074f6` and documentation commit `60c12c63`:
+- `cargo test --workspace --locked`: PASS.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenario manifest cases; 36 runtime route/VIP invoked cases; Java decoded 106 typed headers and 19 typed bodies).
+- `python3 tests/differential/compare.py --self-test` and `--validate-manifest`: PASS; 37 scenarios.
+- `cargo run -p rocketmq-classic-remoting --example fuzz_smoke --locked`: PASS; 163 frame seeds, 11 message seeds, 2,784 bounded mutations, 245 frame decodes, 112 message decodes.
+- `bash tests/stress/run-offline-smoke.sh`: PASS; 16 deterministic race/leak cases × 3 repetitions.
+- `cargo build -p rocketmq-classic --examples --release --locked`: PASS.
+- `cargo bench --workspace --no-run --locked`: PASS.
+- `python3 scripts/check-workspace-metadata.py`: PASS; all seven product package listings include `LICENSE` and `NOTICE`.
+- Four Core Unique ID tests pass under both `TZ=UTC` and `TZ=Asia/Taipei`.
+- Windows GNU compile checks pass: `cargo check -p rocketmq-classic-core --all-targets --target x86_64-pc-windows-gnu --locked` and the Consumer stack-capture test `--no-run` cross-compile.
+
+Broad P18-V01 bidirectional source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows stack-capture execution remain unverified. Phase 19 Broker/Docker validation is separate. No push or remote CI was run; the protected Phase 19 worktree files remain unstaged.

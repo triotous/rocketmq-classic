@@ -7423,3 +7423,21 @@ owner-specific checks belong in the manual handoff.
   validation remains separate. No push, remote CI, Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V02 current server-free refresh after static-topic mapping — 2026-10-22 (`4a0074f6`)
+
+- [x] Default and all-feature locked workspace tests, strict workspace
+  all-target/all-feature Clippy, formatting, differential self-test and
+  37-scenario manifest validation pass. Pinned Java `mvn verify` passes with
+  37 scenarios, 36 runtime route/VIP cases, and Java decoding of 106 typed
+  headers and 19 typed bodies. Bounded fuzz smoke passes (163 frame seeds,
+  11 message seeds, 2,784 mutations, 245 frame decodes and 112 message
+  decodes); race/leak smoke passes 16 cases × 3. Release facade examples,
+  workspace bench compilation, workspace metadata/license/dependency checks,
+  seven package-content checks, and UTC/Asia/Taipei Unique ID tests pass.
+- [x] Windows GNU all-target Core check and the Consumer stack-capture test
+  cross-compile with `--no-run` pass on this revision.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision GitHub Ubuntu CI and
+  native Windows stack-capture execution remain pending. Phase 19 Broker/
+  Docker validation remains separate; no push or remote CI was run.
