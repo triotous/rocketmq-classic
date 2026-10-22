@@ -1,11 +1,21 @@
 //! Namespace resource transformations matching RocketMQ Java 5.5.1.
+//!
+//! The Java constants are associated with `NamespaceUtil`, not exported as
+//! module-level constants.
+//!
+//! ```compile_fail
+//! use rocketmq_classic_protocol::namespace::{
+//!     DLQ_PREFIX_LENGTH, NAMESPACE_SEPARATOR, RETRY_PREFIX_LENGTH, STRING_BLANK,
+//! };
+//! # fn main() {}
+//! ```
 
 use rocketmq_classic_common::topic::TopicValidator;
 
-pub const NAMESPACE_SEPARATOR: char = '%';
-pub const STRING_BLANK: &str = "";
-pub const RETRY_PREFIX_LENGTH: usize = 7;
-pub const DLQ_PREFIX_LENGTH: usize = 5;
+const NAMESPACE_SEPARATOR: char = '%';
+const STRING_BLANK: &str = "";
+const RETRY_PREFIX_LENGTH: usize = 7;
+const DLQ_PREFIX_LENGTH: usize = 5;
 
 const RETRY_PREFIX: &str = "%RETRY%";
 const DLQ_PREFIX: &str = "%DLQ%";
