@@ -1,6 +1,6 @@
 # Phase 18 Java 5.5.1 provenance and package review
 
-Rechecked 2026-10-22 on current revision `2f4daa9a`.
+Rechecked 2026-10-22 on current revision `782a9cdb`.
 
 ## Maven reference artifacts
 
@@ -50,9 +50,29 @@ in this environment because no gpg executable is installed. This record
 therefore establishes the tag target and source-JAR byte identity, but does not
 assert verification of the tag signer.
 
+## ConsumerStatsManager scheduled sampling
+
+Pinned `ConsumerStatsManager` delegates each metric family to its own
+`StatsItemSet`. Each set registers 10-second and 10-minute fixed-rate sample
+tasks. `getAndCreateItem` does not initialize a new item, so its minute/hour
+snapshots are empty until those shared tasks sample it. Java's `consumeStatus`
+therefore returns zero before the first sample; after a sample, TPS is derived
+from the sampled value delta and elapsed time. Failed-message totals use the
+hour window and stay zero until its first 10-minute sample.
+
+The invoked fixture uses a `ScheduledExecutorService` proxy to retain the five
+10-second samplers. It records pull TPS as `0.0` before the first sample,
+`2.0` after sampling an increment of 20, and `2.0` after a later increment of
+5 that has not yet been sampled. Fixture SHA-256:
+`57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
+Rust evaluates manager-aligned 10-second and 10-minute ticks lazily; it does
+not expose a Rust-only scheduler API. Core tests use deterministic timestamps,
+while consumer-flow tests wait for their first real sample when they assert
+positive TPS/RT values.
+
 ## Rust package graph
 
-Locked Cargo metadata on revision `2f4daa9a` resolves 216 packages,
+Locked Cargo metadata on revision `782a9cdb` resolves 216 packages,
 including 208 registry packages and all eight workspace packages. Each
 workspace package is version 0.1.0 with publication disabled (`publish =
 false`; Cargo metadata represents this as an empty registry allowlist). The

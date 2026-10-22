@@ -7913,3 +7913,25 @@ owner-specific checks belong in the manual handoff.
   external CI was run; the four protected Phase 19 worktree paths remain
   unstaged. Detailed run record:
   `rlogs/2026/10/22-phase-18-topic-config-hash-order-gate__20261022T183948Z.rlog`.
+
+## P18-V01 ConsumerStatsManager sampling cadence — 2026-10-22 (`782a9cdb`)
+
+- [x] Rust consumer statistics now follow the pinned Java manager's sampled
+  snapshots: pull/consume metrics remain zero before the first 10-second
+  sample, TPS/RT update at sample ticks, and failed-message totals wait for
+  the first 10-minute hour-window sample. The invoked Java fixture controls
+  the five 10-second samplers and records `0.0`, `2.0`, and `2.0` around the
+  first sample and a pending increment. Fixture SHA-256:
+  `57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
+- [x] Core sampling tests, Consumer stats flow tests, default and all-feature
+  locked workspace suites, strict all-target/all-feature Clippy, pinned Maven
+  `verify` (37 scenarios, 36 route/VIP cases, 106 typed headers and 19 typed
+  bodies), workspace metadata/license checks, all seven product package
+  listings, formatting and diff checks pass on `782a9cdb`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision remote Ubuntu CI, native Windows
+  runtime execution, and Phase 19 Broker/Docker validation remain open. The
+  differential live-runner check still reports 30 cases without local
+  runners. No push or external CI was run; protected Phase 19 files remain
+  unstaged. Detailed run record:
+  `rlogs/2026/10/22-phase-18-consumer-stats-sampling-gate__20261022T190117Z.rlog`.
