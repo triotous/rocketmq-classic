@@ -2968,3 +2968,20 @@ differential checks, fuzz and race/leak smoke, release examples, offline
 benchmark, metadata/package checks, timezone tests and Windows GNU
 cross-compiles pass. Broad P18-V01 reconciliation, remote Ubuntu CI, native
 Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 full message decode nonpositive body/property lengths — 2026-10-22 (`8ca83fc8`)
+
+Java only reads body and property bytes when the respective signed length is
+positive. Negative values are accepted as absent fields; the final buffer
+position remains after that length field. Rust now follows the same branches,
+while positive field lengths keep their existing bounds and limits. Invoked
+fixtures compare full decoded snapshots and cursor positions for negative body
+and property lengths. Fixture SHA-256:
+`9cd0b64fe95643177c533d6cc2fd1f33c957e54cd3bd9559ecb07f6083939938`.
+
+Common differential, default/all-feature workspace tests, strict workspace
+Clippy, pinned Maven verification, differential checks, fuzz and race/leak
+smoke, release examples and benchmark, workspace/package checks, timezone
+tests, and Windows GNU cross-compiles pass. Broad P18-V01 reconciliation,
+remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
+remain open.

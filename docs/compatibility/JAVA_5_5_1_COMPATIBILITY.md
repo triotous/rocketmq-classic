@@ -866,3 +866,13 @@ Fixture SHA-256:
 `41ed0208cdf79da2491554ed08683e4f18b40d6bce1d21d246771dd58f0e15ae`. This
 closes the tested store-size boundary only; broad P18-V01 reconciliation
 remains open.
+
+Phase 18 `MessageDecoder.decode(ByteBuffer)` nonpositive field lengths
+(2026-10-22): Java treats body and property lengths `<= 0` as absent without
+consuming bytes beyond their length fields. Rust now returns a decoded message
+with no body/properties and the matching consumed-byte count. Invoked cases
+cover a negative body with its bytes omitted and a negative property length
+whose original property bytes remain in the input. Fixture SHA-256:
+`9cd0b64fe95643177c533d6cc2fd1f33c957e54cd3bd9559ecb07f6083939938`. This
+closes the tested nonpositive-length branches only; broad P18-V01
+reconciliation remains open.

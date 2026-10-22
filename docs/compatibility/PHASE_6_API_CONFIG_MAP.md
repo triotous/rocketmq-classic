@@ -2608,3 +2608,19 @@ sizes using the parsed-field boundaries. Fixture SHA-256:
 This closes the tested declared-size and concatenated-boundary behavior only;
 broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 full `MessageDecoder.decode(ByteBuffer)` nonpositive field lengths — 2026-10-22 (`8ca83fc8`)
+
+Pinned Java consumes body bytes only when the declared body length is positive,
+and consumes property bytes only when their signed-short length is positive.
+Zero and negative values therefore produce an absent body or property map and
+leave the cursor immediately after the length field. Rust now follows those
+branches; positive lengths retain the existing bounded field parsing. Invoked
+Java fixtures cover a negative body length with the body omitted and a negative
+property length with property bytes still following the length field. Their
+decoded values and final positions match Rust. Fixture SHA-256:
+`9cd0b64fe95643177c533d6cc2fd1f33c957e54cd3bd9559ecb07f6083939938`.
+
+This closes the tested nonpositive body/property length behavior only; broad
+P18-V01 API/settings/source/input/error/control-flow and reverse-export
+reconciliation remains open.

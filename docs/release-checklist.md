@@ -8014,3 +8014,20 @@ owner-specific checks belong in the manual handoff.
   compile-only. No push or external CI was run; the four protected Phase 19
   worktree paths remain unstaged. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T200111Z.rlog`.
+
+## P18-V01 full message decode nonpositive field lengths — 2026-10-22 (`8ca83fc8`)
+
+- [x] Full decode accepts nonpositive body and property lengths as absent
+  fields and returns Java's position after the corresponding length field.
+  Invoked cases compare complete decoded snapshots. Fixture SHA-256:
+  `9cd0b64fe95643177c533d6cc2fd1f33c957e54cd3bd9559ecb07f6083939938`.
+- [x] Common differential, default/all-feature workspace suites, strict
+  Clippy, Maven `verify`, differential checks, fuzz (245 frame and 189 message
+  decodes), race/leak (16 cases × 3), release examples and benchmark, metadata
+  and seven package listings, UTC/Asia-Taipei checks, and Windows GNU
+  cross-compiles pass.
+- [ ] Broad P18-V01 reconciliation, remote Ubuntu CI, native Windows runtime,
+  and Phase 19 Broker/Docker validation remain open. Windows checks are
+  compile-only. No push or external CI was run; the four protected Phase 19
+  worktree paths remain unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T201155Z.rlog`.
