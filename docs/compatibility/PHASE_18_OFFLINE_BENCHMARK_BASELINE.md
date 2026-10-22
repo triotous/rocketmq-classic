@@ -538,3 +538,23 @@ path; these are local observations rather than performance thresholds.
 
 Timing variation across runs is not evidence of a performance regression or
 improvement.
+
+
+## Locale-sensitive topic metrics parity gate — 2026-10-22 (`2887a032`)
+
+Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
+code revision `2887a032`. Environment: macOS AArch64, Apple M5 Max, 18 logical
+CPUs, Rust 1.85.0. Inputs and iteration counts match the fixed fixtures above;
+this single-host observation sets no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 1,654.9 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,104.4 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,204.1 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 14.7 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 58,916.9 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Allocation observations match earlier captures. Timing varies between runs and
+is recorded without interpreting the single sample as a regression or
+improvement; loopback time includes local TCP and Tokio scheduling.

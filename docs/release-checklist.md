@@ -7730,3 +7730,26 @@ owner-specific checks belong in the manual handoff.
   execution, and Phase 19 Broker/Docker validation remain open. No push or
   external CI was run; protected Phase 19 files remain unstaged. Detailed run
   record: `rlogs/2026/10/22-phase-18-metadata-wrapper-identity-gate__20261022T163414Z.rlog`.
+
+
+## P18-V01 locale-sensitive topic metrics and current-tree gate — 2026-10-22 (`2887a032`)
+
+- [x] `TopicMessageType::metrics_value` now follows pinned Java 5.5.1
+  `String.toLowerCase()` behavior for locale values from POSIX process locale
+  selectors. The invoked Java fixture records all eight labels under `tr-TR`;
+  the Rust subprocess regression matches the Turkish output. Producer-core
+  fixture SHA-256: `3743dd869f394f995422d6849e67741a14d44a643f74b3c9e23a253aaac52919`.
+- [x] On code revision `2887a032`, default and all-feature locked workspace
+  tests, strict all-target/all-feature Clippy, formatting/diff checks, pinned
+  Maven `verify` with producer-core fixture verification, differential
+  self-test and 37-scenario manifest, fuzz smoke (163 frame seeds, 11 message
+  seeds, 2,784 mutations), and race/leak smoke (16 cases × 3) pass.
+- [x] Release examples and offline benchmark pass; strict benchmark Clippy,
+  workspace metadata/license/dependency checks, seven package listings,
+  UTC/Asia-Taipei Unique ID tests, Windows GNU Core all-target checking, and
+  Consumer stack-capture cross-compilation pass. Benchmark observations are
+  appended to `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation, current-revision remote Ubuntu CI, and native
+  Windows execution remain open. No push or external CI was run; protected
+  Phase 19 worktree files remain unstaged.

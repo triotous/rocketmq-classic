@@ -2757,3 +2757,25 @@ remains open. Current-revision Ubuntu CI and native Windows execution remain
 unverified. No push or external CI was run; Phase 19 Broker/Docker validation
 remains separate. Run details are in
 `rlogs/2026/10/22-phase-18-metadata-wrapper-identity-gate__20261022T163414Z.rlog`.
+
+
+## P18-V01 `TopicMessageType.getMetricsValue()` default-locale parity — 2026-10-22 (`2887a032`)
+
+Pinned Java 5.5.1 `TopicMessageType.getMetricsValue()` delegates to
+`String.toLowerCase()` without a locale argument, so the JVM default locale
+affects enum labels. Rust previously used ASCII-only lowercase and returned
+`priority` under Turkish locale where Java returns `prıorıty`. Rust now samples
+`LC_ALL`, `LC_CTYPE`, then `LANG` on each call and applies Unicode lowercase
+with Turkish/Azeri `I` handling. The producer-core Java fixture temporarily
+sets `Locale` to `tr-TR` and records all eight labels; a Rust subprocess test
+sets `LC_ALL=tr_TR.UTF-8` and compares the complete vector. Fixture SHA-256:
+`3743dd869f394f995422d6849e67741a14d44a643f74b3c9e23a253aaac52919`.
+
+The focused Protocol API suite (4 tests), Common suite (87 unit, integration,
+and doctest cases), default/all-feature locked workspace tests, strict
+all-target/all-feature workspace Clippy, formatting/diff checks, and pinned
+Maven `verify` with producer-core fixture verification pass. The Maven run
+checks 37 scenarios, 36 route/VIP cases, and Java decoding of 106 typed headers
+and 19 typed bodies. This closes the locale-sensitive metrics-label slice
+only; broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open.
