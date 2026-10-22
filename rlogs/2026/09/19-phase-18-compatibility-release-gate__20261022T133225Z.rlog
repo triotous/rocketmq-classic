@@ -174,3 +174,7 @@ Validation on test/fixture commit `ab46b125`:
 - Pinned `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36 route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
 
 This closes only inherited setter dispatch for the static-topic wrapper. Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Protected Phase 19 files remain untouched and unstaged; no push or external CI was run.
+
+P18-V01 inherited-setter validation follow-up — 2026-10-22 15:19 UTC
+
+The first Maven `verify` correctly detected producer-fixture drift after the Java oracle gained `inheritedSetters`; regenerated `fixtures/producer/core.json` through the configured `verify-java-producer-core-fixtures` execution with `producer.core.fixture.verify=false`. The first Protocol all-feature run then exposed a Rust test-input mismatch: it reused the existing `mapping-topic` detail while Java used `inherited-mapping`. Updated only the Rust test setup to align that oracle input. The focused target, Protocol all-feature suite, strict Protocol Clippy, formatting/diff checks, and full pinned Maven `verify` then passed. No production code changed in this extension.
