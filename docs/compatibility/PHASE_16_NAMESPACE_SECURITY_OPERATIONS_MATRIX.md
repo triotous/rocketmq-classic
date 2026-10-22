@@ -34,3 +34,14 @@ method signatures. Rust keeps those members on the Java-shaped
 callers; compile-fail rustdoc coverage protects the narrowed export surface.
 This correction does not expand the Phase 16 behavior evidence or close the
 broader P18-V01 source/API/input audit.
+
+## P18-V01 Java-shaped constant export follow-up — 2026-10-22 (`87900fb8`)
+
+The 14 public constants declared by Java `TopicValidator` remain available as
+Rust `TopicValidator` associated constants; their duplicate
+`rocketmq_classic_common::topic` module aliases are private. The five Java
+`SessionCredentials` constants remain associated constants, and the
+Rust-only `KEY_FILE_PROPERTY` module export is private. The Java `KEY_FILE`
+value remains available through `SessionCredentials::key_file_path`. The
+module-level paths have compile-fail rustdoc coverage; this export correction
+does not change the namespace/security behavior cases in this matrix.

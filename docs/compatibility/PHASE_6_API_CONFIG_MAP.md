@@ -2158,7 +2158,7 @@ links explicit; they add no client setting or operation.
 
 | Rust export | Pinned Java counterpart / disposition |
 | --- | --- |
-| `ACCESS_KEY`, `SECRET_KEY`, `SECURITY_TOKEN`, `SIGNATURE`, `CHARSET`, `KEY_FILE_PROPERTY` | `SessionCredentials` constants and `KEY_FILE`; `AclUtils` uses the same signing field names and UTF-8 charset. |
+| `SessionCredentials::{ACCESS_KEY,SECRET_KEY,SECURITY_TOKEN,SIGNATURE,CHARSET,key_file_path}` | Java `SessionCredentials` public constants and `KEY_FILE` path value. `AclUtils` uses the same signing field names and UTF-8 charset; the Rust-only `KEY_FILE_PROPERTY` environment key is private. |
 | `DEFAULT_CHARSET`, `DEFAULT_ALGORITHM` | `AclSigner.DEFAULT_CHARSET` and `AclSigner.DEFAULT_ALGORITHM`. |
 | `AclUtilsError`, `is_asterisk`, `is_colon`, `is_comma`, `is_minus`, `with_status_code`, `with_status_code_and_message`, `with_cause`, `with_status_code_and_source`, `set_code` | `AclUtils` scope helpers and `AclException` constructors/accessors. Rust uses typed errors and `Error::source()` for the Java `AclException`/`Throwable` paths; the exact Java helper signature and invoked behavior are in the Phase 16 ACL matrix. |
 | `AdminQueryError`, `query_message_across_brokers` | Java `MQAdminImpl.queryMessage` aggregation and its route/RPC failures; Phase 17 pins the facade calls, result order and failure handling. |
@@ -2255,13 +2255,26 @@ owner and the existing invoked message-codec or NameServer fixtures.
 | `MESSAGE_FLAG_POSITION`, `MESSAGE_MAGIC_CODE_POSITION`, `MESSAGE_PHYSIC_OFFSET_POSITION`, `MESSAGE_STORE_TIMESTAMP_POSITION`, `PHY_POS_POSITION`, `QUEUE_OFFSET_POSITION`, `SYSFLAG_POSITION` | Java `MessageDecoder` public layout constants; the Phase 8 message-decoder API fixture compares every public constant. `DecodeError` and `MessageVersionError` are typed Rust decode-failure carriers for Java decode rejection paths. |
 | `MessagePropertyParseError`, `MessageSysFlagParseError`, `MessageHostAddressError`, `MessageHostAddressBytesError`, `MessageIdError`, `MessageExtEncodeError`, `CompactMessageError`, `CompressionTypeError` | Typed Rust error carriers for Java message property/sysflag parsing, host/ID decoding, `MessageDecoder` compact and wire encoding, and `CompressionType` lookup. Their accepted inputs and observable codec results are covered by the Phase 7/8 message fixtures. |
 | `apply_client_decode_ids`, `into_message_ext`, `is_message_client_ext`, `offset_message_id_for_runtime_type`, `runtime_subtype`, `runtime_subtype_name`, `set_runtime_subtype` | Rust adapters for Java `MessageDecoder.clientDecode`, `MessageExt`/`MessageClientExt` subtype dispatch, and Java-virtual message-ID access when an extension object is passed through a base-message API. They preserve the Java subclass capability in Rust's typed message model. |
-| `RMQ_SYS_BENCHMARK_TOPIC`, `RMQ_SYS_OFFSET_MOVED_EVENT`, `RMQ_SYS_ROCKSDB_OFFSET_TOPIC`, `RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC`, `RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC`, `RMQ_SYS_SCHEDULE_TOPIC`, `RMQ_SYS_SELF_TEST_TOPIC`, `RMQ_SYS_TRACE_TOPIC`, `RMQ_SYS_TRANS_CHECK_MAX_TIME_TOPIC`, `RMQ_SYS_TRANS_HALF_TOPIC`, `RMQ_SYS_TRANS_OP_HALF_TOPIC` | Java `TopicValidator` system-topic constants. The TopicValidator fixture checks public constants alongside mutable topic-set behavior. |
+| `TopicValidator::{AUTO_CREATE_TOPIC_KEY_TOPIC,RMQ_SYS_BENCHMARK_TOPIC,RMQ_SYS_OFFSET_MOVED_EVENT,RMQ_SYS_ROCKSDB_OFFSET_TOPIC,RMQ_SYS_ROCKSDB_TRANS_HALF_TOPIC,RMQ_SYS_ROCKSDB_TRANS_OP_HALF_TOPIC,RMQ_SYS_SCHEDULE_TOPIC,RMQ_SYS_SELF_TEST_TOPIC,RMQ_SYS_TRACE_TOPIC,RMQ_SYS_TRANS_CHECK_MAX_TIME_TOPIC,RMQ_SYS_TRANS_HALF_TOPIC,RMQ_SYS_TRANS_OP_HALF_TOPIC,SYSTEM_TOPIC_PREFIX,SYNC_BROKER_MEMBER_GROUP_PREFIX}` | Java `TopicValidator` public constants. The TopicValidator fixture checks these associated values alongside mutable topic-set behavior. |
 | `NameServerAddressError`, `get_name_srv_addr_from_namesrv_endpoint`, `matches_namesrv_endpoint`, `parse_instance_id_from_endpoint`, `validate_instance_endpoint` | Java `NameServerAddressUtils` public address-pattern and endpoint helpers. The Phase 6 runtime inventory and invoked client-config fixture cover null, empty, malformed, Unicode, path, and line-terminator inputs. |
 
 The Common reverse-name set also included `shares_map_with`, a pointer-identity
 inspection helper with no Java method counterpart. It was removed from the
 public Rust API; its integration assertion now verifies the same two-way
 property-map alias behavior through observable mutations.
+
+## P18-V01 Java-shaped constant export correction — 2026-10-22 (`87900fb8`)
+
+The public module-level constants in `rocketmq_classic_common::topic` duplicated
+14 constants already exposed on Java-shaped `TopicValidator`; the module
+aliases are now private. Likewise, `rocketmq_classic_core::auth` no longer
+exports module-level aliases for the five `SessionCredentials` constants or
+the Rust-only `KEY_FILE_PROPERTY` string. The Java-mapped constants remain
+available on `TopicValidator` and `SessionCredentials`, and
+`SessionCredentials::key_file_path` maps Java's `KEY_FILE` value. Compile-fail
+rustdoc examples guard both module paths. This closes these reverse-export
+aliases only; broad P18-V01 source/settings/input/error/control-flow
+reconciliation remains open.
 
 ## P18-V01 Rustdoc Remoting-export reverse scan — 2026-10-22
 

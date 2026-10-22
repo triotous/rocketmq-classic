@@ -220,3 +220,32 @@ These are name-join counts, not missing-feature counts.
 --workspace --all-features --locked --no-deps`: PASS. Existing workspace
 manifest and Consumer `AtomicU64::fetch_update` warnings remain. No tests were
 run for this documentation and inventory correction.
+
+P18-V01 TopicValidator and SessionCredentials constant export correction — 2026-10-22 15:45 UTC
+
+The reverse source review found duplicate Rust module-level exports alongside
+Java-shaped associated constants. Made 14 `rocketmq_classic_common::topic`
+TopicValidator aliases private, retaining the associated constants. Made
+five `rocketmq_classic_core::auth` SessionCredentials aliases private and
+hid the Rust-only `KEY_FILE_PROPERTY`; the Java `KEY_FILE` value remains
+available through `SessionCredentials::key_file_path`. Added compile-fail
+rustdoc guards for both module paths and updated the ACL profile integration
+test to access Java-mapped credentials through `SessionCredentials`.
+Code commit: `87900fb8`.
+
+Validation on `87900fb8`:
+- `cargo test --workspace --locked`: PASS, including the new compile-fail
+  rustdoc examples.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36
+  runtime route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
+- `RUSTDOCFLAGS='-Z unstable-options --output-format json' cargo +nightly doc
+  --workspace --all-features --locked --no-deps`: PASS; existing manifest
+  and Consumer `AtomicU64::fetch_update` warnings remain.
+
+Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export
+reconciliation remains open. Current-revision remote Ubuntu CI and native
+Windows execution remain open. No push or external CI was run; protected
+Phase 19 worktree files remain untouched and unstaged.

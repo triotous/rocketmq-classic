@@ -2632,3 +2632,23 @@ crosswalk diagnostics; Java naming, inherited methods, DTO fields, and Rust
 ownership adapters need semantic mapping. The static-topic wrapper's three
 associated functions are listed in the Protocol crosswalk; the four private
 namespace module constants no longer appear as public Rustdoc names.
+
+## P18-V01 TopicValidator and SessionCredentials export correction — 2026-10-22 (`87900fb8`)
+
+The reverse surface review found duplicate module-level constants alongside
+Java-shaped associated constants. Fourteen TopicValidator values now remain
+public only on `TopicValidator`; the public `rocketmq_classic_common::topic`
+aliases are private. Five credential constants remain public only on
+`SessionCredentials`; the aliases in `rocketmq_classic_core::auth` and the
+Rust-only `KEY_FILE_PROPERTY` are private. `SessionCredentials::key_file_path`
+continues to map Java's public `KEY_FILE` path value. Two compile-fail rustdoc
+examples cover the removed paths, and the ACL fixture test now reads
+`ACCESS_KEY` and `SIGNATURE` through `SessionCredentials`.
+
+Validation on code revision `87900fb8`: locked default and all-feature
+workspace tests pass; strict all-target/all-feature workspace Clippy,
+format/diff checks, pinned Maven `verify` (37 scenarios; 36 route/VIP cases;
+106 typed headers and 19 typed bodies decoded by Java), and all-feature
+workspace Rustdoc JSON generation pass. Broad P18-V01 source/settings/input/
+error/control-flow reconciliation, current-revision Ubuntu CI, and native
+Windows execution remain open.
