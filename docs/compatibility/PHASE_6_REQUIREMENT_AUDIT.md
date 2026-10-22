@@ -2711,3 +2711,48 @@ This refresh closes the local server-free P18-V02 gate on code revision
 reverse-export reconciliation remains open. Current-revision Ubuntu CI and
 native Windows execution remain unverified; no push or external CI was run.
 Phase 19 Broker/Docker validation remains separate.
+
+## P18-V01 metadata wrapper identity equality — 2026-10-22
+
+The pinned Java `TopicConfigSerializeWrapper` and `SubscriptionGroupWrapper`
+declare neither `equals` nor `hashCode`; both inherit identity behavior from
+`Object`. The invoked producer-core fixture constructs two independently
+populated wrappers with identical serialized bytes, confirms that they remain
+unequal, and confirms that each wrapper equals itself. It records
+`java.lang.Object` as the declaring owner for both methods. Rust no longer
+derives structural `PartialEq`/`Eq` for these DTOs, with compile-fail doctests
+guarding that API boundary. Producer core fixture SHA-256:
+`f0b625d90d319a81070a3cc342f1e655c67d74aa747e0934f12c4b5ed0911095`.
+
+Protocol tests (160 unit tests, all integration targets, and 166 doctests),
+the focused producer-core fixture generation and verification, pinned Maven
+`verify` (37 scenarios, 36 route/VIP cases, and Java decoding of 106 typed
+headers and 19 typed bodies), formatting, and diff checks pass. This closes
+only the identity-equality slice. Broad P18-V01 source/API/settings/input/
+error/control-flow and reverse-export reconciliation, refreshed current-tree
+P18-V02 gates, current-revision Ubuntu CI, and native Windows execution remain
+open.
+
+## P18-V02 current local server-free gate refresh — 2026-10-22 (`91f842f4`)
+
+On code revision `91f842f4`, locked default and all-feature workspace tests,
+strict all-target/all-feature workspace Clippy, formatting/diff checks, pinned
+Maven `verify`, and explicit Java producer-core fixture verification pass.
+Maven verifies 37 scenarios, 36 runtime route/VIP cases, and Java decoding of
+106 typed headers and 19 typed bodies. Differential comparator self-test and
+37-scenario manifest validation pass; fixed-seed fuzz smoke passes with 163
+frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, and 112
+message decodes. Deterministic race/leak smoke passes 16 cases x 3.
+
+Release facade examples build; the offline benchmark runs and strict
+benchmark-target Clippy passes. Workspace metadata, dependency direction, and
+license checks pass; all seven product package listings include `LICENSE`
+and `NOTICE`. Four Core Unique ID tests pass under UTC and `Asia/Taipei`.
+Windows GNU Core all-target checking and Consumer stack-capture `--no-run`
+cross-compilation pass.
+
+This closes the local server-free P18-V02 gate on `91f842f4`. Broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open. Current-revision Ubuntu CI and native Windows execution remain
+unverified. No push or external CI was run; Phase 19 Broker/Docker validation
+remains separate.

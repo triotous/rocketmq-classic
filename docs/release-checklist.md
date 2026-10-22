@@ -7690,3 +7690,42 @@ owner-specific checks belong in the manual handoff.
   native Windows execution, and Phase 19 Broker/Docker validation remain open.
   No push or external CI was run; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 metadata wrapper identity equality — 2026-10-22
+
+- [x] Match pinned Java identity behavior for `TopicConfigSerializeWrapper`
+  and `SubscriptionGroupWrapper` by removing derived structural equality.
+  The direct fixture confirms equal-state encodings, distinct-instance
+  inequality, same-reference equality, and `Object` ownership of `equals` and
+  `hashCode`. Producer core fixture SHA-256:
+  `f0b625d90d319a81070a3cc342f1e655c67d74aa747e0934f12c4b5ed0911095`.
+- [x] Protocol tests pass (160 unit tests, all integration targets, and 166
+  doctests). The named Java producer-core fixture verification and pinned
+  Maven `verify` pass (37 scenarios, 36 route/VIP cases, 106 typed headers
+  and 19 typed bodies decoded by Java); formatting and diff checks pass.
+- [ ] This closes only the wrapper identity-equality slice. The refreshed
+  current-tree P18-V02 gate, broad P18-V01 reconciliation, current-revision
+  Ubuntu CI, and native Windows execution remain open. No push or external CI
+  was run.
+
+## P18-V02 current local server-free gate refresh — 2026-10-22 (`91f842f4`)
+
+- [x] On code revision `91f842f4`, locked default and all-feature workspace
+  tests, strict all-target/all-feature workspace Clippy, formatting/diff
+  checks, pinned Maven `verify`, and explicit producer-core fixture
+  verification pass. Maven verifies 37 scenarios, 36 runtime route/VIP cases,
+  and Java decoding of 106 typed headers and 19 typed bodies.
+- [x] Differential self-test and 37-scenario manifest validation pass.
+  Fixed-seed fuzz smoke passes with 163 frame seeds, 11 message seeds, 2,784
+  mutations, 245 frame decodes, and 112 message decodes; deterministic
+  race/leak smoke passes 16 cases x 3.
+- [x] Release facade examples build; the offline benchmark runs and strict
+  benchmark-target Clippy passes. Workspace metadata, dependency direction,
+  and license checks pass; all seven product package listings include
+  `LICENSE` and `NOTICE`. Four Core Unique ID tests pass under UTC and
+  `Asia/Taipei`.
+- [x] Windows GNU Core all-target checking and Consumer stack-capture
+  `--no-run` cross-compilation pass. This is compile evidence only.
+- [ ] Broad P18-V01 reconciliation, current-revision Ubuntu CI, native Windows
+  execution, and Phase 19 Broker/Docker validation remain open. No push or
+  external CI was run; protected Phase 19 files remain unstaged.

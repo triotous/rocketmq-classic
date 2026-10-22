@@ -521,3 +521,20 @@ this single-host observation sets no performance threshold.
 Allocation observations match earlier captures. Timing varies between runs
 and is recorded without interpreting this sample as a regression or
 improvement; loopback time includes local TCP and Tokio scheduling.
+
+## Metadata wrapper identity gate refresh
+
+Captured on 2026-10-22 at code revision `91f842f4` with the same command and
+environment. The DTO identity change does not exercise a benchmark-specific
+path; these are local observations rather than performance thresholds.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 2,304.8 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,186.3 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,208.1 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 15.3 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 69,611.5 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Timing variation across runs is not evidence of a performance regression or
+improvement.

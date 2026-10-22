@@ -2531,3 +2531,15 @@ compile-fail rustdoc coverage preventing imports through that path. This
 removes four Rust exports that had no Java counterpart and does not alter the
 Java-shaped facade. Broad P18-V01 source/API/settings/input/error/control-flow
 and reverse-export reconciliation remains open.
+
+## P18-V01 metadata wrapper identity equality — 2026-10-22
+
+Java `TopicConfigSerializeWrapper` and `SubscriptionGroupWrapper` inherit
+`equals` and `hashCode` from `Object`; equal serialized state therefore does
+not make distinct wrapper instances equal. Rust removes derived structural
+`PartialEq`/`Eq` from both response-body types, and compile-fail doctests guard
+against restoring value equality. The direct Java fixture checks equal-state
+encoded bytes, distinct-object and same-reference equality, and the declaring
+owners of both methods. `fixtures/producer/core.json` SHA-256:
+`f0b625d90d319a81070a3cc342f1e655c67d74aa747e0934f12c4b5ed0911095`.
+Code commit: `91f842f4`.
