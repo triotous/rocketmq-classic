@@ -6970,3 +6970,42 @@ owner-specific checks belong in the manual handoff.
   stale inherited-method/live-map open notes. Other P18-V01 public API,
   settings, control-flow, input/error and reverse-export reconciliation, plus
   current-revision GitHub Ubuntu/native Windows P18-V04 evidence, remain open.
+
+## P18-V02 current committed refresh — 2026-10-22 (`80faab5a`)
+
+- [x] The server-free Rust refresh passed on the source tree committed as
+  `80faab5a`: formatting, strict all-target/all-feature Clippy, default and
+  all-feature workspace tests, UTC and Asia/Taipei Unique ID regression,
+  deterministic fuzz smoke, offline race/leak smoke, release facade examples,
+  and workspace bench compilation. The fuzz run exercised 163 frame seeds,
+  11 message seeds and 2,784 bounded mutations; the race/leak run passed 16
+  cases × 3 repeats.
+- [x] Differential comparator self-test and 37-scenario manifest validation,
+  workspace metadata and package checks, and `git diff --check` passed.
+- [x] Pinned offline `mvn -o -q -f compat/java-reference/pom.xml verify`
+  passed at `80faab5a`, including 37 scenarios, 73 ClientConfig identity/
+  default/clone checks, typed header decode fixtures, and Java decoding 106
+  Rust-generated header fixtures and 19 typed body fixtures. The offline
+  benchmark was captured at this revision and appended to the benchmark
+  baseline.
+- [x] The five named Java 5.5.1 regressions have local source/test coverage:
+  request/reply exact-once completion and timeout/failure races
+  (`concurrent_reply_and_timeout_claim_exactly_one_terminal_owner`,
+  `reply_races_with_send_failure_or_cancellation_without_double_claim`, and
+  `send_failure_completes_request_and_callback_once`); same-key and
+  unrelated-key runtime construction (`p6_v01_many_first_lookups_share_one_unstarted_runtime_and_transport_owner`,
+  `unrelated_keys_construct_concurrently_and_same_key_constructs_once`);
+  blank local serve address mapped to Proxy-only source behavior (outside the
+  client implementation); optimized Remoting header encoding
+  (`p2_v01_private_codec_matches_java_fast_and_ordinary_header_layouts`,
+  `header_prefix_apis_match_invoked_java_551`); and producer batch validation
+  (`message_batch_generate_from_list_matches_java_validation_order`,
+  `batch_validation_decisions_match_pinned_java_fixtures`).
+- [x] Cross-compilation of the exact native Windows stack regression test
+  binary and `rocketmq-classic-core --all-targets` passed for
+  `x86_64-pc-windows-gnu`. The native Windows stack assertion itself remains
+  for the Windows CI runner to execute; this macOS host has no Windows runtime.
+- This closes the listed server-free refresh only. Broad P18-V01 source,
+  settings, input/error, control-flow and reverse-export reconciliation
+  remains open. Current remote Ubuntu/native Windows CI evidence is also
+  pending; no Broker, Docker or remote CI run was performed.

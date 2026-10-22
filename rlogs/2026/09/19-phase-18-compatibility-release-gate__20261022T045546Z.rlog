@@ -72,3 +72,36 @@ P18-V02 current server-free workspace refresh
 - `git diff --check` passed. This refresh is from the working tree based on
   `d030c74d2be4404db8ee2ac5323ab6bc44f5d8ff`; Maven verify and benchmark will
   be rerun after the fix is committed.
+
+P18-05 benchmark and P18-02 pinned Java verify at `80faab5a`
+- The post-commit `cargo bench -p rocketmq-classic --bench offline --locked`
+  passed at revision `80faab5a` on macOS AArch64, Apple M5 Max, 18 logical
+  CPUs, Rust 1.85.0. Timings in ns/op: frame encode/decode 3349.2; Zstd
+  message decode 2341.8; producer request construction 2533.5; 128-entry
+  route lookup 34.0; loopback pending completion 85556.8. Allocation counts
+  and bytes/op remain 40/4676, 17/197493, 54/3665, 0/0, and 81/9546.
+- `mvn -o -q -f compat/java-reference/pom.xml verify` passed at the same
+  source revision using Maven's Java 27 runtime. It validated 37 differential
+  scenarios, 73 ClientConfig identity/default/clone checks, runtime routing,
+  discovery, heartbeat, address, hook, Broker lookup, client, consumer
+  operation and offset fixtures, all typed header groups, and Java decoding
+  106 Rust-generated header fixtures plus 19 typed body fixtures. Existing
+  JDK/Netty Unsafe and reflective-final-field warnings were emitted.
+- The standalone `java` command resolves to Zulu OpenJDK 21.0.12 while Maven
+  resolves to Homebrew OpenJDK 27. CI pins Java 27. `git status` confirmed
+  Maven did not modify fixture/source inputs; protected Phase 19 files remain
+  untouched and unstaged.
+
+P18-V04 Windows cross-compilation follow-up
+- `cargo test --target x86_64-pc-windows-gnu -p
+  rocketmq-classic-consumer --lib
+  stack::tests::jstack_includes_current_and_other_named_threads --no-run
+  --locked` passed and produced the Windows test executable used by the
+  native CI job.
+- `cargo check -p rocketmq-classic-core --all-targets --target
+  x86_64-pc-windows-gnu --locked` passed, including Windows-gated local
+  address enumeration and helper code. The actual Windows stack capture
+  assertion still requires a native Windows runner; this macOS host has no
+  Windows runtime.
+- Updated `docs/release-checklist.md` with the exact five regression test
+  names and this cross-compilation evidence. P18-V01 broad audit remains open.
