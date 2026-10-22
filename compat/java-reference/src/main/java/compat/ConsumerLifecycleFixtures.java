@@ -22,12 +22,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.TreeMap;
+import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.impl.MQClientManager;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessageService;
+import org.apache.rocketmq.client.impl.consumer.DefaultLitePullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
@@ -49,6 +51,27 @@ public final class ConsumerLifecycleFixtures {
         Field field = DefaultMQPullConsumerImpl.class.getDeclaredField("mQClientFactory");
         field.setAccessible(true);
         return (MQClientInstance) field.get(implementation);
+    }
+
+    private static DefaultLitePullConsumerImpl liteImplementation(DefaultLitePullConsumer consumer)
+        throws ReflectiveOperationException {
+        Field field = DefaultLitePullConsumer.class.getDeclaredField("defaultLitePullConsumerImpl");
+        field.setAccessible(true);
+        return (DefaultLitePullConsumerImpl) field.get(consumer);
+    }
+
+    private static MQClientInstance factory(DefaultLitePullConsumerImpl implementation)
+        throws ReflectiveOperationException {
+        Field field = DefaultLitePullConsumerImpl.class.getDeclaredField("mQClientFactory");
+        field.setAccessible(true);
+        return (MQClientInstance) field.get(implementation);
+    }
+
+    private static String consumerServiceState(Object implementation)
+        throws ReflectiveOperationException {
+        Field field = implementation.getClass().getDeclaredField("serviceState");
+        field.setAccessible(true);
+        return ((ServiceState) field.get(implementation)).name();
     }
 
     private static String factoryServiceState(MQClientInstance factory)
@@ -148,10 +171,54 @@ public final class ConsumerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> failedLitePullFactoryStart() throws Exception {
+        String group = "consumer-start-lite-pull-" + System.nanoTime();
+        DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setNamesrvAddr("");
+        consumer.setPollNameServerInterval(0);
+        Throwable startFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+
+        DefaultLitePullConsumerImpl implementation = liteImplementation(consumer);
+        MQClientInstance factory = factory(implementation);
+        Throwable retryFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            retryFailure = failure;
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+        result.put("retryException", retryFailure == null ? "" : retryFailure.getClass().getSimpleName());
+        result.put("consumerRegistered", factory != null
+            && factory.getConsumerTable().containsKey(group));
+        result.put("consumerServiceState", consumerServiceState(implementation));
+        result.put("factoryServiceState", factory == null ? "" : factoryServiceState(factory));
+        closeFactory(factory, group);
+
+        if (startFailure == null || !"IllegalArgumentException".equals(
+            startFailure.getClass().getSimpleName())
+            || retryFailure == null || !"MQClientException".equals(
+                retryFailure.getClass().getSimpleName())
+            || !Boolean.TRUE.equals(result.get("consumerRegistered"))
+            || !"START_FAILED".equals(result.get("consumerServiceState"))
+            || !"START_FAILED".equals(result.get("factoryServiceState"))) {
+            throw new IllegalStateException("Unexpected LitePullConsumer factory-start outcome: " + result,
+                startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> produce() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("pushFactoryStartFailure", failedPushFactoryStart());
         result.put("pullFactoryStartFailure", failedPullFactoryStart());
+        result.put("litePullFactoryStartFailure", failedLitePullFactoryStart());
         return result;
     }
 

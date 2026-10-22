@@ -118,6 +118,7 @@ enum Lifecycle {
     Created,
     Starting,
     Started,
+    StartFailed,
     Shutdown,
 }
 
@@ -543,20 +544,21 @@ impl LitePullConsumer {
                 Lifecycle::Started | Lifecycle::Starting => {
                     return Err(LitePullConsumerError::AlreadyStarted);
                 }
+                Lifecycle::StartFailed => return Err(LitePullConsumerError::StartFailed),
                 Lifecycle::Shutdown => return Err(LitePullConsumerError::Shutdown),
                 Lifecycle::Created => *state = Lifecycle::Starting,
             }
         }
         let pull_thread_nums = self.pull_thread_nums.load(Ordering::Acquire);
         if pull_thread_nums < 0 {
-            *self.lifecycle.lock().await = Lifecycle::Shutdown;
+            *self.lifecycle.lock().await = Lifecycle::StartFailed;
             return Err(LitePullConsumerError::InvalidPullThreadCount);
         }
         let topic_metadata_check_interval_millis = self
             .topic_metadata_check_interval_millis
             .load(Ordering::Acquire);
         if topic_metadata_check_interval_millis <= 0 {
-            *self.lifecycle.lock().await = Lifecycle::Shutdown;
+            *self.lifecycle.lock().await = Lifecycle::StartFailed;
             return Err(LitePullConsumerError::InvalidTopicMetadataCheckInterval);
         }
         let consumer_timeout_millis = self
@@ -564,7 +566,7 @@ impl LitePullConsumer {
             .load(Ordering::Acquire);
         let broker_suspend_millis = self.config.broker_suspend_max_time_millis();
         if consumer_timeout_millis < broker_suspend_millis {
-            *self.lifecycle.lock().await = Lifecycle::Shutdown;
+            *self.lifecycle.lock().await = Lifecycle::StartFailed;
             return Err(PullConsumerError::InvalidSuspendTimeout {
                 consumer_timeout_millis,
                 broker_suspend_millis,
@@ -607,13 +609,14 @@ impl LitePullConsumer {
         let engine = match self.prepare_engine().await {
             Ok(engine) => engine,
             Err(error) => {
-                *self.lifecycle.lock().await = Lifecycle::Shutdown;
+                self.record_start_failure(&error).await;
                 return Err(error);
             }
         };
         if let Err(error) = engine.start().await {
-            *self.lifecycle.lock().await = Lifecycle::Shutdown;
-            return Err(error.into());
+            let error = LitePullConsumerError::Pull(error);
+            self.record_start_failure(&error).await;
+            return Err(error);
         }
         {
             let mut lifecycle = self.lifecycle.lock().await;
@@ -697,6 +700,23 @@ impl LitePullConsumer {
         Ok(())
     }
 
+    async fn record_start_failure(&self, error: &LitePullConsumerError) {
+        let duplicate_group = matches!(
+            error,
+            LitePullConsumerError::Pull(PullConsumerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::DuplicateGroup { .. }
+            ))
+        );
+        if duplicate_group {
+            self.start_invoked.store(false, Ordering::Release);
+        }
+        *self.lifecycle.lock().await = if duplicate_group {
+            Lifecycle::Created
+        } else {
+            Lifecycle::StartFailed
+        };
+    }
+
     async fn prepare_engine(&self) -> Result<Arc<PullConsumer>, LitePullConsumerError> {
         let mut pull_config = PullConsumerConfig::new(self.config.consumer_group())?;
         *pull_config.client_config_mut() = self.config.client_config().clone();
@@ -769,10 +789,10 @@ impl LitePullConsumer {
         self.reconcile.notify_waiters();
         {
             let mut state = self.lifecycle.lock().await;
-            if matches!(&*state, Lifecycle::Shutdown) {
-                return Ok(());
-            }
-            if matches!(&*state, Lifecycle::Created) {
+            if matches!(
+                &*state,
+                Lifecycle::Created | Lifecycle::StartFailed | Lifecycle::Shutdown
+            ) {
                 return Ok(());
             }
             *state = Lifecycle::Shutdown;
@@ -1774,6 +1794,86 @@ mod tests {
             consumer.config().customized_trace_topic(),
             Some("client-trace-topic")
         );
+    }
+
+    #[tokio::test]
+    async fn factory_start_failure_preserves_java_lite_consumer_lifecycle() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["litePullFactoryStartFailure"];
+        assert_eq!(java["exception"], "IllegalArgumentException");
+        assert_eq!(java["retryException"], "MQClientException");
+        assert_eq!(java["consumerRegistered"], true);
+        assert_eq!(java["consumerServiceState"], "START_FAILED");
+        assert_eq!(java["factoryServiceState"], "START_FAILED");
+
+        let group = format!(
+            "lite-factory-start-failure-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut config = LitePullConsumerConfig::new(&group).unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config
+            .client_config_mut()
+            .set_instance_name(Some(group.clone()));
+        config.client_config_mut().set_poll_name_server_interval(0);
+        let client_config = config.client_config().clone();
+        let client_id = client_config.build_client_id();
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::shared_default();
+        let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::Pull(PullConsumerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidSchedule
+            )))
+        ));
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::StartFailed
+        ));
+        assert!(!consumer.is_running().await);
+
+        let runtime = manager
+            .factory_table()
+            .get(&client_id)
+            .unwrap()
+            .expect("LitePull runtime remains in the shared factory table");
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Failed
+        );
+        assert!(runtime.select_consumer(&group).unwrap().is_some());
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::StartFailed)
+        ));
+        consumer.shutdown().await.unwrap();
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::StartFailed
+        ));
+
+        assert!(
+            runtime
+                .unregister_consumer_by_group(
+                    &group,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .unwrap()
+        );
+        runtime.shutdown().await.unwrap();
+        manager
+            .remove_client_factory(runtime.client_id(), &runtime)
+            .unwrap();
     }
 
     #[tokio::test]

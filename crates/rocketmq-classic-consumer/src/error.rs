@@ -105,6 +105,8 @@ pub enum LitePullConsumerError {
     NotStarted,
     #[error("Lite pull consumer has already been started")]
     AlreadyStarted,
+    #[error("Lite pull consumer startup has already failed")]
+    StartFailed,
     #[error("Lite pull consumer has been shut down")]
     Shutdown,
     #[error("subscription and explicit assignment are mutually exclusive")]
