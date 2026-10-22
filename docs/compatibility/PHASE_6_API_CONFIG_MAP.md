@@ -2486,3 +2486,16 @@ route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
 The full workspace gate must be refreshed after this source change. Broad
 P18-V01 reconciliation and current-revision remote Ubuntu and native Windows
 execution remain open.
+
+## P18-V02 full workspace refresh after static-topic wrapper — 2026-10-22 (`7397bb16`)
+
+The locked default and all-feature workspace tests, strict workspace Clippy,
+format/diff checks, differential comparator self-test and 37-scenario
+manifest, bounded fuzz smoke, and race/leak smoke pass on the wrapper source
+revision. The release facade examples build; workspace benches compile;
+workspace metadata and all seven product package listings include `LICENSE`
+and `NOTICE`. Four Core Unique ID tests pass under both UTC and Asia/Taipei.
+Windows GNU Core all-target checking and Consumer stack-capture `--no-run`
+cross-compilation pass; native Windows execution and remote Ubuntu CI remain
+unverified. The single-run P18-05 benchmark is unchanged by this DTO-only
+source slice. Broad P18-V01 reconciliation remains open.

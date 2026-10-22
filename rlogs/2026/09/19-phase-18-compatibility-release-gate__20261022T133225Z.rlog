@@ -127,3 +127,20 @@ Validation on source commit `7397bb16`:
 - `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36 route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
 
 The full workspace gate needs a post-change refresh. Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains open, along with current-revision remote Ubuntu CI and native Windows stack-capture execution. Phase 19 worktree files remain untouched and unstaged; no push or remote CI was run.
+
+Phase 18 current-revision P18-V02 workspace gate — 2026-10-22 14:59 UTC
+
+Refreshed after code commit `7397bb16` (docs `8499d4d9`):
+- `cargo test --workspace --locked`: PASS.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- Pinned Maven `verify`: PASS (37 scenarios, 36 runtime route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
+- Differential comparator self-test and manifest validation: PASS; 37 scenarios.
+- Fuzz smoke: PASS; 163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, 112 message decodes.
+- Race/leak smoke: PASS; 16 deterministic cases × 3 repetitions.
+- Release facade examples, workspace bench compilation, workspace metadata/license/dependency checks, and seven product package listings with LICENSE/NOTICE: PASS.
+- Four Core Unique ID tests pass under both `TZ=UTC` and `TZ=Asia/Taipei`.
+- Windows GNU Core all-target check and Consumer stack-capture `--no-run` cross-compile: PASS; native Windows runtime execution was not run.
+
+The P18-05 one-run offline benchmark was already recorded for this code family and was not rerun because the new code is confined to the Protocol static-topic wrapper API. Broad P18-V01 remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Phase 19 worktree files were left untouched; no push or external CI was run.

@@ -7539,3 +7539,24 @@ owner-specific checks belong in the manual handoff.
   reverse-export reconciliation, current-revision remote Ubuntu CI, and native
   Windows stack-capture execution remain open. No push or external CI was run;
   protected Phase 19 files remain unstaged.
+
+## P18-V02 current-revision workspace gate after static-topic wrapper — 2026-10-22 (`7397bb16`)
+
+- [x] Locked default and all-feature workspace tests, strict all-target/
+  all-feature workspace Clippy, formatting, and `git diff --check` pass.
+  Protocol all-feature tests pass (159 unit tests, all integration targets,
+  163 doctests); strict Protocol Clippy also passes.
+- [x] Pinned Maven `verify` passes on this source revision (37 scenarios,
+  36 route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
+  Differential self-test and the 37-row manifest pass. Fuzz smoke passes
+  163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, and
+  112 message decodes; race/leak smoke passes 16 cases × 3.
+- [x] Release facade examples and workspace bench compilation pass. Workspace
+  metadata/license/dependency checks pass; all seven product package listings
+  include `LICENSE` and `NOTICE`. Four Core Unique ID tests pass under UTC and
+  Asia/Taipei. Windows GNU Core all-target checking and Consumer stack-capture
+  `--no-run` cross-compilation pass.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Remote Ubuntu CI and native Windows
+  stack-capture execution remain unverified. No push or external CI was run;
+  protected Phase 19 files remain unstaged.
