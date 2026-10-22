@@ -3152,3 +3152,16 @@ GNU Core all-target check and Consumer unit-test cross-compilation pass;
 native Windows execution and remote Ubuntu CI remain unverified. This closes
 the local P18-V02 gate on this revision only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains open.
+
+## P18-V02 Remoting shutdown boundary verification — 2026-10-22 (`477825cc`)
+
+After the public-executor shutdown-order correction, the Remoting library suite
+passes (140 tests), its transport integration target passes (107 tests), and
+the all-feature workspace library suites pass. Strict all-target/all-feature
+workspace Clippy, formatting, and diff checks pass. The offline race/leak
+runner now includes the shutdown-admission regression and completed 17 cases x
+3 repetitions; its final count text was corrected and shell syntax/case count
+were rechecked afterward. This is current-revision evidence for the affected
+shutdown boundary, not a full P18-V02 refresh. Broad P18-V01 reconciliation,
+remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker
+validation remain open.
