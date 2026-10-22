@@ -7652,3 +7652,20 @@ owner-specific checks belong in the manual handoff.
 - [ ] Broad P18-V01 source/settings/input/error/control-flow reconciliation,
   current-revision remote Ubuntu CI, and native Windows execution remain open.
   No push or external CI was run.
+
+## P18-V01 ACL hook custom-header signing — 2026-10-22 (`1eb5b6ba`)
+
+- [x] Match Java's `AclClientRPCHook.parseRequestContent` ordering by
+  materializing typed command headers before canonicalizing request fields and
+  body. The pinned `CreateTopicRequestHeader` fixture compares the resulting
+  fields, canonical bytes, and signature. ACL fixture SHA-256:
+  `56689d2cf7a9ca9e6c39f5dd62cef73aa268b81890fb1b073510e3ad4ebbf2ba`.
+- [x] Locked Core tests, strict all-target/all-feature workspace Clippy,
+  formatting/diff checks, and pinned Maven verification pass. Maven verifies
+  37 scenarios, 36 runtime route/VIP cases, 106 typed headers and 19 typed
+  bodies.
+- [ ] This closes only the typed-header signing branch. Broad P18-V01
+  source/API/settings/input/error/control-flow and reverse-export reconciliation,
+  full current-revision workspace P18-V02 refresh, Ubuntu CI, native Windows,
+  and Phase 19 Broker/Docker validation remain open. No push or external CI was
+  run.

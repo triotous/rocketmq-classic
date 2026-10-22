@@ -2672,3 +2672,20 @@ the trace equality slice; broad P18-V01 source/API/input/error/flow and
 reverse-export reconciliation remains open. Full P18-V02 fuzz/race/benchmark
 refresh, current-revision Ubuntu CI, native Windows execution, and Phase 19
 Broker/Docker validation remain separate open gates.
+
+## P18-V01 ACL hook custom-header signing — 2026-10-22 (`1eb5b6ba`)
+
+Pinned Java `AclClientRPCHook.doBeforeRequest` calls `makeCustomHeaderToNet`
+from `parseRequestContent` before building the sorted signature input. Rust's
+hook now materializes its pending typed command header at the same point. The
+invoked Java fixture and Core differential compare the resulting extension
+fields, canonical bytes (including the body), and HMAC signature for a
+`CreateTopicRequestHeader`. ACL fixture SHA-256:
+`56689d2cf7a9ca9e6c39f5dd62cef73aa268b81890fb1b073510e3ad4ebbf2ba`.
+
+The locked Core suite, strict all-target/all-feature workspace Clippy,
+format/diff checks, and pinned Maven verification pass. This closes only the
+typed-header signing branch; broad P18-V01 source/API/input/error/flow and
+reverse-export reconciliation remains open. Full current-revision workspace
+P18-V02 refresh, Ubuntu CI, native Windows execution, and Phase 19 Broker/
+Docker validation remain open.

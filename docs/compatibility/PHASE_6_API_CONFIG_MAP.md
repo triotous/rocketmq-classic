@@ -2159,6 +2159,7 @@ links explicit; they add no client setting or operation.
 | Rust export | Pinned Java counterpart / disposition |
 | --- | --- |
 | `SessionCredentials::{ACCESS_KEY,SECRET_KEY,SECURITY_TOKEN,SIGNATURE,CHARSET,key_file_path}` | Java `SessionCredentials` public constants and `KEY_FILE` path value. `AclUtils` uses the same signing field names and UTF-8 charset; the Rust-only `KEY_FILE_PROPERTY` environment key is private. |
+| `AclClientRpcHook::new`, `RpcHook::before_request_mut_result` | Java `AclClientRPCHook(SessionCredentials)` and `doBeforeRequest`; Rust materializes a pending typed command header before canonicalizing extension fields and body for the signature. The ACL fixture's `customHeaderCase` compares materialized fields, canonical bytes, and signature. |
 | `DEFAULT_CHARSET`, `DEFAULT_ALGORITHM` | `AclSigner.DEFAULT_CHARSET` and `AclSigner.DEFAULT_ALGORITHM`. |
 | `AclUtilsError`, `is_asterisk`, `is_colon`, `is_comma`, `is_minus`, `with_status_code`, `with_status_code_and_message`, `with_cause`, `with_status_code_and_source`, `set_code` | `AclUtils` scope helpers and `AclException` constructors/accessors. Rust uses typed errors and `Error::source()` for the Java `AclException`/`Throwable` paths; the exact Java helper signature and invoked behavior are in the Phase 16 ACL matrix. |
 | `AdminQueryError`, `query_message_across_brokers` | Java `MQAdminImpl.queryMessage` aggregation and its route/RPC failures; Phase 17 pins the facade calls, result order and failure handling. |
