@@ -36,12 +36,12 @@ use rocketmq_classic_protocol::{
         GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader,
         GetRouteInfoRequestHeader, GetSubscriptionGroupConfigRequestHeader,
         GetTopicConfigRequestHeader, GetTopicStatsInfoRequestHeader,
-        GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, LiteSubscriptionCtlRequestHeader,
-        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        GetTopicsByClusterRequestHeader, HeartbeatRequestHeader, ListUsersRequestHeader,
+        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
+        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
         QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
         QueryConsumerOffsetResponseHeader, QueryCorrectionOffsetRequestHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
@@ -126,6 +126,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-delete-user-request.bin",
         "header-delete-user-request",
         3003,
+    );
+    write_oracle_header::<ListUsersRequestHeader>(
+        output,
+        "typed-list-users-request.bin",
+        "header-list-users-request",
+        3005,
     );
     write_oracle_header::<QueryMessageRequestHeader>(
         output,

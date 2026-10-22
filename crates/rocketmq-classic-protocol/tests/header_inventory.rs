@@ -42,6 +42,7 @@ macro_rules! inventory {
             CreateUserRequestHeader => ("header-create-user-request", "typed-create-user-request.bin"),
             UpdateUserRequestHeader => ("header-update-user-request", "typed-update-user-request.bin"),
             DeleteUserRequestHeader => ("header-delete-user-request", "typed-delete-user-request.bin"),
+            ListUsersRequestHeader => ("header-list-users-request", "typed-list-users-request.bin"),
             QueryMessageRequestHeader => ("header-query-message-request", "typed-query-message-request.bin"),
             QueryMessageResponseHeader => ("header-query-message-response", "typed-query-message-response.bin"),
             QueryTopicsByConsumerRequestHeader => ("header-query-topics-by-consumer-request", "typed-query-topics-by-consumer-request.bin"),

@@ -350,6 +350,15 @@ public final class ProducerCoreFixtures {
         result.put("deleteUserRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.DeleteUserRequestHeader.class));
         result.put("deleteUserOperations", deleteUserOperations());
+        result.put("listUserApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("listUser"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("listUsersRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.ListUsersRequestHeader.class));
+        result.put("listUserOperations", listUserOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -3064,6 +3073,111 @@ public final class ProducerCoreFixtures {
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> listUserOperations() throws Exception {
+        org.apache.rocketmq.remoting.protocol.body.UserInfo alice =
+            org.apache.rocketmq.remoting.protocol.body.UserInfo.of(
+                "alice", "fixture-password", "ADMIN", "ACTIVE");
+        org.apache.rocketmq.remoting.protocol.body.UserInfo bob =
+            org.apache.rocketmq.remoting.protocol.body.UserInfo.of(
+                "bob", null, "USER", null);
+        List<org.apache.rocketmq.remoting.protocol.body.UserInfo> populated = new ArrayList<>();
+        populated.add(alice);
+        populated.add(null);
+        populated.add(bob);
+        byte[] populatedBody = JSON.toJSONString(populated)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] emptyBody = "[]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] oneDefaultBody = "[{}]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] nullBody = "null".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] objectBody = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(listUserCase("populated", "ali", populatedBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("empty-filter", "", emptyBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("null-filter", null, oneDefaultBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("null-body", "alice", null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("json-null", "alice", nullBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("object-root", "alice", objectBody, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(listUserCase("broker-error", "ali", null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "user listing rejected"));
+        cases.add(listUserCase("vip-enabled-address-unchanged", "ali", populatedBody, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> listUserCase(
+        String name,
+        String filter,
+        byte[] responseBody,
+        boolean vipEnabled,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("list-user-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            RemotingCommand reply = RemotingCommand.createResponseCommand(
+                                responseCode, responseRemark);
+                            reply.setBody(responseBody);
+                            return reply;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("filter", filter);
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBodyBase64", responseBody == null ? null
+            : java.util.Base64.getEncoder().encodeToString(responseBody));
+        try {
+            List<org.apache.rocketmq.remoting.protocol.body.UserInfo> users =
+                api.listUser("broker-a:10911", filter, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", users == null);
+            result.put("resultJson", JSON.toJSONString(users));
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } catch (RuntimeException error) {
+            result.put("outcome", error.getClass().getSimpleName());
             result.put("errorMessage", error.getMessage());
         } finally {
             api.shutdown();

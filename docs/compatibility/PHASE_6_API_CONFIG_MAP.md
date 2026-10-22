@@ -2057,3 +2057,19 @@ are enabled. Invoked Java fixtures and Rust loopback tests compare the header,
 absent body, success and Broker error, timeout, typed-header cross-decode, and
 unchanged-address behavior. The direct reverse audit now has five open APIs;
 broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `listUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.listUser` sends request 3005 with a
+`ListUsersRequestHeader`, no body, and the caller timeout. Core exposes
+`MQClientApi::list_user`, returns a nullable list of nullable `UserInfo` rows,
+and preserves null-body and JSON-null results. The supplied Broker address is
+unchanged when VIP channels are enabled. Invoked Java fixtures and Rust
+loopback tests compare nullable filters, request framing, populated/empty/null
+lists, null members, success and Broker errors, timeout, typed-header
+cross-decode, and unchanged-address behavior. Fastjson's object-root input
+produces a list containing the string `{}`; Rust reports that root as malformed
+instead of returning a value that violates the `UserInfo` element type. The
+auth-method review added the previously omitted `getUser` and `getAcl` RPCs to
+the direct audit, which now has six open APIs; broader P18-V01 reconciliation
+remains open.

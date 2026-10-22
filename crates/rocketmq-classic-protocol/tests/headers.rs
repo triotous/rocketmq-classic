@@ -32,7 +32,7 @@ use rocketmq_classic_protocol::{
         GetMinOffsetRequestHeader, GetMinOffsetResponseHeader, GetParentTopicInfoRequestHeader,
         GetRouteInfoRequestHeader, GetSubscriptionGroupConfigRequestHeader,
         GetTopicConfigRequestHeader, GetTopicStatsInfoRequestHeader,
-        GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader,
+        GetTopicsByClusterRequestHeader, HeaderMap, HeartbeatRequestHeader, ListUsersRequestHeader,
         LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
         NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
         PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
@@ -2346,6 +2346,15 @@ fn header_validation_matrix() {
             "",
             "",
             "username",
+            ""
+        ),
+        row!(
+            ListUsersRequestHeader,
+            "list-users-request",
+            "",
+            "",
+            "",
+            "filter",
             ""
         ),
         row!(

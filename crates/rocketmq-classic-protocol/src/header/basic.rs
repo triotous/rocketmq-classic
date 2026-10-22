@@ -3454,6 +3454,33 @@ impl_header_field_accessors!(
     [set_username]
 );
 
+/// Pinned Java auth `ListUsersRequestHeader`. Java's `checkFields()` is a no-op,
+/// so `filter` remains nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct ListUsersRequestHeader {
+    filter: Option<String>,
+}
+
+impl CommandHeader for ListUsersRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "filter", self.filter.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            filter: optional_string(fields, "filter"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    ListUsersRequestHeader,
+    optional_string,
+    filter,
+    [get_filter],
+    [set_filter]
+);
+
 /// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.
 ///
