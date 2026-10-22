@@ -855,3 +855,14 @@ its SHA-256 is
 `699dfaae816b753105119193e3b268fe16fb2b83ad0199473a5665a7d6b76436`. This
 closes the tested decoder cursor/error slice only; broad P18-V01 reconciliation
 remains open.
+
+Phase 18 `MessageDecoder.decode(ByteBuffer)` declared-size handling
+(2026-10-22): Java stores the first integer as `MessageExt.storeSize` but does
+not use it as a parsing boundary. Invoked cases with declared size `0`, `-1`,
+and `Integer.MAX_VALUE` decode the same fields and consume through the
+properties. Rust now follows those field boundaries while retaining the
+declared value and enforcing its configured limit on actual bytes parsed.
+Fixture SHA-256:
+`41ed0208cdf79da2491554ed08683e4f18b40d6bce1d21d246771dd58f0e15ae`. This
+closes the tested store-size boundary only; broad P18-V01 reconciliation
+remains open.

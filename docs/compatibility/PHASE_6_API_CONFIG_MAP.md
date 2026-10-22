@@ -2592,3 +2592,19 @@ The refreshed `fixtures/messages/records.json` SHA-256 is
 This closes the tested `decodeProperties` cursor and truncation slice only;
 broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 `MessageDecoder.decode(ByteBuffer)` declared-size handling — 2026-10-22 (`8acbf137`)
+
+Pinned Java reads and stores the declared total-size integer but does not use it
+to bound or validate the following fields. Rust now retains that integer on
+`MessageExt`, parses through the body/topic/property lengths, returns the
+actual bytes consumed, and applies its configured record-size limit to those
+parsed bytes. Invoked Java cases with declared sizes `0`, `-1`, and
+`Integer.MAX_VALUE` all decode the same message and leave the buffer after its
+properties. Rust also decodes concatenated records with malformed declared
+sizes using the parsed-field boundaries. Fixture SHA-256:
+`41ed0208cdf79da2491554ed08683e4f18b40d6bce1d21d246771dd58f0e15ae`.
+
+This closes the tested declared-size and concatenated-boundary behavior only;
+broad P18-V01 API/settings/source/input/error/control-flow and reverse-export
+reconciliation remains open.

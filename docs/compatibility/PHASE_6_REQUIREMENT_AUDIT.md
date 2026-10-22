@@ -2949,3 +2949,22 @@ workspace metadata/license/package checks, UTC and Asia/Taipei Unique ID tests,
 and Windows GNU cross-compiles also pass on this source revision. Broad P18-V01
 reconciliation, remote Ubuntu CI, native Windows runtime, and Phase 19
 Broker/Docker evidence remain open.
+
+## P18-V01 full `MessageDecoder.decode(ByteBuffer)` store-size boundary — 2026-10-22 (`8acbf137`)
+
+The pinned decoder reads the declared size into `MessageExt.storeSize` but
+continues parsing from field lengths; zero, negative, and `Integer.MAX_VALUE`
+headers do not stop a valid record. Rust now preserves that value as metadata,
+uses parsed fields to determine consumed bytes, and applies the configured
+size limit to those bytes rather than the untrusted declaration. The invoked
+Java fixture captures decoded values and cursor positions for all three
+declared sizes. A Rust batch regression also confirms the parsed positions
+separate two such records. Fixture SHA-256:
+`41ed0208cdf79da2491554ed08683e4f18b40d6bce1d21d246771dd58f0e15ae`.
+
+The Common all-feature test suite, default and all-feature workspace suites,
+strict workspace Clippy, formatting/diff checks, pinned Maven verification,
+differential checks, fuzz and race/leak smoke, release examples, offline
+benchmark, metadata/package checks, timezone tests and Windows GNU
+cross-compiles pass. Broad P18-V01 reconciliation, remote Ubuntu CI, native
+Windows runtime, and Phase 19 Broker/Docker evidence remain open.

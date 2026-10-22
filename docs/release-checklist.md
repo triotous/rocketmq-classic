@@ -7995,3 +7995,22 @@ owner-specific checks belong in the manual handoff.
   results are cross-compilation only. No push or external CI was run; the four
   protected Phase 19 worktree paths remain unstaged. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T194830Z.rlog`.
+
+## P18-V01 full message decode declared-size parity — 2026-10-22 (`8acbf137`)
+
+- [x] Rust retains Java's declared `storeSize` field but parses the record by
+  body/topic/property lengths and returns the corresponding consumed byte
+  count. Direct Java cases verify declared sizes `0`, `-1`, and
+  `Integer.MAX_VALUE`; a Rust concatenated-record test verifies the resulting
+  boundary behavior. Fixture SHA-256:
+  `41ed0208cdf79da2491554ed08683e4f18b40d6bce1d21d246771dd58f0e15ae`.
+- [x] Default and all-feature workspace tests, final Common all-feature tests,
+  strict all-target/all-feature Clippy, pinned Maven `verify`, differential
+  checks, fuzz smoke (245 frame and 188 message decodes), race/leak smoke
+  (16 cases × 3), release examples, benchmark, workspace metadata, seven
+  package listings, timezone tests and Windows GNU cross-compiles pass.
+- [ ] Broad P18-V01 reconciliation, remote Ubuntu CI, native Windows runtime,
+  and Phase 19 Broker/Docker validation remain open. Windows checks are
+  compile-only. No push or external CI was run; the four protected Phase 19
+  worktree paths remain unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T200111Z.rlog`.
