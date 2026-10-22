@@ -630,6 +630,34 @@ impl LitePullConsumer {
             self.running.store(true, Ordering::Release);
             *lifecycle = Lifecycle::Started;
         }
+        if *self
+            .mode
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            == SubscriptionMode::Subscribe
+        {
+            let subscription_topics = self
+                .subscriptions
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            for topic in subscription_topics {
+                match engine.refresh_topic_route(&topic).await {
+                    Ok(())
+                    | Err(PullConsumerError::Runtime(
+                        rocketmq_classic_core::runtime::RuntimeError::Rpc(
+                            rocketmq_classic_core::error::RpcError::Response { .. },
+                        ),
+                    )) => {}
+                    Err(error) => {
+                        self.shutdown_after_start_failure(&engine).await;
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
         let listener_topics = self
             .queue_change_listeners
             .read()
@@ -646,14 +674,14 @@ impl LitePullConsumer {
                         .insert(topic, queues);
                 }
                 Err(error) => {
-                    self.running.store(false, Ordering::Release);
-                    self.ready.notify_waiters();
-                    self.reconcile.notify_waiters();
-                    *self.lifecycle.lock().await = Lifecycle::Shutdown;
-                    let _ = engine.shutdown().await;
+                    self.shutdown_after_start_failure(&engine).await;
                     return Err(error.into());
                 }
             }
+        }
+        if let Err(error) = engine.check_client_in_broker().await {
+            self.shutdown_after_start_failure(&engine).await;
+            return Err(error.into());
         }
         self.sync_workers().await;
         if let Some(dispatcher) = trace_dispatcher {
@@ -706,6 +734,29 @@ impl LitePullConsumer {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(task);
         Ok(())
+    }
+
+    async fn shutdown_after_start_failure(&self, engine: &PullConsumer) {
+        self.running.store(false, Ordering::Release);
+        self.ready.notify_waiters();
+        self.reconcile.notify_waiters();
+        let workers = {
+            let mut workers = self
+                .workers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            std::mem::take(&mut *workers)
+        };
+        for (_, worker) in workers {
+            worker.abort();
+            let _ = worker.await;
+        }
+        self.queue_states
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        *self.lifecycle.lock().await = Lifecycle::Shutdown;
+        let _ = engine.shutdown().await;
     }
 
     async fn record_start_failure(&self, error: &LitePullConsumerError) {

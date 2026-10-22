@@ -1357,6 +1357,12 @@ impl PullConsumer {
         Ok(())
     }
 
+    pub(crate) async fn check_client_in_broker(&self) -> Result<(), PullConsumerError> {
+        let (runtime, _) = self.started_runtime().await?;
+        runtime.check_client_in_broker().await?;
+        Ok(())
+    }
+
     pub async fn pull(
         &self,
         queue: &MessageQueue,

@@ -13,6 +13,7 @@ use rocketmq_classic_consumer::{
     LitePullConsumer, LitePullConsumerConfig, LitePullConsumerError,
     offset::{OffsetRead, OffsetStore, OffsetStoreFuture, ReadOffsetType},
 };
+use rocketmq_classic_core::runtime::{ClientRuntimeManager, RuntimeState};
 use rocketmq_classic_protocol::codes::{request, response};
 use rocketmq_classic_protocol::header::HeaderMap;
 use rocketmq_classic_protocol::heartbeat::{ConsumeFromWhere, MessageModel};
@@ -200,29 +201,51 @@ fn start_scripted_broker(
     mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
     tokio::task::JoinHandle<()>,
 ) {
+    let (requests, task, _) =
+        start_scripted_broker_with_check_response(listener, response::SUCCESS);
+    (requests, task)
+}
+
+fn start_scripted_broker_with_check_response(
+    listener: TcpListener,
+    check_client_response: i32,
+) -> (
+    mpsc::UnboundedReceiver<ScriptedBrokerRequest>,
+    tokio::task::JoinHandle<()>,
+    mpsc::UnboundedReceiver<RemotingCommand>,
+) {
     let (request_tx, request_rx) = mpsc::unbounded_channel::<ScriptedBrokerRequest>();
+    let (check_tx, check_rx) = mpsc::unbounded_channel::<RemotingCommand>();
     let task = tokio::spawn(async move {
         loop {
             let (stream, _) = listener.accept().await.unwrap();
             let request_tx = request_tx.clone();
+            let check_tx = check_tx.clone();
             tokio::spawn(async move {
                 let (mut reader, writer) = stream.into_split();
                 let writer = Arc::new(tokio::sync::Mutex::new(writer));
                 while let Some(command) = read_command(&mut reader).await {
                     if matches!(
                         command.code,
-                        request::HEART_BEAT
-                            | request::UNREGISTER_CLIENT
-                            | request::CHECK_CLIENT_CONFIG
-                    ) {
+                        request::HEART_BEAT | request::UNREGISTER_CLIENT
+                    ) || command.code == request::CHECK_CLIENT_CONFIG
+                    {
+                        if command.code == request::CHECK_CLIENT_CONFIG {
+                            let _ = check_tx.send(command.clone());
+                        }
                         let writer = writer.clone();
                         let opaque = command.opaque;
+                        let code = if command.code == request::CHECK_CLIENT_CONFIG {
+                            check_client_response
+                        } else {
+                            response::SUCCESS
+                        };
                         tokio::spawn(async move {
                             write_reply(
                                 &mut *writer.lock().await,
                                 opaque,
                                 ScriptedReply {
-                                    code: response::SUCCESS,
+                                    code,
                                     fields: None,
                                     body: None,
                                 },
@@ -252,7 +275,7 @@ fn start_scripted_broker(
             });
         }
     });
-    (request_rx, task)
+    (request_rx, task, check_rx)
 }
 
 async fn next_request(
@@ -963,6 +986,111 @@ async fn lite_queue_listener_registration_preserves_java_route_failure_semantics
     );
 
     consumer.shutdown().await.unwrap();
+    nameserver_task.abort();
+}
+
+#[tokio::test]
+async fn lite_sql_subscription_broker_check_failure_matches_java_startup() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
+    let java = &fixture["litePullBrokerSubscriptionCheckFailure"];
+    assert_eq!(java["exception"], "MQClientException");
+    assert_eq!(java["consumerServiceState"], "SHUTDOWN_ALREADY");
+    assert_eq!(java["factoryServiceState"], "SHUTDOWN_ALREADY");
+    assert_eq!(java["consumerRegistered"], false);
+    assert_eq!(java["checkRequest"]["code"], request::CHECK_CLIENT_CONFIG);
+
+    let broker_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let broker_address = broker_listener.local_addr().unwrap().to_string();
+    let (nameserver, nameserver_task) =
+        start_scripted_nameserver(broker_route(&broker_address)).await;
+    let (mut requests, broker_task, mut check_requests) =
+        start_scripted_broker_with_check_response(broker_listener, 44);
+    let mut config = lite_config_with_store(
+        "consumer-broker-check-lite",
+        "consumer-broker-check-lite-client",
+        &nameserver,
+        Arc::new(LiteScriptedOffsetStore::default()),
+    );
+    config.set_message_model(MessageModel::Broadcasting);
+    config.client_config_mut().set_mq_client_api_timeout(100);
+    let client_id = config.client_config().build_client_id();
+    let group = config.consumer_group().to_owned();
+    let manager = ClientRuntimeManager::shared_default();
+    let runtime = manager.get_or_create(config.client_config()).await.unwrap();
+    let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+    let selector = rocketmq_classic_consumer::pull::MessageSelector::by_sql("a > 1");
+    consumer
+        .subscribe_with_selector("lite-broker-check", &selector)
+        .unwrap();
+
+    let request_service = tokio::spawn(async move {
+        while let Some(request) = requests.recv().await {
+            let reply = match request.command.code {
+                request::GET_CONSUMER_LIST_BY_GROUP => ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: None,
+                    body: Some(
+                        serde_json::json!({"consumerIdList": [client_id]})
+                            .to_string()
+                            .into_bytes(),
+                    ),
+                },
+                request::LITE_PULL_MESSAGE => ScriptedReply {
+                    code: response::PULL_NOT_FOUND,
+                    fields: Some(HeaderMap::from([
+                        ("suggestWhichBrokerId".into(), "0".into()),
+                        ("nextBeginOffset".into(), "0".into()),
+                        ("minOffset".into(), "0".into()),
+                        ("maxOffset".into(), "1".into()),
+                    ])),
+                    body: None,
+                },
+                request::QUERY_CONSUMER_OFFSET
+                | request::GET_MIN_OFFSET
+                | request::GET_MAX_OFFSET => ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: Some(HeaderMap::from([("offset".into(), "0".into())])),
+                    body: None,
+                },
+                _ => ScriptedReply {
+                    code: response::SUCCESS,
+                    fields: None,
+                    body: None,
+                },
+            };
+            let _ = request.reply.send(reply);
+        }
+    });
+
+    let start_error = consumer.start().await.unwrap_err();
+    assert!(matches!(start_error, LitePullConsumerError::Pull(_)));
+    assert!(!consumer.is_running().await);
+    assert_eq!(runtime.state(), RuntimeState::Stopped);
+    assert!(runtime.select_consumer(&group).unwrap().is_none());
+
+    let check = timeout(Duration::from_secs(2), check_requests.recv())
+        .await
+        .expect("Java startup check was not sent to the Broker")
+        .expect("check request stream closed");
+    assert_eq!(
+        check.code,
+        java["checkRequest"]["code"].as_i64().unwrap() as i32
+    );
+    let body: Value = serde_json::from_slice(check.body.as_deref().unwrap()).unwrap();
+    assert_eq!(body["group"], java["checkRequest"]["body"]["group"]);
+    let mut subscription = body["subscriptionData"].clone();
+    subscription.as_object_mut().unwrap().remove("subVersion");
+    assert_eq!(
+        subscription,
+        java["checkRequest"]["body"]["subscriptionData"]
+    );
+
+    manager
+        .remove_client_factory(runtime.client_id(), &runtime)
+        .unwrap();
+    request_service.abort();
+    broker_task.abort();
     nameserver_task.abort();
 }
 

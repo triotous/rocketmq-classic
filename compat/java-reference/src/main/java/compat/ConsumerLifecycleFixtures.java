@@ -18,6 +18,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -25,16 +26,23 @@ import java.util.TreeMap;
 import org.apache.rocketmq.client.consumer.DefaultLitePullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.MessageSelector;
 import org.apache.rocketmq.client.consumer.TopicMessageQueueChangeListener;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.impl.MQClientManager;
+import org.apache.rocketmq.client.impl.MQClientAPIImpl;
 import org.apache.rocketmq.client.impl.consumer.ConsumeMessageService;
 import org.apache.rocketmq.client.impl.consumer.DefaultLitePullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPullConsumerImpl;
 import org.apache.rocketmq.client.impl.consumer.DefaultMQPushConsumerImpl;
 import org.apache.rocketmq.client.impl.factory.MQClientInstance;
 import org.apache.rocketmq.common.ServiceState;
+import org.apache.rocketmq.remoting.RemotingClient;
+import org.apache.rocketmq.remoting.netty.NettyClientConfig;
+import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.RequestCode;
+import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 
 /** Invoked Java 5.5.1 Consumer factory-start lifecycle oracle. */
 public final class ConsumerLifecycleFixtures {
@@ -320,6 +328,90 @@ public final class ConsumerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> failedLitePullBrokerSubscriptionCheck() throws Exception {
+        String group = "consumer-broker-check-lite";
+        String topic = "lite-broker-check";
+        DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setNamesrvAddr("127.0.0.1:1");
+        consumer.setClientIP("192.0.2.1");
+        consumer.setInstanceName(group + "-client");
+        consumer.setMessageModel(MessageModel.BROADCASTING);
+        consumer.setMqClientApiTimeout(100);
+        consumer.subscribe(topic, MessageSelector.bySql("a > 1"));
+
+        MQClientInstance factory = MQClientManager.getInstance()
+            .getOrCreateMQClientInstance(consumer);
+        Field apiField = MQClientInstance.class.getDeclaredField("mQClientAPIImpl");
+        apiField.setAccessible(true);
+        MQClientAPIImpl originalApi = (MQClientAPIImpl) apiField.get(factory);
+        Map<String, Object> checkRequest = new TreeMap<>();
+        byte[] route = JSON.toJSONBytes(Map.of(
+            "queueDatas", new Object[] {Map.of(
+                "brokerName", "broker-a", "readQueueNums", 1, "writeQueueNums", 1,
+                "perm", 6, "topicSysFlag", 0)},
+            "brokerDatas", new Object[] {Map.of(
+                "cluster", "cluster", "brokerName", "broker-a",
+                "brokerAddrs", Map.of("0", "127.0.0.1:10911"))},
+            "filterServerTable", Map.of()));
+        RemotingClient transport = (RemotingClient) Proxy.newProxyInstance(
+            RemotingClient.class.getClassLoader(), new Class<?>[] {RemotingClient.class},
+            (proxy, method, values) -> {
+                if ("invokeSync".equals(method.getName())) {
+                    RemotingCommand request = (RemotingCommand) values[1];
+                    if (request.getCode() == RequestCode.GET_ROUTEINFO_BY_TOPIC) {
+                        RemotingCommand response = RemotingCommand.createResponseCommand(0, null);
+                        response.setBody(route);
+                        return response;
+                    }
+                    if (request.getCode() == RequestCode.CHECK_CLIENT_CONFIG) {
+                        checkRequest.put("code", request.getCode());
+                        Map<String, Object> body = JSON.parseObject(request.getBody());
+                        Map<String, Object> subscription = JSON.parseObject(
+                            JSON.toJSONString(body.get("subscriptionData")));
+                        subscription.remove("subVersion");
+                        body.put("subscriptionData", subscription);
+                        checkRequest.put("body", body);
+                        return RemotingCommand.createResponseCommand(44, "rejected by fixture");
+                    }
+                    return RemotingCommand.createResponseCommand(0, null);
+                }
+                return method.getReturnType() == boolean.class ? false : null;
+            });
+        MQClientAPIImpl api = new MQClientAPIImpl(new NettyClientConfig(), null, null,
+            consumer, null, ignored -> transport);
+        apiField.set(factory, api);
+
+        Throwable startFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+        DefaultLitePullConsumerImpl implementation = liteImplementation(consumer);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? ""
+            : startFailure.getClass().getSimpleName());
+        result.put("consumerServiceState", consumerServiceState(implementation));
+        result.put("factoryServiceState", factoryServiceState(factory));
+        result.put("consumerRegistered", factory.getConsumerTable().containsKey(group));
+        result.put("checkRequest", checkRequest);
+
+        closeFactory(factory, group);
+        originalApi.shutdown();
+        api.shutdown();
+        MQClientManager.getInstance().removeClientFactory(factory.getClientId());
+        if (startFailure == null || !"MQClientException".equals(
+            startFailure.getClass().getSimpleName())
+            || !"SHUTDOWN_ALREADY".equals(result.get("consumerServiceState"))
+            || !"SHUTDOWN_ALREADY".equals(result.get("factoryServiceState"))
+            || !Boolean.FALSE.equals(result.get("consumerRegistered"))
+            || !Integer.valueOf(RequestCode.CHECK_CLIENT_CONFIG).equals(checkRequest.get("code"))) {
+            throw new IllegalStateException("Unexpected LitePull broker-check outcome: " + result,
+                startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> produce() throws Exception {
         Map<String, Object> result = new TreeMap<>();
         result.put("pushFactoryStartFailure", failedPushFactoryStart());
@@ -328,6 +420,8 @@ public final class ConsumerLifecycleFixtures {
         result.put("litePullListenerRouteFailure", failedLitePullListenerRouteLookup());
         result.put("litePullListenerRegistrationRouteFailure",
             failedLitePullListenerRegistrationRouteLookup());
+        result.put("litePullBrokerSubscriptionCheckFailure",
+            failedLitePullBrokerSubscriptionCheck());
         return result;
     }
 
