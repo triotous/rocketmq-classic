@@ -148,3 +148,16 @@ The P18-05 one-run offline benchmark was already recorded for this code family a
 Phase 18 static-topic wrapper reverse-export crosswalk — 2026-10-22 15:00 UTC
 
 Added `TopicConfigAndQueueMapping`'s three public associated functions and Rust equality/hash semantics to the Protocol row of the Rust-to-Java crosswalk. The source item inventory now records 402 public items, up from the prior 399; the three associated-function names already existed elsewhere, so the distinct-name counts remain unchanged. This accounts for the new wrapper exports only; broader P18-V01 reverse-export and behavior reconciliation remains open.
+
+Phase 18 static-topic wrapper null-field differential and refreshed P18-V02 gate — 2026-10-22 15:10 UTC
+
+Added a Java oracle case that sets `TopicConfig.topicName`, `topicFilterType`, and `attributes` to null before wrapping it with a null mapping detail. The Rust test compares the copied field state and complete wrapper `toString`. Fixture semantic diff is limited to `topicConfigModelOperations.topicConfigAndQueueMappingApi.nullFields`. `fixtures/producer/core.json` SHA-256: `b64b02f271052b9e402bdebf4dca4ad61f4f40690d936e6f4a4f31de61351d2f`.
+
+Validation on test/fixture commit `c8356edf`:
+- `cargo test --workspace --locked`: PASS.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+- Pinned `mvn -f compat/java-reference/pom.xml verify`: PASS (37 scenarios; 36 route/VIP cases; Java decoded 106 typed headers and 19 typed bodies).
+
+Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Protected Phase 19 files remain untouched and unstaged; no push or external CI was run.

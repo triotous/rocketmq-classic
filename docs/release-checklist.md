@@ -7534,8 +7534,9 @@ owner-specific checks belong in the manual handoff.
   36 route/VIP cases, 106 typed headers and 19 typed bodies decoded by Java).
   Producer core fixture SHA-256:
   `39cf5836801a5d5664a61199200dd96b77084cdec557bcc6581eee353967bb39`.
-- [ ] The full workspace P18-V02 gate must be refreshed after this source
-  change. Broad P18-V01 source/API/settings/input/error/control-flow and
+- [x] The full workspace P18-V02 gate was refreshed after the wrapper source
+  change below and again after the null-field fixture extension in the latest
+  entry. Broad P18-V01 source/API/settings/input/error/control-flow and
   reverse-export reconciliation, current-revision remote Ubuntu CI, and native
   Windows stack-capture execution remain open. No push or external CI was run;
   protected Phase 19 files remain unstaged.
@@ -7571,3 +7572,20 @@ owner-specific checks belong in the manual handoff.
 - [ ] This records only the new exports from the static-topic wrapper slice;
   broad P18-V01 input/error/control-flow and whole-surface reverse-export
   reconciliation remains open.
+
+## P18-V01 static-topic wrapper null-field differential and P18-V02 refresh — 2026-10-22 (`c8356edf`)
+
+- [x] Added a direct Java/Rust comparison for a wrapped `TopicConfig` whose
+  topic name, filter type, and attributes are explicitly null. Both copied
+  fields and the complete Java-compatible wrapper text match. The producer
+  core fixture changes only by adding this `nullFields` observation; SHA-256:
+  `b64b02f271052b9e402bdebf4dca4ad61f4f40690d936e6f4a4f31de61351d2f`.
+- [x] `cargo test --workspace --locked` and
+  `cargo test --workspace --all-features --locked` pass. Strict workspace
+  all-target/all-feature Clippy, formatting, and `git diff --check` pass.
+  Pinned Maven `verify` passes (37 scenarios, 36 route/VIP cases, 106 typed
+  headers and 19 typed bodies decoded by Java).
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision remote Ubuntu CI and
+  native Windows stack-capture execution remain unverified. No push or
+  external CI was run; protected Phase 19 files remain unstaged.
