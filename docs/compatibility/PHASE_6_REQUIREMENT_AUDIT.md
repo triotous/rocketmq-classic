@@ -3133,3 +3133,22 @@ validation, bounded fuzz smoke, and pinned Maven verify pass. This closes this
 public API mismatch only; broad P18-V01 reconciliation, current-revision
 remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V02 current server-free gate refresh after decoder API correction — 2026-10-22 (`95525c06`)
+
+The current revision passes default and all-feature workspace tests, strict
+all-target/all-feature Clippy, format/diff checks, Common Rustdoc, pinned Maven
+verify (37 scenarios, 11 message fixtures, 36 route/VIP cases, 106 typed
+headers, 19 typed bodies), differential self-test and manifest validation
+(37 scenarios). The validator confirms all pending prior-phase handoff source
+IDs are registered; 30 live scenarios remain `PENDING_PHASE_19`.
+
+The offline deterministic race/leak smoke passes 16 cases x 3 repetitions.
+Bounded fuzz smoke passes 163 frame seeds, 11 message seeds, 2,784 mutations,
+245 frame decodes, and 192 message decodes. Release facade examples and the
+offline benchmark pass. Workspace metadata and all seven package listings
+pass; four Core Unique ID tests pass under both UTC and Asia/Taipei. Windows
+GNU Core all-target check and Consumer unit-test cross-compilation pass;
+native Windows execution and remote Ubuntu CI remain unverified. This closes
+the local P18-V02 gate on this revision only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains open.
