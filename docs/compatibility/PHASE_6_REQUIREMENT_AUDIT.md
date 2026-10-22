@@ -2779,3 +2779,33 @@ checks 37 scenarios, 36 route/VIP cases, and Java decoding of 106 typed headers
 and 19 typed bodies. This closes the locale-sensitive metrics-label slice
 only; broad P18-V01 source/API/settings/input/error/control-flow and
 reverse-export reconciliation remains open.
+
+## P18-V01 `RemotingHelper` default-locale code-description parity — 2026-10-22 (`a4136667`)
+
+Pinned Java 5.5.1 builds `REQUEST_CODE_MAP` and `RESPONSE_CODE_MAP` by applying
+no-argument `String.toLowerCase()` to each public code-field name. The map
+values are static, and are observable in the public description helpers and
+remoting metric labels. Under Turkish/Azeri default locale, ASCII `I` becomes
+dotless `ı`; Rust previously returned ASCII-lowercase descriptions. Rust now
+snapshots `LC_ALL`, `LC_CTYPE`, then `LANG` once and applies that mapping to
+the existing ASCII descriptions. The pinned Java fixture sets `Locale` to
+`tr-TR`, verifies all 166 request and 68 response codes plus unknown-code
+fallbacks, and restores the original locale in `finally`. Fixture SHA-256:
+`f6f8ebff1b2cfb33bd7234d8268b5747583f18f98f57fa4017d2af4f204a2573`.
+
+The default and all-feature locked workspace suites, strict all-target/all-
+feature Clippy, formatting/diff checks, pinned Maven `verify`, differential
+self-test and 37-scenario manifest validation, fuzz smoke, deterministic
+race/leak smoke (16 cases × 3), release examples, offline benchmark and strict
+benchmark Clippy pass on `a4136667`. Workspace metadata/license/dependency
+checks and all seven product package listings pass. Four Core Unique ID tests
+pass under UTC and `Asia/Taipei`; Windows GNU Core all-target checking and the
+Consumer stack-capture cross-compilation pass. The Maven verification run
+also confirmed the locale fixture restores global JVM state: it leaves no
+unrelated typed-header fixture drift.
+
+This closes only the remoting code-description locale slice. Broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export
+reconciliation, current-revision remote Ubuntu CI, native Windows execution,
+and Phase 19 Broker/Docker validation remain open. No push or external CI was
+run.

@@ -7753,3 +7753,28 @@ owner-specific checks belong in the manual handoff.
   reverse-export reconciliation, current-revision remote Ubuntu CI, and native
   Windows execution remain open. No push or external CI was run; protected
   Phase 19 worktree files remain unstaged.
+
+## P18-V01 locale-sensitive remoting code descriptions and current local gate — 2026-10-22 (`a4136667`)
+
+- [x] Rust remoting code descriptions now match the pinned Java `RemotingHelper`
+  static maps under Turkish/Azeri default locale, including dotless `ı` for
+  uppercase `I`. The invoked Java fixture compares all 166 request and 68
+  response codes and both unknown-code fallbacks. The fixture restores
+  `Locale` in `finally`; a full Maven verify confirmed no unrelated header
+  fixture drift. Fixture SHA-256:
+  `f6f8ebff1b2cfb33bd7234d8268b5747583f18f98f57fa4017d2af4f204a2573`.
+- [x] On `a4136667`, locked default and all-feature workspace tests, strict
+  all-target/all-feature Clippy, formatting/diff checks, pinned Maven `verify`
+  (37 scenarios, 36 route/VIP cases, 106 typed headers and 19 typed bodies),
+  differential self-test/37-scenario manifest, fuzz smoke (163 frame seeds,
+  11 message seeds, 2,784 mutations), and race/leak smoke (16 cases × 3) pass.
+- [x] Release examples and the offline benchmark pass; strict benchmark
+  Clippy, workspace metadata/license/dependency checks, seven product package
+  listings, UTC/Asia-Taipei Unique ID tests, Windows GNU Core all-target
+  checking, and Consumer stack-capture cross-compilation pass. The benchmark
+  observation is recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, and
+  native Windows execution remain open. Phase 19 Broker/Docker validation
+  remains separate. No push or external CI was run; protected Phase 19 files
+  remain unstaged. Run details:
+  `rlogs/2026/10/22-phase-18-remoting-locale-gate__20261022T171233Z.rlog`.
