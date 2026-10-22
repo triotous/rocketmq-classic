@@ -7669,3 +7669,24 @@ owner-specific checks belong in the manual handoff.
   full current-revision workspace P18-V02 refresh, Ubuntu CI, native Windows,
   and Phase 19 Broker/Docker validation remain open. No push or external CI was
   run.
+
+## P18-V02 current local server-free gate refresh — 2026-10-22 (`1eb5b6ba`)
+
+- [x] Locked default and all-feature workspace tests, strict all-target/
+  all-feature workspace Clippy, formatting/diff checks, pinned Maven `verify`
+  (37 scenarios, 36 route/VIP cases, 106 typed headers and 19 typed bodies),
+  differential self-test and 37-scenario manifest, fuzz smoke (163 frame
+  seeds, 11 message seeds, 2,784 mutations), and race/leak smoke (16 cases x
+  3) pass.
+- [x] Release facade examples build; the offline benchmark runs and strict
+  benchmark-target Clippy passes. Workspace metadata/license/dependency
+  checks, seven product package listings with `LICENSE`/`NOTICE`, and four
+  Core Unique ID tests under both UTC and `Asia/Taipei` pass.
+- [x] Windows GNU Core all-target check and Consumer stack-capture test
+  cross-compile pass. This is compile evidence only; native Windows execution
+  remains open.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision remote Ubuntu CI,
+  native Windows execution, and Phase 19 Broker/Docker validation remain open.
+  No push or external CI was run; protected Phase 19 worktree files remain
+  unstaged.

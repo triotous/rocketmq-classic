@@ -2689,3 +2689,25 @@ typed-header signing branch; broad P18-V01 source/API/input/error/flow and
 reverse-export reconciliation remains open. Full current-revision workspace
 P18-V02 refresh, Ubuntu CI, native Windows execution, and Phase 19 Broker/
 Docker validation remain open.
+
+## P18-V02 current local server-free gate refresh — 2026-10-22 (`1eb5b6ba`)
+
+The current code revision passed locked default and all-feature workspace
+tests, strict all-target/all-feature workspace Clippy, formatting and diff
+checks, pinned Maven `verify` (37 scenarios, 36 route/VIP cases, Java decoding
+of 106 typed headers and 19 typed bodies), differential self-test and
+37-scenario manifest validation, fixed-seed fuzz smoke (163 frame seeds, 11
+message seeds, 2,784 mutations), and race/leak smoke (16 cases x 3).
+
+Release facade examples built in release mode; the offline benchmark executed
+and passed strict benchmark-target Clippy. Workspace metadata, dependency
+direction and license checks passed; all seven product package listings
+contained `LICENSE` and `NOTICE`. Four Core Unique ID tests passed under both
+UTC and `Asia/Taipei`. The Windows GNU Core all-target check and the Consumer
+stack-capture test cross-compile passed.
+
+This refresh closes the local server-free P18-V02 gate on code revision
+`1eb5b6ba`. Broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open. Current-revision Ubuntu CI and
+native Windows execution remain unverified; no push or external CI was run.
+Phase 19 Broker/Docker validation remains separate.
