@@ -2955,6 +2955,171 @@ public final class RuntimeRouteFixtures {
         return cases;
     }
 
+    private static List<Object> topicQueueMappingDetailMethodCases() {
+        String mappingItem = "{\"gen\":1,\"queueId\":3,\"bname\":\"broker\","
+            + "\"logicOffset\":10,\"startOffset\":0,\"endOffset\":-1,"
+            + "\"timeOfStart\":-1,\"timeOfEnd\":-1}";
+        String changedMappingItem = mappingItem.replace("\"logicOffset\":10", "\"logicOffset\":11");
+        String[][] pairs = new String[][] {
+            {"defaults", "{}", "{}"},
+            {"metadata-ignored", "{\"topic\":\"left\",\"totalQueues\":1,\"bname\":\"left\",\"hostedQueues\":{}}",
+                "{\"topic\":\"right\",\"totalQueues\":9,\"bname\":\"right\",\"hostedQueues\":{}}"},
+            {"hosted-equal", "{\"topic\":\"left\",\"hostedQueues\":{\"0\":[" + mappingItem + "]}}",
+                "{\"topic\":\"right\",\"hostedQueues\":{\"0\":[" + mappingItem + "]}}"},
+            {"hosted-different", "{\"hostedQueues\":{\"0\":[" + mappingItem + "]}}",
+                "{\"hostedQueues\":{\"0\":[" + changedMappingItem + "]}}"},
+            {"null-hosted-equal", "{\"topic\":\"left\",\"hostedQueues\":null}",
+                "{\"topic\":\"right\",\"hostedQueues\":null}"},
+            {"null-versus-empty", "{\"hostedQueues\":null}", "{\"hostedQueues\":{}}"}
+        };
+        List<Object> cases = new ArrayList<>();
+        for (String[] pair : pairs) {
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail left =
+                com.alibaba.fastjson2.JSON.parseObject(pair[1],
+                    org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.class);
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail right =
+                com.alibaba.fastjson2.JSON.parseObject(pair[2],
+                    org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.class);
+            Map<String, Object> item = new TreeMap<>();
+            item.put("case", pair[0]);
+            item.put("left", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(left,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            item.put("right", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(right,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+                com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+            item.put("equals", left.equals(right));
+            item.put("leftHashCode", left.hashCode());
+            item.put("rightHashCode", right.hashCode());
+            item.put("leftToString", left.toString());
+            item.put("rightToString", right.toString());
+            cases.add(item);
+        }
+        return cases;
+    }
+
+    private static Map<String, Object> topicQueueMappingDetailOperationCase() {
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail detail =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(
+                "topic", 10, "broker", 4);
+        List<org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem> items =
+            new ArrayList<>();
+        items.add(new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+            1, 4, "broker", 0, 0, 6, -1, -1));
+        boolean inserted = org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .putMappingInfo(detail, 7, items);
+        boolean emptyPut = org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .putMappingInfo(null, null, java.util.Collections.emptyList());
+        List<org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem> returned =
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+                .getMappingInfo(detail, 7);
+        items.add(new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+            2, 5, "broker", 6, 0, -1, -1, -1));
+        List<org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem> single =
+            new ArrayList<>();
+        single.add(new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+            1, 2, "broker", 0, 0, 5, -1, -1));
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.putMappingInfo(
+            detail, 8, single);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo clone =
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+                .cloneAsMappingInfo(detail);
+        Map<String, Object> result = new TreeMap<>();
+        result.put("inserted", inserted);
+        result.put("emptyPutWithNullDetail", emptyPut);
+        result.put("returnedSameList", returned == items);
+        result.put("returnedSizeAfterExternalAdd", returned.size());
+        result.put("missingMapping", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .getMappingInfo(detail, 99) == null);
+        Map<String, Integer> currentIdMap = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .buildIdMap(detail, 0).forEach((key, value) -> currentIdMap.put(key.toString(), value));
+        result.put("currentIdMap", currentIdMap);
+        result.put("otherLevelIdMap", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .buildIdMap(detail, 1));
+        result.put("maxOffset", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .computeMaxOffsetFromMapping(detail, 7));
+        result.put("emptyMaxOffset", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .computeMaxOffsetFromMapping(detail, 99));
+        result.put("physicalSingle", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .checkIfAsPhysical(detail, 8));
+        result.put("physicalMultiple", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .checkIfAsPhysical(detail, 7));
+        result.put("physicalMissing", org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail
+            .checkIfAsPhysical(detail, 99));
+        result.put("clone", com.alibaba.fastjson2.JSON.parseObject(com.alibaba.fastjson2.JSON.toJSONString(clone,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue,
+            com.alibaba.fastjson2.JSONWriter.Feature.WriteNonStringKeyAsString)));
+        return result;
+    }
+
+    private static List<Object> topicQueueMappingDetailNullOperationCases() {
+        String nullItemInput = "{\"hostedQueues\":{\"0\":[null]}}";
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail nullItem =
+            com.alibaba.fastjson2.JSON.parseObject(nullItemInput,
+                org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.class);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail nullQueues =
+            com.alibaba.fastjson2.JSON.parseObject("{\"hostedQueues\":null}",
+                org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.class);
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail valid =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail(
+                "topic", 1, "broker", 1);
+        List<org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem> itemList =
+            new ArrayList<>();
+        itemList.add(new org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem(
+            1, 0, "broker", 0, 0, 1, -1, -1));
+        List<Object[]> operations = new ArrayList<>();
+        operations.add(new Object[] {"put-null-list", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.putMappingInfo(
+                valid, 0, null)});
+        operations.add(new Object[] {"put-null-detail", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.putMappingInfo(
+                null, 0, itemList)});
+        operations.add(new Object[] {"put-null-id", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.putMappingInfo(
+                valid, null, itemList)});
+        operations.add(new Object[] {"get-null-detail", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.getMappingInfo(
+                null, 0)});
+        operations.add(new Object[] {"get-null-hosted-queues", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.getMappingInfo(
+                nullQueues, 0)});
+        operations.add(new Object[] {"get-null-id", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.getMappingInfo(
+                valid, null)});
+        operations.add(new Object[] {"build-null-detail", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.buildIdMap(
+                null, 0)});
+        operations.add(new Object[] {"build-null-item", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.buildIdMap(
+                nullItem, 0)});
+        operations.add(new Object[] {"compute-null-hosted-queues", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.computeMaxOffsetFromMapping(
+                nullQueues, 0)});
+        operations.add(new Object[] {"compute-null-item", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.computeMaxOffsetFromMapping(
+                nullItem, 0)});
+        operations.add(new Object[] {"check-null-item", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.checkIfAsPhysical(
+                nullItem, 0)});
+        operations.add(new Object[] {"clone-null-detail", (Runnable) () ->
+            org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.cloneAsMappingInfo(
+                null)});
+        List<Object> cases = new ArrayList<>();
+        for (Object[] operation : operations) {
+            Map<String, Object> item = new TreeMap<>();
+            item.put("operation", operation[0]);
+            try {
+                ((Runnable) operation[1]).run();
+                item.put("outcome", "OK");
+            } catch (Throwable error) {
+                item.put("outcome", error.getClass().getSimpleName());
+            }
+            cases.add(item);
+        }
+        return cases;
+    }
+
     private static List<Object> topicRouteDataMethodCases() {
         String populated = "{\"orderTopicConf\":\"broker:2\",\"queueDatas\":[{\"brokerName\":\"broker\","
             + "\"readQueueNums\":2,\"writeQueueNums\":2,\"perm\":6,\"topicSysFlag\":1}],"
@@ -3822,6 +3987,23 @@ public final class RuntimeRouteFixtures {
             cases.add(inheritedSerializationCase(entry[0], entry[1],
                 org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo.class));
         }
+        String[][] detailInputs = new String[][] {
+            {"detail-default", "{}"},
+            {"detail-null", "{\"topic\":null,\"bname\":null,\"scope\":null,\"currIdMap\":null,\"hostedQueues\":null}"},
+            {"detail-populated", "{\"topic\":\"topic\",\"scope\":\"__global__\",\"totalQueues\":2,\"bname\":\"broker\",\"epoch\":1,\"dirty\":true,\"currIdMap\":{\"0\":0},\"hostedQueues\":{\"0\":[{\"gen\":1,\"queueId\":3,\"bname\":\"broker\",\"logicOffset\":10,\"startOffset\":0,\"endOffset\":-1,\"timeOfStart\":-1,\"timeOfEnd\":-1},null]}}"}
+        };
+        for (String[] entry : detailInputs) {
+            cases.add(inheritedSerializationCase(entry[0], entry[1],
+                org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail.class));
+        }
+        String[][] logicItemInputs = new String[][] {
+            {"logic-item-default", "{}"},
+            {"logic-item-populated", "{\"gen\":1,\"queueId\":3,\"bname\":\"broker\",\"logicOffset\":10,\"startOffset\":0,\"endOffset\":-1,\"timeOfStart\":-1,\"timeOfEnd\":-1}"}
+        };
+        for (String[] entry : logicItemInputs) {
+            cases.add(inheritedSerializationCase(entry[0], entry[1],
+                org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem.class));
+        }
         return cases;
     }
 
@@ -4122,6 +4304,9 @@ public final class RuntimeRouteFixtures {
         fixture.put("brokerDataToString", brokerDataToStringCases());
         fixture.put("queueDataMethods", queueDataMethodCases());
         fixture.put("topicQueueMappingMethods", topicQueueMappingMethodsCases());
+        fixture.put("topicQueueMappingDetailMethods", topicQueueMappingDetailMethodCases());
+        fixture.put("topicQueueMappingDetailOperations", topicQueueMappingDetailOperationCase());
+        fixture.put("topicQueueMappingDetailNullOperations", topicQueueMappingDetailNullOperationCases());
         fixture.put("topicRouteDataMethods", topicRouteDataMethodCases());
         fixture.put("routeDtoAccessors", routeDtoAccessorCases());
         fixture.put("routeDtoReferenceAliases", routeDtoReferenceAliasCases());

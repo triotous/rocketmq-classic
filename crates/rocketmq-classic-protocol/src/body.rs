@@ -67,7 +67,7 @@ macro_rules! impl_java_enum_api {
     };
 }
 
-macro_rules! impl_java_remoting_serializable_adapters {
+macro_rules! impl_java_static_remoting_serializable_adapters {
     ($($dto:ty),+ $(,)?) => {
         $(
             impl $dto {
@@ -93,16 +93,6 @@ macro_rules! impl_java_remoting_serializable_adapters {
 
                 pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
                     Ok(self.java_to_json(false)?.into_bytes())
-                }
-
-                /// Encodes with the supported inherited Fastjson2 writer features.
-                pub fn java_encode_with_features(
-                    &self,
-                    features: &[JavaJsonWriterFeature],
-                ) -> Result<Vec<u8>, serde_json::Error> {
-                    Ok(crate::route::java_fastjson_json_with_features(
-                        self, false, features,
-                    )?.into_bytes())
                 }
 
                 pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
@@ -139,6 +129,31 @@ macro_rules! impl_java_remoting_serializable_adapters {
     };
 }
 
+macro_rules! impl_java_remoting_serializable_writer_features {
+    ($($dto:ty),+ $(,)?) => {
+        $(
+            impl $dto {
+                /// Encodes with the supported inherited Fastjson2 writer features.
+                pub fn java_encode_with_features(
+                    &self,
+                    features: &[JavaJsonWriterFeature],
+                ) -> Result<Vec<u8>, serde_json::Error> {
+                    Ok(crate::route::java_fastjson_json_with_features(
+                        self, false, features,
+                    )?.into_bytes())
+                }
+            }
+        )+
+    };
+}
+
+macro_rules! impl_java_remoting_serializable_adapters {
+    ($($dto:ty),+ $(,)?) => {
+        impl_java_static_remoting_serializable_adapters!($($dto),+);
+        impl_java_remoting_serializable_writer_features!($($dto),+);
+    };
+}
+
 macro_rules! impl_java_static_topic_serializable_adapters {
     ($($dto:ty),+ $(,)?) => {
         $(
@@ -165,15 +180,6 @@ macro_rules! impl_java_static_topic_serializable_adapters {
 
                 pub fn java_encode(&self) -> Result<Vec<u8>, serde_json::Error> {
                     Ok(self.java_to_json(false)?.into_bytes())
-                }
-
-                pub fn java_encode_with_features(
-                    &self,
-                    features: &[JavaJsonWriterFeature],
-                ) -> Result<Vec<u8>, serde_json::Error> {
-                    Ok(crate::route::java_fastjson_json_with_features(
-                        self, false, features,
-                    )?.into_bytes())
                 }
 
                 pub fn java_decode(data: &[u8]) -> Result<Self, serde_json::Error> {
@@ -285,6 +291,11 @@ impl CheckRocksdbCqWriteStatus {
 /// ```compile_fail
 /// use rocketmq_classic_protocol::body::CheckRocksdbCqWriteResult;
 /// let _ = CheckRocksdbCqWriteResult::default().check_status;
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::CheckRocksdbCqWriteResult;
+/// let _ = CheckRocksdbCqWriteResult::default().java_encode_with_features(&[]);
 /// ```
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -3486,11 +3497,71 @@ impl LogicQueueMappingItem {
     pub fn compute_offset_delta(&self) -> i64 {
         self.logic_offset.wrapping_sub(self.start_offset)
     }
+
+    /// Returns the pinned Java 5.5.1 `LogicQueueMappingItem.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let mut result = 17i32;
+        result = result.wrapping_mul(37).wrapping_add(self.generation);
+        result = result.wrapping_mul(37).wrapping_add(self.queue_id);
+        result = result.wrapping_mul(37).wrapping_add(
+            self.bname
+                .as_deref()
+                .map(cluster_info_java_string_hash_code)
+                .unwrap_or(0),
+        );
+        result = result
+            .wrapping_mul(37)
+            .wrapping_add(fold_i64_hash(self.logic_offset));
+        result = result
+            .wrapping_mul(37)
+            .wrapping_add(fold_i64_hash(self.start_offset));
+        result = result
+            .wrapping_mul(37)
+            .wrapping_add(fold_i64_hash(self.end_offset));
+        result = result
+            .wrapping_mul(37)
+            .wrapping_add(fold_i64_hash(self.time_of_start));
+        result = result
+            .wrapping_mul(37)
+            .wrapping_add(fold_i64_hash(self.time_of_end));
+        result
+    }
+
+    /// Returns the pinned Java 5.5.1 `LogicQueueMappingItem.toString` text.
+    pub fn java_to_string(&self) -> String {
+        format!(
+            "LogicQueueMappingItem{{gen={}, queueId={}, bname='{}', logicOffset={}, startOffset={}, endOffset={}, timeOfStart={}, timeOfEnd={}}}",
+            self.generation,
+            self.queue_id,
+            self.bname.as_deref().unwrap_or("null"),
+            self.logic_offset,
+            self.start_offset,
+            self.end_offset,
+            self.time_of_start,
+            self.time_of_end
+        )
+    }
 }
 
 pub type HostedQueueMappingItems = SharedValue<Vec<Option<LogicQueueMappingItem>>>;
 pub type HostedQueues = BTreeMap<i32, Option<HostedQueueMappingItems>>;
 pub type SharedHostedQueues = SharedValue<HostedQueues>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TopicQueueMappingDetailError {
+    #[error("java.lang.NullPointerException: null TopicQueueMappingDetail")]
+    NullMappingDetail,
+    #[error("java.lang.NullPointerException: null hostedQueues")]
+    NullHostedQueues,
+    #[error("java.lang.NullPointerException: null global queue id")]
+    NullGlobalId,
+    #[error("java.lang.NullPointerException: null mapping item list")]
+    NullMappingItems,
+    #[error("java.lang.NullPointerException: null mapping item")]
+    NullMappingItem,
+    #[error("java.lang.NullPointerException: null broker name")]
+    NullBrokerName,
+}
 
 fn hosted_queues_snapshot(
     value: &SharedHostedQueues,
@@ -3633,6 +3704,19 @@ impl Default for TopicQueueMappingDetail {
 }
 
 impl TopicQueueMappingDetail {
+    /// Constructs a detail using the pinned Java constructor defaults.
+    pub fn new(
+        topic: Option<String>,
+        total_queues: i32,
+        bname: Option<String>,
+        epoch: i64,
+    ) -> Self {
+        Self {
+            mapping_info: TopicQueueMappingInfo::new(topic, total_queues, bname, epoch),
+            hosted_queues: default_hosted_queues(),
+        }
+    }
+
     pub fn topic_queue_mapping_info(&self) -> &TopicQueueMappingInfo {
         &self.mapping_info
     }
@@ -3712,13 +3796,236 @@ impl TopicQueueMappingDetail {
     pub fn set_hosted_queues_owned(&mut self, value: Option<HostedQueues>) {
         self.hosted_queues = value.map(SharedValue::new);
     }
+
+    /// Stores the caller's list handle under a global queue ID, matching
+    /// Java's `putMappingInfo`; an empty list is accepted without mutation.
+    pub fn put_mapping_info(
+        mapping_detail: Option<&Self>,
+        global_id: Option<i32>,
+        mapping_info: Option<HostedQueueMappingItems>,
+    ) -> Result<bool, TopicQueueMappingDetailError> {
+        let mapping_info = mapping_info.ok_or(TopicQueueMappingDetailError::NullMappingItems)?;
+        if mapping_info.with(Vec::is_empty) {
+            return Ok(true);
+        }
+        let mapping_detail =
+            mapping_detail.ok_or(TopicQueueMappingDetailError::NullMappingDetail)?;
+        let hosted_queues = mapping_detail
+            .hosted_queues
+            .as_ref()
+            .ok_or(TopicQueueMappingDetailError::NullHostedQueues)?;
+        let global_id = global_id.ok_or(TopicQueueMappingDetailError::NullGlobalId)?;
+        hosted_queues.with_mut(|queues| {
+            queues.insert(global_id, Some(mapping_info));
+        });
+        Ok(true)
+    }
+
+    /// Returns the stored list handle for a global queue ID.
+    pub fn get_mapping_info(
+        mapping_detail: Option<&Self>,
+        global_id: Option<i32>,
+    ) -> Result<Option<HostedQueueMappingItems>, TopicQueueMappingDetailError> {
+        let mapping_detail =
+            mapping_detail.ok_or(TopicQueueMappingDetailError::NullMappingDetail)?;
+        let hosted_queues = mapping_detail
+            .hosted_queues
+            .as_ref()
+            .ok_or(TopicQueueMappingDetailError::NullHostedQueues)?;
+        let global_id = global_id.ok_or(TopicQueueMappingDetailError::NullGlobalId)?;
+        Ok(hosted_queues.with(|queues| queues.get(&global_id).cloned().flatten()))
+    }
+
+    /// Builds the current physical queue ID map. Java's disabled-by-default
+    /// assertion leaves nonzero levels with an empty result.
+    pub fn build_id_map(
+        mapping_detail: Option<&Self>,
+        level: i32,
+    ) -> Result<BTreeMap<i32, i32>, TopicQueueMappingDetailError> {
+        let mapping_detail =
+            mapping_detail.ok_or(TopicQueueMappingDetailError::NullMappingDetail)?;
+        let Some(hosted_queues) = mapping_detail.hosted_queues.as_ref() else {
+            return Ok(BTreeMap::new());
+        };
+        hosted_queues.with(|queues| {
+            let mut id_map = BTreeMap::new();
+            for (global_id, items) in queues {
+                if level != 0 {
+                    continue;
+                }
+                let items = items
+                    .as_ref()
+                    .ok_or(TopicQueueMappingDetailError::NullMappingItems)?;
+                let items = items.snapshot();
+                let Some(item) = items.last() else {
+                    continue;
+                };
+                let item = item
+                    .as_ref()
+                    .ok_or(TopicQueueMappingDetailError::NullMappingItem)?;
+                let broker_name = mapping_detail
+                    .mapping_info
+                    .bname
+                    .as_deref()
+                    .ok_or(TopicQueueMappingDetailError::NullBrokerName)?;
+                if item.bname.as_deref() == Some(broker_name) {
+                    id_map.insert(*global_id, item.queue_id);
+                }
+            }
+            Ok(id_map)
+        })
+    }
+
+    /// Returns the highest static queue offset in the selected generation, or
+    /// `-1` when the global queue has no mapping items.
+    pub fn compute_max_offset_from_mapping(
+        mapping_detail: Option<&Self>,
+        global_id: Option<i32>,
+    ) -> Result<i64, TopicQueueMappingDetailError> {
+        let Some(items) = Self::get_mapping_info(mapping_detail, global_id)? else {
+            return Ok(-1);
+        };
+        let items = items.snapshot();
+        let Some(item) = items.last() else {
+            return Ok(-1);
+        };
+        let item = item
+            .as_ref()
+            .ok_or(TopicQueueMappingDetailError::NullMappingItem)?;
+        Ok(item.compute_max_static_queue_offset())
+    }
+
+    /// Copies the current mapping fields into a `TopicQueueMappingInfo` and
+    /// derives its current physical ID map from hosted queue generations.
+    pub fn clone_as_mapping_info(
+        mapping_detail: Option<&Self>,
+    ) -> Result<TopicQueueMappingInfo, TopicQueueMappingDetailError> {
+        let mapping_detail =
+            mapping_detail.ok_or(TopicQueueMappingDetailError::NullMappingDetail)?;
+        let id_map = Self::build_id_map(Some(mapping_detail), 0)?;
+        let mut info = TopicQueueMappingInfo::new(
+            mapping_detail.mapping_info.topic.clone(),
+            mapping_detail.mapping_info.total_queues,
+            mapping_detail.mapping_info.bname.clone(),
+            mapping_detail.mapping_info.epoch,
+        );
+        info.set_curr_id_map_owned(Some(id_map));
+        Ok(info)
+    }
+
+    /// Reports whether the selected queue is physical: absent mappings and a
+    /// single mapping beginning at logical offset zero both count as physical.
+    pub fn check_if_as_physical(
+        mapping_detail: Option<&Self>,
+        global_id: Option<i32>,
+    ) -> Result<bool, TopicQueueMappingDetailError> {
+        let Some(items) = Self::get_mapping_info(mapping_detail, global_id)? else {
+            return Ok(true);
+        };
+        let item = items.with(|items| (items.len() == 1).then(|| items[0].clone()));
+        let Some(item) = item else {
+            return Ok(false);
+        };
+        let item = item.ok_or(TopicQueueMappingDetailError::NullMappingItem)?;
+        Ok(item.logic_offset == 0)
+    }
+
+    /// Returns the pinned Java 5.5.1 `TopicQueueMappingDetail.hashCode` result.
+    pub fn java_hash_code(&self) -> i32 {
+        let hosted_queues_hash = self
+            .hosted_queues
+            .as_ref()
+            .map(|queues| queues.with(hosted_queues_java_hash_code))
+            .unwrap_or(0);
+        17i32.wrapping_mul(37).wrapping_add(hosted_queues_hash)
+    }
+
+    /// Returns the pinned Java 5.5.1 `TopicQueueMappingDetail.toString` text.
+    /// Concurrent map entries use deterministic Rust key order.
+    pub fn java_to_string(&self) -> String {
+        let hosted_queues = self.hosted_queues.as_ref().map_or_else(
+            || "null".to_owned(),
+            |queues| queues.with(hosted_queues_java_to_string),
+        );
+        let curr_id_map = self.mapping_info.curr_id_map.as_ref().map_or_else(
+            || "null".to_owned(),
+            |ids| {
+                ids.with(|ids| {
+                    let entries = ids
+                        .iter()
+                        .map(|(logical, physical)| format!("{logical}={physical}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{{{entries}}}")
+                })
+            },
+        );
+        format!(
+            "TopicQueueMappingDetail{{hostedQueues={}, topic='{}', totalQueues={}, bname='{}', epoch={}, dirty={}, currIdMap={}}}",
+            hosted_queues,
+            self.mapping_info.topic.as_deref().unwrap_or("null"),
+            self.mapping_info.total_queues,
+            self.mapping_info.bname.as_deref().unwrap_or("null"),
+            self.mapping_info.epoch,
+            self.mapping_info.dirty,
+            curr_id_map
+        )
+    }
+}
+
+fn hosted_queues_java_hash_code(queues: &HostedQueues) -> i32 {
+    queues.iter().fold(0i32, |hash, (global_id, items)| {
+        let value_hash = items
+            .as_ref()
+            .map(|items| {
+                items.with(|items| {
+                    items.iter().fold(1i32, |list_hash, item| {
+                        list_hash.wrapping_mul(31).wrapping_add(
+                            item.as_ref()
+                                .map(LogicQueueMappingItem::java_hash_code)
+                                .unwrap_or(0),
+                        )
+                    })
+                })
+            })
+            .unwrap_or(0);
+        hash.wrapping_add(*global_id ^ value_hash)
+    })
+}
+
+fn hosted_queues_java_to_string(queues: &HostedQueues) -> String {
+    let entries = queues
+        .iter()
+        .map(|(global_id, items)| {
+            let items = items.as_ref().map_or_else(
+                || "null".to_owned(),
+                |items| {
+                    items.with(|items| {
+                        let values = items
+                            .iter()
+                            .map(|item| {
+                                item.as_ref().map_or_else(
+                                    || "null".to_owned(),
+                                    LogicQueueMappingItem::java_to_string,
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("[{values}]")
+                    })
+                },
+            );
+            format!("{global_id}={items}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{entries}}}")
 }
 
 impl PartialEq for TopicQueueMappingDetail {
     fn eq(&self, other: &Self) -> bool {
-        self.mapping_info == other.mapping_info
-            && self.hosted_queues.as_ref().map(hosted_queues_snapshot)
-                == other.hosted_queues.as_ref().map(hosted_queues_snapshot)
+        self.hosted_queues.as_ref().map(hosted_queues_snapshot)
+            == other.hosted_queues.as_ref().map(hosted_queues_snapshot)
     }
 }
 
@@ -3726,6 +4033,11 @@ impl Eq for TopicQueueMappingDetail {}
 
 /// Java `TopicConfigAndQueueMapping`, a `TopicConfig` with optional static
 /// queue mapping metadata.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicConfigAndQueueMapping;
+/// let _ = TopicConfigAndQueueMapping::default().java_encode_with_features(&[]);
+/// ```
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicConfigAndQueueMapping {
@@ -5063,6 +5375,11 @@ impl UserInfo {
 
 /// Java `AclInfo` body DTO used by Broker ACL operations. The Java class uses
 /// identity equality and keeps its policy list nullable.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::AclInfo;
+/// let _ = AclInfo::default().java_encode_with_features(&[]);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AclInfo {
@@ -5073,6 +5390,11 @@ pub struct AclInfo {
 }
 
 /// Java `AclInfo.PolicyInfo` nested body DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::AclPolicyInfo;
+/// let _ = AclPolicyInfo::default().java_encode_with_features(&[]);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AclPolicyInfo {
@@ -5083,6 +5405,11 @@ pub struct AclPolicyInfo {
 }
 
 /// Java `AclInfo.PolicyEntryInfo` nested body DTO.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::AclPolicyEntryInfo;
+/// let _ = AclPolicyEntryInfo::default().java_encode_with_features(&[]);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AclPolicyEntryInfo {
@@ -10829,7 +11156,6 @@ impl_java_remoting_serializable_adapters!(
     DataVersion,
     SubscriptionGroupWrapper,
     CheckClientRequestBody,
-    CheckRocksdbCqWriteResult,
     LogicQueueMappingItem,
     LiteSubscriptionCtlRequestBody,
     QueryAssignmentRequestBody,
@@ -10845,9 +11171,6 @@ impl_java_remoting_serializable_adapters!(
     ConsumerListByGroupResponseBody,
     ProducerConnection,
     ProducerTableInfo,
-    AclInfo,
-    AclPolicyInfo,
-    AclPolicyEntryInfo,
     KvTable,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,
@@ -10859,7 +11182,15 @@ impl_java_remoting_serializable_adapters!(
     TopicConfigSerializeWrapper,
 );
 
+impl_java_static_remoting_serializable_adapters!(
+    CheckRocksdbCqWriteResult,
+    AclInfo,
+    AclPolicyInfo,
+    AclPolicyEntryInfo,
+);
+
 impl_java_static_topic_serializable_adapters!(TopicConfigAndQueueMapping, TopicQueueMappingDetail);
+impl_java_remoting_serializable_writer_features!(TopicQueueMappingDetail);
 
 macro_rules! impl_java_remoting_serializable_body_adapters {
     ($($dto:ty),+ $(,)?) => {
@@ -11358,6 +11689,231 @@ mod tests {
         version.set_counter(None);
         assert!(!version.next_version());
         assert_eq!(version.compare(&DataVersion::new(9, 0, Some(1))), None);
+    }
+
+    #[test]
+    fn topic_queue_mapping_detail_methods_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+        for case in fixture["topicQueueMappingDetailMethods"]
+            .as_array()
+            .unwrap()
+        {
+            let left: TopicQueueMappingDetail =
+                serde_json::from_value(case["left"].clone()).unwrap();
+            let right: TopicQueueMappingDetail =
+                serde_json::from_value(case["right"].clone()).unwrap();
+            assert_eq!(left == right, case["equals"], "{} equality", case["case"]);
+            assert_eq!(
+                left.java_hash_code(),
+                case["leftHashCode"].as_i64().unwrap() as i32,
+                "{} left hashCode",
+                case["case"]
+            );
+            assert_eq!(
+                right.java_hash_code(),
+                case["rightHashCode"].as_i64().unwrap() as i32,
+                "{} right hashCode",
+                case["case"]
+            );
+            assert_eq!(
+                left.java_to_string(),
+                case["leftToString"],
+                "{} left toString",
+                case["case"]
+            );
+            assert_eq!(
+                right.java_to_string(),
+                case["rightToString"],
+                "{} right toString",
+                case["case"]
+            );
+        }
+    }
+
+    #[test]
+    fn topic_queue_mapping_detail_operations_match_invoked_java() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/runtime/route.json")).unwrap();
+        let expected = &fixture["topicQueueMappingDetailOperations"];
+        let mut detail =
+            TopicQueueMappingDetail::new(Some("topic".into()), 10, Some("broker".into()), 4);
+        let items = SharedValue::new(vec![Some(LogicQueueMappingItem::new(
+            1,
+            4,
+            Some("broker".into()),
+            0,
+            0,
+            6,
+            -1,
+            -1,
+        ))]);
+        assert_eq!(
+            TopicQueueMappingDetail::put_mapping_info(Some(&detail), Some(7), Some(items.clone()))
+                .unwrap(),
+            expected["inserted"]
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::put_mapping_info(None, None, Some(SharedValue::new(vec![])))
+                .unwrap(),
+            expected["emptyPutWithNullDetail"]
+        );
+        let returned = TopicQueueMappingDetail::get_mapping_info(Some(&detail), Some(7))
+            .unwrap()
+            .unwrap();
+        assert_eq!(returned.ptr_eq(&items), expected["returnedSameList"]);
+        items.with_mut(|items| {
+            items.push(Some(LogicQueueMappingItem::new(
+                2,
+                5,
+                Some("broker".into()),
+                6,
+                0,
+                -1,
+                -1,
+                -1,
+            )));
+        });
+        assert_eq!(
+            returned.with(Vec::len),
+            expected["returnedSizeAfterExternalAdd"].as_u64().unwrap() as usize
+        );
+        detail.set_hosted_queues_owned(Some(BTreeMap::from([
+            (7, Some(items)),
+            (
+                8,
+                Some(SharedValue::new(vec![Some(LogicQueueMappingItem::new(
+                    1,
+                    2,
+                    Some("broker".into()),
+                    0,
+                    0,
+                    5,
+                    -1,
+                    -1,
+                ))])),
+            ),
+        ])));
+        assert_eq!(
+            TopicQueueMappingDetail::get_mapping_info(Some(&detail), Some(99))
+                .unwrap()
+                .is_none(),
+            expected["missingMapping"]
+        );
+        assert_eq!(
+            serde_json::to_value(TopicQueueMappingDetail::build_id_map(Some(&detail), 0).unwrap())
+                .unwrap(),
+            expected["currentIdMap"]
+        );
+        assert_eq!(
+            serde_json::to_value(TopicQueueMappingDetail::build_id_map(Some(&detail), 1).unwrap())
+                .unwrap(),
+            expected["otherLevelIdMap"]
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::compute_max_offset_from_mapping(Some(&detail), Some(7))
+                .unwrap(),
+            expected["maxOffset"].as_i64().unwrap()
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::compute_max_offset_from_mapping(Some(&detail), Some(99))
+                .unwrap(),
+            expected["emptyMaxOffset"].as_i64().unwrap()
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::check_if_as_physical(Some(&detail), Some(8)).unwrap(),
+            expected["physicalSingle"]
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::check_if_as_physical(Some(&detail), Some(7)).unwrap(),
+            expected["physicalMultiple"]
+        );
+        assert_eq!(
+            TopicQueueMappingDetail::check_if_as_physical(Some(&detail), Some(99)).unwrap(),
+            expected["physicalMissing"]
+        );
+        assert_eq!(
+            serde_json::to_value(
+                TopicQueueMappingDetail::clone_as_mapping_info(Some(&detail)).unwrap()
+            )
+            .unwrap(),
+            expected["clone"]
+        );
+
+        let cases = fixture["topicQueueMappingDetailNullOperations"]
+            .as_array()
+            .unwrap();
+        let valid = TopicQueueMappingDetail::default();
+        let null_hosted = serde_json::from_value::<TopicQueueMappingDetail>(
+            serde_json::json!({"hostedQueues": null}),
+        )
+        .unwrap();
+        let null_item = serde_json::from_value::<TopicQueueMappingDetail>(
+            serde_json::json!({"hostedQueues": {"0": [null]}}),
+        )
+        .unwrap();
+        let nonempty_items = SharedValue::new(vec![Some(LogicQueueMappingItem::default())]);
+        for case in cases {
+            let result = match case["operation"].as_str().unwrap() {
+                "put-null-list" => {
+                    TopicQueueMappingDetail::put_mapping_info(Some(&valid), Some(0), None)
+                        .map(|_| ())
+                }
+                "put-null-detail" => TopicQueueMappingDetail::put_mapping_info(
+                    None,
+                    Some(0),
+                    Some(nonempty_items.clone()),
+                )
+                .map(|_| ()),
+                "put-null-id" => TopicQueueMappingDetail::put_mapping_info(
+                    Some(&valid),
+                    None,
+                    Some(nonempty_items.clone()),
+                )
+                .map(|_| ()),
+                "get-null-detail" => {
+                    TopicQueueMappingDetail::get_mapping_info(None, Some(0)).map(|_| ())
+                }
+                "get-null-hosted-queues" => {
+                    TopicQueueMappingDetail::get_mapping_info(Some(&null_hosted), Some(0))
+                        .map(|_| ())
+                }
+                "get-null-id" => {
+                    TopicQueueMappingDetail::get_mapping_info(Some(&valid), None).map(|_| ())
+                }
+                "build-null-detail" => TopicQueueMappingDetail::build_id_map(None, 0).map(|_| ()),
+                "build-null-item" => {
+                    TopicQueueMappingDetail::build_id_map(Some(&null_item), 0).map(|_| ())
+                }
+                "compute-null-hosted-queues" => {
+                    TopicQueueMappingDetail::compute_max_offset_from_mapping(
+                        Some(&null_hosted),
+                        Some(0),
+                    )
+                    .map(|_| ())
+                }
+                "compute-null-item" => TopicQueueMappingDetail::compute_max_offset_from_mapping(
+                    Some(&null_item),
+                    Some(0),
+                )
+                .map(|_| ()),
+                "check-null-item" => {
+                    TopicQueueMappingDetail::check_if_as_physical(Some(&null_item), Some(0))
+                        .map(|_| ())
+                }
+                "clone-null-detail" => {
+                    TopicQueueMappingDetail::clone_as_mapping_info(None).map(|_| ())
+                }
+                operation => panic!("unhandled Java operation case: {operation}"),
+            };
+            assert!(
+                result.is_err(),
+                "{} should match Java {}",
+                case["operation"],
+                case["outcome"]
+            );
+            assert_eq!(case["outcome"], "NullPointerException");
+        }
     }
 
     #[test]

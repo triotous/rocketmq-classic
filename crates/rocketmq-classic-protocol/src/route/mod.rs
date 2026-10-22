@@ -370,6 +370,7 @@ pub(crate) fn is_java_map_property(name: &str) -> bool {
             | "consumerTable"
             | "currIdMap"
             | "filterServerTable"
+            | "hostedQueues"
             | "messageQueueTable"
             | "messageRequestModeMap"
             | "offsetTable"
@@ -406,6 +407,8 @@ enum JavaBeanKind {
     ResetOffsetBody,
     SetMessageRequestModeRequestBody,
     SubscriptionData,
+    LogicQueueMappingItem,
+    TopicQueueMappingDetail,
     TopicQueueMappingInfo,
     TopicRouteData,
     UnlockBatchRequestBody,
@@ -463,6 +466,16 @@ impl JavaBeanKind {
                 &["clientId", "consumerGroup", "mqSet", "onlyThisBroker"]
             }
             Self::LockBatchResponseBody => &["lockOKMQSet"],
+            Self::LogicQueueMappingItem => &[
+                "bname",
+                "endOffset",
+                "gen",
+                "logicOffset",
+                "queueId",
+                "startOffset",
+                "timeOfEnd",
+                "timeOfStart",
+            ],
             Self::MessageQueue => &["brokerName", "queueId", "topic"],
             Self::MessageQueueAssignment => &["attachments", "messageQueue", "mode"],
             Self::MessageRequestModeSerializeWrapper => &["messageRequestModeMap"],
@@ -514,6 +527,16 @@ impl JavaBeanKind {
                 "topic",
                 "totalQueues",
             ],
+            Self::TopicQueueMappingDetail => &[
+                "bname",
+                "currIdMap",
+                "dirty",
+                "epoch",
+                "hostedQueues",
+                "scope",
+                "topic",
+                "totalQueues",
+            ],
             Self::TopicRouteData => &[
                 "brokerDatas",
                 "filterServerTable",
@@ -560,6 +583,7 @@ impl JavaBeanKind {
             "ConsumerListByGroupResponseBody" => Self::GetConsumerListByGroupResponseBody,
             "GetConsumerStatusBody" => Self::GetConsumerStatusBody,
             "HeartbeatData" => Self::HeartbeatData,
+            "LogicQueueMappingItem" => Self::LogicQueueMappingItem,
             "LiteSubscriptionCtlRequestBody" => Self::LiteSubscriptionCtlRequestBody,
             "LockBatchRequestBody" => Self::LockBatchRequestBody,
             "LockBatchResponseBody" => Self::LockBatchResponseBody,
@@ -569,6 +593,7 @@ impl JavaBeanKind {
             "QueryConsumeTimeSpanBody" => Self::QueryConsumeTimeSpanBody,
             "ResetOffsetBody" => Self::ResetOffsetBody,
             "SetMessageRequestModeRequestBody" => Self::SetMessageRequestModeRequestBody,
+            "TopicQueueMappingDetail" => Self::TopicQueueMappingDetail,
             "TopicQueueMappingInfo" => Self::TopicQueueMappingInfo,
             "TopicRouteData" => Self::TopicRouteData,
             "UnlockBatchRequestBody" => Self::UnlockBatchRequestBody,
@@ -601,6 +626,9 @@ impl JavaBeanKind {
                 "org.apache.rocketmq.remoting.protocol.body.LiteSubscriptionCtlRequestBody"
             }
             Self::LiteSubscriptionDto => "org.apache.rocketmq.common.lite.LiteSubscriptionDTO",
+            Self::LogicQueueMappingItem => {
+                "org.apache.rocketmq.remoting.protocol.statictopic.LogicQueueMappingItem"
+            }
             Self::LockBatchRequestBody => {
                 "org.apache.rocketmq.remoting.protocol.body.LockBatchRequestBody"
             }
@@ -634,6 +662,9 @@ impl JavaBeanKind {
             }
             Self::TopicQueueMappingInfo => {
                 "org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingInfo"
+            }
+            Self::TopicQueueMappingDetail => {
+                "org.apache.rocketmq.remoting.protocol.statictopic.TopicQueueMappingDetail"
             }
             Self::TopicRouteData => "org.apache.rocketmq.remoting.protocol.route.TopicRouteData",
             Self::UnlockBatchRequestBody => {
@@ -692,8 +723,10 @@ pub(crate) fn is_java_long_field(field: Option<&str>) -> bool {
         Some(
             "consumeTimeStamp"
                 | "delayTime"
+                | "endOffset"
                 | "epoch"
                 | "invisibleTime"
+                | "logicOffset"
                 | "maxTimeStamp"
                 | "minTimeStamp"
                 | "popTime"
@@ -703,6 +736,8 @@ pub(crate) fn is_java_long_field(field: Option<&str>) -> bool {
                 | "spentTimeMills"
                 | "startOffset"
                 | "subVersion"
+                | "timeOfEnd"
+                | "timeOfStart"
                 | "version"
         )
     )
@@ -733,6 +768,23 @@ fn java_concurrent_hash_map_class_name(value: &mut serde_json::Value) {
             "@type".to_owned(),
             serde_json::Value::String("java.util.concurrent.ConcurrentHashMap".to_owned()),
         );
+    }
+}
+
+fn for_each_topic_queue_mapping_detail_logic_item_mut(
+    value: &mut serde_json::Value,
+    mut apply: impl FnMut(&mut serde_json::Value),
+) {
+    let Some(entries) = value.as_object_mut() else {
+        return;
+    };
+    for items in entries
+        .values_mut()
+        .filter_map(serde_json::Value::as_array_mut)
+    {
+        for item in items {
+            apply(item);
+        }
     }
 }
 
@@ -827,8 +879,22 @@ fn apply_java_class_names_to_bean(
                     }
                 }
             }
-            (JavaBeanKind::TopicQueueMappingInfo, "currIdMap") => {
+            (
+                JavaBeanKind::TopicQueueMappingInfo | JavaBeanKind::TopicQueueMappingDetail,
+                "currIdMap",
+            ) => {
                 java_concurrent_hash_map_class_name(field);
+            }
+            (JavaBeanKind::TopicQueueMappingDetail, "hostedQueues") => {
+                java_concurrent_hash_map_class_name(field);
+                for_each_topic_queue_mapping_detail_logic_item_mut(field, |item| {
+                    apply_java_class_names_to_bean(
+                        item,
+                        JavaBeanKind::LogicQueueMappingItem,
+                        true,
+                        not_write_hash_map_array_list,
+                    );
+                });
             }
             (JavaBeanKind::MessageRequestModeSerializeWrapper, "messageRequestModeMap") => {
                 if let Some(topics) = field.as_object_mut() {
@@ -984,6 +1050,10 @@ fn write_java_null_objects(value: &mut serde_json::Value, kind: JavaBeanKind) {
                     write_java_null_objects(entry, JavaBeanKind::TopicQueueMappingInfo);
                 }
             }
+        } else if kind == JavaBeanKind::TopicQueueMappingDetail && name == "hostedQueues" {
+            for_each_topic_queue_mapping_detail_logic_item_mut(field, |item| {
+                write_java_null_objects(item, JavaBeanKind::LogicQueueMappingItem);
+            });
         } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
             && name == "messageRequestModeMap"
         {
@@ -1017,7 +1087,11 @@ fn java_is_nullable_map_field(kind: JavaBeanKind, name: &str) -> bool {
                 "messageRequestModeMap"
             )
             | (JavaBeanKind::ResetOffsetBody, "offsetTable")
-            | (JavaBeanKind::TopicQueueMappingInfo, "currIdMap")
+            | (
+                JavaBeanKind::TopicQueueMappingInfo | JavaBeanKind::TopicQueueMappingDetail,
+                "currIdMap"
+            )
+            | (JavaBeanKind::TopicQueueMappingDetail, "hostedQueues")
             | (
                 JavaBeanKind::TopicRouteData,
                 "filterServerTable" | "topicQueueMappingByBroker"
@@ -1081,6 +1155,10 @@ fn write_java_null_strings(value: &mut serde_json::Value, kind: JavaBeanKind) {
                     write_java_null_strings(entry, JavaBeanKind::TopicQueueMappingInfo);
                 }
             }
+        } else if kind == JavaBeanKind::TopicQueueMappingDetail && name == "hostedQueues" {
+            for_each_topic_queue_mapping_detail_logic_item_mut(field, |item| {
+                write_java_null_strings(item, JavaBeanKind::LogicQueueMappingItem);
+            });
         } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
             && name == "messageRequestModeMap"
         {
@@ -1145,6 +1223,11 @@ fn java_is_nullable_string_field(kind: JavaBeanKind, name: &str) -> bool {
                 JavaBeanKind::TopicQueueMappingInfo,
                 "bname" | "scope" | "topic"
             )
+            | (
+                JavaBeanKind::TopicQueueMappingDetail,
+                "bname" | "scope" | "topic"
+            )
+            | (JavaBeanKind::LogicQueueMappingItem, "bname")
             | (JavaBeanKind::TopicRouteData, "orderTopicConf")
     )
 }
@@ -1199,6 +1282,10 @@ fn write_java_null_lists(value: &mut serde_json::Value, kind: JavaBeanKind) {
                     write_java_null_lists(entry, JavaBeanKind::TopicQueueMappingInfo);
                 }
             }
+        } else if kind == JavaBeanKind::TopicQueueMappingDetail && name == "hostedQueues" {
+            for_each_topic_queue_mapping_detail_logic_item_mut(field, |item| {
+                write_java_null_lists(item, JavaBeanKind::LogicQueueMappingItem);
+            });
         } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
             && name == "messageRequestModeMap"
         {
@@ -1281,6 +1368,10 @@ fn include_java_nullable_fields(value: &mut serde_json::Value, kind: JavaBeanKin
                     include_java_nullable_fields(entry, JavaBeanKind::TopicQueueMappingInfo);
                 }
             }
+        } else if kind == JavaBeanKind::TopicQueueMappingDetail && name == "hostedQueues" {
+            for_each_topic_queue_mapping_detail_logic_item_mut(field, |item| {
+                include_java_nullable_fields(item, JavaBeanKind::LogicQueueMappingItem);
+            });
         } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
             && name == "messageRequestModeMap"
         {
@@ -1346,6 +1437,8 @@ fn serialize_java_bean_as_array(
             }
         } else if kind == JavaBeanKind::TopicRouteData && name == "topicQueueMappingByBroker" {
             apply_java_bean_map_values(&mut value, path, map_fields, use_enum_names);
+        } else if kind == JavaBeanKind::TopicQueueMappingDetail && name == "hostedQueues" {
+            apply_java_bean_map_list_values(&mut value, path, map_fields, use_enum_names);
         } else if kind == JavaBeanKind::GetConsumerStatusBody && name == "consumerTable" {
             mark_nested_java_bean_map_values(&value, path, map_fields, "consumerTable");
         } else if kind == JavaBeanKind::MessageRequestModeSerializeWrapper
@@ -1429,6 +1522,33 @@ fn apply_java_bean_map_values(
                 map_fields,
                 use_enum_names,
             );
+            path.pop();
+        }
+    }
+}
+
+fn apply_java_bean_map_list_values(
+    value: &mut serde_json::Value,
+    path: &mut Vec<JavaJsonPathSegment>,
+    map_fields: &mut BeanToArrayMapFields,
+    use_enum_names: bool,
+) {
+    if let Some(entries) = value.as_object_mut() {
+        for (key, items) in entries {
+            path.push(JavaJsonPathSegment::ObjectKey(key.clone()));
+            if let Some(items) = items.as_array_mut() {
+                for (index, item) in items.iter_mut().enumerate() {
+                    path.push(JavaJsonPathSegment::ArrayIndex(index));
+                    serialize_java_bean_as_array(
+                        item,
+                        JavaBeanKind::LogicQueueMappingItem,
+                        path,
+                        map_fields,
+                        use_enum_names,
+                    );
+                    path.pop();
+                }
+            }
             path.pop();
         }
     }
@@ -1727,13 +1847,17 @@ fn is_java_long_property(name: &str) -> bool {
         "consumeTimeStamp"
             | "delayTime"
             | "epoch"
+            | "endOffset"
             | "invisibleTime"
+            | "logicOffset"
             | "maxTimeStamp"
             | "minTimeStamp"
             | "popTime"
             | "spentTimeMills"
             | "startOffset"
             | "subVersion"
+            | "timeOfEnd"
+            | "timeOfStart"
             | "updateTime"
             | "value"
             | "version"
@@ -3498,8 +3622,74 @@ impl Default for TopicQueueMappingInfo {
 }
 
 impl TopicQueueMappingInfo {
+    /// Constructs a static-topic mapping using Java's constructor defaults.
+    pub fn new(
+        topic: Option<String>,
+        total_queues: i32,
+        bname: Option<String>,
+        epoch: i64,
+    ) -> Self {
+        Self {
+            topic,
+            total_queues,
+            bname,
+            epoch,
+            dirty: false,
+            scope: default_mapping_scope(),
+            curr_id_map: default_mapping_ids().map(SharedValue::new),
+        }
+    }
+
     pub fn get_curr_id_map(&self) -> Option<SharedTopicQueueMappingIds> {
         self.curr_id_map.clone()
+    }
+
+    pub fn get_topic(&self) -> Option<&str> {
+        self.topic.as_deref()
+    }
+
+    pub fn set_topic(&mut self, value: Option<String>) {
+        self.topic = value;
+    }
+
+    pub fn get_total_queues(&self) -> i32 {
+        self.total_queues
+    }
+
+    pub fn set_total_queues(&mut self, value: i32) {
+        self.total_queues = value;
+    }
+
+    pub fn get_bname(&self) -> Option<&str> {
+        self.bname.as_deref()
+    }
+
+    pub fn set_bname(&mut self, value: Option<String>) {
+        self.bname = value;
+    }
+
+    pub fn get_epoch(&self) -> i64 {
+        self.epoch
+    }
+
+    pub fn set_epoch(&mut self, value: i64) {
+        self.epoch = value;
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn set_dirty(&mut self, value: bool) {
+        self.dirty = value;
+    }
+
+    pub fn get_scope(&self) -> Option<&str> {
+        self.scope.as_deref()
+    }
+
+    pub fn set_scope(&mut self, value: Option<String>) {
+        self.scope = value;
     }
 
     pub fn set_curr_id_map(&mut self, value: Option<SharedTopicQueueMappingIds>) {
@@ -5847,8 +6037,13 @@ mod tests {
         }
 
         for case in fixture["inheritedSerializationCases"].as_array().unwrap() {
-            if case["id"].as_str().unwrap().starts_with("route-") {
+            let id = case["id"].as_str().unwrap();
+            if id.starts_with("route-") {
                 check_case!(TopicRouteData, case);
+            } else if id.starts_with("detail-") {
+                check_case!(crate::body::TopicQueueMappingDetail, case);
+            } else if id.starts_with("logic-item-") {
+                check_case!(crate::body::LogicQueueMappingItem, case);
             } else {
                 check_case!(TopicQueueMappingInfo, case);
             }

@@ -1,0 +1,31 @@
+Phase 18 API surface audit continuation — 2026-10-22 13:32 UTC
+
+Environment: macOS AArch64, Rust 1.85.0. Workspace branch is `phase/18-phase-18-compatibility-closure`; pinned RocketMQ Java source commit is `efa1be59d6fc747ad220f036c86030f05f0419f9`. Kept unrelated Phase 19 working-tree files untouched.
+
+Pinned-source API audit finding:
+- The generated Rust `java_encode_with_features` adapter was applied to `CheckRocksdbCqWriteResult`, `AclInfo`, `AclPolicyInfo`, and `AclPolicyEntryInfo`; pinned Java declares these as plain classes and does not inherit `RemotingSerializable.encode(JSONWriter.Feature...)`.
+- `TopicConfigAndQueueMapping` also has the writer-feature instance adapter in Rust, but Java extends plain `TopicConfig`.
+- `TopicQueueMappingDetail` extends `TopicQueueMappingInfo`, which extends `RemotingSerializable`; its Rust method is valid, but feature serialization currently lacks a root/nested bean schema.
+- Other types in the large remoting adapter invocation resolve to pinned `RemotingSerializable` subclasses (or the expected Java alias), so no additional plain-class mismatch was found in that invocation.
+
+Implementation and Java fixture changes are in progress. No Phase 18 plan files or files in the separate pinned Java checkout were changed.
+
+Validation results will be appended after targeted Java/Rust differential checks and the Phase 18 gates.
+
+Phase 18 API surface audit continuation — validation update — 2026-10-22 13:55 UTC
+
+Completed implementation slice:
+- Removed inherited writer-feature instance methods from the five Rust types that are plain Java classes (`CheckRocksdbCqWriteResult`, `AclInfo`, `AclPolicyInfo`, `AclPolicyEntryInfo`, `TopicConfigAndQueueMapping`); retained static RemotingSerializable utilities and compile-fail API guards.
+- Added `TopicQueueMappingDetail` root/nested JSON bean schema handling for inherited Fastjson2 writer features, including nested `LogicQueueMappingItem` values.
+- Added direct-root `LogicQueueMappingItem` cases (default and populated) so its inherited writer-feature API is checked independently as well as nested.
+- Added Java-oracle fixtures and Rust behavior/API coverage for TopicQueueMappingDetail equality/hash/toString and public helper operations, including aliasing and null boundaries. The Java oracle remains pinned to RocketMQ 5.5.1.
+
+Validation:
+- Direct Java fixture generation: passed; 36 runtime route/VIP invoked cases verified.
+- `cargo test -p rocketmq-classic-protocol --all-features --locked inherited_remoting_serialization_matches_invoked_java`: passed (3 selected tests).
+- `cargo test -p rocketmq-classic-protocol --all-features --locked`: passed (158 unit tests, 163 doctests, integration targets).
+- `cargo clippy -p rocketmq-classic-protocol --all-targets --all-features --locked -- -D warnings`: passed.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- `mvn -f compat/java-reference/pom.xml verify`: passed (BUILD SUCCESS, 2m23s; 37 scenario manifest cases, runtime route fixtures, and Java decoding of 106 typed headers and 19 typed bodies).
+
+The worktree still contains the unrelated Phase 19 changes to `integration-tests/README.md`, `tests/differential/run.sh`, `integration-tests/run-local.sh`, and its Phase 19 log. These remain untouched and must not be staged with this slice. The branch is 70 commits ahead of `origin/phase/18-phase-18-compatibility-closure` and has no upstream-only commits.
