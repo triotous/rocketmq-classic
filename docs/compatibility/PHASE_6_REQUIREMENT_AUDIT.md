@@ -2200,3 +2200,23 @@ read the live facade flag; only the shared runtime's `ClientConfig` remains a
 startup clone. The correction is independently covered by the
 `runtimeSetterFlows` case above. This closes the named topic-list alias gap
 only; broad P18-V01 reconciliation remains open.
+
+## P18-V01 push/pull Consumer factory-start failure — 2026-10-22 (`b46612bf`)
+
+Pinned Java `DefaultMQPushConsumerImpl.start()` and
+`DefaultMQPullConsumerImpl.start()` register their consumer group before calling
+`MQClientInstance.start()`. An invoked probe sets the NameServer poll interval
+to zero and observes `IllegalArgumentException`; both Consumer and factory
+remain `START_FAILED`, and the group remains in the factory's consumer table.
+`fixtures/consumer/lifecycle.json` records both paths (SHA-256
+`3dab90cd55b37eb428f7a09cda4c6302345b13df867ef1a4e58f34a7ee856b3b`).
+
+Rust now retains those Consumer registrations when the shared runtime reaches
+its failed startup state, while stopping the owned push workers. The tests
+`factory_start_failure_preserves_java_push_consumer_registration` and
+`factory_start_failure_preserves_java_pull_consumer_registration` compare
+service state, failed runtime state, registration and manager identity with
+the invoked fixture; terminal cleanup removes the retained group. This closes
+the push/pull factory-start branch only. LitePull lifecycle, post-start
+consumer failures, and broad P18-V01 input/error/control-flow and
+reverse-export reconciliation remain open.

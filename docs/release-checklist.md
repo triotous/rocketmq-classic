@@ -7200,3 +7200,33 @@ owner-specific checks belong in the manual handoff.
   Windows stack-capture execution remain open. No Broker, Docker, publication,
   or release action was performed; protected Phase 19 worktree files remain
   unstaged.
+
+## P18-V01 push/pull Consumer factory-start parity and gate refresh — 2026-10-22 (`b46612bf`)
+
+- [x] Pinned Java 5.5.1 probes confirm that both push and pull Consumer
+  startup throw `IllegalArgumentException` for an invalid factory schedule,
+  retain the consumer group, and leave Consumer and factory in
+  `START_FAILED`. Rust preserves the registration after failed runtime start
+  and stops owned push workers. The Java oracle is
+  `fixtures/consumer/lifecycle.json`; push and pull regression tests compare
+  the lifecycle results.
+- [x] Default and all-feature locked workspace tests and strict workspace
+  all-target/all-feature Clippy pass. Formatting, `git diff --check`,
+  differential comparator self-test, all 37 manifest scenarios, and workspace
+  metadata/license/dependency checks pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes,
+  including Producer and Consumer lifecycle fixtures, 37 scenarios, Java
+  decoding of 106 typed headers and 19 typed bodies. Fixed-seed fuzz smoke
+  passes with 163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame
+  decodes and 112 message decodes. Deterministic race/leak smoke passes all 16
+  cases × 3 repetitions.
+- [x] Release facade examples build; the offline benchmark compiles and runs.
+  Its current sample is in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+  Core all-target Windows checking and the exact Consumer lifecycle
+  regressions cross-compile for `x86_64-pc-windows-gnu`.
+- [ ] LitePull lifecycle, broad P18-V01 source/API/settings/input/error/
+  control-flow and reverse-export reconciliation, current-revision GitHub
+  Ubuntu CI, and native Windows stack-capture execution remain open. No Broker,
+  Docker, publication or release action was performed; protected Phase 19
+  worktree files remain unstaged.

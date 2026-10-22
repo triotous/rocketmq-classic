@@ -370,6 +370,25 @@ Allocation counts and byte totals match the preceding samples. Timing varies
 between runs and is recorded without interpreting the single sample as a
 regression or improvement.
 
+## Current revision after push/pull Consumer factory-start parity — 2026-10-22 (`b46612bf`)
+
+Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
+code revision `b46612bf`. Environment: macOS AArch64, Apple M5 Max, 18 logical
+CPUs, Rust 1.85.0. This is a same-host observation with the fixed inputs
+above; it sets no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 2,173.0 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,115.3 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,246.2 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 14.2 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 67,130.6 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Allocation counts and byte totals match the preceding samples. Timing varies
+between runs and is recorded without interpreting the single sample as a
+regression or improvement.
+
 ## Current revision after Query Admin header parity fix — 2026-10-22
 
 Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
