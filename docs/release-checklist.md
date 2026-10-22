@@ -7128,11 +7128,13 @@ owner-specific checks belong in the manual handoff.
 
 ## P18-V02 startup-route regression gate refresh — 2026-10-22 (`561bae6d`)
 
-- [x] The new regression confirms a NameServer transport failure during
-  configured-topic initialization fails Producer startup and releases its
-  runtime registration lease. Producer package tests pass (154 unit, 11 admin,
-  27 facade, 3 request/reply, 18 scripted-send, 7 transaction, and 7 doctest
-  cases); strict Producer Clippy passes.
+- [x] The test at this checkpoint confirmed a NameServer transport failure
+  during configured-topic initialization failed Producer startup and asserted
+  that its runtime registration lease was released. The lease assertion was
+  later found to differ from pinned Java and is superseded by the
+  `4cabbffb` correction below. Producer package tests passed (154 unit, 11
+  admin, 27 facade, 3 request/reply, 18 scripted-send, 7 transaction, and 7
+  doctest cases); strict Producer Clippy passed.
 - [x] Formatting, strict workspace all-target/all-feature Clippy, default and
   all-feature locked workspace tests, differential self-test and 37-scenario
   manifest validation pass. Fixed-seed fuzz smoke and the 16-case × 3
@@ -7148,3 +7150,53 @@ owner-specific checks belong in the manual handoff.
   native Windows stack-capture execution remain pending. No Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V01 startup-route error parity correction — 2026-10-22 (`4cabbffb`)
+
+- [x] A pinned Java 5.5.1 loopback probe confirms that a configured-topic
+  route transport failure throws `IllegalStateException` caused by
+  `RemotingSendRequestException`, leaves Producer state `START_FAILED`, and
+  keeps the Producer group in the factory registry. Rust now preserves that
+  registration after the same post-start route failure. The invoked result is
+  in `fixtures/producer/lifecycle.json`, and the Rust test compares it.
+- [x] The Producer package suite passes (154 unit, 11 admin, 27 facade, 3
+  request/reply, 18 scripted-send, 7 transaction, and 7 doctest cases), strict
+  Producer Clippy, formatting, and `git diff --check`. The exact Producer
+  regression test cross-compiles for `x86_64-pc-windows-gnu`.
+- [ ] At this checkpoint, full workspace and Maven refresh for `4cabbffb` was
+  pending; the branch-level refresh is recorded in the later
+  `cd212ffb` section below. Broad P18-V01 source/API/settings/input/error/
+  control-flow and reverse-export reconciliation, current-revision GitHub
+  Ubuntu CI, and native Windows stack-capture execution remain open. No
+  Broker, Docker, publication, or release action was performed; protected
+  Phase 19 worktree files remain unstaged.
+
+## P18-V01 Producer factory-start failure parity and gate refresh — 2026-10-22 (`cd212ffb`)
+
+- [x] A pinned Java 5.5.1 fixture confirms `IllegalArgumentException` during
+  client factory startup leaves Producer and factory in `START_FAILED` and
+  retains the Producer group in the factory table. Rust now preserves the
+  registration and failed factory identity while cleaning runtime-owned
+  transport/workers. Fixture: `startupFactoryStartFailure` in
+  `fixtures/producer/lifecycle.json`; regression:
+  `runtime_start_failure_preserves_java_factory_registration`.
+- [x] Default and all-feature locked workspace tests and strict workspace
+  all-target/all-feature Clippy pass. Formatting, `git diff --check`,
+  differential comparator self-test, all 37 manifest scenarios, and workspace
+  metadata/license/dependency checks pass.
+- [x] Java reference `mvn -f compat/java-reference/pom.xml verify` passes,
+  including Producer lifecycle verification, 37 scenarios, Java decoding of
+  106 typed headers and 19 typed bodies. Fixed-seed fuzz smoke passes with 163
+  frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes and 112
+  message decodes. Offline deterministic race/leak smoke passes all 16 cases
+  × 3 repetitions.
+- [x] Release facade examples build; the offline benchmark compiles and runs.
+  The current sample is recorded in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+  Core all-target Windows cross-compilation and the exact Producer lifecycle
+  regression cross-compile for `x86_64-pc-windows-gnu`.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation, current-revision GitHub Ubuntu CI, and native
+  Windows stack-capture execution remain open. No Broker, Docker, publication,
+  or release action was performed; protected Phase 19 worktree files remain
+  unstaged.

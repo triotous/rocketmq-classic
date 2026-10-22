@@ -441,10 +441,36 @@ Pinned `DefaultMQProducerImpl.initTopicRoute()` calls
 default-topic fallback and warning path to continue. It converts a
 `RemotingException` to an uncaught `IllegalStateException`, so startup fails
 on a route transport failure. The scripted Rust regression
-`producer_start_propagates_route_transport_failure_and_releases_lease`
+`producer_start_preserves_java_registration_after_route_transport_failure`
 receives the route request, closes the NameServer connection without a
-response, asserts startup failure, and verifies the runtime registry no longer
-contains the Producer group. Implementation is at `561bae6d`; the Producer
-package tests and strict Producer Clippy pass. This closes the named transport
-error/lease-cleanup branch only; broad P18-V01 source/API/settings/input/error/
-control-flow and reverse-export reconciliation remains open.
+response, and compares the failed service state and retained registration to
+`startupRouteTransportFailure` in `fixtures/producer/lifecycle.json`. The
+invoked Java probe observes `IllegalStateException` caused by
+`RemotingSendRequestException`, one route request, `START_FAILED`, and the
+Producer group still present in the factory table. Rust now retains that
+registration after the same post-start route failure. The earlier
+`561bae6d` regression incorrectly expected lease rollback; this correction is
+at `4cabbffb`. Producer package tests, strict Producer Clippy, and Java fixture
+verification pass. This closes the named transport error/registration branch
+only; broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+export reconciliation remains open.
+
+## P18-V01 Producer factory-start failure — 2026-10-22 (`cd212ffb`)
+
+Pinned Java 5.5.1 `DefaultMQProducerImpl.start(boolean)` registers the
+Producer with `MQClientInstance` before calling `MQClientInstance.start()`.
+When an invalid periodic interval makes the client factory start throw
+`IllegalArgumentException`, Java leaves both Producer and factory in
+`START_FAILED` and retains the Producer group in the factory table. The
+invoked result is `startupFactoryStartFailure` in
+`fixtures/producer/lifecycle.json` (SHA-256
+`6f1cdb10b68a13e58fd7ca981155006f9e2061ace654bf13f1c09573d9e448ad`).
+
+Rust now keeps external Producer/Consumer registrations while it tears down
+failed runtime-owned transport and worker state, and keeps the failed runtime
+published in its client factory table. A later unregister can remove a retained
+group. `runtime_start_failure_preserves_java_factory_registration` compares
+the Producer state and table with the Java fixture; core startup-failure tests
+cover retained groups, failed factory identity, and resource cleanup. This
+closes this factory-start failure branch only; broad P18-V01 input/error and
+reverse-export reconciliation remains open.

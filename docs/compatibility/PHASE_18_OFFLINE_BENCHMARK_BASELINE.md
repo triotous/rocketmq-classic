@@ -351,6 +351,25 @@ Allocation counts and byte totals match the preceding current-revision sample.
 Timing is higher in this run and is recorded without interpreting the single
 sample as a regression or improvement.
 
+## Current revision after failed-factory lifecycle parity — 2026-10-22 (`cd212ffb`)
+
+Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
+code revision `cd212ffb`. Environment: macOS AArch64, Apple M5 Max, 18 logical
+CPUs, Rust 1.85.0. This is a same-host observation with the fixed inputs
+above; it sets no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 2,194.0 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,101.1 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,243.4 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 13.8 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 69,537.5 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Allocation counts and byte totals match the preceding samples. Timing varies
+between runs and is recorded without interpreting the single sample as a
+regression or improvement.
+
 ## Current revision after Query Admin header parity fix — 2026-10-22
 
 Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
@@ -388,13 +407,15 @@ Allocation observations match earlier captures. Timing varies across runs and
 does not imply a cross-revision regression or improvement; loopback time
 includes local TCP and Tokio scheduling.
 
-## Current revision after Producer startup-route rollback regression — 2026-10-22
+## Historical benchmark sample after Producer startup-route test checkpoint — 2026-10-22
 
 Captured with `cargo bench -p rocketmq-classic --bench offline --locked` on
-code revision `561bae6d`. This revision adds a Producer startup transport-error
-and lease-rollback regression; production behavior is unchanged from the
-previous sample. Environment, inputs, and iteration counts match the fixed
-fixtures above. This is a single-host observation and sets no threshold.
+code revision `561bae6d`. Its startup transport-error regression asserted lease
+rollback at the time; a later pinned Java probe found that assertion differed
+from Java, and the corrected behavior is recorded at `4cabbffb`. The measured
+operation inputs and outputs below remain a valid single-host observation and
+set no threshold. Environment, inputs, and iteration counts match the fixed
+fixtures above.
 
 | Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
 | --- | --- | ---: | ---: | ---: | ---: |
