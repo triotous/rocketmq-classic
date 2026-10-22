@@ -3060,3 +3060,28 @@ checks, and pinned Maven verify pass. The Maven gate validates 37 scenarios,
 decode fixtures. This closes the batch malformed-tail behavior slice only;
 broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
 Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 Java `decodes` and generic `decodesBatch` malformed-tail parity — 2026-10-22 (`2c1f0a73`)
+
+The pinned Java `MessageDecoder.decodes(ByteBuffer, readBody)` overload also
+stops when record decoding returns null and preserves the successfully decoded
+prefix. The invoked fixture now checks that overload plus `decodesBatch` with
+`isClient=true` and `isClient=false`, including the result class and final
+buffer position/limit. Fixture SHA-256:
+`2be37d4f72d8e088a7bc52eb77de5d36192d48ba17de849619c02da31d6c2b97`.
+
+Rust adds `decode_many_compatible` for the non-client Java batch mode and
+routes `client_decodes` and `client_decodes_with_body` through the client
+prefix-compatible helper. Strict `decode_many` and `decode_many_as_client`
+continue returning errors. Common regressions cover prefix length, runtime
+subtype, omitted body, and strict behavior.
+
+Default and all-feature workspace tests, strict all-target/all-feature Clippy,
+format/diff checks, and pinned Maven verify pass. The current-tree gates also
+include the differential self-test and 37-scenario manifest, bounded fuzz
+smoke, 16-case-by-3 race/leak smoke, release examples, and offline benchmark.
+Workspace metadata and all seven package listings pass; four Core Unique ID
+tests pass under both UTC and Asia/Taipei; Windows GNU Core all-target check
+and Consumer test cross-compilation pass. This closes this decoder behavior
+slice only; broad P18-V01 reconciliation, current-revision remote Ubuntu CI,
+native Windows runtime, and Phase 19 Broker/Docker evidence remain open.
