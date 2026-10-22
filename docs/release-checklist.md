@@ -7560,3 +7560,14 @@ owner-specific checks belong in the manual handoff.
   export reconciliation remains open. Remote Ubuntu CI and native Windows
   stack-capture execution remain unverified. No push or external CI was run;
   protected Phase 19 files remain unstaged.
+
+## P18-V01 static-topic wrapper reverse-export crosswalk — 2026-10-22 (`7397bb16`)
+
+- [x] Added `TopicConfigAndQueueMapping`'s new constructor, nullable adapter,
+  string adapter, and Rust equality/hash implementations to the Rust-to-Java
+  API crosswalk. The public associated-function count rises from 399 to 402;
+  all three added function names already occur elsewhere in the API, so the
+  distinct-name totals do not change.
+- [ ] This records only the new exports from the static-topic wrapper slice;
+  broad P18-V01 input/error/control-flow and whole-surface reverse-export
+  reconciliation remains open.

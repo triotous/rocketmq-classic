@@ -144,3 +144,7 @@ Refreshed after code commit `7397bb16` (docs `8499d4d9`):
 - Windows GNU Core all-target check and Consumer stack-capture `--no-run` cross-compile: PASS; native Windows runtime execution was not run.
 
 The P18-05 one-run offline benchmark was already recorded for this code family and was not rerun because the new code is confined to the Protocol static-topic wrapper API. Broad P18-V01 remains open. Current-revision remote Ubuntu CI and native Windows execution remain unverified. Phase 19 worktree files were left untouched; no push or external CI was run.
+
+Phase 18 static-topic wrapper reverse-export crosswalk — 2026-10-22 15:00 UTC
+
+Added `TopicConfigAndQueueMapping`'s three public associated functions and Rust equality/hash semantics to the Protocol row of the Rust-to-Java crosswalk. The source item inventory now records 402 public items, up from the prior 399; the three associated-function names already existed elsewhere, so the distinct-name counts remain unchanged. This accounts for the new wrapper exports only; broader P18-V01 reverse-export and behavior reconciliation remains open.
