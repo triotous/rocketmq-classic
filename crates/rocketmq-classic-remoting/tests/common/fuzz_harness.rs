@@ -8,7 +8,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::BytesMut;
 use rocketmq_classic_common::{
     compression::decompress,
-    message::{DecodeOptions, decode_many, decode_one, decode_properties},
+    message::{DecodeOptions, decode_many_compatible, decode_one, decode_properties},
     sysflag::message::CompressionType,
 };
 use rocketmq_classic_protocol::{
@@ -202,14 +202,13 @@ fn exercise_trust_boundaries(input: &[u8]) -> (usize, usize) {
         assert!(consumed <= bounded.len());
         assert!(message.body().len() <= MAX_DECOMPRESSED_BYTES);
     }
-    if let Ok(messages) = decode_many(bounded, options) {
-        message_decodes += messages.len();
-        assert!(
-            messages
-                .iter()
-                .all(|message| { message.body().len() <= MAX_DECOMPRESSED_BYTES })
-        );
-    }
+    let messages = decode_many_compatible(bounded, options);
+    message_decodes += messages.len();
+    assert!(
+        messages
+            .iter()
+            .all(|message| { message.body().len() <= MAX_DECOMPRESSED_BYTES })
+    );
 
     for compression in [
         CompressionType::Zlib,

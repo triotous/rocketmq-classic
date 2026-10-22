@@ -578,27 +578,9 @@ fn ensure_record_limit(
     Ok(())
 }
 
-/// Decode concatenated Broker records, requiring each iteration to progress.
-pub fn decode_many(records: &[u8], options: DecodeOptions) -> Result<Vec<MessageExt>, DecodeError> {
-    decode_many_with_limits(records, options, DecodeLimits::default())
-}
-
-/// Decode concatenated records using Java's `isClient=true` ID behavior.
-pub fn decode_many_as_client(
-    records: &[u8],
-    options: DecodeOptions,
-) -> Result<Vec<MessageExt>, DecodeError> {
-    let mut messages = decode_many(records, options)?;
-    for message in &mut messages {
-        assign_client_message_ids(message);
-    }
-    Ok(messages)
-}
-
 /// Decode a batch with Java `decodesBatch(..., isClient=false)` failure
 /// handling. Stops at the first invalid or over-limit record and returns the
-/// successfully decoded prefix; use [`decode_many`] when strict errors are
-/// required.
+/// successfully decoded prefix, matching Java's `null`-then-break behavior.
 pub fn decode_many_compatible(records: &[u8], options: DecodeOptions) -> Vec<MessageExt> {
     decode_many_prefix_with_limits(records, options, DecodeLimits::default()).0
 }
@@ -642,18 +624,6 @@ fn assign_client_message_ids(message: &mut MessageExt) {
         .cloned()
         .or_else(|| offset_message_id.clone());
     message.apply_client_decode_ids(offset_message_id, client_message_id);
-}
-
-fn decode_many_with_limits(
-    records: &[u8],
-    options: DecodeOptions,
-    limits: DecodeLimits,
-) -> Result<Vec<MessageExt>, DecodeError> {
-    let (decoded, failure) = decode_many_prefix_with_limits(records, options, limits);
-    match failure {
-        Some(error) => Err(error),
-        None => Ok(decoded),
-    }
 }
 
 fn decode_many_prefix_with_limits(
@@ -939,9 +909,27 @@ mod tests {
             max_total_decoded_bytes: 16,
             ..DecodeLimits::default()
         };
+        let (decoded, failure) =
+            decode_many_prefix_with_limits(record, DecodeOptions::default(), limits);
+        assert!(decoded.is_empty());
         assert!(matches!(
-            decode_many_with_limits(record, DecodeOptions::default(), limits),
-            Err(DecodeError::AggregateLimitExceeded { .. })
+            failure,
+            Some(DecodeError::AggregateLimitExceeded { .. })
         ));
+    }
+
+    #[test]
+    fn malformed_batch_tail_is_an_internal_decode_error_after_valid_prefix() {
+        let mut records = fixture_cases()[0].1.clone();
+        records.push(1);
+
+        let (decoded, failure) = decode_many_prefix_with_limits(
+            &records,
+            DecodeOptions::default(),
+            DecodeLimits::default(),
+        );
+
+        assert_eq!(decoded.len(), 1);
+        assert!(failure.is_some());
     }
 }

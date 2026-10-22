@@ -10,11 +10,11 @@ use rocketmq_classic_common::{
         SYSFLAG_POSITION, TopicFilterType, append_crc32_property, client_decode, client_decodes,
         client_decodes_with_body, count_inner_messages, create_message_id,
         create_message_id_from_host_bytes, decode_compact_message, decode_compact_messages,
-        decode_inner_batch, decode_many, decode_many_as_client, decode_many_as_client_compatible,
-        decode_many_compatible, decode_message_id, decode_one, decode_one_as_client,
-        decode_properties_nullable, decode_record_properties, encode_compact_message,
-        encode_compact_messages, encode_message_ext, encode_message_ext_uniquely,
-        encode_nullable_property_entries, encode_properties_nullable,
+        decode_inner_batch, decode_many_as_client_compatible, decode_many_compatible,
+        decode_message_id, decode_one, decode_one_as_client, decode_properties_nullable,
+        decode_record_properties, encode_compact_message, encode_compact_messages,
+        encode_message_ext, encode_message_ext_uniquely, encode_nullable_property_entries,
+        encode_properties_nullable,
     },
     sysflag::{message, pull},
 };
@@ -671,7 +671,7 @@ fn client_message_decoder_apis_match_java_551() {
         set_properties_string: true,
         verify_crc: true,
     };
-    let batch = decode_many_as_client(&joined, batch_options).unwrap();
+    let batch = decode_many_as_client_compatible(&joined, batch_options);
     let expected = &cases[..2];
     assert_eq!(batch.len(), expected.len());
     for (message, case) in batch.iter().zip(expected) {
@@ -794,9 +794,6 @@ fn client_batch_decode_keeps_prefix_and_suppresses_malformed_tail_like_java_551(
     assert_eq!(generic_batch_without_body.len(), generic_batch.len());
     assert!(!generic_batch_without_body[0].is_message_client_ext());
     assert!(generic_batch_without_body[0].body().is_empty());
-
-    assert!(decode_many(&bytes, DecodeOptions::default()).is_err());
-    assert!(decode_many_as_client(&bytes, DecodeOptions::default()).is_err());
 }
 
 #[test]
@@ -1978,7 +1975,8 @@ fn message_decoder_property_map_methods_match_java_551() {
                 .unwrap(),
         );
     }
-    let decoded_batch = decode_many(&malformed_store_size_batch, DecodeOptions::default()).unwrap();
+    let decoded_batch =
+        decode_many_compatible(&malformed_store_size_batch, DecodeOptions::default());
     assert_eq!(
         decoded_batch
             .iter()
@@ -3623,7 +3621,7 @@ fn decode_many_handles_concatenated_records_and_requires_complete_progress() {
     let fixture = fixture();
     let cases = fixture["cases"].as_array().unwrap();
     let joined: Vec<u8> = cases.iter().flat_map(record).collect();
-    let decoded = decode_many(&joined, DecodeOptions::default()).unwrap();
+    let decoded = decode_many_compatible(&joined, DecodeOptions::default());
     assert_eq!(decoded.len(), cases.len());
     let mut offset = 0;
     for case in cases {

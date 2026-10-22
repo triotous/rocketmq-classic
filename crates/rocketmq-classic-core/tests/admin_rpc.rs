@@ -5,7 +5,7 @@ use std::{
 
 use base64::Engine;
 use bytes::BytesMut;
-use rocketmq_classic_common::message::{MessageExt, decode_many};
+use rocketmq_classic_common::message::{MessageExt, decode_many_compatible};
 use rocketmq_classic_core::{
     api::{MQClientApi, admin::AdminQueryRequest},
     error::RpcError,
@@ -7044,7 +7044,7 @@ async fn query_message_sets_unique_flag_and_decodes_java_message_records() {
     expected_fields.insert("_UNIQUE_KEY_QUERY".into(), "true".into());
     assert_eq!(command.ext_fields, Some(expected_fields.into()));
     assert_eq!(result.get_index_last_update_timestamp(), 1_700_000_200_041);
-    let mut messages: Vec<MessageExt> = decode_many(&message_record, Default::default()).unwrap();
+    let mut messages: Vec<MessageExt> = decode_many_compatible(&message_record, Default::default());
     for message in &mut messages {
         let offset_id = message.message_id().map(str::to_owned);
         let client_id = message
@@ -8056,7 +8056,7 @@ async fn query_message_keeps_decoded_prefix_with_malformed_success_body_tail() {
 #[tokio::test]
 async fn query_fanout_filters_unique_key_merges_watermarks_and_keeps_partial_successes() {
     let message_record = java_message_record("ipv4-v1");
-    let decoded = decode_many(&message_record, Default::default()).unwrap();
+    let decoded = decode_many_compatible(&message_record, Default::default());
     let offset_message_id = decoded[0].message_id().unwrap().to_owned();
     let unique_key = decoded[0].properties().get("UNIQ_KEY").unwrap().to_owned();
     assert_ne!(offset_message_id, unique_key);
