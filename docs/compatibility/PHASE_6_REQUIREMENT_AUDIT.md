@@ -3007,3 +3007,21 @@ expose a mutable buffer abstraction and no pinned production flow observes
 those states. The return value remains covered by the invoked IPv4/IPv6 ID
 fixture. This source-confirmed API-shape adaptation resolves this helper's
 cursor-side-effect review item; broad P18-V01 reconciliation remains open.
+
+## P18-V01 compact inner-batch `MessageClientExt` subtype — 2026-10-22 (`adf93b21`)
+
+Pinned Java `MessageDecoder.decodeMessage(MessageExt,List)` constructs a new
+`MessageClientExt` for each compact inner message. Rust `decode_inner_batch`
+previously returned a base `MessageExt`, so callers lost Java's virtual
+`getMsgId`/`getOffsetMsgId` behavior and `setMsgId` no-op on the expanded
+values. Rust now retains the `MessageClientExt` runtime marker on each result.
+The invoked Java fixture and Common regression compare initial IDs, ignored
+`setMsgId`, offset fallback, and live `UNIQ_KEY` precedence. Updated
+`fixtures/messages/records.json` SHA-256:
+`43a9740f697078e145e93eee6b9b3671482c4577a91a82d2fb72576b68feba65`.
+Focused Common test, default and all-feature workspace tests, strict workspace
+Clippy, formatting/diff checks, and pinned Maven verify (37 scenarios, 36
+route/VIP cases, 106 typed headers, 19 typed bodies) pass. This closes the
+compact expansion subtype slice only; broad P18-V01 reconciliation, current
+remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
+remain open.
