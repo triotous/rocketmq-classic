@@ -56,6 +56,16 @@ public final class ProducerLifecycleFixtures {
         }
     }
 
+    private static String factoryServiceState(MQClientInstance factory) {
+        try {
+            Field field = MQClientInstance.class.getDeclaredField("serviceState");
+            field.setAccessible(true);
+            return ((ServiceState) field.get(factory)).name();
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not inspect fixture client factory", error);
+        }
+    }
+
     private static Map<String, Object> shutdownCase(String originalGroup, String currentGroup,
         String otherGroup) {
         DefaultMQProducer producer = new DefaultMQProducer(originalGroup);
@@ -73,6 +83,7 @@ public final class ProducerLifecycleFixtures {
                 throw new IllegalStateException("Could not register current Producer group");
             }
             setImplementationField(producer, "mQClientFactory", factory);
+            prepareFactoryForShutdown(factory);
             implementation.setServiceState(ServiceState.RUNNING);
             producer.setProducerGroup(currentGroup);
             try {
@@ -89,6 +100,7 @@ public final class ProducerLifecycleFixtures {
                 && factory.getProducerTable().containsKey(currentGroup));
             result.put("otherGroupRemains", otherGroup != null
                 && factory.getProducerTable().containsKey(otherGroup));
+            result.put("clientFactoryServiceStateAfterShutdown", factoryServiceState(factory));
             result.put("serviceState", implementation.getServiceState().name());
             return result;
         } finally {

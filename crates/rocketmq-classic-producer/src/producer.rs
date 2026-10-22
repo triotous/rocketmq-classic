@@ -996,6 +996,17 @@ impl Producer {
     }
 
     pub async fn start(self: &Arc<Self>) -> Result<(), ProducerError> {
+        self.start_with_factory(true).await
+    }
+
+    /// Starts the producer and optionally starts its shared client runtime.
+    ///
+    /// Pass `false` when the runtime lifecycle is managed by an enclosing
+    /// client factory, matching Java's `DefaultMQProducerImpl.start(boolean)`.
+    pub async fn start_with_factory(
+        self: &Arc<Self>,
+        start_factory: bool,
+    ) -> Result<(), ProducerError> {
         let mut state = self.state.lock().await;
         let service_state = self.service_state();
         match service_state {
@@ -1051,10 +1062,12 @@ impl Producer {
                 return Err(error.into());
             }
         };
-        if let Err(error) = runtime.start().await {
-            let deadline = self.unregister_deadline();
-            let _ = runtime.unregister_producer(&lease, deadline).await;
-            return Err(error.into());
+        if start_factory {
+            if let Err(error) = runtime.start().await {
+                let deadline = self.unregister_deadline();
+                let _ = runtime.unregister_producer(&lease, deadline).await;
+                return Err(error.into());
+            }
         }
         *state = State::Started {
             runtime: Arc::downgrade(&runtime),
@@ -1118,6 +1131,14 @@ impl Producer {
     }
 
     pub async fn shutdown(&self) -> Result<(), ProducerError> {
+        self.shutdown_with_factory(true).await
+    }
+
+    /// Shuts down the producer and optionally its shared client runtime.
+    ///
+    /// Pass `false` when an enclosing client factory owns runtime shutdown,
+    /// matching Java's `DefaultMQProducerImpl.shutdown(boolean)`.
+    pub async fn shutdown_with_factory(&self, shutdown_factory: bool) -> Result<(), ProducerError> {
         match self.service_state() {
             Some(ProducerServiceState::Running) => {}
             Some(
@@ -1170,14 +1191,16 @@ impl Producer {
                         return Err(error.into());
                     }
                 }
-                match runtime_arc.shutdown().await {
-                    Ok(_) => {}
-                    Err(error) => {
-                        *state = State::Started {
-                            runtime: Arc::downgrade(&runtime_arc),
-                            lease,
-                        };
-                        return Err(error.into());
+                if shutdown_factory {
+                    match runtime_arc.shutdown().await {
+                        Ok(_) => {}
+                        Err(error) => {
+                            *state = State::Started {
+                                runtime: Arc::downgrade(&runtime_arc),
+                                lease,
+                            };
+                            return Err(error.into());
+                        }
                     }
                 }
                 self.remove_recall_trace_hook(Some(&runtime_arc)).await;
@@ -1671,6 +1694,43 @@ mod tests {
         ));
         producer.start().await.unwrap();
         producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_lifecycle_overloads_leave_runtime_control_to_the_caller() {
+        let manager = ClientRuntimeManager::new();
+        let mut config = ProducerConfig::new("factory-controlled-producer").unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        let producer = Arc::new(Producer::with_runtime_manager(config, manager));
+
+        producer.start_with_factory(false).await.unwrap();
+        let (runtime, _) = producer.started_registration().await.unwrap();
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Created
+        );
+        runtime.start().await.unwrap();
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/lifecycle.json"))
+                .unwrap();
+        assert_eq!(
+            fixture["sameGroup"]["clientFactoryServiceStateAfterShutdown"],
+            "RUNNING"
+        );
+
+        producer.shutdown_with_factory(false).await.unwrap();
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Running
+        );
+        assert_eq!(
+            producer.service_state(),
+            Some(ProducerServiceState::ShutdownAlready)
+        );
+        assert!(runtime.shutdown().await.unwrap());
     }
 
     #[tokio::test]
