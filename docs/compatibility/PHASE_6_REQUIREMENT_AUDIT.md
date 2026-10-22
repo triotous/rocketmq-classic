@@ -2378,3 +2378,19 @@ LitePull integration tests, strict Clippy, format/diff checks, and Java
 lifecycle fixture verification pass. This closes these assignment
 synchronization branches only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains open.
+
+## P18-V01 LitePull poll lifecycle serialization — 2026-10-22 (`1deb11a3`)
+
+Pinned Java 5.5.1 declares `DefaultLitePullConsumerImpl.poll(long)` synchronized;
+the monitor remains held while poll waits for a consume request and runs its
+delivery hooks. Fixture `litePullMethodSynchronization` records this modifier
+and has SHA-256
+`7d6bd48e1cea531ea6b5a626d9a9dfe042ba8514bccad0d242558cad249cfca5`.
+
+Rust `poll` now holds the lifecycle gate through auto-commit, message waiting,
+and delivery hooks. The scripted flow starts a timed poll with no messages and
+verifies concurrent unsubscribe stays pending until poll times out. The
+regression, strict Clippy, formatting/diff checks, and Java lifecycle fixture
+verification pass. This closes the LitePull poll serialization slice only;
+broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains open.
