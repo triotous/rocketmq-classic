@@ -14,9 +14,15 @@ const HOUR_SAMPLE_COUNT: usize = 7;
 type StatsKey = String;
 
 /// Java 5.5.1 consumer metrics shared by one `MQClientInstance` equivalent.
-#[derive(Default)]
 pub struct ConsumerStatsManager {
+    sampling_origin: Instant,
     topics: Mutex<HashMap<StatsKey, TopicStats>>,
+}
+
+impl Default for ConsumerStatsManager {
+    fn default() -> Self {
+        Self::with_sampling_origin(Instant::now())
+    }
 }
 
 impl ConsumerStatsManager {
@@ -25,7 +31,14 @@ impl ConsumerStatsManager {
         Self::default()
     }
 
-    /// Java's lifecycle hooks are no-ops; sampling is evaluated on reads.
+    fn with_sampling_origin(sampling_origin: Instant) -> Self {
+        Self {
+            sampling_origin,
+            topics: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Java's lifecycle hooks are no-ops; scheduled samples are evaluated lazily.
     pub fn start(&self) {}
 
     /// Java's lifecycle hooks are no-ops; the runtime owns this manager.
@@ -79,9 +92,20 @@ impl ConsumerStatsManager {
         topic: &str,
         update: impl FnOnce(&mut TopicStats, Instant),
     ) {
-        let now = Instant::now();
+        self.update_topic_at(group, topic, Instant::now(), update);
+    }
+
+    fn update_topic_at(
+        &self,
+        group: &str,
+        topic: &str,
+        now: Instant,
+        update: impl FnOnce(&mut TopicStats, Instant),
+    ) {
         let mut topics = self.lock_topics();
-        let stats = topics.entry(java_stats_key(group, topic)).or_default();
+        let stats = topics
+            .entry(java_stats_key(group, topic))
+            .or_insert_with(|| TopicStats::new(self.sampling_origin));
         update(stats, now);
     }
 
@@ -92,13 +116,24 @@ impl ConsumerStatsManager {
     }
 }
 
-#[derive(Default)]
 struct TopicStats {
     pull_rt: MetricSeries,
     pull_tps: MetricSeries,
     consume_rt: MetricSeries,
     consume_ok_tps: MetricSeries,
     consume_failed_tps: MetricSeries,
+}
+
+impl TopicStats {
+    fn new(sampling_origin: Instant) -> Self {
+        Self {
+            pull_rt: MetricSeries::new(sampling_origin),
+            pull_tps: MetricSeries::new(sampling_origin),
+            consume_rt: MetricSeries::new(sampling_origin),
+            consume_ok_tps: MetricSeries::new(sampling_origin),
+            consume_failed_tps: MetricSeries::new(sampling_origin),
+        }
+    }
 }
 
 impl TopicStats {
@@ -136,25 +171,22 @@ struct MetricSeries {
     hour: SampleWindow,
 }
 
-impl Default for MetricSeries {
-    fn default() -> Self {
+impl MetricSeries {
+    fn new(sampling_origin: Instant) -> Self {
         Self {
             value: 0,
             calls: 0,
-            minute: SampleWindow::minute(),
-            hour: SampleWindow::hour(),
+            minute: SampleWindow::minute(sampling_origin),
+            hour: SampleWindow::hour(sampling_origin),
         }
     }
-}
 
-impl MetricSeries {
     fn record(&mut self, now: Instant, value: i64, calls: i64) {
         self.advance(now);
+        self.minute.schedule_after(now);
+        self.hour.schedule_after(now);
         self.value = self.value.wrapping_add(value);
         self.calls = self.calls.wrapping_add(calls);
-        self.minute
-            .update_if_sampled_at(now, self.value, self.calls);
-        self.hour.update_if_sampled_at(now, self.value, self.calls);
     }
 
     fn advance(&mut self, now: Instant) {
@@ -167,94 +199,96 @@ struct SampleWindow {
     interval: Duration,
     capacity: usize,
     samples: VecDeque<Snapshot>,
-    last_sample: Option<Instant>,
+    sampling_origin: Instant,
+    next_sample: Option<Instant>,
 }
 
 impl SampleWindow {
-    fn minute() -> Self {
-        Self::new(MINUTE_SAMPLE_INTERVAL, MINUTE_SAMPLE_COUNT)
+    fn minute(sampling_origin: Instant) -> Self {
+        Self::new(MINUTE_SAMPLE_INTERVAL, MINUTE_SAMPLE_COUNT, sampling_origin)
     }
 
-    fn hour() -> Self {
-        Self::new(HOUR_SAMPLE_INTERVAL, HOUR_SAMPLE_COUNT)
+    fn hour(sampling_origin: Instant) -> Self {
+        Self::new(HOUR_SAMPLE_INTERVAL, HOUR_SAMPLE_COUNT, sampling_origin)
     }
 
-    fn new(interval: Duration, capacity: usize) -> Self {
+    fn new(interval: Duration, capacity: usize, sampling_origin: Instant) -> Self {
         Self {
             interval,
             capacity,
             samples: VecDeque::with_capacity(capacity),
-            last_sample: None,
+            sampling_origin,
+            next_sample: None,
         }
     }
 
-    fn initialize(&mut self, now: Instant) {
-        self.samples.push_back(Snapshot {
-            at: now.checked_sub(self.interval).unwrap_or(now),
-            value: 0,
-            calls: 0,
-        });
-        self.samples.push_back(Snapshot {
-            at: now,
-            value: 0,
-            calls: 0,
-        });
-        self.last_sample = Some(now);
+    fn schedule_after(&mut self, now: Instant) {
+        if self.next_sample.is_some() || self.interval.is_zero() {
+            return;
+        }
+        let elapsed = now.saturating_duration_since(self.sampling_origin);
+        let interval_nanos = self.interval.as_nanos();
+        let ticks = elapsed.as_nanos() / interval_nanos + 1;
+        self.next_sample = Some(
+            self.sampling_origin
+                .checked_add(duration_from_nanos(interval_nanos.saturating_mul(ticks)))
+                .unwrap_or_else(|| now.checked_add(self.interval).unwrap_or(now)),
+        );
     }
 
     fn sample_until(&mut self, now: Instant, value: i64, calls: i64) {
         if self.capacity == 0 || self.interval.is_zero() {
             return;
         }
-        let Some(last_sample) = self.last_sample else {
-            self.initialize(now);
+        let Some(next_sample) = self.next_sample else {
             return;
         };
-        let elapsed = now.saturating_duration_since(last_sample);
-        let due = elapsed.as_nanos() / self.interval.as_nanos();
-        if due == 0 {
+        if next_sample > now {
             return;
         }
 
         let interval_nanos = self.interval.as_nanos();
-        let skip = due.saturating_sub(self.capacity.saturating_sub(1) as u128);
-        let mut sample_at = last_sample;
-        if skip > 0 {
-            sample_at = sample_at
-                .checked_add(duration_from_nanos(interval_nanos.saturating_mul(skip)))
-                .unwrap_or(now);
-            self.samples.clear();
+        let due = now.saturating_duration_since(next_sample).as_nanos() / interval_nanos + 1;
+        let retained = due.min(self.capacity as u128);
+        let skipped = due - retained;
+        let first_retained = next_sample
+            .checked_add(duration_from_nanos(interval_nanos.saturating_mul(skipped)))
+            .unwrap_or(now);
+
+        if self.samples.is_empty() {
             self.push(Snapshot {
-                at: sample_at,
-                value,
-                calls,
+                at: next_sample
+                    .checked_sub(self.interval)
+                    .unwrap_or(next_sample),
+                value: 0,
+                calls: 0,
             });
         }
 
-        let remaining = due.saturating_sub(skip);
-        let remaining = usize::try_from(remaining).unwrap_or(self.capacity);
-        for _ in 0..remaining {
-            sample_at = sample_at.checked_add(self.interval).unwrap_or(now);
+        let retained = usize::try_from(retained).unwrap_or(self.capacity);
+        let mut sample_at = first_retained;
+        for index in 0..retained {
             self.push(Snapshot {
                 at: sample_at,
                 value,
                 calls,
             });
+            if index + 1 < retained {
+                sample_at = sample_at.checked_add(self.interval).unwrap_or(now);
+            }
         }
-        self.last_sample = Some(sample_at);
+        let last_sample = next_sample
+            .checked_add(duration_from_nanos(
+                interval_nanos.saturating_mul(due.saturating_sub(1)),
+            ))
+            .unwrap_or(now);
+        self.next_sample = last_sample.checked_add(self.interval);
     }
 
     fn push(&mut self, sample: Snapshot) {
         self.samples.push_back(sample);
         while self.samples.len() > self.capacity {
             self.samples.pop_front();
-        }
-    }
-
-    fn update_if_sampled_at(&mut self, at: Instant, value: i64, calls: i64) {
-        if let Some(sample) = self.samples.back_mut().filter(|sample| sample.at == at) {
-            sample.value = value;
-            sample.calls = calls;
         }
     }
 
@@ -319,63 +353,82 @@ fn java_stats_key(group: &str, topic: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsumerConsumeStatus, ConsumerStatsManager, MetricSeries, SampleWindow};
+    use super::{ConsumerConsumeStatus, ConsumerStatsManager, MetricSeries};
     use std::time::{Duration, Instant};
 
     #[test]
-    fn sampled_windows_match_java_rate_and_average_calculations() {
+    fn metrics_remain_zero_until_the_first_java_periodic_sample() {
         let origin = Instant::now();
-        let mut series = MetricSeries {
-            minute: SampleWindow::minute(),
-            hour: SampleWindow::hour(),
-            ..MetricSeries::default()
-        };
-        series.record(origin, 200, 1);
+        let mut series = MetricSeries::new(origin);
+        series.record(origin + Duration::from_secs(1), 20, 1);
+        series.advance(origin + Duration::from_secs(2));
+
+        assert!(series.minute.samples.is_empty());
+        assert_eq!(series.minute.rate(), 0.0);
+        assert_eq!(series.minute.average(), (0.0, 0));
+
+        series.advance(origin + Duration::from_secs(10));
+        assert_eq!(series.minute.rate(), 2.0);
+        assert_eq!(series.minute.average(), (20.0, 20));
+
+        series.record(origin + Duration::from_secs(11), 5, 1);
+        series.advance(origin + Duration::from_secs(19));
+        assert_eq!(series.minute.rate(), 2.0);
+        assert_eq!(series.minute.average(), (20.0, 20));
+
         series.advance(origin + Duration::from_secs(20));
-        series.record(origin + Duration::from_secs(20), 400, 1);
-        series.advance(origin + Duration::from_secs(30));
+        assert_eq!(series.minute.average(), (12.5, 25));
+        assert_eq!(series.minute.rate(), 1.25);
 
-        assert_eq!(series.minute.average(), (300.0, 600));
-        assert_eq!(series.minute.rate(), 15.0);
-        assert_eq!(series.hour.sum(), 200);
+        series.advance(origin + Duration::from_secs(70));
+        assert_eq!(series.minute.average(), (5.0, 5));
+        assert!((series.minute.rate() - (5.0 / 60.0)).abs() < f64::EPSILON);
+        assert_eq!(series.hour.sum(), 0);
 
-        series.advance(origin + Duration::from_secs(61));
-        assert_eq!(series.minute.average(), (400.0, 400));
-        assert!((series.minute.rate() - (400.0 / 60.0)).abs() < f64::EPSILON);
-        assert_eq!(series.hour.sum(), 200);
-
-        series.advance(origin + Duration::from_secs(81));
+        series.advance(origin + Duration::from_secs(80));
         assert_eq!(series.minute.average(), (0.0, 0));
         assert_eq!(series.minute.rate(), 0.0);
-        assert_eq!(series.hour.sum(), 200);
+        assert_eq!(series.hour.sum(), 0);
+
+        series.advance(origin + Duration::from_secs(600));
+        assert_eq!(series.hour.sum(), 25);
     }
 
     #[test]
     fn consume_status_is_partitioned_and_failed_results_do_not_count_as_success_calls() {
-        let stats = ConsumerStatsManager::default();
-        stats.inc_pull_rt("workers", "orders", 500);
-        stats.inc_pull_tps("workers", "orders", 2);
-        stats.inc_consume_rt("workers", "orders", 8);
-        stats.inc_consume_ok_tps("workers", "orders", 3);
-        stats.inc_consume_failed_tps("workers", "orders", 1);
-        stats.inc_consume_failed_tps("workers", "orders", 2);
+        let origin = Instant::now();
+        let stats = ConsumerStatsManager::with_sampling_origin(origin);
+        stats.update_topic_at(
+            "workers",
+            "orders",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                topic.pull_rt.record(now, 500, 1);
+                topic.pull_tps.record(now, 2, 1);
+                topic.consume_rt.record(now, 8, 1);
+                topic.consume_ok_tps.record(now, 3, 1);
+                topic.consume_failed_tps.record(now, 1, 1);
+                topic.consume_failed_tps.record(now, 2, 1);
+            },
+        );
 
-        let minute_target = Instant::now() + Duration::from_secs(10);
-        let mut topics = stats.lock_topics();
-        let topic = topics.get_mut("orders@workers").unwrap();
-        topic.advance(minute_target);
-        let status = topic.status(minute_target);
+        let before_sample = stats.status_at("workers", "orders", origin + Duration::from_secs(2));
+        assert_eq!(before_sample.get_pull_rt(), 0.0);
+        assert_eq!(before_sample.get_pull_tps(), 0.0);
+        assert_eq!(before_sample.get_consume_rt(), 0.0);
+
+        let minute_target = origin + Duration::from_secs(10);
+        let status = stats.status_at("workers", "orders", minute_target);
 
         assert_eq!(status.get_pull_rt(), 500.0);
         assert_eq!(status.get_consume_rt(), 8.0);
-        assert!(status.get_pull_tps() > 0.0);
-        assert!(status.get_consume_ok_tps() > 0.0);
-        assert!(status.get_consume_failed_tps() > 0.0);
-        assert_eq!(status.get_consume_failed_msgs(), 1);
-        let hour_target = minute_target + Duration::from_secs(10 * 60);
-        let hour_status = topic.status(hour_target);
+        assert_eq!(status.get_pull_tps(), 0.2);
+        assert_eq!(status.get_consume_ok_tps(), 0.3);
+        assert_eq!(status.get_consume_failed_tps(), 0.3);
+        assert_eq!(status.get_consume_failed_msgs(), 0);
+        let hour_target = origin + Duration::from_secs(10 * 60);
+        let hour_status = stats.status_at("workers", "orders", hour_target);
         assert_eq!(hour_status.get_consume_failed_msgs(), 3);
-        drop(topics);
         assert_eq!(
             serde_json::to_value(stats.status_at("workers", "other-topic", hour_target)).unwrap(),
             serde_json::to_value(ConsumerConsumeStatus::default()).unwrap()
@@ -397,14 +450,88 @@ mod tests {
 
     #[test]
     fn stats_keys_match_java_topic_group_concatenation() {
-        let stats = ConsumerStatsManager::new();
-        stats.inc_pull_rt("workers@blue", "orders", 3);
-        stats.inc_pull_rt("blue", "orders@workers", 5);
+        let origin = Instant::now();
+        let stats = ConsumerStatsManager::with_sampling_origin(origin);
+        stats.update_topic_at(
+            "workers@blue",
+            "orders",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                topic.pull_rt.record(now, 3, 1);
+            },
+        );
+        stats.update_topic_at(
+            "blue",
+            "orders@workers",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                topic.pull_rt.record(now, 5, 1);
+            },
+        );
 
-        let first = stats.consume_status("workers@blue", "orders").get_pull_rt();
-        let colliding = stats.consume_status("blue", "orders@workers").get_pull_rt();
-        assert!(first > 0.0);
+        let first = stats
+            .status_at("workers@blue", "orders", origin + Duration::from_secs(10))
+            .get_pull_rt();
+        let colliding = stats
+            .status_at("blue", "orders@workers", origin + Duration::from_secs(10))
+            .get_pull_rt();
+        assert_eq!(first, 4.0);
         assert_eq!(first, colliding);
         assert_eq!(stats.lock_topics().len(), 1);
+    }
+
+    #[test]
+    fn sampling_matches_the_pinned_java_consumer_stats_fixture() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/consumer/push-implementation-accessor.json"
+        ))
+        .unwrap();
+        let origin = Instant::now();
+        let stats = ConsumerStatsManager::with_sampling_origin(origin);
+        stats.update_topic_at(
+            "workers",
+            "orders",
+            origin + Duration::from_secs(1),
+            |topic, now| {
+                topic.pull_tps.record(now, 20, 1);
+            },
+        );
+
+        let before_sample = stats
+            .status_at("workers", "orders", origin + Duration::from_secs(2))
+            .get_pull_tps();
+        let after_sample = stats
+            .status_at("workers", "orders", origin + Duration::from_secs(10))
+            .get_pull_tps();
+        stats.update_topic_at(
+            "workers",
+            "orders",
+            origin + Duration::from_secs(11),
+            |topic, now| {
+                topic.pull_tps.record(now, 5, 1);
+            },
+        );
+        let before_next_sample = stats
+            .status_at("workers", "orders", origin + Duration::from_secs(19))
+            .get_pull_tps();
+
+        assert_eq!(
+            before_sample,
+            fixture["consumerStatsSamplingBeforeFirstSamplePullTPS"]
+                .as_f64()
+                .unwrap()
+        );
+        assert_eq!(
+            after_sample,
+            fixture["consumerStatsSamplingAfterFirstSamplePullTPS"]
+                .as_f64()
+                .unwrap()
+        );
+        assert_eq!(
+            before_next_sample,
+            fixture["consumerStatsSamplingAfterPendingUpdatePullTPS"]
+                .as_f64()
+                .unwrap()
+        );
     }
 }

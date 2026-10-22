@@ -296,6 +296,7 @@ public final class PushImplementationAccessorFixtures {
         fixture.put("consumerStatsManagersAreInstanceScoped", consumerStatsManagersAreInstanceScoped());
         fixture.put("consumerStatsManagersShareFactoryIdentity", consumerStatsManagersShareFactoryIdentity());
         fixture.putAll(consumerStatsManagerApi());
+        fixture.putAll(consumerStatsManagerSampling());
         fixture.put("implementationNonNull", first != null);
         fixture.put("implementationIdentityStable", first == second);
         fixture.put("rebalanceImplementationNonNull", firstRebalance != null);
@@ -507,6 +508,37 @@ public final class PushImplementationAccessorFixtures {
                 .map(PushImplementationAccessorFixtures::signature)
                 .sorted()
                 .collect(Collectors.toList()));
+        return result;
+    }
+
+    private static Map<String, Object> consumerStatsManagerSampling() {
+        List<Runnable> secondSamplers = new ArrayList<>();
+        ScheduledExecutorService scheduler = (ScheduledExecutorService) Proxy.newProxyInstance(
+            ScheduledExecutorService.class.getClassLoader(),
+            new Class<?>[] {ScheduledExecutorService.class},
+            (proxy, method, arguments) -> {
+                if ("scheduleAtFixedRate".equals(method.getName())) {
+                    long period = (long) arguments[2];
+                    TimeUnit unit = (TimeUnit) arguments[3];
+                    if (period == 10 && unit == TimeUnit.SECONDS) {
+                        secondSamplers.add((Runnable) arguments[0]);
+                    }
+                }
+                return null;
+            });
+        ConsumerStatsManager manager = new ConsumerStatsManager(scheduler);
+        manager.incPullTPS("workers", "orders", 20);
+        double beforeFirstSample = manager.consumeStatus("workers", "orders").getPullTPS();
+        secondSamplers.forEach(Runnable::run);
+        double afterFirstSample = manager.consumeStatus("workers", "orders").getPullTPS();
+        manager.incPullTPS("workers", "orders", 5);
+        double afterPendingUpdate = manager.consumeStatus("workers", "orders").getPullTPS();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("consumerStatsSamplingSecondSamplerCount", secondSamplers.size());
+        result.put("consumerStatsSamplingBeforeFirstSamplePullTPS", beforeFirstSample);
+        result.put("consumerStatsSamplingAfterFirstSamplePullTPS", afterFirstSample);
+        result.put("consumerStatsSamplingAfterPendingUpdatePullTPS", afterPendingUpdate);
         return result;
     }
 

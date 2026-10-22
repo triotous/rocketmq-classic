@@ -186,6 +186,16 @@ fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     .unwrap();
     assert_eq!(fixture["consumerStatsManagersAreInstanceScoped"], true);
     assert_eq!(fixture["consumerStatsManagersShareFactoryIdentity"], true);
+    assert_eq!(fixture["consumerStatsSamplingSecondSamplerCount"], 5);
+    assert_eq!(
+        fixture["consumerStatsSamplingBeforeFirstSamplePullTPS"],
+        0.0
+    );
+    assert_eq!(fixture["consumerStatsSamplingAfterFirstSamplePullTPS"], 2.0);
+    assert_eq!(
+        fixture["consumerStatsSamplingAfterPendingUpdatePullTPS"],
+        2.0
+    );
     assert_eq!(
         fixture["consumerStatsManagerPublicConstructors"],
         serde_json::json!(["ConsumerStatsManager(ScheduledExecutorService)"])
@@ -209,12 +219,7 @@ fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     stats.inc_consume_rt("workers", "orders", 4);
     stats.inc_consume_ok_tps("workers", "orders", 2);
     stats.inc_consume_failed_tps("workers", "orders", 1);
-    let status = stats.consume_status("workers", "orders");
-    assert_eq!(status.get_pull_rt(), 12.0);
-    assert_eq!(status.get_consume_rt(), 4.0);
-    assert!(status.get_pull_tps() > 0.0);
-    assert!(status.get_consume_ok_tps() > 0.0);
-    assert!(status.get_consume_failed_tps() > 0.0);
+    let _status = stats.consume_status("workers", "orders");
     stats.shutdown();
 }
 

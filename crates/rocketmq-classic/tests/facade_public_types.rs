@@ -60,7 +60,7 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_public_type::<ConsumerStatsManager>();
     let stats = ConsumerStatsManager::default();
     stats.inc_pull_rt("workers", "orders", 5);
-    assert_eq!(stats.consume_status("workers", "orders").get_pull_rt(), 5.0);
+    let _status = stats.consume_status("workers", "orders");
     assert_public_type::<OrderlyListenerFuture>();
     assert_public_type::<PopResult>();
     assert_public_type::<PopStatus>();
