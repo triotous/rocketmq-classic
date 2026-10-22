@@ -11,6 +11,7 @@ use rocketmq_classic_remoting::client::TlsConfig;
 
 use crate::ProducerError;
 use crate::retry_response_codes::RetryResponseCodes;
+use crate::topic_list::ProducerTopicList;
 
 pub const DEFAULT_PRODUCER_GROUP: &str = "DEFAULT_PRODUCER";
 pub(crate) const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
@@ -172,7 +173,7 @@ pub struct ProducerConfig {
     backpressure_async_send_size: SharedAtomicI32,
     latency_max_millis: Vec<i64>,
     not_available_duration_millis: Vec<i64>,
-    topics: Option<Vec<String>>,
+    topics: Option<ProducerTopicList>,
 }
 
 impl Clone for ProducerConfig {
@@ -204,7 +205,7 @@ impl Clone for ProducerConfig {
             backpressure_async_send_size: self.backpressure_async_send_size.clone(),
             latency_max_millis: self.latency_max_millis.clone(),
             not_available_duration_millis: self.not_available_duration_millis.clone(),
-            topics: self.topics.clone(),
+            topics: self.topics.as_ref().map(ProducerTopicList::detached_clone),
         }
     }
 }
@@ -567,10 +568,12 @@ impl ProducerConfig {
     pub fn set_not_available_duration_millis(&mut self, value: Vec<i64>) {
         self.not_available_duration_millis = value;
     }
-    pub fn topics(&self) -> Option<&[String]> {
-        self.topics.as_deref()
+    /// Returns a shared mutable topic-list handle, or `None` for Java null.
+    pub fn topics(&self) -> Option<ProducerTopicList> {
+        self.topics.clone()
     }
-    pub fn set_topics(&mut self, value: Option<Vec<String>>) {
+    /// Retains the supplied topic-list handle, including its mutable aliases.
+    pub fn set_topics(&mut self, value: Option<ProducerTopicList>) {
         self.topics = value;
     }
 }
@@ -632,6 +635,26 @@ mod tests {
         assert_eq!(
             config.accumulator_settings().unwrap().total_max_bytes,
             DEFAULT_TOTAL_BATCH_MAX_BYTES as usize
+        );
+    }
+
+    #[test]
+    fn topic_list_aliases_are_live_and_config_clones_are_snapshots() {
+        let topics = ProducerTopicList::from(vec!["startup".to_owned()]);
+        let caller_alias = topics.clone();
+        let mut config = ProducerConfig::new("topic-list-alias").unwrap();
+        config.set_topics(Some(topics));
+        let cloned = config.clone();
+
+        caller_alias.push("later");
+
+        assert_eq!(
+            config.topics().unwrap().snapshot(),
+            vec!["startup".to_owned(), "later".to_owned()]
+        );
+        assert_eq!(
+            cloned.topics().unwrap().snapshot(),
+            vec!["startup".to_owned()]
         );
     }
 
@@ -731,7 +754,7 @@ mod tests {
         config.set_enable_backpressure_for_async_mode(true);
         config.set_backpressure_async_send_num(1);
         config.set_backpressure_async_send_size(1);
-        config.set_topics(Some(vec!["orders".into()]));
+        config.set_topics(Some(vec!["orders".into()].into()));
         assert!(config.auto_batch());
         assert_eq!(config.batch_max_delay_millis(), Some(25));
         assert_eq!(config.batch_max_bytes(), Some(65_536));
@@ -769,7 +792,7 @@ mod tests {
                 .unwrap() as i32
         );
         assert_eq!(
-            config.topics().map(<[String]>::to_vec),
+            config.topics().map(|topics| topics.snapshot()),
             Some(vec!["orders".to_owned()])
         );
 

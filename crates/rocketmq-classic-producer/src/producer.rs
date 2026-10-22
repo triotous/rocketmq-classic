@@ -29,6 +29,7 @@ use crate::{
     executor::TokioAsyncSenderExecutor,
     fault::FaultStrategy,
     selector::RoundRobinSelector,
+    topic_list::ProducerTopicList,
     validation,
 };
 
@@ -72,7 +73,7 @@ pub struct Producer {
     pub(crate) config: ProducerConfig,
     producer_group: RwLock<Option<String>>,
     send_message_with_vip_channel: AtomicBool,
-    topics: RwLock<Option<Vec<String>>>,
+    topics: RwLock<Option<ProducerTopicList>>,
     started_topics: OnceLock<Option<Vec<String>>>,
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
@@ -301,7 +302,7 @@ impl Producer {
         let ids = UniqueIdGenerator::new(config.client_config().client_ip());
         let producer_group = config.producer_group().map(str::to_owned);
         let send_message_with_vip_channel = config.send_message_with_vip_channel();
-        let topics = config.topics().map(<[String]>::to_vec);
+        let topics = config.topics();
         let batch_max_delay_millis = config.batch_max_delay_millis().unwrap_or(-1);
         let batch_max_bytes = config.batch_max_bytes().unwrap_or(-1);
         let total_batch_max_bytes = config.total_batch_max_bytes_input().unwrap_or(-1);
@@ -383,18 +384,20 @@ impl Producer {
         self
     }
 
-    /// Returns the configured producer topics. Changes after start are
-    /// retained by this accessor but do not alter the runtime's topic set.
-    pub fn topics(&self) -> Option<Vec<String>> {
+    /// Returns the shared mutable topic list, preserving Java's getter alias.
+    /// Mutations after start are visible through this handle but do not alter
+    /// the runtime topic snapshot captured at start.
+    pub fn topics(&self) -> Option<ProducerTopicList> {
         self.topics
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 
-    /// Sets the topics read when the producer starts, matching Java's
-    /// `DefaultMQProducer.setTopics` behavior.
-    pub fn set_topics(&self, value: Option<Vec<String>>) {
+    /// Retains the supplied topic list, matching Java's
+    /// `DefaultMQProducer.setTopics` reference behavior. The runtime captures
+    /// a separate topic snapshot when the producer starts.
+    pub fn set_topics(&self, value: Option<ProducerTopicList>) {
         *self
             .topics
             .write()
@@ -1018,7 +1021,9 @@ impl Producer {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = group.clone();
         validation::validate_group(group.as_deref().unwrap_or(""))?;
         self.configured_accumulator_settings()?;
-        let _ = self.started_topics.set(self.topics());
+        let _ = self
+            .started_topics
+            .set(self.topics().map(|topics| topics.snapshot()));
 
         let mut runtime_client_config = self.config.client_config().clone();
         runtime_client_config.set_vip_channel_enabled(self.send_message_with_vip_channel());
@@ -1338,7 +1343,7 @@ impl ProducerRuntime for Producer {
             .started_topics
             .get()
             .cloned()
-            .unwrap_or_else(|| self.topics());
+            .unwrap_or_else(|| self.topics().map(|topics| topics.snapshot()));
         topics.extend(
             configured_topics
                 .unwrap_or_default()
@@ -1394,12 +1399,15 @@ mod tests {
         config
             .client_config_mut()
             .set_namespace(Some("tenant".into()));
-        config.set_topics(Some(vec![
-            "orders".into(),
-            "tenant%already".into(),
-            "%RETRY%workers".into(),
-            "RMQ_SYS_TRACE_TOPIC".into(),
-        ]));
+        config.set_topics(Some(
+            vec![
+                "orders".into(),
+                "tenant%already".into(),
+                "%RETRY%workers".into(),
+                "RMQ_SYS_TRACE_TOPIC".into(),
+            ]
+            .into(),
+        ));
         let producer = Producer::with_runtime_manager(config, ClientRuntimeManager::new());
 
         assert_eq!(
@@ -1419,7 +1427,7 @@ mod tests {
         config
             .client_config_mut()
             .set_namespace(Some("tenant".into()));
-        config.set_topics(Some(vec!["configured".into()]));
+        config.set_topics(Some(vec!["configured".into()].into()));
         let producer = Producer::with_runtime_manager(config, ClientRuntimeManager::new());
         let route = Arc::new(
             TopicSnapshot::from_route_data(
@@ -1445,24 +1453,20 @@ mod tests {
             serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
         let expected = &fixture["runtimeSetterFlows"];
         let mut config = ProducerConfig::new("topics-live-start-snapshot").unwrap();
-        config.set_topics(Some(vec!["startup-topic".into()]));
+        config.set_topics(Some(vec!["startup-topic".into()].into()));
         let producer = Arc::new(Producer::with_runtime_manager(
             config,
             ClientRuntimeManager::new(),
         ));
         producer.start().await.unwrap();
 
-        producer.set_topics(Some(
-            expected["topicsAfterSetter"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|topic| topic.as_str().unwrap().to_owned())
-                .collect(),
-        ));
+        let topics = ProducerTopicList::from(vec!["later-topic".to_owned()]);
+        let caller_alias = topics.clone();
+        producer.set_topics(Some(topics));
+        caller_alias.push("caller-added-topic");
 
         assert_eq!(
-            producer.topics(),
+            producer.topics().map(|topics| topics.snapshot()),
             Some(
                 expected["topicsAfterSetter"]
                     .as_array()
@@ -1471,6 +1475,10 @@ mod tests {
                     .map(|topic| topic.as_str().unwrap().to_owned())
                     .collect()
             )
+        );
+        assert_eq!(
+            expected["topicListIdentityAfterSetter"].as_bool(),
+            Some(true)
         );
         assert_eq!(
             producer.publish_topics(),

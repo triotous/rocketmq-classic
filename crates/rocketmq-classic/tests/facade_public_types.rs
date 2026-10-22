@@ -3,10 +3,11 @@ use rocketmq_classic::{
     EndTransactionContext, EndTransactionHook, Message, MessageBatch, MessageExtSubtype, MqHelper,
     NotifyResult, NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName,
     PermissionParseError, PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList,
-    ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter, QueryResult,
-    SharedMessageBody, SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
-    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
-    TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
+    ProducerQueueIndex, ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter,
+    QueryResult, SharedMessageBody, SharedMessageProperties, TopicPublishInfo,
+    TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView,
+    TopicPublishInfoTable, TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData,
+    TopicRouteDataHandle,
 };
 
 fn assert_public_type<T: ?Sized>() {}
@@ -27,6 +28,16 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_eq!(batch.topic(), "orders");
     assert!(!batch.encode().unwrap().is_empty());
     assert_public_type::<MessageBatch>();
+
+    let topic_list = ProducerTopicList::from(vec!["startup-topic".to_owned()]);
+    let topic_list_alias = topic_list.clone();
+    producer.set_topics(Some(topic_list));
+    topic_list_alias.push("later-topic");
+    assert_eq!(
+        producer.topics().unwrap().snapshot(),
+        vec!["startup-topic".to_owned(), "later-topic".to_owned()]
+    );
+    assert_public_type::<ProducerTopicList>();
 
     let shared_properties =
         SharedMessageProperties::from_properties(std::collections::BTreeMap::new());

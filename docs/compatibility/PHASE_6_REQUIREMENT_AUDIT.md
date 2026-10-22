@@ -2177,3 +2177,26 @@ Producer crate tests, strict Producer Clippy, formatting, diff checks, and
 pinned Maven `verify` pass. This closes the named Producer group/VIP/topic
 setter flow slice; broad P18-V01 source/API/input/reverse-export reconciliation
 and native Windows runtime evidence remain open.
+
+## P18-V01 Producer topic-list alias semantics — 2026-10-22
+
+The pinned constructor and setter retain the supplied `List<String>` object,
+and `getTopics()` returns that same object. The `runtimeSetterFlows` fixture
+now mutates the list held by the caller after `setTopics` and records the
+updated getter contents, while also proving that post-start list mutation does
+not rerun `initTopicRoute`. Rust replaces copied `Vec<String>` access with
+`ProducerTopicList`, a shared lock-protected handle returned by `topics()` and
+retained by `set_topics()`. Cloning the handle preserves aliases; cloning a
+`ProducerConfig` keeps its documented detached settings snapshot. The type is
+re-exported by both Producer and facade crates. Rust constructor/config/runtime
+tests compare external mutations and the startup route snapshot. Fixture
+`fixtures/producer/core.json` SHA-256:
+`ae8e09607bfaac817640a03dc596675757a511c26e03e7d9f0ca7e8a51201cd8`.
+Producer crate tests, facade crate tests, strict Producer/facade Clippy,
+formatting, diff checks, and pinned Maven `verify` pass. This entry also
+corrects the 2026-10-14 Producer group/VIP/topics note: the statement that
+producer sends retained the startup VIP snapshot was incorrect. Java sends
+read the live facade flag; only the shared runtime's `ClientConfig` remains a
+startup clone. The correction is independently covered by the
+`runtimeSetterFlows` case above. This closes the named topic-list alias gap
+only; broad P18-V01 reconciliation remains open.

@@ -11,8 +11,8 @@ use rocketmq_classic_core::route::TopicRouteDataHandle;
 use rocketmq_classic_producer::{
     AsyncSenderExecutor, AsyncSenderTask, CheckForbiddenContext, CheckForbiddenHook,
     CommunicationMode, DEFAULT_PRODUCER_GROUP, Producer, ProducerConfig, ProducerError,
-    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, PublishInfoQueueFilter,
-    SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
+    ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState, ProducerTopicList,
+    PublishInfoQueueFilter, SendMessageContext, SendMessageHook, SendMessageType, TopicPublishInfo,
     TopicPublishInfoTableError,
     validation::{
         check_broker_config, check_topic_config, validate_group, validate_message,
@@ -749,11 +749,11 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         config
             .client_config_mut()
             .set_namespace(namespace.map(str::to_owned));
-        config.set_topics(
-            topics
-                .clone()
-                .map(|topics| topics.into_iter().map(str::to_owned).collect()),
-        );
+        let config_topics = topics.clone().map(|topics| {
+            ProducerTopicList::from(topics.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        });
+        let caller_topics_alias = config_topics.clone();
+        config.set_topics(config_topics);
         config.client_config_mut().set_enable_trace(trace_enabled);
         config
             .client_config_mut()
@@ -765,13 +765,24 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
             namespace
         );
         assert_eq!(
-            config
-                .topics()
-                .map(|topics| topics.iter().map(String::as_str).collect::<Vec<_>>()),
-            topics
+            config.topics().map(|topics| topics.snapshot()),
+            topics.map(|topics| topics.into_iter().map(str::to_owned).collect::<Vec<_>>())
         );
         assert_eq!(config.client_config().enable_trace(), trace_enabled);
         assert_eq!(config.client_config().trace_topic(), trace_topic);
+        let producer = Producer::new(config);
+        if let Some(caller_topics_alias) = caller_topics_alias {
+            caller_topics_alias.push("caller-added-topic");
+            assert_eq!(
+                producer
+                    .topics()
+                    .unwrap()
+                    .snapshot()
+                    .last()
+                    .map(String::as_str),
+                Some("caller-added-topic")
+            );
+        }
     }
 
     let nullable_cases = fixture["producerConstructorCases"]["nullableCases"]
@@ -888,9 +899,9 @@ fn pinned_java_producer_constructor_values_map_to_rust_configuration() {
         config
             .client_config_mut()
             .set_namespace(namespace.map(str::to_owned));
-        config.set_topics(
-            topics.map(|topics: Vec<&str>| topics.into_iter().map(str::to_owned).collect()),
-        );
+        config.set_topics(topics.map(|topics: Vec<&str>| {
+            ProducerTopicList::from(topics.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        }));
         config.client_config_mut().set_enable_trace(trace_enabled);
         config
             .client_config_mut()
@@ -2439,14 +2450,14 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
             .as_bool()
             .unwrap(),
     );
-    producer.set_topics(Some(
+    producer.set_topics(Some(ProducerTopicList::from(
         runtime["topicsAfterSetter"]
             .as_array()
             .unwrap()
             .iter()
             .map(|topic| topic.as_str().unwrap().to_owned())
-            .collect(),
-    ));
+            .collect::<Vec<_>>(),
+    )));
     assert_eq!(
         producer.producer_group().as_deref(),
         runtime["producerGroupAfterSetter"].as_str()
@@ -2456,7 +2467,7 @@ fn pinned_java_producer_core_fixture_matches_defaults_and_validation() {
         runtime["sendMessageWithVIPChannelAfterSetter"]
     );
     assert_eq!(
-        producer.topics().unwrap(),
+        producer.topics().unwrap().snapshot(),
         runtime["topicsAfterSetter"]
             .as_array()
             .unwrap()

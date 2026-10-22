@@ -29,6 +29,7 @@ mod retry_response_codes;
 mod selector;
 mod send;
 mod service_state;
+mod topic_list;
 mod trace;
 mod transaction;
 pub mod validation;
@@ -65,6 +66,7 @@ pub use rocketmq_classic_core::runtime::{
 };
 pub use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 pub use service_state::ProducerServiceState;
+pub use topic_list::ProducerTopicList;
 pub use trace::{TraceDispatcher, TraceDispatcherError, TraceProducerKind};
 #[allow(deprecated)]
 pub use transaction::{

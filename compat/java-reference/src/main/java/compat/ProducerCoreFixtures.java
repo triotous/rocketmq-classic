@@ -7076,7 +7076,10 @@ public final class ProducerCoreFixtures {
 
         producer.setProducerGroup("runtime-setter-flow-live-group");
         producer.setSendMessageWithVIPChannel(false);
-        producer.setTopics(new ArrayList<>(List.of("later-topic")));
+        List<String> laterTopics = new ArrayList<>(List.of("later-topic"));
+        producer.setTopics(laterTopics);
+        boolean topicListIdentityAfterSetter = producer.getTopics() == laterTopics;
+        laterTopics.add("caller-added-topic");
 
         String[] brokerAddressAtSend = {""};
         String[] producerGroupAtSend = {""};
@@ -7119,6 +7122,7 @@ public final class ProducerCoreFixtures {
         result.put("vipChannelAfterSetter", producer.isSendMessageWithVIPChannel());
         result.put("brokerAddressAtSend", brokerAddressAtSend[0]);
         result.put("topicsAfterSetter", new ArrayList<>(producer.getTopics()));
+        result.put("topicListIdentityAfterSetter", topicListIdentityAfterSetter);
         result.put("publishTopicsAfterSetter", new TreeSet<>(implementation.getPublishTopicList()));
         result.put("outcome", outcome);
         result.put("serverContacted", false);
