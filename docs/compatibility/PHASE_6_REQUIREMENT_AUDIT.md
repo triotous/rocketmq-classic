@@ -1,5 +1,29 @@
 # Phase 6 requirement and handoff audit
 
+## Current Phase 18 server-free rerun — 2026-10-22
+
+At code revision `c38f4bc9` (followed only by documentation commit
+`073b91c9`), the current server-free gates pass on macOS AArch64 with Rust
+1.85.0 and the pinned Java 5.5.1 artifact: `cargo fmt --all -- --check`,
+`git diff --check`, strict workspace Clippy, default and all-feature locked
+workspace tests, Maven `verify` (37 differential scenarios, fixture drift,
+invoked Java fixtures, and Java/Rust cross-decodes), comparator self-test and
+37-scenario manifest validation, fuzz smoke (163 frame seeds, 11 message
+seeds, 2,784 bounded mutations), and deterministic race/leak smoke (16 cases
+repeated three times). Release facade examples, offline benchmark execution,
+locked Cargo metadata, workspace metadata/license/dependency checks, seven
+package-content listings with `LICENSE`/`NOTICE`, and the Asia/Taipei Unique ID
+fixture also pass. The offline benchmark observations are recorded in the
+[Phase 18 benchmark baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+
+The Consumer library and all its targets pass Windows GNU cross-target
+`cargo check --all-features`; this does not replace the native Windows CI
+regression. Current-revision Ubuntu CI and native Windows execution remain
+unverified, as do the broad P18-V01 Java source/API/settings/input/error/flow
+and Rust reverse-export reconciliation and Phase 19 Broker/Docker validation.
+This rerun verifies P18-V02's local gates only; it is not a phase-closure or
+compatibility claim.
+
 ## Direct runtime API reconciliation — 2026-10-20
 
 The direct public runtime `consumerRunningInfo`, `consumeMessageDirectly` and
