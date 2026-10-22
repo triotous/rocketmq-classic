@@ -2301,12 +2301,14 @@ impl RemotingClient {
                             shutdown_cleanup_stopped: self.inner.shutdown_cleanup_stopped.clone(),
                             callback_shutdown: self.inner.callback_shutdown.clone(),
                             callback_workers,
+                            public_executor: self.inner.public_executor.clone(),
                             deadline,
                         }
                         .run(),
                     );
                 } else {
                     drop((tasks, connections, event_worker, callback_workers));
+                    self.inner.public_executor.state.shutdown();
                     self.inner.callback_shutdown.send_replace(true);
                     self.inner.shutdown_cleanup_stopped.send_replace(true);
                 }
@@ -2317,6 +2319,7 @@ impl RemotingClient {
         if !*channel_event_stopped.borrow() {
             let _ = tokio::time::timeout_at(deadline, channel_event_stopped.changed()).await;
         }
+        self.inner.public_executor.state.shutdown();
     }
 }
 
@@ -2328,6 +2331,7 @@ struct ShutdownCleanup {
     shutdown_cleanup_stopped: tokio::sync::watch::Sender<bool>,
     callback_shutdown: tokio::sync::watch::Sender<bool>,
     callback_workers: Vec<JoinHandle<()>>,
+    public_executor: Arc<TokioRequestExecutor>,
     deadline: Instant,
 }
 
@@ -2341,6 +2345,7 @@ impl ShutdownCleanup {
             shutdown_cleanup_stopped,
             callback_shutdown,
             callback_workers,
+            public_executor,
             deadline,
         } = self;
         let transport_cleanup = async move {
@@ -2383,6 +2388,7 @@ impl ShutdownCleanup {
                     let _ = worker.await;
                 }
             }
+            public_executor.state.shutdown();
         };
         tokio::join!(transport_cleanup, event_worker_cleanup);
 
@@ -2437,7 +2443,6 @@ impl ClientInner {
 
     fn shutdown(&self) {
         self.closed.store(true, Ordering::Release);
-        self.public_executor.state.shutdown();
         let _ = self.shutdown.send(true);
     }
 
@@ -5449,14 +5454,43 @@ mod tests {
             .notify_channel(NettyEventType::Connect, ChannelHandle::pending("peer"));
         listener.entered.notified().await;
 
-        let started_at = Instant::now();
+        let shutdown_client = client.clone();
+        let shutdown = tokio::spawn(async move {
+            shutdown_client
+                .shutdown_with_timeout(std::time::Duration::from_millis(30))
+                .await;
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !client.inner.closed.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let accepted_task_finished = Arc::new(AtomicBool::new(false));
+        let accepted_task_finished_in_task = accepted_task_finished.clone();
         client
-            .shutdown_with_timeout(std::time::Duration::from_millis(30))
-            .await;
+            .inner
+            .public_executor
+            .execute(Box::new(move || {
+                accepted_task_finished_in_task.store(true, Ordering::Release);
+            }))
+            .expect("public executor remains open until the channel event join ends");
+
+        let started_at = Instant::now();
+        shutdown.await.unwrap();
         assert!(started_at.elapsed() >= std::time::Duration::from_millis(20));
         assert!(started_at.elapsed() < std::time::Duration::from_millis(250));
         assert!(!listener.finished.load(Ordering::Acquire));
         assert!(!*client.inner.channel_event_stopped.subscribe().borrow());
+        assert!(
+            client
+                .inner
+                .public_executor
+                .execute(Box::new(|| {}))
+                .is_err()
+        );
 
         release.send(()).unwrap();
         let mut stopped = client.inner.channel_event_stopped.subscribe();
@@ -5468,6 +5502,13 @@ mod tests {
         .await
         .unwrap();
         assert!(listener.finished.load(Ordering::Acquire));
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while !accepted_task_finished.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         let mut cleanup_stopped = client.inner.shutdown_cleanup_stopped.subscribe();
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             while !*cleanup_stopped.borrow() {
