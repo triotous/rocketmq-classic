@@ -7125,3 +7125,26 @@ owner-specific checks belong in the manual handoff.
   Native Windows execution and current-revision GitHub Ubuntu CI evidence
   remain pending. Broad P18-V01 source/API/settings/input/error/control-flow
   and reverse-export reconciliation remains open.
+
+## P18-V02 startup-route regression gate refresh — 2026-10-22 (`561bae6d`)
+
+- [x] The new regression confirms a NameServer transport failure during
+  configured-topic initialization fails Producer startup and releases its
+  runtime registration lease. Producer package tests pass (154 unit, 11 admin,
+  27 facade, 3 request/reply, 18 scripted-send, 7 transaction, and 7 doctest
+  cases); strict Producer Clippy passes.
+- [x] Formatting, strict workspace all-target/all-feature Clippy, default and
+  all-feature locked workspace tests, differential self-test and 37-scenario
+  manifest validation pass. Fixed-seed fuzz smoke and the 16-case × 3
+  deterministic race/leak smoke pass.
+- [x] Pinned Java `mvn -f compat/java-reference/pom.xml verify` passes under
+  Java 27, including runtime probes, 37 scenarios, Java decoding of 106 typed
+  headers and 19 typed bodies. Maven regenerated no tracked fixture changes.
+  Workspace metadata/license/dependency checks and release example builds
+  pass; the offline benchmark compiled and ran. Its sample is recorded in
+  [the benchmark baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision GitHub Ubuntu CI and
+  native Windows stack-capture execution remain pending. No Broker, Docker,
+  publication, or release action was performed; protected Phase 19 worktree
+  files remain unstaged.
