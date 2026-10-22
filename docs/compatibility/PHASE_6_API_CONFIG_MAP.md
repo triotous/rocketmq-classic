@@ -2379,7 +2379,7 @@ these getters only; broader P18-V01 remains open.
 The older writer-feature continuation in this map reports `47/48` and says
 `WriteClassName` is unmapped. That status is superseded by the current Rust
 adapter implementation: all 48 pinned `JSONWriter.Feature` values are marked
-implemented and compared against Java fixture output across 41 body cases, 8
+implemented and compared against Java fixture output across 41 body cases, 13
 route cases, and 3 heartbeat cases. `WriteClassName` covers root and typed
 nested DTO names, map and Set markers, and Java `long` suffixes. The Rust enum
 inventory test now fails if any pinned value is not marked implemented.
@@ -2394,3 +2394,42 @@ verification (37 scenarios, invoked fixtures, and Java/Rust cross-decodes)
 pass. This closes the `WriteClassName` inventory discrepancy and this
 `UserInfo` over-export only; broader P18-V01 settings/API/input/error/control-
 flow/reverse-export reconciliation remains open.
+
+## P18-V01 inherited writer API and static-topic mapping — 2026-10-22 (`4a0074f6`)
+
+The pinned Java inheritance audit removes the instance writer-feature API
+from five plain classes: `CheckRocksdbCqWriteResult`, `AclInfo`, nested
+`AclPolicyInfo`, nested `AclPolicyEntryInfo`, and `TopicConfigAndQueueMapping`.
+Their type-specific `java_encode` and `java_to_json` helpers remain as Rust
+adapters to Java's generic static utilities. `UserInfo` has the same
+plain-class disposition in the preceding section. Compile-fail Rustdoc guards
+cover these unmatched instance methods.
+
+`TopicQueueMappingDetail` inherits from `TopicQueueMappingInfo`, which
+inherits from `RemotingSerializable`; `LogicQueueMappingItem` also inherits
+the writer-feature encoder. The route schema maps `hostedQueues` as a map of
+nullable lists containing nullable `LogicQueueMappingItem` values, including
+nested `BeanToArray`, `WriteClassName`, null, long and numeric-key behavior.
+The Java fixture compares direct-root defaults and populated cases for
+`LogicQueueMappingItem`, plus default, null and populated
+`TopicQueueMappingDetail` cases, against all 48 writer features.
+
+The static-topic method inventory now includes `LogicQueueMappingItem`'s
+constructor, Java property accessors, offset conversion helpers, equality,
+hash and string behavior. `TopicQueueMappingDetail` exposes its inherited
+mapping accessors plus Java constructor defaults and `putMappingInfo`,
+`getMappingInfo`, `buildIdMap`, `computeMaxOffsetFromMapping`,
+`cloneAsMappingInfo`, and `checkIfAsPhysical`. Its `equals`/`hashCode` use
+`hostedQueues` alone; metadata remains visible to `toString` but does not
+affect equality. Java-oracle cases cover collection aliasing, metadata
+exclusion, null/empty distinctions, defaults, and the helper methods'
+NullPointerException boundaries. Rust maps those null failures through
+`TopicQueueMappingDetailError`. `fixtures/runtime/route.json` SHA-256:
+`d1c152fc1596f657018e9ed0679355fc43db1da1f607a73ed028f9834c651e8d`.
+
+Protocol all-feature tests, strict Protocol Clippy, workspace default and
+all-feature tests, strict workspace Clippy, pinned Maven verification, and
+the current P18-V02 server-free checks pass. This closes the named
+writer-feature inheritance and static-topic method slices; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains open.

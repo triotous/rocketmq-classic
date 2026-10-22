@@ -7388,7 +7388,7 @@ owner-specific checks belong in the manual handoff.
 
 - [x] Reconciled the stale `47/48` inventory: Rust implements all 48 pinned
   Fastjson writer features for the mapped body, route, and heartbeat adapters.
-  Java fixture differentials compare feature output across 41 body, 8 route,
+  Java fixture differentials compare feature output across 41 body, 13 route,
   and 3 heartbeat cases; the enum test asserts all pinned variants are mapped.
 - [x] Removed `UserInfo::java_encode_with_features`, which has no matching
   pinned Java instance API because `UserInfo` is not a `RemotingSerializable`

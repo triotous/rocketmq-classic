@@ -189,6 +189,7 @@ Baseline: Java client 5.5.1, commit `efa1be59d6fc747ad220f036c86030f05f0419f9`. 
 | TopicRouteData equality, hashCode and toString cover its five route fields and nested DTO behavior | four actual Java equality/hash pairs cover defaults, null/empty collections, ignored BrokerData metadata and changed queues; three actual `toString` cases cover default, null and populated nested values; derived equality and `java_hash_code/java_to_string` match exact outcomes |
 | Queue and Broker lists sort using their `compareTo` methods; a null broker name throws when sorting compares multiple entries | five actual QueueData method cases, six actual `topicRouteDataChanged` outcomes and six direct BrokerData pairs; both Rust DTOs preserve UTF-16 results, and `routes_equal` uses them with `route_change_sort_matches_invoked_java_broker_comparison_errors` covering null/single/multiple and reordered lists |
 | Static `TopicQueueMappingInfo` equality/hash/text follows all stored fields and its ID map | four actual Java pairs; derived Rust equality and `java_hash_code` match, `java_to_string` uses key order as one deterministic map ordering |
+| Static `TopicQueueMappingDetail.equals/hashCode` use only `hostedQueues`, while `toString` includes inherited mapping metadata | six actual Java equality/hash/text pairs cover defaults, ignored metadata, hosted-list value changes, null hosted queues and null-versus-empty; Rust equality and Java hash/string helpers match, with deterministic Rust map-key ordering |
 | getTopicRouteTable is a retained live raw map; primitive/view writes do not perform refresh/conversion | TopicRouteTable/RouteSnapshot.raw_routes; the 95-outcome oracle covers primitives, remapping defaults and same-key callback ordering, views, `Map.Entry.setValue`, and query/topic/global-Broker/clear/cleanup effects; `TopicRouteDataHandle` preserves mutable value aliases from `put` through getters; actual refresh preserves shared nested DTO aliases across raw and published route copies while keeping outer containers distinct |
 | owner-forced unchanged publication restores Broker metadata overwritten by another topic | `replace_for_owner_update`; `unchanged_route_requested_by_owner_republishes_its_broker_table` and wire observer need-update assertions |
 | complete conversion before coherent publication; callback sees owned snapshot outside cache/registry locks | cache replacement and runtime owner snapshots; reentrant registry/snapshot reader assertions and queued refresh barrier test |
@@ -231,3 +232,32 @@ The endpoint-transition fixture at `32503a4` had SHA-256 `4f94c105ed0419555a244c
 Historical nullable Broker oracle `dd7a569` has fixture SHA-256 `6f8cfa265ae30a41d59fe2ae5c395acdd24f6360ea600b56f937180740b0c72c`. Two actual unstarted runtime cases have master0=null, with/without a valid slave. Both JSON decode and refresh succeed, retain the master key/null value, and convert to publish2/subscribe2. Publish/exact-master Subscribe return null; Admin skips null and returns the valid slave only in the mixed case. At that stage, `nullable_broker_address_values_match_invoked_java_refresh_and_lookups --ignored` reproduced the native decode failure. ADR-0008's later public DTO correction enabled the test; it passes unignored now. The source/null-value behavior and native fix are documented above and in ADR-0008.
 
 Validation: endpoint focused `/tmp/p6-endpoint-transition-focused.log`, full workspace `/tmp/p6-endpoint-transition-workspace.log` (core library 62), all-target/all-feature Clippy `/tmp/p6-endpoint-transition-clippy.log`, Maven `/tmp/p6-endpoint-transition-java-verify.log`, fmt/diff passed. Subsequent workspace/Clippy/Maven gates also passed with the manager config oracle (`/tmp/p6-manager-copy-{workspace,clippy,java-verify}.log`) and approved heartbeat Vec correction (`/tmp/p6-heartbeat-vec-*.log`). Initial generation dispatcher/include/required-cluster setup errors were corrected and are not behavioral oracle results. The heartbeat duplicate mismatch is corrected with owner approval and new evidence; see its branch audit. Complete source/final-plan reconciliation remains open; the endpoint transition regression is now covered. P6-V04 is PENDING_PHASE_19 against server 5.3.4.
+
+## P18-V01 static-topic detail and inherited writer API — 2026-10-22 (`4a0074f6`)
+
+The pinned Java `TopicQueueMappingDetail` inherits its static-topic mapping
+properties from `TopicQueueMappingInfo` and adds `hostedQueues`, a map from
+global queue IDs to lists of nullable `LogicQueueMappingItem` entries. The
+Java differential records default, explicit-null and populated detail roots,
+as well as direct-root `LogicQueueMappingItem` defaults and values. Rust now
+routes both roots through a JavaBean schema for all 48 inherited Fastjson
+writer features, including `WriteClassName`, `BeanToArray`, nullable nested
+members, Java long suffixes and integer map keys.
+
+The invoked Java method fixture verifies that detail equality and hashing
+depend only on `hostedQueues`, while its text includes inherited metadata. It
+also compares the six static helper operations for mapping insertion and
+lookup, current ID-map construction, maximum offset, cloning to
+`TopicQueueMappingInfo`, and physical-queue classification. Cases verify
+empty-list behavior, shared list aliasing, missing mappings, Java constructor
+defaults and the observed null failures. `LogicQueueMappingItem` constructor,
+property accessors, offset conversion methods, equality/hash and text are
+covered by protocol method fixtures. The direct Java/Rust route fixture has
+SHA-256 `d1c152fc1596f657018e9ed0679355fc43db1da1f607a73ed028f9834c651e8d`.
+
+The same inheritance audit removed `java_encode_with_features` from five
+plain Java classes and added compile-fail API guards; the corresponding
+RemotingSerializable static utility adapters remain. Protocol and full
+workspace gates plus pinned Maven verification pass on this revision. This
+closes these static-topic API and serializer rows only; the broader Phase 6
+and P18-V01 source/API/input/control-flow reconciliation remains open.
