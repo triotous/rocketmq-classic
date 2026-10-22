@@ -105,3 +105,7 @@ P18-V04 Windows cross-compilation follow-up
   Windows runtime.
 - Updated `docs/release-checklist.md` with the exact five regression test
   names and this cross-compilation evidence. P18-V01 broad audit remains open.
+- Appended a correction to
+  `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md`: current Windows GNU
+  cross-compilation supersedes the older missing-linker note, while native
+  Windows execution remains outstanding.

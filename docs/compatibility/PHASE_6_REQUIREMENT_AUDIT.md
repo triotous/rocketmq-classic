@@ -2090,3 +2090,18 @@ behavior. Fixture SHA-256:
 query_admin_header_reflection_modes_match_invoked_java_551 --locked` passes.
 This closes the surfaced header decode slice only; full P18-V01 and current
 revision CI verification remain open.
+
+## P18-V04 Windows cross-compilation update — 2026-10-22
+
+The previous Windows address-enumeration compile note records that the
+MinGW-w64 linker was unavailable on its October 10 host. It is installed on
+the current macOS host. The full
+`cargo check -p rocketmq-classic-core --all-targets --target
+x86_64-pc-windows-gnu --locked` now passes, covering the repository's
+Windows-gated address enumeration and test helpers. The exact native CI test
+also cross-compiles successfully with
+`cargo test --target x86_64-pc-windows-gnu -p rocketmq-classic-consumer
+--lib stack::tests::jstack_includes_current_and_other_named_threads
+--no-run --locked`. These are compile checks; the stack-capture assertion
+still requires execution on Windows. Broad P18-V01 and native Windows
+P18-V04 evidence remain open.
