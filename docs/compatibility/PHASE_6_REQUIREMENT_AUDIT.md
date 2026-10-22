@@ -3116,3 +3116,20 @@ all-target/all-feature Clippy, formatting/diff checks, and pinned Maven verify
 pass. This closes only the body-skip dimension of this malformed-tail decoder
 slice; broad P18-V01 reconciliation, current-revision remote Ubuntu CI, native
 Windows runtime, and Phase 19 Broker/Docker evidence remain open.
+
+## P18-V01 strict batch helper reverse-export correction — 2026-10-22 (`95525c06`)
+
+Reverse API review found public Rust `decode_many` and
+`decode_many_as_client` strict helpers with no equivalent Java public batch
+methods. The strict helpers were unused by production owners and gave Rust a
+different public malformed-tail contract. They are removed from the public
+Common API; production, tests, and fuzz harnesses now use Java-compatible
+prefix-returning operations. Strict failure details remain internal to the
+decoder. Generated Common Rustdoc confirms neither strict name is exported.
+
+Default and all-feature workspace tests, strict workspace Clippy,
+format/diff checks, Common Rustdoc, differential self-test and manifest
+validation, bounded fuzz smoke, and pinned Maven verify pass. This closes this
+public API mismatch only; broad P18-V01 reconciliation, current-revision
+remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
+remain open.
