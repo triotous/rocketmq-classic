@@ -2522,3 +2522,16 @@ Core/Consumer Clippy, formatting/diff checks, and Java lifecycle fixture drift
 verification. This closes this validation-order branch only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V02 LitePull route observer stability — 2026-10-22 (`5c61aa83`)
+
+The running-subscription regression observed NameServer requests in a fixed
+two-message window. Concurrent route refresh could emit a duplicate topic
+notification before the second distinct topic, making the assertion flaky.
+The observer now collects until it has seen both subscribed topics or the
+existing two-second deadline expires.
+
+No client behavior changed. The focused Lite/POP integration target passes,
+and the full `cargo test --workspace --all-features --locked` gate passes
+after the observer update. This closes the test-observer flake only; full
+P18-V02 fuzz/performance checks and platform CI evidence remain open.
