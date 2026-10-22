@@ -314,3 +314,14 @@ P18-V01 nullable direct getter results — 2026-10-22 07:19 UTC
   workspace and Maven gates for the production hooks passed at `2f65745b`.
 - Broad P18-V01, current-revision remote Ubuntu CI and native Windows stack
   execution remain open. Phase 19 protected worktree files remain unstaged.
+
+P18-V01 subtype-hook docs and crosswalk refresh — 2026-10-22 07:20 UTC
+- `ca57278a` clarifies the public `MessageExt` getter documentation: direct
+  subtype hooks take precedence, then inherited getters use the Java
+  `getProperty` path. `51894f4f` names all ten `MessageExtSubtype` hooks
+  explicitly in the Java/Rust crosswalk and API map.
+- `cargo fmt --all -- --check` and `git diff --check` pass. These commits
+  document the implementation and fixture evidence already validated at
+  `2f65745b` / `d4f1a4f1`; they do not change runtime behavior.
+- Broad P18-V01, current-revision remote Ubuntu CI and native Windows stack
+  execution remain open.
