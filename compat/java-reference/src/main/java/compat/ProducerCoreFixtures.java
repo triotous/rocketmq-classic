@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -3015,6 +3016,15 @@ public final class ProducerCoreFixtures {
         result.put("messageTypeValues", Arrays.stream(TopicMessageType.values())
             .map(TopicMessageType::getValue).collect(java.util.stream.Collectors.toList()));
         result.put("messageTypeMetrics", TopicMessageType.LITE.getMetricsValue());
+        Locale originalLocale = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            result.put("messageTypeMetricsTurkish", Arrays.stream(TopicMessageType.values())
+                .map(TopicMessageType::getMetricsValue)
+                .collect(java.util.stream.Collectors.toList()));
+        } finally {
+            Locale.setDefault(originalLocale);
+        }
         return result;
     }
 

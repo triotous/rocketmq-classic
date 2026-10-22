@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
+    process::Command,
 };
 
 use rocketmq_classic_common::{
@@ -602,5 +603,42 @@ fn topic_message_type_precedence_and_enum_surface_match_java() {
     assert_eq!(
         filter_values.map(|value| value.name()),
         ["SINGLE_TAG", "MULTI_TAG"]
+    );
+}
+
+#[test]
+fn topic_message_type_metrics_match_java_turkish_default_locale() {
+    const CHILD_MARKER: &str = "ROCKETMQ_TOPIC_MESSAGE_TYPE_TURKISH_CHILD";
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        let fixture = fixture();
+        let expected = fixture["messageTypeMetricsTurkish"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>();
+        let actual = TopicMessageType::values()
+            .iter()
+            .map(|value| value.metrics_value())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        return;
+    }
+
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "topic_message_type_metrics_match_java_turkish_default_locale",
+        ])
+        .env(CHILD_MARKER, "1")
+        .env("LC_ALL", "tr_TR.UTF-8")
+        .env_remove("LC_CTYPE")
+        .env("LANG", "C")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Turkish locale child failed: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }

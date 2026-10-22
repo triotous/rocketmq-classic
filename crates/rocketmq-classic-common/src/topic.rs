@@ -154,8 +154,30 @@ impl TopicMessageType {
     }
 
     pub fn metrics_value(self) -> String {
-        self.name().to_ascii_lowercase()
+        let language = java_default_locale_language();
+        self.name()
+            .chars()
+            .flat_map(|character| match (language.as_deref(), character) {
+                (Some("tr" | "az"), 'I') => 'ı'.to_lowercase(),
+                (_, character) => character.to_lowercase(),
+            })
+            .collect()
     }
+}
+
+fn java_default_locale_language() -> Option<String> {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(|locale| locale.to_string_lossy().into_owned())
+        .find(|locale| !locale.is_empty())
+        .map(|locale| {
+            locale
+                .split(['_', '-', '.', '@'])
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+        })
 }
 
 impl fmt::Display for TopicMessageType {
