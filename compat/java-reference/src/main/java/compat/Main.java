@@ -333,6 +333,10 @@ public final class Main {
             ProducerLifecycleFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "consumer-lifecycle-fixtures".equals(args[0])) {
+            ConsumerLifecycleFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "message-decode-fixtures".equals(args[0])) {
             MessageDecodeFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

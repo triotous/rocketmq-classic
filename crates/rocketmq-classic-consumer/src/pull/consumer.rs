@@ -1278,9 +1278,11 @@ impl PullConsumer {
         self.rebalance_active.store(true, Ordering::Release);
         if let Err(error) = runtime.start().await {
             self.rebalance_active.store(false, Ordering::Release);
-            let _ = runtime
-                .unregister_consumer(&lease, self.unregister_deadline())
-                .await;
+            if runtime.state() != rocketmq_classic_core::runtime::RuntimeState::Failed {
+                let _ = runtime
+                    .unregister_consumer(&lease, self.unregister_deadline())
+                    .await;
+            }
             return Err(error.into());
         }
         *state = State::Started {
@@ -4333,6 +4335,58 @@ mod tests {
         assert!(consumer.is_running().await);
         consumer.set_service_state(Some(ConsumerServiceState::CreateJust));
         assert!(!consumer.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn factory_start_failure_preserves_java_pull_consumer_registration() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["pullFactoryStartFailure"];
+        assert_eq!(java["exception"], "IllegalArgumentException");
+        assert_eq!(java["consumerRegistered"], true);
+        assert_eq!(java["consumerServiceState"], "START_FAILED");
+        assert_eq!(java["factoryServiceState"], "START_FAILED");
+
+        let group = "pull-factory-start-failure";
+        let mut config = PullConsumerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config.client_config_mut().set_poll_name_server_interval(0);
+        let manager = ClientRuntimeManager::new();
+        let client_config = config.client_config().clone();
+        let runtime = manager.get_or_create(&client_config).await.unwrap();
+        let consumer = Arc::new(PullConsumer::with_manager(config, manager.clone()));
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(PullConsumerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidSchedule
+            ))
+        ));
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::StartFailed)
+        );
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Failed
+        );
+        assert!(runtime.select_consumer(group).unwrap().is_some());
+        assert!(Arc::ptr_eq(
+            &runtime,
+            &manager.get_or_create(&client_config).await.unwrap()
+        ));
+        assert!(
+            runtime
+                .unregister_consumer_by_group(
+                    group,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

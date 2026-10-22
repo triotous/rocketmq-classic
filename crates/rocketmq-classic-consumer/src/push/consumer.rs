@@ -4812,7 +4812,9 @@ impl PushConsumer {
                     .shutdown(self.config.await_termination_millis_when_shutdown())
                     .await;
                 self.consume_orderly.store(false, Ordering::Release);
-                if let Some(lease) = lease {
+                if let Some(lease) = lease.filter(|_| {
+                    runtime.state() != rocketmq_classic_core::runtime::RuntimeState::Failed
+                }) {
                     let _ = runtime
                         .unregister_consumer(&lease, self.unregister_deadline())
                         .await;
@@ -15358,6 +15360,70 @@ mod tests {
             );
             runtime.shutdown().await.unwrap();
         }
+    }
+
+    #[tokio::test]
+    async fn factory_start_failure_preserves_java_push_consumer_registration() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["pushFactoryStartFailure"];
+        assert_eq!(java["exception"], "IllegalArgumentException");
+        assert_eq!(java["consumerRegistered"], true);
+        assert_eq!(java["consumerServiceState"], "START_FAILED");
+        assert_eq!(java["factoryServiceState"], "START_FAILED");
+
+        let group = "push-factory-start-failure";
+        let mut config = PushConsumerConfig::new(group).unwrap();
+        config
+            .client_config_mut()
+            .set_namesrv_addr(Some(String::new()));
+        config.client_config_mut().set_poll_name_server_interval(0);
+        let manager = ClientRuntimeManager::new();
+        let client_config = config.client_config().clone();
+        let runtime = manager.get_or_create(&client_config).await.unwrap();
+        let consumer = Arc::new(PushConsumer::with_manager(config, manager.clone()));
+        consumer
+            .register_message_listener(PushMessageListener::concurrently(
+                |_messages: Vec<rocketmq_classic_common::message::MessageExt>, context| async move {
+                    (
+                        Some(super::super::listener::ConsumeConcurrentlyStatus::ConsumeSuccess),
+                        context,
+                    )
+                },
+            ))
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(PushConsumerError::Runtime(
+                rocketmq_classic_core::runtime::RuntimeError::InvalidSchedule
+            ))
+        ));
+        assert_eq!(
+            consumer.service_state(),
+            Some(ConsumerServiceState::StartFailed)
+        );
+        assert!(!consumer.is_running().await);
+        assert_eq!(
+            runtime.state(),
+            rocketmq_classic_core::runtime::RuntimeState::Failed
+        );
+        assert!(runtime.select_consumer(group).unwrap().is_some());
+        assert!(Arc::ptr_eq(
+            &runtime,
+            &manager.get_or_create(&client_config).await.unwrap()
+        ));
+        assert!(
+            runtime
+                .unregister_consumer_by_group(
+                    group,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .unwrap()
+        );
     }
 
     struct EmptyOrderlyListener;

@@ -1,0 +1,1 @@
+{"pullFactoryStartFailure":{"consumerRegistered":true,"consumerServiceState":"START_FAILED","exception":"IllegalArgumentException","factoryServiceState":"START_FAILED"},"pushFactoryStartFailure":{"consumerRegistered":true,"consumerServiceState":"START_FAILED","exception":"IllegalArgumentException","factoryServiceState":"START_FAILED"}}
