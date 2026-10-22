@@ -143,11 +143,6 @@ impl SharedMessageProperties {
         self.len() == 0
     }
 
-    /// Returns whether two handles refer to the same mutable property map.
-    pub fn shares_map_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.storage, &other.storage)
-    }
-
     /// Adds or replaces entries from an owned set of Java-style map entries.
     pub fn extend<I>(&self, entries: I)
     where

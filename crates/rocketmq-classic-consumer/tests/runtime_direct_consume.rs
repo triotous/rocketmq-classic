@@ -88,22 +88,20 @@ fn callback_record(message: &MessageExt, queue: &MessageQueue) -> Value {
         record["tags"] = json!(message.tags());
         record["keys"] = json!(message.keys());
         let properties = message.shared_properties();
-        record["propertiesSharesSubtypeMap"] = json!(
-            properties
-                .as_ref()
-                .is_some_and(|properties| properties.shares_map_with(&subtype.custom_properties))
-        );
         if let Some(properties) = properties {
             record["subtypeProperty"] = json!(properties.get(Some("subtype-only")).flatten());
             properties.insert(Some("through-view".into()), Some("visible".into()));
-            record["mapMutationVisibleToSubtype"] = json!(
-                subtype.custom_properties.get(Some("through-view")) == Some(Some("visible".into()))
-            );
+            let map_mutation_visible_to_subtype =
+                subtype.custom_properties.get(Some("through-view")) == Some(Some("visible".into()));
+            record["mapMutationVisibleToSubtype"] = json!(map_mutation_visible_to_subtype);
             subtype
                 .custom_properties
                 .insert(Some("through-subtype".into()), Some("visible".into()));
-            record["subtypeMutationVisibleToMap"] =
-                json!(properties.get(Some("through-subtype")) == Some(Some("visible".into())));
+            let subtype_mutation_visible_to_map =
+                properties.get(Some("through-subtype")) == Some(Some("visible".into()));
+            record["subtypeMutationVisibleToMap"] = json!(subtype_mutation_visible_to_map);
+            record["propertiesSharesSubtypeMap"] =
+                json!(map_mutation_visible_to_subtype && subtype_mutation_visible_to_map);
             record["mutationVisibleToLaterGetter"] = json!(
                 message
                     .get_properties()

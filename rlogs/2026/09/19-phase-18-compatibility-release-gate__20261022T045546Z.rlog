@@ -134,3 +134,20 @@ P18-V01 Rustdoc export reverse-name pass — 2026-10-22
   broad P18-V01 behavior/control-flow reconciliation remains open.
 - `git diff --check` passed. No tests were added or run in this documentation
   pass. Protected Phase 19 worktree changes remain untouched and unstaged.
+
+P18-V01 Common public export reconciliation follow-up — 2026-10-22
+- Added exact-name crosswalks for the Common `MessageConst`, `MessageSysFlag`,
+  `CompressionType`, `MessageDecoder`, `TopicValidator`, typed codec errors,
+  runtime message-subtype adapters, and `NameServerAddressUtils` exports.
+- Removed `SharedMessageProperties::shares_map_with`, a Rust-only pointer-
+  identity inspection helper used only by one integration assertion. The
+  consumer test now checks the same two-way property-map alias behavior by
+  mutating each side and observing the other.
+- Regenerated Common Rustdoc JSON successfully. Its exact-name join now covers
+  431 public names with zero omissions. `cargo fmt --all -- --check`,
+  `git diff --check`, and focused integration test
+  `direct_runtime_consumption_matches_java_status_callbacks_and_offset_isolation`
+  passed.
+- Current remaining exact-name join gaps are Protocol (908 of 1,498 names) and
+  Remoting (65 of 338 names). Most Protocol hits are Java DTO accessors and
+  fields; the reverse semantic audit remains open.
