@@ -3876,6 +3876,148 @@ async fn list_user_honors_the_java_timeout_argument() {
 }
 
 #[tokio::test]
+async fn list_acl_matches_java_requests_responses_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["listAclApi"],
+        json!([
+            "java.util.List org.apache.rocketmq.client.impl.MQClientAPIImpl.listAcl(java.lang.String,java.lang.String,java.lang.String,long)"
+        ])
+    );
+    let methods = fixture["listAclsRequestHeaderApi"]["declaredPublicMethods"]
+        .as_array()
+        .unwrap();
+    for method in [
+        "getSubjectFilter",
+        "setSubjectFilter",
+        "getResourceFilter",
+        "setResourceFilter",
+        "checkFields",
+    ] {
+        assert!(methods.iter().any(|signature| {
+            signature
+                .as_str()
+                .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+        }));
+    }
+    assert_eq!(
+        fixture["listAclsRequestHeaderApi"]["publicConstructors"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.header.ListAclsRequestHeader()",
+            "org.apache.rocketmq.remoting.protocol.header.ListAclsRequestHeader(java.lang.String,java.lang.String)"
+        ])
+    );
+
+    let cases = fixture["listAclOperations"]["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 8);
+    let (client_api, client) = api().await;
+    for case in cases
+        .iter()
+        .filter(|case| !case["vipEnabled"].as_bool().unwrap())
+    {
+        let name = case["name"].as_str().unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(expected_request["requestCode"], request::AUTH_LIST_ACL);
+        assert_eq!(expected_request["timeoutMillis"], case["timeoutMillis"]);
+        assert_eq!(expected_request["requestBodyPresent"], false);
+        let expected_body = case["responseBodyBase64"].as_str().map(|body| {
+            base64::engine::general_purpose::STANDARD
+                .decode(body)
+                .unwrap()
+        });
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, expected_body)
+                .await;
+        let result = client_api
+            .list_acl(
+                &addr,
+                case["subjectFilter"].as_str(),
+                case["resourceFilter"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if name == "object-root" {
+            assert_eq!(case["resultJson"], "[\"{}\"]");
+            assert!(matches!(
+                result,
+                Err(RpcError::MalformedResponse {
+                    request_code: request::AUTH_LIST_ACL,
+                    peer: error_peer,
+                    ..
+                }) if error_peer == addr
+            ));
+        } else {
+            match case["outcome"].as_str().unwrap() {
+                "returned" => {
+                    let received = result.unwrap_or_else(|error| panic!("{name}: {error}"));
+                    let result_is_null = received.is_none();
+                    assert_eq!(
+                        serde_json::to_value(received).unwrap(),
+                        serde_json::from_str::<Value>(case["resultJson"].as_str().unwrap())
+                            .unwrap(),
+                        "{name}"
+                    );
+                    assert_eq!(case["resultIsNull"], result_is_null, "{name}");
+                }
+                "MQBrokerException" => assert!(matches!(
+                    result,
+                    Err(RpcError::Response {
+                        request_code: request::AUTH_LIST_ACL,
+                        peer: error_peer,
+                        code,
+                        remark: Some(remark),
+                    }) if error_peer == addr
+                        && code == response_code
+                        && response_remark.as_deref() == Some(remark.as_str())
+                )),
+                _ => panic!("unexpected Java outcome for {name}"),
+            }
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::AUTH_LIST_ACL, "{name}");
+        assert!(request.body.is_none(), "{name}");
+        assert_eq!(
+            request
+                .ext_fields
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+                .as_object()
+                .map_or_else(|| json!({}), |fields| json!(fields)),
+            "{name}"
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn list_acl_honors_the_java_timeout_argument() {
+    let (addr, peer) =
+        scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;
+    let (client_api, client) = api().await;
+    let result = client_api
+        .list_acl(&addr, Some("ali"), Some("topic"), 25)
+        .await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn get_user_matches_java_requests_responses_and_outcomes() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();

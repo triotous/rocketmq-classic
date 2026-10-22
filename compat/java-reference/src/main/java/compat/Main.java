@@ -537,6 +537,10 @@ public final class Main {
             new org.apache.rocketmq.remoting.protocol.header.GetAclRequestHeader("subject");
         writeTypedHeaderFixture(output, "get-acl-request", 3009, getAcl);
 
+        org.apache.rocketmq.remoting.protocol.header.ListAclsRequestHeader listAcls =
+            new org.apache.rocketmq.remoting.protocol.header.ListAclsRequestHeader("alice", "topic-a");
+        writeTypedHeaderFixture(output, "list-acls-request", 3010, listAcls);
+
         org.apache.rocketmq.remoting.protocol.header.ListUsersRequestHeader listUsers =
             new org.apache.rocketmq.remoting.protocol.header.ListUsersRequestHeader("ali");
         writeTypedHeaderFixture(output, "list-users-request", 3005, listUsers);
@@ -1331,7 +1335,7 @@ public final class Main {
             require("rust-phase-2".equals(((Map<?, ?>) json.get("ext_fields")).get("oracle")), "Rust JSON ext field decoded");
             require("rust-phase-2".equals(((Map<?, ?>) rocketmq.get("ext_fields")).get("oracle")), "Rust private ext field decoded");
         } else {
-            require(count == 105, "all Rust typed header fixtures were supplied");
+            require(count == 106, "all Rust typed header fixtures were supplied");
             Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
             try (var files = Files.list(directory)) {
                 for (Path file : (Iterable<Path>) files.filter(path -> path.toString().endsWith(".bin"))::iterator) {
@@ -1349,6 +1353,7 @@ public final class Main {
             assertAllExtFields(byName, "typed-delete-user-request.bin", 3003);
             assertAllExtFields(byName, "typed-get-user-request.bin", 3004);
             assertAllExtFields(byName, "typed-get-acl-request.bin", 3009);
+            assertAllExtFields(byName, "typed-list-acls-request.bin", 3010);
             assertAllExtFields(byName, "typed-list-users-request.bin", 3005);
             assertAllExtFields(byName, "typed-query-message-request.bin", 12);
             assertAllExtFields(byName, "typed-query-message-response.bin", 0);
@@ -1456,6 +1461,8 @@ public final class Main {
             assertExtField(byName, "typed-delete-user-request.bin", 3003, "username", "alice");
             assertExtField(byName, "typed-get-user-request.bin", 3004, "username", "alice");
             assertExtField(byName, "typed-get-acl-request.bin", 3009, "subject", "subject");
+            assertExtField(byName, "typed-list-acls-request.bin", 3010, "subjectFilter", "alice");
+            assertExtField(byName, "typed-list-acls-request.bin", 3010, "resourceFilter", "topic-a");
             assertExtField(byName, "typed-list-users-request.bin", 3005, "filter", "ali");
             assertExtField(byName, "typed-query-message-request.bin", 12, "key", "order-42");
             assertExtField(byName, "typed-query-message-request.bin", 12, "indexType", "UNIQUE_KEY");
@@ -1603,6 +1610,7 @@ public final class Main {
             case "typed-delete-user-request.bin": fixtureStem = "header-delete-user-request"; break;
             case "typed-get-user-request.bin": fixtureStem = "header-get-user-request"; break;
             case "typed-get-acl-request.bin": fixtureStem = "header-get-acl-request"; break;
+            case "typed-list-acls-request.bin": fixtureStem = "header-list-acls-request"; break;
             case "typed-list-users-request.bin": fixtureStem = "header-list-users-request"; break;
             case "typed-query-message-request.bin": fixtureStem = "header-query-message-request"; break;
             case "typed-query-message-response.bin": fixtureStem = "header-query-message-response"; break;

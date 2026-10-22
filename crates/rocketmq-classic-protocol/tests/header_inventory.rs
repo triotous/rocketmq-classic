@@ -47,6 +47,7 @@ macro_rules! inventory {
             DeleteUserRequestHeader => ("header-delete-user-request", "typed-delete-user-request.bin"),
             GetUserRequestHeader => ("header-get-user-request", "typed-get-user-request.bin"),
             GetAclRequestHeader => ("header-get-acl-request", "typed-get-acl-request.bin"),
+            ListAclsRequestHeader => ("header-list-acls-request", "typed-list-acls-request.bin"),
             ListUsersRequestHeader => ("header-list-users-request", "typed-list-users-request.bin"),
             QueryMessageRequestHeader => ("header-query-message-request", "typed-query-message-request.bin"),
             QueryMessageResponseHeader => ("header-query-message-response", "typed-query-message-response.bin"),

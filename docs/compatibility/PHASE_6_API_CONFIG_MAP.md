@@ -2131,3 +2131,16 @@ Invoked Java fixtures and Rust loopback tests compare header fields, absent
 body, success and Broker errors, timeout, typed-header cross-decode, and
 unchanged-address behavior. The auth reverse audit now has one open API;
 broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `listAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.listAcl` sends request 3010 with a
+`ListAclsRequestHeader`, no body, and the caller timeout. Core exposes
+`MQClientApi::list_acl`, accepts nullable subject/resource filters, and
+preserves nullable list roots and nullable `AclInfo` members. The supplied
+Broker address is unchanged with VIP channels enabled. Invoked Java fixtures
+and Rust loopback tests compare filters, null/default/populated responses,
+null list members, Fastjson object-root behavior, success and Broker errors,
+timeout, typed-header cross-decode, and unchanged-address behavior. The auth
+reverse audit has no remaining direct RPC rows; broader P18-V01 reconciliation
+remains open.

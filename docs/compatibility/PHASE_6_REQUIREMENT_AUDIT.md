@@ -1746,9 +1746,10 @@ been implemented and checked against the pinned Java fixture. The initial list
 of 12 direct operations has since been reduced by the `getAllTopicConfig`,
 `getAllSubscriptionGroup`, `queryConsumeQueue`, `createStaticTopic`,
 `createUser`, `updateUser`, `deleteUser`, and `listUser` slices below; 4 of
-that original candidate list remain implementation work. A pinned-source
-review of the adjacent auth methods also found `getUser` and `getAcl` were
-omitted from the candidate list; the current table now has 1 open operation.
+that original candidate list remained: `createAcl`, `updateAcl`, `deleteAcl`,
+and `listAcl`. Those four slices are now closed below. A pinned-source review
+of the adjacent auth methods also found `getUser` and `getAcl` were omitted
+from the candidate list; the current table now has 0 open operations.
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
@@ -1771,13 +1772,15 @@ omitted from the candidate list; the current table now has 1 open operation.
 | ACL update | `updateAcl` | 3007 | Closed by `update_acl` |
 | ACL deletion | `deleteAcl` | 3008 | Closed by `delete_acl` |
 | ACL retrieval | `getAcl` | 3009 | Closed by `get_acl` |
-| ACL listing | `listAcl` | 3010 | Open |
+| ACL listing | `listAcl` | 3010 | Closed by `list_acl` |
 
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
-`efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exists for the 1 open row, but its Rust DTO and RPC owner are still
-missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
+`efa1be59d6fc747ad220f036c86030f05f0419f9`. Every operation in this table
+and all 18 original direct-operation candidates now have fixture-backed Rust
+DTO and RPC owners. This closes that direct-operation candidate list, not the
+broader source/API/input/error/control-flow/reverse-export audit. Earlier
+closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
 `ClientRuntime::remoting`; and `recallMessageAsync` maps to the Future-based
@@ -2056,3 +2059,17 @@ empty fields, absent body, success, Broker rejection, timeout, typed-header
 inventory/cross-decode for all three fields, and unchanged-address behavior.
 This closes one direct API/header slice and reduces the auth reverse-audit
 list from two to one open row; broad P18-V01 remains open.
+
+## P18-V01 direct `listAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.listAcl(String,String,String,long)` sends
+request 3010 with `ListAclsRequestHeader.subjectFilter` and `.resourceFilter`,
+no body, and the caller timeout. Core exposes `MQClientApi::list_acl`, accepts
+nullable filters, and preserves nullable list roots and `AclInfo` members. It
+leaves the supplied Broker address unchanged with VIP channels enabled.
+Invoked Java fixtures and Rust loopback tests cover populated/default/null/
+empty filters, null body/list, object-root coercion and its typed malformed-
+response error, nullable list members, success, Broker rejection, timeout,
+typed-header inventory/cross-decode, and unchanged-address behavior. This
+closes the final direct auth API/header slice; the broader P18-V01 audit
+remains open.

@@ -3611,6 +3611,44 @@ impl_header_field_accessors!(
     [set_subject]
 );
 
+/// Pinned Java auth `ListAclsRequestHeader`. Java's `checkFields()` is a no-op,
+/// so both filters remain nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct ListAclsRequestHeader {
+    subject_filter: Option<String>,
+    resource_filter: Option<String>,
+}
+
+impl CommandHeader for ListAclsRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "subjectFilter", self.subject_filter.as_deref());
+        put_optional(fields, "resourceFilter", self.resource_filter.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            subject_filter: optional_string(fields, "subjectFilter"),
+            resource_filter: optional_string(fields, "resourceFilter"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    ListAclsRequestHeader,
+    optional_string,
+    subject_filter,
+    [get_subject_filter],
+    [set_subject_filter]
+);
+
+impl_header_field_accessors!(
+    ListAclsRequestHeader,
+    optional_string,
+    resource_filter,
+    [get_resource_filter],
+    [set_resource_filter]
+);
+
 /// Pinned Java auth `ListUsersRequestHeader`. Java's `checkFields()` is a no-op,
 /// so `filter` remains nullable at the command-header boundary.
 #[derive(Debug, Clone, Default)]

@@ -37,12 +37,12 @@ use rocketmq_classic_protocol::{
         GetParentTopicInfoRequestHeader, GetRouteInfoRequestHeader,
         GetSubscriptionGroupConfigRequestHeader, GetTopicConfigRequestHeader,
         GetTopicStatsInfoRequestHeader, GetTopicsByClusterRequestHeader, GetUserRequestHeader,
-        HeartbeatRequestHeader, ListUsersRequestHeader, LiteSubscriptionCtlRequestHeader,
-        LockBatchMqRequestHeader, NotificationRequestHeader, NotificationResponseHeader,
-        NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader, PollingInfoResponseHeader,
-        PopLiteMessageRequestHeader, PopLiteMessageResponseHeader, PopMessageRequestHeader,
-        PopMessageResponseHeader, PullMessageRequestHeader, PullMessageResponseHeader,
-        PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        HeartbeatRequestHeader, ListAclsRequestHeader, ListUsersRequestHeader,
+        LiteSubscriptionCtlRequestHeader, LockBatchMqRequestHeader, NotificationRequestHeader,
+        NotificationResponseHeader, NotifyUnsubscribeLiteRequestHeader, PollingInfoRequestHeader,
+        PollingInfoResponseHeader, PopLiteMessageRequestHeader, PopLiteMessageResponseHeader,
+        PopMessageRequestHeader, PopMessageResponseHeader, PullMessageRequestHeader,
+        PullMessageResponseHeader, PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
         QueryConsumeTimeSpanRequestHeader, QueryConsumerOffsetRequestHeader,
         QueryConsumerOffsetResponseHeader, QueryCorrectionOffsetRequestHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
@@ -157,6 +157,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-get-acl-request.bin",
         "header-get-acl-request",
         3009,
+    );
+    write_oracle_header::<ListAclsRequestHeader>(
+        output,
+        "typed-list-acls-request.bin",
+        "header-list-acls-request",
+        3010,
     );
     write_oracle_header::<ListUsersRequestHeader>(
         output,

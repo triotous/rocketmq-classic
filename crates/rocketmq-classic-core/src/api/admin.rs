@@ -32,8 +32,8 @@ use rocketmq_classic_protocol::{
         GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
         GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
         GetSubscriptionGroupConfigRequestHeader, GetTopicConfigRequestHeader,
-        GetTopicStatsInfoRequestHeader, GetUserRequestHeader, HeaderMap, ListUsersRequestHeader,
-        PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
+        GetTopicStatsInfoRequestHeader, GetUserRequestHeader, HeaderMap, ListAclsRequestHeader,
+        ListUsersRequestHeader, PutKvConfigRequestHeader, QueryConsumeQueueRequestHeader,
         QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
         QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
@@ -1733,6 +1733,40 @@ impl MQClientApi {
             .await?;
         let reply = classify(reply, code, addr)?;
         UserInfo::java_decode_list_nullable(reply.body.as_deref()).map_err(|error| {
+            RpcError::MalformedResponse {
+                request_code: code,
+                peer: addr.to_owned(),
+                reason: error.to_string(),
+            }
+        })
+    }
+
+    /// Lists Broker ACLs through Java `MQClientAPIImpl.listAcl` (request
+    /// 3010). Java accepts nullable subject/resource filters and returns a
+    /// nullable list with nullable `AclInfo` members.
+    pub async fn list_acl(
+        &self,
+        addr: &str,
+        subject_filter: Option<&str>,
+        resource_filter: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<Vec<Option<AclInfo>>>, RpcError> {
+        let code = request::AUTH_LIST_ACL;
+        let mut header = ListAclsRequestHeader::default();
+        header.set_subject_filter(subject_filter.map(str::to_owned));
+        header.set_resource_filter(resource_filter.map(str::to_owned));
+        header.check_fields()?;
+        let reply = self
+            .request(
+                addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        AclInfo::java_decode_list_nullable(reply.body.as_deref()).map_err(|error| {
             RpcError::MalformedResponse {
                 request_code: code,
                 peer: addr.to_owned(),
@@ -4001,6 +4035,96 @@ mod tests {
         let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
         let result = api
             .list_user(&address, filter, case["timeoutMillis"].as_i64().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(serde_json::to_value(result).unwrap(), expected_result);
+        peer.await.unwrap();
+        remoting.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn list_acl_keeps_supplied_address_with_vip_enabled() {
+        use super::MQClientApi;
+        use crate::config::ClientConfig;
+        use base64::Engine as _;
+        use rocketmq_classic_protocol::codes::{LanguageCode, request, response};
+        use rocketmq_classic_remoting::{
+            RemotingCommand,
+            client::{RemotingClient, TransportMode},
+            codec::frame,
+        };
+        use std::sync::{Arc, RwLock};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/producer/core.json")).unwrap();
+        let case = fixture["listAclOperations"]["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == "vip-enabled-address-unchanged")
+            .unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(case["vipEnabled"], true);
+        assert_eq!(expected_request["address"], case["address"]);
+        let expected_fields = expected_request["extFields"].clone();
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(case["responseBodyBase64"].as_str().unwrap())
+            .unwrap();
+        let expected_result: serde_json::Value =
+            serde_json::from_str(case["resultJson"].as_str().unwrap()).unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut length = [0_u8; 4];
+            stream.read_exact(&mut length).await.unwrap();
+            let mut encoded = bytes::BytesMut::from(&length[..]);
+            encoded.resize(u32::from_be_bytes(length) as usize + 4, 0);
+            stream.read_exact(&mut encoded[4..]).await.unwrap();
+            let request_command = frame::decode_next(&mut encoded).unwrap().unwrap();
+            assert_eq!(request_command.code, request::AUTH_LIST_ACL);
+            assert_eq!(request_command.language, Some(LanguageCode::Java));
+            assert!(request_command.body.is_none());
+            assert_eq!(
+                request_command
+                    .ext_fields
+                    .as_ref()
+                    .map(serde_json::to_value)
+                    .transpose()
+                    .unwrap()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                expected_fields
+            );
+            let mut reply = RemotingCommand {
+                code: response::SUCCESS,
+                opaque: request_command.opaque,
+                body: Some(expected_body),
+                ..Default::default()
+            };
+            reply.mark_response();
+            stream
+                .write_all(&frame::encode(&reply).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        remoting.start().unwrap();
+        let mut config = ClientConfig::new("list-acl-vip-enabled");
+        config.set_vip_channel_enabled(true);
+        let api = MQClientApi::with_config(remoting.clone(), Arc::new(RwLock::new(config)));
+        let result = api
+            .list_acl(
+                &address,
+                case["subjectFilter"].as_str(),
+                case["resourceFilter"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(serde_json::to_value(result).unwrap(), expected_result);
