@@ -3094,6 +3094,19 @@ public final class ProducerCoreFixtures {
             new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
                 nullFields, null)));
 
+        org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping inheritedSetters =
+            new org.apache.rocketmq.remoting.protocol.statictopic.TopicConfigAndQueueMapping(
+                new TopicConfig("inherited-before", 1, 2, 3, 4),
+                topicConfigMappingDetail("inherited-mapping", "broker", 0));
+        inheritedSetters.setTopicName("inherited-after");
+        inheritedSetters.setReadQueueNums(41);
+        inheritedSetters.setWriteQueueNums(42);
+        inheritedSetters.setPerm(5);
+        inheritedSetters.setTopicFilterType(org.apache.rocketmq.common.TopicFilterType.MULTI_TAG);
+        inheritedSetters.setTopicSysFlag(43);
+        inheritedSetters.setOrder(true);
+        result.put("inheritedSetters", topicConfigAndQueueMappingState(inheritedSetters));
+
         source.setTopicName("source-mutated");
         source.setReadQueueNums(99);
         attributes.put("owner", "updated");

@@ -294,6 +294,30 @@ fn topic_config_and_queue_mapping_constructor_and_methods_match_java_551() {
         fixture["nullFields"]["toString"].as_str().unwrap()
     );
 
+    let inherited_config = TopicConfig::with_topic_sys_flag("inherited-before", 1, 2, 3, 4);
+    let mut inherited_mapping_detail: TopicQueueMappingDetail =
+        serde_json::from_value(fixture["detailBefore"].clone()).unwrap();
+    inherited_mapping_detail.set_topic(Some("inherited-mapping".to_owned()));
+    let mut inherited_wrapper = TopicConfigAndQueueMapping::new(
+        &inherited_config,
+        Some(SharedValue::new(inherited_mapping_detail)),
+    );
+    inherited_wrapper.set_topic_name(Some("inherited-after".to_owned()));
+    inherited_wrapper.set_read_queue_nums(41);
+    inherited_wrapper.set_write_queue_nums(42);
+    inherited_wrapper.set_perm(5);
+    inherited_wrapper.set_topic_filter_type(Some(TopicConfigFilterType::MultiTag));
+    inherited_wrapper.set_topic_sys_flag(43);
+    inherited_wrapper.set_order(true);
+    assert_config_fields(
+        inherited_wrapper.topic_config(),
+        &fixture["inheritedSetters"]["topicConfig"],
+    );
+    assert_eq!(
+        inherited_wrapper.java_to_string(),
+        fixture["inheritedSetters"]["toString"].as_str().unwrap()
+    );
+
     let mut source = TopicConfig::with_topic_sys_flag("source-topic", 3, 4, 6, 7);
     let shared_attributes = SharedValue::new(attributes(&[("owner", Some("initial"))]));
     source.set_attributes_shared(Some(shared_attributes.clone()));
