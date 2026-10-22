@@ -2997,5 +2997,13 @@ constructor is represented by Rust module functions. This is a signature
 crosswalk only; existing invoked tests cover mapped cases, but broad input,
 error, control-flow, settings and reverse-export reconciliation remains open.
 The `createMessageId(ByteBuffer,ByteBuffer,long)` helper's mutable scratch-buffer
-positions are not represented by the immutable Rust host-byte slice; review of
-that caller-visible side effect remains open.
+positions are not represented by the immutable Rust host-byte slice. Source
+inspection of pinned `MessageDecoder`, `DefaultMessageStore`, and both
+`DLedgerCommitLog` append call sites confirms they use local scratch buffers
+and retain only the returned string. Rust preserves that ID-producing
+capability with `create_message_id_from_host_bytes`; the Java-only scratch
+cursor mutations are intentionally not modeled because the Rust API does not
+expose a mutable buffer abstraction and no pinned production flow observes
+those states. The return value remains covered by the invoked IPv4/IPv6 ID
+fixture. This source-confirmed API-shape adaptation resolves this helper's
+cursor-side-effect review item; broad P18-V01 reconciliation remains open.
