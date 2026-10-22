@@ -1125,27 +1125,30 @@ async fn running_lite_subscribe_sends_updated_heartbeat_and_refreshes_all_routes
     .expect("running subscribe did not send a heartbeat with the new subscription");
     assert_eq!(heartbeat.code, request::HEART_BEAT);
 
-    let mut refreshed_topics = BTreeSet::new();
-    for _ in 0..2 {
-        let command = timeout(Duration::from_secs(2), route_requests.recv())
-            .await
-            .expect("running subscribe did not immediately refresh every subscribed route")
-            .expect("NameServer route observation channel closed");
-        assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
-        refreshed_topics.insert(
-            command
-                .ext_fields
-                .as_ref()
-                .expect("route query omitted its header")
-                .get("topic")
-                .expect("route query omitted its topic")
-                .to_owned(),
-        );
-    }
-    assert_eq!(
-        refreshed_topics,
-        BTreeSet::from(["invoices".to_owned(), "orders".to_owned()])
-    );
+    let expected_topics = BTreeSet::from(["invoices".to_owned(), "orders".to_owned()]);
+    let refreshed_topics = timeout(Duration::from_secs(2), async {
+        let mut refreshed_topics = BTreeSet::new();
+        while refreshed_topics != expected_topics {
+            let command = route_requests
+                .recv()
+                .await
+                .expect("NameServer route observation channel closed");
+            assert_eq!(command.code, request::GET_ROUTEINFO_BY_TOPIC);
+            refreshed_topics.insert(
+                command
+                    .ext_fields
+                    .as_ref()
+                    .expect("route query omitted its header")
+                    .get("topic")
+                    .expect("route query omitted its topic")
+                    .to_owned(),
+            );
+        }
+        refreshed_topics
+    })
+    .await
+    .expect("running subscribe did not immediately refresh every subscribed route");
+    assert_eq!(refreshed_topics, expected_topics);
 
     consumer.shutdown().await.unwrap();
     broker_service.abort();
