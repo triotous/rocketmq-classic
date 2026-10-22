@@ -2394,3 +2394,21 @@ regression, strict Clippy, formatting/diff checks, and Java lifecycle fixture
 verification pass. This closes the LitePull poll serialization slice only;
 broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
 reconciliation remains open.
+
+## P18-V01 LitePull synchronized runtime operations — 2026-10-22 (`49bcfa19`)
+
+The pinned `DefaultLitePullConsumerImpl` also synchronizes `isRunning`,
+`assignment`, `seek`, `commitAll`, and both `commit` overloads. The lifecycle
+fixture now records those modifiers alongside the previously covered methods;
+its SHA-256 is
+`09682534479d8b1459eee8945bfccf5e1411d6fe37c9bbb45233907f1883193b`.
+
+Rust lifecycle-gates the corresponding async operations and their queue/map
+commit adapters. Auto-commit now calls the unlocked internal commit helper so
+poll can retain the monitor-equivalent gate without recursively acquiring it.
+The paused-start regression confirms `is_running`, `assignment`, and `commit`
+wait until start completes. All LitePull integration tests, strict Clippy,
+format/diff checks, and Java lifecycle fixture verification pass. This closes
+these LitePull synchronized-operation branches only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
