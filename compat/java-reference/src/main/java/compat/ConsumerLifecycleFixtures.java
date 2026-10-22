@@ -329,6 +329,52 @@ public final class ConsumerLifecycleFixtures {
         return result;
     }
 
+    private static Map<String, Object> litePullConfigValidationPrecedesExecutor() throws Exception {
+        String group = "consumer-start-lite-config-order-" + System.nanoTime();
+        DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
+        consumer.setConsumerTimeoutMillisWhenSuspend(19_999);
+        consumer.setPullThreadNums(-1);
+        Throwable startFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            startFailure = failure;
+        }
+
+        DefaultLitePullConsumerImpl implementation = liteImplementation(consumer);
+        MQClientInstance factory = factory(implementation);
+        Throwable retryFailure = null;
+        try {
+            consumer.start();
+        } catch (Throwable failure) {
+            retryFailure = failure;
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("exception", startFailure == null ? "" : startFailure.getClass().getSimpleName());
+        result.put("retryException", retryFailure == null ? "" : retryFailure.getClass().getSimpleName());
+        result.put("timeoutValidationReached", startFailure != null
+            && startFailure.getMessage() != null
+            && startFailure.getMessage().contains(
+                "consumer consumerTimeoutMillisWhenSuspend must greater than brokerSuspendMaxTimeMillis"));
+        result.put("consumerRegistered", factory != null
+            && factory.getConsumerTable().containsKey(group));
+        result.put("consumerServiceState", consumerServiceState(implementation));
+        result.put("factoryServiceState", factory == null ? "" : factoryServiceState(factory));
+        closeFactory(factory, group);
+
+        if (!"MQClientException".equals(result.get("exception"))
+            || !"MQClientException".equals(result.get("retryException"))
+            || !Boolean.TRUE.equals(result.get("timeoutValidationReached"))
+            || !Boolean.FALSE.equals(result.get("consumerRegistered"))
+            || !"START_FAILED".equals(result.get("consumerServiceState"))
+            || !"".equals(result.get("factoryServiceState"))) {
+            throw new IllegalStateException("Unexpected LitePullConsumer config-order outcome: "
+                + result, startFailure);
+        }
+        return result;
+    }
+
     private static Map<String, Object> failedLitePullListenerRouteLookup() throws Exception {
         String group = "consumer-start-lite-listener-" + System.nanoTime();
         DefaultLitePullConsumer consumer = new DefaultLitePullConsumer(group);
@@ -514,6 +560,8 @@ public final class ConsumerLifecycleFixtures {
         result.put("pullFactoryStartFailure", failedPullFactoryStart());
         result.put("litePullFactoryStartFailure", failedLitePullFactoryStart());
         result.put("litePullMetadataScheduleFailure", failedLitePullMetadataSchedule());
+        result.put("litePullConfigValidationPrecedesExecutor",
+            litePullConfigValidationPrecedesExecutor());
         result.put("litePullListenerRouteFailure", failedLitePullListenerRouteLookup());
         result.put("litePullListenerRegistrationRouteFailure",
             failedLitePullListenerRegistrationRouteLookup());

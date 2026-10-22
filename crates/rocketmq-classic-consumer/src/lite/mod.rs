@@ -596,10 +596,32 @@ impl LitePullConsumer {
                 Lifecycle::Created => *state = Lifecycle::Starting,
             }
         }
-        let pull_thread_nums = self.pull_thread_nums.load(Ordering::Acquire);
-        if pull_thread_nums < 0 {
+        let effective_group = match self
+            .config
+            .client_config()
+            .clone()
+            .with_namespace(Some(self.config.consumer_group()))
+        {
+            Ok(Some(group)) => group,
+            Ok(None) => {
+                *self.lifecycle.lock().await = Lifecycle::StartFailed;
+                return Err(PullConsumerError::InvalidConsumerGroup.into());
+            }
+            Err(error) => {
+                *self.lifecycle.lock().await = Lifecycle::StartFailed;
+                return Err(error.into());
+            }
+        };
+        let group_validation = crate::config::validate_group(&effective_group).and_then(|()| {
+            if effective_group == crate::config::DEFAULT_CONSUMER_GROUP {
+                Err(PullConsumerError::DefaultConsumerGroup)
+            } else {
+                Ok(())
+            }
+        });
+        if let Err(error) = group_validation {
             *self.lifecycle.lock().await = Lifecycle::StartFailed;
-            return Err(LitePullConsumerError::InvalidPullThreadCount);
+            return Err(error.into());
         }
         let consumer_timeout_millis = self
             .consumer_timeout_millis_when_suspend
@@ -612,6 +634,11 @@ impl LitePullConsumer {
                 broker_suspend_millis,
             }
             .into());
+        }
+        let pull_thread_nums = self.pull_thread_nums.load(Ordering::Acquire);
+        if pull_thread_nums < 0 {
+            *self.lifecycle.lock().await = Lifecycle::StartFailed;
+            return Err(LitePullConsumerError::InvalidPullThreadCount);
         }
         self.pull_permits
             .add_permits(usize::try_from(pull_thread_nums.max(1)).unwrap_or(1));
@@ -2063,6 +2090,54 @@ mod tests {
         manager
             .remove_client_factory(runtime.client_id(), &runtime)
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn lite_config_validation_precedes_pull_executor_creation() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../../fixtures/consumer/lifecycle.json"))
+                .unwrap();
+        let java = &fixture["litePullConfigValidationPrecedesExecutor"];
+        assert_eq!(java["exception"], "MQClientException");
+        assert_eq!(java["retryException"], "MQClientException");
+        assert_eq!(java["timeoutValidationReached"], true);
+        assert_eq!(java["consumerRegistered"], false);
+        assert_eq!(java["consumerServiceState"], "START_FAILED");
+        assert_eq!(java["factoryServiceState"], "");
+
+        let group = format!(
+            "lite-config-order-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut config = LitePullConsumerConfig::new(&group).unwrap();
+        config.set_consumer_timeout_millis_when_suspend(19_999);
+        config.set_pull_thread_nums(-1);
+        config
+            .client_config_mut()
+            .set_instance_name(Some(group.clone()));
+        let client_id = config.client_config().build_client_id();
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::shared_default();
+        let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
+
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::Pull(
+                PullConsumerError::InvalidSuspendTimeout { .. }
+            ))
+        ));
+        assert!(matches!(
+            *consumer.lifecycle.lock().await,
+            Lifecycle::StartFailed
+        ));
+        assert!(consumer.engine().is_none());
+        assert!(manager.factory_table().get(&client_id).unwrap().is_none());
+        assert!(matches!(
+            consumer.start().await,
+            Err(LitePullConsumerError::StartFailed)
+        ));
     }
 
     #[tokio::test]
