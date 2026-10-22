@@ -7486,3 +7486,36 @@ owner-specific checks belong in the manual handoff.
   source/API/settings/input/error/control-flow and reverse-export
   reconciliation, current-revision GitHub Ubuntu CI, and native Windows
   stack-capture execution remain open. Phase 19 changes remain unstaged.
+
+## P18-V02 current-tree gate and P18-05 offline benchmark — 2026-10-22 (`70671a33`; docs `e897168c`)
+
+- [x] Current-tree locked default/all-feature workspace tests, strict
+  all-target/all-feature Clippy, formatting/diff checks, pinned Maven verify,
+  comparator self-test and 37-scenario manifest, fuzz smoke (163 frame seeds,
+  11 message seeds, 2,784 mutations), and race/leak smoke (16 cases × 3) pass.
+  Maven verifies 37 scenarios, 36 route/VIP cases, and Java decoding of 106
+  typed headers and 19 typed bodies.
+- [x] Release examples, metadata/license/dependency checks, seven product
+  package listings with LICENSE/NOTICE, four Core Unique ID tests under both
+  UTC and Asia/Taipei, Windows GNU Core all-target check, and Consumer
+  stack-capture `--no-run` cross-compile pass.
+- [x] Executed the fixed-input `cargo bench -p rocketmq-classic --bench
+  offline --locked` benchmark on Apple M5 Max, macOS AArch64, 18 logical CPUs,
+  Rust 1.85.0. One-run observations (ns/op; allocations/op; bytes/op):
+
+  | Workload | Iterations × input | ns/op | allocations/op | bytes/op |
+  | --- | ---: | ---: | ---: | ---: |
+  | Remoting frame encode/decode | 20,000 × 427 B | 2,254.5 | 40.00 | 4,676.0 |
+  | Zstd message decode | 10,000 × 146 B | 1,155.5 | 17.00 | 197,493.0 |
+  | Producer send construction | 20,000 × 512 B | 1,182.1 | 54.00 | 3,665.0 |
+  | Route lookup, 128 entries | 100,000 × 10 B | 14.1 | 0.00 | 0.0 |
+  | Loopback pending request completion | 500 × 128 B | 69,111.1 | 81.00 | 9,546.0 |
+
+  These are single-run observations, not acceptance thresholds or optimization
+  claims. The request-completion benchmark uses a local loopback peer and no
+  Broker.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains open. The server-free CI workflow was
+  reviewed but remote Ubuntu CI was not run; the Windows test cross-compiled
+  but native Windows execution remains pending. No push or external CI was
+  run; protected Phase 19 files remain unstaged.
