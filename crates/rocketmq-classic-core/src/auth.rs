@@ -949,6 +949,7 @@ impl RpcHook for AclClientRpcHook {
         if let Some(token) = &self.credentials.security_token {
             fields.insert(SECURITY_TOKEN.to_owned(), token.clone());
         }
+        request.make_custom_header_to_net();
         let canonical = combine_request_content(request);
         let signature = cal_signature(&canonical, secret_key, SigningAlgorithm::HmacSha1);
         request
@@ -1115,6 +1116,7 @@ fn unescape_property(bytes: &[u8]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rocketmq_classic_protocol::header::CreateTopicRequestHeader;
     use rocketmq_classic_remoting::client::RpcHook;
     use serde_json::Value;
 
@@ -1172,6 +1174,35 @@ mod tests {
                 case["signature"]
             );
         }
+    }
+
+    #[test]
+    fn acl_hook_materializes_typed_headers_before_signing_like_java() {
+        let case = &fixture()["customHeaderCase"];
+        let mut header = CreateTopicRequestHeader::default();
+        header.set_topic(Some("header-topic".to_owned()));
+        header.set_default_topic(Some("header-default".to_owned()));
+        header.set_read_queue_nums(Some(3));
+        let mut request =
+            RemotingCommand::create_request_command_with_header(17, Some(header)).unwrap();
+        request.body = Some(b"header-body".to_vec());
+
+        AclClientRpcHook::new(SessionCredentials::new("header-access", "header-secret"))
+            .before_request_mut_result("broker:10911", &mut request)
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&request.ext_fields).unwrap(),
+            case["fields"]
+        );
+        assert_eq!(
+            STANDARD.encode(combine_request_content(&request)),
+            case["canonicalBase64"]
+        );
+        assert_eq!(
+            request.ext_fields.as_ref().unwrap()[SIGNATURE],
+            case["signature"]
+        );
     }
 
     #[test]

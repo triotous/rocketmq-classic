@@ -37,12 +37,13 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
 import org.apache.rocketmq.acl.common.AclException;
-import org.apache.rocketmq.acl.common.AclUtils;
 import org.apache.rocketmq.acl.common.AclSigner;
+import org.apache.rocketmq.acl.common.AclUtils;
 import org.apache.rocketmq.acl.common.SessionCredentials;
 import org.apache.rocketmq.acl.common.SigningAlgorithm;
 import org.apache.rocketmq.remoting.RPCHook;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader;
 
 /** Invoked Java 5.5.1 ACL signing and canonicalization oracle. */
 public final class AclFixtures {
@@ -92,6 +93,7 @@ public final class AclFixtures {
         cases.add(signCase("existing_signature_and_token", "ak-existing", "key-existing", null,
             existing, ""));
         result.put("cases", cases);
+        result.put("customHeaderCase", customHeaderCase());
 
         Map<String, String> algorithms = new TreeMap<>();
         for (SigningAlgorithm algorithm : SigningAlgorithm.values()) {
@@ -104,6 +106,36 @@ public final class AclFixtures {
         result.put("utilityCases", utilityCases());
         result.put("exceptionCases", exceptionCases());
         result.put("canonicalization", "sort keys by Java String order; concatenate values except Signature; append body bytes");
+        return result;
+    }
+
+    private static Map<String, Object> customHeaderCase() {
+        CreateTopicRequestHeader header = new CreateTopicRequestHeader();
+        header.setTopic("header-topic");
+        header.setDefaultTopic("header-default");
+        header.setReadQueueNums(3);
+        RemotingCommand request = RemotingCommand.createRequestCommand(17, header);
+        request.setBody("header-body".getBytes(StandardCharsets.UTF_8));
+        new AclClientRPCHook(new SessionCredentials("header-access", "header-secret"))
+            .doBeforeRequest("127.0.0.1:10911", request);
+
+        SortedMap<String, String> fields = new TreeMap<>(request.getExtFields());
+        StringBuilder content = new StringBuilder();
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            if (!SessionCredentials.SIGNATURE.equals(entry.getKey())) {
+                content.append(entry.getValue());
+            }
+        }
+        byte[] prefix = content.toString().getBytes(SessionCredentials.CHARSET);
+        byte[] body = request.getBody();
+        byte[] canonical = new byte[prefix.length + body.length];
+        System.arraycopy(prefix, 0, canonical, 0, prefix.length);
+        System.arraycopy(body, 0, canonical, prefix.length, body.length);
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("fields", fields);
+        result.put("canonicalBase64", Base64.getEncoder().encodeToString(canonical));
+        result.put("signature", fields.get(SessionCredentials.SIGNATURE));
         return result;
     }
 
