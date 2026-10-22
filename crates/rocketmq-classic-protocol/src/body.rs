@@ -5054,6 +5054,203 @@ impl ConsumeStats {
     }
 }
 
+pub type BrokerConsumeStatsGroup =
+    HashMap<String, Option<SharedValue<Vec<Option<SharedValue<ConsumeStats>>>>>>;
+pub type BrokerConsumeStatsGroups = Vec<Option<SharedValue<BrokerConsumeStatsGroup>>>;
+
+fn encode_broker_consume_stats_group(
+    group: &BrokerConsumeStatsGroup,
+) -> Result<String, serde_json::Error> {
+    let mut names = group.keys().collect::<Vec<_>>();
+    names.sort();
+    let mut entries = Vec::with_capacity(names.len());
+    for name in names {
+        let stats = match group.get(name).expect("group key came from map") {
+            None => "null".to_owned(),
+            Some(stats) => stats.with(|stats| {
+                let mut rows = Vec::with_capacity(stats.len());
+                for stat in stats {
+                    rows.push(match stat {
+                        None => "null".to_owned(),
+                        Some(stat) => {
+                            let encoded = stat.with(|stat| stat.encode_java_json())?;
+                            String::from_utf8_lossy(&encoded).into_owned()
+                        }
+                    });
+                }
+                Ok::<_, serde_json::Error>(format!("[{}]", rows.join(",")))
+            })?,
+        };
+        entries.push(format!("{}:{stats}", serde_json::to_string(name)?));
+    }
+    Ok(format!("{{{}}}", entries.join(",")))
+}
+
+fn encode_broker_consume_stats_groups(
+    groups: &BrokerConsumeStatsGroups,
+) -> Result<String, serde_json::Error> {
+    let mut encoded_groups = Vec::with_capacity(groups.len());
+    for group in groups {
+        encoded_groups.push(match group {
+            None => "null".to_owned(),
+            Some(group) => group.with(encode_broker_consume_stats_group)?,
+        });
+    }
+    Ok(format!("[{}]", encoded_groups.join(",")))
+}
+
+/// Java `ConsumeStatsList` response body returned by request 317.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumeStatsList {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    consume_stats_list: Option<SharedValue<BrokerConsumeStatsGroups>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    broker_addr: Option<String>,
+    total_diff: i64,
+    total_inflight_diff: i64,
+}
+
+fn default_broker_consume_stats_groups() -> Option<Vec<Option<BrokerConsumeStatsGroup>>> {
+    Some(Vec::new())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConsumeStatsListFields {
+    #[serde(default = "default_broker_consume_stats_groups")]
+    consume_stats_list: Option<Vec<Option<BrokerConsumeStatsGroup>>>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_nullable_string"
+    )]
+    broker_addr: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    total_diff: i64,
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    total_inflight_diff: i64,
+}
+
+impl Default for ConsumeStatsListFields {
+    fn default() -> Self {
+        Self {
+            consume_stats_list: default_broker_consume_stats_groups(),
+            broker_addr: None,
+            total_diff: 0,
+            total_inflight_diff: 0,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConsumeStatsList {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: ConsumeStatsListFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            consume_stats_list: fields.consume_stats_list.map(|groups| {
+                SharedValue::new(
+                    groups
+                        .into_iter()
+                        .map(|group| group.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+            broker_addr: fields.broker_addr,
+            total_diff: fields.total_diff,
+            total_inflight_diff: fields.total_inflight_diff,
+        })
+    }
+}
+
+impl Default for ConsumeStatsList {
+    fn default() -> Self {
+        Self {
+            consume_stats_list: default_broker_consume_stats_groups().map(|groups| {
+                SharedValue::new(
+                    groups
+                        .into_iter()
+                        .map(|group| group.map(SharedValue::new))
+                        .collect(),
+                )
+            }),
+            broker_addr: None,
+            total_diff: 0,
+            total_inflight_diff: 0,
+        }
+    }
+}
+
+impl ConsumeStatsList {
+    /// Decodes the Java Fastjson body syntax, including nested MessageQueue
+    /// objects used as keys in each consumer's `offsetTable`.
+    pub fn decode_java_json(input: &str) -> Result<Self, serde_json::Error> {
+        let normalized = serde_fastjson::normalize_json_input(input);
+        let normalized = normalize_java_object_map_keys(&normalized)?;
+        serde_json::from_str(&normalized)
+    }
+
+    fn encode_java_json(&self) -> Result<Vec<u8>, serde_json::Error> {
+        let mut fields = Vec::with_capacity(4);
+        if let Some(broker_addr) = &self.broker_addr {
+            fields.push(format!(
+                "\"brokerAddr\":{}",
+                serde_json::to_string(broker_addr)?
+            ));
+        }
+        if let Some(consume_stats_list) = &self.consume_stats_list {
+            let encoded = consume_stats_list.with(encode_broker_consume_stats_groups)?;
+            fields.push(format!("\"consumeStatsList\":{encoded}"));
+        }
+        fields.push(format!("\"totalDiff\":{}", self.total_diff));
+        fields.push(format!(
+            "\"totalInflightDiff\":{}",
+            self.total_inflight_diff
+        ));
+        Ok(format!("{{{}}}", fields.join(",")).into_bytes())
+    }
+
+    pub fn get_consume_stats_list(&self) -> Option<SharedValue<BrokerConsumeStatsGroups>> {
+        self.consume_stats_list.clone()
+    }
+
+    pub fn set_consume_stats_list(&mut self, value: Option<SharedValue<BrokerConsumeStatsGroups>>) {
+        self.consume_stats_list = value;
+    }
+
+    pub fn get_broker_addr(&self) -> Option<&str> {
+        self.broker_addr.as_deref()
+    }
+
+    pub fn set_broker_addr(&mut self, value: Option<String>) {
+        self.broker_addr = value;
+    }
+
+    pub fn get_total_diff(&self) -> i64 {
+        self.total_diff
+    }
+
+    pub fn set_total_diff(&mut self, value: i64) {
+        self.total_diff = value;
+    }
+
+    pub fn get_total_inflight_diff(&self) -> i64 {
+        self.total_inflight_diff
+    }
+
+    pub fn set_total_inflight_diff(&mut self, value: i64) {
+        self.total_inflight_diff = value;
+    }
+}
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail
@@ -7541,12 +7738,12 @@ fn normalize_java_object_map_keys(input: &str) -> Result<String, serde_json::Err
                 None => ObjectKind::Root,
                 Some(parent) if previous_json_byte(bytes, index) == Some(b':') => {
                     match (parent.kind, parent.last_key.as_deref()) {
+                        (ObjectKind::ConsumerTable, _) => ObjectKind::QueueTable,
                         (
-                            ObjectKind::Root,
-                            Some("messageQueueTable" | "offsetTable" | "mqTable" | "mqPopTable"),
+                            _,
+                            Some("offsetTable" | "messageQueueTable" | "mqTable" | "mqPopTable"),
                         ) => ObjectKind::QueueTable,
                         (ObjectKind::Root, Some("consumerTable")) => ObjectKind::ConsumerTable,
-                        (ObjectKind::ConsumerTable, _) => ObjectKind::QueueTable,
                         _ => ObjectKind::Other,
                     }
                 }
@@ -8717,6 +8914,7 @@ impl_java_remoting_serializable_body_adapters!(
     GetLiteTopicInfoResponseBody,
     TopicStatsTable,
     ConsumeStats,
+    ConsumeStatsList,
     GetConsumerStatusBody,
     ResetOffsetBody,
 );

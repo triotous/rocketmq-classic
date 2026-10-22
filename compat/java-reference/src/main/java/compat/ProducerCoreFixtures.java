@@ -240,6 +240,17 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("brokerMaintenanceOperations", brokerMaintenanceOperations());
+        result.put("fetchConsumeStatsInBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("fetchConsumeStatsInBroker"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("getConsumeStatsInBrokerHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.GetConsumeStatsInBrokerHeader.class));
+        result.put("consumeStatsListApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList.class));
+        result.put("fetchConsumeStatsInBrokerOperations", fetchConsumeStatsInBrokerOperations());
         result.put("subscriptionGroupConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("getSubscriptionGroupConfig"))
@@ -2427,6 +2438,112 @@ public final class ProducerCoreFixtures {
                 method + " rejected"));
         }
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> fetchConsumeStatsInBrokerOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(fetchConsumeStatsInBrokerCase("stats-populated", true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            consumeStatsListSample()));
+        cases.add(fetchConsumeStatsInBrokerCase("stats-defaults", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{}"));
+        cases.add(fetchConsumeStatsInBrokerCase("stats-null-list", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"brokerAddr\":null,\"consumeStatsList\":null,\"totalDiff\":0,\"totalInflightDiff\":0}"));
+        cases.add(fetchConsumeStatsInBrokerCase("stats-null-primitives", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"totalDiff\":null,\"totalInflightDiff\":null}"));
+        cases.add(fetchConsumeStatsInBrokerCase("stats-success-no-body", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(fetchConsumeStatsInBrokerCase("stats-broker-error", true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "broker consume stats unavailable", null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static String consumeStatsListSample() {
+        org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList statsList =
+            new org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList();
+        org.apache.rocketmq.remoting.protocol.admin.ConsumeStats stats =
+            new org.apache.rocketmq.remoting.protocol.admin.ConsumeStats();
+        stats.setConsumeTps(3.5);
+        org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper offsets =
+            new org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper();
+        offsets.setBrokerOffset(100L);
+        offsets.setConsumerOffset(85L);
+        offsets.setPullOffset(95L);
+        stats.setOffsetTable(Map.of(
+            new MessageQueue("orders", "broker-a", 0), offsets));
+        Map<String, List<org.apache.rocketmq.remoting.protocol.admin.ConsumeStats>> group =
+            new TreeMap<>();
+        group.put("workers", List.of(stats));
+        statsList.setConsumeStatsList(List.of(group));
+        statsList.setBrokerAddr("broker-a:10911");
+        statsList.setTotalDiff(15L);
+        statsList.setTotalInflightDiff(10L);
+        return statsList.toJson();
+    }
+
+    private static Map<String, Object> fetchConsumeStatsInBrokerCase(
+        String name, boolean isOrder, int responseCode, String responseRemark,
+        String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("fetch-consume-stats-in-broker-api");
+        config.setVipChannelEnabled(false);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("isOrder", isOrder);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList stats =
+                api.fetchConsumeStatsInBroker("broker-a:10911", isOrder, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultJson", stats.toJson());
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

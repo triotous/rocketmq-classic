@@ -2364,6 +2364,105 @@ async fn get_broker_ha_status_matches_java_fixture() {
 }
 
 #[tokio::test]
+async fn fetch_consume_stats_in_broker_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["fetchConsumeStatsInBrokerApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList org.apache.rocketmq.client.impl.MQClientAPIImpl.fetchConsumeStatsInBroker(java.lang.String,boolean,long)"
+        ])
+    );
+    let cases = fixture["fetchConsumeStatsInBrokerOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .fetch_consume_stats_in_broker(
+                &addr,
+                case["isOrder"].as_bool().unwrap(),
+                timeout_millis,
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let stats = result.unwrap();
+            assert_eq!(
+                stats.java_to_json(false).unwrap(),
+                case["resultJson"].as_str().unwrap()
+            );
+            if case["name"] == "stats-populated" {
+                assert_eq!(stats.get_broker_addr(), Some("broker-a:10911"));
+                assert_eq!(stats.get_total_diff(), 15);
+                assert_eq!(stats.get_total_inflight_diff(), 10);
+                stats.get_consume_stats_list().unwrap().with(|groups| {
+                    assert_eq!(groups.len(), 1);
+                    let group = groups[0].as_ref().unwrap();
+                    group.with(|group| {
+                        let stats_list = group.get("workers").unwrap().as_ref().unwrap();
+                        stats_list.with(|stats_list| {
+                            assert_eq!(stats_list.len(), 1);
+                            let stats = stats_list[0].as_ref().unwrap();
+                            stats.with(|stats| {
+                                assert_eq!(stats.get_consume_tps(), 3.5);
+                                assert_eq!(stats.compute_total_diff().unwrap(), 15);
+                                assert_eq!(stats.compute_inflight_total_diff().unwrap(), 10);
+                            });
+                        });
+                    });
+                });
+            }
+            if case["name"] == "stats-null-primitives" {
+                assert_eq!(stats.get_total_diff(), 0);
+                assert_eq!(stats.get_total_inflight_diff(), 0);
+            }
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+        );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn add_broker_honors_the_java_timeout_argument() {
     let (addr, peer) =
         scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;

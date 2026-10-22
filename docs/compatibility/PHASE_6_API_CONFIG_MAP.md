@@ -1911,3 +1911,18 @@ a Rust loopback test cover populated/default DTOs, success without a body,
 Broker errors, and the empty request envelope. Producer core fixture SHA-256 is
 recorded in the execution log. This closes this direct API slice only; broad
 P18-V01 remains open.
+
+## P18-V01 direct `fetchConsumeStatsInBroker` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.fetchConsumeStatsInBroker(String,boolean,long)` sends
+request 317 with `GetConsumeStatsInBrokerHeader.isOrder`, applies configured
+VIP address conversion, and decodes a `ConsumeStatsList` response. Core exposes
+`MQClientApi::fetch_consume_stats_in_broker` with the caller timeout. The DTO
+preserves Java's default empty list, explicit null list/address, primitive
+totals (including null-to-zero decoding), nested mutable `ConsumeStats` rows,
+and `MessageQueue` object keys in each `offsetTable`; its compact Java encoder
+retains Fastjson's object-key syntax. Invoked Java fixtures and a Rust loopback
+test cover populated/default/null bodies, success without a body, Broker
+errors, the exact request header, VIP conversion and timeout. Producer core
+fixture SHA-256 is recorded in the execution log. This closes this direct
+API/header/DTO slice only; broad P18-V01 remains open.

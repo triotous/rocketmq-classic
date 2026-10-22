@@ -4519,6 +4519,35 @@ impl CommandHeader for GetConsumeStatsRequestHeader {
     }
 }
 
+/// Pinned Java `GetConsumeStatsInBrokerHeader`. Its `checkFields()` is a
+/// no-op, and Java emits the primitive `isOrder` field even when false.
+#[derive(Debug, Clone, Default)]
+pub struct GetConsumeStatsInBrokerRequestHeader {
+    is_order: bool,
+}
+
+impl GetConsumeStatsInBrokerRequestHeader {
+    pub fn is_order(&self) -> bool {
+        self.is_order
+    }
+
+    pub fn set_is_order(&mut self, value: bool) {
+        self.is_order = value;
+    }
+}
+
+impl CommandHeader for GetConsumeStatsInBrokerRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        fields.insert("isOrder".to_owned(), self.is_order.to_string());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            is_order: optional_java_boolean(fields, "isOrder").unwrap_or(false),
+        })
+    }
+}
+
 /// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
 /// `RpcRequestHeader` namespace and broker-routing fields.
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.

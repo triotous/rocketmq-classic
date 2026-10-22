@@ -50,6 +50,7 @@ macro_rules! inventory {
             GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
             GetSubscriptionGroupConfigRequestHeader => ("header-get-subscription-group-config-request", "typed-get-subscription-group-config-request.bin"),
             GetConsumeStatsRequestHeader => ("header-consume-stats-request", "typed-consume-stats-request.bin"),
+            GetConsumeStatsInBrokerRequestHeader => ("header-consume-stats-in-broker-request", "typed-consume-stats-in-broker-request.bin"),
             DeleteTopicRequestHeader => ("header-delete-topic-request", "typed-delete-topic-request.bin"),
             DeleteTopicFromNamesrvRequestHeader => ("header-delete-topic-from-namesrv-request", "typed-delete-topic-from-namesrv-request.bin"),
             DeleteKvConfigRequestHeader => ("header-delete-kv-config-request", "typed-delete-kv-config-request.bin"),

@@ -8,7 +8,7 @@ use rocketmq_classic_protocol::{
     SharedValue,
     body::{
         CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
-        ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
+        ConsumeStatsList, ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
         DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList,
         HaRuntimeInfo, KvTable, ProducerConnection, ProducerTableInfo, QueryCorrectionOffsetBody,
         QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
@@ -22,12 +22,12 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
-        GetConsumeStatsRequestHeader, GetConsumerConnectionListRequestHeader,
-        GetConsumerRunningInfoRequestHeader, GetKvConfigRequestHeader,
-        GetKvListByNamespaceRequestHeader, GetSubscriptionGroupConfigRequestHeader,
-        GetTopicStatsInfoRequestHeader, HeaderMap, PutKvConfigRequestHeader,
-        QueryConsumeTimeSpanRequestHeader, QueryCorrectionOffsetRequestHeader,
-        QueryMessageRequestHeader, QueryMessageResponseHeader,
+        GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
+        GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
+        GetKvConfigRequestHeader, GetKvListByNamespaceRequestHeader,
+        GetSubscriptionGroupConfigRequestHeader, GetTopicStatsInfoRequestHeader, HeaderMap,
+        PutKvConfigRequestHeader, QueryConsumeTimeSpanRequestHeader,
+        QueryCorrectionOffsetRequestHeader, QueryMessageRequestHeader, QueryMessageResponseHeader,
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
@@ -1497,6 +1497,52 @@ impl MQClientApi {
                 peer: addr.to_owned(),
                 reason: error.to_string(),
             }
+        })
+    }
+
+    /// Fetches the aggregate consumer offsets from a Broker through Java
+    /// `MQClientAPIImpl.fetchConsumeStatsInBroker`. The request preserves the
+    /// primitive order flag and uses configured VIP conversion.
+    pub async fn fetch_consume_stats_in_broker(
+        &self,
+        addr: &str,
+        is_order: bool,
+        timeout_millis: i64,
+    ) -> Result<ConsumeStatsList, RpcError> {
+        let code = request::GET_BROKER_CONSUME_STATS;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = GetConsumeStatsInBrokerRequestHeader::default();
+        header.set_is_order(is_order);
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code == response::SUCCESS {
+            if let Some(body) = reply.body.as_deref() {
+                return ConsumeStatsList::decode_java_json(&String::from_utf8_lossy(body)).map_err(
+                    |error| RpcError::MalformedResponse {
+                        request_code: code,
+                        peer: addr.to_owned(),
+                        reason: error.to_string(),
+                    },
+                );
+            }
+        }
+        Err(RpcError::Response {
+            request_code: code,
+            peer: addr.to_owned(),
+            code: reply.code,
+            remark: reply.remark,
         })
     }
 
