@@ -847,6 +847,7 @@ public final class ProducerCoreFixtures {
         backpressure.put("clampedSendSize", backpressureSettings.getBackPressureForAsyncSendSize());
         result.put("backpressureSettings", backpressure);
         result.put("runtimeSettings", runtimeSettings());
+        result.put("runtimeSetterFlows", runtimeSetterFlows());
         result.put("perRequestTimeoutRetry", perRequestTimeoutRetry());
         result.put("missingBrokerAddressRetry", missingBrokerAddressRetry());
         result.put("missingBrokerAddressExplicit", missingBrokerAddressExplicit());
@@ -7058,6 +7059,69 @@ public final class ProducerCoreFixtures {
         result.put("addMethodVisibleThroughExistingSet", liveRetryCodes.contains(9002));
         liveRetryCodes.remove(9001);
         result.put("setRemovalVisibleThroughGetter", !producer.getRetryResponseCodes().contains(9001));
+        return result;
+    }
+
+    private static Map<String, Object> runtimeSetterFlows() throws Exception {
+        DefaultMQProducer producer = new DefaultMQProducer("runtime-setter-flow-start-group");
+        producer.setTopics(new ArrayList<>(List.of("startup-topic")));
+        producer.setSendMessageWithVIPChannel(true);
+        DefaultMQProducerImpl implementation = producer.getDefaultMQProducerImpl();
+        MQClientInstance client = installProducerSendFixtureRoute(
+            producer, implementation, "startup-topic", "runtime-setter-flow-fixture");
+
+        Method initTopicRoute = DefaultMQProducerImpl.class.getDeclaredMethod("initTopicRoute");
+        initTopicRoute.setAccessible(true);
+        initTopicRoute.invoke(implementation);
+
+        producer.setProducerGroup("runtime-setter-flow-live-group");
+        producer.setSendMessageWithVIPChannel(false);
+        producer.setTopics(new ArrayList<>(List.of("later-topic")));
+
+        String[] brokerAddressAtSend = {""};
+        String[] producerGroupAtSend = {""};
+        implementation.registerSendMessageHook(new SendMessageHook() {
+            @Override
+            public String hookName() {
+                return "runtime-setter-flow-fixture";
+            }
+
+            @Override
+            public void sendMessageBefore(SendMessageContext context) {
+                brokerAddressAtSend[0] = context.getBrokerAddr();
+                producerGroupAtSend[0] = context.getProducerGroup();
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+
+            @Override
+            public void sendMessageAfter(SendMessageContext context) {
+            }
+        });
+
+        String outcome;
+        try {
+            implementation.send(new Message("startup-topic", new byte[] {1}),
+                new MessageQueue("startup-topic", "broker-a", 0), 10L);
+            outcome = "success";
+        } catch (Exception expected) {
+            outcome = expected.getClass().getSimpleName();
+        } finally {
+            shutdownUnstartedClientExecutors(client);
+        }
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("producerGroupAfterSetter", producer.getProducerGroup());
+        result.put("producerGroupAtSend", producerGroupAtSend[0]);
+        result.put("vipChannelAfterSetter", producer.isSendMessageWithVIPChannel());
+        result.put("brokerAddressAtSend", brokerAddressAtSend[0]);
+        result.put("topicsAfterSetter", new ArrayList<>(producer.getTopics()));
+        result.put("publishTopicsAfterSetter", new TreeSet<>(implementation.getPublishTopicList()));
+        result.put("outcome", outcome);
+        result.put("serverContacted", false);
         return result;
     }
 

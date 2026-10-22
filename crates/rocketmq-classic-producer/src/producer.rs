@@ -1441,6 +1441,9 @@ mod tests {
 
     #[tokio::test]
     async fn topic_setter_after_start_changes_getter_but_not_runtime_topics() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["runtimeSetterFlows"];
         let mut config = ProducerConfig::new("topics-live-start-snapshot").unwrap();
         config.set_topics(Some(vec!["startup-topic".into()]));
         let producer = Arc::new(Producer::with_runtime_manager(
@@ -1449,12 +1452,34 @@ mod tests {
         ));
         producer.start().await.unwrap();
 
-        producer.set_topics(Some(vec!["later-topic".into()]));
+        producer.set_topics(Some(
+            expected["topicsAfterSetter"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|topic| topic.as_str().unwrap().to_owned())
+                .collect(),
+        ));
 
-        assert_eq!(producer.topics(), Some(vec!["later-topic".into()]));
+        assert_eq!(
+            producer.topics(),
+            Some(
+                expected["topicsAfterSetter"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|topic| topic.as_str().unwrap().to_owned())
+                    .collect()
+            )
+        );
         assert_eq!(
             producer.publish_topics(),
-            BTreeSet::from(["startup-topic".to_owned()])
+            expected["publishTopicsAfterSetter"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|topic| topic.as_str().unwrap().to_owned())
+                .collect()
         );
         producer.shutdown().await.unwrap();
     }

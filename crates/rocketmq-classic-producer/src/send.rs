@@ -1797,11 +1797,10 @@ impl Producer {
         info: &TopicSnapshot,
         queue: &MessageQueue,
     ) -> Result<Option<String>, ProducerError> {
-        let vip_enabled = runtime
-            .config()
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .vip_channel_enabled();
+        // DefaultMQProducerImpl.sendKernelImpl reads the facade's current
+        // isSendMessageWithVIPChannel value for every send. The runtime's
+        // ClientConfig is a startup snapshot and must not control this path.
+        let vip_enabled = self.send_message_with_vip_channel();
         if let Some(address) = info.endpoints.get(queue) {
             return Ok(Some(broker_vip_channel(vip_enabled, address)?));
         }
@@ -2288,12 +2287,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn vip_channel_setter_after_start_only_changes_getter_not_runtime_config() {
+    async fn vip_channel_setter_after_start_changes_later_send_addresses() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let expected = &fixture["runtimeSetterFlows"];
         let mut config = crate::ProducerConfig::new("live-vip-channel-send").unwrap();
         config.set_send_message_with_vip_channel(true);
         let (producer, _) = scripted_producer(config).await;
-        producer.set_send_message_with_vip_channel(false);
-        assert!(!producer.send_message_with_vip_channel());
+        producer.set_producer_group(Some(
+            expected["producerGroupAfterSetter"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        ));
+        producer.set_send_message_with_vip_channel(
+            expected["vipChannelAfterSetter"].as_bool().unwrap(),
+        );
+        assert_eq!(
+            producer.send_message_with_vip_channel(),
+            expected["vipChannelAfterSetter"]
+        );
         producer
             .scripted_transport
             .lock()
@@ -2306,12 +2319,19 @@ mod tests {
             .await
             .unwrap();
 
-        let address = {
-            producer.scripted_transport.lock().unwrap().attempts[0]
-                .address
-                .clone()
-        };
-        assert!(address == "10.0.0.1:10909" || address == "10.0.0.2:10909");
+        {
+            let transport = producer.scripted_transport.lock().unwrap();
+            let attempt = &transport.attempts[0];
+            let java_address = expected["brokerAddressAtSend"].as_str().unwrap();
+            assert_eq!(
+                attempt.address.rsplit(':').next(),
+                java_address.rsplit(':').next()
+            );
+            assert_eq!(
+                attempt.producer_group.as_deref(),
+                expected["producerGroupAtSend"].as_str()
+            );
+        }
         producer.shutdown().await.unwrap();
     }
 

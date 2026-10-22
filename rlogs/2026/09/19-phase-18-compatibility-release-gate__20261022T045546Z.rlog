@@ -325,3 +325,10 @@ P18-V01 subtype-hook docs and crosswalk refresh — 2026-10-22 07:20 UTC
   `2f65745b` / `d4f1a4f1`; they do not change runtime behavior.
 - Broad P18-V01, current-revision remote Ubuntu CI and native Windows stack
   execution remain open.
+
+
+P18-V01 Producer live runtime setter flow — 2026-10-22 07:32 UTC
+- Pinned Java `DefaultMQProducerImpl.sendKernelImpl` reads the facade's current VIP flag for each send, while `initTopicRoute` consumes the startup topic list once. Added invoked `runtimeSetterFlows`: it changes producer group, VIP setting, and topics after startup initialization; a hook captures the live group and normal broker port before a timeout. No Broker is contacted.
+- Rust producer send routing now uses `Producer::send_message_with_vip_channel()` instead of the runtime ClientConfig snapshot. Topic and send tests compare post-setter effects with the Java fixture. Fixture SHA-256: `1c3ac406157b2ad70f5ffd438b893e1b8c39a62c83a7339a819e752cfa587acb`.
+- `cargo test -p rocketmq-classic-producer --locked` passes (147 unit tests and all integration/doctest targets); strict Producer Clippy, `cargo fmt --all -- --check`, `git diff --check`, and pinned `mvn -f compat/java-reference/pom.xml verify` pass.
+- This closes the named Producer group/VIP/topics runtime flow slice only. Broad P18-V01 Java API/settings/input/error/control-flow/reverse-export reconciliation and native Windows execution remain open. Protected Phase 19 worktree files remain unstaged.

@@ -2154,3 +2154,26 @@ SHA-256: `8640635c5eb044d1485c182be377a308f909885477d01916ba234fb34ef70b7b`.
 The six direct-consume tests, focused Common/Consumer Clippy, formatting and
 Java fixture verification pass. Broad P18-V01 and native Windows execution
 remain open.
+
+## P18-V01 Producer live runtime setter flow — 2026-10-22
+
+Pinned Java source confirms three distinct post-start behaviors. `sendKernelImpl`
+reads `DefaultMQProducer.isSendMessageWithVIPChannel()` for each producer send,
+so changing true to false changes the next broker address from VIP port 10909 to
+the normal port 10911. Later sends also read the current producer group. In
+contrast, `initTopicRoute` reads `getTopics()` during startup; replacing the
+facade list later updates its getter but leaves the initialized topic routes
+unchanged. The invoked `runtimeSetterFlows` fixture seeds a route, invokes the
+startup initializer, changes all three settings, and captures send-hook group
+and address before a short timeout, without contacting a Broker.
+
+Rust now converts producer send addresses with the live Producer VIP flag
+instead of the shared runtime's startup `ClientConfig` snapshot. Rust tests
+compare the changed send group and normal broker port to the fixture and
+compare post-setter topics to the retained startup route set. Fixture
+`fixtures/producer/core.json` SHA-256:
+`1c3ac406157b2ad70f5ffd438b893e1b8c39a62c83a7339a819e752cfa587acb`.
+Producer crate tests, strict Producer Clippy, formatting, diff checks, and
+pinned Maven `verify` pass. This closes the named Producer group/VIP/topic
+setter flow slice; broad P18-V01 source/API/input/reverse-export reconciliation
+and native Windows runtime evidence remain open.
