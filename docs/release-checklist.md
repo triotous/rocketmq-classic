@@ -7461,3 +7461,14 @@ owner-specific checks belong in the manual handoff.
   input/error/control-flow and reverse-export reconciliation, current-revision
   GitHub Ubuntu CI, and native Windows stack-capture execution remain open.
   No push or external CI was run; protected Phase 19 files remain unstaged.
+
+## P18-V02 current-revision workspace gate after static-topic API update — 2026-10-22 (`e415be18`)
+
+- [x] Refreshed locked default and all-feature workspace tests, strict
+  all-target/all-feature workspace Clippy, formatting, and diff checks after
+  the static-topic API update. Protocol all-feature tests and strict Protocol
+  Clippy also pass; pinned Maven `verify` passes on the same code revision.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and reverse-
+  export reconciliation remains open. Current-revision GitHub Ubuntu CI and
+  native Windows stack-capture execution remain unverified. No push or remote
+  CI was run; Phase 19 worktree changes remain unstaged.

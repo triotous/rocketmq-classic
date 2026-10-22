@@ -65,3 +65,13 @@ Validation after this code slice:
 - `fixtures/runtime/route.json` SHA-256: `e1b5ca4167b237c2011e8ecd62600a54ac0b43e522e4ae164157db2c7ddb5716`.
 
 The earlier full workspace/release gate in this log predates these final constant and method-matrix additions and will need refreshing before they can be used as current-revision evidence. Broad P18-V01 reconciliation, current-revision remote Ubuntu CI, and native Windows execution remain open. Protected Phase 19 files remain unstaged and untouched.
+
+Phase 18 current-revision workspace gate — 2026-10-22 15:12 UTC
+
+Refreshed after code commit `e415be18` (documentation follow-up `62a17ecf` only):
+- `cargo test --workspace --locked`: PASS.
+- `cargo test --workspace --all-features --locked`: PASS.
+- `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`: PASS.
+- `cargo fmt --all -- --check` and `git diff --check`: PASS.
+
+The protocol-specific and pinned Maven results for `e415be18` are recorded above. This refresh does not complete the broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation. Current-revision remote Ubuntu CI and native Windows stack-capture execution remain unverified. The separate Phase 19 worktree files remain unstaged.
