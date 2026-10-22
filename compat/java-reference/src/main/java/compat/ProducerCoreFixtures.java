@@ -298,6 +298,7 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.header.GetAllSubscriptionGroupResponseHeader.class));
         result.put("subscriptionGroupWrapperApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper.class));
+        result.put("metadataWrapperIdentity", metadataWrapperIdentity());
         result.put("getAllSubscriptionGroupOperations", getAllSubscriptionGroupOperations());
         result.put("queryConsumeQueueApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
@@ -4361,6 +4362,82 @@ public final class ProducerCoreFixtures {
             api.shutdown();
         }
         result.put("requests", requests);
+        return result;
+    }
+
+    private static org.apache.rocketmq.remoting.protocol.DataVersion metadataWrapperVersion() {
+        org.apache.rocketmq.remoting.protocol.DataVersion version =
+            new org.apache.rocketmq.remoting.protocol.DataVersion();
+        version.setStateVersion(7);
+        version.setTimestamp(1500);
+        version.setCounter(new java.util.concurrent.atomic.AtomicLong(5));
+        return version;
+    }
+
+    private static Map<String, Object> metadataWrapperIdentity() throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+
+        org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper topicFirst =
+            new org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper();
+        org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper topicSecond =
+            new org.apache.rocketmq.remoting.protocol.body.TopicConfigSerializeWrapper();
+        java.util.concurrent.ConcurrentMap<String, TopicConfig> firstTopics =
+            new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ConcurrentMap<String, TopicConfig> secondTopics =
+            new java.util.concurrent.ConcurrentHashMap<>();
+        firstTopics.put("orders", new TopicConfig("orders"));
+        secondTopics.put("orders", new TopicConfig("orders"));
+        topicFirst.setTopicConfigTable(firstTopics);
+        topicSecond.setTopicConfigTable(secondTopics);
+        topicFirst.setDataVersion(metadataWrapperVersion());
+        topicSecond.setDataVersion(metadataWrapperVersion());
+        result.put("topicConfigWrapperSameStateEncodedEqual",
+            Arrays.equals(topicFirst.encode(), topicSecond.encode()));
+        result.put("topicConfigWrapperDistinctSameStateEquals", topicFirst.equals(topicSecond));
+        result.put("topicConfigWrapperSameReferenceEquals", topicFirst.equals(topicFirst));
+        result.put("topicConfigWrapperEqualsOwner",
+            topicFirst.getClass().getMethod("equals", Object.class).getDeclaringClass().getName());
+        result.put("topicConfigWrapperHashCodeOwner",
+            topicFirst.getClass().getMethod("hashCode").getDeclaringClass().getName());
+
+        org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper groupFirst =
+            new org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper();
+        org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper groupSecond =
+            new org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper();
+        org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig firstGroup =
+            new org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig();
+        org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig secondGroup =
+            new org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig();
+        firstGroup.setGroupName("workers");
+        secondGroup.setGroupName("workers");
+        java.util.concurrent.ConcurrentMap<String,
+            org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig> firstGroups =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ConcurrentMap<String,
+            org.apache.rocketmq.remoting.protocol.subscription.SubscriptionGroupConfig> secondGroups =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        firstGroups.put("workers", firstGroup);
+        secondGroups.put("workers", secondGroup);
+        java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ConcurrentMap<String, Integer>>
+            firstForbidden = new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.ConcurrentMap<String, java.util.concurrent.ConcurrentMap<String, Integer>>
+            secondForbidden = new java.util.concurrent.ConcurrentHashMap<>();
+        firstForbidden.put("workers", new java.util.concurrent.ConcurrentHashMap<>(Map.of("orders", 1)));
+        secondForbidden.put("workers", new java.util.concurrent.ConcurrentHashMap<>(Map.of("orders", 1)));
+        groupFirst.setSubscriptionGroupTable(firstGroups);
+        groupSecond.setSubscriptionGroupTable(secondGroups);
+        groupFirst.setForbiddenTable(firstForbidden);
+        groupSecond.setForbiddenTable(secondForbidden);
+        groupFirst.setDataVersion(metadataWrapperVersion());
+        groupSecond.setDataVersion(metadataWrapperVersion());
+        result.put("subscriptionGroupWrapperSameStateEncodedEqual",
+            Arrays.equals(groupFirst.encode(), groupSecond.encode()));
+        result.put("subscriptionGroupWrapperDistinctSameStateEquals", groupFirst.equals(groupSecond));
+        result.put("subscriptionGroupWrapperSameReferenceEquals", groupFirst.equals(groupFirst));
+        result.put("subscriptionGroupWrapperEqualsOwner",
+            groupFirst.getClass().getMethod("equals", Object.class).getDeclaringClass().getName());
+        result.put("subscriptionGroupWrapperHashCodeOwner",
+            groupFirst.getClass().getMethod("hashCode").getDeclaringClass().getName());
         return result;
     }
 

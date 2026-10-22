@@ -3119,7 +3119,15 @@ fn fold_i64_hash(value: i64) -> i32 {
 }
 
 /// Java's `TopicConfigSerializeWrapper` response model for Broker metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// Java inherits identity equality and hashing from `Object`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::TopicConfigSerializeWrapper;
+/// let first = TopicConfigSerializeWrapper::default();
+/// let second = TopicConfigSerializeWrapper::default();
+/// assert_eq!(first, second);
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicConfigSerializeWrapper {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3204,8 +3212,16 @@ impl TopicConfigSerializeWrapper {
 
 /// Java `SubscriptionGroupWrapper`, returned by the paginated Broker snapshot
 /// RPC. The nested maps use ordered Rust maps while preserving nullable table
-/// fields and Java constructor defaults.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// fields and Java constructor defaults. Java inherits identity equality from
+/// `Object`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::SubscriptionGroupWrapper;
+/// let first = SubscriptionGroupWrapper::default();
+/// let second = SubscriptionGroupWrapper::default();
+/// assert_eq!(first, second);
+/// ```
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscriptionGroupWrapper {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -12178,6 +12194,24 @@ mod tests {
         );
         assert_eq!(populated.forbidden_table().unwrap()["workers"]["orders"], 1);
         assert_eq!(populated.data_version().unwrap().state_version(), 3);
+    }
+
+    #[test]
+    fn metadata_snapshot_wrappers_match_java_identity_equality() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+        let identity = &fixture["metadataWrapperIdentity"];
+
+        for prefix in ["topicConfigWrapper", "subscriptionGroupWrapper"] {
+            assert_eq!(identity[format!("{prefix}EqualsOwner")], "java.lang.Object");
+            assert_eq!(
+                identity[format!("{prefix}HashCodeOwner")],
+                "java.lang.Object"
+            );
+            assert_eq!(identity[format!("{prefix}SameStateEncodedEqual")], true);
+            assert_eq!(identity[format!("{prefix}DistinctSameStateEquals")], false);
+            assert_eq!(identity[format!("{prefix}SameReferenceEquals")], true);
+        }
     }
 
     #[test]
