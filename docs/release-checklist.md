@@ -7112,3 +7112,16 @@ owner-specific checks belong in the manual handoff.
   native Windows stack-capture execution remain pending. No Broker, Docker,
   publication, or release action was performed; protected Phase 19 worktree
   files remain unstaged.
+
+## P18-V04 Windows cross-target refresh — 2026-10-22 (`af04d054`)
+
+- [x] On code revision `af04d054`, `cargo check -p rocketmq-classic-core
+  --all-targets --target x86_64-pc-windows-gnu --locked` passed. The exact
+  Consumer stack-capture test cross-compiled with `cargo test --target
+  x86_64-pc-windows-gnu -p rocketmq-classic-consumer --lib
+  stack::tests::jstack_includes_current_and_other_named_threads --no-run
+  --locked`.
+- [ ] Cross-compilation does not execute the Windows stack assertion.
+  Native Windows execution and current-revision GitHub Ubuntu CI evidence
+  remain pending. Broad P18-V01 source/API/settings/input/error/control-flow
+  and reverse-export reconciliation remains open.
