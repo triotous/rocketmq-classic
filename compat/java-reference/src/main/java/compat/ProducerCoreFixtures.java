@@ -251,6 +251,19 @@ public final class ProducerCoreFixtures {
         result.put("consumeStatsListApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.body.ConsumeStatsList.class));
         result.put("fetchConsumeStatsInBrokerOperations", fetchConsumeStatsInBrokerOperations());
+        result.put("viewBrokerStatsDataApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("viewBrokerStatsData"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("viewBrokerStatsDataRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.ViewBrokerStatsDataRequestHeader.class));
+        result.put("brokerStatsDataApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerStatsData.class));
+        result.put("brokerStatsItemApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem.class));
+        result.put("viewBrokerStatsDataOperations", viewBrokerStatsDataOperations());
         result.put("subscriptionGroupConfigApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("getSubscriptionGroupConfig"))
@@ -2536,6 +2549,114 @@ public final class ProducerCoreFixtures {
                 api.fetchConsumeStatsInBroker("broker-a:10911", isOrder, 2345L);
             result.put("outcome", "returned");
             result.put("resultJson", stats.toJson());
+        } catch (org.apache.rocketmq.client.exception.MQClientException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> viewBrokerStatsDataOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(viewBrokerStatsDataCase("stats-populated", "SNDBYTES", "orders@0",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            brokerStatsDataSample()));
+        cases.add(viewBrokerStatsDataCase("stats-defaults", "SNDBYTES", "orders@0",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "{}"));
+        cases.add(viewBrokerStatsDataCase("stats-null-primitives", "SNDBYTES", "orders@0",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null,
+            "{\"statsMinute\":{\"sum\":null,\"tps\":null,\"avgpt\":null}}"));
+        cases.add(viewBrokerStatsDataCase("stats-null-result", null, null,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, "null"));
+        cases.add(viewBrokerStatsDataCase("stats-success-no-body", "SNDBYTES", "orders@0",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null, null));
+        cases.add(viewBrokerStatsDataCase("stats-broker-error", "SNDBYTES", "orders@0",
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR,
+            "broker statistics unavailable", null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static String brokerStatsDataSample() {
+        org.apache.rocketmq.remoting.protocol.body.BrokerStatsData stats =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerStatsData();
+        org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem minute =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem();
+        minute.setSum(1200L);
+        minute.setTps(20.0);
+        minute.setAvgpt(1.25);
+        stats.setStatsMinute(minute);
+        org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem hour =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem();
+        hour.setSum(43200L);
+        hour.setTps(12.0);
+        hour.setAvgpt(1.5);
+        stats.setStatsHour(hour);
+        org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem day =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerStatsItem();
+        day.setSum(1000000L);
+        day.setTps(11.574);
+        day.setAvgpt(1.75);
+        stats.setStatsDay(day);
+        return stats.toJson();
+    }
+
+    private static Map<String, Object> viewBrokerStatsDataCase(
+        String name, String statsName, String statsKey, int responseCode,
+        String responseRemark, String responseBody) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("view-broker-stats-data-api");
+        config.setVipChannelEnabled(false);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand request =
+                                (org.apache.rocketmq.remoting.protocol.RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields());
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            org.apache.rocketmq.remoting.protocol.RemotingCommand response =
+                                org.apache.rocketmq.remoting.protocol.RemotingCommand
+                                    .createResponseCommand(responseCode, responseRemark);
+                            if (responseBody != null) {
+                                response.setBody(responseBody.getBytes(
+                                    java.nio.charset.StandardCharsets.UTF_8));
+                            }
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("timeoutMillis", 2345L);
+        result.put("statsName", statsName);
+        result.put("statsKey", statsKey);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        result.put("responseBody", responseBody);
+        try {
+            org.apache.rocketmq.remoting.protocol.body.BrokerStatsData stats =
+                api.viewBrokerStatsData("broker-a:10911", statsName, statsKey, 2345L);
+            result.put("outcome", "returned");
+            result.put("resultIsNull", stats == null);
+            if (stats != null) result.put("resultJson", stats.toJson());
         } catch (org.apache.rocketmq.client.exception.MQClientException error) {
             result.put("outcome", error.getClass().getSimpleName());
             result.put("errorCode", error.getResponseCode());

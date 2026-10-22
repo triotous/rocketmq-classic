@@ -46,8 +46,9 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
-        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, ViewBrokerStatsDataRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
@@ -424,6 +425,12 @@ fn generate_p4_headers(output: &std::path::Path) {
         "typed-consume-stats-in-broker-request.bin",
         "header-consume-stats-in-broker-request",
         317,
+    );
+    write_oracle_header::<ViewBrokerStatsDataRequestHeader>(
+        output,
+        "typed-view-broker-stats-data-request.bin",
+        "header-view-broker-stats-data-request",
+        315,
     );
     write_oracle_header::<GetConsumerRunningInfoRequestHeader>(
         output,

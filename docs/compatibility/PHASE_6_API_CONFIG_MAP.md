@@ -1926,3 +1926,18 @@ test cover populated/default/null bodies, success without a body, Broker
 errors, the exact request header, VIP conversion and timeout. Producer core
 fixture SHA-256 is recorded in the execution log. This closes this direct
 API/header/DTO slice only; broad P18-V01 remains open.
+
+## P18-V01 direct `viewBrokerStatsData` Broker API — 2026-10-22
+
+Pinned `MQClientAPIImpl.viewBrokerStatsData(String,String,String,long)` sends
+request 315 with nullable `statsName` and `statsKey`; their `@CFNotNull`
+annotations are not enforced by Java's no-op `checkFields()`. Core exposes
+`MQClientApi::view_broker_stats_data`, applies configured VIP conversion, and
+uses the caller timeout. The new `BrokerStatsData` and `BrokerStatsItem` DTOs
+preserve nullable minute/hour/day periods, shared nested object handles, and
+primitive zero defaults, including explicit-null numeric inputs. Invoked Java
+fixtures and a Rust loopback test cover populated/default/null results, null
+request fields, success without a body, Broker errors, and the request
+envelope. The focused Core unit test also checks configured VIP routing.
+Producer core fixture SHA-256 is recorded in the execution log. This closes
+this direct RPC/header/DTO slice only; broad P18-V01 remains open.

@@ -4548,6 +4548,46 @@ impl CommandHeader for GetConsumeStatsInBrokerRequestHeader {
     }
 }
 
+/// Pinned Java `ViewBrokerStatsDataRequestHeader`. Java's `checkFields()` is
+/// a no-op, so both annotated statistics identifiers remain nullable.
+#[derive(Debug, Clone, Default)]
+pub struct ViewBrokerStatsDataRequestHeader {
+    stats_name: Option<String>,
+    stats_key: Option<String>,
+}
+
+impl ViewBrokerStatsDataRequestHeader {
+    pub fn get_stats_name(&self) -> Option<&str> {
+        self.stats_name.as_deref()
+    }
+
+    pub fn set_stats_name(&mut self, value: Option<String>) {
+        self.stats_name = value;
+    }
+
+    pub fn get_stats_key(&self) -> Option<&str> {
+        self.stats_key.as_deref()
+    }
+
+    pub fn set_stats_key(&mut self, value: Option<String>) {
+        self.stats_key = value;
+    }
+}
+
+impl CommandHeader for ViewBrokerStatsDataRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "statsName", self.stats_name.as_deref());
+        put_optional(fields, "statsKey", self.stats_key.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            stats_name: optional_string(fields, "statsName"),
+            stats_key: optional_string(fields, "statsKey"),
+        })
+    }
+}
+
 /// Pinned Java `GetConsumerRunningInfoRequestHeader`, including the inherited
 /// `RpcRequestHeader` namespace and broker-routing fields.
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.

@@ -5251,6 +5251,143 @@ impl ConsumeStatsList {
     }
 }
 
+/// Java `BrokerStatsItem`, one minute/hour/day aggregate in `BrokerStatsData`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrokerStatsItem {
+    sum: i64,
+    tps: f64,
+    avgpt: f64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BrokerStatsItemFields {
+    #[serde(
+        default,
+        deserialize_with = "serde_fastjson::deserialize_i64_reject_object"
+    )]
+    sum: i64,
+    #[serde(default, deserialize_with = "deserialize_fastjson_f64")]
+    tps: f64,
+    #[serde(default, deserialize_with = "deserialize_fastjson_f64")]
+    avgpt: f64,
+}
+
+impl<'de> Deserialize<'de> for BrokerStatsItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: BrokerStatsItemFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            sum: fields.sum,
+            tps: fields.tps,
+            avgpt: fields.avgpt,
+        })
+    }
+}
+
+impl Default for BrokerStatsItem {
+    fn default() -> Self {
+        Self {
+            sum: 0,
+            tps: 0.0,
+            avgpt: 0.0,
+        }
+    }
+}
+
+impl BrokerStatsItem {
+    pub fn get_sum(&self) -> i64 {
+        self.sum
+    }
+
+    pub fn set_sum(&mut self, value: i64) {
+        self.sum = value;
+    }
+
+    pub fn get_tps(&self) -> f64 {
+        self.tps
+    }
+
+    pub fn set_tps(&mut self, value: f64) {
+        self.tps = value;
+    }
+
+    pub fn get_avgpt(&self) -> f64 {
+        self.avgpt
+    }
+
+    pub fn set_avgpt(&mut self, value: f64) {
+        self.avgpt = value;
+    }
+}
+
+/// Java `BrokerStatsData`, returned by `VIEW_BROKER_STATS_DATA`.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BrokerStatsData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats_minute: Option<SharedValue<BrokerStatsItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats_hour: Option<SharedValue<BrokerStatsItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats_day: Option<SharedValue<BrokerStatsItem>>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BrokerStatsDataFields {
+    stats_minute: Option<BrokerStatsItem>,
+    stats_hour: Option<BrokerStatsItem>,
+    stats_day: Option<BrokerStatsItem>,
+}
+
+impl<'de> Deserialize<'de> for BrokerStatsData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields: BrokerStatsDataFields =
+            serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
+        Ok(Self {
+            stats_minute: fields.stats_minute.map(SharedValue::new),
+            stats_hour: fields.stats_hour.map(SharedValue::new),
+            stats_day: fields.stats_day.map(SharedValue::new),
+        })
+    }
+}
+
+impl BrokerStatsData {
+    pub fn get_stats_minute(&self) -> Option<SharedValue<BrokerStatsItem>> {
+        self.stats_minute.clone()
+    }
+
+    pub fn set_stats_minute(&mut self, value: Option<SharedValue<BrokerStatsItem>>) {
+        self.stats_minute = value;
+    }
+
+    pub fn get_stats_hour(&self) -> Option<SharedValue<BrokerStatsItem>> {
+        self.stats_hour.clone()
+    }
+
+    pub fn set_stats_hour(&mut self, value: Option<SharedValue<BrokerStatsItem>>) {
+        self.stats_hour = value;
+    }
+
+    pub fn get_stats_day(&self) -> Option<SharedValue<BrokerStatsItem>> {
+        self.stats_day.clone()
+    }
+
+    pub fn set_stats_day(&mut self, value: Option<SharedValue<BrokerStatsItem>>) {
+        self.stats_day = value;
+    }
+}
+
+impl_java_remoting_serializable_adapters!(BrokerStatsData);
+
 /// Java `SetMessageRequestModeRequestBody` inherits identity-based `Object.equals`.
 ///
 /// ```compile_fail

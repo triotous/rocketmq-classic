@@ -2463,6 +2463,164 @@ async fn fetch_consume_stats_in_broker_matches_java_fixture() {
 }
 
 #[tokio::test]
+async fn view_broker_stats_data_matches_java_fixture() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["viewBrokerStatsDataApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.BrokerStatsData org.apache.rocketmq.client.impl.MQClientAPIImpl.viewBrokerStatsData(java.lang.String,java.lang.String,java.lang.String,long)"
+        ])
+    );
+    for (surface, methods) in [
+        (
+            "brokerStatsDataApi",
+            vec![
+                "getStatsMinute",
+                "setStatsMinute",
+                "getStatsHour",
+                "setStatsHour",
+                "getStatsDay",
+                "setStatsDay",
+            ],
+        ),
+        (
+            "brokerStatsItemApi",
+            vec![
+                "getSum", "setSum", "getTps", "setTps", "getAvgpt", "setAvgpt",
+            ],
+        ),
+    ] {
+        let declared = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in methods {
+            assert!(declared.iter().any(|signature| {
+                signature
+                    .as_str()
+                    .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+            }));
+        }
+    }
+    let alias = SharedValue::new(rocketmq_classic_protocol::body::BrokerStatsItem::default());
+    let mut stats_dto = rocketmq_classic_protocol::body::BrokerStatsData::default();
+    stats_dto.set_stats_minute(Some(alias.clone()));
+    assert!(stats_dto.get_stats_minute().unwrap().ptr_eq(&alias));
+    let cases = fixture["viewBrokerStatsDataOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 6);
+
+    for case in cases {
+        let expected_request = &case["requests"][0];
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let response_body = case["responseBody"]
+            .as_str()
+            .map(|body| body.as_bytes().to_vec());
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark, None, response_body).await;
+        let (client_api, client) = api().await;
+        let result = client_api
+            .view_broker_stats_data(
+                &addr,
+                case["statsName"].as_str(),
+                case["statsKey"].as_str(),
+                case["timeoutMillis"].as_i64().unwrap(),
+            )
+            .await;
+        if case["outcome"] == "returned" {
+            let stats = result.unwrap();
+            if case["resultIsNull"] == true {
+                assert!(stats.is_none());
+            } else {
+                let stats = stats.unwrap();
+                assert_eq!(
+                    serde_json::from_str::<Value>(&stats.java_to_json(false).unwrap()).unwrap(),
+                    serde_json::from_str::<Value>(case["resultJson"].as_str().unwrap()).unwrap()
+                );
+                if case["name"] == "stats-populated" {
+                    stats.get_stats_minute().unwrap().with(|minute| {
+                        assert_eq!(minute.get_sum(), 1200);
+                        assert_eq!(minute.get_tps(), 20.0);
+                        assert_eq!(minute.get_avgpt(), 1.25);
+                    });
+                    stats.get_stats_hour().unwrap().with(|hour| {
+                        assert_eq!(hour.get_sum(), 43200);
+                        assert_eq!(hour.get_tps(), 12.0);
+                        assert_eq!(hour.get_avgpt(), 1.5);
+                    });
+                    stats.get_stats_day().unwrap().with(|day| {
+                        assert_eq!(day.get_sum(), 1_000_000);
+                        assert_eq!(day.get_tps(), 11.574);
+                        assert_eq!(day.get_avgpt(), 1.75);
+                    });
+                }
+                if case["name"] == "stats-null-primitives" {
+                    stats.get_stats_minute().unwrap().with(|minute| {
+                        assert_eq!(minute.get_sum(), 0);
+                        assert_eq!(minute.get_tps(), 0.0);
+                        assert_eq!(minute.get_avgpt(), 0.0);
+                    });
+                }
+            }
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code,
+                    peer: error_peer,
+                    code,
+                    remark,
+                }) if request_code == expected_request["requestCode"].as_i64().unwrap() as i32
+                    && error_peer == addr
+                    && code == response_code
+                    && remark.as_deref() == case["responseRemark"].as_str()
+            ));
+        }
+
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, expected_request["requestCode"]);
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+        assert!(request.body.is_none());
+        assert_eq!(
+            request
+                .ext_fields
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+        );
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn view_broker_stats_data_honors_the_java_timeout_argument() {
+    let (addr, peer) = scripted_peer_after(
+        response::SUCCESS,
+        None,
+        Some(b"{}".to_vec()),
+        Duration::from_millis(150),
+    )
+    .await;
+    let (client_api, client) = api().await;
+    let result = client_api
+        .view_broker_stats_data(&addr, Some("SNDBYTES"), Some("orders@0"), 25)
+        .await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
 async fn add_broker_honors_the_java_timeout_argument() {
     let (addr, peer) =
         scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;

@@ -44,8 +44,9 @@ use rocketmq_classic_protocol::{
         SearchOffsetResponseHeader, SendMessageRequestHeaderV1, SendMessageRequestHeaderV2,
         SendMessageResponseHeader, UnlockBatchMqRequestHeader, UnregisterClientRequestHeader,
         UnregisterClientResponseHeader, UpdateConsumerOffsetRequestHeader,
-        UpdateGroupForbiddenRequestHeader, ViewMessageRequestHeader,
-        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
+        UpdateGroupForbiddenRequestHeader, ViewBrokerStatsDataRequestHeader,
+        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
+        WipeWritePermOfBrokerResponseHeader,
     },
 };
 
@@ -2814,6 +2815,15 @@ fn header_validation_matrix() {
             "",
             "",
             "isOrder"
+        ),
+        row!(
+            ViewBrokerStatsDataRequestHeader,
+            "view-broker-stats-data-request",
+            "",
+            "",
+            "",
+            "statsName statsKey",
+            ""
         ),
         row!(
             GetConsumerRunningInfoRequestHeader,

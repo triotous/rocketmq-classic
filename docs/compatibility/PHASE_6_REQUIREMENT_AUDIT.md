@@ -1741,16 +1741,16 @@ The pinned Java 5.5.1 `MQClientAPIImpl` public surface was checked with
 The initial candidate list contained 18 direct operations with no mapped Rust
 operation or fixture-backed owner path. Since this list was captured,
 `queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`, and
-`fetchConsumeStatsInBroker` have been implemented and checked against the
-pinned Java fixture. Fourteen direct operations from the initial list remain
-implementation work rather than approved differences:
+`fetchConsumeStatsInBroker` and `viewBrokerStatsData` have been implemented and
+checked against the pinned Java fixture. Thirteen direct operations from the
+initial list remain implementation work rather than approved differences:
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
 | Topic configuration snapshot | `getAllTopicConfig` | 21 | Open |
 | Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Open |
 | Broker consume statistics | `fetchConsumeStatsInBroker` | 317 | Closed by `fetch_consume_stats_in_broker` |
-| Broker statistics view | `viewBrokerStatsData` | 315 | Open |
+| Broker statistics view | `viewBrokerStatsData` | 315 | Closed by `view_broker_stats_data` |
 | Consume-queue query | `queryConsumeQueue` | 321 | Open |
 | Correction-offset query | `queryCorrectionOffset` | 308 | Closed by `query_correction_offset` |
 | Static-topic configuration lookup | `getTopicConfig` | 351 | Open |
@@ -1769,7 +1769,7 @@ implementation work rather than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 14 open rows, but their Rust DTO and RPC owners are still
+already exist for the 13 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to

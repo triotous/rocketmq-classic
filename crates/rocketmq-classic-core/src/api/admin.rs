@@ -7,12 +7,13 @@ use rocketmq_classic_common::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult, ConsumeStats,
-        ConsumeStatsList, ConsumerConnection, ConsumerRunningInfoBody, CreateTopicListRequestBody,
-        DeleteSubscriptionGroupListRequestBody, DeleteTopicListRequestBody, GroupList,
-        HaRuntimeInfo, KvTable, ProducerConnection, ProducerTableInfo, QueryCorrectionOffsetBody,
-        QuerySubscriptionResponseBody, QueueTimeSpan, ResetOffsetBody, SharedQueueOffsetEntries,
-        SubscriptionGroupList, TopicConfig, TopicList, TopicStatsTable,
+        BrokerStatsData, CheckRocksdbCqWriteResult, ClusterInfo, ConsumeMessageDirectlyResult,
+        ConsumeStats, ConsumeStatsList, ConsumerConnection, ConsumerRunningInfoBody,
+        CreateTopicListRequestBody, DeleteSubscriptionGroupListRequestBody,
+        DeleteTopicListRequestBody, GroupList, HaRuntimeInfo, KvTable, ProducerConnection,
+        ProducerTableInfo, QueryCorrectionOffsetBody, QuerySubscriptionResponseBody, QueueTimeSpan,
+        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig, TopicList,
+        TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -31,8 +32,8 @@ use rocketmq_classic_protocol::{
         QuerySubscriptionByConsumerRequestHeader, QueryTopicConsumeByWhoRequestHeader,
         QueryTopicsByConsumerRequestHeader, RemoveBrokerRequestHeader,
         ResetMasterFlushOffsetHeader, ResetOffsetRequestHeader, UpdateGroupForbiddenRequestHeader,
-        ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
-        WipeWritePermOfBrokerResponseHeader,
+        ViewBrokerStatsDataRequestHeader, ViewMessageRequestHeader,
+        WipeWritePermOfBrokerRequestHeader, WipeWritePermOfBrokerResponseHeader,
     },
     heartbeat::SubscriptionData,
     route::TopicRouteData,
@@ -1536,6 +1537,53 @@ impl MQClientApi {
                         reason: error.to_string(),
                     },
                 );
+            }
+        }
+        Err(RpcError::Response {
+            request_code: code,
+            peer: addr.to_owned(),
+            code: reply.code,
+            remark: reply.remark,
+        })
+    }
+
+    /// Reads one Broker's minute, hour, and day statistics through Java
+    /// `MQClientAPIImpl.viewBrokerStatsData` with configured VIP conversion.
+    pub async fn view_broker_stats_data(
+        &self,
+        addr: &str,
+        stats_name: Option<&str>,
+        stats_key: Option<&str>,
+        timeout_millis: i64,
+    ) -> Result<Option<BrokerStatsData>, RpcError> {
+        let code = request::VIEW_BROKER_STATS_DATA;
+        let vip_enabled = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).vip_channel_enabled())
+            .unwrap_or(false);
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+        let mut header = ViewBrokerStatsDataRequestHeader::default();
+        header.set_stats_name(stats_name.map(str::to_owned));
+        header.set_stats_key(stats_key.map(str::to_owned));
+        let reply = self
+            .request(
+                &broker_addr,
+                code,
+                &header,
+                None,
+                deadline_after_timeout_millis(timeout_millis),
+            )
+            .await?;
+        if reply.code == response::SUCCESS {
+            if let Some(body) = reply.body.as_deref() {
+                return BrokerStatsData::java_decode_nullable(Some(body)).map_err(|error| {
+                    RpcError::MalformedResponse {
+                        request_code: code,
+                        peer: addr.to_owned(),
+                        reason: error.to_string(),
+                    }
+                });
             }
         }
         Err(RpcError::Response {
@@ -3095,18 +3143,23 @@ mod tests {
             for (expected_code, expected_fields, body) in [
                 (
                     request::GET_PRODUCER_CONNECTION_LIST,
-                    Some(("producerGroup", "workers")),
+                    &[("producerGroup", "workers")][..],
                     b"{\"connectionSet\":[]}".as_slice(),
                 ),
                 (
                     request::GET_ALL_PRODUCER_INFO,
-                    None,
+                    &[][..],
                     b"{\"data\":{}}".as_slice(),
                 ),
                 (
                     request::GET_BROKER_RUNTIME_INFO,
-                    None,
+                    &[][..],
                     b"{\"table\":{}}".as_slice(),
+                ),
+                (
+                    request::VIEW_BROKER_STATS_DATA,
+                    &[("statsName", "SNDBYTES"), ("statsKey", "orders@0")][..],
+                    b"{\"statsMinute\":{\"sum\":1,\"tps\":1.0,\"avgpt\":1.0}}".as_slice(),
                 ),
             ] {
                 let mut length = [0_u8; 4];
@@ -3119,11 +3172,9 @@ mod tests {
                 assert_eq!(request.language, Some(LanguageCode::Java));
                 assert!(request.body.is_none());
                 let fields = request.ext_fields.unwrap_or_default();
-                match expected_fields {
-                    Some((key, value)) => {
-                        assert_eq!(fields.get(key).map(String::as_str), Some(value))
-                    }
-                    None => assert!(fields.is_empty()),
+                assert_eq!(fields.len(), expected_fields.len());
+                for (key, value) in expected_fields {
+                    assert_eq!(fields.get(key).map(String::as_str), Some(*value));
                 }
                 let mut reply = RemotingCommand {
                     code: response::SUCCESS,
@@ -3154,6 +3205,9 @@ mod tests {
             .await
             .unwrap();
         api.get_broker_runtime_info(&advertised_addr, deadline)
+            .await
+            .unwrap();
+        api.view_broker_stats_data(&advertised_addr, Some("SNDBYTES"), Some("orders@0"), 2000)
             .await
             .unwrap();
         peer.await.unwrap();
