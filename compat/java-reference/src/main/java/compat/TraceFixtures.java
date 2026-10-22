@@ -93,8 +93,35 @@ public final class TraceFixtures {
         result.put("clientArtifact", "org.apache.rocketmq:rocketmq-client:5.5.1");
         result.put("entrypoint", "TraceDataEncoder.encoderFromContextBean");
         result.put("defaults", defaults());
+        result.put("identityEquality", identityEquality());
         result.put("invalidInputThrows", invalidInputThrows());
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> identityEquality() {
+        TraceBean firstBean = new TraceBean();
+        TraceBean secondBean = new TraceBean();
+
+        TraceContext firstContext = new TraceContext();
+        firstContext.setTraceType(TraceType.Pub);
+        firstContext.setTimeStamp(42);
+        firstContext.setRegionId("region");
+        firstContext.setGroupName("group");
+        firstContext.setRequestId("request");
+        TraceContext secondContext = new TraceContext();
+        secondContext.setTraceType(TraceType.Pub);
+        secondContext.setTimeStamp(42);
+        secondContext.setRegionId("region");
+        secondContext.setGroupName("group");
+        secondContext.setRequestId("request");
+
+        Map<String, Object> result = new TreeMap<>();
+        result.put("equalValueBeansCompareEqual", firstBean.equals(secondBean));
+        result.put("sameBeanReferenceComparesEqual", firstBean.equals(firstBean));
+        result.put("equalValueContextsCompareEqual", firstContext.equals(secondContext));
+        result.put("sameContextReferenceComparesEqual", firstContext.equals(firstContext));
+        result.put("equalTimestampContextsCompareAsZero", firstContext.compareTo(secondContext) == 0);
         return result;
     }
 

@@ -193,7 +193,16 @@ impl LocalTransactionState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One Java `TraceBean` value. Java inherits identity-based `Object.equals` and
+/// `Object.hashCode`, so this Rust value intentionally has no structural
+/// equality implementation.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::trace::TraceBean;
+/// fn requires_equality<T: PartialEq>() {}
+/// requires_equality::<TraceBean>();
+/// ```
+#[derive(Clone, Debug)]
 pub struct TraceBean {
     pub topic: Option<String>,
     pub message_id: Option<String>,
@@ -239,7 +248,16 @@ impl Default for TraceBean {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Java `TraceContext` value with its mutable trace fields. Java implements
+/// `Comparable` by timestamp but inherits identity-based `equals` and
+/// `hashCode`; this Rust value therefore does not expose structural equality.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::trace::TraceContext;
+/// fn requires_equality<T: PartialEq>() {}
+/// requires_equality::<TraceContext>();
+/// ```
+#[derive(Clone, Debug)]
 pub struct TraceContext {
     /// Java `TraceContext.traceType` defaults to null and remains mutable.
     pub trace_type: Option<TraceType>,
@@ -579,13 +597,40 @@ mod tests {
     }
 
     #[test]
+    fn trace_record_equality_follows_java_identity_contract() {
+        let fixture = fixtures();
+        let identity = &fixture["identityEquality"];
+        assert!(!identity["equalValueBeansCompareEqual"].as_bool().unwrap());
+        assert!(
+            identity["sameBeanReferenceComparesEqual"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            !identity["equalValueContextsCompareEqual"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            identity["sameContextReferenceComparesEqual"]
+                .as_bool()
+                .unwrap()
+        );
+        assert!(
+            identity["equalTimestampContextsCompareAsZero"]
+                .as_bool()
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn trace_context_default_constructor_matches_java_nullable_state() {
         let defaults = &fixtures()["defaults"];
         let context = TraceContext::default();
         let bean = TraceBean::default();
 
         assert_eq!(context.trace_type, None);
-        assert_eq!(context.trace_beans, None);
+        assert!(context.trace_beans.is_none());
         assert!(context.timestamp_millis > 0);
         assert_eq!(context.region_id.as_deref(), defaults["regionId"].as_str());
         assert_eq!(
@@ -714,7 +759,7 @@ mod tests {
         assert_eq!(first.context_code, 0);
         assert_eq!(first.access_channel, None);
         assert_eq!(first.trace_type, Some(TraceType::Pub));
-        assert_eq!(first.trace_beans, None);
+        assert!(first.trace_beans.is_none());
         assert!(first.timestamp_millis > 0);
         let first_id = first.request_id.as_deref().unwrap();
         let second_id = second.request_id.as_deref().unwrap();
