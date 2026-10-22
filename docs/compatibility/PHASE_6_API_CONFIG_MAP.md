@@ -2046,3 +2046,14 @@ has Java's no-op validation behavior. Invoked Java fixtures and Rust loopback
 tests compare the request header/body, success and Broker error, timeout, typed
 header cross-decode, and unchanged-address behavior. The direct reverse audit
 now has six open APIs; broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `deleteUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.deleteUser` sends request 3003 with a
+`DeleteUserRequestHeader`, no body, and the caller timeout. Core exposes
+`MQClientApi::delete_user`, preserves nullable usernames and Java's no-op
+header validation, and leaves the Broker address unchanged when VIP channels
+are enabled. Invoked Java fixtures and Rust loopback tests compare the header,
+absent body, success and Broker error, timeout, typed-header cross-decode, and
+unchanged-address behavior. The direct reverse audit now has five open APIs;
+broader P18-V01 reconciliation remains open.

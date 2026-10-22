@@ -3427,6 +3427,33 @@ impl_header_field_accessors!(
     [set_username]
 );
 
+/// Pinned Java auth `DeleteUserRequestHeader`. Java's `checkFields()` is a no-op,
+/// so `username` remains nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct DeleteUserRequestHeader {
+    username: Option<String>,
+}
+
+impl CommandHeader for DeleteUserRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "username", self.username.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            username: optional_string(fields, "username"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    DeleteUserRequestHeader,
+    optional_string,
+    username,
+    [get_username],
+    [set_username]
+);
+
 /// Pinned Java `CreateTopicRequestHeader` used by `UPDATE_AND_CREATE_TOPIC`.
 /// Java 5.5.1 exposes this value through its accessor API, not as a public field.
 ///
