@@ -2343,3 +2343,21 @@ strict Clippy, formatting/diff checks, and pinned Java Maven verification pass.
 This closes the LitePull live-subscription refresh slice only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 LitePull unsubscribe lifecycle serialization — 2026-10-22 (`fa43e761`)
+
+Pinned Java 5.5.1 declares `DefaultLitePullConsumerImpl.unsubscribe(String)`
+synchronized on the same monitor as `start`, `shutdown`, and subscription
+methods. Fixture `litePullMethodSynchronization` now records the reflected
+modifier; its SHA-256 is
+`cc3ae6b4f1b6adb53dd1b32a4314cbf2252dabff22655dab4102c6a8473152ec`.
+
+Rust `unsubscribe` now takes the lifecycle gate followed by the reconciliation
+gate before changing subscriptions, queue state, workers, and engine
+registrations. The lifecycle regression holds startup at the Broker check and
+verifies concurrent unsubscribe remains pending, then removes the original
+subscription after startup completes. The focused regression, strict Clippy,
+format/diff checks, and Java lifecycle fixture verification pass. This closes
+only the LitePull unsubscribe synchronization slice; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
