@@ -2119,3 +2119,15 @@ enabled. Invoked Java fixtures and Rust loopback tests compare exact body
 bytes, nullable fields, success and Broker errors, timeout, typed-header
 cross-decode, and unchanged-address behavior. The auth reverse audit now has
 two open APIs; broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `deleteAcl` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.deleteAcl` sends request 3008 with
+`DeleteAclRequestHeader.subject` and `.resource`, no body, and the caller
+timeout; its nullable `policyType` remains unset by the method. Core exposes
+`MQClientApi::delete_acl`, preserves nullable subject/resource values, and
+leaves the supplied Broker address unchanged when VIP channels are enabled.
+Invoked Java fixtures and Rust loopback tests compare header fields, absent
+body, success and Broker errors, timeout, typed-header cross-decode, and
+unchanged-address behavior. The auth reverse audit now has one open API;
+broader P18-V01 reconciliation remains open.

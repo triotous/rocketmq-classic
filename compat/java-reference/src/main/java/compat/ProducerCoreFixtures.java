@@ -401,6 +401,15 @@ public final class ProducerCoreFixtures {
         result.put("updateAclRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.UpdateAclRequestHeader.class));
         result.put("updateAclOperations", updateAclOperations());
+        result.put("deleteAclApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("deleteAcl"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("deleteAclRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.DeleteAclRequestHeader.class));
+        result.put("deleteAclOperations", deleteAclOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -3536,6 +3545,83 @@ public final class ProducerCoreFixtures {
             } else {
                 api.createAcl("broker-a:10911", aclInfo, 2345L);
             }
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> deleteAclOperations() throws Exception {
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(deleteAclCase("populated", "subject", "topic-a", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteAclCase("defaults", null, null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteAclCase("null-subject", null, "topic-a", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteAclCase("null-resource", "subject", null, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteAclCase("empty-fields", "", "", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(deleteAclCase("broker-error", "subject", "topic-a", false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "ACL deletion rejected"));
+        cases.add(deleteAclCase("vip-enabled-address-unchanged", "subject", "topic-a", true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> deleteAclCase(
+        String name,
+        String subject,
+        String resource,
+        boolean vipEnabled,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("delete-acl-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyPresent", request.getBody() != null);
+                            requests.add(call);
+                            return RemotingCommand.createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("subject", subject);
+        result.put("resource", resource);
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.deleteAcl("broker-a:10911", subject, resource, 2345L);
             result.put("outcome", "returned");
         } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
             result.put("outcome", error.getClass().getSimpleName());

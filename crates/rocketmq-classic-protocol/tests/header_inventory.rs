@@ -41,6 +41,7 @@ macro_rules! inventory {
             CreateTopicRequestHeader => ("header-create-topic-request", "typed-create-topic-request.bin"),
             CreateUserRequestHeader => ("header-create-user-request", "typed-create-user-request.bin"),
             CreateAclRequestHeader => ("header-create-acl-request", "typed-create-acl-request.bin"),
+            DeleteAclRequestHeader => ("header-delete-acl-request", "typed-delete-acl-request.bin"),
             UpdateAclRequestHeader => ("header-update-acl-request", "typed-update-acl-request.bin"),
             UpdateUserRequestHeader => ("header-update-user-request", "typed-update-user-request.bin"),
             DeleteUserRequestHeader => ("header-delete-user-request", "typed-delete-user-request.bin"),

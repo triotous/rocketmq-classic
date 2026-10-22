@@ -3535,6 +3535,55 @@ impl_header_field_accessors!(
     [set_subject]
 );
 
+/// Pinned Java auth `DeleteAclRequestHeader`. Java's `checkFields()` is a no-op,
+/// so all three fields remain nullable at the command-header boundary.
+#[derive(Debug, Clone, Default)]
+pub struct DeleteAclRequestHeader {
+    subject: Option<String>,
+    policy_type: Option<String>,
+    resource: Option<String>,
+}
+
+impl CommandHeader for DeleteAclRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "subject", self.subject.as_deref());
+        put_optional(fields, "policyType", self.policy_type.as_deref());
+        put_optional(fields, "resource", self.resource.as_deref());
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            subject: optional_string(fields, "subject"),
+            policy_type: optional_string(fields, "policyType"),
+            resource: optional_string(fields, "resource"),
+        })
+    }
+}
+
+impl_header_field_accessors!(
+    DeleteAclRequestHeader,
+    optional_string,
+    subject,
+    [get_subject],
+    [set_subject]
+);
+
+impl_header_field_accessors!(
+    DeleteAclRequestHeader,
+    optional_string,
+    policy_type,
+    [get_policy_type],
+    [set_policy_type]
+);
+
+impl_header_field_accessors!(
+    DeleteAclRequestHeader,
+    optional_string,
+    resource,
+    [get_resource],
+    [set_resource]
+);
+
 /// Pinned Java auth `UpdateAclRequestHeader`. Java's `checkFields()` is a no-op,
 /// so `subject` remains nullable at the command-header boundary.
 #[derive(Debug, Clone, Default)]
