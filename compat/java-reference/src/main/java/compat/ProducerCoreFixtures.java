@@ -321,6 +321,17 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.header.CreateTopicRequestHeader.class));
         result.put("staticTopicConfigApi", publicApiSurface(TopicConfig.class));
         result.put("createStaticTopicOperations", createStaticTopicOperations());
+        result.put("createUserApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> method.getName().equals("createUser"))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("createUserRequestHeaderApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.CreateUserRequestHeader.class));
+        result.put("userInfoApi", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.UserInfo.class));
+        result.put("createUserOperations", createUserOperations());
         result.put("getTopicConfigRequestHeaderApi", publicApiSurface(
             org.apache.rocketmq.remoting.protocol.header.GetTopicConfigRequestHeader.class));
         result.put("topicConfigAndQueueMappingApi", publicApiSurface(
@@ -2806,6 +2817,90 @@ public final class ProducerCoreFixtures {
             org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
         Map<String, Object> result = new TreeMap<>();
         result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> createUserOperations() throws Exception {
+        org.apache.rocketmq.remoting.protocol.body.UserInfo populated =
+            org.apache.rocketmq.remoting.protocol.body.UserInfo.of(
+                "alice", "fixture-password", "ADMIN", "ACTIVE");
+        org.apache.rocketmq.remoting.protocol.body.UserInfo nullableFields =
+            new org.apache.rocketmq.remoting.protocol.body.UserInfo();
+        nullableFields.setUsername("nullable-fields");
+        org.apache.rocketmq.remoting.protocol.body.UserInfo nullUsername =
+            new org.apache.rocketmq.remoting.protocol.body.UserInfo();
+        nullUsername.setPassword("pw-only");
+        nullUsername.setUserType("USER");
+        List<Map<String, Object>> cases = new ArrayList<>();
+        cases.add(createUserCase("populated", populated, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createUserCase("defaults", new org.apache.rocketmq.remoting.protocol.body.UserInfo(), false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createUserCase("nullable-fields", nullableFields, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createUserCase("null-username", nullUsername, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        cases.add(createUserCase("broker-error", populated, false,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SYSTEM_ERROR, "user rejected"));
+        cases.add(createUserCase("vip-enabled-address-unchanged", populated, true,
+            org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS, null));
+        Map<String, Object> result = new TreeMap<>();
+        result.put("cases", cases);
+        return result;
+    }
+
+    private static Map<String, Object> createUserCase(
+        String name,
+        org.apache.rocketmq.remoting.protocol.body.UserInfo userInfo,
+        boolean vipEnabled,
+        int responseCode,
+        String responseRemark) throws Exception {
+        Map<String, Object> result = new TreeMap<>();
+        List<Map<String, Object>> requests = new ArrayList<>();
+        org.apache.rocketmq.client.ClientConfig config = new org.apache.rocketmq.client.ClientConfig();
+        config.setClientIP("create-user-api");
+        config.setVipChannelEnabled(vipEnabled);
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            config, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            call.put("extFields", request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields()));
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+                            return RemotingCommand.createResponseCommand(responseCode, responseRemark);
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+        result.put("name", name);
+        result.put("address", "broker-a:10911");
+        result.put("userInfoJson", JSON.toJSONString(userInfo));
+        result.put("vipEnabled", vipEnabled);
+        result.put("timeoutMillis", 2345L);
+        result.put("responseCode", responseCode);
+        result.put("responseRemark", responseRemark);
+        try {
+            api.createUser("broker-a:10911", userInfo, 2345L);
+            result.put("outcome", "returned");
+        } catch (org.apache.rocketmq.client.exception.MQBrokerException error) {
+            result.put("outcome", error.getClass().getSimpleName());
+            result.put("errorCode", error.getResponseCode());
+            result.put("errorMessage", error.getMessage());
+        } finally {
+            api.shutdown();
+        }
+        result.put("requests", requests);
         return result;
     }
 

@@ -15,7 +15,7 @@ use rocketmq_classic_protocol::{
     body::{
         CheckRocksdbCqWriteResult, CheckRocksdbCqWriteStatus, ConsumeQueueData,
         QueryConsumeQueueResponseBody, TopicConfig, TopicConfigAndQueueMapping,
-        TopicQueueMappingDetail,
+        TopicQueueMappingDetail, UserInfo,
     },
     codes::{request, response},
     header::{
@@ -3340,6 +3340,162 @@ async fn create_static_topic_honors_the_java_timeout_argument() {
     let result = client_api
         .create_static_topic(&addr, Some("TBW102"), &config, &mapping, false, 25)
         .await;
+    assert!(matches!(
+        result,
+        Err(RpcError::Transport(ref error)) if error.is_timeout()
+    ));
+    peer.await.unwrap();
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_user_matches_java_requests_and_outcomes() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["createUserApi"],
+        json!([
+            "void org.apache.rocketmq.client.impl.MQClientAPIImpl.createUser(java.lang.String,org.apache.rocketmq.remoting.protocol.body.UserInfo,long)"
+        ])
+    );
+    for (surface, required_methods) in [
+        (
+            "createUserRequestHeaderApi",
+            vec!["getUsername", "setUsername", "checkFields"],
+        ),
+        (
+            "userInfoApi",
+            vec![
+                "of",
+                "getUsername",
+                "setUsername",
+                "getPassword",
+                "setPassword",
+                "getUserType",
+                "setUserType",
+                "getUserStatus",
+                "setUserStatus",
+            ],
+        ),
+    ] {
+        let methods = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in required_methods {
+            assert!(
+                methods.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+                }),
+                "{surface} lacks {method}"
+            );
+        }
+    }
+    assert_eq!(
+        fixture["createUserRequestHeaderApi"]["publicConstructors"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.header.CreateUserRequestHeader()",
+            "org.apache.rocketmq.remoting.protocol.header.CreateUserRequestHeader(java.lang.String)"
+        ])
+    );
+    assert_eq!(
+        fixture["userInfoApi"]["publicConstructors"],
+        json!(["org.apache.rocketmq.remoting.protocol.body.UserInfo()"])
+    );
+    let user_info_methods = fixture["userInfoApi"]["declaredPublicMethods"]
+        .as_array()
+        .unwrap();
+    for signature in [
+        "org.apache.rocketmq.remoting.protocol.body.UserInfo org.apache.rocketmq.remoting.protocol.body.UserInfo.of(java.lang.String,java.lang.String,java.lang.String)",
+        "org.apache.rocketmq.remoting.protocol.body.UserInfo org.apache.rocketmq.remoting.protocol.body.UserInfo.of(java.lang.String,java.lang.String,java.lang.String,java.lang.String)",
+    ] {
+        assert!(
+            user_info_methods
+                .iter()
+                .any(|method| method.as_str() == Some(signature)),
+            "missing UserInfo factory: {signature}"
+        );
+    }
+
+    let cases = fixture["createUserOperations"]["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 6);
+    let (client_api, client) = api().await;
+    for case in cases
+        .iter()
+        .filter(|case| !case["vipEnabled"].as_bool().unwrap())
+    {
+        let name = case["name"].as_str().unwrap();
+        let user_info =
+            serde_json::from_str::<UserInfo>(case["userInfoJson"].as_str().unwrap()).unwrap();
+        let expected_request = &case["requests"][0];
+        assert_eq!(expected_request["address"], case["address"]);
+        assert_eq!(expected_request["requestCode"], request::AUTH_CREATE_USER);
+        assert_eq!(expected_request["timeoutMillis"], case["timeoutMillis"]);
+        let expected_body = base64::engine::general_purpose::STANDARD
+            .decode(expected_request["requestBodyBase64"].as_str().unwrap())
+            .unwrap();
+        let response_code = case["responseCode"].as_i64().unwrap() as i32;
+        let response_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let (addr, peer) =
+            scripted_peer_with_remark(response_code, response_remark.clone(), None, None).await;
+        let result = client_api
+            .create_user(&addr, &user_info, case["timeoutMillis"].as_i64().unwrap())
+            .await;
+        if case["outcome"] == "returned" {
+            result.unwrap_or_else(|error| panic!("{name}: {error}"));
+        } else {
+            assert!(matches!(
+                result,
+                Err(RpcError::Response {
+                    request_code: request::AUTH_CREATE_USER,
+                    peer: error_peer,
+                    code,
+                    remark: Some(remark),
+                }) if error_peer == addr
+                    && code == response_code
+                    && response_remark.as_deref() == Some(remark.as_str())
+            ));
+        }
+        let request = peer.await.unwrap();
+        assert_eq!(request.code, request::AUTH_CREATE_USER);
+        assert_eq!(
+            request.body.as_deref(),
+            Some(expected_body.as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            request
+                .ext_fields
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .unwrap()
+                .unwrap_or_else(|| json!({})),
+            expected_request["extFields"]
+                .as_object()
+                .map_or_else(|| json!({}), |fields| json!(fields)),
+            "{name}"
+        );
+        assert_eq!(
+            request.language,
+            Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+        );
+    }
+    client.shutdown().await;
+}
+
+#[tokio::test]
+async fn create_user_honors_the_java_timeout_argument() {
+    let (addr, peer) =
+        scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;
+    let (client_api, client) = api().await;
+    let user_info = UserInfo::of(
+        Some("alice".into()),
+        Some("fixture-password".into()),
+        Some("ADMIN".into()),
+    );
+    let result = client_api.create_user(&addr, &user_info, 25).await;
     assert!(matches!(
         result,
         Err(RpcError::Transport(ref error)) if error.is_timeout()

@@ -4498,6 +4498,88 @@ impl ProducerConnection {
     }
 }
 
+/// Java `UserInfo` body DTO used by the Broker auth user operations.
+/// Java inherits identity equality from `Object` for this model.
+///
+/// ```compile_fail
+/// use rocketmq_classic_protocol::body::UserInfo;
+/// fn requires_java_identity<T: PartialEq + Eq + std::hash::Hash>() {}
+/// requires_java_identity::<UserInfo>();
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+}
+
+impl UserInfo {
+    pub fn of(
+        username: Option<String>,
+        password: Option<String>,
+        user_type: Option<String>,
+    ) -> Self {
+        Self {
+            username,
+            password,
+            user_type,
+            user_status: None,
+        }
+    }
+
+    pub fn of_with_status(
+        username: Option<String>,
+        password: Option<String>,
+        user_type: Option<String>,
+        user_status: Option<String>,
+    ) -> Self {
+        Self {
+            username,
+            password,
+            user_type,
+            user_status,
+        }
+    }
+
+    pub fn get_username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
+    pub fn set_username(&mut self, value: Option<String>) {
+        self.username = value;
+    }
+
+    pub fn get_password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    pub fn set_password(&mut self, value: Option<String>) {
+        self.password = value;
+    }
+
+    pub fn get_user_type(&self) -> Option<&str> {
+        self.user_type.as_deref()
+    }
+
+    pub fn set_user_type(&mut self, value: Option<String>) {
+        self.user_type = value;
+    }
+
+    pub fn get_user_status(&self) -> Option<&str> {
+        self.user_status.as_deref()
+    }
+
+    pub fn set_user_status(&mut self, value: Option<String>) {
+        self.user_status = value;
+    }
+}
+
 /// Java `KVTable` response DTO returned by Broker runtime and query RPCs.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10125,6 +10207,7 @@ impl_java_remoting_serializable_adapters!(
     ConsumerListByGroupResponseBody,
     ProducerConnection,
     ProducerTableInfo,
+    UserInfo,
     KvTable,
     ConsumerConnection,
     ConsumeMessageDirectlyResult,

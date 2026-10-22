@@ -2023,3 +2023,14 @@ keys in `currIdMap` and `hostedQueues` unquoted. Invoked Java fixtures and Rust
 loopback tests compare the header, exact body bytes, success/error outcomes,
 timeout, and VIP routing. The reverse audit now has eight open direct APIs;
 broader P18-V01 reconciliation remains open.
+
+## P18-V01 direct `createUser` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.createUser` sends request 3001 with a
+`CreateUserRequestHeader` and a `UserInfo` body. Core exposes
+`MQClientApi::create_user`, preserves nullable user fields and Java's
+null-omitting body encoding, uses the supplied timeout, and leaves the Broker
+address unchanged when VIP channels are enabled. Invoked Java fixtures and
+Rust loopback tests compare the request header/body, success and Broker error,
+timeout, and unchanged-address behavior. The direct reverse audit now has
+seven open APIs; broader P18-V01 reconciliation remains open.
