@@ -518,7 +518,7 @@ async fn scripted_lite_seek_pause_resume_commit_and_restart_preserve_delivery_of
         ))
         .unwrap(),
     );
-    first.assign([queue.clone()]).unwrap();
+    first.assign([queue.clone()]).await.unwrap();
     first.start().await.unwrap();
 
     let original_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
@@ -604,7 +604,7 @@ async fn scripted_lite_seek_pause_resume_commit_and_restart_preserve_delivery_of
         ))
         .unwrap(),
     );
-    restarted.assign([queue.clone()]).unwrap();
+    restarted.assign([queue.clone()]).await.unwrap();
     restarted.start().await.unwrap();
     let restarted_pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
     assert_eq!(
@@ -647,7 +647,7 @@ async fn lite_rpc_hook_stream_identity_and_namespace_config_reach_runtime() {
         LitePullConsumer::new_with_rpc_hook(config, Some(hook)).expect("Lite RPC-hook constructor"),
     );
     let queue = MessageQueue::new("orders", "broker-a", 0);
-    consumer.assign([queue.clone()]).unwrap();
+    consumer.assign([queue.clone()]).await.unwrap();
     consumer.start().await.unwrap();
 
     let pull = next_request(&mut requests, request::LITE_PULL_MESSAGE).await;
@@ -731,7 +731,7 @@ async fn lite_runtime_settings_can_be_changed_after_consumer_construction() {
     assert_eq!(consumer.consumer_timeout_millis_when_suspend(), 25_000);
     assert_eq!(consumer.topic_metadata_check_interval_millis(), 43);
 
-    consumer.assign([queue.clone()]).unwrap();
+    consumer.assign([queue.clone()]).await.unwrap();
     consumer.start().await.unwrap();
     let first_pull = next_lite_pull_request(&mut requests, "lite-post-construction-client").await;
     assert_eq!(
@@ -783,11 +783,14 @@ async fn scripted_lite_helpers_cover_assignment_offsets_commits_and_name_server_
     let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
     consumer
         .set_sub_expression_for_assign("orders", "green")
+        .await
         .unwrap();
-    consumer.assign([queue.clone()]).unwrap();
+    consumer.assign([queue.clone()]).await.unwrap();
     consumer.start().await.unwrap();
     assert!(matches!(
-        consumer.set_sub_expression_for_assign("orders", "new-tag"),
+        consumer
+            .set_sub_expression_for_assign("orders", "new-tag")
+            .await,
         Err(LitePullConsumerError::AssignmentExpressionAfterStartup)
     ));
 
@@ -1294,7 +1297,9 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/consumer/lifecycle.json")).unwrap();
     let java = &fixture["litePullMethodSynchronization"];
+    assert_eq!(java["assign"], true);
     assert_eq!(java["start"], true);
+    assert_eq!(java["setSubExpressionForAssign"], true);
     assert_eq!(java["subscribeExpression"], true);
     assert_eq!(java["subscribeSelector"], true);
     assert_eq!(java["subscribeWithListener"], true);
@@ -1370,6 +1375,30 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .is_err(),
         "unsubscription must wait for the Java-equivalent synchronized start"
     );
+    let assign_consumer = consumer.clone();
+    let mut assignment = tokio::spawn(async move {
+        assign_consumer
+            .assign([MessageQueue::new("other", "broker-a", 0)])
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(100), &mut assignment)
+            .await
+            .is_err(),
+        "assignment must wait for the Java-equivalent synchronized start"
+    );
+    let expression_consumer = consumer.clone();
+    let mut assignment_expression = tokio::spawn(async move {
+        expression_consumer
+            .set_sub_expression_for_assign("other", "*")
+            .await
+    });
+    assert!(
+        timeout(Duration::from_millis(100), &mut assignment_expression)
+            .await
+            .is_err(),
+        "assignment expression changes must wait for the Java-equivalent synchronized start"
+    );
 
     release_check
         .send(())
@@ -1396,6 +1425,20 @@ async fn lite_listener_registration_waits_for_start_like_java_monitor() {
             .expect("unsubscription task failed")
             .unwrap()
     );
+    assert!(matches!(
+        timeout(Duration::from_secs(4), &mut assignment)
+            .await
+            .expect("assignment did not resume after start")
+            .expect("assignment task failed"),
+        Err(LitePullConsumerError::SubscriptionModeConflict)
+    ));
+    assert!(matches!(
+        timeout(Duration::from_secs(4), &mut assignment_expression)
+            .await
+            .expect("assignment expression did not resume after start")
+            .expect("assignment expression task failed"),
+        Err(LitePullConsumerError::AssignmentExpressionAfterStartup)
+    ));
     assert!(consumer.is_running().await);
 
     consumer.shutdown().await.unwrap();
@@ -1434,7 +1477,7 @@ async fn committed_reads_use_broker_offsets_and_preserve_rpc_errors() {
     let consumer_id = config.client_config().build_client_id();
     let consumer = Arc::new(LitePullConsumer::new(config).unwrap());
     let assigned_queue = MessageQueue::new("orders", "broker-a", 0);
-    consumer.assign([assigned_queue.clone()]).unwrap();
+    consumer.assign([assigned_queue.clone()]).await.unwrap();
     consumer.start().await.unwrap();
 
     let initial_offset_request =
@@ -1696,6 +1739,7 @@ async fn lite_config_defaults_and_mode_exclusivity_match_java() {
     assert!(
         consumer
             .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
+            .await
             .is_err()
     );
 
@@ -1703,6 +1747,7 @@ async fn lite_config_defaults_and_mode_exclusivity_match_java() {
     let consumer = LitePullConsumer::new(config).unwrap();
     consumer
         .assign(vec![MessageQueue::new("orders", "broker-a", 0)])
+        .await
         .unwrap();
     assert!(
         consumer
@@ -1761,7 +1806,7 @@ async fn explicit_lite_assignment_returns_the_callers_queue_topic_with_namespace
         .set_namespace(Some("tenant".to_owned()));
     let consumer = LitePullConsumer::new(config).unwrap();
     let queue = MessageQueue::new("orders", "broker-a", 0);
-    consumer.assign([queue.clone()]).unwrap();
+    consumer.assign([queue.clone()]).await.unwrap();
 
     assert_eq!(
         consumer.assignment().await.unwrap(),
@@ -1963,13 +2008,13 @@ async fn lite_assignment_is_available_before_start_and_created_shutdown_is_a_noo
     let config = LitePullConsumerConfig::new("lite-assignment-before-start").unwrap();
     let consumer = LitePullConsumer::new(config).unwrap();
     assert!(matches!(
-        consumer.assign(Vec::<MessageQueue>::new()),
+        consumer.assign(Vec::<MessageQueue>::new()).await,
         Err(LitePullConsumerError::EmptyAssignment)
     ));
     let queues = vec![MessageQueue::new("orders", "broker-a", 0)];
-    consumer.assign(queues.clone()).unwrap();
+    consumer.assign(queues.clone()).await.unwrap();
     assert!(matches!(
-        consumer.set_sub_expression_for_assign("orders", "  "),
+        consumer.set_sub_expression_for_assign("orders", "  ").await,
         Err(LitePullConsumerError::EmptyAssignmentExpression)
     ));
     assert_eq!(
@@ -1981,6 +2026,7 @@ async fn lite_assignment_is_available_before_start_and_created_shutdown_is_a_noo
     assert!(!consumer.is_running().await);
     consumer
         .set_sub_expression_for_assign("orders", "paid")
+        .await
         .unwrap();
 }
 

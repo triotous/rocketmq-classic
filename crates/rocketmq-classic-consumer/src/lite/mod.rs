@@ -536,10 +536,11 @@ impl LitePullConsumer {
         Ok(removed)
     }
 
-    pub fn assign<I>(&self, message_queues: I) -> Result<(), LitePullConsumerError>
+    pub async fn assign<I>(&self, message_queues: I) -> Result<(), LitePullConsumerError>
     where
         I: IntoIterator<Item = MessageQueue>,
     {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         let public_queues = message_queues.into_iter().collect::<BTreeSet<_>>();
         let queues = public_queues
             .iter()
@@ -561,11 +562,12 @@ impl LitePullConsumer {
         Ok(())
     }
 
-    pub fn set_sub_expression_for_assign(
+    pub async fn set_sub_expression_for_assign(
         &self,
         topic: &str,
         expression: &str,
     ) -> Result<(), LitePullConsumerError> {
+        let _lifecycle_gate = self.lifecycle_gate.lock().await;
         if expression.trim().is_empty() {
             return Err(LitePullConsumerError::EmptyAssignmentExpression);
         }

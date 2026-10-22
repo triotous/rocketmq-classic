@@ -91,6 +91,12 @@ public final class ConsumerLifecycleFixtures {
         Map<String, Object> result = new TreeMap<>();
         result.put("start", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("start").getModifiers()));
+        result.put("assign", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("assign",
+                java.util.Collection.class).getModifiers()));
+        result.put("setSubExpressionForAssign", Modifier.isSynchronized(
+            DefaultLitePullConsumerImpl.class.getDeclaredMethod("setSubExpressionForAssign",
+                String.class, String.class).getModifiers()));
         result.put("subscribeExpression", Modifier.isSynchronized(
             DefaultLitePullConsumerImpl.class.getDeclaredMethod("subscribe",
                 String.class, String.class).getModifiers()));
