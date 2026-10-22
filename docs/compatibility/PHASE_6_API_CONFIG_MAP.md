@@ -1977,3 +1977,21 @@ and timeout. Bidirectional typed-header and body fixtures cover both headers
 and the wrapper. This closes this direct RPC/header/DTO slice only; the broader
 P18-V01 API/config/feature/input/error/control-flow/reverse-export audit
 remains open.
+
+## P18-V01 direct `getAllSubscriptionGroup` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAllSubscriptionGroup(String,long)` sends
+request 201 with `GetAllSubscriptionGroupRequestHeader` fields `groupSeq`,
+`dataVersion`, and `maxGroupNum`. Core exposes
+`MQClientApi::get_all_subscription_group`; it uses the configured metadata
+page size (default 2000), configured VIP transformation, and one caller
+deadline across all pages. `SubscriptionGroupWrapper` preserves Java defaults,
+nullable tables, `DataVersion`, group configurations, and nested forbidden-topic
+settings. Pagination merges both tables while the version is stable; a changed
+version clears both tables and restarts at page zero. A missing or invalid
+`totalGroupNum` follows Java's legacy-Broker path and accepts that page as
+complete. Java fixtures and Rust tests cover single/multiple pages, version
+restart, legacy response, null/malformed bodies, Broker errors, timeout, and
+both wrapper tables. Bidirectional typed-header and body fixtures cover the
+new protocol models. This closes only this direct API/header/DTO slice; broad
+P18-V01 remains open.

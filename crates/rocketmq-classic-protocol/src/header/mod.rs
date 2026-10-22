@@ -17,6 +17,7 @@ pub use basic::{
     DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
     DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
     ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+    GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
     GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
     GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
     GetConsumerConnectionListRequestHeader, GetConsumerListByGroupRequestHeader,

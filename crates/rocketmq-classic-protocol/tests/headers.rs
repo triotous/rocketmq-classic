@@ -19,6 +19,7 @@ use rocketmq_classic_protocol::{
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType, FastCodesHeader,
+        GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
         GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerListByGroupRequestHeader,
@@ -2338,6 +2339,24 @@ fn header_validation_matrix() {
             "topicSeq maxTopicNum",
             "",
             "dataVersion",
+            ""
+        ),
+        row!(
+            GetAllSubscriptionGroupRequestHeader,
+            "get-all-subscription-group-request",
+            "",
+            "groupSeq maxGroupNum",
+            "",
+            "dataVersion",
+            ""
+        ),
+        row!(
+            GetAllSubscriptionGroupResponseHeader,
+            "get-all-subscription-group-response",
+            "",
+            "totalGroupNum",
+            "",
+            "",
             ""
         ),
         row!(

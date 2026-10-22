@@ -704,6 +704,58 @@ pub struct GetTopicConfigRequestHeader {
     logical: Option<bool>,
 }
 
+/// Java `GetAllSubscriptionGroupRequestHeader`. Its annotated sequence remains
+/// nullable because `checkFields()` is a no-op.
+#[derive(Debug, Clone, Default)]
+pub struct GetAllSubscriptionGroupRequestHeader {
+    group_seq: Option<i32>,
+    data_version: Option<String>,
+    max_group_num: Option<i32>,
+}
+
+impl GetAllSubscriptionGroupRequestHeader {
+    pub fn get_group_seq(&self) -> Option<i32> {
+        self.group_seq
+    }
+
+    pub fn set_group_seq(&mut self, value: Option<i32>) {
+        self.group_seq = value;
+    }
+
+    pub fn get_data_version(&self) -> Option<&str> {
+        self.data_version.as_deref()
+    }
+
+    pub fn set_data_version(&mut self, value: Option<String>) {
+        self.data_version = value;
+    }
+
+    pub fn get_max_group_num(&self) -> Option<i32> {
+        self.max_group_num
+    }
+
+    pub fn set_max_group_num(&mut self, value: Option<i32>) {
+        self.max_group_num = value;
+    }
+}
+
+/// Java `GetAllSubscriptionGroupResponseHeader`; this field is optional when
+/// talking to pre-pagination Brokers.
+#[derive(Debug, Clone, Default)]
+pub struct GetAllSubscriptionGroupResponseHeader {
+    total_group_num: Option<i32>,
+}
+
+impl GetAllSubscriptionGroupResponseHeader {
+    pub fn get_total_group_num(&self) -> Option<i32> {
+        self.total_group_num
+    }
+
+    pub fn set_total_group_num(&mut self, value: Option<i32>) {
+        self.total_group_num = value;
+    }
+}
+
 /// Java `GetAllTopicConfigRequestHeader`. Its annotated sequence is nullable
 /// because `checkFields()` is a no-op.
 #[derive(Debug, Clone, Default)]
@@ -985,6 +1037,34 @@ impl CommandHeader for GetAllTopicConfigResponseHeader {
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
         Ok(Self {
             total_topic_num: optional_i32(fields, "totalTopicNum")?,
+        })
+    }
+}
+
+impl CommandHeader for GetAllSubscriptionGroupRequestHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "groupSeq", self.group_seq);
+        put_optional(fields, "dataVersion", self.data_version.as_deref());
+        put_optional(fields, "maxGroupNum", self.max_group_num);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            group_seq: optional_i32(fields, "groupSeq")?,
+            data_version: optional_string(fields, "dataVersion"),
+            max_group_num: optional_i32(fields, "maxGroupNum")?,
+        })
+    }
+}
+
+impl CommandHeader for GetAllSubscriptionGroupResponseHeader {
+    fn encode_fields(&self, fields: &mut HeaderMap) {
+        put_optional(fields, "totalGroupNum", self.total_group_num);
+    }
+
+    fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            total_group_num: optional_i32(fields, "totalGroupNum")?,
         })
     }
 }

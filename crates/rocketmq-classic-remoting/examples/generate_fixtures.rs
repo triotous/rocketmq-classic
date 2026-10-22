@@ -8,8 +8,8 @@ use rocketmq_classic_protocol::{
         GetLiteGroupInfoResponseBody, LiteLagInfo, LiteSubscriptionAction,
         LiteSubscriptionCtlRequestBody, LiteSubscriptionDto, LockBatchRequestBody,
         LockBatchResponseBody, MessageRequestMode, OffsetOption, OffsetOptionType, OffsetWrapper,
-        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody, TopicConfig,
-        TopicConfigSerializeWrapper, UnlockBatchRequestBody,
+        QueryAssignmentRequestBody, ResetOffsetBody, SetMessageRequestModeRequestBody,
+        SubscriptionGroupWrapper, TopicConfig, TopicConfigSerializeWrapper, UnlockBatchRequestBody,
     },
     codes::{LanguageCode, SerializeType},
     header::{
@@ -22,6 +22,7 @@ use rocketmq_classic_protocol::{
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, EndTransactionRequestHeader, EndTransactionResponseHeader,
         ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
         GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerListByGroupRequestHeader,
@@ -52,6 +53,7 @@ use rocketmq_classic_protocol::{
         ViewMessageRequestHeader, WipeWritePermOfBrokerRequestHeader,
         WipeWritePermOfBrokerResponseHeader,
     },
+    subscription::SubscriptionGroupConfig,
 };
 use rocketmq_classic_remoting::{codec::frame, command::RemotingCommand};
 
@@ -168,6 +170,18 @@ fn generate_p4_headers(output: &std::path::Path) {
         output,
         "typed-get-all-topic-config-response.bin",
         "header-get-all-topic-config-response",
+        0,
+    );
+    write_oracle_header::<GetAllSubscriptionGroupRequestHeader>(
+        output,
+        "typed-get-all-subscription-group-request.bin",
+        "header-get-all-subscription-group-request",
+        201,
+    );
+    write_oracle_header::<GetAllSubscriptionGroupResponseHeader>(
+        output,
+        "typed-get-all-subscription-group-response.bin",
+        "header-get-all-subscription-group-response",
         0,
     );
     write_oracle_header::<GetTopicsByClusterRequestHeader>(
@@ -909,6 +923,37 @@ fn generate_p4_bodies(output: &std::path::Path) {
         "body-topic-config-wrapper.bin",
         21,
         &topic_config_wrapper,
+    );
+
+    let mut workers = SubscriptionGroupConfig::default();
+    workers.set_group_name(Some("workers".into()));
+    workers.set_retry_queue_nums(5);
+    workers.set_consume_broadcast_enable(false);
+    let mut analytics = SubscriptionGroupConfig::default();
+    analytics.set_group_name(Some("analytics".into()));
+    analytics.set_consume_message_orderly(true);
+    let group_wrapper = SubscriptionGroupWrapper::new(
+        Some(DataVersion::new(6, 1_712_345_678_902, Some(9))),
+        Some(std::collections::BTreeMap::from([
+            ("workers".into(), workers),
+            ("analytics".into(), analytics),
+        ])),
+        Some(std::collections::BTreeMap::from([
+            (
+                "workers".into(),
+                std::collections::BTreeMap::from([("orders".into(), 1), ("payments".into(), 0)]),
+            ),
+            (
+                "analytics".into(),
+                std::collections::BTreeMap::from([("alerts".into(), 1)]),
+            ),
+        ])),
+    );
+    write_body(
+        output,
+        "body-subscription-group-wrapper.bin",
+        201,
+        &group_wrapper,
     );
 
     let mut request_mode = SetMessageRequestModeRequestBody::default();

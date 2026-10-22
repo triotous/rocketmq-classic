@@ -39,6 +39,8 @@ import org.apache.rocketmq.remoting.protocol.header.ExportRocksDBConfigToJsonReq
 import org.apache.rocketmq.remoting.protocol.header.DeleteTopicRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetAllSubscriptionGroupRequestHeader;
+import org.apache.rocketmq.remoting.protocol.header.GetAllSubscriptionGroupResponseHeader;
 import org.apache.rocketmq.remoting.protocol.header.ResetMasterFlushOffsetHeader;
 import org.apache.rocketmq.remoting.protocol.header.GetTopicsByClusterRequestHeader;
 import org.apache.rocketmq.remoting.protocol.header.QueryConsumeTimeSpanRequestHeader;
@@ -149,6 +151,20 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         cases.put("topic-stats-info-missing", decodeModes("topic-stats-info", fields()));
         cases.put("topic-stats-info-malformed-booleans", decodeModes("topic-stats-info", fields(
             "topic", "orders", "nsd", "malformed", "oway", "malformed", "lo", "malformed")));
+        cases.put("get-all-subscription-group-request-valid", decodeModes(
+            "get-all-subscription-group-request", fields(
+                "groupSeq", "2", "dataVersion", "{\"counter\":4,\"stateVersion\":7,\"timestamp\":1712345678901}",
+                "maxGroupNum", "2000")));
+        cases.put("get-all-subscription-group-request-missing", decodeModes(
+            "get-all-subscription-group-request", fields()));
+        cases.put("get-all-subscription-group-request-invalid-numbers", decodeModes(
+            "get-all-subscription-group-request", fields("groupSeq", "invalid", "maxGroupNum", "overflow")));
+        cases.put("get-all-subscription-group-response-valid", decodeModes(
+            "get-all-subscription-group-response", fields("totalGroupNum", "5")));
+        cases.put("get-all-subscription-group-response-missing", decodeModes(
+            "get-all-subscription-group-response", fields()));
+        cases.put("get-all-subscription-group-response-invalid", decodeModes(
+            "get-all-subscription-group-response", fields("totalGroupNum", "not-an-int")));
         fixture.put("cases", cases);
 
         Map<String, Object> apiInventories = new TreeMap<>();
@@ -166,6 +182,10 @@ public final class QueryAdminHeaderDecodeModeFixtures {
             apiInventory(GetTopicsByClusterRequestHeader.class));
         apiInventories.put("GetSubscriptionGroupConfigRequestHeader",
             apiInventory(GetSubscriptionGroupConfigRequestHeader.class));
+        apiInventories.put("GetAllSubscriptionGroupRequestHeader",
+            apiInventory(GetAllSubscriptionGroupRequestHeader.class));
+        apiInventories.put("GetAllSubscriptionGroupResponseHeader",
+            apiInventory(GetAllSubscriptionGroupResponseHeader.class));
         apiInventories.put("ResetMasterFlushOffsetHeader",
             apiInventory(ResetMasterFlushOffsetHeader.class));
         apiInventories.put("ExportRocksDBConfigToJsonRequestHeader",
@@ -244,6 +264,9 @@ public final class QueryAdminHeaderDecodeModeFixtures {
         } else if ("add-write-perm-request".equals(type)
             || "add-write-perm-response".equals(type)) {
             code = 327;
+        } else if ("get-all-subscription-group-request".equals(type)
+            || "get-all-subscription-group-response".equals(type)) {
+            code = 201;
         }
         RemotingCommand command = RemotingCommand.createRequestCommand(code, null);
         command.setExtFields(new HashMap<>(fields));
@@ -273,6 +296,12 @@ public final class QueryAdminHeaderDecodeModeFixtures {
                     break;
                 case "topic-stats-info":
                     headerClass = GetTopicStatsInfoRequestHeader.class;
+                    break;
+                case "get-all-subscription-group-request":
+                    headerClass = GetAllSubscriptionGroupRequestHeader.class;
+                    break;
+                case "get-all-subscription-group-response":
+                    headerClass = GetAllSubscriptionGroupResponseHeader.class;
                     break;
                 case "delete-kv-config":
                     headerClass = DeleteKVConfigRequestHeader.class;

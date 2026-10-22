@@ -48,6 +48,8 @@ macro_rules! inventory {
             UpdateGroupForbiddenRequestHeader => ("header-update-group-forbidden-request", "typed-update-group-forbidden-request.bin"),
             GetTopicStatsInfoRequestHeader => ("header-topic-stats-info-request", "typed-topic-stats-info-request.bin"),
             GetTopicConfigRequestHeader => ("header-topic-config-request", "typed-topic-config-request.bin"),
+            GetAllSubscriptionGroupRequestHeader => ("header-get-all-subscription-group-request", "typed-get-all-subscription-group-request.bin"),
+            GetAllSubscriptionGroupResponseHeader => ("header-get-all-subscription-group-response", "typed-get-all-subscription-group-response.bin"),
             GetAllTopicConfigRequestHeader => ("header-get-all-topic-config-request", "typed-get-all-topic-config-request.bin"),
             GetAllTopicConfigResponseHeader => ("header-get-all-topic-config-response", "typed-get-all-topic-config-response.bin"),
             GetTopicsByClusterRequestHeader => ("header-topics-by-cluster-request", "typed-topics-by-cluster-request.bin"),
@@ -393,6 +395,70 @@ fn get_subscription_group_config_header_api_matches_java_inventory() {
             "GetSubscriptionGroupConfigRequestHeader",
             method
         ));
+    }
+}
+
+#[test]
+fn get_all_subscription_group_headers_match_java_public_api_inventory() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/remoting/query-admin-header-decode-modes.json"
+    ))
+    .unwrap();
+    let source = include_str!("../src/header/basic.rs");
+    let trait_source = include_str!("../src/header/mod.rs");
+    for (rust_type, methods) in [
+        (
+            "GetAllSubscriptionGroupRequestHeader",
+            [
+                "get_group_seq",
+                "set_group_seq",
+                "get_data_version",
+                "set_data_version",
+                "get_max_group_num",
+                "set_max_group_num",
+            ]
+            .as_slice(),
+        ),
+        (
+            "GetAllSubscriptionGroupResponseHeader",
+            ["get_total_group_num", "set_total_group_num"].as_slice(),
+        ),
+    ] {
+        let inventory = &fixture["apiInventories"][rust_type];
+        assert_eq!(inventory["publicFields"], serde_json::json!([]));
+        let declared = inventory["declaredPublicMethods"].as_array().unwrap();
+        assert!(
+            declared
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|signature| signature.ends_with(&format!(".{rust_type}.checkFields()"))),
+            "{rust_type} lacks Java CommandCustomHeader.checkFields"
+        );
+        for method in methods {
+            assert!(rust_header_method_exists(
+                source,
+                trait_source,
+                rust_type,
+                method
+            ));
+            let mut parts = method.split('_');
+            let mut java_method = parts.next().unwrap().to_owned();
+            for part in parts {
+                let mut characters = part.chars();
+                if let Some(first) = characters.next() {
+                    java_method.extend(first.to_uppercase());
+                    java_method.extend(characters);
+                }
+            }
+            assert!(
+                declared.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{java_method}(")))
+                }),
+                "Java {rust_type} lacks {java_method}"
+            );
+        }
     }
 }
 

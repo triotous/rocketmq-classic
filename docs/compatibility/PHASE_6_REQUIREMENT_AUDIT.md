@@ -1743,13 +1743,14 @@ operation or fixture-backed owner path. Since this list was captured,
 `queryCorrectionOffset`, `updateAndGetGroupForbidden`, `getBrokerHAStatus`,
 `fetchConsumeStatsInBroker`, `viewBrokerStatsData`, and `getTopicConfig` have
 been implemented and checked against the pinned Java fixture. The initial list
-of 12 direct operations has since been reduced by the `getAllTopicConfig`
-slice below; 11 remain implementation work rather than approved differences:
+of 12 direct operations has since been reduced by the `getAllTopicConfig` and
+`getAllSubscriptionGroup` slices below; 10 remain implementation work rather
+than approved differences:
 
 | Request | Java method | Code | Status |
 | --- | --- | ---: | --- |
 | Topic configuration snapshot | `getAllTopicConfig` | 21 | Closed by `get_all_topic_config` |
-| Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Open |
+| Subscription-group configuration snapshot | `getAllSubscriptionGroup` | 201 | Closed by `get_all_subscription_group` |
 | Broker consume statistics | `fetchConsumeStatsInBroker` | 317 | Closed by `fetch_consume_stats_in_broker` |
 | Broker statistics view | `viewBrokerStatsData` | 315 | Closed by `view_broker_stats_data` |
 | Consume-queue query | `queryConsumeQueue` | 321 | Open |
@@ -1770,7 +1771,7 @@ slice below; 11 remain implementation work rather than approved differences:
 The audited Java declarations are in
 `org.apache.rocketmq.client.impl.MQClientAPIImpl` at pinned commit
 `efa1be59d6fc747ad220f036c86030f05f0419f9`. The remoting request constants
-already exist for the 11 open rows, but their Rust DTO and RPC owners are still
+already exist for the 10 open rows, but their Rust DTO and RPC owners are still
 missing. Earlier closed direct rows include `cloneGroupOffset` (314) and
 `invokeBrokerToGetConsumerStatus` (223). `deleteTopicInNameServer` maps through
 `delete_topic_in_nameserver`; `getRemotingClient` maps to
@@ -1876,4 +1877,23 @@ fixture and Rust loopback test cover nullable header fields, inherited RPC
 fields, populated and default-null result objects, a success without a body,
 and Broker rejection. Header inventory and field-validation matrix checks
 pass. This closes only this direct API/header/DTO slice; broad P18-V01 remains
+open.
+
+## P18-V01 direct `getAllSubscriptionGroup` Broker API — 2026-10-22
+
+Pinned Java 5.5.1 `MQClientAPIImpl.getAllSubscriptionGroup(String,long)` sends
+request 201 with `groupSeq`, `dataVersion`, and `maxGroupNum`. Rust exposes
+`MQClientApi::get_all_subscription_group`, applies configured VIP conversion
+and metadata page size (default 2000), and uses one deadline for all pages.
+The new `SubscriptionGroupWrapper` retains both the subscription-group
+configuration map and nested forbidden-topic map, plus `DataVersion` and Java
+default/null semantics. A version change clears both accumulated maps and
+restarts from group sequence zero. Missing or invalid `totalGroupNum` accepts
+the reply as a complete legacy Broker result. Eleven invoked Java cases and the
+Rust admin RPC replay cover one/multiple pages, a version restart that removes
+stale rows from both maps, legacy replies, null/malformed bodies, Broker error,
+and timeout. Bidirectional typed-header and wrapper-body fixture checks pass;
+the focused VIP routing test also checks request 201. This closes one direct
+API slice and reduces the reverse-audit list from 11 to 10 open rows; broad
+settings/API/input/error/control-flow/reverse-export reconciliation remains
 open.

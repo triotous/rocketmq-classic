@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rocketmq_classic_common::{
     message::{DecodeOptions, MessageExt, constants, decode_many, decode_one},
@@ -12,8 +12,9 @@ use rocketmq_classic_protocol::{
         CreateTopicListRequestBody, DataVersion, DeleteSubscriptionGroupListRequestBody,
         DeleteTopicListRequestBody, GroupList, HaRuntimeInfo, KvTable, ProducerConnection,
         ProducerTableInfo, QueryCorrectionOffsetBody, QuerySubscriptionResponseBody, QueueTimeSpan,
-        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, TopicConfig,
-        TopicConfigAndQueueMapping, TopicConfigSerializeWrapper, TopicList, TopicStatsTable,
+        ResetOffsetBody, SharedQueueOffsetEntries, SubscriptionGroupList, SubscriptionGroupWrapper,
+        TopicConfig, TopicConfigAndQueueMapping, TopicConfigSerializeWrapper, TopicList,
+        TopicStatsTable,
     },
     codes::{request, response},
     header::{
@@ -23,6 +24,7 @@ use rocketmq_classic_protocol::{
         CreateTopicRequestHeader, DeleteKvConfigRequestHeader,
         DeleteSubscriptionGroupRequestHeader, DeleteTopicFromNamesrvRequestHeader,
         DeleteTopicRequestHeader, ExportRocksDBConfigToJsonRequestHeader, ExportRocksDBConfigType,
+        GetAllSubscriptionGroupRequestHeader, GetAllSubscriptionGroupResponseHeader,
         GetAllTopicConfigRequestHeader, GetAllTopicConfigResponseHeader,
         GetConsumeStatsInBrokerRequestHeader, GetConsumeStatsRequestHeader,
         GetConsumerConnectionListRequestHeader, GetConsumerRunningInfoRequestHeader,
@@ -1552,6 +1554,139 @@ impl MQClientApi {
         Ok(TopicConfigSerializeWrapper::new(
             current_data_version,
             Some(topic_config_table.into_iter().collect()),
+        ))
+    }
+
+    /// Reads one Broker's complete subscription-group configuration snapshot
+    /// through Java `MQClientAPIImpl.getAllSubscriptionGroup`, including its
+    /// version-checked pages and forbidden-topic settings.
+    pub async fn get_all_subscription_group(
+        &self,
+        addr: &str,
+        timeout_millis: i64,
+    ) -> Result<SubscriptionGroupWrapper, RpcError> {
+        let code = request::GET_ALL_SUBSCRIPTIONGROUP_CONFIG;
+        let deadline = deadline_after_timeout_millis(timeout_millis);
+        let mut current_data_version: Option<DataVersion> = None;
+        let mut group_seq = 0_i32;
+        let mut subscription_group_table = BTreeMap::new();
+        let mut forbidden_table = BTreeMap::new();
+        let (vip_enabled, max_group_num) = self
+            .config
+            .as_ref()
+            .map(|config| {
+                let config = read_shared_client_config(config);
+                (
+                    config.vip_channel_enabled(),
+                    config.max_page_size_in_get_metadata(),
+                )
+            })
+            .unwrap_or((false, 2_000));
+        let broker_addr = crate::route::broker_vip_channel(vip_enabled, addr)?;
+
+        loop {
+            let data_version_json = match current_data_version.as_ref() {
+                Some(data_version) => data_version.java_to_json(false).map_err(|source| {
+                    RpcError::RequestSerialization {
+                        request_code: code,
+                        source,
+                    }
+                })?,
+                None => String::new(),
+            };
+            let mut header = GetAllSubscriptionGroupRequestHeader::default();
+            header.set_group_seq(Some(group_seq));
+            header.set_data_version(Some(data_version_json));
+            header.set_max_group_num(Some(max_group_num));
+
+            let reply = self
+                .request(&broker_addr, code, &header, None, deadline)
+                .await?;
+            if reply.code != response::SUCCESS {
+                return Err(RpcError::Response {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    code: reply.code,
+                    remark: reply.remark,
+                });
+            }
+            let body = reply
+                .body
+                .as_deref()
+                .ok_or_else(|| RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: "missing response body".into(),
+                })?;
+            let page = SubscriptionGroupWrapper::java_decode(body).map_err(|error| {
+                RpcError::MalformedResponse {
+                    request_code: code,
+                    peer: addr.to_owned(),
+                    reason: error.to_string(),
+                }
+            })?;
+            let page_group_table =
+                page.subscription_group_table()
+                    .ok_or_else(|| RpcError::MalformedResponse {
+                        request_code: code,
+                        peer: addr.to_owned(),
+                        reason: "response field `subscriptionGroupTable` is null".into(),
+                    })?;
+            let page_forbidden_table =
+                page.forbidden_table()
+                    .ok_or_else(|| RpcError::MalformedResponse {
+                        request_code: code,
+                        peer: addr.to_owned(),
+                        reason: "response field `forbiddenTable` is null".into(),
+                    })?;
+            subscription_group_table.extend(
+                page_group_table
+                    .iter()
+                    .map(|(group, config)| (group.clone(), config.clone())),
+            );
+            forbidden_table.extend(
+                page_forbidden_table
+                    .iter()
+                    .map(|(group, values)| (group.clone(), values.clone())),
+            );
+            group_seq = group_seq.wrapping_add(page_group_table.len() as i32);
+
+            let new_data_version = page.data_version().cloned();
+            if current_data_version.is_none() {
+                // Java captures the first version before checking the optional
+                // response total for compatibility with older Brokers.
+                current_data_version = new_data_version.clone();
+            }
+            let response_header = reply
+                .ext_fields
+                .as_ref()
+                .and_then(|fields| {
+                    GetAllSubscriptionGroupResponseHeader::decode_fields(fields).ok()
+                })
+                .unwrap_or_default();
+            let Some(total_group_num) = response_header.get_total_group_num() else {
+                // Java 5.5.1 treats a response without totalGroupNum as a
+                // pre-pagination Broker and accepts this complete body.
+                break;
+            };
+
+            if current_data_version != new_data_version {
+                current_data_version = new_data_version;
+                group_seq = 0;
+                subscription_group_table.clear();
+                forbidden_table.clear();
+                continue;
+            }
+
+            if group_seq >= total_group_num.wrapping_sub(1) {
+                break;
+            }
+        }
+
+        Ok(SubscriptionGroupWrapper::new(
+            current_data_version,
+            Some(subscription_group_table),
+            Some(forbidden_table),
         ))
     }
 
@@ -3337,6 +3472,15 @@ mod tests {
                     b"{\"dataVersion\":{\"counter\":0,\"stateVersion\":0,\"timestamp\":0},\"topicConfigTable\":{}}"
                         .as_slice(),
                 ),
+                (
+                    request::GET_ALL_SUBSCRIPTIONGROUP_CONFIG,
+                    &[
+                        ("groupSeq", "0"),
+                        ("dataVersion", ""),
+                        ("maxGroupNum", "77"),
+                    ][..],
+                    b"{}".as_slice(),
+                ),
             ] {
                 let mut length = [0_u8; 4];
                 stream.read_exact(&mut length).await.unwrap();
@@ -3391,6 +3535,9 @@ mod tests {
             .await
             .unwrap();
         api.get_all_topic_config(&advertised_addr, 2000)
+            .await
+            .unwrap();
+        api.get_all_subscription_group(&advertised_addr, 2000)
             .await
             .unwrap();
         peer.await.unwrap();

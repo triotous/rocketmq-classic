@@ -3074,6 +3074,214 @@ async fn get_all_topic_config_matches_java_pagination_and_version_fixtures() {
 }
 
 #[tokio::test]
+async fn get_all_subscription_group_matches_java_pagination_and_version_fixtures() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../fixtures/producer/core.json")).unwrap();
+    assert_eq!(
+        fixture["getAllSubscriptionGroupApi"],
+        json!([
+            "org.apache.rocketmq.remoting.protocol.body.SubscriptionGroupWrapper org.apache.rocketmq.client.impl.MQClientAPIImpl.getAllSubscriptionGroup(java.lang.String,long)"
+        ])
+    );
+    for (surface, expected_methods) in [
+        (
+            "getAllSubscriptionGroupRequestHeaderApi",
+            vec![
+                "getGroupSeq",
+                "setGroupSeq",
+                "getDataVersion",
+                "setDataVersion",
+                "getMaxGroupNum",
+                "setMaxGroupNum",
+            ],
+        ),
+        (
+            "getAllSubscriptionGroupResponseHeaderApi",
+            vec!["getTotalGroupNum", "setTotalGroupNum"],
+        ),
+        (
+            "subscriptionGroupWrapperApi",
+            vec![
+                "getSubscriptionGroupTable",
+                "setSubscriptionGroupTable",
+                "getForbiddenTable",
+                "setForbiddenTable",
+                "getDataVersion",
+                "setDataVersion",
+            ],
+        ),
+    ] {
+        let declared = fixture[surface]["declaredPublicMethods"]
+            .as_array()
+            .unwrap();
+        for method in expected_methods {
+            assert!(
+                declared.iter().any(|signature| {
+                    signature
+                        .as_str()
+                        .is_some_and(|signature| signature.contains(&format!(".{method}(")))
+                }),
+                "{surface} lacks {method}"
+            );
+        }
+        assert_eq!(
+            fixture[surface]["declaredPublicMethodCount"]
+                .as_u64()
+                .unwrap(),
+            declared.len() as u64
+        );
+    }
+
+    let cases = fixture["getAllSubscriptionGroupOperations"]["cases"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cases.len(), 11);
+    for case in cases {
+        let expected_requests = case["requests"].as_array().unwrap();
+        let timeout_millis = case["timeoutMillis"].as_i64().unwrap();
+        let name = case["name"].as_str().unwrap();
+        let (addr, peer) = if expected_requests.is_empty() {
+            ("127.0.0.1:1".to_owned(), None)
+        } else {
+            let responses = case["responses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .take(expected_requests.len())
+                .cloned()
+                .collect();
+            let (addr, peer) = scripted_peer_sequence(responses).await;
+            (addr, Some(peer))
+        };
+        let (client_api, client) = api().await;
+        let result = client_api
+            .get_all_subscription_group(&addr, timeout_millis)
+            .await;
+
+        if case["outcome"] == "returned" {
+            let value = result.unwrap_or_else(|error| panic!("{name}: {error}"));
+            let actual_json: Value =
+                serde_json::from_str(&value.java_to_json(false).unwrap()).unwrap();
+            let expected_json: Value =
+                serde_json::from_str(case["resultJson"].as_str().unwrap()).unwrap();
+            assert_eq!(actual_json, expected_json, "{name}");
+            let actual_groups: Vec<_> = value
+                .subscription_group_table()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                actual_groups,
+                case["resultGroups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(Value::as_str)
+                    .map(Option::unwrap)
+                    .collect::<Vec<_>>(),
+                "{name}"
+            );
+            let actual_forbidden = value.forbidden_table().unwrap();
+            for (group, topics) in case["resultForbiddenTable"].as_object().unwrap() {
+                let expected_topics = topics.as_object().unwrap();
+                assert_eq!(
+                    actual_forbidden[group].len(),
+                    expected_topics.len(),
+                    "{name}"
+                );
+                for (topic, forbidden) in expected_topics {
+                    assert_eq!(
+                        actual_forbidden[group][topic],
+                        forbidden.as_i64().unwrap() as i32,
+                        "{name}"
+                    );
+                }
+            }
+            let expected_version = &case["resultDataVersion"];
+            let actual_version = value.data_version().unwrap();
+            assert_eq!(
+                actual_version.state_version(),
+                expected_version["stateVersion"].as_i64().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                actual_version.timestamp(),
+                expected_version["timestamp"].as_i64().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                actual_version.counter(),
+                expected_version["counter"].as_i64(),
+                "{name}"
+            );
+        } else if name.starts_with("snapshot-timeout") || expected_requests.is_empty() {
+            assert!(
+                matches!(
+                    result,
+                    Err(RpcError::Transport(ref error)) if error.is_timeout()
+                ),
+                "{name}: {result:?}"
+            );
+        } else if case["outcome"] == "MQBrokerException" {
+            assert!(
+                matches!(
+                    result,
+                    Err(RpcError::Response {
+                        request_code,
+                        code,
+                        ref remark,
+                        ..
+                    }) if request_code == request::GET_ALL_SUBSCRIPTIONGROUP_CONFIG
+                        && code == case["errorCode"].as_i64().unwrap() as i32
+                        && remark.as_deref() == case["responses"][0]["remark"].as_str()
+                ),
+                "{name}: {result:?}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(RpcError::MalformedResponse { request_code, .. })
+                        if request_code == request::GET_ALL_SUBSCRIPTIONGROUP_CONFIG
+                ),
+                "{name}: {result:?}"
+            );
+        }
+
+        if let Some(peer) = peer {
+            let requests = peer.await.unwrap();
+            assert_eq!(requests.len(), expected_requests.len(), "{name}");
+            for (request, expected) in requests.iter().zip(expected_requests) {
+                assert_eq!(
+                    request.code,
+                    request::GET_ALL_SUBSCRIPTIONGROUP_CONFIG,
+                    "{name}"
+                );
+                assert_eq!(
+                    request.language,
+                    Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
+                    "{name}"
+                );
+                assert!(request.body.is_none(), "{name}");
+                assert_eq!(
+                    request
+                        .ext_fields
+                        .as_ref()
+                        .map(serde_json::to_value)
+                        .transpose()
+                        .unwrap()
+                        .unwrap_or_else(|| json!({})),
+                    expected["extFields"],
+                    "{name}"
+                );
+            }
+        }
+        client.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn add_broker_honors_the_java_timeout_argument() {
     let (addr, peer) =
         scripted_peer_after(response::SUCCESS, None, None, Duration::from_millis(150)).await;

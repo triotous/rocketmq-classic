@@ -2822,6 +2822,117 @@ impl TopicConfigSerializeWrapper {
     }
 }
 
+/// Java `SubscriptionGroupWrapper`, returned by the paginated Broker snapshot
+/// RPC. The nested maps use ordered Rust maps while preserving nullable table
+/// fields and Java constructor defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionGroupWrapper {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subscription_group_table: Option<BTreeMap<String, SubscriptionGroupConfig>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forbidden_table: Option<BTreeMap<String, BTreeMap<String, i32>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_version: Option<DataVersion>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct SubscriptionGroupWrapperFields {
+    subscription_group_table: Option<BTreeMap<String, SubscriptionGroupConfig>>,
+    forbidden_table: Option<BTreeMap<String, BTreeMap<String, i32>>>,
+    data_version: Option<DataVersion>,
+}
+
+impl Default for SubscriptionGroupWrapperFields {
+    fn default() -> Self {
+        Self {
+            subscription_group_table: Some(BTreeMap::new()),
+            forbidden_table: Some(BTreeMap::new()),
+            data_version: Some(DataVersion::default()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SubscriptionGroupWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let fields = SubscriptionGroupWrapperFields::deserialize(deserializer)?;
+        Ok(Self {
+            subscription_group_table: fields.subscription_group_table,
+            forbidden_table: fields.forbidden_table,
+            data_version: fields.data_version,
+        })
+    }
+}
+
+impl Default for SubscriptionGroupWrapper {
+    fn default() -> Self {
+        Self {
+            subscription_group_table: Some(BTreeMap::new()),
+            forbidden_table: Some(BTreeMap::new()),
+            data_version: Some(DataVersion::default()),
+        }
+    }
+}
+
+impl SubscriptionGroupWrapper {
+    pub fn new(
+        data_version: Option<DataVersion>,
+        subscription_group_table: Option<BTreeMap<String, SubscriptionGroupConfig>>,
+        forbidden_table: Option<BTreeMap<String, BTreeMap<String, i32>>>,
+    ) -> Self {
+        Self {
+            subscription_group_table,
+            forbidden_table,
+            data_version,
+        }
+    }
+
+    pub fn subscription_group_table(&self) -> Option<&BTreeMap<String, SubscriptionGroupConfig>> {
+        self.subscription_group_table.as_ref()
+    }
+
+    pub fn get_subscription_group_table(
+        &self,
+    ) -> Option<&BTreeMap<String, SubscriptionGroupConfig>> {
+        self.subscription_group_table()
+    }
+
+    pub fn set_subscription_group_table(
+        &mut self,
+        value: Option<BTreeMap<String, SubscriptionGroupConfig>>,
+    ) {
+        self.subscription_group_table = value;
+    }
+
+    pub fn forbidden_table(&self) -> Option<&BTreeMap<String, BTreeMap<String, i32>>> {
+        self.forbidden_table.as_ref()
+    }
+
+    pub fn get_forbidden_table(&self) -> Option<&BTreeMap<String, BTreeMap<String, i32>>> {
+        self.forbidden_table()
+    }
+
+    pub fn set_forbidden_table(&mut self, value: Option<BTreeMap<String, BTreeMap<String, i32>>>) {
+        self.forbidden_table = value;
+    }
+
+    pub fn data_version(&self) -> Option<&DataVersion> {
+        self.data_version.as_ref()
+    }
+
+    pub fn get_data_version(&self) -> Option<&DataVersion> {
+        self.data_version()
+    }
+
+    pub fn set_data_version(&mut self, value: Option<DataVersion>) {
+        self.data_version = value;
+    }
+}
+
 /// One physical generation in Java's `LogicQueueMappingItem` static-topic
 /// metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -9794,6 +9905,7 @@ fn default_auto_commit() -> bool {
 
 impl_java_remoting_serializable_adapters!(
     DataVersion,
+    SubscriptionGroupWrapper,
     CheckClientRequestBody,
     CheckRocksdbCqWriteResult,
     LogicQueueMappingItem,
@@ -10336,6 +10448,34 @@ mod tests {
         .unwrap();
         assert!(explicit_nulls.data_version().is_none());
         assert!(explicit_nulls.topic_config_table().is_none());
+    }
+
+    #[test]
+    fn subscription_group_wrapper_preserves_java_defaults_and_null_tables() {
+        let defaults = SubscriptionGroupWrapper::java_decode(b"{}").unwrap();
+        assert!(defaults.subscription_group_table().unwrap().is_empty());
+        assert!(defaults.forbidden_table().unwrap().is_empty());
+        assert_eq!(defaults.data_version().unwrap().counter(), Some(0));
+        assert!(defaults.data_version().unwrap().timestamp() > 0);
+
+        let explicit_nulls = SubscriptionGroupWrapper::java_decode(
+            br#"{"subscriptionGroupTable":null,"forbiddenTable":null,"dataVersion":null}"#,
+        )
+        .unwrap();
+        assert!(explicit_nulls.subscription_group_table().is_none());
+        assert!(explicit_nulls.forbidden_table().is_none());
+        assert!(explicit_nulls.data_version().is_none());
+
+        let populated = SubscriptionGroupWrapper::java_decode(
+            br#"{"subscriptionGroupTable":{"workers":{"groupName":"workers"}},"forbiddenTable":{"workers":{"orders":1}},"dataVersion":{"stateVersion":3,"timestamp":7,"counter":2}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            populated.subscription_group_table().unwrap()["workers"].get_group_name(),
+            Some("workers")
+        );
+        assert_eq!(populated.forbidden_table().unwrap()["workers"]["orders"], 1);
+        assert_eq!(populated.data_version().unwrap().state_version(), 3);
     }
 
     #[test]
