@@ -114,10 +114,8 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   per-set minute/hour/day log events are all represented in Rust. The
   scheduler queue and statistics callback gaps are closed for this slice;
   broad P18-V01 remains PARTIAL.
-- P18-V01 hidden-public Rust API reverse scan (`9c149d26`, 2026-10-23): reviewed
-  all 30 `#[doc(hidden)]` annotations across the library crates, including the
-  new `ConsumerStatsManager::new_unscheduled_internal` Core/Consumer bootstrap
-  bridge. The Phase 6
+- P18-V01 hidden-public Rust API reverse scan (`df5c3c59`, 2026-10-23): reviewed
+  all 29 `#[doc(hidden)]` annotations across the library crates. The Phase 6
   crosswalk maps the property/runtime bridges, request/reply controls, inner
   producer path, trace helpers, typed remoting state, and signed-timeout
   adapter to Java owners. No additional client setting or wire operation was
@@ -147,14 +145,15 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   checks pass. Rust `new`/`Default` remained an unscheduled convenience at this
   revision. This closes constructor scheduling only; broad P18-V01 remains
   PARTIAL. Native Windows runtime and current-revision remote CI remain open.
-- P18-V01 constructor surface follow-up (`9c149d26`, 2026-10-23): removed
+- P18-V01 constructor surface follow-up (`df5c3c59`, 2026-10-23): removed
   Rust-only public `ConsumerStatsManager::new` and `Default`, retained
-  `with_scheduler` as the Java-mapped public construction path, and added the
-  hidden Core/Consumer bootstrap bridge. Compile-fail doctests and affected
-  facade tests pass. Default and all-feature tests/doctests for Core, Consumer,
-  and the facade pass; strict all-target/all-feature Clippy, formatting, and
-  diff checks pass. Broad P18-V01 remains PARTIAL; native Windows runtime and
-  current-revision remote CI remain open.
+  `with_scheduler` as the Java-mapped public construction path, and kept the
+  unscheduled runtime allocator private to the runtime module. PushConsumer no
+  longer allocates a separate fallback manager before runtime binding.
+  Default/all-feature tests/doctests for Core, Consumer, and the facade pass;
+  strict all-target/all-feature Clippy, formatting, and diff checks pass. Broad
+  P18-V01 remains PARTIAL; native Windows runtime and current-revision remote CI
+  remain open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
