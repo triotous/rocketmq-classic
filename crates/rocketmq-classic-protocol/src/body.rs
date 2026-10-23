@@ -18855,13 +18855,14 @@ mod tests {
             )
             .unwrap()
         );
+        let serialized_assignment = serde_json::to_string(&assignment).unwrap();
+        let java_serialized_assignment: serde_json::Value =
+            serde_json::from_str(oracle["serializedAssignment"].as_str().unwrap()).unwrap();
         assert_eq!(
-            serde_json::to_value(assignment).unwrap(),
-            serde_json::from_str::<serde_json::Value>(
-                oracle["serializedAssignment"].as_str().unwrap()
-            )
-            .unwrap()
+            serde_json::from_str::<serde_json::Value>(&serialized_assignment).unwrap(),
+            java_serialized_assignment
         );
+        assert_eq!(serialized_assignment.matches("\"null\":").count(), 2);
 
         let decoded: MessageQueueAssignment =
             serde_json::from_str(r#"{"attachments":{"null":"string-key"}}"#).unwrap();
