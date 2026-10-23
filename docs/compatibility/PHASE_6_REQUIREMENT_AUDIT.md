@@ -15,6 +15,12 @@ Deterministic race/leak smoke passes 17 cases repeated three times. Release
 examples build and the offline benchmark runs; its current observation is
 recorded in the [Phase 18 benchmark baseline](PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
 
+Follow-up code revision `612f9c71` adds the nullable ProcessQueue message
+lookup adapter. On that revision, the focused facade comparison, all-feature
+Consumer package tests, strict Consumer Clippy, formatting/diff checks, and
+pinned Maven verify pass. The full workspace, fuzz, race/leak, release-example,
+and benchmark gate above remains the recorded run on `c3b53fcb`.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3382,3 +3388,17 @@ Release examples and the offline benchmark pass, with the current benchmark
 recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This closes the negative
 batch-size error path only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `containsMessage` input — 2026-10-23
+
+Pinned Java `ProcessQueue.containsMessage(null)` returns `false` before it
+acquires the tree lock. Rust adds `contains_message_nullable(Option<&MessageExt>)`
+to model this explicit null input while retaining the non-null method. The
+invoked Java fixture and Rust facade test compare the `false` result. Fixture
+SHA-256: `edb43a544374bb1c5ae969bcdaa09ea3746a310b3d28dc86b459a18ecfcff551`.
+
+The focused Consumer facade test, all 260 Consumer unit tests and remaining
+Consumer integration tests (including all features), strict Consumer Clippy,
+format/diff checks, and pinned Maven verify pass. This closes the null-message
+input branch only; broad P18-V01 source/API/settings/input/error/control-flow
+and reverse-export reconciliation remains PARTIAL.
