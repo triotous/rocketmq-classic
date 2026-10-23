@@ -4651,9 +4651,10 @@ Rust retry-topic fallback now uses the same default timeout and attempt count,
 skips the previous Broker when another routed Broker is available, and applies
 the pinned response-code retry rule. The response-code, queue-selection, and
 scripted third-attempt-success regressions pass. This maps the default
-`sendLatencyEnable=false` selection path. The optional Java latency-fault
-selector when `sendLatencyEnable=true` remains open in the broader setting and
-control-flow audit.
+`sendLatencyEnable=false` selection path at this checkpoint. The optional
+Java latency-fault selector was still open at this point; the later
+`P18-V01 internal producer latency-fault branch closure` entry records its
+follow-up coverage.
 
 `cargo test -p rocketmq-classic-consumer` passes, including 266 library tests,
 the Consumer integration suites, and 13 doctests. Strict Consumer all-target,
@@ -4685,8 +4686,9 @@ through Producer, Consumer, and ClientRuntime owner operations; it does not
 expose a mutable raw inner-producer wrapper or claim Java object-identity
 parity. This records the getter as an implementation-accessor disposition,
 while its default retry-topic flow is covered by the preceding retry-fallback
-slice. The source-private/configurable latency-fault branch remains open in the
-broader P18-V01 audit.
+slice at this checkpoint. The source-private/configurable latency-fault branch
+is superseded by the later `P18-V01 internal producer latency-fault branch
+closure` entry below.
 
 ## P18-V01 `MessageQueueAssignment` HashSet collision disposition — 2026-10-23
 
@@ -4858,3 +4860,20 @@ offline Maven `verify` (including producer-core fixture verification). This
 closes the controller DTO gaps identified in the previous scan only; broad
 P18-V01 API/settings/flow and reverse-export reconciliation remains
 `PARTIAL`, and Phase 18 acceptance is not yet established.
+
+## P18-V01 internal producer latency-fault branch closure — 2026-10-23 (`ea17b8fc`)
+
+The earlier retry-topic audit entries left `sendLatencyEnable=true` open. The
+follow-up on `ea17b8fc` routes retry-topic publication through the Consumer's
+existing `ClientRuntime` internal Producer extension, so Producer's
+`MQFaultStrategy` reads the copied Java `ClientConfig`, owns the same
+per-runtime fault table, applies the same response/transport retry rules, and
+starts the latency detector when enabled. The tests
+`inner_producer_is_shared_by_runtime_and_replaced_on_runtime_change`,
+`internal_runtime_send_uses_the_latency_fault_selector`, and the internal
+Producer send tests compare runtime identity, fault-based Broker choice,
+detector startup, retry budget, and outcomes. Default and all-feature Core,
+Producer, and Consumer suites and strict all-target/all-feature Clippy passed
+on that code revision. The earlier “latency-fault branch remains open” wording
+is historical and no longer identifies an active implementation gap. Broad
+P18-V01 reconciliation remains `PARTIAL` for other inventory rows.

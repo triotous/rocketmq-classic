@@ -26,3 +26,7 @@ Added `controllerDtoApi` and `controllerDtoOperations` to the pinned producer-co
 - `git diff --check`: passed after documentation cleanup.
 
 These results close the controller DTO findings only. Broad P18-V01 API/settings/control-flow reconciliation, remaining Phase 18 gates, and live/platform evidence remain outstanding. No plan file, Phase 19 protected path, Java external worktree file, remote CI, or push was changed/run.
+
+## Stale internal Producer latency-fault note correction
+
+Reviewed the previously open `sendLatencyEnable=true` note against the later internal Producer implementation and tests at `ea17b8fc`. The follow-up routes retry-topic sends through the runtime-owned Producer extension and verifies the copied settings, shared fault table, latency-based Broker choice, and detector startup. Updated the compatibility audit/release checklist so the older “remains open” language is explicitly historical; broad P18-V01 remains partial for other inventory rows.

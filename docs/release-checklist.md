@@ -9355,6 +9355,21 @@ owner-specific checks belong in the manual handoff.
   remain open. This DTO slice does not establish Phase 18 acceptance. Run log:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T231037Z.rlog`.
 
+## P18-V01 internal producer latency-fault branch closure — 2026-10-23 (`ea17b8fc`)
+
+- [x] The earlier retry-topic entry left the configured
+  `sendLatencyEnable=true` selector open. The internal Producer follow-up now
+  reuses the copied Java `ClientConfig`, a runtime-shared fault table, the
+  pinned latency selector, and detector startup through the Consumer's
+  existing `ClientRuntime` extension.
+- [x] Runtime identity/isolation, fault-based Broker choice, detector startup,
+  retry budget, and outcomes are covered by the Core, Producer, and Consumer
+  regressions. Default and all-feature Core/Producer/Consumer suites and strict
+  all-target/all-feature Clippy pass on revision `ea17b8fc`.
+- [ ] This closes the internal producer latency-fault branch only. Broad
+  P18-V01 reconciliation remains PARTIAL. See the source-backed entry in
+  `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md`.
+
 ## P18-V01 Rustdoc export and controller DTO reverse scan — 2026-10-23 (`df5c3c59`)
 
 - [x] Current all-feature Rustdoc JSON generation passes. Distinct public name
