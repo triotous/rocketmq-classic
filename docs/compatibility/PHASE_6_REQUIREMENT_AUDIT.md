@@ -4209,3 +4209,21 @@ adapters explicitly.
 
 This closes an exact-name crosswalk omission only; no runtime behavior or
 tests changed, and broad P18-V01 remains PARTIAL.
+
+## P18-V01 public tuple error payload privacy — 2026-10-23 (`65cf3cad`)
+
+The workspace Rustdoc export contained two public tuple fields named `0`:
+`RequestSendFailureCause(pub String)` and
+`TransactionCallbackError(pub String)`. Java exposes throwable messages through
+`getMessage()` and does not make that storage a writable public field. The
+Rust wrappers now keep the backing strings private and expose `new` and
+read-only `message()` methods; production call sites and transaction callback
+examples/tests use those APIs. Compile-fail doctests guard against external
+tuple-field access.
+
+The affected Core and Producer test suites and doctests passed, as did strict
+all-target/all-feature Clippy for both crates. Workspace all-feature Rustdoc
+JSON generation passed and shows no public tuple-field `0`; current distinct
+public-name counts are Common 439, Consumer 460, Core 746, Producer 361,
+Protocol 1,524, and Remoting 337. This closes two extra public mutation/access
+surfaces only; broad P18-V01 remains PARTIAL.

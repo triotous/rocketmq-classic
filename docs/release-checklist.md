@@ -8755,3 +8755,19 @@ owner-specific checks belong in the manual handoff.
   remote CI was run; the four existing user-owned Phase 19 paths remain
   untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-remoting-factory-export-crosswalk__20261023T132731Z.rlog`.
+
+## P18-V01 public tuple error payload privacy — 2026-10-23 (`65cf3cad`)
+
+- [x] Made `RequestSendFailureCause` and `TransactionCallbackError` payloads
+  private, while retaining public `new` and read-only `message()` methods.
+  Compile-fail doctests guard the removed public tuple fields.
+- [x] Core and Producer all-feature test suites/doctests, strict all-target /
+  all-feature Clippy for both crates, workspace all-feature Rustdoc JSON,
+  formatting, and diff checks passed. Rustdoc confirms no public tuple field
+  named `0`; Core exports 746 distinct names and Producer 361.
+- [ ] This closes two extra error-payload access surfaces only. Broad P18-V01
+  remains open; native Windows execution and current-revision remote Ubuntu CI
+  remain pending. Phase 19 Broker/Docker validation remains outside scope. No
+  push or remote CI was run; the four existing user-owned Phase 19 paths remain
+  untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-error-payload-privacy__20261023T133226Z.rlog`.
