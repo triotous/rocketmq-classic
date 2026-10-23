@@ -8124,3 +8124,24 @@ owner-specific checks belong in the manual handoff.
   Docker action was performed; protected Phase 19 worktree files remain
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 scheduled-executor lifecycle — 2026-10-23 (`4c337b1e`)
+
+- [x] Both public scheduler handles now expose graceful and immediate
+  shutdown, shutdown/termination status, and an async termination wait.
+  Graceful shutdown drains accepted one-shot work and stops recurring work;
+  immediate shutdown reports the pending queue size and signals cancellation
+  without waiting for the scheduler worker to join itself. Pull scheduler
+  shutdown leaves immediate FIFO pull dispatch available.
+- [x] The Core library suite passed (227 tests), strict all-target/all-feature
+  Core Clippy passed, and formatting plus `git diff --check` passed on
+  `4c337b1e`. Regressions cover both scheduler owners, timeout/status
+  transitions, runtime shutdown, and shutdown requested from the scheduler
+  worker itself.
+- [ ] This closes the scheduler-lifecycle slice only. Broad P18-V01 Java
+  source/API/settings/input/error/control-flow and Rust reverse-export
+  reconciliation, current-revision remote Ubuntu CI, native Windows runtime,
+  and Phase 19 Broker/Docker validation remain open. No remote CI, push, Broker,
+  or Docker action was performed; protected Phase 19 worktree files remain
+  untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
