@@ -639,6 +639,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     let initial_size = queue.get_msg_size().get();
     let initial_span = queue.get_max_span();
     let contains_first = queue.contains_message(&first);
+    let contains_null = queue.contains_message_nullable(None);
     let has_messages = queue.has_temp_message();
     let first_taken = queue.take_messages(1).unwrap()[0].queue_offset();
     let after_take_tree_keys = tree_map.read().keys().copied().collect::<Vec<_>>();
@@ -1117,6 +1118,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "initialSize": initial_size,
         "initialSpan": initial_span,
         "containsFirst": contains_first,
+        "containsNull": contains_null,
         "hasMessages": has_messages,
         "firstTaken": first_taken,
         "afterTakeTreeKeys": after_take_tree_keys,

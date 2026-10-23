@@ -727,6 +727,11 @@ impl ProcessQueue {
         ready_message_by_offset(&self.lock_state(), message.queue_offset()).is_some()
     }
 
+    /// Matches Java's `containsMessage`, which returns `false` for a null message.
+    pub fn contains_message_nullable(&self, message: Option<&MessageExt>) -> bool {
+        message.is_some_and(|message| self.contains_message(message))
+    }
+
     pub fn has_temp_message(&self) -> bool {
         has_ready_messages(&self.lock_state())
     }

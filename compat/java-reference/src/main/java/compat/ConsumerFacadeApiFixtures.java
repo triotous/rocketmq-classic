@@ -197,6 +197,7 @@ public final class ConsumerFacadeApiFixtures {
         long initialSize = queue.getMsgSize().get();
         long initialSpan = queue.getMaxSpan();
         boolean containsFirst = queue.containsMessage(first);
+        boolean containsNull = queue.containsMessage(null);
         boolean hasMessages = queue.hasTempMessage();
         long firstTaken = queue.takeMessages(1).get(0).getQueueOffset();
         List<Long> afterTakeTreeKeys = new ArrayList<>(queue.getMsgTreeMap().keySet());
@@ -241,6 +242,7 @@ public final class ConsumerFacadeApiFixtures {
         result.put("initialSize", initialSize);
         result.put("initialSpan", initialSpan);
         result.put("containsFirst", containsFirst);
+        result.put("containsNull", containsNull);
         result.put("hasMessages", hasMessages);
         result.put("firstTaken", firstTaken);
         result.put("afterTakeTreeKeys", afterTakeTreeKeys);
