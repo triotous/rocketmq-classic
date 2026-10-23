@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod consumer;
+pub mod controller;
 pub mod extensions;
 pub mod factory;
 pub mod producer;

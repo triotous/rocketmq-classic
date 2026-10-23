@@ -529,6 +529,15 @@ public final class ProducerCoreFixtures {
             })
             .collect(java.util.stream.Collectors.toList()));
         result.put("checkRocksdbCqWriteProgressOperations", checkRocksdbCqWriteProgressOperations());
+        result.put("controllerAdminApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
+            .filter(method -> Modifier.isPublic(method.getModifiers()))
+            .filter(method -> Set.of("getControllerMetaData", "getInSyncStateData", "getBrokerEpochCache",
+                "getControllerConfig", "updateControllerConfig", "electMaster",
+                "cleanControllerBrokerData").contains(method.getName()))
+            .map(ProducerCoreFixtures::methodSignature)
+            .sorted()
+            .collect(java.util.stream.Collectors.toList()));
+        result.put("controllerAdminOperations", controllerAdminOperations());
         result.put("wipeWritePermOfBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("wipeWritePermOfBroker"))
@@ -6257,6 +6266,126 @@ public final class ProducerCoreFixtures {
             api.shutdown();
         }
         result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> controllerAdminOperations() throws Exception {
+        String controllerAddress = "controller-a:9878";
+        List<Map<String, Object>> scriptedReplies = new ArrayList<>();
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            Map.of("group", "cluster-a", "controllerLeaderId", "controller-1",
+                "controllerLeaderAddress", controllerAddress, "isLeader", "true", "peers", "controller-1"),
+            null));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            Map.of("group", "cluster-a", "controllerLeaderId", "controller-1",
+                "controllerLeaderAddress", controllerAddress, "isLeader", "true", "peers", "controller-1"),
+            null));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null,
+            "{\"replicasInfoTable\":{\"broker-a\":{\"masterBrokerId\":0,\"masterAddress\":\"broker-a:10911\",\"masterEpoch\":9,\"syncStateSetEpoch\":10,\"inSyncReplicas\":[{\"brokerName\":\"broker-a\",\"brokerId\":0,\"brokerAddress\":\"broker-a:10911\",\"alive\":true}],\"notInSyncReplicas\":[]}}}"));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null,
+            "{\"clusterName\":\"cluster-a\",\"brokerName\":\"broker-a\",\"brokerId\":3,\"epochList\":[{\"epoch\":4,\"startOffset\":10}],\"maxOffset\":20}"));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, "alpha=one\nbeta=two\n"));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, null));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            Map.of("group", "cluster-a", "controllerLeaderId", "controller-1",
+                "controllerLeaderAddress", controllerAddress, "isLeader", "true", "peers", "controller-1"),
+            null));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            Map.of("masterBrokerId", "7", "masterAddress", "broker-a:10911",
+                "masterEpoch", "11", "syncStateSetEpoch", "12"),
+            "{\"cluster\":\"cluster-a\",\"brokerName\":\"broker-a\",\"brokerAddrs\":{\"7\":\"broker-a:10911\"}}"));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            Map.of("group", "cluster-a", "controllerLeaderId", "controller-1",
+                "controllerLeaderAddress", controllerAddress, "isLeader", "true", "peers", "controller-1"),
+            null));
+        scriptedReplies.add(controllerAdminReply(org.apache.rocketmq.remoting.protocol.ResponseCode.SUCCESS,
+            null, null));
+
+        List<Map<String, Object>> requests = new ArrayList<>();
+        AtomicInteger replyIndex = new AtomicInteger();
+        org.apache.rocketmq.client.ClientConfig clientConfig = new org.apache.rocketmq.client.ClientConfig();
+        clientConfig.setClientIP("controller-admin-api");
+        MQClientAPIImpl api = new MQClientAPIImpl(
+            new org.apache.rocketmq.remoting.netty.NettyClientConfig(), null, null,
+            clientConfig, null, ignored -> (org.apache.rocketmq.remoting.RemotingClient)
+                java.lang.reflect.Proxy.newProxyInstance(
+                    ProducerCoreFixtures.class.getClassLoader(),
+                    new Class<?>[] {org.apache.rocketmq.remoting.RemotingClient.class},
+                    (proxy, method, values) -> {
+                        if ("invokeSync".equals(method.getName())) {
+                            RemotingCommand request = (RemotingCommand) values[1];
+                            request.makeCustomHeaderToNet();
+                            Map<String, Object> call = new TreeMap<>();
+                            call.put("address", values[0]);
+                            call.put("requestCode", request.getCode());
+                            call.put("timeoutMillis", values[2]);
+                            Map<String, String> recordedFields = request.getExtFields() == null ? null
+                                : new TreeMap<>(request.getExtFields());
+                            if (recordedFields != null && recordedFields.containsKey("invokeTime")) {
+                                recordedFields.put("invokeTime", "1700000000000");
+                            }
+                            call.put("extFields", recordedFields);
+                            call.put("requestBodyBase64", request.getBody() == null ? null
+                                : java.util.Base64.getEncoder().encodeToString(request.getBody()));
+                            requests.add(call);
+
+                            Map<String, Object> script = scriptedReplies.get(replyIndex.getAndIncrement());
+                            RemotingCommand response = RemotingCommand.createResponseCommand(
+                                (Integer) script.get("code"), (String) script.get("remark"));
+                            @SuppressWarnings("unchecked")
+                            Map<String, String> fields = (Map<String, String>) script.get("extFields");
+                            if (fields != null) response.setExtFields(new HashMap<>(fields));
+                            String body = (String) script.get("body");
+                            if (body != null) response.setBody(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            return response;
+                        }
+                        return method.getReturnType() == boolean.class ? false : null;
+                    }));
+
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.header.controller.GetMetaDataResponseHeader metadata =
+            api.getControllerMetaData(controllerAddress);
+        result.put("metadataLeader", metadata.getControllerLeaderAddress());
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo replicas =
+            api.getInSyncStateData(controllerAddress, List.of("broker-a"));
+        result.put("syncStateMasterEpoch", replicas.getReplicasInfoTable().get("broker-a").getMasterEpoch());
+        org.apache.rocketmq.remoting.protocol.body.EpochEntryCache epoch =
+            api.getBrokerEpochCache("broker-a:10911");
+        result.put("epochCacheMaxOffset", epoch.getMaxOffset());
+        result.put("epochEntryEndOffsetWhenMissing", epoch.getEpochList().get(0).getEndOffset());
+
+        Map<String, Properties> configs = api.getControllerConfig(List.of("controller-config:9878"), 2345L);
+        result.put("controllerConfigAlpha", configs.get("controller-config:9878").getProperty("alpha"));
+        Properties updated = new Properties();
+        updated.setProperty("alpha", "one");
+        updated.setProperty("beta", "two");
+        api.updateControllerConfig(updated, List.of("controller-update:9878"), 2345L);
+
+        org.apache.rocketmq.common.Pair<
+            org.apache.rocketmq.remoting.protocol.header.controller.ElectMasterResponseHeader,
+            org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup> election =
+            api.electMaster(controllerAddress, "cluster-a", "broker-a", 7L);
+        result.put("electedBrokerId", election.getObject1().getMasterBrokerId());
+        result.put("electedMemberAddress", election.getObject2().getBrokerAddrs().get(7L));
+        api.cleanControllerBrokerData(controllerAddress, "cluster-a", "broker-a", "1,2", true);
+        result.put("requests", requests);
+        api.shutdown();
+        return result;
+    }
+
+    private static Map<String, Object> controllerAdminReply(
+        int code,
+        Map<String, String> extFields,
+        String body) {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("code", code);
+        result.put("remark", null);
+        result.put("extFields", extFields);
+        result.put("body", body);
         return result;
     }
 
