@@ -45,3 +45,33 @@ Rust-only `KEY_FILE_PROPERTY` module export is private. The Java `KEY_FILE`
 value remains available through `SessionCredentials::key_file_path`. The
 module-level paths have compile-fail rustdoc coverage; this export correction
 does not change the namespace/security behavior cases in this matrix.
+
+## P18-V01 `AsyncTraceDispatcher` declared API follow-up — 2026-10-23 (`34cbfb8b`)
+
+The pinned Java declaration scan covered the five-argument constructor,
+`TraceDispatcher.Type`, and every declared public method. Java's access-channel,
+trace-topic, and namespace-v2 getters/setters map to Rust's
+`access_channel`/`set_access_channel`, `trace_topic_name`/`set_trace_topic_name`,
+and `namespace_v2`/`set_namespace_v2`. Java's `getTraceProducer` maps to
+`trace_producer`; Rust exposes it as `Option<Arc<Producer>>` because the owning
+Producer, PushConsumer, and LitePullConsumer create the dispatcher during start.
+Those owners pass the host `ClientConfig` (including TLS, nameserver address,
+access channel, and namespace-v2) into dispatcher construction before starting
+the internal producer. Java's `start(nameSrvAddr, accessChannel)` is therefore
+represented by owner-configured async `start()` rather than repeated arguments.
+`append(Object)` is narrowed to `append(TraceContext)`, and `flush`/`shutdown`
+are async owner operations.
+
+The Java `hostProducer` reference is used by
+`EndTransactionTraceHookImpl` to copy the host client ID. Rust derives the same
+ID from the host `ClientConfig`; `end_transaction_trace_client_host_matches_java_host_producer_client_id`
+covers that result. The pinned Java `hostConsumer` field is set by the Push
+owner but has no reads in the pinned client source, so it has no trace behavior
+to reproduce. The direct Java host-reference getters/setters are not exposed on
+the Rust dispatcher. Java's public `registerShutDownHook` and
+`removeShutdownHook` also have no process-global Rust equivalent; Rust flushes
+through owner shutdown or sender closure while the runtime remains active.
+Scripted broker-ack flush/shutdown and dispatcher-drop flush tests cover those
+Rust lifecycle paths. Direct use of these Java-only dispatcher helpers remains
+an API-shape difference; this note does not claim the full P18-V01 audit is
+closed.

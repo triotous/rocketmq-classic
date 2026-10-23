@@ -29,3 +29,11 @@ The default workspace run saw temporary macOS dynamic-loader delays for the Remo
 `integration-tests/README.md`, `tests/differential/run.sh`, `integration-tests/run-local.sh`, and `rlogs/2026/09/20-phase-19-docker-local-validation__20261017T224455Z.rlog`.
 
 Broad P18-V01 source/API/settings/input/error/control-flow/reverse-export reconciliation remains PARTIAL. This gate closes the P18-V02 server-free checks on code revision `34cbfb8b`, but it does not close the full Phase 18 objective.
+
+## Trace dispatcher declared-surface mapping — 2026-10-23
+
+- Compared pinned Java 5.5.1 `TraceDispatcher` and `AsyncTraceDispatcher` public declarations and Java owner call sites with Rust dispatcher/Producer/Push/Lite APIs.
+- Confirmed owner-configured trace producer gets host TLS, name server, access channel and namespace-v2 before Rust async start; trace topic/access-channel/namespace-v2 property pairs map to Rust accessors. `append(Object)` maps to typed `append(TraceContext)`.
+- Confirmed Java end-transaction host producer pointer is only used to copy client ID; Rust derives the same ID from host `ClientConfig`, covered by `end_transaction_trace_client_host_matches_java_host_producer_client_id`. Pinned Java hostConsumer storage has no reads.
+- Documented Java-only direct host-reference accessors and process-global shutdown-hook methods as API-shape/lifecycle differences. Existing scripted flush, shutdown and dispatcher-drop tests cover Rust owner lifecycle behavior. Broad P18-V01 source/API/input/reverse-export audit remains PARTIAL.
+- Documentation validation: `git diff --check` passed. No code or Phase 19 files changed; no new test run was needed.
