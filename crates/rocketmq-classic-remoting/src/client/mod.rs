@@ -4334,6 +4334,71 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn inbound_shutdown_go_away_precedes_rejection_above_java_551_version_cutoff() {
+        struct RejectingProcessor {
+            rejects: Arc<AtomicUsize>,
+            processed: Arc<AtomicUsize>,
+        }
+
+        impl RequestProcessor for RejectingProcessor {
+            fn process(&self, _: RemotingCommand) -> Result<Option<RemotingCommand>, String> {
+                self.processed.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }
+
+            fn reject_request(&self) -> bool {
+                self.rejects.fetch_add(1, Ordering::SeqCst);
+                true
+            }
+        }
+
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        let rejects = Arc::new(AtomicUsize::new(0));
+        let processed = Arc::new(AtomicUsize::new(0));
+        client.register_processor(
+            test_command().code,
+            Arc::new(RejectingProcessor {
+                rejects: rejects.clone(),
+                processed: processed.clone(),
+            }),
+        );
+
+        client.inner.shutdown.send_replace(true);
+        for version in [476, 475] {
+            let mut command = test_command();
+            command.version = version;
+            processor::process_one(
+                &Arc::downgrade(&client.inner),
+                processor::InboundRequest {
+                    generation: 0,
+                    remote_addr: "test:0".into(),
+                    channel: ChannelHandle::pending("test:0"),
+                    command,
+                },
+            );
+            assert_eq!(rejects.load(Ordering::SeqCst), usize::from(version == 475));
+        }
+
+        client.inner.shutdown.send_replace(false);
+        let mut running_command = test_command();
+        running_command.version = 476;
+        processor::process_one(
+            &Arc::downgrade(&client.inner),
+            processor::InboundRequest {
+                generation: 0,
+                remote_addr: "test:0".into(),
+                channel: ChannelHandle::pending("test:0"),
+                command: running_command,
+            },
+        );
+
+        assert_eq!(rejects.load(Ordering::SeqCst), 2);
+        assert_eq!(processed.load(Ordering::SeqCst), 0);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn callback_workers_drain_late_tasks_after_client_shutdown_starts() {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (shutdown, _shutdown_receiver) = tokio::sync::watch::channel(false);

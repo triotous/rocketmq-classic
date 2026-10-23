@@ -229,6 +229,10 @@ public final class Main {
             RuntimeInboundRoutingFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;
         }
+        if (args.length > 0 && "runtime-remoting-shutdown-fixtures".equals(args[0])) {
+            RuntimeRemotingShutdownFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 0 && "runtime-heartbeat-fixtures".equals(args[0])) {
             RuntimeHeartbeatFixtures.main(java.util.Arrays.copyOfRange(args, 1, args.length));
             return;

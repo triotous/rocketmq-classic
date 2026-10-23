@@ -61,6 +61,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-runtime-remoting-shutdown-fixtures</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RuntimeRemotingShutdownFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/runtime/remoting-shutdown.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-runtime-discovery-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

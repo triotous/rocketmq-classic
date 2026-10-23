@@ -10,6 +10,9 @@ use crate::{command::RemotingCommand, error::TransportError};
 
 use super::{ChannelHandle, ClientInner, ProcessorRegistration};
 
+/// Java 5.5.1's `MQVersion.Version.V5_3_1.ordinal()` shutdown cutoff.
+const SHUTDOWN_GO_AWAY_VERSION: i32 = 475;
+
 /// Request-scoped access to the channel that delivered an inbound command.
 ///
 /// The channel handle preserves connection identity and supports address inspection, closing,
@@ -171,6 +174,12 @@ pub(super) fn process_one(inner: &Weak<ClientInner>, request: InboundRequest) {
         );
         return;
     };
+    if let Some(response) =
+        shutdown_go_away_response(*client.shutdown.borrow(), request.command.version)
+    {
+        send_response(inner, request, response);
+        return;
+    }
     if registration.processor.reject_request() {
         send_response(
             inner,
@@ -469,6 +478,30 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 fn error_response(code: i32, remark: &str) -> RemotingCommand {
     RemotingCommand::create_response_command(code, Some(remark.into()))
         .expect("remoting version configuration is valid")
+}
+
+fn shutdown_go_away_response(
+    is_shutting_down: bool,
+    request_version: i32,
+) -> Option<RemotingCommand> {
+    (is_shutting_down && request_version > SHUTDOWN_GO_AWAY_VERSION)
+        .then(|| error_response(response::GO_AWAY, "please go away"))
+}
+
+#[cfg(test)]
+mod shutdown_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn java_551_shutdown_version_boundary_returns_go_away_only_above_v531() {
+        assert!(shutdown_go_away_response(false, 476).is_none());
+        assert!(shutdown_go_away_response(true, 475).is_none());
+
+        let response = shutdown_go_away_response(true, 476).unwrap();
+        assert_eq!(SHUTDOWN_GO_AWAY_VERSION, 475);
+        assert_eq!(response.code, response::GO_AWAY);
+        assert_eq!(response.remark.as_deref(), Some("please go away"));
+    }
 }
 
 #[cfg(test)]
