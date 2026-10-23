@@ -45,9 +45,28 @@ fn transaction_flag(state: LocalTransactionState) -> i32 {
     }
 }
 
+/// Error returned by a Rust transaction callback, adapting a Java callback
+/// exception to the callback's typed `Result` contract. Java's throwable
+/// message is read-only, so the stored message is exposed through `message()`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::TransactionCallbackError;
+/// let error = TransactionCallbackError::new("callback failed");
+/// let _ = error.0;
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
-pub struct TransactionCallbackError(pub String);
+pub struct TransactionCallbackError(String);
+
+impl TransactionCallbackError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Transaction callbacks run outside the remoting reader. A callback error,
 /// panic, or null-like `None` result resolves to `Unknown`.
@@ -1136,7 +1155,7 @@ mod tests {
                 panic!("local callback panic");
             }
             if self.local_error {
-                return Err(TransactionCallbackError("local callback error".into()));
+                return Err(TransactionCallbackError::new("local callback error"));
             }
             assert_eq!(
                 message
@@ -1176,7 +1195,7 @@ mod tests {
                 panic!("check callback panic");
             }
             if self.check_error {
-                return Err(TransactionCallbackError("check callback error".into()));
+                return Err(TransactionCallbackError::new("check callback error"));
             }
             Ok(self.check_state)
         }

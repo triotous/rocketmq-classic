@@ -478,7 +478,7 @@ impl PendingReplyControl {
         entry.future.set_send_request_ok(false);
         entry
             .future
-            .set_cause(Some(Arc::new(RequestSendFailureCause(cause.clone()))));
+            .set_cause(Some(Arc::new(RequestSendFailureCause::new(cause.clone()))));
         entry.future.execute_request_callback();
         entry.sender.is_none_or(|sender| {
             sender

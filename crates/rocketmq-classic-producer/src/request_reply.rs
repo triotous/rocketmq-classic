@@ -54,7 +54,7 @@ impl RequestResponseCallback for ProducerRequestCallback {
             Some(cause) => match cause.downcast_ref::<RequestSendFailureCause>() {
                 Some(cause) => ProducerError::RequestSendFailed {
                     topic: self.topic.clone(),
-                    cause: cause.0.clone(),
+                    cause: cause.message().to_owned(),
                 },
                 None => ProducerError::RequestSendFailed {
                     topic: self.topic.clone(),

@@ -25,9 +25,27 @@ pub enum RequestFutureError {
     MissingCountDownLatch,
 }
 
+/// Typed send failure delivered through the Java-compatible request callback.
+/// Its message is exposed read-only, like Java `Throwable.getMessage()`.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::runtime::RequestSendFailureCause;
+/// let cause = RequestSendFailureCause::new("send failed");
+/// let _ = cause.0;
+/// ```
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
-pub struct RequestSendFailureCause(pub String);
+pub struct RequestSendFailureCause(String);
+
+impl RequestSendFailureCause {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
+    pub fn message(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Rust latch with CountDownLatch-style countdown and async waiting.
 #[derive(Clone)]
