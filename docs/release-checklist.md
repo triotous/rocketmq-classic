@@ -8427,3 +8427,17 @@ owner-specific checks belong in the manual handoff.
   runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
   evidence remain pending. No push or remote CI was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 current-tree Rustdoc public-name refresh — 2026-10-23 (`668dfb1e`)
+
+- [x] All-feature Rustdoc JSON generation and distinct public-name counting
+  pass on the current tree. Counts (crate-root marker excluded): Common 439,
+  Consumer 460, Core 740, Producer 362, Protocol 1,524, and Remoting 337.
+  This supersedes the 2026-10-22 Consumer/Core counts and includes the new
+  `MQClientApiFactory` export.
+- [ ] Export counts are inventory only. Broad P18-V01 source/API/settings/
+  input/error/control-flow and reverse-export reconciliation, current-revision
+  remote Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker evidence
+  remain open. Rustdoc emitted the existing workspace-manifest and Consumer
+  `fetch_update` warnings. No external CI or push was run. Run record:
+  `rlogs/2026/10/23-phase-18-rustdoc-export-refresh__20261023T091621Z.rlog`.
