@@ -54,7 +54,16 @@ fn transaction_flag(state: LocalTransactionState) -> i32 {
 /// let error = TransactionCallbackError::new("callback failed");
 /// let _ = error.0;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+///
+/// It does not expose structural value equality or cloning by message; Java
+/// `Throwable` inherits identity-based equality.
+///
+/// ```compile_fail
+/// use rocketmq_classic_producer::TransactionCallbackError;
+/// fn requires_value_traits<T: Clone + PartialEq + Eq>() {}
+/// requires_value_traits::<TransactionCallbackError>();
+/// ```
+#[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct TransactionCallbackError(String);
 
