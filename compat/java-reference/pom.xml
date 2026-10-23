@@ -901,6 +901,18 @@
             </configuration>
           </execution>
           <execution>
+            <id>verify-java-remaining-header-api-fixture</id>
+            <phase>verify</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <mainClass>compat.RemainingHeaderApiFixtures</mainClass>
+              <arguments>
+                <argument>${project.basedir}/../../fixtures/protocol/remaining-header-api.json</argument>
+                <argument>--verify</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
             <id>verify-java-message-decode-fixtures</id>
             <phase>verify</phase>
             <goals><goal>java</goal></goals>

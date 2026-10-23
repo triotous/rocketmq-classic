@@ -63,6 +63,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("GetSubscriptionGroupConfigRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetSubscriptionGroupConfigRequestHeader"),
         Map.entry("LockBatchMqRequestHeader", "org.apache.rocketmq.remoting.protocol.header.LockBatchMqRequestHeader"),
         Map.entry("NotificationRequestHeader", "org.apache.rocketmq.remoting.protocol.header.NotificationRequestHeader"),
+        Map.entry("NotifyUnsubscribeLiteRequestHeader", "org.apache.rocketmq.remoting.protocol.header.NotifyUnsubscribeLiteRequestHeader"),
         Map.entry("PollingInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PollingInfoRequestHeader"),
         Map.entry("PopMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PopMessageRequestHeader"),
         Map.entry("PopLiteMessageRequestHeader", "org.apache.rocketmq.remoting.protocol.header.PopLiteMessageRequestHeader"),

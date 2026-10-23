@@ -210,6 +210,7 @@ impl_rpc_request_header_semantics!(
     SendMessageRequestHeaderV1,
     SendMessageRequestHeaderV2,
     LiteSubscriptionCtlRequestHeader,
+    NotifyUnsubscribeLiteRequestHeader,
 );
 
 impl PartialEq for ConsumeMessageDirectlyResultRequestHeader {
@@ -6399,16 +6400,17 @@ fn java_string_hash_code(value: &str) -> i32 {
 /// let _ = NotifyUnsubscribeLiteRequestHeader::default().lite_topic;
 /// ```
 ///
-/// ```compile_fail
-/// use rocketmq_classic_protocol::header::NotifyUnsubscribeLiteRequestHeader;
-/// fn requires_value_equality<T: PartialEq + Eq>() {}
-/// fn main() { requires_value_equality::<NotifyUnsubscribeLiteRequestHeader>(); }
-/// ```
+/// Java equality for this header compares the inherited RPC routing fields;
+/// the payload fields do not participate in equality or hashing.
 #[derive(Debug, Clone, Default)]
 pub struct NotifyUnsubscribeLiteRequestHeader {
     pub(crate) lite_topic: String,
     pub(crate) consumer_group: String,
     pub(crate) client_id: String,
+    namespace: Option<String>,
+    namespaced: Option<bool>,
+    broker_name: Option<String>,
+    oneway: Option<bool>,
 }
 
 impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
@@ -6416,6 +6418,10 @@ impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
         fields.insert("liteTopic".into(), self.lite_topic.clone());
         fields.insert("consumerGroup".into(), self.consumer_group.clone());
         fields.insert("clientId".into(), self.client_id.clone());
+        put_optional(fields, "ns", self.namespace.as_deref());
+        put_optional(fields, "nsd", self.namespaced);
+        put_optional(fields, "bname", self.broker_name.as_deref());
+        put_optional(fields, "oway", self.oneway);
     }
 
     fn decode_fields(fields: &HeaderMap) -> Result<Self, ProtocolError> {
@@ -6423,6 +6429,10 @@ impl CommandHeader for NotifyUnsubscribeLiteRequestHeader {
             lite_topic: required_string(fields, "liteTopic")?.to_owned(),
             consumer_group: required_string(fields, "consumerGroup")?.to_owned(),
             client_id: required_string(fields, "clientId")?.to_owned(),
+            namespace: optional_string(fields, "ns"),
+            namespaced: optional_java_boolean(fields, "nsd"),
+            broker_name: optional_string(fields, "bname"),
+            oneway: optional_java_boolean(fields, "oway"),
         })
     }
 }
@@ -6955,7 +6965,8 @@ impl_rpc_request_header_accessors!(
     AckMessageRequestHeader,
     ChangeInvisibleTimeRequestHeader,
     PollingInfoRequestHeader,
-    PopLiteMessageRequestHeader
+    PopLiteMessageRequestHeader,
+    NotifyUnsubscribeLiteRequestHeader
 );
 impl ConsumeMessageDirectlyResultRequestHeader {
     pub fn get_namespace(&self) -> Option<&str> {
@@ -8409,7 +8420,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 49);
+        assert_eq!(cases.len(), 50);
         let rpc_semantics_types: std::collections::BTreeSet<_> = include_str!("basic.rs")
             .split_once("impl_rpc_request_header_semantics!(")
             .unwrap()
@@ -8501,6 +8512,14 @@ mod tests {
             broker_name,
             |_| {},
             |_: &mut LiteSubscriptionCtlRequestHeader| {}
+        );
+        check_rpc_request_header!(
+            NotifyUnsubscribeLiteRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut NotifyUnsubscribeLiteRequestHeader| {
+                header.lite_topic = "payload".into()
+            }
         );
         check_rpc_request_header!(
             CloneGroupOffsetRequestHeader,

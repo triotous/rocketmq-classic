@@ -3220,8 +3220,8 @@ fn header_validation_matrix() {
             "liteTopic consumerGroup clientId",
             "",
             "",
-            "",
-            ""
+            "ns nsd bname oway",
+            "nsd oway"
         ),
         row!(
             ConsumeMessageDirectlyResultRequestHeader,
@@ -3323,6 +3323,9 @@ fn header_validation_matrix() {
                 ""
             };
             raw.insert(name.into(), value.into());
+        }
+        for &name in &booleans {
+            raw.insert(name.into(), "false".into());
         }
         raw.insert("futureField".into(), "opaque-value".into());
         let encoded = (case.decode)(&raw).unwrap();
