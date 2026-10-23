@@ -47,6 +47,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   focused test, all-feature Protocol suite (including 166 doctests), strict
   Protocol Clippy, formatting/diff checks, and offline Maven verification
   pass. This closes the null-input branch only; broad P18-V01 remains open.
+- P18-V01 inherited `ServiceThread.makeStop()` wake behavior (`4c74d38e`,
+  2026-10-23): pinned Java wakes a started worker after setting its stop flag.
+  Rust now wakes the Rebalance worker; PullMessageService's blocking queue wait
+  retains its source behavior. A Java `waitForRunning` probe and Rust worker
+  regression cover prompt exit. Core all-feature tests (247 unit tests, all
+  integration targets, 21 doctests), strict Core Clippy, formatting/diff
+  checks, and offline Maven verification pass. This closes the wake branch
+  only; broad P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;

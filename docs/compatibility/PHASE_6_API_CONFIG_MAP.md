@@ -1089,7 +1089,7 @@ The Phase 9 boundary response headers (`SearchOffsetResponseHeader`, `GetMaxOffs
 | inherited `isStopped()` | `RuntimeServiceThread::is_stopped()` exposes each worker's stopped flag, including the initial false value, pre-start no-op, and started `make_stop()` transition. |
 | inherited `shutdown(boolean)` | `RuntimeServiceThread::shutdown(interrupt).await` sets the service stopped flag, wakes the worker, and waits up to the pinned 90,000ms join window unless the started thread's daemon snapshot is true. For PullMessageService, `interrupt=true` also releases a worker blocked on the message queue; its scheduled executor closes with the Java one-second grace. |
 | inherited `getJoinTime()` | `RuntimeServiceThread::join_time_millis()` and `runtime::SERVICE_THREAD_JOIN_TIME_MILLIS` expose Java's fixed 90,000ms result; direct Java fixture values and Rust handle values are checked. |
-| inherited `makeStop()` | `RuntimeServiceThread::make_stop()` is a pre-start no-op and otherwise sets only that worker's stop flag without waking or joining it. Rebalance observes the flag after its current wait/run cycle; PullMessageService observes it after a current or already-blocked queue item. |
+| inherited `makeStop()` | `RuntimeServiceThread::make_stop()` is a pre-start no-op and otherwise sets the stop flag, wakes the RebalanceService worker, and does not join it. PullMessageService's inherited `LockSupport.unpark` does not release its blocking message-queue take, so it observes the flag after a current or already-blocked queue item. A direct Java `waitForRunning` probe and Rust worker-liveness regression cover the rebalance wake path. |
 | inherited `isDaemon()` / `setDaemon(boolean)` | `RuntimeServiceThread::{is_daemon,set_daemon}` map the default false value and mutable property. The value is captured when a worker starts and controls whether service shutdown performs the Java join wait; Tokio tasks remain owned by the runtime rather than setting an OS thread's process-exit policy. |
 
 The `serviceThreadCases` fixture invokes inherited state/configuration methods on unstarted workers. `serviceLifecycleCases` uses controlled Java `run()` bodies; Rust's runtime regression exercises the public service handles and independent worker lifecycle, including pre-start no-op, repeat start, `make_stop`, interrupting PullMessageService queue wait, daemon setting and restart after full runtime shutdown. Neither fixture contacts a Broker. `ServiceThread.waitForRunning(long)` and `onWaitEnd()` are protected and are not public API rows; concrete worker `run()` behavior is mapped separately. See [ADR-0025](../architecture/ADR-0025-runtime-service-name-methods.md) for names and [ADR-0026](../architecture/ADR-0026-service-thread-api-boundary.md) for the inherited contract. The Tokio worker remains runtime-owned; daemon semantics apply to the per-service join wait.
@@ -3148,6 +3148,23 @@ slot null. Rust exposes `with_optional_refresh_scheduler(None)` to represent
 the input; its domain branch returns `NullRefreshScheduler` at the same point,
 while static mode proceeds normally. The invoked factory fixture covers both
 modes and the Core test compares the exception and null slot.
+
+## P18-V01 inherited `ServiceThread.makeStop()` wake behavior — 2026-10-23 (`4c74d38e`)
+
+Pinned Java `ServiceThread.makeStop()` returns before mutation when the service
+has not started; otherwise it sets `stopped` and calls `wakeup()` without
+joining. Rust's `RuntimeServiceThread::make_stop()` now wakes the Rebalance
+worker after setting the flag. PullMessageService retains the queue wait
+behavior: its inherited `LockSupport.unpark` does not release a blocking queue
+take. A direct Java probe blocks in protected `waitForRunning(60_000)` and
+confirms `makeStop()` releases it promptly; the Rust regression waits for the
+owned Rebalance worker to exit after the public handle call. The refreshed
+`fixtures/runtime/client-config.json` SHA-256 is
+`aff5aa095941819f7cb3a1f419a66000e5b83177f7badd0d4625b85552e53387`.
+Core all-feature tests (247 unit tests, all integration targets, 21 doctests),
+strict Core Clippy, formatting/diff checks, and offline Maven verification
+pass. This closes the `makeStop()` wake branch only; broad P18-V01
+reconciliation remains open.
 
 ## P18-V01 `TopicConfig.decode(null)` parity — 2026-10-23
 
