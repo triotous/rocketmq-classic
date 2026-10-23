@@ -8580,3 +8580,22 @@ owner-specific checks belong in the manual handoff.
   Phase 19 Broker/Docker evidence remain open. No push or remote CI was run;
   the existing Phase 19 worktree files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T103825Z.rlog`.
+
+## P18-V02 current server-free workspace gate — 2026-10-23 (`74c236ab`)
+
+- [x] Locked default and all-feature workspace tests pass, including doctests;
+  strict all-target/all-feature workspace Clippy passes.
+- [x] Offline Maven `verify` passes with 37 scenarios and the refreshed
+  factory fixture; differential self-test and the 37-scenario manifest pass.
+- [x] Metadata/license/dependency checks, deterministic race/leak smoke
+  (17 cases × 3), bounded fuzz smoke (163 frame seeds, 11 message seeds,
+  2,784 mutations), release examples, and fixed-input offline benchmark pass.
+- [x] Core all-target/all-feature Windows GNU cross-compilation, formatting,
+  and diff checks pass. This is compile evidence only, not native Windows
+  runtime evidence.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains open. Native Windows execution and
+  remote Ubuntu CI were not run; Phase 19 Broker/Docker remains a separate
+  handoff. No push or remote CI was run, and the existing Phase 19 worktree
+  files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T104953Z.rlog`.
