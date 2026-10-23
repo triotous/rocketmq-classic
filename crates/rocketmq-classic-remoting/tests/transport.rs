@@ -5849,6 +5849,171 @@ async fn p18_pipeline_failure_maps_to_system_error_without_running_later_stages(
     client.shutdown().await;
 }
 
+struct InvokedFailureFlowHook {
+    case: String,
+    calls: Arc<Mutex<Vec<String>>>,
+}
+
+impl RpcHook for InvokedFailureFlowHook {
+    fn before_request_result(&self, _: &str, _: &RemotingCommand) -> Result<(), RpcHookError> {
+        self.calls.lock().unwrap().push("before".into());
+        match self.case.as_str() {
+            "before" => Err(RpcHookError::Failed("before failed".into())),
+            "abort_before" => Err(RpcHookError::Abort {
+                response_code: 831,
+                remark: Some("before aborted".into()),
+            }),
+            _ => Ok(()),
+        }
+    }
+
+    fn after_response_optional_result(
+        &self,
+        _: &str,
+        _: &RemotingCommand,
+        response: Option<&RemotingCommand>,
+    ) -> Result<(), RpcHookError> {
+        let code = response.map_or_else(|| "null".into(), |response| response.code.to_string());
+        self.calls.lock().unwrap().push(format!("after:{code}"));
+        match self.case.as_str() {
+            "after" => Err(RpcHookError::Failed("after failed".into())),
+            "abort_after" => Err(RpcHookError::Abort {
+                response_code: 832,
+                remark: Some("after aborted".into()),
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+struct InvokedFailureFlowPipeline {
+    case: String,
+    calls: Arc<Mutex<Vec<String>>>,
+}
+
+impl RequestPipeline for InvokedFailureFlowPipeline {
+    fn execute(&self, _: &RemotingCommand) -> Result<(), i32> {
+        Ok(())
+    }
+
+    fn execute_detailed(&self, _: &RemotingCommand) -> Result<(), RequestPipelineError> {
+        self.calls.lock().unwrap().push("pipeline".into());
+        match self.case.as_str() {
+            "pipeline" => Err(RequestPipelineError::Failed("pipeline failed".into())),
+            "abort_pipeline" => Err(RequestPipelineError::Abort {
+                response_code: 833,
+                remark: Some("pipeline aborted".into()),
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[tokio::test]
+async fn p18_inbound_hook_pipeline_and_processor_failures_match_java_flow_fixture() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../fixtures/runtime/hooks.json")).unwrap();
+    for case in fixture["inboundFailureFlows"]["cases"].as_array().unwrap() {
+        let name = case["case"].as_str().unwrap().to_owned();
+        let expected_calls = case["calls"].as_array().unwrap();
+        let expected_calls = expected_calls
+            .iter()
+            .map(|call| call.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        let expected_present = case["responsePresent"].as_bool().unwrap();
+        let expected_code = case["responseCode"].as_i64().map(|code| code as i32);
+        let expected_opaque = case["responseOpaque"].as_i64().map(|opaque| opaque as i32);
+        let expected_remark = case["responseRemark"].as_str().map(str::to_owned);
+        let oneway = name.starts_with("oneway_");
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = command(900_030);
+            request.opaque = 71;
+            if oneway {
+                request.mark_oneway();
+            }
+            write_command(&mut stream, &request).await;
+            if oneway {
+                tokio::time::timeout(Duration::from_millis(100), try_read_command(&mut stream))
+                    .await
+                    .ok()
+                    .flatten()
+            } else {
+                Some(read_command(&mut stream).await)
+            }
+        });
+
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let client = RemotingClient::new(TransportMode::Plain);
+        client.start().unwrap();
+        client.add_rpc_hook(Arc::new(InvokedFailureFlowHook {
+            case: name.clone(),
+            calls: calls.clone(),
+        }));
+        client.set_request_pipeline(Some(Arc::new(InvokedFailureFlowPipeline {
+            case: name.clone(),
+            calls: calls.clone(),
+        })));
+        let processor_calls = calls.clone();
+        let processor_case = name.clone();
+        client.register_processor(
+            900_030,
+            Arc::new(move |_: RemotingCommand| {
+                processor_calls.lock().unwrap().push("processor".into());
+                if processor_case == "processor" || processor_case == "oneway_processor" {
+                    Err("processor failed".into())
+                } else {
+                    Ok(Some(command(0)))
+                }
+            }),
+        );
+        assert!(
+            client
+                .is_address_reachable(
+                    &address.to_string(),
+                    Instant::now() + Duration::from_secs(2)
+                )
+                .await,
+            "{name}: connection should be accepted"
+        );
+
+        let response = peer.await.unwrap();
+        assert_eq!(
+            response.is_some(),
+            expected_present,
+            "{name}: response presence"
+        );
+        if let Some(response) = response {
+            assert_eq!(Some(response.code), expected_code, "{name}: response code");
+            assert_eq!(Some(response.opaque), expected_opaque, "{name}: opaque");
+            if expected_remark
+                .as_deref()
+                .is_some_and(|remark| remark != "java.lang.IllegalStateException")
+            {
+                assert_eq!(
+                    response.remark.as_deref(),
+                    expected_remark.as_deref(),
+                    "{name}: remark"
+                );
+            } else if expected_remark.is_some() {
+                assert!(
+                    response.remark.is_some(),
+                    "{name}: Java reports exception diagnostic"
+                );
+            }
+        }
+        assert_eq!(
+            *calls.lock().unwrap(),
+            expected_calls,
+            "{name}: hook/processor order"
+        );
+        client.shutdown().await;
+    }
+}
+
 #[tokio::test]
 async fn p18_request_pipeline_mutates_request_before_later_stage_and_processor() {
     let fixture: serde_json::Value =

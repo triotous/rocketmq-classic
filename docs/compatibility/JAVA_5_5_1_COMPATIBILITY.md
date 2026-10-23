@@ -876,3 +876,17 @@ whose original property bytes remain in the input. Fixture SHA-256:
 `9cd0b64fe95643177c533d6cc2fd1f33c957e54cd3bd9559ecb07f6083939938`. This
 closes the tested nonpositive-length branches only; broad P18-V01
 reconciliation remains open.
+
+Phase 18 inbound Remoting failure flow (2026-10-23): the pinned
+`NettyRemotingAbstract.processRequestCommand` was invoked with local Netty
+`EmbeddedChannel` requests and actual Java hook, pipeline, and processor
+interfaces. The fixture covers ordinary before-hook, pipeline, processor, and
+after-hook failures; `AbortProcessException` at before, pipeline, and after
+stages; and one-way processor failure. Rust loopback cases compare response
+presence/code/opaque and stage call order. The checks confirm SYSTEM_ERROR for
+ordinary failures, explicit abort codes, Java's processor and after-hook skip
+ordering, and one-way silence. Java's exception class plus first stack frame
+in the remark remains diagnostic-only; the fixture normalizes this field to
+the Java exception class. Source artifact: `NettyRemotingAbstract.java` at
+5.5.1 commit `efa1be59d6fc747ad220f036c86030f05f0419f9`, SHA-256
+`b21a504b5310f8096cca443ee64ff733a6feaaea7fbd22ddd214821fa561275d`.

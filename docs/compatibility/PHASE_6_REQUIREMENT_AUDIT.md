@@ -4877,3 +4877,25 @@ Producer, and Consumer suites and strict all-target/all-feature Clippy passed
 on that code revision. The earlier “latency-fault branch remains open” wording
 is historical and no longer identifies an active implementation gap. Broad
 P18-V01 reconciliation remains `PARTIAL` for other inventory rows.
+
+## P18-V01 inbound Remoting failure-flow closure — 2026-10-23
+
+The pinned `NettyRemotingAbstract.processRequestCommand` source
+(`b21a504b5310f8096cca443ee64ff733a6feaaea7fbd22ddd214821fa561275d`) was
+invoked with `EmbeddedChannel`, a direct executor, and actual 5.5.1 hook,
+pipeline, and processor interfaces. `RuntimeHookFixtures` records four
+ordinary failure stages, aborts at before/pipeline/after, and one-way processor
+failure. Its fixture-backed Rust loopback test verifies response presence,
+response code and opaque, callback order, processor suppression, and one-way
+silence. Both paths return SYSTEM_ERROR for ordinary failures and preserve
+the caller-supplied abort codes. Java exception remarks are normalized to the
+exception class because first-stack-frame text is diagnostic-only.
+`fixtures/runtime/hooks.json` SHA-256:
+`b1d92bab58838debc816ccce321a48876aaf72fb6addfe9aa6b6168620eedc5b`;
+Java fixture source SHA-256:
+`522e20cdf8bd69ea43a82683fc4a85fb843639d077f33fbfc9dd59dc6d48fd76`.
+
+Focused remoting comparison and pinned offline fixture generation pass. This
+closes the previously vague hook/pipeline/processor response-category and
+control-flow concern only; the broad P18-V01 bidirectional audit remains
+`PARTIAL`.

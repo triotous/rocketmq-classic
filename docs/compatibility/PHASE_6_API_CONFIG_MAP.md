@@ -3376,6 +3376,24 @@ audit.
 | `RemotingClient::invoke_sync_with_timeout_millis` | Java `NettyRemotingClient.invokeSync` with its signed millisecond timeout and channel-acquisition-before-expiry ordering. This is the low-level adapter used by client API calls; it adds no transport operation beyond the Java sync call. |
 | Hidden `unique_id` module: `UniqueIdError`, `UniqueIdGenerator::{new,set_if_missing,create}`, `{get_ip_from_id,get_ip_str_from_id,get_pid_from_id,get_nearly_time_from_id,create_fake_ip}`; `TraceDispatcher::new`; `TraceContext::transfer_keys` | Java `MessageClientIDSetter` constructor, unique-ID creation/set/decode helpers, and fake-IP behavior; Java `AsyncTraceDispatcher` owner construction; and trace encoder transfer-key selection. Their public Java declarations or owner-flow dispositions are recorded in the Phase 7 and Phase 16 matrices. |
 
+## P18-V01 inbound remoting failure-flow comparison — 2026-10-23
+
+The pinned 5.5.1 `NettyRemotingAbstract.processRequestCommand` path was
+invoked with a local `EmbeddedChannel`, direct executor, and real Java
+`RPCHook`, `RequestPipeline`, and `NettyRequestProcessor` implementations.
+`fixtures/runtime/hooks.json` now records normal failures from each stage,
+`AbortProcessException` from before/pipeline/after, and a one-way processor
+failure. The fixture pins response presence/code/opaque and the observed
+before, pipeline, processor, and after callback sequence. The Rust
+`p18_inbound_hook_pipeline_and_processor_failures_match_java_flow_fixture`
+loopback test compares each of those outcomes. It confirms SYSTEM_ERROR for
+ordinary stage failures, the specified abort response codes, Java's skip and
+after-hook ordering, and no response for one-way failures. Exception remarks
+are normalized to their Java exception class in this fixture; Rust's
+error-message text and Java's exception-plus-stack-frame text remain a
+diagnostic-only difference. This closes the previously vague processor,
+pipeline, and hook response-flow concern, not the broader P18-V01 audit.
+
 This pass reviewed each of the 29 hidden-documentation annotations, including
 the public hidden fields and bridge methods. It found no additional client
 setting or wire operation in this set. Rust `pub` accessibility remains part

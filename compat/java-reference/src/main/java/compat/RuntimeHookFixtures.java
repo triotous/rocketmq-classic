@@ -1,20 +1,32 @@
 package compat;
 
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.embedded.EmbeddedChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.AbstractExecutorService;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.rpchook.NamespaceRpcHook;
+import org.apache.rocketmq.common.AbortProcessException;
+import org.apache.rocketmq.common.Pair;
 import org.apache.rocketmq.remoting.RPCHook;
+import org.apache.rocketmq.remoting.ChannelEventListener;
+import org.apache.rocketmq.remoting.netty.NettyRemotingAbstract;
+import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
+import org.apache.rocketmq.remoting.protocol.RemotingSysResponseCode;
 import org.apache.rocketmq.remoting.pipeline.RequestPipeline;
 import org.apache.rocketmq.remoting.rpchook.StreamTypeRPCHook;
 import org.apache.rocketmq.remoting.rpchook.DynamicalExtFieldRPCHook;
 
-/** Invokes actual pinned hooks in MQClientAPIImpl constructor order. No transport. */
+/** Invokes pinned client hooks and remoting request handling with local fixtures only. */
 public final class RuntimeHookFixtures {
     public static void main(String[] args) throws Exception {
         List<Object> cases = new ArrayList<>();
@@ -56,6 +68,7 @@ public final class RuntimeHookFixtures {
         fixture.put("entrypoint", "NamespaceRpcHook/StreamTypeRPCHook/DynamicalExtFieldRPCHook.doBeforeRequest; MQClientAPIImpl constructor order");
         fixture.put("afterResponseMutation", afterResponseMutation());
         fixture.put("requestPipelineMutation", requestPipelineMutation());
+        fixture.put("inboundFailureFlows", inboundFailureFlows());
         fixture.put("serverBaselineContacted", false); fixture.put("cases", cases);
         String json = com.alibaba.fastjson2.JSON.toJSONString(fixture, com.alibaba.fastjson2.JSONWriter.Feature.WriteMapNullValue) + "\n";
         Path file = Path.of(args[0]);
@@ -111,6 +124,137 @@ public final class RuntimeHookFixtures {
         result.put("inputOpaque", 41);
         result.put("opaque", request.getOpaque());
         result.put("extFields", new TreeMap<>(request.getExtFields()));
+        return result;
+    }
+
+    private static final class InlineExecutor extends AbstractExecutorService {
+        private boolean shutdown;
+
+        @Override
+        public void shutdown() {
+            shutdown = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdown = true;
+            return List.of();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return shutdown;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return shutdown;
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            if (shutdown) throw new IllegalStateException("executor is shut down");
+            command.run();
+        }
+    }
+
+    private static final class FixtureRemoting extends NettyRemotingAbstract {
+        FixtureRemoting() {
+            super(1, 1);
+        }
+
+        @Override
+        public ChannelEventListener getChannelEventListener() {
+            return null;
+        }
+
+        @Override
+        public ExecutorService getCallbackExecutor() {
+            return null;
+        }
+
+        void register(int code, NettyRequestProcessor processor) {
+            processorTable.put(code, Pair.of(processor, new InlineExecutor()));
+        }
+    }
+
+    private static Map<String, Object> inboundFailureFlows() {
+        List<Object> rows = new ArrayList<>();
+        for (String failure : new String[] {
+            "before", "pipeline", "processor", "after",
+            "abort_before", "abort_pipeline", "abort_after", "oneway_processor"
+        }) {
+            List<String> calls = new ArrayList<>();
+            FixtureRemoting remoting = new FixtureRemoting();
+            int code = 900_030;
+            boolean oneway = failure.startsWith("oneway_");
+            String point = failure.replace("abort_", "").replace("oneway_", "");
+            boolean abort = failure.startsWith("abort_");
+            remoting.register(code, (ctx, request) -> {
+                calls.add("processor");
+                if (point.equals("processor")) {
+                    throw new IllegalStateException("processor failed");
+                }
+                return RemotingCommand.createResponseCommand(0, "ok");
+            });
+            remoting.registerRPCHook(new RPCHook() {
+                @Override
+                public void doBeforeRequest(String remoteAddr, RemotingCommand request) {
+                    calls.add("before");
+                    if (point.equals("before")) {
+                        if (abort) throw new AbortProcessException(831, "before aborted");
+                        throw new IllegalStateException("before failed");
+                    }
+                }
+
+                @Override
+                public void doAfterResponse(String remoteAddr, RemotingCommand request, RemotingCommand response) {
+                    calls.add("after:" + (response == null ? "null" : response.getCode()));
+                    if (point.equals("after")) {
+                        if (abort) throw new AbortProcessException(832, "after aborted");
+                        throw new IllegalStateException("after failed");
+                    }
+                }
+            });
+            remoting.setRequestPipeline((ctx, request) -> {
+                calls.add("pipeline");
+                if (point.equals("pipeline")) {
+                    if (abort) throw new AbortProcessException(833, "pipeline aborted");
+                    throw new IllegalStateException("pipeline failed");
+                }
+            });
+
+            EmbeddedChannel channel = new EmbeddedChannel();
+            channel.pipeline().addLast(new ChannelInboundHandlerAdapter());
+            RemotingCommand request = RemotingCommand.createRequestCommand(code, null);
+            request.setOpaque(71);
+            if (oneway) request.markOnewayRPC();
+            ChannelHandlerContext ctx = channel.pipeline().firstContext();
+            remoting.processRequestCommand(ctx, request);
+            channel.runPendingTasks();
+            RemotingCommand response = channel.readOutbound();
+
+            Map<String, Object> row = new TreeMap<>();
+            row.put("case", failure);
+            row.put("calls", calls);
+            row.put("responseCode", response == null ? null : response.getCode());
+            row.put("responseOpaque", response == null ? null : response.getOpaque());
+            String remark = response == null ? null : response.getRemark();
+            row.put("responseRemark", response == null ? null
+                : response.getCode() == RemotingSysResponseCode.SYSTEM_ERROR && remark != null
+                    ? remark.substring(0, remark.indexOf(':')) : remark);
+            row.put("responsePresent", response != null);
+            rows.add(row);
+            channel.finishAndReleaseAll();
+        }
+        Map<String, Object> result = new TreeMap<>();
+        result.put("entrypoint", "NettyRemotingAbstract.processRequestCommand with EmbeddedChannel and direct ExecutorService");
+        result.put("cases", rows);
         return result;
     }
 }

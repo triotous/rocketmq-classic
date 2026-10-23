@@ -9370,6 +9370,25 @@ owner-specific checks belong in the manual handoff.
   P18-V01 reconciliation remains PARTIAL. See the source-backed entry in
   `docs/compatibility/PHASE_6_REQUIREMENT_AUDIT.md`.
 
+## P18-V01 inbound Remoting failure-flow comparison — 2026-10-23
+
+- [x] Invoked pinned Java `NettyRemotingAbstract.processRequestCommand` with a
+  local `EmbeddedChannel`, direct executor, and real hook/pipeline/processor
+  implementations. The fixture records ordinary failures at all four stages,
+  aborts at before/pipeline/after, one-way silence, response codes/opaque, and
+  callback order.
+- [x] Rust fixture-backed loopback test passes for all eight cases. Ordinary
+  failures map to SYSTEM_ERROR, aborts keep their chosen codes, processor and
+  after-hook execution matches Java, and one-way failures write no response.
+  The Java exception class is compared while exact first-stack-frame remarks
+  remain a diagnostic difference.
+- [ ] This closes the remoting error-flow concern only. Broad P18-V01 remains
+  PARTIAL; native Windows runtime, current-revision remote Ubuntu CI, and
+  Phase 19 Broker/Docker scenarios remain separate. No plan was edited, no
+  push or remote CI was run, and the four protected Phase 19 worktree paths
+  remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-remoting-error-flow__20261023T234626Z.rlog`.
+
 ## P18-V01 Rustdoc export and controller DTO reverse scan — 2026-10-23 (`df5c3c59`)
 
 - [x] Current all-feature Rustdoc JSON generation passes. Distinct public name
