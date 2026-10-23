@@ -9094,3 +9094,30 @@ owner-specific checks belong in the manual handoff.
   edited, no remote CI or push was run, and the four existing Phase 19 paths
   remain untouched and unstaged. Run record:
   `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T184207Z.rlog`.
+
+## P18-V02 current-tree server-free refresh after compatibility corrections — 2026-10-23 (`875e47d9`)
+
+- [x] NameServer scan admission now follows Java's configured-order bounded
+  executor submission and `AbortPolicy` retry ordering. Unix offset-store
+  process ownership now uses non-inherited POSIX record locks; a subprocess
+  test checks exclusion during ownership and acquisition after drop. The
+  deterministic race/leak runner passed 20 cases × 3 repetitions.
+- [x] Three consecutive parallel all-feature Consumer library runs passed.
+  Sequential default and all-feature workspace tests/doctests, strict
+  all-target/all-feature workspace Clippy, formatting/diff checks, Windows GNU
+  all-target/all-feature check and strict Clippy, offline Maven `verify` (37
+  scenarios, 11 message fixtures, 106 typed headers, 19 typed bodies, and
+  Java/Rust cross-decodes), differential self-test and 37-scenario manifest,
+  fuzz smoke (163 frame seeds, 11 message seeds, 2,784 mutations), release
+  examples, offline benchmark, and workspace metadata/license/dependency
+  checks passed.
+- [x] Rustdoc JSON generation passed. Its inventory remains name-level
+  evidence, not behavioral proof. Benchmark observations are machine-specific
+  and set no threshold.
+- [ ] Broad P18-V01 bidirectional source/API/settings/input/error/control-flow
+  and reverse-export reconciliation remains PARTIAL. Native Windows runtime,
+  current-revision remote CI, and Phase 19 live Broker/Docker scenarios remain
+  open or out of scope. No plan was edited, no remote CI or push was run, and
+  the four pre-existing Phase 19 worktree paths remain untouched and
+  unstaged. Run record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T192026Z.rlog`.

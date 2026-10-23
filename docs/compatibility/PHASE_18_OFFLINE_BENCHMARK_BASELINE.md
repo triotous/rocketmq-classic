@@ -1127,3 +1127,23 @@ and sets no acceptance threshold.
 
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
+
+## NameServer scan and offset-lock current-tree sample — 2026-10-23 (`875e47d9`)
+
+Captured with `cargo bench --offline --locked -p rocketmq-classic --bench
+offline` on code revision `875e47d9`, after aligning NameServer scan admission
+with Java's bounded executor order and switching Unix offset-store ownership
+to POSIX record locks. Environment: macOS 26.6.1 AArch64, Apple M5 Max, 18
+logical CPUs, Rust 1.85.0. This general benchmark does not isolate either
+change and sets no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 2,230.5 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,128.5 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,153.3 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 14.0 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 62,364.0 ns | 82.00 (100 samples) | 9,561.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling.

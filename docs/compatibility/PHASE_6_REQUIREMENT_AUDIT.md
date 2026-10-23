@@ -4523,3 +4523,35 @@ serial workspace run passed. This closes this attachment-key API/input/output
 gap only; broad P18-V01 source/API/settings/input/error/control-flow and
 reverse-export reconciliation remains PARTIAL. Phase 6 remains PARTIAL and
 P6-V04 remains `PENDING_PHASE_19`.
+
+## P18-V01 NameServer scan admission and offset-store process locks — 2026-10-23 (`875e47d9`)
+
+Pinned RocketMQ 5.5.1 `NettyRemotingClient.java` (SHA-256
+`b9822a1abb0710070de051e7f94e0ba5facbf3284f3ae09977de14aee952476d`) submits
+NameServer probes in configured order to a 4-core/10-max executor with a
+32-entry queue. `ThreadUtils.java` (SHA-256
+`3aef35aa3f9f42eeb8da63e89f0a47b1eecfbe0e13ca2e460cf6be520a48d479`) confirms
+the default `AbortPolicy`: a rejected submission stops the remainder of that
+scan pass. Rust now admits only the configured-order prefix that fits its 42
+active-plus-queued bound; each later pass starts at the first address, and
+completed probe tasks are applied before capacity is recalculated. The
+`name_server_scan_batch_matches_java_abort_policy_submission_order` test pins
+the saturation and restart ordering.
+
+The local offset-store writer lease also switched on Unix from inherited
+`flock` locks to POSIX `fcntl(F_SETLK)` record locks, which are not inherited
+across `fork`; the lock file remains linked to avoid replacement-inode races,
+and drop explicitly unlocks it. A subprocess regression verifies a second
+process is rejected while the writer owns the store and can open it after the
+owner drops. Three repeated parallel all-feature Consumer library suites and
+the serial default/all-feature workspace suites pass after the change.
+
+The offline stress suite now runs 20 cases three times. Strict workspace
+Clippy, Windows GNU check and Clippy, offline Maven verification, differential
+self-test/37-scenario manifest, fuzz smoke, release examples, offline
+benchmark, metadata checks, formatting, and diff checks pass. This closes the
+NameServer scan submission-order mismatch and strengthens offset-store lock
+release behavior only; broad P18-V01 source/API/settings/input/error/flow and
+reverse-export reconciliation remains PARTIAL. Native Windows runtime,
+current-revision remote CI, and Phase 19 live Broker/Docker evidence remain
+separate.
