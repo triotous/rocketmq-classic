@@ -6743,6 +6743,24 @@ public final class ProducerCoreFixtures {
         producerConnection.setConnectionSet(new java.util.HashSet<>(List.of(connection)));
         result.put("producerConnectionDefaultJson", JSON.toJSONString(
             new org.apache.rocketmq.remoting.protocol.body.ProducerConnection()));
+        Map<String, Object> producerConnectionSetSemantics = new TreeMap<>();
+        java.util.HashSet<org.apache.rocketmq.remoting.protocol.body.Connection> identitySet =
+            new java.util.HashSet<>();
+        producerConnectionSetSemantics.put("firstSameReferenceAdd", identitySet.add(connection));
+        producerConnectionSetSemantics.put("secondSameReferenceAdd", identitySet.add(connection));
+        org.apache.rocketmq.remoting.protocol.body.Connection sameFieldsDifferentReference =
+            new org.apache.rocketmq.remoting.protocol.body.Connection();
+        sameFieldsDifferentReference.setClientId(connection.getClientId());
+        sameFieldsDifferentReference.setClientAddr(connection.getClientAddr());
+        sameFieldsDifferentReference.setLanguage(connection.getLanguage());
+        sameFieldsDifferentReference.setVersion(connection.getVersion());
+        producerConnectionSetSemantics.put("differentReferenceAdd",
+            identitySet.add(sameFieldsDifferentReference));
+        producerConnectionSetSemantics.put("sizeBeforeNull", identitySet.size());
+        producerConnectionSetSemantics.put("firstNullAdd", identitySet.add(null));
+        producerConnectionSetSemantics.put("secondNullAdd", identitySet.add(null));
+        producerConnectionSetSemantics.put("sizeAfterNull", identitySet.size());
+        result.put("producerConnectionSetSemantics", producerConnectionSetSemantics);
         org.apache.rocketmq.remoting.protocol.body.ProducerConnection nullConnections =
             new org.apache.rocketmq.remoting.protocol.body.ProducerConnection();
         nullConnections.setConnectionSet(null);

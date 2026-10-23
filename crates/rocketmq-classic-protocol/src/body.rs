@@ -5199,30 +5199,53 @@ impl Connection {
     }
 }
 
+/// Java `HashSet<Connection>` membership uses `Connection` object identity.
+/// `SharedValue` clones represent the same Java object; independently created
+/// values remain distinct even when their fields match.
+type ConnectionSet = HashSet<Option<SharedValue<Connection>>>;
+type SharedConnectionSet = SharedValue<ConnectionSet>;
+
+fn empty_shared_connection_set() -> Option<SharedConnectionSet> {
+    Some(SharedValue::default())
+}
+
+impl PartialEq for SharedValue<Connection> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr_eq(other)
+    }
+}
+
+impl Eq for SharedValue<Connection> {}
+
+impl Hash for SharedValue<Connection> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash_identity(state);
+    }
+}
+
 /// Java `ProducerConnection` response DTO returned by
 /// `GET_PRODUCER_CONNECTION_LIST`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProducerConnection {
     #[serde(skip_serializing_if = "Option::is_none")]
-    connection_set: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
-}
-
-fn default_producer_connection_set() -> Option<Vec<Option<Connection>>> {
-    Some(Vec::new())
+    connection_set: Option<SharedConnectionSet>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct ProducerConnectionFields {
-    #[serde(default = "default_producer_connection_set")]
-    connection_set: Option<Vec<Option<Connection>>>,
+    #[serde(
+        default = "empty_shared_connection_set",
+        deserialize_with = "crate::heartbeat::deserialize_identity_shared_hash_set_with_null"
+    )]
+    connection_set: Option<SharedConnectionSet>,
 }
 
 impl Default for ProducerConnectionFields {
     fn default() -> Self {
         Self {
-            connection_set: default_producer_connection_set(),
+            connection_set: empty_shared_connection_set(),
         }
     }
 }
@@ -5235,14 +5258,7 @@ impl<'de> Deserialize<'de> for ProducerConnection {
         let fields: ProducerConnectionFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            connection_set: fields.connection_set.map(|connections| {
-                SharedValue::new(
-                    connections
-                        .into_iter()
-                        .map(|connection| connection.map(SharedValue::new))
-                        .collect(),
-                )
-            }),
+            connection_set: fields.connection_set,
         })
     }
 }
@@ -5250,19 +5266,21 @@ impl<'de> Deserialize<'de> for ProducerConnection {
 impl Default for ProducerConnection {
     fn default() -> Self {
         Self {
-            connection_set: Some(SharedValue::new(Vec::new())),
+            connection_set: empty_shared_connection_set(),
         }
     }
 }
 
 impl ProducerConnection {
-    pub fn get_connection_set(&self) -> Option<SharedValue<Vec<Option<SharedValue<Connection>>>>> {
+    pub fn get_connection_set(
+        &self,
+    ) -> Option<SharedValue<HashSet<Option<SharedValue<Connection>>>>> {
         self.connection_set.clone()
     }
 
     pub fn set_connection_set(
         &mut self,
-        value: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+        value: Option<SharedValue<HashSet<Option<SharedValue<Connection>>>>>,
     ) {
         self.connection_set = value;
     }
@@ -5876,7 +5894,7 @@ impl ProducerTableInfo {
 #[serde(rename_all = "camelCase")]
 pub struct ConsumerConnection {
     #[serde(skip_serializing_if = "Option::is_none")]
-    connection_set: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+    connection_set: Option<SharedConnectionSet>,
     #[serde(skip_serializing_if = "Option::is_none")]
     subscription_table: Option<SharedValue<HashMap<String, Option<SharedValue<SubscriptionData>>>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -5887,10 +5905,6 @@ pub struct ConsumerConnection {
     consume_from_where: Option<ConsumeFromWhere>,
 }
 
-fn default_consumer_connection_set() -> Option<Vec<Option<Connection>>> {
-    Some(Vec::new())
-}
-
 fn default_consumer_connection_subscription_table()
 -> Option<HashMap<String, Option<SubscriptionData>>> {
     Some(HashMap::new())
@@ -5899,8 +5913,11 @@ fn default_consumer_connection_subscription_table()
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct ConsumerConnectionFields {
-    #[serde(default = "default_consumer_connection_set")]
-    connection_set: Option<Vec<Option<Connection>>>,
+    #[serde(
+        default = "empty_shared_connection_set",
+        deserialize_with = "crate::heartbeat::deserialize_identity_shared_hash_set_with_null"
+    )]
+    connection_set: Option<SharedConnectionSet>,
     #[serde(default = "default_consumer_connection_subscription_table")]
     subscription_table: Option<HashMap<String, Option<SubscriptionData>>>,
     #[serde(
@@ -5923,7 +5940,7 @@ struct ConsumerConnectionFields {
 impl Default for ConsumerConnectionFields {
     fn default() -> Self {
         Self {
-            connection_set: default_consumer_connection_set(),
+            connection_set: empty_shared_connection_set(),
             subscription_table: default_consumer_connection_subscription_table(),
             consume_type: None,
             message_model: None,
@@ -5940,14 +5957,7 @@ impl<'de> Deserialize<'de> for ConsumerConnection {
         let fields: ConsumerConnectionFields =
             serde_fastjson::deserialize_fastjson_last_wins_object(deserializer)?;
         Ok(Self {
-            connection_set: fields.connection_set.map(|values| {
-                SharedValue::new(
-                    values
-                        .into_iter()
-                        .map(|value| value.map(SharedValue::new))
-                        .collect(),
-                )
-            }),
+            connection_set: fields.connection_set,
             subscription_table: fields.subscription_table.map(|values| {
                 SharedValue::new(
                     values
@@ -5967,14 +5977,7 @@ impl Default for ConsumerConnection {
     fn default() -> Self {
         let fields = ConsumerConnectionFields::default();
         Self {
-            connection_set: fields.connection_set.map(|values| {
-                SharedValue::new(
-                    values
-                        .into_iter()
-                        .map(|value| value.map(SharedValue::new))
-                        .collect(),
-                )
-            }),
+            connection_set: fields.connection_set,
             subscription_table: fields.subscription_table.map(|values| {
                 SharedValue::new(
                     values
@@ -5999,13 +6002,15 @@ pub enum ConsumerConnectionComputeMinVersionError {
 }
 
 impl ConsumerConnection {
-    pub fn get_connection_set(&self) -> Option<SharedValue<Vec<Option<SharedValue<Connection>>>>> {
+    pub fn get_connection_set(
+        &self,
+    ) -> Option<SharedValue<HashSet<Option<SharedValue<Connection>>>>> {
         self.connection_set.clone()
     }
 
     pub fn set_connection_set(
         &mut self,
-        value: Option<SharedValue<Vec<Option<SharedValue<Connection>>>>>,
+        value: Option<SharedValue<HashSet<Option<SharedValue<Connection>>>>>,
     ) {
         self.connection_set = value;
     }
@@ -13078,12 +13083,16 @@ mod tests {
     }
 
     #[test]
+    // The Java Set key is mutable, but this Rust key hashes and compares only
+    // the stable SharedValue pointer identity, matching Object.equals/hashCode.
+    #[allow(clippy::mutable_key_type)]
     fn consumer_connection_min_version_matches_invoked_java_api() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../fixtures/admin/query-consume-time-span.json"
         ))
         .unwrap();
         let api = &fixture["getConsumerConnectionList"]["success"]["consumerConnectionApi"];
+        let set_semantics = &api["connectionSetSemantics"];
         assert_eq!(
             api["connectionPublicConstructors"],
             json!(["public org.apache.rocketmq.remoting.protocol.body.Connection()"])
@@ -13136,6 +13145,49 @@ mod tests {
         assert_eq!(
             default_connection.get_version(),
             api["connectionDefaults"]["version"].as_i64().unwrap() as i32
+        );
+
+        assert_eq!(set_semantics["firstSameReferenceAdd"], true);
+        assert_eq!(set_semantics["sameReferencePresentAfterMutation"], true);
+        assert_eq!(set_semantics["secondSameReferenceAdd"], false);
+        assert_eq!(set_semantics["differentReferenceAdd"], true);
+        assert_eq!(set_semantics["differentReferencesCompareEqual"], false);
+        assert_eq!(set_semantics["sizeBeforeNull"], 2);
+        assert_eq!(set_semantics["firstNullAdd"], true);
+        assert_eq!(set_semantics["secondNullAdd"], false);
+        assert_eq!(set_semantics["sizeAfterNull"], 3);
+        assert_eq!(set_semantics["equalsDeclaringClass"], "java.lang.Object");
+        assert_eq!(set_semantics["decodedNullAndDistinctObjectsSize"], 3);
+
+        let mut connection_set = ConnectionSet::new();
+        let same_connection = SharedValue::new(Connection::default());
+        assert!(connection_set.insert(Some(same_connection.clone())));
+        same_connection.with_mut(|connection| connection.set_version(55));
+        assert!(connection_set.contains(&Some(same_connection.clone())));
+        assert!(!connection_set.insert(Some(same_connection.clone())));
+        assert!(connection_set.insert(Some(SharedValue::new(Connection::default()))));
+        assert!(connection_set.insert(None));
+        assert!(!connection_set.insert(None));
+        assert_eq!(connection_set.len(), 3);
+        assert!(connection_set.contains(&None));
+        assert!(connection_set.remove(&None));
+        assert!(!connection_set.contains(&None));
+
+        let decoded_duplicate_members = ConsumerConnection::java_decode(
+            br#"{"connectionSet":[null,null,{"version":7},{"version":7}]}"#,
+        )
+        .unwrap();
+        let decoded_connection_set = decoded_duplicate_members.get_connection_set().unwrap();
+        assert_eq!(decoded_connection_set.with(HashSet::len), 3);
+        assert_eq!(
+            decoded_connection_set
+                .with(|values| values.iter().filter(|value| value.is_none()).count()),
+            1
+        );
+        assert_eq!(
+            decoded_connection_set
+                .with(|values| values.iter().filter(|value| value.is_some()).count()),
+            2
         );
 
         let mut assigned_connection = Connection::default();
@@ -13195,7 +13247,7 @@ mod tests {
 
         let assigned_connection_value = SharedValue::new(Connection::default());
         let assigned_connection_set =
-            SharedValue::new(vec![Some(assigned_connection_value.clone())]);
+            SharedValue::new(HashSet::from([Some(assigned_connection_value.clone())]));
         let mut assigned_consumer_connection = ConsumerConnection::default();
         assigned_consumer_connection.set_connection_set(Some(assigned_connection_set.clone()));
         let returned_connection_set = assigned_consumer_connection.get_connection_set().unwrap();
@@ -13211,18 +13263,22 @@ mod tests {
         );
         assert!(returned_connection_set.ptr_eq(&assigned_connection_set));
         assert!(returned_connection_set.with(|values| {
-            values[0]
+            values
+                .iter()
+                .next()
+                .unwrap()
                 .as_ref()
                 .is_some_and(|value| value.ptr_eq(&assigned_connection_value))
         }));
-        returned_connection_set
-            .with_mut(|values| values.push(Some(SharedValue::new(Connection::default()))));
+        returned_connection_set.with_mut(|values| {
+            values.insert(Some(SharedValue::new(Connection::default())));
+        });
         assert!(
             api["connectionSetGetterMutationVisibleToAssignedSet"]
                 .as_bool()
                 .unwrap()
         );
-        assert_eq!(assigned_connection_set.with(Vec::len), 2);
+        assert_eq!(assigned_connection_set.with(HashSet::len), 2);
 
         let assigned_subscription = SharedValue::new(SubscriptionData::default());
         let assigned_subscription_table = SharedValue::new(HashMap::from([(
@@ -13321,35 +13377,36 @@ mod tests {
         );
 
         let mut explicit_empty = ConsumerConnection::default();
-        explicit_empty.set_connection_set(Some(SharedValue::new(Vec::new())));
+        explicit_empty.set_connection_set(Some(SharedValue::new(HashSet::new())));
         assert_eq!(
             explicit_empty.compute_min_version().unwrap(),
             api["explicitEmpty"]["value"].as_i64().unwrap() as i32
         );
 
         let mut default_connection = ConsumerConnection::default();
-        default_connection.set_connection_set(Some(SharedValue::new(vec![connection(0)])));
+        default_connection
+            .set_connection_set(Some(SharedValue::new(HashSet::from([connection(0)]))));
         assert_eq!(
             default_connection.compute_min_version().unwrap(),
             api["defaultConnection"]["value"].as_i64().unwrap() as i32
         );
 
         let mut mixed_versions = ConsumerConnection::default();
-        mixed_versions.set_connection_set(Some(SharedValue::new(vec![
+        mixed_versions.set_connection_set(Some(SharedValue::new(HashSet::from([
             connection(9),
             connection(-3),
             connection(4),
-        ])));
+        ]))));
         assert_eq!(
             mixed_versions.compute_min_version().unwrap(),
             api["mixedVersions"]["value"].as_i64().unwrap() as i32
         );
 
         let mut integer_bounds = ConsumerConnection::default();
-        integer_bounds.set_connection_set(Some(SharedValue::new(vec![
+        integer_bounds.set_connection_set(Some(SharedValue::new(HashSet::from([
             connection(i32::MAX),
             connection(i32::MIN),
-        ])));
+        ]))));
         assert_eq!(
             integer_bounds.compute_min_version().unwrap(),
             api["integerBounds"]["value"].as_i64().unwrap() as i32
@@ -13367,7 +13424,7 @@ mod tests {
         );
 
         let mut null_element = ConsumerConnection::default();
-        null_element.set_connection_set(Some(SharedValue::new(vec![None])));
+        null_element.set_connection_set(Some(SharedValue::new(HashSet::from([None]))));
         assert_eq!(
             api["nullElement"]["exceptionClass"],
             "java.lang.NullPointerException"
@@ -13450,6 +13507,30 @@ mod tests {
         );
 
         let operations = &fixture["producerDiagnosticsOperations"];
+        let producer_set_semantics = &operations["producerConnectionSetSemantics"];
+        assert_eq!(producer_set_semantics["firstSameReferenceAdd"], true);
+        assert_eq!(producer_set_semantics["secondSameReferenceAdd"], false);
+        assert_eq!(producer_set_semantics["differentReferenceAdd"], true);
+        assert_eq!(producer_set_semantics["sizeBeforeNull"], 2);
+        assert_eq!(producer_set_semantics["firstNullAdd"], true);
+        assert_eq!(producer_set_semantics["secondNullAdd"], false);
+        assert_eq!(producer_set_semantics["sizeAfterNull"], 3);
+        let decoded_producer_connections = ProducerConnection::java_decode(
+            br#"{"connectionSet":[null,null,{"version":7},{"version":7}]}"#,
+        )
+        .unwrap();
+        let decoded_producer_set = decoded_producer_connections.get_connection_set().unwrap();
+        assert_eq!(decoded_producer_set.with(HashSet::len), 3);
+        assert_eq!(
+            decoded_producer_set
+                .with(|values| values.iter().filter(|value| value.is_none()).count()),
+            1
+        );
+        assert_eq!(
+            decoded_producer_set
+                .with(|values| values.iter().filter(|value| value.is_some()).count()),
+            2
+        );
         let default_connection = ProducerConnection::default();
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(
@@ -13529,8 +13610,16 @@ mod tests {
         let connection_case = &operations["getProducerConnectionList"]["cases"][0];
         let connection_body = connection_case["responseBody"].as_str().unwrap().as_bytes();
         let producer_connection = ProducerConnection::java_decode(connection_body).unwrap();
+        assert_eq!(
+            producer_connection
+                .get_connection_set()
+                .unwrap()
+                .with(HashSet::len),
+            1
+        );
         let connection_set = producer_connection.get_connection_set().unwrap();
-        let connection = connection_set.with(|values| values[0].as_ref().unwrap().clone());
+        let connection =
+            connection_set.with(|values| values.iter().next().unwrap().as_ref().unwrap().clone());
         assert_eq!(
             connection.with(|value| value.get_client_id().map(str::to_owned)),
             Some("producer-client".to_owned())
@@ -13615,13 +13704,21 @@ mod tests {
         );
 
         let assigned_connection = SharedValue::new(Connection::default());
-        let assigned_connections = SharedValue::new(vec![Some(assigned_connection.clone())]);
+        let assigned_connections =
+            SharedValue::new(HashSet::from([Some(assigned_connection.clone())]));
         let mut connection_owner = ProducerConnection::default();
         connection_owner.set_connection_set(Some(assigned_connections.clone()));
         let returned_connections = connection_owner.get_connection_set().unwrap();
         assert!(returned_connections.ptr_eq(&assigned_connections));
+        assert!(
+            !returned_connections
+                .with_mut(|values| { values.insert(Some(assigned_connection.clone())) })
+        );
         returned_connections.with_mut(|values| {
-            values[0]
+            values
+                .iter()
+                .next()
+                .unwrap()
                 .as_ref()
                 .unwrap()
                 .with_mut(|value| value.set_client_id(Some("updated-client".into())))

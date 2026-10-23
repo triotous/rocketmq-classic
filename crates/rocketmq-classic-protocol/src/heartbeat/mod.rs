@@ -19,7 +19,7 @@ pub type ProducerDataSet = HashSet<Option<SharedValue<ProducerData>>>;
 pub type SharedProducerDataSet = SharedValue<ProducerDataSet>;
 pub type HeartbeatConsumerDataSet = HashSet<Option<SharedValue<ConsumerData>>>;
 pub type SharedHeartbeatConsumerDataSet = SharedValue<HeartbeatConsumerDataSet>;
-type SharedIdentityNullableSet<T> = SharedValue<HashSet<Option<SharedValue<T>>>>;
+pub(crate) type SharedIdentityNullableSet<T> = SharedValue<HashSet<Option<SharedValue<T>>>>;
 
 macro_rules! impl_java_enum_api {
     ($enum_type:ident, $java_class:literal, $count:literal, $($variant:ident => $name:literal = $ordinal:literal),+ $(,)?) => {
@@ -1788,7 +1788,7 @@ where
     deserializer.deserialize_any(IdentitySetVisitor(PhantomData))
 }
 
-fn deserialize_identity_shared_hash_set_with_null<'de, T, D>(
+pub(crate) fn deserialize_identity_shared_hash_set_with_null<'de, T, D>(
     deserializer: D,
 ) -> Result<Option<SharedIdentityNullableSet<T>>, D::Error>
 where

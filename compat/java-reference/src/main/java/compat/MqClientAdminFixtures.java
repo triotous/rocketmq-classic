@@ -918,6 +918,29 @@ public final class MqClientAdminFixtures {
         result.put("connectionSetGetterMutationVisibleToAssignedSet",
             assignedConnectionSet.contains(secondAssignedConnection));
 
+        Map<String, Object> connectionSetSemantics = new LinkedHashMap<>();
+        Connection sameReference = new Connection();
+        HashSet<Connection> identitySet = new HashSet<>();
+        connectionSetSemantics.put("firstSameReferenceAdd", identitySet.add(sameReference));
+        sameReference.setVersion(55);
+        connectionSetSemantics.put("sameReferencePresentAfterMutation", identitySet.contains(sameReference));
+        connectionSetSemantics.put("secondSameReferenceAdd", identitySet.add(sameReference));
+        Connection equalFieldsDifferentReference = new Connection();
+        connectionSetSemantics.put("differentReferenceAdd", identitySet.add(equalFieldsDifferentReference));
+        connectionSetSemantics.put("differentReferencesCompareEqual", sameReference.equals(equalFieldsDifferentReference));
+        connectionSetSemantics.put("sizeBeforeNull", identitySet.size());
+        connectionSetSemantics.put("firstNullAdd", identitySet.add(null));
+        connectionSetSemantics.put("secondNullAdd", identitySet.add(null));
+        connectionSetSemantics.put("sizeAfterNull", identitySet.size());
+        connectionSetSemantics.put("equalsDeclaringClass",
+            Connection.class.getMethod("equals", Object.class).getDeclaringClass().getName());
+        ConsumerConnection decodedSet = JSON.parseObject(
+            "{\"connectionSet\":[null,null,{\"version\":7},{\"version\":7}]}",
+            ConsumerConnection.class);
+        connectionSetSemantics.put("decodedNullAndDistinctObjectsSize",
+            decodedSet.getConnectionSet().size());
+        result.put("connectionSetSemantics", connectionSetSemantics);
+
         ConcurrentHashMap<String, SubscriptionData> assignedSubscriptionTable = new ConcurrentHashMap<>();
         SubscriptionData firstSubscription = new SubscriptionData("orders", "tag-a");
         assignedSubscriptionTable.put("orders", firstSubscription);
