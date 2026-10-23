@@ -61,6 +61,13 @@ focused facade comparison, targeted pinned Java fixture verification, all 260
 Consumer library tests and 69 integration tests with all features, strict
 Consumer Clippy, and formatting/diff checks pass.
 
+At revision `533d9713`, default and all-feature locked workspace tests pass,
+including the exact 32-method ProcessQueue crosswalk regression. Strict
+all-target/all-feature workspace Clippy and full offline Maven `verify` pass;
+Maven validates 37 differential scenarios and Java cross-decodes all 106 typed
+headers and 19 typed bodies. Fuzz, race/leak, release-example, and offline
+benchmark results remain the recorded runs at `c3b53fcb`.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
