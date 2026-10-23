@@ -1207,6 +1207,50 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut null_requeue_prefix = MessageExt::new();
+    null_requeue_prefix.set_queue_offset(234);
+    null_requeue_prefix.set_body(vec![9, 10]);
+    let null_requeue_element_queue = ProcessQueue::new();
+    null_requeue_element_queue
+        .put_message(&[null_requeue_prefix.clone()])
+        .expect("valid message before taking a null requeue batch");
+    null_requeue_element_queue.take_messages(1).unwrap();
+    let null_requeue_element_error = null_requeue_element_queue
+        .make_message_to_consume_again_items_nullable(Some(&[Some(null_requeue_prefix), None]))
+        .expect_err("Java dereferencing a null requeue element throws NullPointerException");
+    assert!(matches!(
+        &null_requeue_element_error,
+        ProcessQueueError::NullMessageElement
+    ));
+    let null_requeue_element_count_after_error = null_requeue_element_queue.get_msg_count().get();
+    let null_requeue_element_size_after_error = null_requeue_element_queue.get_msg_size().get();
+    let null_requeue_element_tree_after_error = null_requeue_element_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut after_null_requeue_element = MessageExt::new();
+    after_null_requeue_element.set_queue_offset(235);
+    after_null_requeue_element.set_body(vec![11]);
+    let null_requeue_element_next_dispatch = null_requeue_element_queue
+        .put_message(&[after_null_requeue_element])
+        .expect("valid message after null requeue element failure");
+    let null_requeue_element_result = serde_json::json!({
+        "errorClass": null_requeue_element_error.to_string(),
+        "countAfterError": null_requeue_element_count_after_error,
+        "sizeAfterError": null_requeue_element_size_after_error,
+        "treeKeysAfterError": null_requeue_element_tree_after_error,
+        "nextDispatch": null_requeue_element_next_dispatch,
+        "finalCount": null_requeue_element_queue.get_msg_count().get(),
+        "finalSize": null_requeue_element_queue.get_msg_size().get(),
+        "finalTreeKeys": null_requeue_element_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1276,6 +1320,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "nullRemoveMessage": null_remove_message_result,
         "nullRequeueMessage": null_requeue_message_result,
         "nullMessageElement": null_message_element_result,
+        "nullRequeueElement": null_requeue_element_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

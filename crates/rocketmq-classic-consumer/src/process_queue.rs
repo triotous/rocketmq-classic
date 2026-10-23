@@ -1030,6 +1030,31 @@ impl ProcessQueue {
         Ok(())
     }
 
+    /// Preserves Java's prefix requeue when a message list contains a null element.
+    pub fn make_message_to_consume_again_items_nullable(
+        &self,
+        messages: Option<&[Option<MessageExt>]>,
+    ) -> Result<(), ProcessQueueError> {
+        let Some(messages) = messages else {
+            return Err(ProcessQueueError::NullMessageList);
+        };
+        let Some(null_index) = messages.iter().position(Option::is_none) else {
+            let messages = messages
+                .iter()
+                .map(|message| message.as_ref().unwrap().clone())
+                .collect::<Vec<_>>();
+            self.make_message_to_consume_again(&messages);
+            return Ok(());
+        };
+        let prefix = messages[..null_index]
+            .iter()
+            .filter_map(Option::as_ref)
+            .cloned()
+            .collect::<Vec<_>>();
+        self.make_message_to_consume_again(&prefix);
+        Err(ProcessQueueError::NullMessageElement)
+    }
+
     pub fn fill_process_queue_info(
         &self,
         info: &mut rocketmq_classic_protocol::body::ConsumerProcessQueueInfo,

@@ -340,6 +340,32 @@ public final class ConsumerFacadeApiFixtures {
             new ArrayList<>(nullMessageElementQueue.getMsgTreeMap().keySet()));
         result.put("nullMessageElement", nullMessageElement);
 
+        ProcessQueue nullRequeueElementQueue = new ProcessQueue();
+        MessageExt nullRequeuePrefix = processQueueMessage(234L, new byte[] {9, 10});
+        nullRequeueElementQueue.putMessage(List.of(nullRequeuePrefix));
+        nullRequeueElementQueue.takeMessages(1);
+        String nullRequeueElementErrorClass = null;
+        try {
+            nullRequeueElementQueue.makeMessageToConsumeAgain(
+                Arrays.asList(nullRequeuePrefix, null));
+        } catch (Throwable error) {
+            nullRequeueElementErrorClass = error.getClass().getName();
+        }
+        Map<String, Object> nullRequeueElement = new TreeMap<>();
+        nullRequeueElement.put("errorClass", nullRequeueElementErrorClass);
+        nullRequeueElement.put("countAfterError", nullRequeueElementQueue.getMsgCount().get());
+        nullRequeueElement.put("sizeAfterError", nullRequeueElementQueue.getMsgSize().get());
+        nullRequeueElement.put("treeKeysAfterError",
+            new ArrayList<>(nullRequeueElementQueue.getMsgTreeMap().keySet()));
+        boolean nullRequeueElementNextDispatch = nullRequeueElementQueue.putMessage(
+            List.of(processQueueMessage(235L, new byte[] {11})));
+        nullRequeueElement.put("nextDispatch", nullRequeueElementNextDispatch);
+        nullRequeueElement.put("finalCount", nullRequeueElementQueue.getMsgCount().get());
+        nullRequeueElement.put("finalSize", nullRequeueElementQueue.getMsgSize().get());
+        nullRequeueElement.put("finalTreeKeys",
+            new ArrayList<>(nullRequeueElementQueue.getMsgTreeMap().keySet()));
+        result.put("nullRequeueElement", nullRequeueElement);
+
         ProcessQueue negativeBatchQueue = new ProcessQueue();
         negativeBatchQueue.setLastConsumeTimestamp(777L);
         Map<String, Object> negativeBatchResult = new TreeMap<>();
