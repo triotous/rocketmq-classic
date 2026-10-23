@@ -3954,3 +3954,24 @@ callback ownership slice only. Broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL; native
 Windows runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
 evidence remain open.
+
+## P18-V01 `MQClientAPIFactory` null client-array slots — 2026-10-23 (`1b1d4e2a`)
+
+Pinned Java `onNameServerAddressChange` iterates the public mutable client
+array in order. A null slot raises `NullPointerException` when reached, after
+any earlier client has already received the address update. The same failure
+occurs for a null address because Java still invokes each client in sequence.
+Rust now walks the same slot order, preserves earlier updates, and returns
+`NullClient(index)` at the first null slot.
+
+The invoked factory fixture records both error names and each partially
+updated address array. The Core factory regression consumes those values for
+both a non-null address and a null address, then restores the slot for the
+existing update/shutdown assertions. Default/all-feature workspace tests,
+strict workspace Clippy, formatter/diff checks, offline Maven `verify` (37
+scenarios), differential self-test/manifest validation (37 scenarios),
+metadata/package checks, fuzz and race/leak smoke, release examples, offline
+benchmark, and Windows GNU cross-compilation passed. This closes the null-slot
+failure-order slice only; broad P18-V01 reconciliation remains PARTIAL, with
+native Windows execution, remote Ubuntu CI, and Phase 19 Broker/Docker
+evidence open.

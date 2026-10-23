@@ -556,6 +556,21 @@ checks, and full offline Maven `verify` passed. This closes the per-client
 refresh scheduling slice only; broad P18-V01 reconciliation and the platform/
 Phase 19 evidence listed above remain open.
 
+### P18-V01 factory null client-array slots — 2026-10-23 (`1b1d4e2a`)
+
+Java's public `getClients()` exposes a mutable array. Its address-change
+method visits array entries in order, updates earlier clients, and throws
+`NullPointerException` when it reaches a null slot, including when the
+address argument itself is null. Rust's factory now preserves that partial
+effect and reports `NullClient(index)` at the same boundary. The invoked
+fixture captures both errors and the resulting array states, and the Core
+factory test checks them before restoring the array slot. Default and
+all-feature workspace tests, strict workspace Clippy, pinned offline Maven
+`verify`, differential/metadata/package checks, fuzz and race/leak smoke,
+release examples, benchmark, and Windows GNU cross-compilation pass. This
+closes this failure-order slice only; broad P18-V01 and platform/Phase 19
+evidence remain open.
+
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 
 Runtime ownership will be an explicit shareable manager, not a process singleton. Runtime-affecting transport/NameServer/security incompatibility is rejected as required by the plan; producer/consumer-specific settings are not silently promoted into manager keys. Private failure-injection seams must not enter the public API.

@@ -8511,3 +8511,22 @@ owner-specific checks belong in the manual handoff.
   evidence remain pending. No push or remote CI was run. Existing Phase 19
   worktree files remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-factory-per-client-callbacks__20261023T100045Z.rlog`.
+
+## P18-V01 MQClientAPIFactory null client-array slots — 2026-10-23 (`1b1d4e2a`)
+
+- [x] Explicit NameServer changes now follow Java's mutable-array iteration:
+  earlier slots retain updates, then the first null slot raises the matching
+  Rust `NullClient(index)` error. Null-address calls follow the same slot
+  order.
+- [x] The invoked Java fixture and Core regression compare both errors and
+  partial address-array states.
+- [x] Default and all-feature workspace tests, strict workspace Clippy,
+  formatting/diff, pinned offline Maven `verify` (37 scenarios), differential
+  self-test/37-scenario manifest, workspace metadata, all seven package
+  license lists, fuzz smoke, race/leak smoke (17 cases × 3), release examples,
+  offline benchmark, and Windows GNU cross-compilation passed.
+- [ ] Broad P18-V01 remains open. Native Windows runtime, current-revision
+  remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain pending. No
+  remote CI or push was run; the four existing Phase 19 worktree paths remain
+  untouched. Run record:
+  `rlogs/2026/10/23-phase-18-factory-null-slot-parity__20261023T101220Z.rlog`.
