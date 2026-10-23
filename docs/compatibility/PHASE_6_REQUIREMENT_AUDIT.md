@@ -49,6 +49,11 @@ Follow-up revision `68f554e3` preserves the valid-prefix mutations from
 facade comparison, pinned Java facade fixture verification, strict Consumer
 Clippy, and formatting/diff checks pass.
 
+Follow-up revision `9be7efed` requeues the valid prefix from
+`makeMessageToConsumeAgain([message, null])` before the Java exception. The
+focused facade comparison, pinned Java fixture verification, strict Consumer
+Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3516,4 +3521,19 @@ Fixture SHA-256:
 The focused ProcessQueue facade test, targeted pinned Java facade fixture
 verification, strict Consumer Clippy, and formatting/diff checks pass. This
 closes the null-element prefix branch only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null requeue element and prefix state — 2026-10-23
+
+Pinned Java moves valid prefix messages from the consuming map to the ready map
+before a later null element throws. Rust adds
+`make_message_to_consume_again_items_nullable`; it applies that prefix, clears
+its in-flight ownership, keeps counters and dispatch state, then returns a
+typed null-element error. The invoked Java fixture and Rust facade comparison
+check the requeued prefix and following insertion outcome. Fixture SHA-256:
+`2b1daf803430969e4b7bd57f4bc54e9794b3d107b7cc0a1fd5fb1062764efdb7`.
+
+The focused ProcessQueue facade test, targeted pinned Java facade fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-element requeue branch only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.
