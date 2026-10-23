@@ -1,0 +1,7 @@
+Execution session: 2026-10-23 22:14 UTC
+Plan: plan/2026/09/19-phase-18-compatibility-release-gate.md
+Branch: phase/18-phase-18-compatibility-closure
+
+Latency-fault follow-up: documented the final regression coverage for the runtime-scoped internal Producer, including shared-runtime identity, runtime replacement, fault-based Broker selection, and detector startup. Updated the Phase 10 matrix and Phase 6 audit to reflect passing default/all-feature Core, Producer, and Consumer suites and strict all-target/all-feature Clippy on `ea17b8fc`. Formatting and `git diff --check` pass. Prior code/test commits: `325c77fe`, `96f311e9`, `ea17b8fc`.
+
+The Phase 18 plan remains open. Broad P18-V01 Java/client setting and reverse-export reconciliation remains partial. P18-V04 current-revision platform evidence remains open; no remote CI or native Windows runtime was run. Phase 19 protected paths in the worktree were left untouched.

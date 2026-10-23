@@ -4724,10 +4724,10 @@ table and detector settings. The existing Producer selector, fault updates,
 response classification, default synchronous retry budget, message
 compression, and route lookup are reused.
 
-`cargo check -p rocketmq-classic-core -p rocketmq-classic-producer
--p rocketmq-classic-consumer`, formatting, and `git diff --check` pass. Tests
-were not run in this slice. The current Consumer scripted fallback returns
-before the production Producer path, so a dedicated production-path regression
-for latency-fault selection and detector reachability remains required before
-this behavior is considered behaviorally verified. Broad P18-V01 reconciliation
+The Core runtime-extension identity test, Consumer owner-sharing/runtime-change
+test, and Producer internal-send test verify runtime scoping, fault-based Broker
+selection, and detector startup. `cargo test -p rocketmq-classic-core
+-p rocketmq-classic-producer -p rocketmq-classic-consumer`, the same command with
+`--all-features`, and strict all-target/all-feature Clippy pass on revision
+`ea17b8fc`; formatting and `git diff --check` pass. Broad P18-V01 reconciliation
 and P18-V04 current-revision platform evidence remain open.
