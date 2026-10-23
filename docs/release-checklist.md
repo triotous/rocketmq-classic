@@ -8599,3 +8599,24 @@ owner-specific checks belong in the manual handoff.
   handoff. No push or remote CI was run, and the existing Phase 19 worktree
   files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T104953Z.rlog`.
+
+
+## P18-V01 factory process-property parity and P18-V02 server-free refresh — 2026-10-23 (`34cbfb8b`)
+
+- [x] `MQClientAPIFactory.init` now leaves Java-equivalent shared property
+  effects visible to subsequent `ClientConfig` instances and Common NameServer
+  lookup, including failure-order side effects. It does not mutate the OS
+  environment. The invoked Java fixture SHA-256 is
+  `cd41d77583fc72ec9949d09de805a3055a5303b9f3f514ad8986a3c495af2e6b`.
+- [x] Focused property integration test, 240 Core unit tests, default and
+  all-feature locked workspace tests, strict all-target/all-feature Clippy,
+  Maven `verify` (37 scenarios), differential self-test and manifest (37
+  scenarios), workspace metadata/license/dependency check, race/leak smoke
+  (17 cases x 3), bounded fuzz smoke, release examples, fixed-input offline
+  benchmark, Core Windows GNU cross-compilation, formatter, and diff checks
+  passed.
+- [ ] Broad P18-V01 reconciliation remains PARTIAL. Native Windows execution,
+  current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
+  open. No push or remote CI was run. The four existing user-owned Phase 19
+  worktree paths remain untouched and unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-factory-process-properties__20261023T111654Z.rlog`.

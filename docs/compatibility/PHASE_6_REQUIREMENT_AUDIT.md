@@ -4014,3 +4014,35 @@ cleanup explicitly closes the Java client removed from the public array after
 the factory's behavior is captured. All seven Core factory tests and the
 direct Java fixture verification pass. This closes the factory shutdown
 failure-order slice only; broad P18-V01 remains PARTIAL.
+
+
+## P18-V01 `MQClientAPIFactory.init` process-property side effects — 2026-10-23 (`34cbfb8b`)
+
+Pinned Java 5.5.1 writes `com.rocketmq.sendMessageWithVIPChannel=false`
+before selecting the NameServer path. Static mode then validates and writes
+`rocketmq.namesrv.addr`; domain mode writes `rocketmq.namesrv.domain` before
+`rocketmq.namesrv.domain.subgroup`, so a null subgroup throws while retaining
+the domain update and prior subgroup value. Rust now records those writes in
+a hidden shared in-process property overlay. Later `ClientConfig` construction
+and Common NameServer lookup see the Java-equivalent values, including writes
+that occur before constructor failure, while the operating-system environment
+is unchanged. The Common module is a hidden cross-crate implementation bridge
+and is not re-exported by the public facade; a compile-fail doctest guards that
+boundary.
+
+The invoked Java factory fixture records both constructor failures and their
+property side effects. `fixtures/runtime/api-factory.json` SHA-256:
+`cd41d77583fc72ec9949d09de805a3055a5303b9f3f514ad8986a3c495af2e6b`.
+The single-process Core integration regression verifies that later clients and
+Common lookup observe factory writes. It passed along with all 240 Core unit
+tests, both default and all-feature workspace suites, strict workspace Clippy,
+Maven `verify` (37 scenarios), differential self-test and manifest (37
+scenarios), workspace metadata checks, deterministic race/leak smoke (17
+cases x 3), bounded fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+mutations), release examples, fixed-input benchmark, Windows GNU
+cross-compilation, formatting, and diff checks. This closes the factory
+global-property side-effect slice only; broad P18-V01 source/API/settings/
+input/error/control-flow/reverse-export reconciliation remains PARTIAL.
+Native Windows execution, current-revision remote Ubuntu CI, and Phase 19
+Broker/Docker evidence remain open. Run record:
+`rlogs/2026/09/19-phase-18-factory-process-properties__20261023T111654Z.rlog`.
