@@ -271,11 +271,11 @@ fn java_process_properties() -> HashMap<String, String> {
         .collect()
 }
 
-struct FactoryAddressCallback(Weak<FactoryAddressState>);
+struct FactoryAddressCallback(Weak<FactoryAddressState>, usize);
 
 impl NameServerUpdateCallback for FactoryAddressCallback {
     fn on_name_server_address_change(&self, addresses: Option<&str>) -> Option<String> {
-        self.0.upgrade()?.update_all(addresses)
+        self.0.upgrade()?.update_slot(self.1, addresses)
     }
 }
 
@@ -398,7 +398,7 @@ impl MQClientApiFactory {
         let address_state = Arc::new(FactoryAddressState::new(address));
         let remoting_client_creator =
             creator.unwrap_or_else(|| Arc::new(|_, config| RemotingClient::with_config(config)));
-        let factory = Self {
+        Ok(Self {
             name_prefix,
             client_num,
             client_config,
@@ -410,9 +410,7 @@ impl MQClientApiFactory {
             address_state,
             refresh_shutdown: Mutex::new(None),
             refresh_tasks: Mutex::new(Vec::new()),
-        };
-        factory.register_address_callback()?;
-        Ok(factory)
+        })
     }
 
     /// Replaces the default NameServer provider used by the domain-based
@@ -422,14 +420,15 @@ impl MQClientApiFactory {
         provider: Arc<dyn TopAddressing>,
     ) -> Result<Self, MQClientApiFactoryError> {
         self.top_addressing = Some(provider);
-        self.register_address_callback()?;
         Ok(self)
     }
 
-    fn register_address_callback(&self) -> Result<(), MQClientApiFactoryError> {
+    fn register_address_callback(&self, index: usize) -> Result<(), MQClientApiFactoryError> {
         if let Some(provider) = &self.top_addressing {
-            let callback: Arc<dyn NameServerUpdateCallback> =
-                Arc::new(FactoryAddressCallback(Arc::downgrade(&self.address_state)));
+            let callback: Arc<dyn NameServerUpdateCallback> = Arc::new(FactoryAddressCallback(
+                Arc::downgrade(&self.address_state),
+                index,
+            ));
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 provider.register_change_callback(callback)
             }))
@@ -472,6 +471,7 @@ impl MQClientApiFactory {
 
         for index in 0..client_count {
             if let Some(provider) = &self.top_addressing {
+                self.register_address_callback(index)?;
                 let addresses = provider.fetch_ns_addr().await;
                 self.address_state
                     .update_from_discovery(index, addresses.as_deref());
@@ -909,6 +909,101 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
         factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_registers_and_dispatches_name_server_callbacks_per_client() {
+        struct RecordingProvider {
+            calls: AtomicUsize,
+            callbacks: Mutex<Vec<Arc<dyn NameServerUpdateCallback>>>,
+        }
+        impl TopAddressing for RecordingProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                let call = self.calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move { Some(format!("domain-ns-{call}:9876")) })
+            }
+
+            fn register_change_callback(&self, callback: Arc<dyn NameServerUpdateCallback>) {
+                self.callbacks.lock().unwrap().push(callback);
+            }
+        }
+
+        let provider = Arc::new(RecordingProvider {
+            calls: AtomicUsize::new(0),
+            callbacks: Mutex::new(Vec::new()),
+        });
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let factory = MQClientApiFactory::new(access.clone(), "domain-callback-", 2, None, None)
+            .unwrap()
+            .with_top_addressing(provider.clone())
+            .unwrap();
+        assert!(provider.callbacks.lock().unwrap().is_empty());
+
+        factory.start().await.unwrap();
+        let callbacks = provider.callbacks.lock().unwrap().clone();
+        assert_eq!(callbacks.len(), 2);
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            callbacks[0].on_name_server_address_change(Some("callback-ns-0:9876")),
+            Some("callback-ns-0:9876".to_owned())
+        );
+        let mut addresses = factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| client.unwrap().get_name_server_address_list())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            addresses,
+            vec![
+                Some(vec!["callback-ns-0:9876".to_owned()]),
+                Some(vec!["domain-ns-1:9876".to_owned()])
+            ]
+        );
+        assert_eq!(
+            callbacks[1].on_name_server_address_change(Some("callback-ns-1:9876")),
+            Some("callback-ns-1:9876".to_owned())
+        );
+        addresses = factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| client.unwrap().get_name_server_address_list())
+            .collect();
+        assert_eq!(
+            addresses,
+            vec![
+                Some(vec!["callback-ns-0:9876".to_owned()]),
+                Some(vec!["callback-ns-1:9876".to_owned()])
+            ]
+        );
+        assert_eq!(
+            callbacks[0].on_name_server_address_change(None),
+            Some("callback-ns-0:9876".to_owned())
+        );
+        factory.shutdown().await.unwrap();
+
+        let zero_provider = Arc::new(RecordingProvider {
+            calls: AtomicUsize::new(0),
+            callbacks: Mutex::new(Vec::new()),
+        });
+        let zero = MQClientApiFactory::new(access, "domain-callback-zero-", 0, None, None)
+            .unwrap()
+            .with_top_addressing(zero_provider.clone())
+            .unwrap();
+        zero.start().await.unwrap();
+        assert!(zero_provider.callbacks.lock().unwrap().is_empty());
+        assert_eq!(zero_provider.calls.load(Ordering::SeqCst), 0);
+        zero.shutdown().await.unwrap();
     }
 
     #[tokio::test(start_paused = true)]
