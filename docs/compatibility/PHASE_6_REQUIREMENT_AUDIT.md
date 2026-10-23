@@ -4731,3 +4731,26 @@ selection, and detector startup. `cargo test -p rocketmq-classic-core
 `--all-features`, and strict all-target/all-feature Clippy pass on revision
 `ea17b8fc`; formatting and `git diff --check` pass. Broad P18-V01 reconciliation
 and P18-V04 current-revision platform evidence remain open.
+
+## P18-V02 current-tree server-free gate — 2026-10-23 (`ea17b8fc`)
+
+On the current code/test revision `ea17b8fc` (documentation head at run start:
+`9a4ffdea`), sequential offline default and all-feature locked workspace
+tests/doctests passed. Strict all-target/all-feature workspace Clippy,
+formatting, and `git diff --check` passed. Offline Maven `verify` passed all 37
+scenarios, Java fixture drift checks, and cross-decodes for 11 message
+fixtures, 106 typed headers, and 19 typed bodies. The comparator self-test and
+37-scenario manifest, workspace metadata/dependency/license checks, and all
+seven product package listings with `LICENSE` and `NOTICE` passed. Deterministic
+race/leak smoke passed 20 cases × 3; bounded fuzz smoke passed 163 frame seeds,
+11 message seeds, and 2,784 mutations (245 frame and 192 message decodes).
+Release examples and the offline benchmark passed. Whole-workspace Windows GNU
+all-target/all-feature check and strict Clippy passed as compile-only evidence.
+
+The offline benchmark observations are in
+`PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This refresh does not close broad
+P18-V01 bidirectional source/API/settings/input/error/control-flow and
+reverse-export reconciliation. Native Windows runtime and current-revision
+remote Ubuntu CI remain unverified; no push or remote CI was run. Phase 19
+Broker/Docker evidence remains outside this phase. Run record:
+`rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.

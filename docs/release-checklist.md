@@ -9269,3 +9269,25 @@ owner-specific checks belong in the manual handoff.
   out of scope. No plan was edited, no push or remote CI was run, and the four
   pre-existing Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-stats-schedule-single-source__20261023T212953Z.rlog`.
+
+## P18-V02 current-tree server-free gate after inner-producer fault coverage — 2026-10-23 (`ea17b8fc`)
+
+- [x] Sequential offline default and all-feature locked workspace tests and
+  doctests passed on code/test revision `ea17b8fc`; strict all-target/all-feature
+  Clippy, formatting, and diff checks passed.
+- [x] Offline Maven `verify` passed 37 scenarios, fixture drift, and
+  Java/Rust cross-decodes for 11 message fixtures, 106 typed headers, and 19
+  typed bodies. Comparator self-test and 37-scenario manifest validation,
+  workspace metadata/dependency/license checks, and seven product package
+  listings containing `LICENSE` and `NOTICE` passed.
+- [x] Deterministic race/leak smoke passed 20 cases × 3; fixed-seed fuzz smoke
+  passed 163 frame seeds, 11 message seeds, and 2,784 mutations (245 frame and
+  192 message decodes). Release examples and the offline benchmark passed.
+  Whole-workspace Windows GNU all-target/all-feature check and strict Clippy
+  passed as compile-only evidence.
+- [ ] Broad P18-V01 bidirectional source/API/settings/input/error/control-flow
+  and reverse-export reconciliation remains PARTIAL. Native Windows runtime
+  and current-revision remote Ubuntu CI remain unverified; no push or remote CI
+  was run. Phase 19 Broker/Docker evidence remains out of scope. The four
+  pre-existing Phase 19 worktree paths remain untouched and unstaged. Run
+  record: `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
