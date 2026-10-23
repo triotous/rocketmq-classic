@@ -448,6 +448,31 @@ not form additional RocketMQ client settings; Rust uses its native task and
 worker owners. This disposition covers the helper callsites and lifecycle
 flow only; the broad bidirectional P18-V01 audit remains open.
 
+### P18-V01 final scope review: `MQClientAPIFactory` — 2026-10-23 (`6d0f4523`)
+
+The pinned Java class at
+`client/src/main/java/org/apache/rocketmq/client/impl/mqclient/MQClientAPIFactory.java`
+is Java-public and declares two constructors, `getClient`, `getClients`,
+`onNameServerAddressChange`, and inherited `start`/`shutdown`; protected
+`init` and `createAndStart` are subclass hooks. The exact-revision `git grep`
+finds only the class declaration and its constructors in client source. Its
+constructor property writes and pool behavior therefore do not run on the
+supported pinned client path. The pinned `MQClientManager` creates a
+`MQClientInstance`; that constructor creates one `MQClientAPIImpl`.
+`MQClientAPIExt` is referenced only by this factory in client source.
+
+The Rust path maps the active single-runtime lifecycle and client API to
+`ClientRuntime`/`ClientRuntimeManager`, `MQClientApi`, and
+`RemotingClient::{start, update_name_server_address_list, shutdown}`. The
+factory's constructors, random pool selection, returned mutable Java array,
+and subclass hooks are not part of the supported application-facing
+Producer/Consumer API contract; the Java class's `impl.mqclient` package,
+absence of a client callsite, and the distinct `MQClientInstance` construction
+path support this scope decision. This is a reviewed internal-helper
+disposition, not a claim that external code directly instantiating that Java
+implementation class has method-for-method Rust parity. It closes this
+inventory follow-up only; broad P18-V01 remains open.
+
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 
 Runtime ownership will be an explicit shareable manager, not a process singleton. Runtime-affecting transport/NameServer/security incompatibility is rejected as required by the plan; producer/consumer-specific settings are not silently promoted into manager keys. Private failure-injection seams must not enter the public API.

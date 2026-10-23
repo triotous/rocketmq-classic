@@ -8373,8 +8373,9 @@ owner-specific checks belong in the manual handoff.
 - [x] Pinned Java `System` property/environment reads and Rust production
   environment-backed settings were cross-checked. Each active client setting
   maps to its existing Rust owner and source evidence.
-- [ ] `MQClientAPIFactory` remains for final scope review: it is Java-public
-  but has no construction/call site outside its own class. Broad P18-V01
+- [x] Final scope review records `MQClientAPIFactory` as an orphaned public
+  implementation helper with no pinned client construction/callsite; the
+  supported path constructs one API implementation per runtime. Broad P18-V01
   source/API/settings/input/error/control-flow and reverse-export audit remains
   partial. No remote CI or push was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
@@ -8389,8 +8390,8 @@ owner-specific checks belong in the manual handoff.
 - [x] Focused Rust test, full Consumer all-features package tests, strict
   Consumer Clippy, focused Java runtime-offset fixture verify, and full offline
   Maven `verify` passed.
-- [ ] Broad P18-V01 and final reverse API review remain open, including
-  `MQClientAPIFactory` scope. Native Windows runtime, current-revision remote
-  Ubuntu CI, and Phase 19 Broker/Docker evidence are pending. No push or remote
-  CI was run. Run record:
+- [ ] Broad P18-V01 and final reverse API review remain open; the
+  `MQClientAPIFactory` scope review is recorded in the Phase 6 inventory.
+  Native Windows runtime, current-revision remote Ubuntu CI, and Phase 19
+  Broker/Docker evidence are pending. No push or remote CI was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

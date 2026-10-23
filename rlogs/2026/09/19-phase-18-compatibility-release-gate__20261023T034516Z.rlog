@@ -405,3 +405,21 @@ header/body decoders. This resolves the uncaptured-exit status noted in the
 08:26 entry. Existing Java/Netty `Unsafe` and reflective final-field warnings
 were emitted; they did not fail the verify. Broad P18-V01 and platform/live
 evidence remain open.
+
+## P18-V01 MQClientAPIFactory final scope review — 2026-10-23T08:33:28Z
+
+At pinned client commit `efa1be59d6fc747ad220f036c86030f05f0419f9`,
+`git grep` finds `MQClientAPIFactory` only at its declaration and constructors;
+`MQClientAPIExt` is referenced only by that factory in client source. The
+Java-public helper is under `impl.mqclient` and owns a multi-API pool, but the
+standard client manager constructs one `MQClientAPIImpl` per
+`MQClientInstance`, without using the factory. Reviewed its public constructors,
+selection/list/name-server methods, lifecycle, protected initialization and
+client-creation hooks. The active Rust flow maps to
+`ClientRuntime`/`ClientRuntimeManager`, `MQClientApi`, and `RemotingClient`.
+Disposition: internal implementation helper, outside the supported
+Producer/Consumer facade contract; direct external Java use is not claimed
+method-for-method compatible. Its constructor's VIP/NameServer system-property
+writes were added to the inactive-helper process-property census. This closes
+the final scope-review follow-up only; broad P18-V01 and platform/live evidence
+remain open. No code/tests changed in this review; no remote CI or push was run.
