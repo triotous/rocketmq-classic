@@ -8088,3 +8088,21 @@ owner-specific checks belong in the manual handoff.
   or Docker action was performed. The protected Phase 19 worktree files remain
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 PullMessageService scheduler getter — 2026-10-23 (`2c52ac4d`)
+
+- [x] Added `ClientRuntime::pull_scheduled_executor_service()` as a distinct
+  handle over the PullMessageService scheduled queue. It supports the same
+  Rust-native immediate/delayed, fixed-rate/fixed-delay, and per-task
+  cancellation operations, while retaining the existing one-second graceful
+  shutdown behavior. The pre-start regression also checks cancellation removes
+  the delayed task from that queue.
+- [x] The Core library suite passed (219 tests), strict all-target/all-feature
+  Core Clippy passed, formatting and `git diff --check` passed on `2c52ac4d`.
+- [ ] Java's executor-wide controls and result-bearing `Future` operations,
+  inherited thread controls, broad P18-V01 source/API/settings/input/error/
+  control-flow and reverse-export reconciliation, current-revision remote
+  Ubuntu CI, native Windows runtime, and Phase 19 Broker/Docker validation
+  remain open. No remote CI, push, Broker, or Docker action was performed. The
+  protected Phase 19 worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
