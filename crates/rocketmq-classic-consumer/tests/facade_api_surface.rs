@@ -658,6 +658,30 @@ fn every_pinned_java_process_queue_method_has_owner_mapping_or_disposition() {
         ("setLocked", "set_locked"),
         ("setMsgAccCnt", "set_msg_acc_cnt"),
     ];
+    let java_methods = methods
+        .iter()
+        .map(|signature| {
+            signature
+                .as_str()
+                .expect("Java method signature")
+                .split('(')
+                .next()
+                .expect("method name")
+                .rsplit('.')
+                .next()
+                .expect("declaring type and method name")
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mapped_java_methods = mappings
+        .iter()
+        .map(|(java_method, _)| *java_method)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        mapped_java_methods.len(),
+        mappings.len(),
+        "each pinned ProcessQueue method has exactly one crosswalk row"
+    );
+    assert_eq!(mapped_java_methods, java_methods);
 
     for (java_method, rust_method) in mappings {
         assert!(
