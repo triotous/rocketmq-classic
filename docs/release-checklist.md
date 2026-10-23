@@ -8841,3 +8841,24 @@ owner-specific checks belong in the manual handoff.
   remote CI was run; the four existing user-owned Phase 19 paths remain
   untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-lite-rpc-header-inheritance__20261023T143107Z.rlog`.
+
+## P18-V01 remaining RPC request-header identity/API coverage — 2026-10-23 (`082809d1`)
+
+- [x] Added `CloneGroupOffsetRequestHeader`,
+  `GetSubscriptionGroupConfigRequestHeader`, and
+  `QueryConsumeQueueRequestHeader` to the pinned Java identity/API oracle.
+  Added explicit Rust base-field, payload-ignore, hash, and wire round-trip
+  checks for all six previously unexercised request headers; all 49 fixture
+  entries are now covered. Fixture SHA-256:
+  `7e3f828aca4785153cc98b2f71bb38a93b33421df55bb3cf1cb5338a68e1b594`.
+- [x] Java fixture drift verification, Protocol header inventory/validation,
+  request-header identity/hash tests, strict all-target/all-feature Protocol
+  Clippy, formatting/diff checks, and offline Maven `verify` passed. The Maven
+  run verified 37 scenarios, 11 message fixtures, 106 typed headers, and
+  19 typed bodies.
+- [ ] This closes the request-header identity/API inventory slice only. Broad
+  P18-V01 remains open; native Windows runtime and current-revision remote
+  Ubuntu CI remain pending. Phase 19 Broker/Docker validation remains outside
+  scope. No push or remote CI was run; the four existing user-owned Phase 19
+  paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-rpc-header-identity-inventory__20261023T143907Z.rlog`.

@@ -4260,3 +4260,22 @@ and doctests, strict Protocol Clippy, formatting/diff checks, and pinned Java
 gap only. Broad P18-V01 remains PARTIAL; current-revision remote Ubuntu CI and
 native Windows runtime evidence remain open, and Phase 19 Broker/Docker work
 stays outside scope.
+
+## P18-V01 remaining RPC request-header identity/API coverage — 2026-10-23 (`082809d1`)
+
+The Rust `RpcRequestHeader` equality/hash implementation list contained 48
+header types, while the Java identity/API fixture omitted
+`CloneGroupOffsetRequestHeader`, `GetSubscriptionGroupConfigRequestHeader`,
+and `QueryConsumeQueueRequestHeader`. The Rust identity test also explicitly
+exercised only 43 fixture entries. Added the three pinned Java classes to the
+invoked fixture and added base-field, payload-ignore, hash, and codec checks
+for all six previously unexercised Rust headers. The fixture and Rust checks
+now cover 49 entries with no uncovered class; fixture SHA-256:
+`7e3f828aca4785153cc98b2f71bb38a93b33421df55bb3cf1cb5338a68e1b594`.
+
+The Java fixture drift verifier, Protocol header inventory/validation tests,
+request-header equality/hash test, strict Protocol Clippy, formatting/diff
+checks, and full offline Maven verification passed. No production behavior
+changed. This closes the request-header identity/API inventory gap only; broad
+P18-V01 remains PARTIAL, with native Windows runtime and current-revision
+remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
