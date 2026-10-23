@@ -1,3 +1,4 @@
+use super::tasks::UserSchedule;
 use super::{ClientRuntime, RuntimeError, RuntimeState};
 use rocketmq_classic_protocol::body::MessageRequestMode;
 use std::{
@@ -22,9 +23,18 @@ pub trait MessageRequest: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+struct ScheduledTaskGuard(Option<UserSchedule>);
+impl Drop for ScheduledTaskGuard {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.as_ref() {
+            task.reject();
+        }
+    }
+}
 enum Job {
     Request(Arc<dyn MessageRequest>),
     Task(Task),
+    ScheduledTask(UserSchedule),
 }
 #[derive(Default)]
 struct Queues {
@@ -37,9 +47,35 @@ struct Queues {
 pub(super) struct PullService {
     queues: Mutex<Queues>,
     immediate: Notify,
-    scheduled: Notify,
+    scheduled: Arc<Notify>,
 }
 impl PullService {
+    pub fn scheduled_notifier(&self) -> Arc<Notify> {
+        self.scheduled.clone()
+    }
+
+    fn discard_cancelled_user_tasks(&self) {
+        let cancelled = self.queues.lock().ok().map(|mut queues| {
+            let keys = queues
+                .scheduled
+                .iter()
+                .filter_map(|(key, job)| {
+                    matches!(job, Job::ScheduledTask(task) if task.is_cancelled()).then_some(*key)
+                })
+                .collect::<Vec<_>>();
+            keys.into_iter()
+                .filter_map(|key| queues.scheduled.remove(&key))
+                .collect::<Vec<_>>()
+        });
+        if let Some(cancelled) = cancelled {
+            for job in cancelled {
+                if let Job::ScheduledTask(task) = job {
+                    task.reject();
+                }
+            }
+        }
+    }
+
     pub fn enqueue(&self, request: Arc<dyn MessageRequest>) -> Result<(), RuntimeError> {
         let mut queues = self
             .queues
@@ -79,9 +115,26 @@ impl PullService {
     pub fn task_later(&self, task: Task, delay: i64) -> Result<(), RuntimeError> {
         self.schedule(Job::Task(task), delay)
     }
+    pub fn schedule_user_task(&self, task: UserSchedule) -> Result<(), RuntimeError> {
+        let mut queues = self
+            .queues
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if queues.stopped {
+            return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
+        }
+        let due = Instant::now() + task.delay;
+        let sequence = queues.sequence;
+        queues.sequence = queues.sequence.wrapping_add(1);
+        queues
+            .scheduled
+            .insert((due, sequence), Job::ScheduledTask(task));
+        self.scheduled.notify_one();
+        Ok(())
+    }
     pub fn close(&self) {
         // User destructors/futures must drop outside the queue mutex.
-        let old = self.queues.lock().ok().map(|mut queues| {
+        let mut old = self.queues.lock().ok().map(|mut queues| {
             std::mem::replace(
                 &mut *queues,
                 Queues {
@@ -90,14 +143,40 @@ impl PullService {
                 },
             )
         });
+        if let Some(queues) = old.as_mut() {
+            for (_, job) in std::mem::take(&mut queues.scheduled) {
+                if let Job::ScheduledTask(task) = job {
+                    task.reject();
+                }
+            }
+        }
         drop(old);
     }
     pub fn stop_accepting(&self) {
         let pending = self.queues.lock().ok().map(|mut queues| {
             queues.stopped = true;
-            std::mem::take(&mut queues.immediate)
+            let pending = std::mem::take(&mut queues.immediate);
+            let repeating_keys = queues
+                .scheduled
+                .iter()
+                .filter_map(|(key, job)| {
+                    matches!(job, Job::ScheduledTask(task) if task.period.is_some()).then_some(*key)
+                })
+                .collect::<Vec<_>>();
+            let repeating = repeating_keys
+                .into_iter()
+                .filter_map(|key| queues.scheduled.remove(&key))
+                .collect::<Vec<_>>();
+            (pending, repeating)
         });
-        drop(pending);
+        if let Some((pending, repeating)) = pending {
+            drop(pending);
+            for job in repeating {
+                if let Job::ScheduledTask(task) = job {
+                    task.reject();
+                }
+            }
+        }
         self.scheduled.notify_one();
     }
     #[cfg(test)]
@@ -129,6 +208,7 @@ impl OwnedPullWorker {
             let _live = live;
             tokio::select! { biased; _ = cancellation.changed() => return, _ = activation.changed() => {}, }
             loop {
+                service.discard_cancelled_user_tasks();
                 if scheduled
                     && service
                         .queues
@@ -153,7 +233,10 @@ impl OwnedPullWorker {
                             .first_key_value()
                             .is_some_and(|(key, _)| key.0 <= Instant::now())
                         {
-                            queues.scheduled.pop_first().map(|(_, job)| job)
+                            queues
+                                .scheduled
+                                .pop_first()
+                                .map(|(key, job)| (Some(key), job))
                         } else {
                             None
                         }
@@ -167,15 +250,77 @@ impl OwnedPullWorker {
                     if request.is_none() {
                         tokio::select! { biased; _ = cancellation.changed() => return, _ = service.immediate.notified() => continue, }
                     }
-                    request.map(Job::Request)
+                    request.map(|request| (None, Job::Request(request)))
                 };
-                let Some(work) = work else {
+                let Some((key, work)) = work else {
                     continue;
                 };
                 let operation = async {
                     match work {
                         Job::Request(request) if scheduled => {
                             let _ = service.enqueue(request);
+                        }
+                        Job::ScheduledTask(task) => {
+                            let mut guard = ScheduledTaskGuard(Some(task));
+                            let task = guard.0.as_ref().expect("scheduled task guard is active");
+                            if !task.try_start() {
+                                return;
+                            }
+                            let mut operation =
+                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    (task.factory)()
+                                })) {
+                                    Ok(operation) => operation,
+                                    Err(_) => {
+                                        task.reject();
+                                        return;
+                                    }
+                                };
+                            let caught = std::future::poll_fn(|context| {
+                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    operation.as_mut().poll(context)
+                                })) {
+                                    Ok(std::task::Poll::Ready(())) => std::task::Poll::Ready(true),
+                                    Ok(std::task::Poll::Pending) => std::task::Poll::Pending,
+                                    Err(_) => std::task::Poll::Ready(false),
+                                }
+                            });
+                            let succeeded = tokio::select! { biased;
+                                _ = task.cancel.notified() => false,
+                                succeeded = caught => succeeded,
+                            };
+                            let task = guard.0.take().expect("scheduled task guard is active");
+                            if !succeeded {
+                                task.reject();
+                                return;
+                            }
+                            if task.complete() {
+                                if let Some(period) = task.period {
+                                    let due = if task.fixed_rate {
+                                        key.expect("scheduled task has a deadline").0 + period
+                                    } else {
+                                        Instant::now() + period
+                                    };
+                                    let task = task;
+                                    match service.queues.lock() {
+                                        Ok(mut queues) if !queues.stopped => {
+                                            queues.scheduled.insert(
+                                                (
+                                                    due,
+                                                    key.expect("scheduled task has a deadline").1,
+                                                ),
+                                                Job::ScheduledTask(task),
+                                            );
+                                            service.scheduled.notify_one();
+                                        }
+                                        _ => task.reject(),
+                                    }
+                                } else {
+                                    task.changed.notify_one();
+                                }
+                            } else {
+                                task.changed.notify_one();
+                            }
                         }
                         Job::Request(request) => {
                             let Some(runtime) = runtime.upgrade() else {

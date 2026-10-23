@@ -48,8 +48,8 @@ pub(super) struct Schedule {
     period: Duration,
 }
 
-type UserFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-type UserTaskFactory = Arc<dyn Fn() -> UserFuture + Send + Sync + 'static>;
+pub(super) type UserFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+pub(super) type UserTaskFactory = Arc<dyn Fn() -> UserFuture + Send + Sync + 'static>;
 
 const TASK_PENDING: u8 = 0;
 const TASK_RUNNING: u8 = 1;
@@ -102,13 +102,13 @@ impl RuntimeScheduledTaskHandle {
 
 #[derive(Clone)]
 pub(super) struct UserSchedule {
-    delay: Duration,
-    period: Option<Duration>,
-    fixed_rate: bool,
-    factory: UserTaskFactory,
-    state: Arc<AtomicU8>,
-    cancel: Arc<Notify>,
-    changed: Arc<Notify>,
+    pub(super) delay: Duration,
+    pub(super) period: Option<Duration>,
+    pub(super) fixed_rate: bool,
+    pub(super) factory: UserTaskFactory,
+    pub(super) state: Arc<AtomicU8>,
+    pub(super) cancel: Arc<Notify>,
+    pub(super) changed: Arc<Notify>,
 }
 
 impl UserSchedule {
@@ -154,6 +154,32 @@ impl UserSchedule {
         }
         self.changed.notify_one();
     }
+
+    pub(super) fn try_start(&self) -> bool {
+        self.state
+            .compare_exchange(
+                TASK_PENDING,
+                TASK_RUNNING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    pub(super) fn complete(&self) -> bool {
+        let next = if self.period.is_some() {
+            TASK_PENDING
+        } else {
+            TASK_FINISHED
+        };
+        self.state
+            .compare_exchange(TASK_RUNNING, next, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub(super) fn is_cancelled(&self) -> bool {
+        self.state.load(Ordering::Acquire) == TASK_CANCELLED
+    }
 }
 
 /// Rust-native access to the single-threaded scheduler owned by `MQClientInstance`.
@@ -162,11 +188,18 @@ impl UserSchedule {
 /// lifetime remains owned by `ClientRuntime`.
 pub struct RuntimeScheduler {
     runtime: Weak<ClientRuntime>,
+    owner: RuntimeSchedulerOwner,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RuntimeSchedulerOwner {
+    Client,
+    Pull,
 }
 
 impl RuntimeScheduler {
-    pub(super) fn new(runtime: Weak<ClientRuntime>) -> Self {
-        Self { runtime }
+    pub(super) fn new(runtime: Weak<ClientRuntime>, owner: RuntimeSchedulerOwner) -> Self {
+        Self { runtime, owner }
     }
 
     /// Queues a task for immediate execution on the client scheduler.
@@ -258,14 +291,15 @@ impl RuntimeScheduler {
             .runtime
             .upgrade()
             .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?;
-        let (schedule, handle) = UserSchedule::new(
-            delay,
-            period,
-            fixed_rate,
-            factory,
-            runtime.task_scheduler_changed.clone(),
-        );
-        runtime.enqueue_scheduled_task(schedule)?;
+        let changed = match self.owner {
+            RuntimeSchedulerOwner::Client => runtime.task_scheduler_changed.clone(),
+            RuntimeSchedulerOwner::Pull => runtime.pull.scheduled_notifier(),
+        };
+        let (schedule, handle) = UserSchedule::new(delay, period, fixed_rate, factory, changed);
+        match self.owner {
+            RuntimeSchedulerOwner::Client => runtime.enqueue_scheduled_task(schedule)?,
+            RuntimeSchedulerOwner::Pull => runtime.enqueue_pull_scheduled_task(schedule)?,
+        }
         Ok(handle)
     }
 }
@@ -470,19 +504,33 @@ impl OwnedTasks {
                                     continue;
                                 }
                             };
-                        let caught = std::future::poll_fn(|context| {
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                operation.as_mut().poll(context)
-                            }))
-                            .unwrap_or(Poll::Ready(()))
-                        });
-                        tokio::select! { biased;
+                        let caught =
+                            std::future::poll_fn(|context| {
+                                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    operation.as_mut().poll(context)
+                                })) {
+                                    Ok(Poll::Ready(())) => Poll::Ready(true),
+                                    Ok(Poll::Pending) => Poll::Pending,
+                                    Err(_) => Poll::Ready(false),
+                                }
+                            });
+                        let succeeded = tokio::select! { biased;
                             _ = cancellation.changed() => {
                                 schedule.reject();
                                 return;
                             },
-                            _ = schedule.cancel.notified() => {},
-                            _ = caught => {},
+                            _ = schedule.cancel.notified() => false,
+                            succeeded = caught => succeeded,
+                        };
+                        if !succeeded {
+                            let _ = schedule.state.compare_exchange(
+                                TASK_RUNNING,
+                                TASK_FINISHED,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            );
+                            schedule.changed.notify_one();
+                            continue;
                         }
                         let next_state = if schedule.period.is_some() {
                             TASK_PENDING
@@ -781,6 +829,37 @@ mod tests {
             scheduler.schedule_with_fixed_delay(Duration::ZERO, Duration::ZERO, || async {}),
             Err(RuntimeError::InvalidSchedule)
         ));
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn public_pull_scheduler_uses_its_own_pre_start_queue() {
+        let runtime = runtime();
+        let scheduler = runtime.pull_scheduled_executor_service();
+        let cancelled = scheduler
+            .schedule_after(Duration::from_secs(3_600), async {})
+            .unwrap();
+        settle().await;
+        assert!(cancelled.cancel());
+        settle().await;
+        assert!(runtime.pull.is_empty());
+
+        let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
+        let task = scheduler
+            .schedule_after(Duration::from_secs(2), async move {
+                let _ = completed_tx.send(());
+            })
+            .unwrap();
+
+        settle().await;
+        advance(1_999).await;
+        assert!(!task.is_finished());
+        advance(1).await;
+        completed_rx.await.unwrap();
+        settle().await;
+        assert!(task.is_finished());
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();

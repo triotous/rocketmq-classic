@@ -137,7 +137,18 @@ impl ClientRuntime {
     /// Scheduled work shares the client runtime's serial scheduler and is
     /// cancelled when the runtime shuts down.
     pub fn scheduled_executor_service(self: &Arc<Self>) -> super::tasks::RuntimeScheduler {
-        super::tasks::RuntimeScheduler::new(Arc::downgrade(self))
+        super::tasks::RuntimeScheduler::new(
+            Arc::downgrade(self),
+            super::tasks::RuntimeSchedulerOwner::Client,
+        )
+    }
+
+    /// Returns a Rust-native handle to the PullMessageService-owned scheduler.
+    pub fn pull_scheduled_executor_service(self: &Arc<Self>) -> super::tasks::RuntimeScheduler {
+        super::tasks::RuntimeScheduler::new(
+            Arc::downgrade(self),
+            super::tasks::RuntimeSchedulerOwner::Pull,
+        )
     }
 
     pub(super) fn enqueue_scheduled_task(
@@ -155,6 +166,14 @@ impl ClientRuntime {
             .sender(self)?
             .send(Command::ScheduleRuntimeTask(schedule))
             .map_err(|_| RuntimeError::ControlTaskFailed)
+    }
+
+    pub(super) fn enqueue_pull_scheduled_task(
+        self: &Arc<Self>,
+        schedule: super::tasks::UserSchedule,
+    ) -> Result<(), RuntimeError> {
+        self.ensure_pull_scheduler()?;
+        self.pull.schedule_user_task(schedule)
     }
 
     /// Returns the shared consumer statistics manager for this client runtime.
@@ -447,7 +466,10 @@ impl ClientRuntime {
 
     fn ensure_pull_scheduler(self: &Arc<Self>) -> Result<(), RuntimeError> {
         let state = self.state();
-        if !matches!(state, RuntimeState::Created | RuntimeState::Running) {
+        if !matches!(
+            state,
+            RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
+        ) {
             return Err(RuntimeError::InvalidState(state));
         }
         self.control

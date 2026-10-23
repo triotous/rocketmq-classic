@@ -334,7 +334,11 @@ async fn run(
                 }
             }
             Command::StartPullScheduler => {
-                if allowed && pull_workers[1].is_none() {
+                if matches!(
+                    state,
+                    RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
+                ) && pull_workers[1].is_none()
+                {
                     let worker = super::pull::OwnedPullWorker::new(
                         Arc::downgrade(&runtime),
                         runtime.pull.clone(),
