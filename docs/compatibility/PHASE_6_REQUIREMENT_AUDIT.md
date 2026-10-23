@@ -4141,3 +4141,28 @@ The invoked `RuntimeApiFactoryFixtures` records both Java outcomes, and the
 Core regression compares the domain error/slot and static success. This closes
 only the null-scheduler input branch; broad P18-V01 reconciliation remains
 PARTIAL.
+
+## P18-V01 `MQClientAPIFactory` nullable access config and name prefix — 2026-10-23
+
+Pinned Java's constructor accepts a null `NameserverAccessConfig`, writes the
+VIP property to `false`, then throws `NullPointerException` while reading the
+config. Java also accepts a null `namePrefix`; client startup concatenates it
+as the literal `null`, producing `nullN_0`. Rust's `new_nullable` adapter
+preserves both observations with `NullNameServerAccessConfig`, the same
+property write, and the generated instance name. The invoked
+`RuntimeApiFactoryFixtures` records these inputs; the Core property test and
+factory unit test compare them. This closes these nullable constructor input
+branches only; broad P18-V01 reconciliation remains PARTIAL.
+
+## P18-V01 `MQClientAPIFactory` nullable seven-argument constructor — 2026-10-23
+
+The pinned seven-argument constructor passes its optional
+`ObjectCreator<RemotingClient>` through to `MQClientAPIExt`; a null creator uses
+the standard Netty remoting client. Rust now exposes
+`new_nullable_with_remoting_client_creator`, preserving null config, prefix,
+and scheduler behavior while accepting an optional injected creator. The
+invoked Java fixture records the creator call count and `nullN_0` instance
+name; the Core regression checks both a supplied creator and the default
+creator fallback. Full current-revision local gates pass as recorded in the
+Phase 18 execution log. This closes this nullable constructor overload only;
+broad P18-V01 reconciliation remains PARTIAL.

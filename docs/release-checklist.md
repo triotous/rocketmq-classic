@@ -19,6 +19,21 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Windows cross-target compile evidence. The CI workflow now includes a native
   Windows stack runtime job; its current-revision result and Broker-backed
   query checks remain pending. Plans remain unchanged.
+- P18-V01 factory nullable-constructor follow-up (`0d6d9b79`, 2026-10-23):
+  the invoked Java fixture and Rust regressions now cover null
+  `NameserverAccessConfig` property-write/error order and null `namePrefix`
+  conversion to `nullN_0`. The default and all-feature workspace suites,
+  strict Clippy, offline Maven/differential fixtures, metadata/package checks,
+  stress/fuzz smoke, release examples, benchmark, Windows GNU cross-check,
+  Rustdoc JSON, formatting, and diff checks pass on this revision. This closes
+  those factory input branches only; broad P18-V01 remains open.
+- P18-V01 nullable seven-argument factory follow-up (`8f30b6fb`, 2026-10-23):
+  the nullable constructor adapter now carries a custom remoting creator or
+  uses the Java null-creator default, with fixture and Rust coverage for the
+  generated `nullN_0` instance name. Default/all-feature workspace tests,
+  strict Clippy, offline Maven verification, and the remaining local P18-V02
+  gates pass on this revision. The Rustdoc name scan reports Core 747; broad
+  P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
