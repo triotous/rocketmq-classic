@@ -43,7 +43,10 @@ pub use tables::{
     ConsumerValuesView, ProducerEntryHandle, ProducerEntrySetView, ProducerKeySetView,
     ProducerTable, ProducerValuesView,
 };
-pub use tasks::{RuntimeScheduledCall, RuntimeScheduledTaskHandle, RuntimeScheduler};
+pub use tasks::{
+    RuntimeScheduledCall, RuntimeScheduledTaskHandle, RuntimeScheduledTaskOutcome,
+    RuntimeScheduledTaskWaitError, RuntimeScheduler,
+};
 
 /// Callback aliases used by nullable live runtime table adapters.
 pub type TableKeyViewPredicate<'a> = dyn FnMut(&str) -> bool + 'a;
@@ -83,6 +86,8 @@ pub enum RuntimeError {
     EmptyTaskSet,
     #[error("no invoked task returned a value")]
     NoSuccessfulTask,
+    #[error("invoked tasks did not produce a value before the deadline")]
+    InvocationTimeout,
     #[error("periodic callback panicked")]
     TaskCallbackFailed,
     #[error("runtime operation is invalid in state {0:?}")]

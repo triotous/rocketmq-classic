@@ -219,7 +219,7 @@ impl PullService {
         if queues.stopped || queues.scheduler_closed {
             return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
         }
-        let due = Instant::now() + task.delay;
+        let due = task.due_at();
         let sequence = queues.sequence;
         queues.sequence = queues.sequence.wrapping_add(1);
         queues
@@ -369,7 +369,7 @@ impl OwnedPullWorker {
                                 })) {
                                     Ok(operation) => operation,
                                     Err(_) => {
-                                        task.reject();
+                                        task.fail();
                                         return;
                                     }
                                 };
@@ -383,12 +383,15 @@ impl OwnedPullWorker {
                                 }
                             });
                             let succeeded = tokio::select! { biased;
-                                _ = task.cancel.notified() => false,
+                                _ = task.cancel.notified() => {
+                                    task.changed.notify_one();
+                                    return;
+                                },
                                 succeeded = caught => succeeded,
                             };
                             let task = guard.0.take().expect("scheduled task guard is active");
                             if !succeeded {
-                                task.reject();
+                                task.fail();
                                 return;
                             }
                             if task.complete() {
@@ -398,6 +401,7 @@ impl OwnedPullWorker {
                                     } else {
                                         Instant::now() + period
                                     };
+                                    task.update_due(due);
                                     let task = task;
                                     match service.queues.lock() {
                                         Ok(mut queues) if !queues.scheduler_closed => {

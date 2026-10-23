@@ -55,6 +55,7 @@ const TASK_PENDING: u8 = 0;
 const TASK_RUNNING: u8 = 1;
 const TASK_FINISHED: u8 = 2;
 const TASK_CANCELLED: u8 = 3;
+const TASK_FAILED: u8 = 4;
 
 const SCHEDULER_OPEN: u8 = 0;
 const SCHEDULER_SHUTDOWN: u8 = 1;
@@ -135,12 +136,38 @@ pub struct RuntimeScheduledTaskHandle {
     state: Arc<AtomicU8>,
     cancel: Arc<Notify>,
     changed: Arc<Notify>,
+    due: Arc<Mutex<Instant>>,
+}
+
+/// Failure reported by the asynchronous wait methods on a scheduled-task handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RuntimeScheduledTaskWaitError {
+    /// The scheduled work was cancelled before it completed.
+    #[error("scheduled task was cancelled")]
+    Cancelled,
+    /// The scheduled callback panicked.
+    #[error("scheduled task callback failed")]
+    Failed,
+    /// The requested wait deadline elapsed while the task remained pending.
+    #[error("timed out waiting for scheduled task")]
+    Timeout,
 }
 
 /// Result-bearing work submitted to a runtime-owned scheduler.
 pub struct RuntimeScheduledCall<T> {
     task: RuntimeScheduledTaskHandle,
     result: tokio::sync::oneshot::Receiver<T>,
+}
+
+/// Per-task result returned by [`RuntimeScheduler::invoke_all_with_timeout`].
+#[derive(Debug)]
+pub enum RuntimeScheduledTaskOutcome<T> {
+    /// The callback returned a value before the deadline.
+    Completed(T),
+    /// The callback panicked, was cancelled, or its runtime stopped.
+    FailedOrCancelled,
+    /// The callback was still pending when the timed invocation expired.
+    CancelledByTimeout,
 }
 
 struct ScheduledCallsCancellationGuard {
@@ -168,6 +195,20 @@ impl ScheduledCallsCancellationGuard {
         }
     }
 
+    fn cancel_all(&self) {
+        for task in &self.tasks {
+            task.cancel();
+        }
+    }
+
+    fn cancel_unfinished(&self, completed: &[bool]) {
+        for (index, task) in self.tasks.iter().enumerate() {
+            if !completed.get(index).copied().unwrap_or(false) {
+                task.cancel();
+            }
+        }
+    }
+
     fn disarm(&mut self) {
         self.armed = false;
     }
@@ -176,9 +217,7 @@ impl ScheduledCallsCancellationGuard {
 impl Drop for ScheduledCallsCancellationGuard {
     fn drop(&mut self) {
         if self.armed {
-            for task in &self.tasks {
-                task.cancel();
-            }
+            self.cancel_all();
         }
     }
 }
@@ -194,12 +233,29 @@ impl<T> RuntimeScheduledCall<T> {
         self.task.is_finished()
     }
 
+    /// Returns whether the call was cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.task.is_cancelled()
+    }
+
     /// Waits asynchronously for the call's result.
     ///
     /// The receive error indicates cancellation, a panicking callback, or
     /// runtime shutdown before the callback could return a value.
     pub async fn join(self) -> Result<T, tokio::sync::oneshot::error::RecvError> {
         self.result.await
+    }
+
+    /// Waits up to `timeout` without cancelling the scheduled callback.
+    ///
+    /// The mutable borrow keeps the result receiver available if the timeout
+    /// expires, so the caller can wait again or use [`join`](Self::join) later.
+    pub async fn join_with_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Result<T, tokio::sync::oneshot::error::RecvError>, tokio::time::error::Elapsed>
+    {
+        tokio::time::timeout(timeout, &mut self.result).await
     }
 }
 
@@ -208,7 +264,7 @@ impl RuntimeScheduledTaskHandle {
     pub fn cancel(&self) -> bool {
         let mut current = self.state.load(Ordering::Acquire);
         loop {
-            if matches!(current, TASK_FINISHED | TASK_CANCELLED) {
+            if matches!(current, TASK_FINISHED | TASK_FAILED | TASK_CANCELLED) {
                 return false;
             }
             match self.state.compare_exchange_weak(
@@ -227,12 +283,61 @@ impl RuntimeScheduledTaskHandle {
         }
     }
 
+    /// Returns whether the task has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.state.load(Ordering::Acquire) == TASK_CANCELLED
+    }
+
     /// Returns whether the task completed or was cancelled.
     pub fn is_finished(&self) -> bool {
         matches!(
             self.state.load(Ordering::Acquire),
-            TASK_FINISHED | TASK_CANCELLED
+            TASK_FINISHED | TASK_FAILED | TASK_CANCELLED
         )
+    }
+
+    /// Returns the nonnegative time remaining until the task's next scheduled
+    /// invocation. A completed or overdue task returns zero.
+    pub fn remaining_delay(&self) -> Duration {
+        if self.is_finished() {
+            return Duration::ZERO;
+        }
+        self.due
+            .lock()
+            .map(|due| due.saturating_duration_since(Instant::now()))
+            .unwrap_or(Duration::ZERO)
+    }
+
+    /// Waits until the task completes, fails, or is cancelled.
+    ///
+    /// A repeating task remains pending until it is cancelled or its callback
+    /// fails, matching `ScheduledFuture::get()` completion behavior.
+    pub async fn wait(&self) -> Result<(), RuntimeScheduledTaskWaitError> {
+        loop {
+            let changed = self.changed.notified();
+            match self.state.load(Ordering::Acquire) {
+                TASK_FINISHED => return Ok(()),
+                TASK_FAILED => return Err(RuntimeScheduledTaskWaitError::Failed),
+                TASK_CANCELLED => return Err(RuntimeScheduledTaskWaitError::Cancelled),
+                _ => changed.await,
+            }
+        }
+    }
+
+    /// Waits until the task completes or `timeout` expires.
+    ///
+    /// A timeout leaves the scheduled task running, as Java's timed
+    /// `Future.get` does; cancel it separately when that is desired.
+    pub async fn wait_with_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<(), RuntimeScheduledTaskWaitError> {
+        if self.is_finished() {
+            return self.wait().await;
+        }
+        tokio::time::timeout(timeout, self.wait())
+            .await
+            .map_err(|_| RuntimeScheduledTaskWaitError::Timeout)?
     }
 }
 
@@ -245,6 +350,7 @@ pub(super) struct UserSchedule {
     pub(super) state: Arc<AtomicU8>,
     pub(super) cancel: Arc<Notify>,
     pub(super) changed: Arc<Notify>,
+    due: Arc<Mutex<Instant>>,
 }
 
 impl UserSchedule {
@@ -257,6 +363,7 @@ impl UserSchedule {
     ) -> (Self, RuntimeScheduledTaskHandle) {
         let state = Arc::new(AtomicU8::new(TASK_PENDING));
         let cancel = Arc::new(Notify::new());
+        let due = Arc::new(Mutex::new(Instant::now() + delay));
         (
             Self {
                 delay,
@@ -266,13 +373,28 @@ impl UserSchedule {
                 state: state.clone(),
                 cancel: cancel.clone(),
                 changed: changed.clone(),
+                due: due.clone(),
             },
             RuntimeScheduledTaskHandle {
                 state,
                 cancel,
                 changed,
+                due,
             },
         )
+    }
+
+    pub(super) fn due_at(&self) -> Instant {
+        self.due
+            .lock()
+            .map(|due| *due)
+            .unwrap_or_else(|_| Instant::now() + self.delay)
+    }
+
+    pub(super) fn update_due(&self, due: Instant) {
+        if let Ok(mut current) = self.due.lock() {
+            *current = due;
+        }
     }
 
     pub(super) fn reject(&self) {
@@ -280,7 +402,24 @@ impl UserSchedule {
         while matches!(current, TASK_PENDING | TASK_RUNNING) {
             match self.state.compare_exchange_weak(
                 current,
-                TASK_FINISHED,
+                TASK_CANCELLED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
+        self.changed.notify_one();
+        self.cancel.notify_one();
+    }
+
+    pub(super) fn fail(&self) {
+        let mut current = self.state.load(Ordering::Acquire);
+        while matches!(current, TASK_PENDING | TASK_RUNNING) {
+            match self.state.compare_exchange_weak(
+                current,
+                TASK_FAILED,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -485,6 +624,66 @@ impl RuntimeScheduler {
         Ok(results)
     }
 
+    /// Schedules every task and collects outcomes until `timeout` expires.
+    ///
+    /// Results retain submission order. Tasks still pending at the deadline
+    /// are cancelled and reported as [`RuntimeScheduledTaskOutcome::CancelledByTimeout`].
+    /// A timeout of zero cancels all work immediately after it is accepted.
+    pub async fn invoke_all_with_timeout<T, Fut, Tasks>(
+        &self,
+        tasks: Tasks,
+        timeout: Duration,
+    ) -> Result<Vec<RuntimeScheduledTaskOutcome<T>>, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+        Tasks: IntoIterator<Item = Fut>,
+    {
+        let deadline = Instant::now().checked_add(timeout);
+        let mut cancellation = ScheduledCallsCancellationGuard::new();
+        let mut calls = Vec::new();
+        for task in tasks {
+            let call = self.submit(task)?;
+            cancellation.track(call.task.clone());
+            calls.push(call);
+        }
+
+        let mut outcomes = std::iter::repeat_with(|| None)
+            .take(calls.len())
+            .collect::<Vec<Option<RuntimeScheduledTaskOutcome<T>>>>();
+        let mut timed_out = false;
+        for (index, call) in calls.into_iter().enumerate() {
+            let joined = match deadline {
+                Some(deadline) => tokio::time::timeout_at(deadline, call.join()).await,
+                None => Ok(call.join().await),
+            };
+            match joined {
+                Ok(Ok(value)) => {
+                    outcomes[index] = Some(RuntimeScheduledTaskOutcome::Completed(value));
+                }
+                Ok(Err(_)) => {
+                    outcomes[index] = Some(RuntimeScheduledTaskOutcome::FailedOrCancelled);
+                }
+                Err(_) => {
+                    timed_out = true;
+                    let completed = outcomes.iter().map(Option::is_some).collect::<Vec<_>>();
+                    cancellation.cancel_unfinished(&completed);
+                    break;
+                }
+            }
+        }
+
+        cancellation.disarm();
+        Ok(outcomes
+            .into_iter()
+            .map(|outcome| match (timed_out, outcome) {
+                (_, Some(outcome)) => outcome,
+                (true, None) => RuntimeScheduledTaskOutcome::CancelledByTimeout,
+                (false, None) => RuntimeScheduledTaskOutcome::FailedOrCancelled,
+            })
+            .collect())
+    }
+
     /// Returns the value from the first task that completes normally.
     ///
     /// Tasks run on this scheduler's single worker, so they are considered in
@@ -525,6 +724,62 @@ impl RuntimeScheduler {
                 cancellation.cancel_except(index);
                 cancellation.disarm();
                 return Ok(result);
+            }
+        }
+
+        cancellation.disarm();
+        Err(RuntimeError::NoSuccessfulTask)
+    }
+
+    /// Returns the first normal callback value, cancelling other accepted
+    /// work when `timeout` expires. A returned `Err` inside `Result` is a
+    /// normal callback value. Empty input returns [`RuntimeError::EmptyTaskSet`].
+    pub async fn invoke_any_with_timeout<T, Fut, Tasks>(
+        &self,
+        tasks: Tasks,
+        timeout: Duration,
+    ) -> Result<T, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+        Tasks: IntoIterator<Item = Fut>,
+    {
+        let deadline = Instant::now().checked_add(timeout);
+        let mut cancellation = ScheduledCallsCancellationGuard::new();
+        let mut calls = Vec::new();
+        let any_succeeded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for task in tasks {
+            let any_succeeded = any_succeeded.clone();
+            let call = self.submit(async move {
+                if any_succeeded.load(Ordering::Acquire) {
+                    None
+                } else {
+                    let result = task.await;
+                    any_succeeded.store(true, Ordering::Release);
+                    Some(result)
+                }
+            })?;
+            cancellation.track(call.task.clone());
+            calls.push(call);
+        }
+        if calls.is_empty() {
+            cancellation.disarm();
+            return Err(RuntimeError::EmptyTaskSet);
+        }
+
+        for (index, call) in calls.into_iter().enumerate() {
+            let joined = match deadline {
+                Some(deadline) => tokio::time::timeout_at(deadline, call.join()).await,
+                None => Ok(call.join().await),
+            };
+            match joined {
+                Ok(Ok(Some(result))) => {
+                    cancellation.cancel_except(index);
+                    cancellation.disarm();
+                    return Ok(result);
+                }
+                Ok(Ok(None) | Err(_)) => {}
+                Err(_) => return Err(RuntimeError::InvocationTimeout),
             }
         }
 
@@ -834,8 +1089,7 @@ impl OwnedTasks {
                             })) {
                                 Ok(operation) => operation,
                                 Err(_) => {
-                                    schedule.state.store(TASK_FINISHED, Ordering::Release);
-                                    schedule.changed.notify_one();
+                                    schedule.fail();
                                     continue;
                                 }
                             };
@@ -854,17 +1108,14 @@ impl OwnedTasks {
                                 schedule.reject();
                                 return;
                             },
-                            _ = schedule.cancel.notified() => false,
+                            _ = schedule.cancel.notified() => {
+                                schedule.changed.notify_one();
+                                continue;
+                            },
                             succeeded = caught => succeeded,
                         };
                         if !succeeded {
-                            let _ = schedule.state.compare_exchange(
-                                TASK_RUNNING,
-                                TASK_FINISHED,
-                                Ordering::AcqRel,
-                                Ordering::Acquire,
-                            );
-                            schedule.changed.notify_one();
+                            schedule.fail();
                             continue;
                         }
                         let next_state = if schedule.period.is_some() {
@@ -892,6 +1143,7 @@ impl OwnedTasks {
                                         } else {
                                             Instant::now() + period
                                         };
+                                        schedule.update_due(next_due);
                                         queue.jobs.insert(
                                             (next_due, key.1),
                                             ScheduledJob::User(schedule),
@@ -939,7 +1191,7 @@ impl OwnedTasks {
     }
 
     pub fn register_user(&mut self, schedule: UserSchedule) -> Result<(), RuntimeError> {
-        let due = Instant::now() + schedule.delay;
+        let due = schedule.due_at();
         let mut queue = self
             .schedules
             .lock()
@@ -1289,12 +1541,19 @@ mod tests {
     async fn scheduled_calls_return_values_and_report_cancellation() {
         let runtime = runtime();
         let scheduler = runtime.scheduled_executor_service();
-        let call = scheduler
+        let mut call = scheduler
             .schedule_call_after(Duration::from_secs(2), async { 73_u64 })
             .unwrap();
 
         settle().await;
-        advance(1_999).await;
+        assert!(
+            call.join_with_timeout(Duration::from_secs(1))
+                .await
+                .is_err()
+        );
+        assert!(!call.is_finished());
+        assert!(!call.is_cancelled());
+        advance(999).await;
         assert!(!call.is_finished());
         advance(1).await;
         assert_eq!(call.join().await.unwrap(), 73);
@@ -1306,6 +1565,59 @@ mod tests {
         settle().await;
         assert!(cancelled.is_finished());
         assert!(cancelled.join().await.is_err());
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn scheduled_task_handles_report_delay_status_failure_and_wait_results() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
+        let delayed = scheduler
+            .schedule_after(Duration::from_secs(5), async move {
+                let _ = completed_tx.send(());
+            })
+            .unwrap();
+
+        assert_eq!(delayed.remaining_delay(), Duration::from_secs(5));
+        assert!(!delayed.is_finished());
+        assert!(!delayed.is_cancelled());
+        assert_eq!(
+            delayed.wait_with_timeout(Duration::from_secs(2)).await,
+            Err(RuntimeScheduledTaskWaitError::Timeout)
+        );
+        assert!(!delayed.is_finished());
+        assert_eq!(delayed.remaining_delay(), Duration::from_secs(3));
+        advance(3_000).await;
+        completed_rx.await.unwrap();
+        delayed.wait().await.unwrap();
+        assert!(delayed.is_finished());
+        assert!(!delayed.is_cancelled());
+        assert_eq!(delayed.remaining_delay(), Duration::ZERO);
+
+        let cancelled = scheduler
+            .schedule_after(Duration::from_secs(60), async {})
+            .unwrap();
+        assert!(cancelled.cancel());
+        assert!(cancelled.is_finished());
+        assert!(cancelled.is_cancelled());
+        assert_eq!(
+            cancelled.wait().await,
+            Err(RuntimeScheduledTaskWaitError::Cancelled)
+        );
+
+        let failed = scheduler
+            .execute(async { panic!("scripted scheduled task failure") })
+            .unwrap();
+        settle().await;
+        assert!(failed.is_finished());
+        assert!(!failed.is_cancelled());
+        assert_eq!(
+            failed.wait().await,
+            Err(RuntimeScheduledTaskWaitError::Failed)
+        );
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();
@@ -1401,6 +1713,119 @@ mod tests {
         settle().await;
         assert_eq!(active_drops.load(Ordering::SeqCst), 1);
         assert_eq!(queued_calls.load(Ordering::SeqCst), 0);
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timed_invoke_all_retains_completed_results_and_cancels_pending_tasks() {
+        struct DropCount(Arc<AtomicUsize>);
+        impl Drop for DropCount {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let runtime = runtime();
+        let scheduler = Arc::new(runtime.scheduled_executor_service());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let active_drops = Arc::new(AtomicUsize::new(0));
+        let active_task_drops = active_drops.clone();
+        let queued_calls = Arc::new(AtomicUsize::new(0));
+        let queued_task_calls = queued_calls.clone();
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send>>> = vec![
+            Box::pin(async { 17 }),
+            Box::pin(async move {
+                let _drop_count = DropCount(active_task_drops);
+                let _ = started_tx.send(());
+                std::future::pending::<usize>().await
+            }),
+            Box::pin(async move { queued_task_calls.fetch_add(1, Ordering::SeqCst) }),
+        ];
+        let invocation = {
+            let scheduler = scheduler.clone();
+            tokio::spawn(async move {
+                scheduler
+                    .invoke_all_with_timeout(tasks, Duration::from_secs(5))
+                    .await
+            })
+        };
+
+        started_rx.await.unwrap();
+        advance(5_000).await;
+        let outcomes = invocation.await.unwrap().unwrap();
+        assert!(matches!(
+            outcomes[0],
+            RuntimeScheduledTaskOutcome::Completed(17)
+        ));
+        assert!(matches!(
+            outcomes[1],
+            RuntimeScheduledTaskOutcome::CancelledByTimeout
+        ));
+        assert!(matches!(
+            outcomes[2],
+            RuntimeScheduledTaskOutcome::CancelledByTimeout
+        ));
+        assert_eq!(active_drops.load(Ordering::SeqCst), 1);
+        assert_eq!(queued_calls.load(Ordering::SeqCst), 0);
+
+        let empty = scheduler
+            .invoke_all_with_timeout(
+                std::iter::empty::<std::future::Ready<usize>>(),
+                Duration::ZERO,
+            )
+            .await
+            .unwrap();
+        assert!(empty.is_empty());
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timed_invoke_any_reports_timeout_and_cancels_accepted_tasks() {
+        struct DropCount(Arc<AtomicUsize>);
+        impl Drop for DropCount {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let runtime = runtime();
+        let scheduler = Arc::new(runtime.scheduled_executor_service());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let drops = Arc::new(AtomicUsize::new(0));
+        let task_drops = drops.clone();
+        let tasks: Vec<Pin<Box<dyn Future<Output = usize> + Send>>> = vec![Box::pin(async move {
+            let _drop_count = DropCount(task_drops);
+            let _ = started_tx.send(());
+            std::future::pending::<usize>().await
+        })];
+        let invocation = {
+            let scheduler = scheduler.clone();
+            tokio::spawn(async move {
+                scheduler
+                    .invoke_any_with_timeout(tasks, Duration::from_secs(5))
+                    .await
+            })
+        };
+
+        started_rx.await.unwrap();
+        advance(5_000).await;
+        assert!(matches!(
+            invocation.await.unwrap(),
+            Err(RuntimeError::InvocationTimeout)
+        ));
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+
+        let empty = std::iter::empty::<std::future::Ready<usize>>();
+        assert!(matches!(
+            scheduler
+                .invoke_any_with_timeout(empty, Duration::ZERO)
+                .await,
+            Err(RuntimeError::EmptyTaskSet)
+        ));
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();
