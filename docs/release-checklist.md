@@ -55,6 +55,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   integration targets, 21 doctests), strict Core Clippy, formatting/diff
   checks, and offline Maven verification pass. This closes the wake branch
   only; broad P18-V01 remains open.
+- P18-V01 `ServiceThread.shutdown()` overload mapping (`6e994989`, 2026-10-23):
+  Rust now exposes no-argument `shutdown()` and maps Java's boolean overload to
+  `shutdown_with_interrupt(bool)`. Core tests cover the no-interrupt default,
+  PullMessageService pre-start executor closure, and explicit interruption.
+  Core all-feature tests (247 unit tests, all integration targets, 21
+  doctests), strict Core Clippy, all-feature workspace Rustdoc JSON,
+  formatting/diff checks, and offline Maven verification pass. This closes the
+  overload mapping only; broad P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
