@@ -41,6 +41,12 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   stress/fuzz, packaging, examples, benchmark, Windows cross-check, Rustdoc,
   formatting, and diff checks pass on this revision. This closes the negative
   count branch only; broad P18-V01 remains open.
+- P18-V01 `TopicConfig.decode(null)` (`19b674ab`, 2026-10-23): the invoked
+  Java fixture records `NullPointerException` before decode mutation, and the
+  Protocol regression compares Rust's `TopicConfigError::NullInput`. The
+  focused test, all-feature Protocol suite (including 166 doctests), strict
+  Protocol Clippy, formatting/diff checks, and offline Maven verification
+  pass. This closes the null-input branch only; broad P18-V01 remains open.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
