@@ -8903,3 +8903,24 @@ owner-specific checks belong in the manual handoff.
   remains outside scope. No push or remote CI was run. The four existing
   user-owned Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-windows-gnu-workspace-cross-target__20261023T145158Z.rlog`.
+
+## P18-V01 response-header identity and API inventory — 2026-10-23 (`e555c725`)
+
+- [x] Expanded the invoked pinned Java 5.5.1 identity and API inventory from
+  16 to all 22 Rust response headers, adding the six omitted types. Recorded
+  the NameServer package and Java `GetKVConfigResponseHeader` spelling. The
+  fixture confirms each inherits `Object.equals/hashCode`; the Protocol test
+  checks every class's constructor, fields, and callable method inventory
+  against the Rust API.
+- [x] Full Protocol tests passed (160 unit tests, integration targets, and
+  166 doctests), strict all-target/all-feature Protocol Clippy passed, and
+  formatting/diff checks passed. Offline Maven verify passed (37 scenarios,
+  fixture drift, and Java/Rust cross-decodes of 11 message fixtures, 106 typed
+  headers, and 19 typed bodies). Fixture SHA-256:
+  `4e17f64398e2ae742f1fae55841e365eb7aed89b3f6aaad7eb191e8d282dd8ae`.
+- [ ] This closes the response-header identity/API inventory omission only;
+  broad P18-V01 remains PARTIAL. Native Windows runtime and current-revision
+  remote Ubuntu CI remain open; Phase 19 Broker/Docker validation remains
+  outside scope. No push or remote CI was run. The four existing user-owned
+  Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-response-header-api-inventory__20261023T145913Z.rlog`.

@@ -4280,6 +4280,21 @@ changed. This closes the request-header identity/API inventory gap only; broad
 P18-V01 remains PARTIAL, with native Windows runtime and current-revision
 remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
 
+## P18-V01 response-header identity and API inventory — 2026-10-23
+
+The Java 5.5.1 response-header fixture previously inventoried 16 Rust
+response-header types while `header/basic.rs` exposes 22. Added the six
+missing Java classes (`AddWritePermOfBrokerResponseHeader`,
+`ChangeInvisibleTimeResponseHeader`, `GetAllSubscriptionGroupResponseHeader`,
+`GetAllTopicConfigResponseHeader`, `GetKVConfigResponseHeader`, and
+`WipeWritePermOfBrokerResponseHeader`) to the invoked fixture. The Java
+NameServer package and `GetKV` spelling are recorded explicitly. Java
+confirms all 22 inherit identity `equals`/`hashCode`; Protocol tests compare
+their API inventories and check Rust accessor mappings. Fixture SHA-256:
+`4e17f64398e2ae742f1fae55841e365eb7aed89b3f6aaad7eb191e8d282dd8ae`.
+This closes the response-header inventory omission only; broad P18-V01
+remains PARTIAL.
+
 ## P18-V04 current workspace Windows GNU cross-target check — 2026-10-23 (`77587adc`)
 
 On the current macOS AArch64 tree, the complete workspace passed
