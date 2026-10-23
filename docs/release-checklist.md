@@ -8326,3 +8326,18 @@ owner-specific checks belong in the manual handoff.
   current-revision GitHub Ubuntu/native Windows evidence for P18-V04. No
   external CI or push was performed. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V02 Linux ARM64 low-artifact refresh — 2026-10-23 (`0095d478`)
+
+- [x] On Linux ARM64, the current tree passed formatting, strict workspace
+  Clippy, default/all-features workspace tests, the Asia/Taipei unique-ID
+  fixture, differential self-test and 37-scenario manifest, fuzz smoke,
+  17 deterministic race/leak cases × 3, release examples, benchmark compile,
+  and workspace metadata. The CI profile settings
+  (`CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`,
+  `CARGO_INCREMENTAL=0`) were active for every Cargo command.
+- [ ] This verifies the Rust server-free pipeline locally under the reduced
+  profile; it is not a current GitHub Actions result. Broad P18-V01 and
+  current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
+  No push or remote run was performed. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

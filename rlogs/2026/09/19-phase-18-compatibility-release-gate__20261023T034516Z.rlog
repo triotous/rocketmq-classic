@@ -285,3 +285,25 @@ bidirectional Java/Rust source/API/settings/input/error/control-flow and
 reverse-export reconciliation remains open, as do current-revision GitHub
 Ubuntu/Windows results. No external CI run or push was performed. Protected
 Phase 19 user changes remain unstaged and untouched.
+
+## Linux ARM64 CI-profile server-free refresh — 2026-10-23T07:14:01Z
+
+Current tree `0095d478` passed the complete local Rust server-free pipeline
+inside `rust:1.85.0-bookworm` on Linux ARM64 with the exact new CI profile
+settings active: `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`,
+and `CARGO_INCREMENTAL=0`. Formatting, strict all-target/all-feature
+workspace Clippy, default and all-feature workspace tests, the Asia/Taipei
+public unique-ID fixture, differential comparator self-test and all 37
+manifest scenarios, fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+bounded mutations, 245 frame decodes, 192 message decodes), 17 deterministic
+race/leak cases × 3, release examples, offline benchmark compilation, and
+workspace metadata checks all passed (exit 0). The pinned offline Maven verify
+also passed on the preceding documentation-only tree `bc58a528`; it verified
+37 scenarios, 106 typed headers, and 19 typed bodies.
+
+This local Linux ARM64 run exercises the full unit-only Cargo pipeline under
+the disk-reduction profile, but does not replace a current GitHub Actions run.
+No push or remote run was performed. Broad P18-V01 source/API/settings/input/
+error/control-flow/reverse-export reconciliation and current-revision remote
+Ubuntu/native Windows evidence remain open. Protected Phase 19 user changes
+remain untouched and unstaged.
