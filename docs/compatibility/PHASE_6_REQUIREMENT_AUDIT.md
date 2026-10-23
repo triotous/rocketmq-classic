@@ -4626,3 +4626,32 @@ workspace check/Clippy, the direct fixture verification, and the full offline
 Maven verify pass. Broad P18-V01 source/API/input/reverse-export reconciliation
 remains PARTIAL. The detailed run record is
 `rlogs/2026/10/23-phase-18-scheduler-shutdown-return-list__20261023T200933Z.rlog`.
+
+## P18-V01 internal producer retry-topic publication — 2026-10-23
+
+The pinned `rocketmq-all-5.5.1` tag (`2ed890cd27b047cc124638aa3c80e391dde942b8`)
+constructs `MQClientInstance.defaultMQProducer` with
+`CLIENT_INNER_PRODUCER`. `DefaultMQProducer.java` sets a 3000 ms send timeout,
+two synchronous retries, `retryAnotherBrokerWhenNotStoreOK=false`, and the
+default retry-response set `{TOPIC_NOT_EXIST, SERVICE_NOT_AVAILABLE,
+SYSTEM_ERROR, SYSTEM_BUSY, NO_PERMISSION, NO_BUYER_ID, NOT_IN_CURRENT_UNIT,
+GO_AWAY}`. `DefaultMQProducerImpl.sendDefaultImpl` spends one total timeout
+budget across route lookup and up to three synchronous send attempts, choosing
+another Broker when one is available. It retries transport/client failures and
+only that response-code set. Source SHA-256 values are recorded in the run log.
+
+Rust retry-topic fallback now uses the same default timeout and attempt count,
+skips the previous Broker when another routed Broker is available, and applies
+the pinned response-code retry rule. The response-code, queue-selection, and
+scripted third-attempt-success regressions pass. This maps the default
+`sendLatencyEnable=false` selection path. The optional Java latency-fault
+selector when `sendLatencyEnable=true` remains open in the broader setting and
+control-flow audit.
+
+`cargo test -p rocketmq-classic-consumer` passes, including 266 library tests,
+the Consumer integration suites, and 13 doctests. Strict Consumer all-target,
+all-feature Clippy and formatting pass. Java source and fixture files were not
+changed, so Maven fixture verification was not rerun. Broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL. Native Windows runtime and current-revision remote CI remain
+separate; Phase 19 Broker/Docker work is outside this slice.
