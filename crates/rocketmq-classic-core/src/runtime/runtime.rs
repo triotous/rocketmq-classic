@@ -110,6 +110,7 @@ pub struct ClientRuntime {
     pub(super) control: ControlPlane,
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
+    pub(super) task_scheduler_changed: Arc<tokio::sync::Notify>,
     pub(super) pull: Arc<super::pull::PullService>,
     manager: Mutex<Vec<ManagerLink>>,
     reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -131,6 +132,31 @@ pub struct ClientRuntime {
 }
 
 impl ClientRuntime {
+    /// Returns a Rust-native handle to the client instance's owned scheduler.
+    ///
+    /// Scheduled work shares the client runtime's serial scheduler and is
+    /// cancelled when the runtime shuts down.
+    pub fn scheduled_executor_service(self: &Arc<Self>) -> super::tasks::RuntimeScheduler {
+        super::tasks::RuntimeScheduler::new(Arc::downgrade(self))
+    }
+
+    pub(super) fn enqueue_scheduled_task(
+        self: &Arc<Self>,
+        schedule: super::tasks::UserSchedule,
+    ) -> Result<(), RuntimeError> {
+        let state = self.state();
+        if !matches!(
+            state,
+            RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
+        ) {
+            return Err(RuntimeError::InvalidState(state));
+        }
+        self.control
+            .sender(self)?
+            .send(Command::ScheduleRuntimeTask(schedule))
+            .map_err(|_| RuntimeError::ControlTaskFailed)
+    }
+
     /// Returns the shared consumer statistics manager for this client runtime.
     ///
     /// This is the Rust equivalent of
@@ -266,6 +292,7 @@ impl ClientRuntime {
             control: ControlPlane::default(),
             inbound: Arc::default(),
             rebalance,
+            task_scheduler_changed: Arc::new(tokio::sync::Notify::new()),
             pull: Arc::default(),
             manager: Mutex::new(Vec::new()),
             reply_timeout_task: tokio::sync::Mutex::new(None),

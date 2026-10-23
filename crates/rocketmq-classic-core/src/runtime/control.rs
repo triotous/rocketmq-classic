@@ -72,6 +72,7 @@ pub(super) enum Command {
         reply: oneshot::Sender<Result<(), RuntimeError>>,
     },
     StartPullScheduler,
+    ScheduleRuntimeTask(super::tasks::UserSchedule),
     Shutdown {
         reply: oneshot::Sender<Result<bool, RuntimeError>>,
     },
@@ -344,6 +345,30 @@ async fn run(
                     pull_order.push(1);
                 }
             }
+            Command::ScheduleRuntimeTask(schedule) => {
+                if matches!(
+                    state,
+                    RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
+                ) {
+                    if periodic.is_none() {
+                        periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                    }
+                    let result = periodic
+                        .as_mut()
+                        .expect("client scheduler was initialized")
+                        .register_user(schedule.clone());
+                    if result.is_ok() {
+                        periodic
+                            .as_ref()
+                            .expect("client scheduler was initialized")
+                            .activate();
+                    } else {
+                        schedule.reject();
+                    }
+                } else {
+                    schedule.reject();
+                }
+            }
             Command::RegisterProducer {
                 group,
                 handle,
@@ -451,7 +476,9 @@ async fn run(
                     runtime.control.checkpoint(2)?;
                     let config = runtime.config_snapshot();
                     let specs = super::tasks::schedules(&config)?;
-                    periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                    if periodic.is_none() {
+                        periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                    }
                     for (index, schedule) in specs.into_iter().enumerate() {
                         if let Some(tasks) = periodic.as_mut() {
                             tasks.register(schedule)?;

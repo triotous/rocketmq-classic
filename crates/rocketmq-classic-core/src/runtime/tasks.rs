@@ -1,11 +1,14 @@
-use super::{ClientRuntime, RuntimeError};
+use super::{ClientRuntime, RuntimeError, RuntimeState};
 use std::{
+    collections::BTreeMap,
     future::Future,
+    pin::Pin,
+    sync::atomic::{AtomicU8, Ordering},
     sync::{Arc, Mutex, Weak},
     task::Poll,
 };
 use tokio::{
-    sync::watch,
+    sync::{Notify, watch},
     task::JoinHandle,
     time::{Duration, Instant},
 };
@@ -45,6 +48,255 @@ pub(super) struct Schedule {
     period: Duration,
 }
 
+type UserFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+type UserTaskFactory = Arc<dyn Fn() -> UserFuture + Send + Sync + 'static>;
+
+const TASK_PENDING: u8 = 0;
+const TASK_RUNNING: u8 = 1;
+const TASK_FINISHED: u8 = 2;
+const TASK_CANCELLED: u8 = 3;
+
+/// A handle to one task accepted by a runtime's client scheduler.
+///
+/// Dropping the handle leaves the scheduled task running. Call [`cancel`](Self::cancel)
+/// to cancel it explicitly.
+#[derive(Clone)]
+pub struct RuntimeScheduledTaskHandle {
+    state: Arc<AtomicU8>,
+    cancel: Arc<Notify>,
+    changed: Arc<Notify>,
+}
+
+impl RuntimeScheduledTaskHandle {
+    /// Cancels a task that has not already finished or been cancelled.
+    pub fn cancel(&self) -> bool {
+        let mut current = self.state.load(Ordering::Acquire);
+        loop {
+            if matches!(current, TASK_FINISHED | TASK_CANCELLED) {
+                return false;
+            }
+            match self.state.compare_exchange_weak(
+                current,
+                TASK_CANCELLED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    self.cancel.notify_one();
+                    self.changed.notify_one();
+                    return true;
+                }
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    /// Returns whether the task completed or was cancelled.
+    pub fn is_finished(&self) -> bool {
+        matches!(
+            self.state.load(Ordering::Acquire),
+            TASK_FINISHED | TASK_CANCELLED
+        )
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct UserSchedule {
+    delay: Duration,
+    period: Option<Duration>,
+    fixed_rate: bool,
+    factory: UserTaskFactory,
+    state: Arc<AtomicU8>,
+    cancel: Arc<Notify>,
+    changed: Arc<Notify>,
+}
+
+impl UserSchedule {
+    fn new(
+        delay: Duration,
+        period: Option<Duration>,
+        fixed_rate: bool,
+        factory: UserTaskFactory,
+        changed: Arc<Notify>,
+    ) -> (Self, RuntimeScheduledTaskHandle) {
+        let state = Arc::new(AtomicU8::new(TASK_PENDING));
+        let cancel = Arc::new(Notify::new());
+        (
+            Self {
+                delay,
+                period,
+                fixed_rate,
+                factory,
+                state: state.clone(),
+                cancel: cancel.clone(),
+                changed: changed.clone(),
+            },
+            RuntimeScheduledTaskHandle {
+                state,
+                cancel,
+                changed,
+            },
+        )
+    }
+
+    pub(super) fn reject(&self) {
+        let mut current = self.state.load(Ordering::Acquire);
+        while matches!(current, TASK_PENDING | TASK_RUNNING) {
+            match self.state.compare_exchange_weak(
+                current,
+                TASK_FINISHED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
+        self.changed.notify_one();
+    }
+}
+
+/// Rust-native access to the single-threaded scheduler owned by `MQClientInstance`.
+///
+/// The handle schedules async work on the runtime's client scheduler, whose
+/// lifetime remains owned by `ClientRuntime`.
+pub struct RuntimeScheduler {
+    runtime: Weak<ClientRuntime>,
+}
+
+impl RuntimeScheduler {
+    pub(super) fn new(runtime: Weak<ClientRuntime>) -> Self {
+        Self { runtime }
+    }
+
+    /// Queues a task for immediate execution on the client scheduler.
+    pub fn execute(
+        &self,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> Result<RuntimeScheduledTaskHandle, RuntimeError> {
+        self.schedule_after(Duration::ZERO, task)
+    }
+
+    /// Queues a task for execution after `delay`.
+    pub fn schedule_after(
+        &self,
+        delay: Duration,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> Result<RuntimeScheduledTaskHandle, RuntimeError> {
+        let pending = Arc::new(Mutex::new(Some(Box::pin(task) as UserFuture)));
+        self.enqueue(
+            delay,
+            None,
+            true,
+            Arc::new(move || {
+                pending
+                    .lock()
+                    .expect("one-shot scheduled task future lock poisoned")
+                    .take()
+                    .expect("one-shot scheduled task future already consumed")
+            }),
+        )
+    }
+
+    /// Queues a callback at a fixed rate. Calls run serially on the client
+    /// scheduler and retain the prior-deadline catch-up behavior of Java's
+    /// `scheduleAtFixedRate`.
+    pub fn schedule_at_fixed_rate<F, Fut>(
+        &self,
+        initial_delay: Duration,
+        period: Duration,
+        callback: F,
+    ) -> Result<RuntimeScheduledTaskHandle, RuntimeError>
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        if period.is_zero() {
+            return Err(RuntimeError::InvalidSchedule);
+        }
+        let callback = Arc::new(callback);
+        self.enqueue(
+            initial_delay,
+            Some(period),
+            true,
+            Arc::new(move || Box::pin(callback())),
+        )
+    }
+
+    /// Queues a callback with a delay measured from the previous completion.
+    /// Calls run serially on the client scheduler.
+    pub fn schedule_with_fixed_delay<F, Fut>(
+        &self,
+        initial_delay: Duration,
+        delay: Duration,
+        callback: F,
+    ) -> Result<RuntimeScheduledTaskHandle, RuntimeError>
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        if delay.is_zero() {
+            return Err(RuntimeError::InvalidSchedule);
+        }
+        let callback = Arc::new(callback);
+        self.enqueue(
+            initial_delay,
+            Some(delay),
+            false,
+            Arc::new(move || Box::pin(callback())),
+        )
+    }
+
+    fn enqueue(
+        &self,
+        delay: Duration,
+        period: Option<Duration>,
+        fixed_rate: bool,
+        factory: UserTaskFactory,
+    ) -> Result<RuntimeScheduledTaskHandle, RuntimeError> {
+        let runtime = self
+            .runtime
+            .upgrade()
+            .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?;
+        let (schedule, handle) = UserSchedule::new(
+            delay,
+            period,
+            fixed_rate,
+            factory,
+            runtime.task_scheduler_changed.clone(),
+        );
+        runtime.enqueue_scheduled_task(schedule)?;
+        Ok(handle)
+    }
+}
+
+#[derive(Clone)]
+enum ScheduledJob {
+    Periodic(Schedule),
+    User(UserSchedule),
+}
+
+#[derive(Default)]
+struct SchedulerQueue {
+    jobs: BTreeMap<(Instant, u64), ScheduledJob>,
+    next_order: u64,
+}
+
+impl SchedulerQueue {
+    fn insert(&mut self, due: Instant, job: ScheduledJob) -> u64 {
+        let order = self.next_order;
+        self.next_order = self.next_order.wrapping_add(1);
+        self.jobs.insert((due, order), job);
+        order
+    }
+
+    fn remove_cancelled_users(&mut self) {
+        self.jobs.retain(|_, job| {
+            !matches!(job, ScheduledJob::User(schedule) if schedule.state.load(Ordering::Acquire) == TASK_CANCELLED)
+        });
+    }
+}
+
 pub(super) fn schedules(
     config: &crate::config::ClientConfig,
 ) -> Result<Vec<Schedule>, RuntimeError> {
@@ -81,7 +333,8 @@ pub(super) fn schedules(
 /// Java's single scheduled executor: fixed-rate deadlines, no overlapping jobs,
 /// catch-up after slow work, and one cancellation/join owner.
 pub(super) struct OwnedTasks {
-    schedules: Arc<Mutex<Vec<(Schedule, Instant)>>>,
+    schedules: Arc<Mutex<SchedulerQueue>>,
+    changed: Arc<Notify>,
     active: watch::Sender<bool>,
     cancel: watch::Sender<bool>,
     task: Option<JoinHandle<()>>,
@@ -100,8 +353,13 @@ impl OwnedTasks {
         });
         let (active, mut activation) = watch::channel(false);
         let (cancel, mut cancellation) = watch::channel(false);
-        let schedules = Arc::new(Mutex::new(Vec::new()));
+        let schedules = Arc::new(Mutex::new(SchedulerQueue::default()));
+        let changed = runtime
+            .upgrade()
+            .map(|runtime| runtime.task_scheduler_changed.clone())
+            .unwrap_or_else(|| Arc::new(Notify::new()));
         let worker_schedules = schedules.clone();
+        let worker_changed = changed.clone();
         let task = tokio::spawn(async move {
             #[cfg(test)]
             let _live = live;
@@ -112,49 +370,162 @@ impl OwnedTasks {
                 _ = cancellation.changed() => return,
                 _ = activation.changed() => {},
             }
-            let mut jobs: Vec<(Schedule, Instant)> = match worker_schedules.lock() {
-                Ok(value) => value.clone(),
-                Err(_) => return,
-            };
-            while !jobs.is_empty() {
-                let index = jobs
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(index, (_, due))| (*due, *index))
-                    .map(|(index, _)| index)
-                    .unwrap_or(0);
-                let (schedule, due) = jobs[index];
+            loop {
+                let next = match worker_schedules.lock() {
+                    Ok(mut queue) => {
+                        queue.remove_cancelled_users();
+                        queue.jobs.first_key_value().map(|(key, _)| key.0)
+                    }
+                    Err(_) => return,
+                };
+                let Some(due) = next else {
+                    tokio::select! { biased;
+                        _ = cancellation.changed() => return,
+                        _ = worker_changed.notified() => continue,
+                        _ = rebalance.scheduled.notified() => {
+                            rebalance.fire_due();
+                            continue;
+                        },
+                    }
+                };
                 let wake_due = rebalance.next_due().filter(|wake| *wake < due);
-                let next = wake_due.unwrap_or(due);
+                let next_wake = wake_due.unwrap_or(due);
                 tokio::select! { biased;
                     _ = cancellation.changed() => return,
-                    _ = rebalance.scheduled.notified() => continue,
-                    _ = tokio::time::sleep_until(next) => {},
+                    _ = worker_changed.notified() => continue,
+                    _ = rebalance.scheduled.notified() => {
+                        rebalance.fire_due();
+                        continue;
+                    },
+                    _ = tokio::time::sleep_until(next_wake) => {},
                 }
                 if wake_due.is_some() {
                     rebalance.fire_due();
                     continue;
                 }
+                let (key, job) = match worker_schedules.lock() {
+                    Ok(mut queue) => {
+                        queue.remove_cancelled_users();
+                        if queue
+                            .jobs
+                            .first_key_value()
+                            .is_some_and(|(key, _)| key.0 <= Instant::now())
+                        {
+                            queue
+                                .jobs
+                                .pop_first()
+                                .expect("first scheduled job was checked")
+                        } else {
+                            continue;
+                        }
+                    }
+                    Err(_) => return,
+                };
                 let Some(runtime) = runtime.upgrade() else {
                     return;
                 };
-                let mut operation = Box::pin(runtime.run_periodic(schedule.kind));
-                let caught = std::future::poll_fn(|context| {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        operation.as_mut().poll(context)
-                    }))
-                    .unwrap_or(Poll::Ready(Err(RuntimeError::TaskCallbackFailed)))
-                });
-                tokio::select! { biased;
-                    _ = cancellation.changed() => return,
-                    _ = caught => {},
+                match job {
+                    ScheduledJob::Periodic(schedule) => {
+                        let mut operation = Box::pin(runtime.run_periodic(schedule.kind));
+                        let caught = std::future::poll_fn(|context| {
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                operation.as_mut().poll(context)
+                            }))
+                            .unwrap_or(Poll::Ready(Err(RuntimeError::TaskCallbackFailed)))
+                        });
+                        tokio::select! { biased;
+                            _ = cancellation.changed() => return,
+                            _ = caught => {},
+                        }
+                        if let Ok(mut queue) = worker_schedules.lock() {
+                            queue.jobs.insert(
+                                ((key.0 + schedule.period), key.1),
+                                ScheduledJob::Periodic(schedule),
+                            );
+                        } else {
+                            return;
+                        }
+                    }
+                    ScheduledJob::User(schedule) => {
+                        if schedule
+                            .state
+                            .compare_exchange(
+                                TASK_PENDING,
+                                TASK_RUNNING,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            )
+                            .is_err()
+                        {
+                            continue;
+                        }
+                        let mut operation =
+                            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                (schedule.factory)()
+                            })) {
+                                Ok(operation) => operation,
+                                Err(_) => {
+                                    schedule.state.store(TASK_FINISHED, Ordering::Release);
+                                    schedule.changed.notify_one();
+                                    continue;
+                                }
+                            };
+                        let caught = std::future::poll_fn(|context| {
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                operation.as_mut().poll(context)
+                            }))
+                            .unwrap_or(Poll::Ready(()))
+                        });
+                        tokio::select! { biased;
+                            _ = cancellation.changed() => {
+                                schedule.reject();
+                                return;
+                            },
+                            _ = schedule.cancel.notified() => {},
+                            _ = caught => {},
+                        }
+                        let next_state = if schedule.period.is_some() {
+                            TASK_PENDING
+                        } else {
+                            TASK_FINISHED
+                        };
+                        if schedule
+                            .state
+                            .compare_exchange(
+                                TASK_RUNNING,
+                                next_state,
+                                Ordering::AcqRel,
+                                Ordering::Acquire,
+                            )
+                            .is_ok()
+                        {
+                            if let Some(period) = schedule.period {
+                                if let Ok(mut queue) = worker_schedules.lock() {
+                                    let next_due = if schedule.fixed_rate {
+                                        key.0 + period
+                                    } else {
+                                        Instant::now() + period
+                                    };
+                                    queue
+                                        .jobs
+                                        .insert((next_due, key.1), ScheduledJob::User(schedule));
+                                    worker_changed.notify_one();
+                                } else {
+                                    return;
+                                }
+                            } else {
+                                schedule.changed.notify_one();
+                            }
+                        } else {
+                            schedule.changed.notify_one();
+                        }
+                    }
                 }
-                // Fixed rate is anchored to the prior deadline, never to completion.
-                jobs[index].1 += schedule.period;
             }
         });
         Self {
             schedules,
+            changed,
             active,
             cancel,
             task: Some(task),
@@ -165,7 +536,21 @@ impl OwnedTasks {
         self.schedules
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?
-            .push((schedule, Instant::now() + schedule.delay));
+            .insert(
+                Instant::now() + schedule.delay,
+                ScheduledJob::Periodic(schedule),
+            );
+        self.changed.notify_one();
+        Ok(())
+    }
+
+    pub fn register_user(&mut self, schedule: UserSchedule) -> Result<(), RuntimeError> {
+        let due = Instant::now() + schedule.delay;
+        self.schedules
+            .lock()
+            .map_err(|_| RuntimeError::RegistryPoisoned)?
+            .insert(due, ScheduledJob::User(schedule));
+        self.changed.notify_one();
         Ok(())
     }
 
@@ -177,6 +562,13 @@ impl OwnedTasks {
         self.cancel.send_replace(true);
         if let Some(task) = self.task.take() {
             let _ = task.await;
+        }
+        if let Ok(mut queue) = self.schedules.lock() {
+            for (_, job) in std::mem::take(&mut queue.jobs) {
+                if let ScheduledJob::User(schedule) = job {
+                    schedule.reject();
+                }
+            }
         }
     }
 }
@@ -327,6 +719,71 @@ mod tests {
     async fn advance(milliseconds: u64) {
         tokio::time::advance(Duration::from_millis(milliseconds)).await;
         settle().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn public_client_scheduler_runs_before_start_and_cancels_fixed_rate_tasks() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
+        let one_shot = scheduler
+            .schedule_after(Duration::from_secs(1), async move {
+                let _ = completed_tx.send(());
+            })
+            .unwrap();
+
+        settle().await;
+        advance(999).await;
+        assert!(!one_shot.is_finished());
+        advance(1).await;
+        completed_rx.await.unwrap();
+        settle().await;
+        assert!(one_shot.is_finished());
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = calls.clone();
+        let repeating = scheduler
+            .schedule_at_fixed_rate(Duration::ZERO, Duration::from_secs(1), move || {
+                let callback_calls = callback_calls.clone();
+                async move {
+                    callback_calls.fetch_add(1, Ordering::SeqCst);
+                }
+            })
+            .unwrap();
+        settle().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(repeating.cancel());
+        settle().await;
+        advance(5_000).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(repeating.is_finished());
+
+        let delayed_calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = delayed_calls.clone();
+        let fixed_delay = scheduler
+            .schedule_with_fixed_delay(Duration::from_secs(2), Duration::from_secs(2), move || {
+                let callback_calls = callback_calls.clone();
+                async move {
+                    callback_calls.fetch_add(1, Ordering::SeqCst);
+                }
+            })
+            .unwrap();
+        settle().await;
+        advance(2_000).await;
+        assert_eq!(delayed_calls.load(Ordering::SeqCst), 1);
+        advance(1_999).await;
+        assert_eq!(delayed_calls.load(Ordering::SeqCst), 1);
+        advance(1).await;
+        assert_eq!(delayed_calls.load(Ordering::SeqCst), 2);
+        assert!(fixed_delay.cancel());
+
+        assert!(matches!(
+            scheduler.schedule_with_fixed_delay(Duration::ZERO, Duration::ZERO, || async {}),
+            Err(RuntimeError::InvalidSchedule)
+        ));
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
     }
 
     fn tasks(runtime: &Arc<ClientRuntime>) -> OwnedTasks {
