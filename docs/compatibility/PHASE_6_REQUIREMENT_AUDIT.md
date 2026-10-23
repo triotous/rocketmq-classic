@@ -1052,9 +1052,9 @@ Heartbeat nullable Set member update: actual Fastjson retains one null in produc
 
 Static mapping map input probe: six actual Java `currIdMap` cases reject null/malformed entries and accept signed i32 boundary keys/values. Native BTreeMap decoding matches all accepted/rejected outcomes, though Rust parse errors do not expose the same Java exception classes. `static_mapping_map_entry_inputs_match_invoked_java_acceptance` verifies them; route fixture SHA-256 `962d63f6f615b552410a5717298cd2f8e10e67be3e26ad897633ce231db6020e`. This closes only these inputs; Phase 6 source/API reconciliation remains open.
 
-`BrokerData.selectBrokerAddr`, nullable nested route DTOs, the direct `TopicRouteData.topicRouteDataChanged` counterpart, and copy-constructor null defaults are covered by pinned Java fixtures. Ten actual selection cases exercise master-first, random fallback, null-address, null-map, and empty-map outcomes; the Rust DTO method matches allowed outputs and typed error branches. Native route values preserve null list elements and null nested lists/map values; cache refresh rejects null queue, broker, and static mapping values before publication while retaining accepted null filter lists. `java_topic_route_data_changed` matches 11 actual Java outcomes, including `old == null`, single null entries, and multi-entry sort-time `NullPointerException` cases; route publication, route comparison, and `RouteCache` use the shared `java_copy_constructed` normalization. Current route fixture SHA-256 `7c5f6b1c09937d21a63252e9c1359485ebde19b68284f63de1215781185ad6db`; focused protocol and core regressions pass. The shallow-clone nested identity difference is a documented owned-value adaptation; full Phase 6 API/input reconciliation remains open; P6-V04 remains PENDING_PHASE_19.
+`BrokerData.selectBrokerAddr`, nullable nested route DTOs, the direct `TopicRouteData.topicRouteDataChanged` counterpart, and copy-constructor null defaults are covered by pinned Java fixtures. Ten actual selection cases exercise master-first, random fallback, null-address, null-map, and empty-map outcomes; the Rust DTO method matches allowed outputs and typed error branches. Native route values preserve null list elements and null nested lists/map values; cache refresh rejects null queue, broker, and static mapping values before publication while retaining accepted null filter lists. `java_topic_route_data_changed` matches 11 actual Java outcomes, including `old == null`, single null entries, and multi-entry sort-time `NullPointerException` cases; route publication, route comparison, and `RouteCache` use the shared `java_copy_constructed` normalization. Current route fixture SHA-256 `7c5f6b1c09937d21a63252e9c1359485ebde19b68284f63de1215781185ad6db`; focused protocol and core regressions pass. The earlier shallow-clone nested-identity caveat is superseded by the later shared-handle implementation and oracle differential recorded below. Full Phase 6 API/input reconciliation remains open; P6-V04 remains PENDING_PHASE_19.
 
-TopicRouteData clone helper update: eight actual Java cases exercise copy/clone/deep-clone field values and null failures. Native `clone_topic_route_data` and `deep_clone_topic_route_data` pass those outcomes using owned values; live route-table identity remains shared through `TopicRouteDataHandle`. The Java fixture records that the shallow helper preserves nested object identity, which the owned DTO model does not reproduce as nested handles. Current route fixture SHA-256 `08038bfb606aaa057869cb3e41256a410ec03d8c4f85003aa32055be69ea21a2`; focused protocol test passes. This closes helper value/error mapping; whole-phase API/input reconciliation remains open; P6-V04 remains PENDING_PHASE_19.
+TopicRouteData clone helper update: eight actual Java cases exercise copy/clone/deep-clone field values and null failures. Native `clone_topic_route_data` and `deep_clone_topic_route_data` pass those outcomes; live route-table identity remains shared through `TopicRouteDataHandle`. The shallow helper's nested-object identity is checked by the fixture alias map; the later shared-handle correction below closes that identity slice. Current route fixture SHA-256 at this update `08038bfb606aaa057869cb3e41256a410ec03d8c4f85003aa32055be69ea21a2`; focused protocol test passes. Whole-phase API/input reconciliation remains open; P6-V04 remains PENDING_PHASE_19.
 
 Route DTO text update `07e62e8`/`449e97e`/`1d6f799`: actual Java fixtures capture two `BrokerData.toString` and three `TopicRouteData.toString` cases, and native `java_to_string` matches nested DTO/list/map text. Rust emits maps by deterministic key order because Java map iteration order is unspecified. Route fixture SHA-256 `d26481b826d4323e5e1f017108de2772051b0caf968257642a101a4f48537fef`; full workspace/all-target tests, strict all-target/all-feature Clippy, pinned Maven verify, comparator/manifest22, fmt and diff pass. Additional DTO/input combinations and full Phase 6 source/API/input reconciliation remain open; P6-V04 remains PENDING_PHASE_19.
 
@@ -4464,3 +4464,21 @@ checks pass. Java oracle source and fixtures did not change, so Maven fixture
 verification was not rerun. This closes the recorded offset-table alias gap;
 broad P18-V01 source/API/settings/input/error/control-flow reconciliation
 remains PARTIAL, and P6-V04 remains `PENDING_PHASE_19`.
+
+TopicRouteData shallow-clone alias correction (2026-10-23): the pinned Java
+5.5.1 copy constructor and `cloneTopicRouteData` allocate new outer lists/maps
+and retain nested DTO/list references through `addAll`/`putAll`;
+`deepCloneTopicRouteData` creates distinct nested values. Rust's shared route
+DTOs match those identities: `java_copy_constructed` and
+`clone_topic_route_data` create new outer containers while retaining nested
+`QueueData`, `BrokerData`, filter-list, and mapping-value handles; the deep
+clone creates distinct handles. The invoked Java fixture compares those
+references, and
+`topic_route_data_copy_and_clone_methods_match_invoked_java_values_and_failures`
+checks the same alias flags with `SharedValue::ptr_eq`. Implementation commits
+`45b8a5fc` and `8b69c09e` provide the shared-handle behavior and differential.
+The focused Protocol test passes on the current tree. Current
+`fixtures/runtime/route.json` SHA-256:
+`0fcad65ecc00a9c55657113ed494d0d818621f5dcd4fa11e5da87e49c61d9470`.
+This closes the stale documented clone-identity caveat only; broad P18-V01
+reconciliation remains PARTIAL.
