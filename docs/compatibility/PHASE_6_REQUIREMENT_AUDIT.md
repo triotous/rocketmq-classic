@@ -30,6 +30,10 @@ Follow-up revision `90f9e2d1` maps `cleanExpiredMsg(null)` to a typed
 fixture, Rust expiry comparison, strict Consumer Clippy, and formatting/diff
 checks pass.
 
+Follow-up revision `e8a4811f` adds the `putMessage(null)` adapter. Its focused
+facade comparison, pinned Java facade fixture verification, strict Consumer
+Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3439,3 +3443,17 @@ The focused Consumer facade test, strict Consumer Clippy, formatting/diff
 checks, and targeted pinned Java facade fixture verification pass. This closes
 the null-info input branch only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `putMessage` list — 2026-10-23
+
+Pinned Java throws `NullPointerException` when the enhanced-for loop begins on
+a null list; no queue entries or counters have changed at that point. Rust adds
+`put_message_nullable(None)` and returns the matching typed error before
+mutation. The invoked Java fixture and Rust facade comparison check the
+exception class, empty tree, count, and size. Fixture SHA-256:
+`be3d3a818e11a39838b83bafed81ec0f67bec266c200a5d13af374a69af91bb4`.
+
+The focused ProcessQueue facade test, targeted pinned Java facade fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-list input branch only; broad P18-V01 source/API/settings/input/
+error/control-flow and reverse-export reconciliation remains PARTIAL.

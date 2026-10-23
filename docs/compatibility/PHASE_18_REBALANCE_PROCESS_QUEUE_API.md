@@ -23,7 +23,7 @@ declared method counts and callable method counts in
 | `RebalanceImpl.lock`, `unlock`, `lockAll`, `unlockAll` | Push and Pull owners expose direct single/all queue lock operations. Push uses the same orderly lock transport and state application as assignment; Pull uses the shared runtime consumer RPC. | Push order-lock regression and owner-surface tests pass; Pull methods preserve Java's broker batching and one-way unlock option. |
 | `RebalanceImpl` subscription/model/group/strategy accessors and factory getter/setter; `RebalancePushImpl.getConsumeInitMode` | Push/Pull owner settings and tables map to their runtime state; Pull model and strategy setters update the shared registration and wake rebalance. `get_client_runtime` and `set_client_runtime` expose the nullable rebalance-factory reference while owner registration and lifecycle remain managed by `ClientRuntimeManager`. Pinned direct fixtures check Push/Pull group/model/strategy values; Push also checks consume type and init mode. | Direct settings and mapped runtime identity are checked; Push/Pull setter tests cover runtime replacement and explicit null. |
 | `getSubscriptionInner`, `getTopicSubscribeInfoTable`, `getProcessQueueTable`, `getPopProcessQueueTable`, `createProcessQueue`, `createPopProcessQueue` | Push and Pull owners expose live subscription/topic/process-queue tables and queue factories. Push creates both queue types. Pull creates ProcessQueue and returns no POP queue, matching Java; assignment reconciliation updates its process table. | Table identity and direct factory behavior are checked with the pinned fixture and Rust tests. |
-| `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Public `ProcessQueue` operations map to retained queue state and in-flight batches. `getMsgTreeMap()` returns a lock-backed live view whose edits preserve Java's separate count/size counters; `getMsgCount()` and `getMsgSize()` return mutable, linearizable AtomicLong-style handles. | Direct behavior and tree/counter mutation are compared with the pinned Java fixture. |
+| `ProcessQueue.putMessage`, `takeMessages`, `removeMessage`, `commit`, `rollback`, `makeMessageToConsumeAgain`, `clear` | Public `ProcessQueue` operations map to retained queue state and in-flight batches. `put_message_nullable(None)` maps Java's null-list `NullPointerException` before queue mutation. `getMsgTreeMap()` returns a lock-backed live view whose edits preserve Java's separate count/size counters; `getMsgCount()` and `getMsgSize()` return mutable, linearizable AtomicLong-style handles. | Direct behavior, null-list failure, and tree/counter mutation are compared with the pinned Java fixture. |
 | `ProcessQueue.isPullExpired`, `cleanExpiredMsg` | Public direct expiry methods use the pinned Java pull-idle property and async Broker send-back adapter. `clean_expired_msg_nullable(None)` maps Java's immediate `NullPointerException` before the expiry scan. The ProcessQueue timeout is captured once when its Rust class-equivalent cache is first used; POP keeps its independent cache, matching Java's two static fields. The runtime concurrent consume service records `CONSUME_START_TIME` and runs its owned expiry sweep. It checks the oldest message, retries send-back at delay level 3 up to the bounded queue attempt count, removes only after successful send-back, and skips orderly consume. Missing/empty timestamps skip cleanup; Java Unicode decimal digits parse; orderly mode returns before parsing; malformed non-empty values return `ExpiredMessageCleanupError` before send-back, and the scheduled owner logs the error. Java direct fixtures and Rust tests cover these cases, repeated send-back failure, retry cap, strict timeout boundary, cache lifetime, in-flight completion and initial timer delay. | UNIT_VERIFIED for the direct methods and runtime expiry flow. |
 | `ProcessQueue` message tree/count/size/consume-lock/timestamp/info getters and setters; `containsMessage` | Public locked tree view, mutable counter handles, async read/write consume gate, timestamp/settings accessors and `ConsumerProcessQueueInfo` fill method. `contains_message_nullable(None)` preserves Java's explicit null guard and returns false; `fill_process_queue_info_nullable(None)` preserves Java's swallowed null-info exception as a no-op. | Direct getter/setter behavior, info values, and null-input results are compared with the pinned Java fixture. |
 | `PopProcessQueue` timestamp, dropped state, ACK counter and queue-info methods | Public atomic state, Java signed `decFoundMsg(int)` semantics, `ack`, `isPullExpired`, queue-info fill and `toString`; Push exposes the live POP table. Phase 13 assignment tests cover runtime flow. | Public type and direct method behavior implemented; fixture SHA is recorded below. |
@@ -164,6 +164,15 @@ corresponding typed cleanup error before starting the scan. The Java expiry
 fixture and Rust cleanup comparison check the exception class. Fixture
 SHA-256: `2934eb15b2fb599bd6309fd8d8dc394ad0deef817060bc3883373da0942ce40c`.
 
+### Null `putMessage` list
+
+Pinned Java throws `NullPointerException` while beginning its enhanced-for
+loop over a null message list, leaving map, count, and size unchanged. Rust
+adds `put_message_nullable(None)` and returns the Java exception class without
+mutating queue state. The invoked facade fixture and Rust comparison check the
+error and unchanged queue snapshot. Fixture SHA-256:
+`be3d3a818e11a39838b83bafed81ec0f67bec266c200a5d13af374a69af91bb4`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -294,6 +303,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `57e2890ebeace93ecf00e2509e2bf7557c28f681ad19141f81430fecfe57ddf3`
+  `be3d3a818e11a39838b83bafed81ec0f67bec266c200a5d13af374a69af91bb4`
 - `fixtures/consumer/expired-messages.json` —
   `2934eb15b2fb599bd6309fd8d8dc394ad0deef817060bc3883373da0942ce40c`
