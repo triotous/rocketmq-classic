@@ -339,3 +339,14 @@ reconciliation remains PARTIAL. Current-revision GitHub Ubuntu and native
 Windows evidence, plus Phase 19 Broker/Docker validation, remain open. No
 push, remote CI, Broker, or Docker action was performed. Protected Phase 19
 worktree files remain untouched and unstaged.
+
+## P18-V04 current-revision Windows GNU compile — 2026-10-23T08:10:08Z
+
+On implementation revision `838286ca`,
+`cargo check --offline --workspace --all-targets --all-features --target
+x86_64-pc-windows-gnu --locked` passed, including Core, Consumer, Producer,
+Remoting, facade, and integration targets. This is compile-only evidence; it
+does not execute tests on Windows or establish a current GitHub Actions result.
+Native Windows runtime and current-revision remote Ubuntu evidence remain open.
+Broad P18-V01 remains PARTIAL. No push or remote CI was performed; protected
+Phase 19 worktree files remain untouched and unstaged.

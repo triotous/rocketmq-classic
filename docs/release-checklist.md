@@ -8357,3 +8357,13 @@ owner-specific checks belong in the manual handoff.
   Broker/Docker validation remain open. No push or remote CI was run. Phase 19
   user-owned worktree files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V04 current-revision Windows GNU compile — 2026-10-23 (`838286ca`)
+
+- [x] `cargo check --offline --workspace --all-targets --all-features
+  --target x86_64-pc-windows-gnu --locked` passed on the command-version
+  implementation revision.
+- [ ] This is a cross-compile only. Native Windows execution and
+  current-revision remote Ubuntu CI remain open, as does broad P18-V01. No
+  push or remote CI was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
