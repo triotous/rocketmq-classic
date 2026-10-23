@@ -8725,3 +8725,19 @@ owner-specific checks belong in the manual handoff.
   work remains outside scope. No push or remote CI was run. The four existing
   user-owned Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-factory-null-scheduler__20261023T123306Z.rlog`.
+
+## P18-V01 runtime NameServer provider export crosswalk — 2026-10-23
+
+- [x] Added the exact `ClientRuntimeManager::with_top_addressing` mapping to
+  Java's `TopAddressing` ServiceLoader extension and distinguished the
+  manager's injected capability from the now-private factory test seam.
+- [x] Reviewed the Rust public declaration, the Java `DefaultTopAddressing`
+  provider-loading path, the existing manager/provider tests, and the refreshed
+  all-feature Rustdoc JSON inventory. `git diff --check` passed; no runtime
+  code or tests changed.
+- [ ] This closes one API-map omission only. Broad P18-V01 remains open;
+  native Windows execution and current-revision remote Ubuntu CI remain
+  pending. Phase 19 Broker/Docker validation remains outside scope. No push or
+  remote CI was run; the four existing user-owned Phase 19 paths remain
+  untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-manager-addressing-export-crosswalk__20261023T132628Z.rlog`.

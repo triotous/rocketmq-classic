@@ -4176,3 +4176,20 @@ still null. Rust already returns `NegativeClientCount` before publishing its
 shared array. The invoked Java fixture and Core test now compare that failure
 boundary and retained null state. This closes the negative-count start branch
 only; broad P18-V01 reconciliation remains PARTIAL.
+
+## P18-V01 runtime NameServer provider export crosswalk — 2026-10-23
+
+The current Rustdoc export inventory contains a public
+`ClientRuntimeManager::with_top_addressing` method. The prior API-map note
+described the factory's same-named provider seam after it became private, but
+did not give the runtime-manager method its own exact crosswalk entry. The
+manager method maps the Java `TopAddressing` ServiceLoader extension: pinned
+`DefaultTopAddressing` loads the first provider and uses it for discovery and
+callback registration. Rust accepts that capability explicitly per manager,
+and cloned managers retain it; the direct `MQClientApiFactory` test hook stays
+private and remains a separate surface.
+
+The API map now distinguishes and records both surfaces. This corrects one
+reverse-export documentation omission; it does not identify a new runtime
+behavior or close the broad P18-V01 source/API/settings/input/error/control-
+flow audit.
