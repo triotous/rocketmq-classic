@@ -356,6 +356,32 @@ explicit representation.
 `every_pinned_java_process_queue_method_has_owner_mapping_or_disposition`
 checks the fixture denominator, each Java method name, and its Rust mapping.
 
+## Rust ProcessQueue public support-surface reverse audit
+
+`ProcessQueue::new()` maps the Java no-argument constructor. The nullable
+adapters `contains_message_nullable`, `put_message_nullable`,
+`put_message_items_nullable`, `remove_message_nullable`,
+`remove_message_items_nullable`, `make_message_to_consume_again_nullable`,
+`make_message_to_consume_again_items_nullable`,
+`fill_process_queue_info_nullable`, and `clean_expired_msg_nullable` expose
+Java reference-null inputs through Rust's `Option` arguments.
+
+`ProcessQueueAtomicLong` maps the live Java count/size `AtomicLong` handles and
+their `get`, `set`, `get_and_add`, `add_and_get`, `get_and_set`,
+`increment_and_get`, `get_and_increment`, `decrement_and_get`,
+`get_and_decrement`, and `compare_and_set` operations.
+`ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, and
+`ProcessQueueMessageTreeWriteGuard` provide a lock-backed Rust view of Java's
+live `TreeMap`; writes reconcile ready entries while preserving the independent
+count and byte counters. `ProcessQueueError` and
+`ExpiredMessageCleanupError` represent Java exception outcomes as Rust
+`Result` values. The stale-generation, dropped-queue, and batch-ownership
+variants report Rust assignment and in-flight fencing states.
+
+`every_process_queue_rust_only_surface_has_java_disposition` checks the
+constructor, nullable adapters, public helper types, counter methods, and tree
+read/write methods against this reverse audit.
+
 ## Internal implementation adaptation
 
 The Java raw Push/Pull implementation accessors return a `RebalanceImpl`

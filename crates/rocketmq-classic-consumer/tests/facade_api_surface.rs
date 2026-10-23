@@ -708,6 +708,78 @@ fn every_pinned_java_process_queue_method_has_owner_mapping_or_disposition() {
 }
 
 #[test]
+fn every_process_queue_rust_only_surface_has_java_disposition() {
+    let crosswalk =
+        include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
+    let process_queue_source = include_str!("../src/process_queue.rs");
+    let adapters = [
+        "new",
+        "contains_message_nullable",
+        "put_message_nullable",
+        "put_message_items_nullable",
+        "remove_message_nullable",
+        "remove_message_items_nullable",
+        "make_message_to_consume_again_nullable",
+        "make_message_to_consume_again_items_nullable",
+        "fill_process_queue_info_nullable",
+        "clean_expired_msg_nullable",
+    ];
+    for adapter in adapters {
+        assert!(
+            process_queue_source.contains(&format!("fn {adapter}(")),
+            "Rust ProcessQueue source contains {adapter}"
+        );
+        assert!(
+            crosswalk.contains(adapter),
+            "the reverse audit gives {adapter} a Java disposition"
+        );
+    }
+
+    let support_types = [
+        "ProcessQueueAtomicLong",
+        "ProcessQueueMessageTreeMap",
+        "ProcessQueueMessageTreeReadGuard",
+        "ProcessQueueMessageTreeWriteGuard",
+        "ProcessQueueError",
+        "ExpiredMessageCleanupError",
+    ];
+    for support_type in support_types {
+        assert!(
+            process_queue_source.contains(support_type),
+            "Rust ProcessQueue source contains {support_type}"
+        );
+        assert!(
+            crosswalk.contains(support_type),
+            "the reverse audit maps {support_type}"
+        );
+    }
+
+    for method in [
+        "get",
+        "set",
+        "get_and_add",
+        "add_and_get",
+        "get_and_set",
+        "increment_and_get",
+        "get_and_increment",
+        "decrement_and_get",
+        "get_and_decrement",
+        "compare_and_set",
+        "read",
+        "write",
+    ] {
+        assert!(
+            process_queue_source.contains(&format!("fn {method}(")),
+            "Rust ProcessQueue support source contains {method}"
+        );
+        assert!(
+            crosswalk.contains(method),
+            "the reverse audit gives support method {method} a Java disposition"
+        );
+    }
+}
+
+#[test]
 fn process_queue_public_methods_match_pinned_java_behavior() {
     let fixture: Value = serde_json::from_str(JAVA_FACADE_API).expect("valid Java API fixture");
     let expected = &fixture["implementationBehaviors"]["processQueue"];

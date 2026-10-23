@@ -1816,6 +1816,16 @@ remains `29cc00f7cf9b8194f08007a12c5e75f0499a5601c140a78855b14cb244bef771`.
 This closes the `ProcessQueue` declared-method crosswalk slice only; P18-V01
 remains open.
 
+## ProcessQueue Rust public support-surface reverse audit — 2026-10-23
+
+The ProcessQueue audit now records the Rust constructor, nullable-input
+adapters, AtomicLong-style handles, lock-backed live-tree view and guards, and
+typed result/error wrappers against their Java counterparts or lifecycle
+dispositions. `every_process_queue_rust_only_surface_has_java_disposition`
+checks each listed Rust-only surface against the owner source and audit table.
+This closes the ProcessQueue reverse-support-surface slice only; P18-V01
+remains open.
+
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
 The pinned `getClusterList(String,long)` implementation ignores both inputs,

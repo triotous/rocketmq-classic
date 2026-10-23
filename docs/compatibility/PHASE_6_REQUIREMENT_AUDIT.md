@@ -3583,3 +3583,19 @@ The focused crosswalk regression and formatting/diff checks pass. This closes
 the `ProcessQueue` method-inventory slice only; broad P18-V01 source/API/
 settings/input/error/control-flow and reverse-export reconciliation remains
 PARTIAL.
+
+## P18-V01 ProcessQueue Rust public support-surface reverse audit — 2026-10-23
+
+The Rust ProcessQueue constructor, nullable adapters, AtomicLong-style
+counter handle, lock-backed tree view and guards, and typed error wrappers now
+have documented Java mappings or lifecycle dispositions. The focused reverse
+audit regression checks each listed helper surface against the public owner
+source and compatibility table.
+
+At revision `533d9713`, the focused Java-to-Rust method crosswalk, strict
+workspace Clippy, formatting/diff checks, default and all-feature workspace
+suites, and full offline Maven `verify` pass. The new reverse-support-surface
+regression and strict Consumer Clippy also pass. This closes the ProcessQueue
+reverse-support-surface slice only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL.
