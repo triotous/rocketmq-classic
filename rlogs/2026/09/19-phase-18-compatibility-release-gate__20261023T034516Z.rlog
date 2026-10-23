@@ -231,3 +231,41 @@ reconciliation remains PARTIAL. Remote Ubuntu CI, native Windows runtime, and
 Phase 19 Broker/Docker validation remain open. No external CI, push, Broker,
 or Docker action was performed; protected Phase 19 paths remain unchanged and
 unstaged.
+
+## Windows stack alignment and CI disk usage — 2026-10-23T06:54:16Z
+
+Remote GitHub run `39730752050` at `662d98c5` showed the native Windows
+stack-capture regression failing: `jstack-worker` was listed but its next line
+was `<native stack unavailable>`. The windows-sys `CONTEXT` layout lacks the
+16-byte native alignment needed by Windows x64 `GetThreadContext`; see the
+Microsoft Windows SDK alignment requirement in the
+[GetThreadContext documentation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadcontext)
+and the upstream [windows-rs metadata issue](https://github.com/microsoft/win32metadata/issues/1477).
+Commit `f375e3f0` wraps the context in `#[repr(C, align(16))]` storage on both
+x64 and ARM64 before capture and unwinding. Native macOS stack regression:
+1 passed. Full Windows GNU workspace check across all targets and features:
+passed. A focused ARM64/MSVC compile of the context and unwind calls passed.
+The full ARM64/MSVC workspace check is unavailable on this Mac because the
+Windows ARM64 C toolchain and standard headers required by aws-lc-sys and
+zstd-sys are absent.
+
+The same remote Ubuntu run failed while linking the Remoting security target
+with `No space left on device` after Clippy and workspace tests had produced
+large debug artifacts. Commit `7a4f132e` sets Cargo dev/test debug information
+to zero and disables incremental compilation in the Ubuntu CI job. With the
+reduced test profile, all seven Remoting security integration tests passed
+locally. The amended GitHub job was not run or pushed.
+
+Before these Windows-only and workflow commits, Linux ARM64 revision
+`73721ae5` passed the server-free refresh: formatting, strict all-target/all-
+feature Clippy, default and all-feature workspace tests, the Asia/Taipei unique
+ID fixture, differential self-test and 37-scenario manifest, fuzz smoke (163
+frame seeds, 11 message seeds, 2,784 bounded mutations, 245 frame decodes,
+192 message decodes), 17 deterministic race/leak cases × 3, release examples,
+benchmark compilation, and workspace metadata. After `f375e3f0`, the focused
+native macOS stack regression and full Windows GNU cross-check passed.
+
+No external CI run or push was performed. Current-revision GitHub
+Ubuntu/Windows evidence and broad P18-V01 bidirectional source/API/settings/
+input/error/control-flow/reverse-export reconciliation remain open. The
+protected Phase 19 user changes were not staged or modified.

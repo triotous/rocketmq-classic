@@ -8287,3 +8287,30 @@ owner-specific checks belong in the manual handoff.
   No external CI or push was run. Protected Phase 19 worktree files remain
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V04 Windows stack alignment and CI artifact budget — 2026-10-23 (`f375e3f0`, `7a4f132e`)
+
+- [x] Remote run `39730752050` exposed that the named Windows worker thread
+  was enumerated but its native stack was unavailable. Both supported Windows
+  stack-capture paths now pass a 16-byte-aligned `CONTEXT` to
+  `GetThreadContext`. The focused macOS stack regression passes; the complete
+  Windows GNU workspace cross-check passes for all targets and features. A
+  focused ARM64/MSVC compile of the context and unwind calls passes. A full
+  ARM64/MSVC workspace check cannot run on this host because its Windows C
+  toolchain and headers are absent.
+- [x] The Ubuntu CI job disables debug information for dev/test profiles and
+  incremental compilation. With the reduced test profile, all seven Remoting
+  security integration tests pass. The Windows GNU and security commands are
+  local checks; the updated GitHub workflow has not been rerun.
+- [x] Linux ARM64 server-free refresh on `73721ae5` passed formatting,
+  all-target/all-feature Clippy, default and all-feature workspace tests,
+  differential self-test and manifest validation, fuzz and race/leak smokes,
+  release example build, benchmark compilation, and metadata checks. The
+  Windows-only source fix then passed its focused Linux regression and Windows
+  GNU cross-check.
+- [ ] Current-revision GitHub Ubuntu/Windows results and P18-V04 remain open.
+  Broad P18-V01 bidirectional Java/Rust source/API/settings/input/error/flow
+  and reverse-export reconciliation also remains open. Phase 19 Docker/Broker
+  work and protected user changes are out of scope and were left untouched.
+  No external CI run or push was performed. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
