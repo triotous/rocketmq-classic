@@ -2531,24 +2531,26 @@ This closes the reverse-name disposition for these 22 items only. The full
 P18-V01 Java source/API/settings/input/error/control-flow and Rust
 reverse-export reconciliation remains open.
 
-## P18-V01 `MQClientAPIImpl` tooling-only methods — 2026-10-23
+## P18-V01 `MQClientAPIImpl` controller/replica API coverage — 2026-10-23
 
-Compared the public declarations on the pinned 5.5.1 `MQClientAPIImpl` with
-Rust Core API methods and traced the remaining controller/replica operations
-through the pinned source call sites. `javap -public` reports 143 public method
-signatures across 132 distinct method names, plus three public constructors.
-Eight methods without Rust client counterparts are:
+Correction to the earlier same-day tooling-only disposition: the Phase 18 plan
+requires every public `MQClientAPIImpl` capability, and source call-site
+location in `DefaultMQAdminExt` or `tools` does not remove that client API from
+scope. The earlier list also counted `checkRocksdbCqWriteProgress` as missing,
+although its Rust counterpart already existed. The pinned 5.5.1 artifact has
+143 public method signatures across 132 method names and three constructors;
+these eight public methods are now reconciled:
 
-| Java method | Pinned source callers | Scope disposition |
-| --- | --- | --- |
-| `checkRocksdbCqWriteProgress` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `CheckRocksdbCqWriteProgressCommand` in `tools` | Tools-only RocksDB administration API. |
-| `getBrokerEpochCache` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetBrokerEpochSubCommand` in `tools` | Tools-only administration API. |
-| `getInSyncStateData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetSyncStateSetSubCommand` in `tools` | Tools-only replica inspection API. |
-| `getControllerMetaData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `MQClientAPIImpl` broker-epoch/election/cleanup helpers | Tools-only controller administration API. |
-| `getControllerConfig` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `GetControllerConfigSubCommand` in `tools` | Tools-only controller administration API. |
-| `updateControllerConfig` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `UpdateControllerConfigSubCommand` in `tools` | Tools-only controller administration API. |
-| `electMaster` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `ReElectMasterSubCommand` in `tools` | Tools-only controller administration API. |
-| `cleanControllerBrokerData` | `DefaultMQAdminExt`, `DefaultMQAdminExtImpl`, and `CleanControllerBrokerMetaSubCommand` in `tools` | Tools-only controller administration API. |
+| Java method | Rust Core API / evidence |
+| --- | --- |
+| `checkRocksdbCqWriteProgress` | `MQClientApi::check_rocksdb_cq_write_progress`; Java response/body and request fixtures in `checkRocksdbCqWriteProgressOperations`, compared in `admin_rpc.rs`. |
+| `getBrokerEpochCache` | `MQClientApi::get_broker_epoch_cache`; nullable `EpochEntryCache` body decode and request sequence in `controller_api.rs`. |
+| `getInSyncStateData` | `MQClientApi::get_in_sync_state_data`; resolves metadata first, serializes nullable Broker list, then calls the leader; Java fixture and request/body comparison in `controller_api.rs`. |
+| `getControllerMetaData` | `MQClientApi::get_controller_meta_data`; nullable custom-header fields, primitive `isLeader` default, fixed 3000 ms timeout, and Java fixture. |
+| `getControllerConfig` | `MQClientApi::get_controller_config`; null/empty list falls back to the remoting NameServer list, an absent selection returns `None`, first error stops the call, and malformed Properties remain nullable. |
+| `updateControllerConfig` | `MQClientApi::update_controller_config`; empty Properties or absent/empty controllers is a no-op, all selected controllers are called, and the last non-success reply is returned. |
+| `electMaster` | `MQClientApi::elect_master`; metadata then leader request, `designateElect=true`, invocation timestamp, custom response header, and nullable `BrokerMemberGroup` body. |
+| `cleanControllerBrokerData` | `MQClientApi::clean_controller_broker_data`; metadata then leader request with clean flags and invocation timestamp. |
 
 The public-method join also checked name-level mappings that do not follow a
 direct camelCase-to-snake_case conversion. `ackLiteMessageAsync` delegates to
@@ -2565,18 +2567,17 @@ maps to `get_earliest_msg_store_time` in the Phase 9 offset RPC crosswalk.
 `recallMessageAsync` maps to the Rust
 Producer's future-returning recall operation and its Core RPC path.
 
-The source call-site scan found no use of these operations from the pinned
-`MQAdmin`, Producer, Push Consumer, or Pull Consumer APIs.
-The separate `rocketmq-tools` artifact is outside the Phase 17 client scope;
-this is a scope disposition, not a claim that the operations have Rust
-implementations. Other controller-adjacent client operations already mapped
-in this inventory remain in scope where they are used by the client API.
+The invoked fixture `controllerAdminApi` records the seven method signatures
+that were missing from Core. `controllerAdminOperations` records their ten
+Java requests, including fixed 3000 ms controller calls and caller-selected
+2345 ms config calls. Rust integration checks compare request codes, optional
+headers and bodies against that fixture; the dynamic invocation timestamp and
+Java `Properties` iteration order are normalized. The request-code constants,
+including `CLEAN_BROKER_DATA=1011`, were already present in the protocol crate.
 
-The scan used `javap -public` on the cached client 5.5.1 artifact and
-`git grep` at source commit `efa1be59d6fc747ad220f036c86030f05f0419f9` across
-`client` and `tools`. It closes this bounded unmapped-method scope check only;
-broad P18-V01 source/API/settings/input/error/control-flow and reverse-export
-reconciliation remains open.
+This closes the controller/replica API slice only. Broad P18-V01 Java
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains open.
 
 ## P18-V01 Rustdoc reverse-export delta — 2026-10-23
 
