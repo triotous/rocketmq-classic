@@ -9121,3 +9121,24 @@ owner-specific checks belong in the manual handoff.
   the four pre-existing Phase 19 worktree paths remain untouched and
   unstaged. Run record:
   `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T192026Z.rlog`.
+
+## P18-V01 inbound remoting shutdown version gate — 2026-10-23 (`a2eb40c2`)
+
+- [x] Pinned Java 5.5.1 `processRequestCommand` returns `GO_AWAY` (1500,
+  `please go away`) for a request above `V5_3_1` ordinal 475 during shutdown,
+  after processor lookup and before request rejection. Added an invoked Java
+  fixture for versions 475/476, a running-client case, unsupported-code
+  ordering, and response opaque, plus matching Rust version and dispatch-order
+  checks.
+- [x] Sequential default and all-feature workspace suites, all 143 remoting
+  tests, strict workspace Clippy, Windows GNU all-target/all-feature check and
+  Clippy, formatting/diff checks, and the dedicated four-case Java fixture
+  verification passed.
+- [ ] The full offline Maven `verify` attempt did not finish: the pre-existing
+  `ConsumerLifecycleFixtures` default NameServer lookup blocked in DNS, so the
+  process was stopped after preceding fixtures had passed. Broad P18-V01
+  reconciliation remains PARTIAL; native Windows runtime, current-revision
+  remote CI, and Phase 19 live Broker/Docker scenarios remain separate. No plan
+  was edited, no remote CI or push was run, and the four Phase 19 worktree paths
+  remain untouched and unstaged. Run record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T193945Z.rlog`.

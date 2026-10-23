@@ -4555,3 +4555,33 @@ release behavior only; broad P18-V01 source/API/settings/input/error/flow and
 reverse-export reconciliation remains PARTIAL. Native Windows runtime,
 current-revision remote CI, and Phase 19 live Broker/Docker evidence remain
 separate.
+
+## P18-V01 inbound remoting shutdown version gate — 2026-10-23 (`a2eb40c2`)
+
+Pinned RocketMQ 5.5.1 `NettyRemotingAbstract.java` (SHA-256
+`f4c5daa4a9a560df4bf92c5b8d0e058accc54a84ef491e530559280ef0457d7e`) looks up
+the request processor first. If a processor exists and shutdown is active, a
+request version newer than `MQVersion.Version.V5_3_1.ordinal()` receives
+`GO_AWAY` (`1500`, remark `please go away`) before `rejectRequest()` or
+executor submission. The pinned `MQVersion.java` source
+(SHA-256 `8b9a6a4b728f6b74d41f8ab19aac5cb5a39665cd0c05bf227ccba8d571ae5f82`)
+and the invoked Java 5.5.1 fixture confirm the cutoff is ordinal 475.
+
+Rust `process_one` now applies the same gate after processor lookup and before
+rejection. Unsupported codes therefore retain priority; version 475 follows
+the processor's normal rejection/submission path, while version 476 gets the
+shutdown response. The fixture checks both boundary values, the running-client
+path, unsupported-code ordering, response code, remark, opaque, and rejection
+counts. Rust checks include the boundary helper and direct dispatch-order
+regression.
+
+Sequential default and all-feature workspace test suites, all 143 remoting
+library tests, strict workspace Clippy, Windows GNU workspace check and
+Clippy, formatting, and diff checks pass. The dedicated offline Java fixture
+verification passes all four cases. A full `mvn -o ... verify` attempt was
+stopped after an existing `ConsumerLifecycleFixtures` case entered DNS lookup
+through Java's default NameServer resolver; it did not report a shutdown
+fixture failure. Broad P18-V01 source/API/settings/input/error/control-flow
+and reverse-export reconciliation remains PARTIAL. Native Windows runtime,
+current-revision remote CI, and Phase 19 Broker/Docker scenarios remain
+separate.
