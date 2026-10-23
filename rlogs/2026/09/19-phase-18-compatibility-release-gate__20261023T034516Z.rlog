@@ -423,3 +423,28 @@ method-for-method compatible. Its constructor's VIP/NameServer system-property
 writes were added to the inactive-helper process-property census. This closes
 the final scope-review follow-up only; broad P18-V01 and platform/live evidence
 remain open. No code/tests changed in this review; no remote CI or push was run.
+
+## P18-V01 MQClientAPIFactory public API mapping — 2026-10-23T09:02:27Z
+
+Correction to the 08:33 scope disposition above: the pinned Java class being
+under `impl.mqclient` and lacking a standard client callsite does not waive the
+P18 public API parity requirement. Commit `ac3a8ed5` adds Core's
+`MQClientApiFactory` and `NameserverAccessConfig`, including pool selection,
+Java-style shared mutable client-array aliasing, NameServer updates, both
+constructor forms, domain refresh, and lifecycle methods. Java's JVM-wide
+VIP/NameServer property writes are represented by the factory-owned client
+configuration and domain provider; Rust does not mutate process environment.
+
+`RuntimeApiFactoryFixtures` directly invokes the pinned Java constructors and
+methods, captures the public surface and lifecycle/address/property outcomes,
+and verifies `fixtures/runtime/api-factory.json`. Full workspace
+`cargo test --workspace --all-features --locked` passed. Strict all-target,
+all-feature workspace Clippy passed with `-D warnings`; format and diff checks
+passed. Offline Maven `verify` completed with exit code 0, including the new
+invoked factory fixture and remaining Java/Rust fixture decoders.
+
+This closes the factory public API slice, not the broad P18-V01 audit.
+Protected subclass hooks remain a separate inventory item; final reverse API
+reconciliation, native Windows runtime, current-revision remote Ubuntu CI, and
+Phase 19 Broker/Docker evidence remain open. No push or remote CI was run.
+Protected Phase 19 worktree files remain unstaged and untouched.

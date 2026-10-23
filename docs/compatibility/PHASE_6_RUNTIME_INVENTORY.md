@@ -431,9 +431,11 @@ disposition are pinned in the Phase 7 producer API fixture and matrix.
 `MQClientAPIFactory.shutdown()`, which starts shutdown on each factory-owned
 remoting API client and waits for completion. The pinned client source contains
 no construction/callsite for `MQClientAPIFactory` outside that class. The
-primary Rust runtime owns one remoting client and shuts it down through the
-runtime control lifecycle, so there is no separate user-facing multi-client
-factory setting or helper API to mirror.
+earlier inventory treated that lack of an internal caller as a reason to omit
+the Java-public helper; that scope conclusion is superseded by the P18-V01
+follow-up below, which maps the direct factory API. The primary Rust runtime
+still owns its ordinary single remoting client through the runtime control
+lifecycle.
 
 `ThreadUtils` declares 20 public static overloads for executor/thread creation
 and graceful shutdown. Pinned client callsites use it for the four consumer
@@ -448,7 +450,7 @@ not form additional RocketMQ client settings; Rust uses its native task and
 worker owners. This disposition covers the helper callsites and lifecycle
 flow only; the broad bidirectional P18-V01 audit remains open.
 
-### P18-V01 final scope review: `MQClientAPIFactory` — 2026-10-23 (`6d0f4523`)
+### Historical P18-V01 scope review: `MQClientAPIFactory` — 2026-10-23 (`6d0f4523`)
 
 The pinned Java class at
 `client/src/main/java/org/apache/rocketmq/client/impl/mqclient/MQClientAPIFactory.java`
@@ -461,17 +463,39 @@ supported pinned client path. The pinned `MQClientManager` creates a
 `MQClientInstance`; that constructor creates one `MQClientAPIImpl`.
 `MQClientAPIExt` is referenced only by this factory in client source.
 
-The Rust path maps the active single-runtime lifecycle and client API to
+The earlier review mapped only the active single-runtime lifecycle to
 `ClientRuntime`/`ClientRuntimeManager`, `MQClientApi`, and
-`RemotingClient::{start, update_name_server_address_list, shutdown}`. The
-factory's constructors, random pool selection, returned mutable Java array,
-and subclass hooks are not part of the supported application-facing
-Producer/Consumer API contract; the Java class's `impl.mqclient` package,
-absence of a client callsite, and the distinct `MQClientInstance` construction
-path support this scope decision. This is a reviewed internal-helper
-disposition, not a claim that external code directly instantiating that Java
-implementation class has method-for-method Rust parity. It closes this
-inventory follow-up only; broad P18-V01 remains open.
+`RemotingClient::{start, update_name_server_address_list, shutdown}`. It
+concluded that the factory's Java-public methods could be excluded because the
+class is under `impl.mqclient` and has no standard client callsite. That
+conclusion was too narrow for the P18 public-API parity requirement and is
+superseded by the implementation and invoked differential recorded below.
+
+### P18-V01 `MQClientAPIFactory` Rust API mapping — 2026-10-23 (`ac3a8ed5`)
+
+Core now exports `MQClientApiFactory` and `NameserverAccessConfig` from
+`rocketmq_classic_core::api`. Its constructors map Java's standard and
+injected-remoting-client overloads; `get_client` chooses a pool member,
+`get_clients` returns a shared mutable view with Java array alias behavior,
+`on_name_server_address_change` updates each active remoting client, and
+`start`, `pre_shutdown`, and `shutdown` expose the lifecycle. Domain-based
+NameServer lookup uses the existing TopAddressing provider and a Tokio refresh
+worker. The Java constructor's process-wide property writes map to the
+factory-owned `ClientConfig` and provider settings; Rust does not mutate the
+process environment.
+
+The invoked fixture in `fixtures/runtime/api-factory.json` records both Java
+constructors and all six public methods, pre-start selection failure, client
+names/count/address lists, selection membership, mutable-array identity,
+address changes, property initialization, and shutdown retention. Rust factory
+tests consume this fixture and cover static and domain configuration, creator
+injection, and lifecycle. Implementation commit `ac3a8ed5` adds the Rust API
+and invoked Java oracle. Full workspace all-feature tests, strict
+all-target/all-feature workspace Clippy, pinned offline Maven `verify` (exit
+0), formatting, and diff checks pass. This closes the direct factory public
+API slice only; protected Java subclass hooks and broad P18-V01
+source/API/input/error/control-flow/reverse-export reconciliation remain
+review items.
 
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 

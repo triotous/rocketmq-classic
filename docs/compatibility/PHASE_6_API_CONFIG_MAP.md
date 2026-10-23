@@ -2964,16 +2964,15 @@ Common, Protocol, Remoting, Core, Producer, and Consumer crates.
 | `DefaultMQProducer` compression type/level and recall-trace enable | Producer config and trace hook; constructor property parsing and source selection are recorded in the [Phase 7 producer matrix](PHASE_7_PRODUCER_MATRIX.md) and [Phase 16 operations matrix](PHASE_16_NAMESPACE_SECURITY_OPERATIONS_MATRIX.md). |
 | `NettyClientConfig`, `NettySystemConfig`, `TlsSystemConfig`, and `RemotingCommand` serialization type | Remoting config, TLS property state, and serialization-type initialization; see the [Phase 3 Remoting inventory](PHASE_3_REMOTING_INVENTORY.md). |
 | `DynamicalExtFieldRPCHook` zone properties/environment fallbacks | Core dynamic RPC hook; values are read at each hook invocation, as recorded in the Phase 3 inventory. |
-| `MQClientAPIFactory.init` NameServer/VIP properties | `MQClientAPIFactory` is an orphaned public implementation helper in the pinned artifact; its constructor writes `sendMessageWithVIPChannel=false` and NameServer properties, but no pinned client callsite constructs it. The active client path initializes one `MQClientAPIImpl` per `MQClientInstance` and is mapped to the Rust runtime/config owners. |
+| `MQClientAPIFactory.init` NameServer/VIP properties | The direct Java-public pool API is mapped to Core `MQClientApiFactory`; its owned `ClientConfig` disables VIP and carries the configured NameServer address, while domain settings feed the `TopAddressing` provider. The Java class also writes these values to JVM-wide properties, while Rust keeps them scoped to the factory and does not mutate process environment. The pinned standard manager still constructs one `MQClientAPIImpl` per `MQClientInstance`; the separate factory surface is available for direct callers. |
 
 The remaining common-module reads are server/configuration utilities, JVM or
 OS implementation selection, or the unused `TopicQueueMappingUtils` temp-file
 helper; they do not add a client setting or an active client operation. The
 reverse Rust scan found no unexplained production environment-backed public
-setting. The P18 final scope review of `MQClientAPIFactory` is recorded in the
-[Phase 6 runtime inventory](PHASE_6_RUNTIME_INVENTORY.md): its Java-public
-methods belong to an unreferenced `impl.mqclient` helper, not the pinned
-client's supported Producer/Consumer runtime path. This census closes the
+setting. The earlier P18 scope review excluded `MQClientAPIFactory` based on
+its lack of a standard client callsite; the [Phase 6 runtime inventory](PHASE_6_RUNTIME_INVENTORY.md)
+records the correction and current Rust mapping. This census closes the
 process-property slice only; broad P18-V01 remains PARTIAL.
 
 ## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)

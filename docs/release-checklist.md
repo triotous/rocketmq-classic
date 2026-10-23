@@ -8373,9 +8373,9 @@ owner-specific checks belong in the manual handoff.
 - [x] Pinned Java `System` property/environment reads and Rust production
   environment-backed settings were cross-checked. Each active client setting
   maps to its existing Rust owner and source evidence.
-- [x] Final scope review records `MQClientAPIFactory` as an orphaned public
-  implementation helper with no pinned client construction/callsite; the
-  supported path constructs one API implementation per runtime. Broad P18-V01
+- [x] The initial scope review recorded `MQClientAPIFactory` as an orphaned
+  public helper with no pinned client construction/callsite. That exclusion is
+  superseded by the direct Rust API mapping recorded below. Broad P18-V01
   source/API/settings/input/error/control-flow and reverse-export audit remains
   partial. No remote CI or push was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
@@ -8390,8 +8390,25 @@ owner-specific checks belong in the manual handoff.
 - [x] Focused Rust test, full Consumer all-features package tests, strict
   Consumer Clippy, focused Java runtime-offset fixture verify, and full offline
   Maven `verify` passed.
-- [ ] Broad P18-V01 and final reverse API review remain open; the
-  `MQClientAPIFactory` scope review is recorded in the Phase 6 inventory.
+- [ ] Broad P18-V01 and final reverse API review remain open; the direct
+  `MQClientAPIFactory` API slice is now mapped in the Phase 6 inventory.
   Native Windows runtime, current-revision remote Ubuntu CI, and Phase 19
   Broker/Docker evidence are pending. No push or remote CI was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 MQClientAPIFactory public API mapping — 2026-10-23 (`ac3a8ed5`)
+
+- [x] Added Core `MQClientApiFactory` and `NameserverAccessConfig` with
+  Java-shaped pool selection, shared mutable client-array behavior, NameServer
+  updates, injected remoting-client creation, domain refresh, and lifecycle.
+- [x] Added an invoked Java 5.5.1 fixture for constructor/method inventory,
+  initial property values, client names/addresses, selection, array aliasing,
+  address updates, and shutdown. Rust tests compare the resulting fixture.
+- [x] Full workspace all-feature tests, strict all-target/all-feature
+  workspace Clippy, formatting, diff checks, and full offline Maven `verify`
+  passed (exit 0).
+- [ ] Broad P18-V01 and final reverse API review remain open. Protected Java
+  subclass hooks, native Windows runtime, current-revision remote Ubuntu CI,
+  and Phase 19 Broker/Docker evidence remain pending. No push or remote CI was
+  run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
