@@ -33,3 +33,8 @@ P18-V03 local preparation review on code/test revision `ea17b8fc`:
 - `scripts/check-workspace-metadata.py` passed; seven product `cargo package --list --offline --locked` outputs contain LICENSE and NOTICE; `cargo build --offline --locked -p rocketmq-classic --examples --release` passed.
 - Confirmed all product packages use Apache-2.0 and `publish = false`; dependency-direction checks passed. No publishing or release tagging occurred.
 - Updated README current gate status and recorded P18-V03 local preparation review in the release checklist. P18-V01 and P18-V04 remain open.
+
+P18-V04 Phase 19 handoff registration check:
+- Re-read the source-ID collection in `tests/differential/compare.py`: it scans pending live gates in Phase 0–17 plans and rejects any manifest that omits a source ID or assigns it to the wrong phase.
+- The current manifest passes self-test and coverage validation. It contains 37 live scenario rows (7 archived PASS, 30 PENDING_PHASE_19) and covers every one of the 17 pending source gate IDs collected from Phase 0–17 plans.
+- Local offline workspace gates pass without Docker or a Broker. Current-revision remote Ubuntu CI was not run under the user's constraint; native Windows runtime remains unverified. P18-V04 therefore remains open despite the handoff-registration subcriterion passing.

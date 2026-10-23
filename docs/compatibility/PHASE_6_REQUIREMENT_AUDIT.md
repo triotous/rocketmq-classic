@@ -4739,9 +4739,11 @@ On the current code/test revision `ea17b8fc` (documentation head at run start:
 tests/doctests passed. Strict all-target/all-feature workspace Clippy,
 formatting, and `git diff --check` passed. Offline Maven `verify` passed all 37
 scenarios, Java fixture drift checks, and cross-decodes for 11 message
-fixtures, 106 typed headers, and 19 typed bodies. The comparator self-test and
-37-scenario manifest, workspace metadata/dependency/license checks, and all
-seven product package listings with `LICENSE` and `NOTICE` passed. Deterministic
+fixtures, 106 typed headers, and 19 typed bodies. Comparator self-test passed;
+the 37-scenario manifest validator confirmed coverage of every pending source
+gate ID collected from the Phase 0–17 plans. Workspace metadata, dependency,
+and license checks and all seven product package listings with `LICENSE` and
+`NOTICE` passed. Deterministic
 race/leak smoke passed 20 cases × 3; bounded fuzz smoke passed 163 frame seeds,
 11 message seeds, and 2,784 mutations (245 frame and 192 message decodes).
 Release examples and the offline benchmark passed. Whole-workspace Windows GNU

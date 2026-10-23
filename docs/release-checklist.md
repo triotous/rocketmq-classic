@@ -9278,8 +9278,12 @@ owner-specific checks belong in the manual handoff.
 - [x] Offline Maven `verify` passed 37 scenarios, fixture drift, and
   Java/Rust cross-decodes for 11 message fixtures, 106 typed headers, and 19
   typed bodies. Comparator self-test and 37-scenario manifest validation,
+  including every pending source gate ID collected from the Phase 0–17 plans,
   workspace metadata/dependency/license checks, and seven product package
   listings containing `LICENSE` and `NOTICE` passed.
+- [x] The manifest has 37 live scenario rows; seven have archived Phase 19
+  evidence and 30 remain `PENDING_PHASE_19`. Current local server-free tests
+  run without Docker or a Broker. No remote CI was run.
 - [x] Deterministic race/leak smoke passed 20 cases × 3; fixed-seed fuzz smoke
   passed 163 frame seeds, 11 message seeds, and 2,784 mutations (245 frame and
   192 message decodes). Release examples and the offline benchmark passed.
