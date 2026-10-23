@@ -38,11 +38,16 @@ import org.apache.rocketmq.remoting.protocol.header.RecallMessageResponseHeader;
 public final class HeaderResponseIdentityFixtures {
     private static final String SOURCE_COMMIT = "efa1be59d6fc747ad220f036c86030f05f0419f9";
     private static final Map<String, String> RUST_TO_JAVA_CLASSES = Map.ofEntries(
+        Map.entry("AddWritePermOfBrokerResponseHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.AddWritePermOfBrokerResponseHeader"),
+        Map.entry("ChangeInvisibleTimeResponseHeader", "org.apache.rocketmq.remoting.protocol.header.ChangeInvisibleTimeResponseHeader"),
         Map.entry("QueryConsumerOffsetResponseHeader", "org.apache.rocketmq.remoting.protocol.header.QueryConsumerOffsetResponseHeader"),
         Map.entry("SearchOffsetResponseHeader", "org.apache.rocketmq.remoting.protocol.header.SearchOffsetResponseHeader"),
         Map.entry("GetMaxOffsetResponseHeader", "org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetResponseHeader"),
         Map.entry("GetMinOffsetResponseHeader", "org.apache.rocketmq.remoting.protocol.header.GetMinOffsetResponseHeader"),
         Map.entry("GetEarliestMsgStoretimeResponseHeader", "org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeResponseHeader"),
+        Map.entry("GetAllSubscriptionGroupResponseHeader", "org.apache.rocketmq.remoting.protocol.header.GetAllSubscriptionGroupResponseHeader"),
+        Map.entry("GetAllTopicConfigResponseHeader", "org.apache.rocketmq.remoting.protocol.header.GetAllTopicConfigResponseHeader"),
+        Map.entry("GetKvConfigResponseHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.GetKVConfigResponseHeader"),
         Map.entry("PullMessageResponseHeader", "org.apache.rocketmq.remoting.protocol.header.PullMessageResponseHeader"),
         Map.entry("QueryMessageResponseHeader", "org.apache.rocketmq.remoting.protocol.header.QueryMessageResponseHeader"),
         Map.entry("RecallMessageResponseHeader", "org.apache.rocketmq.remoting.protocol.header.RecallMessageResponseHeader"),
@@ -53,6 +58,7 @@ public final class HeaderResponseIdentityFixtures {
         Map.entry("NotificationResponseHeader", "org.apache.rocketmq.remoting.protocol.header.NotificationResponseHeader"),
         Map.entry("PopMessageResponseHeader", "org.apache.rocketmq.remoting.protocol.header.PopMessageResponseHeader"),
         Map.entry("PopLiteMessageResponseHeader", "org.apache.rocketmq.remoting.protocol.header.PopLiteMessageResponseHeader"),
+        Map.entry("WipeWritePermOfBrokerResponseHeader", "org.apache.rocketmq.remoting.protocol.header.namesrv.WipeWritePermOfBrokerResponseHeader"),
         Map.entry("PollingInfoResponseHeader", "org.apache.rocketmq.remoting.protocol.header.PollingInfoResponseHeader"));
 
     private HeaderResponseIdentityFixtures() {

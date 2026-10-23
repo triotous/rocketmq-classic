@@ -8272,9 +8272,9 @@ mod tests {
             false
         );
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 16);
+        assert_eq!(cases.len(), 22);
         let api_inventories = fixture["apiInventories"].as_object().unwrap();
-        assert_eq!(api_inventories.len(), 16);
+        assert_eq!(api_inventories.len(), 22);
         for (rust_name, inventory) in api_inventories {
             assert_eq!(
                 inventory["publicFields"],
@@ -8299,10 +8299,20 @@ mod tests {
                 .ends_with("RecallMessageResponseHeader.setMsgId(java.lang.String)")
         }));
         for (rust_name, identity) in cases {
-            assert_eq!(
-                identity["javaClass"],
-                format!("org.apache.rocketmq.remoting.protocol.header.{rust_name}")
-            );
+            let expected_java_class = match rust_name.as_str() {
+                "AddWritePermOfBrokerResponseHeader" => {
+                    format!("org.apache.rocketmq.remoting.protocol.header.namesrv.{rust_name}")
+                }
+                "GetKvConfigResponseHeader" => {
+                    "org.apache.rocketmq.remoting.protocol.header.namesrv.GetKVConfigResponseHeader"
+                        .to_owned()
+                }
+                "WipeWritePermOfBrokerResponseHeader" => {
+                    format!("org.apache.rocketmq.remoting.protocol.header.namesrv.{rust_name}")
+                }
+                _ => format!("org.apache.rocketmq.remoting.protocol.header.{rust_name}"),
+            };
+            assert_eq!(identity["javaClass"], expected_java_class);
             assert_eq!(
                 identity["equalsDeclaredBy"], "java.lang.Object",
                 "{rust_name}"
