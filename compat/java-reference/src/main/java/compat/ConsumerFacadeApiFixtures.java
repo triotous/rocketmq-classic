@@ -390,6 +390,76 @@ public final class ConsumerFacadeApiFixtures {
         requeueLifecycle.put("treeKeys", new ArrayList<>(requeueLifecycleQueue.getMsgTreeMap().keySet()));
         result.put("requeueLifecycle", requeueLifecycle);
 
+        ProcessQueue duplicateInFlightQueue = new ProcessQueue();
+        duplicateInFlightQueue.putMessage(
+            Arrays.asList(processQueueMessage(110L, new byte[] {1, 2})));
+        duplicateInFlightQueue.takeMessages(1);
+        MessageExt duplicateReadyMessage = processQueueMessage(110L, new byte[] {3, 4, 5, 6});
+        boolean duplicateInFlightDispatch = duplicateInFlightQueue.putMessage(
+            Arrays.asList(duplicateReadyMessage));
+        Map<String, Object> duplicateInFlightAfterPut = new TreeMap<>();
+        duplicateInFlightAfterPut.put("dispatch", duplicateInFlightDispatch);
+        duplicateInFlightAfterPut.put("count", duplicateInFlightQueue.getMsgCount().get());
+        duplicateInFlightAfterPut.put("size", duplicateInFlightQueue.getMsgSize().get());
+        duplicateInFlightAfterPut.put("treeKeys", new ArrayList<>(duplicateInFlightQueue.getMsgTreeMap().keySet()));
+        duplicateInFlightAfterPut.put("readyBodySize",
+            duplicateInFlightQueue.getMsgTreeMap().get(110L).getBody().length);
+        long duplicateInFlightCommitOffset = duplicateInFlightQueue.commit();
+        Map<String, Object> duplicateInFlightAfterCommit = new TreeMap<>();
+        duplicateInFlightAfterCommit.put("commitOffset", duplicateInFlightCommitOffset);
+        duplicateInFlightAfterCommit.put("count", duplicateInFlightQueue.getMsgCount().get());
+        duplicateInFlightAfterCommit.put("size", duplicateInFlightQueue.getMsgSize().get());
+        duplicateInFlightAfterCommit.put("treeKeys", new ArrayList<>(duplicateInFlightQueue.getMsgTreeMap().keySet()));
+        duplicateInFlightAfterCommit.put("readyBodySize",
+            duplicateInFlightQueue.getMsgTreeMap().get(110L).getBody().length);
+        Map<String, Object> duplicateInFlight = new TreeMap<>();
+        duplicateInFlight.put("afterPut", duplicateInFlightAfterPut);
+        duplicateInFlight.put("afterCommit", duplicateInFlightAfterCommit);
+        result.put("duplicateInFlight", duplicateInFlight);
+
+        ProcessQueue duplicateRollbackQueue = new ProcessQueue();
+        duplicateRollbackQueue.putMessage(
+            Arrays.asList(processQueueMessage(120L, new byte[] {1, 2})));
+        duplicateRollbackQueue.takeMessages(1);
+        duplicateRollbackQueue.putMessage(
+            Arrays.asList(processQueueMessage(120L, new byte[] {3, 4, 5, 6})));
+        duplicateRollbackQueue.rollback();
+        Map<String, Object> duplicateRollback = new TreeMap<>();
+        duplicateRollback.put("count", duplicateRollbackQueue.getMsgCount().get());
+        duplicateRollback.put("size", duplicateRollbackQueue.getMsgSize().get());
+        duplicateRollback.put("treeKeys", new ArrayList<>(duplicateRollbackQueue.getMsgTreeMap().keySet()));
+        duplicateRollback.put("readyBodySize",
+            duplicateRollbackQueue.getMsgTreeMap().get(120L).getBody().length);
+        result.put("duplicateRollback", duplicateRollback);
+
+        ProcessQueue duplicateRemovalQueue = new ProcessQueue();
+        duplicateRemovalQueue.putMessage(
+            Arrays.asList(processQueueMessage(130L, new byte[] {1, 2})));
+        duplicateRemovalQueue.takeMessages(1);
+        MessageExt duplicateForRemoval = processQueueMessage(130L, new byte[] {3, 4, 5, 6});
+        duplicateRemovalQueue.putMessage(Arrays.asList(duplicateForRemoval));
+        long duplicateRemovalNextOffset = duplicateRemovalQueue.removeMessage(
+            Arrays.asList(duplicateForRemoval));
+        long duplicateRemovalCommitOffset = duplicateRemovalQueue.commit();
+        Map<String, Object> duplicateRemoval = new TreeMap<>();
+        duplicateRemoval.put("nextOffset", duplicateRemovalNextOffset);
+        duplicateRemoval.put("commitOffset", duplicateRemovalCommitOffset);
+        duplicateRemoval.put("count", duplicateRemovalQueue.getMsgCount().get());
+        duplicateRemoval.put("size", duplicateRemovalQueue.getMsgSize().get());
+        duplicateRemoval.put("treeKeys", new ArrayList<>(duplicateRemovalQueue.getMsgTreeMap().keySet()));
+        result.put("duplicateRemoval", duplicateRemoval);
+
+        ProcessQueue duplicateOffsetMaxQueue = new ProcessQueue();
+        duplicateOffsetMaxQueue.putMessage(Arrays.asList(
+            processQueueMessage(40L, new byte[] {4}),
+            processQueueMessage(45L, new byte[] {5})));
+        duplicateOffsetMaxQueue.putMessage(
+            Arrays.asList(processQueueMessage(40L, new byte[] {4, 0})));
+        long duplicateOffsetMaxNextOffset = duplicateOffsetMaxQueue.removeMessage(Arrays.asList(
+            processQueueMessage(40L, new byte[] {4}),
+            processQueueMessage(45L, new byte[] {5})));
+        result.put("duplicateOffsetMaxNextOffset", duplicateOffsetMaxNextOffset);
+
         ProcessQueue mapQueue = new ProcessQueue();
         MessageExt original = processQueueMessage(20L, new byte[] {4});
         MessageExt direct = processQueueMessage(21L, new byte[] {5, 6});

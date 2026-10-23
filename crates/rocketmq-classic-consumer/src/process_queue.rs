@@ -133,6 +133,7 @@ pub struct ProcessQueue {
 
 struct ProcessQueueState {
     messages: BTreeMap<i64, QueueMessage>,
+    ready_duplicates: BTreeMap<i64, QueueMessage>,
     in_flight_batches: HashMap<u64, Vec<i64>>,
     cached_count: i64,
     cached_bytes: i64,
@@ -349,26 +350,65 @@ impl Drop for ProcessQueueMessageTreeWriteGuard<'_> {
 }
 
 fn ready_message_view(state: &ProcessQueueState) -> BTreeMap<i64, Arc<MessageExt>> {
-    state
+    let mut view = state
         .messages
         .iter()
         .filter(|(_, message)| message.state == MessageState::Ready)
         .map(|(offset, message)| (*offset, message.message.clone()))
+        .collect::<BTreeMap<_, _>>();
+    view.extend(
+        state
+            .ready_duplicates
+            .iter()
+            .map(|(offset, message)| (*offset, message.message.clone())),
+    );
+    view
+}
+
+fn ready_message_by_offset(state: &ProcessQueueState, offset: i64) -> Option<&QueueMessage> {
+    state
+        .messages
+        .get(&offset)
+        .filter(|message| message.state == MessageState::Ready)
+        .or_else(|| state.ready_duplicates.get(&offset))
+}
+
+fn ready_offsets(state: &ProcessQueueState) -> Vec<i64> {
+    state
+        .messages
+        .iter()
+        .filter(|(_, message)| message.state == MessageState::Ready)
+        .map(|(offset, _)| *offset)
+        .chain(state.ready_duplicates.keys().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect()
+}
+
+fn has_ready_messages(state: &ProcessQueueState) -> bool {
+    state
+        .messages
+        .values()
+        .any(|message| message.state == MessageState::Ready)
+        || !state.ready_duplicates.is_empty()
+}
+
+fn first_ready_offset(state: &ProcessQueueState) -> Option<i64> {
+    ready_offsets(state).into_iter().next()
 }
 
 fn reconcile_ready_message_view(
     state: &mut ProcessQueueState,
     view: &BTreeMap<i64, Arc<MessageExt>>,
 ) {
-    let ready_offsets = state
-        .messages
-        .iter()
-        .filter(|(_, message)| message.state == MessageState::Ready)
-        .map(|(offset, _)| *offset)
-        .collect::<Vec<_>>();
-    for offset in ready_offsets {
-        if !view.contains_key(&offset) {
+    for offset in ready_offsets(state) {
+        if !view.contains_key(&offset)
+            && state.ready_duplicates.remove(&offset).is_none()
+            && state
+                .messages
+                .get(&offset)
+                .is_some_and(|message| message.state == MessageState::Ready)
+        {
             state.messages.remove(&offset);
         }
     }
@@ -376,14 +416,13 @@ fn reconcile_ready_message_view(
         let body_bytes = message.body().len() as u64;
         let consume_start_timestamp_millis = consume_start_timestamp(message);
         match state.messages.get_mut(offset) {
-            Some(existing) => {
+            Some(existing) if existing.state == MessageState::Ready => {
                 existing.message = message.clone();
                 existing.body_bytes = body_bytes;
                 existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
-                existing.state = MessageState::Ready;
             }
-            None => {
-                state.messages.insert(
+            Some(_) => {
+                state.ready_duplicates.insert(
                     *offset,
                     QueueMessage {
                         message: message.clone(),
@@ -393,6 +432,24 @@ fn reconcile_ready_message_view(
                     },
                 );
             }
+            None => match state.ready_duplicates.get_mut(offset) {
+                Some(existing) => {
+                    existing.message = message.clone();
+                    existing.body_bytes = body_bytes;
+                    existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
+                }
+                None => {
+                    state.messages.insert(
+                        *offset,
+                        QueueMessage {
+                            message: message.clone(),
+                            body_bytes,
+                            state: MessageState::Ready,
+                            consume_start_timestamp_millis,
+                        },
+                    );
+                }
+            },
         }
     }
     let in_flight_offsets = state
@@ -537,6 +594,7 @@ impl ProcessQueue {
             generation,
             state: Mutex::new(ProcessQueueState {
                 messages: BTreeMap::new(),
+                ready_duplicates: BTreeMap::new(),
                 in_flight_batches: HashMap::new(),
                 cached_count: 0,
                 cached_bytes: 0,
@@ -655,34 +713,20 @@ impl ProcessQueue {
 
     pub fn get_max_span(&self) -> i64 {
         let state = self.lock_state();
-        let first = state
-            .messages
-            .iter()
-            .find(|(_, message)| message.state == MessageState::Ready)
-            .map(|(offset, _)| *offset);
-        let last = state
-            .messages
-            .iter()
-            .rev()
-            .find(|(_, message)| message.state == MessageState::Ready)
-            .map(|(offset, _)| *offset);
+        let offsets = ready_offsets(&state);
+        let first = offsets.first().copied();
+        let last = offsets.last().copied();
         first
             .zip(last)
             .map_or(0, |(min, max)| max.wrapping_sub(min))
     }
 
     pub fn contains_message(&self, message: &MessageExt) -> bool {
-        self.lock_state()
-            .messages
-            .get(&message.queue_offset())
-            .is_some_and(|entry| entry.state == MessageState::Ready)
+        ready_message_by_offset(&self.lock_state(), message.queue_offset()).is_some()
     }
 
     pub fn has_temp_message(&self) -> bool {
-        self.lock_state()
-            .messages
-            .values()
-            .any(|entry| entry.state == MessageState::Ready)
+        has_ready_messages(&self.lock_state())
     }
 
     pub fn put_message(&self, messages: &[MessageExt]) -> Result<bool, ProcessQueueError> {
@@ -694,12 +738,9 @@ impl ProcessQueue {
         assert!(batch_size >= 0, "batch size cannot be negative");
         let mut state = self.lock_state();
         state.last_consume_timestamp_millis = epoch_millis();
-        let offsets = state
-            .messages
-            .iter()
-            .filter(|(_, message)| message.state == MessageState::Ready)
+        let offsets = ready_offsets(&state)
+            .into_iter()
             .take(batch_size as usize)
-            .map(|(offset, _)| *offset)
             .collect::<Vec<_>>();
         if offsets.is_empty() {
             state.consuming = false;
@@ -708,7 +749,11 @@ impl ProcessQueue {
         let batch_id = Self::allocate_batch_id(&mut state);
         let mut messages = Vec::with_capacity(offsets.len());
         for offset in &offsets {
-            if let Some(message) = state.messages.get_mut(offset) {
+            if let Some(mut duplicate) = state.ready_duplicates.remove(offset) {
+                duplicate.state = MessageState::InFlight(batch_id);
+                messages.push(duplicate.message.clone());
+                state.messages.insert(*offset, duplicate);
+            } else if let Some(message) = state.messages.get_mut(offset) {
                 message.state = MessageState::InFlight(batch_id);
                 messages.push(message.message.clone());
             }
@@ -721,33 +766,32 @@ impl ProcessQueue {
         let now = epoch_millis();
         let mut state = self.lock_state();
         state.last_consume_timestamp_millis = now;
-        if !state
-            .messages
-            .values()
-            .any(|entry| entry.state == MessageState::Ready)
-        {
+        if !has_ready_messages(&state) {
             return -1;
         }
         let mut result = state.queue_offset_max.wrapping_add(1);
         for message in messages {
             let offset = message.queue_offset();
-            let is_ready = state
+            let removed_ready_duplicate = state.ready_duplicates.remove(&offset).is_some();
+            let removed_ready_message = if removed_ready_duplicate {
+                true
+            } else if state
                 .messages
                 .get(&offset)
-                .is_some_and(|entry| entry.state == MessageState::Ready);
-            if is_ready {
+                .is_some_and(|entry| entry.state == MessageState::Ready)
+            {
                 state.messages.remove(&offset);
+                true
+            } else {
+                false
+            };
+            if removed_ready_message {
                 state.cached_count = state.cached_count.wrapping_sub(1);
                 let body_bytes = message.body().len();
                 state.cached_bytes = state.cached_bytes.wrapping_sub(body_bytes as i64);
             }
         }
-        if let Some(offset) = state
-            .messages
-            .iter()
-            .find(|(_, entry)| entry.state == MessageState::Ready)
-            .map(|(offset, _)| *offset)
-        {
+        if let Some(offset) = first_ready_offset(&state) {
             result = offset;
         }
         if state.cached_count == 0 {
@@ -758,11 +802,20 @@ impl ProcessQueue {
 
     pub fn rollback(&self) {
         let mut state = self.lock_state();
-        for message in state.messages.values_mut() {
-            if matches!(
-                message.state,
-                MessageState::InFlight(_) | MessageState::Held
-            ) {
+        let in_flight_offsets = state
+            .messages
+            .iter()
+            .filter(|(_, message)| {
+                matches!(
+                    message.state,
+                    MessageState::InFlight(_) | MessageState::Held
+                )
+            })
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        for offset in in_flight_offsets {
+            state.ready_duplicates.remove(&offset);
+            if let Some(message) = state.messages.get_mut(&offset) {
                 message.state = MessageState::Ready;
             }
         }
@@ -785,14 +838,26 @@ impl ProcessQueue {
         let Some(last_offset) = consuming_offsets.last().copied() else {
             return Err(ProcessQueueError::EmptyOrderedConsumeSet);
         };
+        let mut consumed_messages = Vec::with_capacity(consuming_offsets.len());
         for offset in &consuming_offsets {
             if let Some(message) = state.messages.remove(offset) {
-                state.cached_count = state.cached_count.wrapping_sub(1);
-                state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
+                consumed_messages.push((*offset, message));
             }
+        }
+        for _ in &consumed_messages {
+            state.cached_count = state.cached_count.wrapping_sub(1);
         }
         if state.cached_count == 0 {
             state.cached_bytes = 0;
+        } else {
+            for (_, message) in &consumed_messages {
+                state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
+            }
+        }
+        for (offset, _) in consumed_messages {
+            if let Some(ready_message) = state.ready_duplicates.remove(&offset) {
+                state.messages.insert(offset, ready_message);
+            }
         }
         state.in_flight_batches.clear();
         Ok(last_offset.wrapping_add(1))
@@ -802,21 +867,22 @@ impl ProcessQueue {
         let mut state = self.lock_state();
         for message in messages {
             let offset = message.queue_offset();
+            let replacement = QueueMessage {
+                message: Arc::new(message.clone()),
+                body_bytes: message.body().len() as u64,
+                state: MessageState::Ready,
+                consume_start_timestamp_millis: consume_start_timestamp(message),
+            };
+            state.ready_duplicates.remove(&offset);
             if let Some(entry) = state.messages.get_mut(&offset) {
                 entry.message = Arc::new(message.clone());
                 entry.body_bytes = message.body().len() as u64;
                 entry.state = MessageState::Ready;
                 entry.consume_start_timestamp_millis = consume_start_timestamp(message);
+            } else if let Some(entry) = state.ready_duplicates.get_mut(&offset) {
+                *entry = replacement;
             } else {
-                state.messages.insert(
-                    offset,
-                    QueueMessage {
-                        message: Arc::new(message.clone()),
-                        body_bytes: message.body().len() as u64,
-                        state: MessageState::Ready,
-                        consume_start_timestamp_millis: consume_start_timestamp(message),
-                    },
-                );
+                state.messages.insert(offset, replacement);
             }
         }
         let in_flight_offsets = state
@@ -836,14 +902,10 @@ impl ProcessQueue {
         info: &mut rocketmq_classic_protocol::body::ConsumerProcessQueueInfo,
     ) {
         let state = self.lock_state();
-        let ready = state
-            .messages
-            .iter()
-            .filter(|(_, message)| message.state == MessageState::Ready)
-            .collect::<Vec<_>>();
-        if let (Some((minimum, _)), Some((maximum, _))) = (ready.first(), ready.last()) {
-            info.set_cached_msg_min_offset(**minimum);
-            info.set_cached_msg_max_offset(**maximum);
+        let ready = ready_offsets(&state);
+        if let (Some(minimum), Some(maximum)) = (ready.first(), ready.last()) {
+            info.set_cached_msg_min_offset(*minimum);
+            info.set_cached_msg_max_offset(*maximum);
             info.set_cached_msg_count(i32::try_from(ready.len()).unwrap_or(i32::MAX));
         }
         info.set_cached_msg_size_in_mib(
@@ -960,7 +1022,6 @@ impl ProcessQueue {
         });
         for message in messages {
             let offset = message.queue_offset();
-            state.queue_offset_max = offset;
             let body_bytes = message.body().len() as u64;
             state.highest_seen_offset = Some(
                 state
@@ -980,8 +1041,30 @@ impl ProcessQueue {
                         existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
                     }
                 }
-                Some((MessageState::InFlight(_) | MessageState::Held, _)) => {}
+                Some((MessageState::InFlight(_) | MessageState::Held, _)) => {
+                    let consume_start_timestamp_millis = consume_start_timestamp(&message);
+                    if let Some(existing) = state.ready_duplicates.get_mut(&offset) {
+                        existing.message = Arc::new(message);
+                        existing.body_bytes = body_bytes;
+                        existing.consume_start_timestamp_millis = consume_start_timestamp_millis;
+                    } else {
+                        state.ready_duplicates.insert(
+                            offset,
+                            QueueMessage {
+                                message: Arc::new(message),
+                                body_bytes,
+                                state: MessageState::Ready,
+                                consume_start_timestamp_millis,
+                            },
+                        );
+                        state.queue_offset_max = offset;
+                        state.cached_count = state.cached_count.wrapping_add(1);
+                        state.cached_bytes = state.cached_bytes.wrapping_add(body_bytes as i64);
+                        inserted_count = inserted_count.saturating_add(1);
+                    }
+                }
                 None => {
+                    state.queue_offset_max = offset;
                     state.messages.insert(
                         offset,
                         QueueMessage {
@@ -1010,10 +1093,7 @@ impl ProcessQueue {
             }
         }
 
-        let has_ready_messages = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
+        let has_ready_messages = has_ready_messages(&state);
         let dispatch_to_consume = has_ready_messages && !state.consuming;
         if dispatch_to_consume {
             state.consuming = true;
@@ -1038,12 +1118,9 @@ impl ProcessQueue {
             return Ok(None);
         }
 
-        let offsets = state
-            .messages
-            .iter()
-            .filter(|(_, message)| message.state == MessageState::Ready)
+        let offsets = ready_offsets(&state)
+            .into_iter()
             .take(batch_size)
-            .map(|(offset, _)| *offset)
             .collect::<Vec<_>>();
         if offsets.is_empty() {
             if state.in_flight_batches.is_empty() {
@@ -1055,7 +1132,11 @@ impl ProcessQueue {
         let batch_id = Self::allocate_batch_id(&mut state);
         let mut messages = Vec::with_capacity(offsets.len());
         for offset in &offsets {
-            if let Some(message) = state.messages.get_mut(offset) {
+            if let Some(mut duplicate) = state.ready_duplicates.remove(offset) {
+                duplicate.state = MessageState::InFlight(batch_id);
+                messages.push(duplicate.message.clone());
+                state.messages.insert(*offset, duplicate);
+            } else if let Some(message) = state.messages.get_mut(offset) {
                 message.state = MessageState::InFlight(batch_id);
                 messages.push(message.message.clone());
             }
@@ -1104,7 +1185,14 @@ impl ProcessQueue {
     ) -> Result<Option<(i64, Arc<MessageExt>)>, ProcessQueueError> {
         self.ensure_generation(generation)?;
         let state = self.lock_state();
-        let Some((offset, message)) = state.messages.first_key_value() else {
+        let Some(offset) = first_ready_offset(&state)
+            .or_else(|| state.messages.first_key_value().map(|(offset, _)| *offset))
+        else {
+            return Ok(None);
+        };
+        let Some(message) =
+            ready_message_by_offset(&state, offset).or_else(|| state.messages.get(&offset))
+        else {
             return Ok(None);
         };
         let started_at = match &message.consume_start_timestamp_millis {
@@ -1112,13 +1200,13 @@ impl ProcessQueue {
             ConsumeStartTimestamp::Parsed(timestamp) => *timestamp,
             ConsumeStartTimestamp::Invalid(value) => {
                 return Err(ProcessQueueError::InvalidConsumeStartTimestamp {
-                    offset: *offset,
+                    offset,
                     value: value.clone(),
                 });
             }
         };
         if now_millis.wrapping_sub(started_at) > timeout_millis {
-            Ok(Some((*offset, message.message.clone())))
+            Ok(Some((offset, message.message.clone())))
         } else {
             Ok(None)
         }
@@ -1132,14 +1220,25 @@ impl ProcessQueue {
     ) -> Result<bool, ProcessQueueError> {
         self.ensure_generation(generation)?;
         let mut state = self.lock_state();
-        if state
-            .messages
-            .first_key_value()
-            .is_none_or(|(head, _)| *head != offset)
-        {
+        let oldest_offset = first_ready_offset(&state)
+            .or_else(|| state.messages.first_key_value().map(|(offset, _)| *offset));
+        if oldest_offset != Some(offset) {
             return Ok(false);
         }
-        let Some(removed) = state.messages.remove(&offset) else {
+        let removed = if let Some(duplicate) = state.ready_duplicates.remove(&offset) {
+            duplicate
+        } else if state
+            .messages
+            .get(&offset)
+            .is_some_and(|message| message.state == MessageState::Ready)
+        {
+            let Some(message) = state.messages.remove(&offset) else {
+                return Ok(false);
+            };
+            message
+        } else if let Some(message) = state.messages.remove(&offset) {
+            message
+        } else {
             return Ok(false);
         };
         state.cached_count = state.cached_count.wrapping_sub(1);
@@ -1147,11 +1246,16 @@ impl ProcessQueue {
         if state.cached_count == 0 {
             state.cached_bytes = 0;
         }
-        for offsets in state.in_flight_batches.values_mut() {
-            offsets.retain(|in_flight_offset| *in_flight_offset != offset);
+        if !state
+            .messages
+            .get(&offset)
+            .is_some_and(|message| matches!(message.state, MessageState::InFlight(_)))
+        {
+            for offsets in state.in_flight_batches.values_mut() {
+                offsets.retain(|in_flight_offset| *in_flight_offset != offset);
+            }
         }
         state.last_consume_timestamp_millis = now_millis;
-        state.consuming = !state.messages.is_empty();
         Ok(true)
     }
 
@@ -1187,26 +1291,29 @@ impl ProcessQueue {
                 if let Some(message) = state.messages.remove(&offset) {
                     state.cached_count = state.cached_count.wrapping_sub(1);
                     state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
+                    if let Some(ready_message) = state.ready_duplicates.remove(&offset) {
+                        state.messages.insert(offset, ready_message);
+                    }
                     completed_offsets.push(offset);
                 }
-            } else if let Some(message) = state.messages.get_mut(&offset) {
-                message.state = MessageState::Ready;
-                requeued_offsets.push(offset);
+            } else {
+                state.ready_duplicates.remove(&offset);
+                if let Some(message) = state.messages.get_mut(&offset) {
+                    message.state = MessageState::Ready;
+                    requeued_offsets.push(offset);
+                }
             }
         }
         if state.cached_count == 0 {
             state.cached_bytes = 0;
         }
-        let has_ready_messages = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
-        state.consuming = !state.messages.is_empty();
+        let has_ready_messages = has_ready_messages(&state);
+        state.consuming = !state.messages.is_empty() || !state.ready_duplicates.is_empty();
         state.last_consume_timestamp_millis = epoch_millis();
         let next_commit_offset = if had_owned_messages {
             next_commit_offset(&state)
         } else {
-            state.messages.first_key_value().map(|(offset, _)| *offset)
+            first_ready_offset(&state).or_else(|| state.messages.first_key_value().map(|(o, _)| *o))
         };
         Ok(CompletionOutcome {
             completed_offsets,
@@ -1277,9 +1384,13 @@ impl ProcessQueue {
                 if let Some(message) = state.messages.remove(&offset) {
                     state.cached_count = state.cached_count.wrapping_sub(1);
                     state.cached_bytes = state.cached_bytes.wrapping_sub(message.body_bytes as i64);
+                    if let Some(ready_message) = state.ready_duplicates.remove(&offset) {
+                        state.messages.insert(offset, ready_message);
+                    }
                     completed_offsets.push(offset);
                 }
             } else if current_batch || transition_held {
+                state.ready_duplicates.remove(&offset);
                 if let Some(message) = state.messages.get_mut(&offset) {
                     match completion {
                         OrderlyCompletion::HoldCurrent => message.state = MessageState::Held,
@@ -1297,10 +1408,7 @@ impl ProcessQueue {
             state.cached_bytes = 0;
         }
 
-        let has_ready_messages = state
-            .messages
-            .values()
-            .any(|message| message.state == MessageState::Ready);
+        let has_ready_messages = has_ready_messages(&state);
         // Held messages are committed or rolled back only by a later listener
         // result. They must not keep dispatch latched when no ready message is
         // available, otherwise a future pull would never schedule a callback.
@@ -1349,6 +1457,7 @@ impl ProcessQueue {
     pub fn clear(&self) {
         let mut state = self.lock_state();
         state.messages.clear();
+        state.ready_duplicates.clear();
         state.in_flight_batches.clear();
         state.cached_count = 0;
         state.cached_bytes = 0;
@@ -1373,12 +1482,7 @@ impl ProcessQueue {
     ) -> Result<ProcessQueueSnapshot, ProcessQueueError> {
         self.ensure_generation(generation)?;
         let state = self.lock_state();
-        let cached_offsets = state
-            .messages
-            .iter()
-            .filter(|(_, message)| message.state == MessageState::Ready)
-            .map(|(offset, _)| *offset)
-            .collect::<Vec<_>>();
+        let cached_offsets = ready_offsets(&state);
         let transaction_offsets = state
             .messages
             .iter()
@@ -1835,6 +1939,36 @@ mod tests {
         assert_eq!(completed.next_commit_offset, Some(13));
         assert_eq!(process_queue.snapshot(17).unwrap().cached_count, 0);
         assert_eq!(process_queue.snapshot(17).unwrap().cached_bytes, 0);
+    }
+
+    #[test]
+    fn duplicate_repull_stays_ready_when_the_original_batch_completes() {
+        let process_queue = process_queue(31);
+        process_queue
+            .insert_messages(31, vec![message(20, 2)])
+            .unwrap();
+        let original_batch = process_queue.take_batch(31, 1).unwrap().unwrap();
+
+        let duplicate = message(20, 4);
+        let inserted = process_queue.put_message(&[duplicate]).unwrap();
+        assert!(!inserted);
+        let during_flight = process_queue.snapshot(31).unwrap();
+        assert_eq!(during_flight.cached_count, 2);
+        assert_eq!(during_flight.cached_bytes, 6);
+        assert_eq!(during_flight.cached_map_count, 1);
+        assert_eq!(during_flight.in_flight_count, 1);
+        assert_eq!(process_queue.get_msg_tree_map().read()[&20].body().len(), 4);
+
+        let completed = process_queue
+            .complete_batch(31, original_batch.id(), &[20])
+            .unwrap();
+        assert_eq!(completed.completed_offsets, [20]);
+        let after_completion = process_queue.snapshot(31).unwrap();
+        assert_eq!(after_completion.cached_count, 1);
+        assert_eq!(after_completion.cached_bytes, 4);
+        assert_eq!(after_completion.cached_map_count, 1);
+        assert_eq!(after_completion.in_flight_count, 0);
+        assert_eq!(process_queue.get_msg_tree_map().read()[&20].body().len(), 4);
     }
 
     #[test]

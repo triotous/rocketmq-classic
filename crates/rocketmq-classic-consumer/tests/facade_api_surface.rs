@@ -916,6 +916,146 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut duplicate_in_flight_original = MessageExt::new();
+    duplicate_in_flight_original.set_queue_offset(110);
+    duplicate_in_flight_original.set_body(vec![1, 2]);
+    let mut duplicate_in_flight_ready = MessageExt::new();
+    duplicate_in_flight_ready.set_queue_offset(110);
+    duplicate_in_flight_ready.set_body(vec![3, 4, 5, 6]);
+    let duplicate_in_flight_queue = ProcessQueue::new();
+    duplicate_in_flight_queue
+        .put_message(&[duplicate_in_flight_original])
+        .expect("valid in-flight message");
+    duplicate_in_flight_queue.take_messages(1);
+    let duplicate_in_flight_dispatch = duplicate_in_flight_queue
+        .put_message(&[duplicate_in_flight_ready])
+        .expect("valid duplicate while in flight");
+    let duplicate_in_flight_tree = duplicate_in_flight_queue.get_msg_tree_map();
+    let duplicate_in_flight_after_put = serde_json::json!({
+        "dispatch": duplicate_in_flight_dispatch,
+        "count": duplicate_in_flight_queue.get_msg_count().get(),
+        "size": duplicate_in_flight_queue.get_msg_size().get(),
+        "treeKeys": duplicate_in_flight_tree
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        "readyBodySize": duplicate_in_flight_tree
+            .read()
+            .get(&110)
+            .expect("ready duplicate remains in the message tree")
+            .body()
+            .len(),
+    });
+    let duplicate_in_flight_commit_offset = duplicate_in_flight_queue
+        .commit()
+        .expect("in-flight original remains committable");
+    let duplicate_in_flight_after_commit = serde_json::json!({
+        "commitOffset": duplicate_in_flight_commit_offset,
+        "count": duplicate_in_flight_queue.get_msg_count().get(),
+        "size": duplicate_in_flight_queue.get_msg_size().get(),
+        "treeKeys": duplicate_in_flight_tree
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        "readyBodySize": duplicate_in_flight_tree
+            .read()
+            .get(&110)
+            .expect("ready duplicate remains after commit")
+            .body()
+            .len(),
+    });
+    let duplicate_in_flight_result = serde_json::json!({
+        "afterPut": duplicate_in_flight_after_put,
+        "afterCommit": duplicate_in_flight_after_commit,
+    });
+    let mut duplicate_rollback_original = MessageExt::new();
+    duplicate_rollback_original.set_queue_offset(120);
+    duplicate_rollback_original.set_body(vec![1, 2]);
+    let mut duplicate_rollback_ready = MessageExt::new();
+    duplicate_rollback_ready.set_queue_offset(120);
+    duplicate_rollback_ready.set_body(vec![3, 4, 5, 6]);
+    let duplicate_rollback_queue = ProcessQueue::new();
+    duplicate_rollback_queue
+        .put_message(&[duplicate_rollback_original])
+        .expect("valid in-flight message");
+    duplicate_rollback_queue.take_messages(1);
+    duplicate_rollback_queue
+        .put_message(&[duplicate_rollback_ready])
+        .expect("valid duplicate while in flight");
+    duplicate_rollback_queue.rollback();
+    let duplicate_rollback_result = serde_json::json!({
+        "count": duplicate_rollback_queue.get_msg_count().get(),
+        "size": duplicate_rollback_queue.get_msg_size().get(),
+        "treeKeys": duplicate_rollback_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        "readyBodySize": duplicate_rollback_queue
+            .get_msg_tree_map()
+            .read()
+            .get(&120)
+            .expect("rollback keeps one ready message")
+            .body()
+            .len(),
+    });
+    let mut duplicate_removal_original = MessageExt::new();
+    duplicate_removal_original.set_queue_offset(130);
+    duplicate_removal_original.set_body(vec![1, 2]);
+    let mut duplicate_for_removal = MessageExt::new();
+    duplicate_for_removal.set_queue_offset(130);
+    duplicate_for_removal.set_body(vec![3, 4, 5, 6]);
+    let duplicate_removal_queue = ProcessQueue::new();
+    duplicate_removal_queue
+        .put_message(&[duplicate_removal_original])
+        .expect("valid in-flight message");
+    duplicate_removal_queue.take_messages(1);
+    duplicate_removal_queue
+        .put_message(&[duplicate_for_removal.clone()])
+        .expect("valid duplicate while in flight");
+    let duplicate_removal_next_offset =
+        duplicate_removal_queue.remove_message(&[std::sync::Arc::new(duplicate_for_removal)]);
+    let duplicate_removal_commit_offset = duplicate_removal_queue
+        .commit()
+        .expect("in-flight original remains committable");
+    let duplicate_removal_result = serde_json::json!({
+        "nextOffset": duplicate_removal_next_offset,
+        "commitOffset": duplicate_removal_commit_offset,
+        "count": duplicate_removal_queue.get_msg_count().get(),
+        "size": duplicate_removal_queue.get_msg_size().get(),
+        "treeKeys": duplicate_removal_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
+    let mut duplicate_offset_first = MessageExt::new();
+    duplicate_offset_first.set_queue_offset(40);
+    duplicate_offset_first.set_body(vec![4]);
+    let mut duplicate_offset_last = MessageExt::new();
+    duplicate_offset_last.set_queue_offset(45);
+    duplicate_offset_last.set_body(vec![5]);
+    let mut duplicate_offset_replacement = MessageExt::new();
+    duplicate_offset_replacement.set_queue_offset(40);
+    duplicate_offset_replacement.set_body(vec![4, 0]);
+    let duplicate_offset_max_queue = ProcessQueue::new();
+    duplicate_offset_max_queue
+        .put_message(&[
+            duplicate_offset_first.clone(),
+            duplicate_offset_last.clone(),
+        ])
+        .expect("valid offset range");
+    duplicate_offset_max_queue
+        .put_message(&[duplicate_offset_replacement])
+        .expect("valid duplicate offset");
+    let duplicate_offset_max_next_offset = duplicate_offset_max_queue.remove_message(&[
+        std::sync::Arc::new(duplicate_offset_first),
+        std::sync::Arc::new(duplicate_offset_last),
+    ]);
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -972,6 +1112,10 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "commitLifecycle": commit_lifecycle_result,
         "rollbackLifecycle": rollback_lifecycle_result,
         "requeueLifecycle": requeue_lifecycle_result,
+        "duplicateInFlight": duplicate_in_flight_result,
+        "duplicateRollback": duplicate_rollback_result,
+        "duplicateRemoval": duplicate_removal_result,
+        "duplicateOffsetMaxNextOffset": duplicate_offset_max_next_offset,
     });
     assert_eq!(&actual, expected);
     queue.clear();

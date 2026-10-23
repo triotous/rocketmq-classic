@@ -82,6 +82,21 @@ requeue, including a nonempty take while the flag is false, and checks the
 timestamp around commit. Fixture SHA-256:
 `2e43cc737fa784cdaec0488252000e82360ccd0a4b121e6ee28d2dccf704791e`.
 
+### Duplicate offset while consuming
+
+Java stores ready and orderly in-flight messages in separate `TreeMap`s. A
+second `putMessage` for an offset already in the consuming map therefore adds
+a ready entry, increments count/size, and leaves the consuming entry intact.
+`commit` removes the in-flight entry and keeps the ready copy; `rollback`
+overwrites that ready copy with the in-flight message without adjusting the
+already-incremented counters. `removeMessage` acts on the ready copy only.
+Rust now preserves both entries and these counter transitions. The fixture
+checks the ready body before and after commit, rollback overwrite, removal of
+the ready duplicate, and that replacing an existing ready offset does not
+change Java's `queueOffsetMax`. The internal batch regression verifies that a
+terminal completion leaves the repulled message ready. Fixture SHA-256:
+`f4c918d58b0fd0104511281b8380a13356cd0dfb5bd1d2d370fe9b890e32bb31`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -212,6 +227,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `2e43cc737fa784cdaec0488252000e82360ccd0a4b121e6ee28d2dccf704791e`
+  `f4c918d58b0fd0104511281b8380a13356cd0dfb5bd1d2d370fe9b890e32bb31`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`
