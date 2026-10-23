@@ -25,6 +25,11 @@ Follow-up revision `e5075bfe` also preserves Java's swallowed null-info input
 for `fillProcessQueueInfo`; the focused facade comparison, pinned Java facade
 fixture verification, strict Consumer Clippy, and formatting/diff checks pass.
 
+Follow-up revision `90f9e2d1` maps `cleanExpiredMsg(null)` to a typed
+`NullPointerException` cleanup error before scanning. The direct Java expiry
+fixture, Rust expiry comparison, strict Consumer Clippy, and formatting/diff
+checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3369,6 +3374,20 @@ Release examples and the offline benchmark pass, with the benchmark observation
 recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This closes the
 try-unlock overflow path only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `cleanExpiredMsg` consumer — 2026-10-23
+
+Pinned Java calls `pushConsumer.isConsumeOrderly()` before scanning the queue,
+so a null consumer throws `NullPointerException` before any expiry work. Rust
+adds `clean_expired_msg_nullable(None)` and returns the matching typed cleanup
+error. The direct Java expired-message fixture and Rust cleanup comparison
+check the exception class. Fixture SHA-256:
+`2934eb15b2fb599bd6309fd8d8dc394ad0deef817060bc3883373da0942ce40c`.
+
+The focused Rust expiry comparison, targeted Java expired-message fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-consumer input branch only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.
 
 ## P18-V01 ProcessQueue negative batch-size error — 2026-10-23 (`c3b53fcb`)
 
