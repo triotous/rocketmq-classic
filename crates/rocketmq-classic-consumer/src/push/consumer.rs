@@ -2442,9 +2442,7 @@ impl PushConsumer {
                     i32::try_from(snapshot.transaction_count).unwrap_or(i32::MAX),
                 );
                 info.set_locked(snapshot.locked);
-                info.set_try_unlock_times(
-                    i64::try_from(snapshot.try_unlock_times).unwrap_or(i64::MAX),
-                );
+                info.set_try_unlock_times(snapshot.try_unlock_times);
                 info.set_last_lock_timestamp(snapshot.last_lock_timestamp_millis);
                 info.set_droped(snapshot.dropped);
                 info.set_last_pull_timestamp(snapshot.last_pull_timestamp_millis);

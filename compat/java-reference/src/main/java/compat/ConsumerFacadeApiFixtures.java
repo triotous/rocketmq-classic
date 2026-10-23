@@ -2,6 +2,7 @@ package compat;
 
 import com.alibaba.fastjson2.JSON;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.consumer.DefaultMQPullConsumer;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
@@ -495,6 +497,15 @@ public final class ConsumerFacadeApiFixtures {
         return result;
     }
 
+    private static long processQueueTryUnlockOverflow() throws ReflectiveOperationException {
+        ProcessQueue queue = new ProcessQueue();
+        Field tryUnlockTimesField = ProcessQueue.class.getDeclaredField("tryUnlockTimes");
+        tryUnlockTimesField.setAccessible(true);
+        ((AtomicLong) tryUnlockTimesField.get(queue)).set(Long.MAX_VALUE);
+        queue.incTryUnlockTimes();
+        return queue.getTryUnlockTimes();
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) throw new IllegalArgumentException("expected fixture path");
         Path output = Path.of(args[0]);
@@ -525,6 +536,7 @@ public final class ConsumerFacadeApiFixtures {
         Map<String, Object> implementationBehaviors = new TreeMap<>();
         implementationBehaviors.put("popProcessQueue", popProcessQueueBehavior());
         implementationBehaviors.put("processQueue", processQueueBehavior());
+        implementationBehaviors.put("processQueueTryUnlockOverflow", processQueueTryUnlockOverflow());
         implementationBehaviors.put("rebalancePush", rebalancePushBehavior());
         implementationBehaviors.put("rebalancePull", rebalancePullBehavior());
         fixture.put("implementationBehaviors", implementationBehaviors);

@@ -149,7 +149,7 @@ struct ProcessQueueState {
     last_lock_timestamp_millis: i64,
     last_lock_instant: Option<Instant>,
     lock_attempt_id: u64,
-    try_unlock_times: u64,
+    try_unlock_times: i64,
 }
 
 struct QueueMessage {
@@ -577,7 +577,7 @@ pub(crate) struct ProcessQueueSnapshot {
     pub(crate) last_consume_timestamp_millis: i64,
     pub(crate) locked: bool,
     pub(crate) last_lock_timestamp_millis: i64,
-    pub(crate) try_unlock_times: u64,
+    pub(crate) try_unlock_times: i64,
 }
 
 impl ProcessQueue {
@@ -680,7 +680,7 @@ impl ProcessQueue {
     }
 
     pub fn get_try_unlock_times(&self) -> i64 {
-        i64::try_from(self.lock_state().try_unlock_times).unwrap_or(i64::MAX)
+        self.lock_state().try_unlock_times
     }
 
     pub fn inc_try_unlock_times(&self) {
@@ -925,7 +925,7 @@ impl ProcessQueue {
             info.set_transaction_msg_count(i32::try_from(consuming.len()).unwrap_or(i32::MAX));
         }
         info.set_locked(state.locked);
-        info.set_try_unlock_times(i64::try_from(state.try_unlock_times).unwrap_or(i64::MAX));
+        info.set_try_unlock_times(state.try_unlock_times);
         info.set_last_lock_timestamp(state.last_lock_timestamp_millis);
         info.set_droped(state.dropped);
         info.set_last_pull_timestamp(state.last_pull_timestamp_millis);
@@ -1674,10 +1674,10 @@ impl ProcessQueue {
     pub(crate) fn increment_try_unlock_times(
         &self,
         generation: u64,
-    ) -> Result<u64, ProcessQueueError> {
+    ) -> Result<i64, ProcessQueueError> {
         let mut state = self.lock_state();
         self.ensure_generation(generation)?;
-        state.try_unlock_times = state.try_unlock_times.saturating_add(1);
+        state.try_unlock_times = state.try_unlock_times.wrapping_add(1);
         Ok(state.try_unlock_times)
     }
 
@@ -1757,6 +1757,34 @@ mod tests {
 
     fn process_queue(generation: u64) -> ProcessQueue {
         ProcessQueue::new_for_assignment(MessageQueue::new("orders", "broker-a", 0), generation)
+    }
+
+    #[test]
+    fn try_unlock_counter_matches_java_signed_atomic_long_wrap() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/consumer/facade-api.json"))
+                .expect("valid pinned Java facade fixture");
+        let java_wrapped_value =
+            fixture["implementationBehaviors"]["processQueueTryUnlockOverflow"]
+                .as_i64()
+                .expect("Java fixture records the signed overflow result");
+        let process_queue = process_queue(31);
+        process_queue.lock_state().try_unlock_times = i64::MAX;
+
+        process_queue.inc_try_unlock_times();
+        assert_eq!(process_queue.get_try_unlock_times(), java_wrapped_value);
+        let mut info = rocketmq_classic_protocol::body::ConsumerProcessQueueInfo::default();
+        process_queue.fill_process_queue_info(&mut info);
+        assert_eq!(info.get_try_unlock_times(), java_wrapped_value);
+        process_queue.lock_state().try_unlock_times = i64::MAX;
+        assert_eq!(
+            process_queue.increment_try_unlock_times(31),
+            Ok(java_wrapped_value)
+        );
+        assert_eq!(
+            process_queue.snapshot(31).unwrap().try_unlock_times,
+            java_wrapped_value
+        );
     }
 
     fn message(offset: i64, body_size: usize) -> MessageExt {
