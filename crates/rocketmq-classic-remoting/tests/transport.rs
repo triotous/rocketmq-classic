@@ -377,6 +377,37 @@ async fn p3_client_start_is_explicit_and_idempotent() {
     assert_eq!(client.start(), Err(TransportError::Shutdown));
 }
 
+#[tokio::test]
+async fn zero_timeout_connects_before_expiring_without_sending_a_frame() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let client = RemotingClient::new(TransportMode::Plain);
+    client.start().unwrap();
+
+    assert!(matches!(
+        client
+            .invoke_sync(&address, command(77), Duration::ZERO)
+            .await,
+        Err(TransportError::TimeoutWithContext {
+            phase: rocketmq_classic_remoting::error::TimeoutPhase::Operation,
+            ..
+        })
+    ));
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .expect("synchronous Java invocation obtains the channel first")
+        .unwrap();
+    let mut byte = [0];
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), socket.read(&mut byte))
+            .await
+            .is_err()
+    );
+
+    client.shutdown().await;
+    assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
+}
+
 struct ContextCallback {
     sender: tokio::sync::mpsc::UnboundedSender<CallbackSnapshot>,
     events: Arc<std::sync::Mutex<Vec<&'static str>>>,

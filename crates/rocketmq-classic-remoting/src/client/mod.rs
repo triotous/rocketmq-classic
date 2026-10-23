@@ -1890,7 +1890,8 @@ impl RemotingClient {
         command: RemotingCommand,
         timeout: std::time::Duration,
     ) -> Result<RemotingCommand, TransportError> {
-        self.invoke_sync_deadline_inner(addr, command, Instant::now() + timeout, timeout)
+        let timeout_millis = timeout.as_millis().min(i64::MAX as u128) as i64;
+        self.invoke_sync_with_timeout_millis(addr, command, timeout_millis)
             .await
     }
 
@@ -1952,12 +1953,9 @@ impl RemotingClient {
             ));
         }
 
-        self.invoke_sync(
-            addr,
-            command,
-            std::time::Duration::from_millis(remaining_millis as u64),
-        )
-        .await
+        let remaining = std::time::Duration::from_millis(remaining_millis as u64);
+        self.invoke_sync_deadline_inner(addr, command, Instant::now() + remaining, remaining)
+            .await
     }
 
     async fn invoke_sync_deadline_inner(
