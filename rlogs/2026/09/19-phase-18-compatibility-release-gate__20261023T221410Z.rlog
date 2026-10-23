@@ -43,3 +43,9 @@ P18-V01 Cargo feature-flag reverse scan on code revision `ea17b8fc`:
 - `CARGO_NET_OFFLINE=true cargo metadata --offline --format-version 1 --no-deps` reports an empty `features` map for all eight workspace packages (six libraries, facade, integration runner).
 - No workspace-defined Cargo feature matrix or optional feature branch adds a Rust-only client capability; `--all-features` selects no extra workspace feature set.
 - Added the narrow feature-flag disposition to the Phase 6 API/config map and requirement audit. Broad P18-V01 remains PARTIAL.
+
+P18-V01 statistics scheduler audit correction:
+- Reconciled the earlier scheduler shutdown audit with implementation and follow-up records `644fff21`, `4251b2b3`, `b0189bd3`, `3b9d9473`, and `4d32bc97`.
+- The client runtime queue contains Java's 30 constructor-time `ConsumerStatsManager` jobs; the Rust pre-start shutdown fixture returns the same 32 entries (30 maintenance jobs plus two submitted tasks).
+- Each sample/log callback retains its owning `StatsItemSet`; sampling advances only the matching series and print jobs emit only that set's minute/hour/day event. `ConsumerStatsManager::with_scheduler` registers the same 30 jobs on the supplied scheduler, using the shared schedule specification.
+- Updated `PHASE_6_REQUIREMENT_AUDIT.md`, `PHASE_6_API_CONFIG_MAP.md`, and `docs/release-checklist.md`. The previously stated queue-count and statistics-event gaps are closed for this scheduler slice; broad P18-V01 remains PARTIAL. Existing implementation and verification evidence is in the cited run logs; this correction changes documentation only.

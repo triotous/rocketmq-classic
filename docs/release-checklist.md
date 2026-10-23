@@ -106,6 +106,14 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   and Clippy, offline Maven `verify`, formatting, and diff checks. This closes
   callback ownership only; broad P18-V01 remains PARTIAL. Native Windows runtime
   and current-revision remote CI remain open.
+- P18-V01 statistics scheduler reconciliation (`3b9d9473`, `4d32bc97`,
+  2026-10-23): `ConsumerStatsManager::with_scheduler` maps Java's public
+  scheduler-injected constructor and registers all 30 jobs; runtime-owned and
+  standalone managers share the same schedule specification. The 32-entry
+  pre-start client `shutdownNow` result, per-set sampling ownership, and
+  per-set minute/hour/day log events are all represented in Rust. The
+  scheduler queue and statistics callback gaps are closed for this slice;
+  broad P18-V01 remains PARTIAL.
 - P18-V02 server-free refresh on code revision `4251b2b3` (documentation
   revision `23265067`, 2026-10-23): default/all-feature workspace tests and
   doctests, strict workspace Clippy, offline Maven `verify` (37 scenarios and
