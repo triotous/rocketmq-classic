@@ -9022,3 +9022,20 @@ owner-specific checks belong in the manual handoff.
   run. The four protected Phase 19 worktree paths remain untouched and
   unstaged. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T162602Z.rlog`.
+
+## P18-V01 ProducerConnection assigned-Set alias — 2026-10-23 (`b41efa8b`)
+
+- [x] Added direct pinned-Java evidence that `ProducerConnection` retains the
+  assigned `HashSet` reference and exposes that same mutable set from its
+  getter. The Java probe uses an isolated DTO so it does not change the RPC
+  response fixture.
+- [x] Rust verifies `SharedValue::ptr_eq` and mutation visibility through the
+  assigned set. Protocol library tests (160), strict workspace Clippy, offline
+  Maven `verify` (37 scenarios and cross-decodes), formatting, and diff checks
+  pass. Updated producer fixture SHA-256:
+  `412fb8f5d9805edb2f994876d81ca980bfccc2963a1aff2bea19b98319a1eb5a`.
+- [ ] This closes this assigned-Set alias evidence gap only. Broad P18-V01
+  remains PARTIAL; current-revision remote CI and native Windows runtime
+  evidence remain open. Phase 19 is out of scope. No push or remote CI was run;
+  the four protected Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T163451Z.rlog`.

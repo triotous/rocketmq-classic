@@ -508,6 +508,23 @@ scenarios and Java/Rust fixture cross-decodes), formatting, and diff checks
 pass. This closes the two DTO Set collection mappings only; broad P18-V01
 reconciliation remains open.
 
+## P18-V01 `ProducerConnection` assigned-Set alias — 2026-10-23 (`b41efa8b`)
+
+The pinned Java `ProducerConnection` setter retains the supplied
+`HashSet<Connection>` reference, and its getter returns that same object; a
+mutation through the getter is visible through the caller's set. Rust now has
+a direct regression for `set_connection_set` / `get_connection_set` that
+checks `SharedValue::ptr_eq` and observes mutation through the assigned
+container. The Java fixture invokes the DTO accessors directly using an
+isolated DTO, so the probe does not alter the separately captured RPC response.
+Updated `fixtures/producer/core.json` SHA-256:
+`412fb8f5d9805edb2f994876d81ca980bfccc2963a1aff2bea19b98319a1eb5a`.
+
+The Protocol library suite (160 tests), strict all-target/all-feature workspace
+Clippy, offline Maven `verify`, formatting, and diff checks pass. This closes
+the ProducerConnection assigned-Set alias proof only; broad P18-V01 remains
+open.
+
 ## P18-V01 `ClusterInfo` DTO surface — 2026-10-18 (`6b40e86c`)
 
 Pinned Java `ClusterInfo` declares private broker/cluster tables with public

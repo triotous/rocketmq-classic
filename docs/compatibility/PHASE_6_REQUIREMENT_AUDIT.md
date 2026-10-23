@@ -4430,3 +4430,20 @@ passed. Maven verified the 37-scenario manifest, fixture drift, and Java/Rust
 cross-decodes. The change closes this two-DTO collection mismatch only; broad
 P18-V01 reconciliation, current-revision remote CI, and native Windows runtime
 evidence remain open. Phase 19 remains out of scope.
+
+## P18-V01 `ProducerConnection` Set alias regression — 2026-10-23 (`b41efa8b`)
+
+The prior Set correction preserved `ProducerConnection`'s setter/getter
+container alias in Rust, but its direct proof exercised only
+`ConsumerConnection`. Added a pinned Java probe showing that
+`ProducerConnection.getConnectionSet()` returns the exact `HashSet` assigned
+by `setConnectionSet`, and that adding through the returned set mutates the
+assigned instance. An isolated DTO keeps this probe from changing the
+separately captured RPC response. Rust asserts shared-handle pointer identity
+and visible mutation. Updated `fixtures/producer/core.json` SHA-256:
+`412fb8f5d9805edb2f994876d81ca980bfccc2963a1aff2bea19b98319a1eb5a`.
+
+The Protocol library suite (160 tests), strict all-target/all-feature workspace
+Clippy, offline Maven `verify`, formatting, and diff checks pass. This closes
+the ProducerConnection assigned-Set alias evidence gap only; broad P18-V01
+reconciliation remains PARTIAL.
