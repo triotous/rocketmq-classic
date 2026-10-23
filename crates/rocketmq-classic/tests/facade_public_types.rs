@@ -1,19 +1,20 @@
 use rocketmq_classic::{
-    ConsumerServiceState, ConsumerStatsManager, DEFAULT_CONSUMER_GROUP, DEFAULT_PRODUCER_GROUP,
-    EndTransactionContext, EndTransactionHook, Message, MessageBatch, MessageExtSubtype, MqHelper,
-    NotifyResult, NullablePublishInfoQueueFilters, OrderlyListenerFuture, PermName,
-    PermissionParseError, PopResult, PopStatus, Producer, ProducerConfig, ProducerPublishQueueList,
-    ProducerQueueIndex, ProducerServiceState, ProducerTopicList, PublishInfoQueueFilter,
-    QueryResult, SharedMessageBody, SharedMessageProperties, TopicPublishInfo,
-    TopicPublishInfoEntryHandle, TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView,
-    TopicPublishInfoTable, TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData,
-    TopicRouteDataHandle,
+    ClientConfig, ConsumerServiceState, ConsumerStatsManager, DEFAULT_CONSUMER_GROUP,
+    DEFAULT_PRODUCER_GROUP, EndTransactionContext, EndTransactionHook, Message, MessageBatch,
+    MessageExtSubtype, MqHelper, NotifyResult, NullablePublishInfoQueueFilters,
+    OrderlyListenerFuture, PermName, PermissionParseError, PopResult, PopStatus, Producer,
+    ProducerConfig, ProducerPublishQueueList, ProducerQueueIndex, ProducerServiceState,
+    ProducerTopicList, PublishInfoQueueFilter, QueryResult, SharedMessageBody,
+    SharedMessageProperties, TopicPublishInfo, TopicPublishInfoEntryHandle,
+    TopicPublishInfoEntrySetView, TopicPublishInfoKeySetView, TopicPublishInfoTable,
+    TopicPublishInfoTableError, TopicPublishInfoValuesView, TopicRouteData, TopicRouteDataHandle,
 };
+use rocketmq_classic_core::runtime::ClientRuntimeManager;
 
 fn assert_public_type<T: ?Sized>() {}
 
-#[test]
-fn phase_owned_public_types_are_available_from_the_facade_crate() {
+#[tokio::test]
+async fn phase_owned_public_types_are_available_from_the_facade_crate() {
     assert_eq!(DEFAULT_CONSUMER_GROUP, "DEFAULT_CONSUMER");
     assert_eq!(DEFAULT_PRODUCER_GROUP, "DEFAULT_PRODUCER");
     assert!(PermName::is_valid_string("٧").unwrap());
@@ -58,9 +59,16 @@ fn phase_owned_public_types_are_available_from_the_facade_crate() {
 
     assert_public_type::<ConsumerServiceState>();
     assert_public_type::<ConsumerStatsManager>();
-    let stats = ConsumerStatsManager::default();
+    let manager = ClientRuntimeManager::new();
+    let runtime = manager
+        .get_or_create(&ClientConfig::default())
+        .await
+        .unwrap();
+    let scheduler = runtime.scheduled_executor_service();
+    let stats = ConsumerStatsManager::with_scheduler(&scheduler).unwrap();
     stats.inc_pull_rt("workers", "orders", 5);
     let _status = stats.consume_status("workers", "orders");
+    runtime.shutdown().await.unwrap();
     assert_public_type::<OrderlyListenerFuture>();
     assert_public_type::<PopResult>();
     assert_public_type::<PopStatus>();

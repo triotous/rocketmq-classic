@@ -680,7 +680,7 @@ impl PushConsumer {
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
-            stats: Arc::new(ConsumerStatsManager::default()),
+            stats: Arc::new(ConsumerStatsManager::new_unscheduled_internal()),
             runtime_stats: RwLock::new(StatsManagerBinding::Unbound),
             consume_message_service: RwLock::new(ConsumeMessageServiceBinding::Unbound),
             consume_stats_group: RwLock::new(None),

@@ -153,27 +153,38 @@ impl StatsLogWindow {
 }
 
 /// Java 5.5.1 consumer metrics shared by one `MQClientInstance` equivalent.
+///
+/// Standalone construction requires a scheduler, as in Java:
+/// [`ConsumerStatsManager::with_scheduler`]. The unscheduled Rust convenience
+/// constructors do not have a Java public API counterpart.
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::runtime::ConsumerStatsManager;
+/// let _ = ConsumerStatsManager::new();
+/// ```
+///
+/// ```compile_fail
+/// use rocketmq_classic_core::runtime::ConsumerStatsManager;
+/// let _ = ConsumerStatsManager::default();
+/// ```
 pub struct ConsumerStatsManager {
     sampling_origin: Instant,
     topics: Mutex<HashMap<StatsKey, TopicStats>>,
 }
 
-impl Default for ConsumerStatsManager {
-    fn default() -> Self {
-        Self::with_sampling_origin(Instant::now())
-    }
-}
-
 impl ConsumerStatsManager {
-    /// Creates an empty manager for one client runtime.
-    pub fn new() -> Self {
-        Self::default()
+    /// Allocates the manager for Core/Consumer runtime ownership before its
+    /// client scheduler is activated. Standalone users should use
+    /// [`ConsumerStatsManager::with_scheduler`].
+    #[doc(hidden)]
+    pub fn new_unscheduled_internal() -> Self {
+        Self::with_sampling_origin(Instant::now())
     }
 
     /// Creates a manager and registers its Java-compatible maintenance jobs
     /// with the supplied client scheduler.
     pub fn with_scheduler(scheduler: &RuntimeScheduler) -> Result<Arc<Self>, RuntimeError> {
-        let manager = Arc::new(Self::default());
+        let manager = Arc::new(Self::new_unscheduled_internal());
         for spec in stats_schedule_specs() {
             match spec.kind {
                 StatsScheduleKind::Sample(set) => {

@@ -7,6 +7,7 @@ use rocketmq_classic_consumer::{
     PopProcessQueue, ProcessQueue, PullConsumerConfig, PushConsumer, PushConsumerConfig,
     pull::PullConsumer, rebalance::AllocateMessageQueueAveragely,
 };
+use rocketmq_classic_core::{config::ClientConfig, runtime::ClientRuntimeManager};
 use rocketmq_classic_protocol::body::{
     ConsumeMessageDirectlyResult, ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo,
 };
@@ -181,8 +182,8 @@ fn pinned_java_consumer_facade_inventory_covers_declared_and_inherited_methods()
     ));
 }
 
-#[test]
-fn consumer_stats_manager_exposes_the_pinned_java_methods() {
+#[tokio::test]
+async fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../fixtures/consumer/push-implementation-accessor.json"
     ))
@@ -215,7 +216,12 @@ fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     ]);
     assert_eq!(fixture["consumerStatsManagerPublicMethods"], expected);
 
-    let stats = ConsumerStatsManager::default();
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&ClientConfig::default())
+        .await
+        .unwrap();
+    let scheduler = runtime.scheduled_executor_service();
+    let stats = ConsumerStatsManager::with_scheduler(&scheduler).unwrap();
     stats.start();
     stats.inc_pull_rt("workers", "orders", 12);
     stats.inc_pull_tps("workers", "orders", 3);
@@ -224,6 +230,7 @@ fn consumer_stats_manager_exposes_the_pinned_java_methods() {
     stats.inc_consume_failed_tps("workers", "orders", 1);
     let _status = stats.consume_status("workers", "orders");
     stats.shutdown();
+    runtime.shutdown().await.unwrap();
 }
 
 #[tokio::test]
