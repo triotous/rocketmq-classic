@@ -8862,3 +8862,17 @@ owner-specific checks belong in the manual handoff.
   scope. No push or remote CI was run; the four existing user-owned Phase 19
   paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-rpc-header-identity-inventory__20261023T143907Z.rlog`.
+
+## P18-V01 Lite request-header Core call-site update — 2026-10-23 (`8288cc98`)
+
+- [x] Updated all six Core uses of `LiteSubscriptionCtlRequestHeader` to pass
+  `Default`; the empty default header emits no ext fields and preserves the
+  existing request wire shape.
+- [x] Full workspace all-feature tests and doctests passed after the changes.
+  `cargo fmt --all -- --check` and `git diff --check` passed.
+- [ ] This closes downstream call-site fallout from the Lite header mapping
+  only. Broad P18-V01 remains open; native Windows runtime and current-revision
+  remote Ubuntu CI remain pending. Phase 19 Broker/Docker validation remains
+  outside scope. No push or remote CI was run; the four existing user-owned
+  Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-lite-core-header-call-sites__20261023T144643Z.rlog`.

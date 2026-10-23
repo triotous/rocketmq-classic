@@ -4279,3 +4279,18 @@ checks, and full offline Maven verification passed. No production behavior
 changed. This closes the request-header identity/API inventory gap only; broad
 P18-V01 remains PARTIAL, with native Windows runtime and current-revision
 remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
+
+## P18-V01 Lite request-header Core call-site update — 2026-10-23 (`8288cc98`)
+
+Changing `LiteSubscriptionCtlRequestHeader` from a unit struct to a value with
+four inherited RPC fields exposed six Core call sites that still passed the
+unit type as a value. Updated check-client, query-assignment, request-mode,
+Lite subscription-control, and batch-ack requests to pass a default header
+instance. The default still emits no ext fields, preserving their existing
+empty-header wire behavior.
+
+The full workspace all-feature test suite and doctests passed after the call
+site updates, as did formatting and diff checks. This closes the downstream
+construction fallout from the Lite header mapping only; broad P18-V01 remains
+PARTIAL, and native Windows runtime and current-revision remote Ubuntu CI
+remain open. Phase 19 Broker/Docker work remains outside scope.
