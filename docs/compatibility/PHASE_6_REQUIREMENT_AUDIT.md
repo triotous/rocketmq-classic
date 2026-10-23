@@ -3755,3 +3755,10 @@ workspace documentation command reaches the integration crate, then triggers
 a rustdoc metadata-decoder compiler ICE in Rust 1.85.0 while indexing an opaque
 `Message::body` return type; this toolchain failure does not occur in the
 targeted Core and Consumer documentation run.
+
+The follow-up command
+`CC_x86_64_pc_windows_gnu=/opt/homebrew/bin/x86_64-w64-mingw32-gcc cargo
+check --offline --workspace --all-targets --all-features --locked --target
+x86_64-pc-windows-gnu` also passes, compiling all test and example targets for
+the Windows GNU target. It adds cross-target compile evidence only; the native
+Windows runtime check remains open.
