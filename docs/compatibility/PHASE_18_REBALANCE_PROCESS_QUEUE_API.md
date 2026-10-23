@@ -382,6 +382,9 @@ checks the fixture denominator, each Java method name, and its Rust mapping.
 ## Rust `PopProcessQueue` public support-surface reverse audit
 
 `PopProcessQueue::new()` maps Java's no-argument constructor.
+`PopProcessQueue::default()` delegates to `new()` and creates the same Java
+default state; it is the idiomatic Rust constructor adapter, not a separate
+queue capability.
 `fill_pop_process_queue_info_nullable` represents the nullable DTO argument and
 returns `PopProcessQueueError::NullInfo`, whose display text is Java's
 `java.lang.NullPointerException`. `PopProcessQueueError` is re-exported from
@@ -389,11 +392,15 @@ the Consumer facade. The invoked fixture and Rust facade comparison verify
 this error class.
 
 `every_pop_process_queue_rust_only_surface_has_java_disposition` checks the
-constructor, nullable DTO adapter, and public error type against this mapping.
+`Default` adapter, nullable DTO adapter, and public error type against this
+mapping.
 
 ## Rust ProcessQueue public support-surface reverse audit
 
-`ProcessQueue::new()` maps the Java no-argument constructor. The nullable
+`ProcessQueue::new()` maps the Java no-argument constructor.
+`ProcessQueue::default()` also delegates to `new()` and produces the same Java
+default state; it is the idiomatic Rust form of that constructor. A facade
+regression compares both forms across stable queue defaults. The nullable
 adapters `contains_message_nullable`, `put_message_nullable`,
 `put_message_items_nullable`, `remove_message_nullable`,
 `remove_message_items_nullable`, `make_message_to_consume_again_nullable`,
@@ -414,8 +421,8 @@ count and byte counters. `ProcessQueueError` and
 variants report Rust assignment and in-flight fencing states.
 
 `every_process_queue_rust_only_surface_has_java_disposition` checks the
-constructor, nullable adapters, public helper types, counter methods, and tree
-read/write methods against this reverse audit.
+constructor and `Default` adapter, nullable adapters, public helper types,
+counter methods, and tree read/write methods against this reverse audit.
 
 ## Internal implementation adaptation
 

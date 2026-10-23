@@ -689,6 +689,12 @@ fn every_pop_process_queue_rust_only_surface_has_java_disposition() {
     let pop_source = include_str!("../src/pop.rs");
     let facade_source = include_str!("../src/lib.rs");
 
+    assert!(pop_source.contains("impl Default for PopProcessQueue"));
+    assert!(
+        crosswalk.contains("PopProcessQueue::default()"),
+        "the Java no-argument constructor mapping records Rust Default"
+    );
+
     for surface in [
         "PopProcessQueue::new",
         "fill_pop_process_queue_info_nullable",
@@ -808,6 +814,11 @@ fn every_process_queue_rust_only_surface_has_java_disposition() {
     let crosswalk =
         include_str!("../../../docs/compatibility/PHASE_18_REBALANCE_PROCESS_QUEUE_API.md");
     let process_queue_source = include_str!("../src/process_queue.rs");
+    assert!(process_queue_source.contains("impl Default for ProcessQueue"));
+    assert!(
+        crosswalk.contains("ProcessQueue::default()"),
+        "the Java no-argument constructor mapping records Rust Default"
+    );
     let adapters = [
         "new",
         "contains_message_nullable",
@@ -873,6 +884,62 @@ fn every_process_queue_rust_only_surface_has_java_disposition() {
             "the reverse audit gives support method {method} a Java disposition"
         );
     }
+}
+
+#[test]
+fn rust_default_process_queue_constructors_match_java_no_arg_defaults() {
+    let default_queue = ProcessQueue::default();
+    let new_queue = ProcessQueue::new();
+    macro_rules! assert_same {
+        ($name:literal, $default_value:expr, $new_value:expr) => {
+            assert_eq!($default_value, $new_value, "ProcessQueue {}", $name);
+        };
+    }
+    assert_same!(
+        "dropped",
+        default_queue.is_dropped(),
+        new_queue.is_dropped()
+    );
+    assert_same!("locked", default_queue.is_locked(), new_queue.is_locked());
+    assert_same!(
+        "lock expired",
+        default_queue.is_lock_expired(),
+        new_queue.is_lock_expired()
+    );
+    assert_same!(
+        "ready messages",
+        default_queue.has_temp_message(),
+        new_queue.has_temp_message()
+    );
+    assert_same!(
+        "message count",
+        default_queue.get_msg_count().get(),
+        new_queue.get_msg_count().get()
+    );
+    assert_same!(
+        "message size",
+        default_queue.get_msg_size().get(),
+        new_queue.get_msg_size().get()
+    );
+    assert_same!(
+        "message accumulated count",
+        default_queue.get_msg_acc_cnt(),
+        new_queue.get_msg_acc_cnt()
+    );
+    assert_same!(
+        "try unlock count",
+        default_queue.get_try_unlock_times(),
+        new_queue.get_try_unlock_times()
+    );
+
+    let default_pop = PopProcessQueue::default();
+    let new_pop = PopProcessQueue::new();
+    assert_eq!(default_pop.is_dropped(), new_pop.is_dropped());
+    assert_eq!(
+        default_pop.get_wai_ack_msg_count(),
+        new_pop.get_wai_ack_msg_count()
+    );
+    assert_eq!(default_pop.ack(), new_pop.ack());
 }
 
 #[test]
