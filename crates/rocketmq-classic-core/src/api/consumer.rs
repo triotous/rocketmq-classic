@@ -143,7 +143,7 @@ impl MQClientApi {
             .request(
                 addr,
                 code,
-                &rocketmq_classic_protocol::header::LiteSubscriptionCtlRequestHeader,
+                &rocketmq_classic_protocol::header::LiteSubscriptionCtlRequestHeader::default(),
                 Some(
                     serde_json::to_vec(body).expect("check-client body serialization cannot fail"),
                 ),

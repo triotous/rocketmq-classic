@@ -592,7 +592,7 @@ impl MQClientApi {
             self.request(
                 addr,
                 request::QUERY_ASSIGNMENT,
-                &LiteSubscriptionCtlRequestHeader,
+                &LiteSubscriptionCtlRequestHeader::default(),
                 Some(json_body(body, request::QUERY_ASSIGNMENT)?),
                 deadline,
             )
@@ -616,7 +616,7 @@ impl MQClientApi {
             self.request_with_timeout_millis(
                 addr,
                 request::QUERY_ASSIGNMENT,
-                &LiteSubscriptionCtlRequestHeader,
+                &LiteSubscriptionCtlRequestHeader::default(),
                 Some(json_body(body, request::QUERY_ASSIGNMENT)?),
                 i64::from(timeout_millis),
             )
@@ -637,7 +637,7 @@ impl MQClientApi {
             self.request(
                 addr,
                 request::SET_MESSAGE_REQUEST_MODE,
-                &LiteSubscriptionCtlRequestHeader,
+                &LiteSubscriptionCtlRequestHeader::default(),
                 Some(json_body(body, request::SET_MESSAGE_REQUEST_MODE)?),
                 deadline,
             )
@@ -741,7 +741,7 @@ impl MQClientApi {
             self.request_future(
                 addr,
                 request::LITE_SUBSCRIPTION_CTL,
-                &LiteSubscriptionCtlRequestHeader,
+                &LiteSubscriptionCtlRequestHeader::default(),
                 Some(json_body(body, request::LITE_SUBSCRIPTION_CTL)?),
                 deadline,
             )
@@ -841,7 +841,7 @@ impl MQClientApi {
             .request_future(
                 addr,
                 request::BATCH_ACK_MESSAGE,
-                &LiteSubscriptionCtlRequestHeader,
+                &LiteSubscriptionCtlRequestHeader::default(),
                 Some(json_body(body, request::BATCH_ACK_MESSAGE)?),
                 deadline,
             )
