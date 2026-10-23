@@ -4447,3 +4447,20 @@ The Protocol library suite (160 tests), strict all-target/all-feature workspace
 Clippy, offline Maven `verify`, formatting, and diff checks pass. This closes
 the ProducerConnection assigned-Set alias evidence gap only; broad P18-V01
 reconciliation remains PARTIAL.
+
+Offset-map alias and partial-mutation correction (2026-10-23): pinned Java
+5.5.1 `MQClientInstance.parseOffsetTableFromBroker` mutates each input
+`MessageQueue` key and inserts that same object into a new `HashMap`; if a later
+null key fails, earlier queue mutations remain visible. Commit `38194e8a`
+changes Rust to borrow a shared ordered input table, mutate the same shared
+queue keys, return a new HashMap retaining those queue handles, and preserve
+the prefix mutation on failure. The seventeen existing Java cases now compare
+both the mutated input and returned map and assert returned-key identity.
+`fixtures/runtime/offsets.json` remains unchanged (SHA-256:
+`f8298b31303536f9d97d172444bc63bb8a63708f7e1e93e33c148d01e3511af2`). On the
+final borrowed signature, the focused metadata differential, full offline
+workspace tests, strict all-target/all-feature Clippy, formatting, and diff
+checks pass. Java oracle source and fixtures did not change, so Maven fixture
+verification was not rerun. This closes the recorded offset-table alias gap;
+broad P18-V01 source/API/settings/input/error/control-flow reconciliation
+remains PARTIAL, and P6-V04 remains `PENDING_PHASE_19`.
