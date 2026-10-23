@@ -39,6 +39,11 @@ consume timestamp update, return offset, and retained queue state. Its focused
 facade comparison, pinned Java facade fixture verification, strict Consumer
 Clippy, and formatting/diff checks pass.
 
+Follow-up revision `0418761f` maps `makeMessageToConsumeAgain(null)` to the
+uncaught Java null-list failure. Its focused facade comparison, pinned Java
+facade fixture verification, strict Consumer Clippy, and formatting/diff checks
+pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3476,4 +3481,18 @@ timestamp update, count, size, and tree. Fixture SHA-256:
 The focused ProcessQueue facade test, targeted pinned Java facade fixture
 verification, strict Consumer Clippy, and formatting/diff checks pass. This
 closes the null-list removal branch only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `makeMessageToConsumeAgain` list — 2026-10-23
+
+Pinned Java propagates the null-list exception from its enhanced-for loop
+before changing queue state. Rust adds
+`make_message_to_consume_again_nullable(None)` and returns the typed Java error
+with the current queue preserved. The invoked Java fixture and Rust facade
+comparison check exception class, count, size, and tree. Fixture SHA-256:
+`a9fb84f276c05f4f55481b03fa2316cf28ec0ca691ecfbe1ae027522abfd6365`.
+
+The focused ProcessQueue facade test, targeted pinned Java facade fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-list requeue branch only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.

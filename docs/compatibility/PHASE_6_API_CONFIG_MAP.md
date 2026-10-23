@@ -1764,6 +1764,15 @@ Fixture SHA-256:
 `357c266f6bea2c4df5b066d334b75b28314202d1d198a34bd270115345b9096f`.
 This closes the null-list removal branch only; P18-V01 remains open.
 
+## ProcessQueue `makeMessageToConsumeAgain(null)` input — 2026-10-23
+
+Pinned Java propagates `NullPointerException` from the enhanced-for loop before
+changing queue state. Rust adds `make_message_to_consume_again_nullable(None)`
+and returns the typed Java error while leaving entries and counters intact.
+Fixture SHA-256:
+`a9fb84f276c05f4f55481b03fa2316cf28ec0ca691ecfbe1ae027522abfd6365`.
+This closes the null-list requeue branch only; P18-V01 remains open.
+
 ## `MQClientAPIImpl.getClusterList` stub — 2026-10-21
 
 The pinned `getClusterList(String,long)` implementation ignores both inputs,
@@ -2285,7 +2294,7 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `PopProcessError`, `PopReceiptError` | Typed Rust error carriers for Java POP response decoding and `ExtraInfoUtil` receipt parsing. `PopReceiptError` keeps malformed numeric and missing-field outcomes distinct while the original receipt remains available for forward-compatible fields. |
 | `ProcessQueueAtomicLong` | Rust operation view for Java `ProcessQueue.getMsgCount()` / `getMsgSize()` `AtomicLong` values, including `get_and_add`, `add_and_get`, `get_and_set`, increment/decrement, and `compare_and_set` operations with Java wrapping arithmetic. |
 | `ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, `ProcessQueueMessageTreeWriteGuard` | Lock-backed Rust views for Java `ProcessQueue.getMsgTreeMap()`'s live `TreeMap`. Read/write guards preserve direct map edits while keeping independent count and byte counters unchanged, matching Java's separate fields. |
-| `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `contains_message_nullable`, `has_temp_message`, `put_message`, `put_message_nullable`, `take_messages`, `remove_message`, `remove_message_nullable`, `make_message_to_consume_again`, `clean_expired_msg`, `clean_expired_msg_nullable`, `fill_process_queue_info`, `fill_process_queue_info_nullable` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. The nullable adapters map Java's null-message `false`, null-list put/removal and null-consumer `NullPointerException` paths, and null-info swallowed exception; Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
+| `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `contains_message_nullable`, `has_temp_message`, `put_message`, `put_message_nullable`, `take_messages`, `remove_message`, `remove_message_nullable`, `make_message_to_consume_again`, `make_message_to_consume_again_nullable`, `clean_expired_msg`, `clean_expired_msg_nullable`, `fill_process_queue_info`, `fill_process_queue_info_nullable` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. The nullable adapters map Java's null-message `false`, null-list put/removal/requeue and null-consumer `NullPointerException` paths, and null-info swallowed exception; Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
 | `is_dropped`, `set_dropped`, `is_locked`, `set_locked`, `is_lock_expired`, `is_pull_expired`, `get_last_lock_timestamp`, `set_last_lock_timestamp`, `get_last_pull_timestamp`, `set_last_pull_timestamp`, `get_last_consume_timestamp`, `set_last_consume_timestamp`, `get_msg_acc_cnt`, `set_msg_acc_cnt`, `get_try_unlock_times`, `inc_try_unlock_times`, `get_consume_lock` | Java `ProcessQueue` state/accessor methods (`isDropped`, `setDropped`, lock/pull expiration, timestamp, accumulated-count, unlock-attempt, and orderly-consume lock accessors). `PopProcessQueue.is_pull_expired` maps to the corresponding Java POP queue check. |
 | `get_and_add`, `add_and_get`, `get_and_set`, `get_and_increment`, `increment_and_get`, `get_and_decrement`, `decrement_and_get`, `compare_and_set` | Java `AtomicLong` methods returned from `ProcessQueue.getMsgCount()` / `getMsgSize()`; operations mutate the same cached counters. |
 | `get_last_pop_timestamp`, `set_last_pop_timestamp`, `get_wai_ack_msg_count`, `inc_found_msg`, `dec_found_msg`, `fill_pop_process_queue_info` | Java `PopProcessQueue` getters, setters, found-message counter methods, and `fillPopProcessQueueInfo`; the Rust spelling `wai` retains Java's declared `getWaiAckMsgCount` typo. |
