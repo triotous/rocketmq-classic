@@ -1869,6 +1869,21 @@ mod tests {
                 .unwrap(),
             53
         );
+        let timed_batch = scheduler
+            .invoke_all_with_timeout([std::future::ready(59_u32)], Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(matches!(
+            timed_batch.as_slice(),
+            [RuntimeScheduledTaskOutcome::Completed(59)]
+        ));
+        assert_eq!(
+            scheduler
+                .invoke_any_with_timeout([std::future::ready(61_u32)], Duration::from_secs(1))
+                .await
+                .unwrap(),
+            61
+        );
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();
