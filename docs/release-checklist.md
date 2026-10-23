@@ -9291,3 +9291,22 @@ owner-specific checks belong in the manual handoff.
   was run. Phase 19 Broker/Docker evidence remains out of scope. The four
   pre-existing Phase 19 worktree paths remain untouched and unstaged. Run
   record: `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
+
+## P18-V03 documentation and package preparation review — 2026-10-23 (`ea17b8fc`)
+
+- [x] The facade README documents the Java 5.5.1 client baseline separately
+  from the RocketMQ 5.3.4 Phase 19 Broker baseline, send timeout and duplicate
+  delivery semantics, consumer redelivery, and shutdown/offset behavior. It
+  continues to state that full compatibility and release readiness are not
+  claimed.
+- [x] The release checklist and compatibility docs keep unit status distinct
+  from pending live evidence; the Phase 19 manifest remains the handoff for
+  server-backed cases.
+- [x] `scripts/check-workspace-metadata.py` confirms Apache-2.0 metadata,
+  `publish = false`, package direction, and exact `LICENSE`/`NOTICE` contents.
+  All seven product `cargo package --list --offline --locked` checks include
+  both documents. The release example build passes.
+- [x] No publication, release tag, or compatibility claim was made. This
+  closes the P18-V03 local preparation review only; broad P18-V01 and P18-V04
+  remain open. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
