@@ -402,7 +402,7 @@ impl MQClientApi {
                 language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                 ext_fields: Some(fields.into()),
                 remark,
-                ..RemotingCommand::default()
+                ..super::java_client_request_command(request::END_TRANSACTION)?
             },
             deadline,
         )?;

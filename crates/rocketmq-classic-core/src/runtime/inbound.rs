@@ -333,14 +333,14 @@ fn receive_reply_message(runtime: &ClientRuntime, command: &RemotingCommand) -> 
             match runtime.complete_reply_request(&correlation_id, reply) {
                 Ok(_) => RemotingCommand {
                     code: response::SUCCESS,
-                    ..Default::default()
+                    ..crate::api::java_client_response_command(response::SUCCESS, None)
                 },
                 Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
             }
         }
         Ok((_, None)) => RemotingCommand {
             code: response::SUCCESS,
-            ..Default::default()
+            ..crate::api::java_client_response_command(response::SUCCESS, None)
         },
         Err(_) => error(response::SYSTEM_ERROR, "process reply message fail"),
     }
@@ -367,11 +367,7 @@ impl RequestProcessor for RuntimeProcessor {
 }
 
 fn error(code: i32, remark: &str) -> RemotingCommand {
-    RemotingCommand {
-        code,
-        remark: Some(remark.into()),
-        ..Default::default()
-    }
+    crate::api::java_client_response_command(code, Some(remark.into()))
 }
 fn unsupported(code: i32, phase: &str) -> RemotingCommand {
     error(
@@ -393,7 +389,7 @@ fn missing_consumer_response(
             Ok(Some(RemotingCommand {
                 code: response::SUCCESS,
                 body: Some(body),
-                ..Default::default()
+                ..crate::api::java_client_response_command(response::SUCCESS, None)
             }))
         }
         ConsumerOperation::RunningInfo | ConsumerOperation::ConsumeDirectly => Ok(Some(error(

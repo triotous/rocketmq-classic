@@ -31,6 +31,7 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.common.message.MessageQueueAssignment;
 import org.apache.rocketmq.common.message.MessageRequestMode;
 import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.MQVersion;
 import org.apache.rocketmq.remoting.common.HeartbeatV2Result;
 import org.apache.rocketmq.remoting.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.remoting.protocol.body.QueryAssignmentRequestBody;
@@ -100,6 +101,8 @@ public final class InvokedRpcOracle {
     private static void dispatched(Capture capture, String mode, int code, String address) {
         check(mode.equals(capture.mode) && code == capture.request.getCode()
             && java.util.Objects.equals(address, capture.address), "dispatch " + code + " " + mode);
+        check(capture.request.getVersion() == MQVersion.CURRENT_VERSION,
+            "client request version " + code + " " + capture.request.getVersion());
     }
 
     private static void checkSendModes(Capture capture, MQClientAPIImpl api, Message message,

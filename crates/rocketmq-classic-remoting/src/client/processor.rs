@@ -288,10 +288,10 @@ fn process_registered(
                     response = Some(error_response(response::SYSTEM_ERROR, &message));
                 }
                 Ok(()) if before_failure.is_some() => {
-                    response = Some(RemotingCommand {
-                        code: response::SYSTEM_ERROR,
-                        ..RemotingCommand::default()
-                    });
+                    response = Some(
+                        RemotingCommand::create_response_command(response::SYSTEM_ERROR, None)
+                            .expect("remoting version configuration is valid"),
+                    );
                     run_after_hooks = true;
                 }
                 Ok(()) => {
@@ -467,11 +467,8 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 }
 
 fn error_response(code: i32, remark: &str) -> RemotingCommand {
-    RemotingCommand {
-        code,
-        remark: Some(remark.into()),
-        ..RemotingCommand::default()
-    }
+    RemotingCommand::create_response_command(code, Some(remark.into()))
+        .expect("remoting version configuration is valid")
 }
 
 #[cfg(test)]

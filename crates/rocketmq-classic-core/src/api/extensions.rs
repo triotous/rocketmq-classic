@@ -316,7 +316,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..Default::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -660,7 +660,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -689,7 +689,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )

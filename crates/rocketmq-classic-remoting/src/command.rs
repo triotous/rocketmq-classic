@@ -13,6 +13,7 @@ use crate::ext_fields::ExtFields;
 
 static REQUEST_ID: AtomicI32 = AtomicI32::new(0);
 static COMMAND_VERSION: AtomicI32 = AtomicI32::new(-1);
+static CLIENT_API_VERSION: AtomicI32 = AtomicI32::new(-1);
 static SERIALIZE_TYPE_CONFIG: OnceLock<Result<SerializeType, String>> = OnceLock::new();
 
 #[derive(Debug, Default)]
@@ -526,6 +527,14 @@ impl RemotingCommand {
     pub const SERIALIZE_TYPE_ENV: &'static str = "ROCKETMQ_SERIALIZE_TYPE";
     pub const REMOTING_VERSION_KEY: &'static str = "rocketmq.remoting.version";
 
+    /// Records the Java client API version installed by
+    /// `MQClientAPIImpl`'s static initializer. This is hidden because it is a
+    /// cross-crate compatibility hook, not a user setting.
+    #[doc(hidden)]
+    pub fn initialize_client_api_version(version: i32) {
+        CLIENT_API_VERSION.store(version, Ordering::SeqCst);
+    }
+
     const RESPONSE_BIT: i32 = 1;
     const ONEWAY_BIT: i32 = 1 << 1;
 
@@ -806,6 +815,13 @@ impl RemotingCommand {
         let configured = COMMAND_VERSION.load(Ordering::SeqCst);
         if configured >= 0 {
             self.version = configured;
+            return Ok(());
+        }
+
+        let client_api_version = CLIENT_API_VERSION.load(Ordering::SeqCst);
+        if client_api_version >= 0 {
+            COMMAND_VERSION.store(client_api_version, Ordering::SeqCst);
+            self.version = client_api_version;
             return Ok(());
         }
 
@@ -2918,6 +2934,73 @@ mod tests {
         timer.reset();
         assert!(!cloned_timer.is_running());
         assert_eq!(timer.elapsed(), Duration::ZERO);
+    }
+
+    #[test]
+    fn client_api_version_initializer_preserves_java_static_configuration_order() {
+        const CHILD_CASE: &str = "ROCKETMQ_CLASSIC_CLIENT_API_VERSION_CASE";
+        match std::env::var(CHILD_CASE).as_deref() {
+            Ok("command-before-client") => {
+                let before = RemotingCommand::create_request_command(70).unwrap();
+                assert_eq!(before.version, 0);
+                let before_response = RemotingCommand::create_response_command(70, None).unwrap();
+                assert_eq!(before_response.version, 0);
+                RemotingCommand::initialize_client_api_version(515);
+                let after = RemotingCommand::create_request_command(71).unwrap();
+                assert_eq!(after.version, 515);
+                let after_response = RemotingCommand::create_response_command(71, None).unwrap();
+                assert_eq!(after_response.version, 515);
+                return;
+            }
+            Ok("cached-property-before-client") => {
+                let before = RemotingCommand::create_request_command(70).unwrap();
+                assert_eq!(before.version, 77);
+                let before_response = RemotingCommand::create_response_command(70, None).unwrap();
+                assert_eq!(before_response.version, 77);
+                RemotingCommand::initialize_client_api_version(515);
+                let after = RemotingCommand::create_request_command(71).unwrap();
+                assert_eq!(after.version, 77);
+                let after_response = RemotingCommand::create_response_command(71, None).unwrap();
+                assert_eq!(after_response.version, 77);
+                return;
+            }
+            Ok("client-before-command") => {
+                RemotingCommand::initialize_client_api_version(515);
+                let command = RemotingCommand::create_request_command(70).unwrap();
+                assert_eq!(command.version, 515);
+                let response = RemotingCommand::create_response_command(71, None).unwrap();
+                assert_eq!(response.version, 515);
+                return;
+            }
+            _ => {}
+        }
+
+        for (case, property) in [
+            ("command-before-client", None),
+            ("cached-property-before-client", Some("77")),
+            ("client-before-command", Some("77")),
+        ] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .arg("--exact")
+                .arg("command::tests::client_api_version_initializer_preserves_java_static_configuration_order")
+                .arg("--nocapture")
+                .env(CHILD_CASE, case)
+                .env_remove(RemotingCommand::SERIALIZE_TYPE_PROPERTY)
+                .env_remove(RemotingCommand::SERIALIZE_TYPE_ENV);
+            if let Some(value) = property {
+                child.env(RemotingCommand::REMOTING_VERSION_KEY, value);
+            } else {
+                child.env_remove(RemotingCommand::REMOTING_VERSION_KEY);
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "child case {case} failed: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
     #[test]

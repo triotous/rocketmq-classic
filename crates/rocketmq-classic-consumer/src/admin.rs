@@ -281,11 +281,10 @@ impl RequestProcessor for ConsumerRunningInfoProcessor {
             return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
         let body = body.encode_java_json().map_err(|error| error.to_string())?;
-        Ok(Some(RemotingCommand {
-            code: response::SUCCESS,
-            body: Some(body),
-            ..Default::default()
-        }))
+        let mut response = RemotingCommand::create_response_command(response::SUCCESS, None)
+            .map_err(|error| error.to_string())?;
+        response.body = Some(body);
+        Ok(Some(response))
     }
 }
 
@@ -545,11 +544,10 @@ impl RequestProcessor for DirectConsumeProcessor {
             return Ok(Some(group_not_found_error(header.get_consumer_group())));
         };
         let body = serde_json::to_vec(&result).map_err(|error| error.to_string())?;
-        Ok(Some(RemotingCommand {
-            code: response::SUCCESS,
-            body: Some(body),
-            ..Default::default()
-        }))
+        let mut response = RemotingCommand::create_response_command(response::SUCCESS, None)
+            .map_err(|error| error.to_string())?;
+        response.body = Some(body);
+        Ok(Some(response))
     }
 }
 
@@ -655,22 +653,21 @@ impl RequestProcessor for ConsumerStatusProcessor {
         let body = status_body
             .encode_java_json()
             .map_err(|error| error.to_string())?;
-        Ok(Some(RemotingCommand {
-            code: response::SUCCESS,
-            body: Some(body),
-            ..Default::default()
-        }))
+        let mut response = RemotingCommand::create_response_command(response::SUCCESS, None)
+            .map_err(|error| error.to_string())?;
+        response.body = Some(body);
+        Ok(Some(response))
     }
 }
 
 fn group_not_found_error(group: &str) -> RemotingCommand {
-    RemotingCommand {
-        code: response::SYSTEM_ERROR,
-        remark: Some(format!(
+    RemotingCommand::create_response_command(
+        response::SYSTEM_ERROR,
+        Some(format!(
             "The Consumer Group <{group}> not exist in this consumer"
         )),
-        ..Default::default()
-    }
+    )
+    .expect("MQClientAPIImpl initializes a valid Java client command version")
 }
 
 #[cfg(test)]

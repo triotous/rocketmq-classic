@@ -68,6 +68,7 @@ async fn scripted(
         let incoming = frame::decode_next(&mut frame_bytes).unwrap().unwrap();
         let expected = &fixture["request"];
         assert_eq!(incoming.code, expected["code"].as_i64().unwrap() as i32);
+        assert_eq!(incoming.version, 515, "pinned Java MQVersion.V5_5_1");
         assert_eq!(
             incoming.ext_fields.as_ref().unwrap(),
             &serde_json::from_value::<rocketmq_classic_protocol::header::HeaderMap>(

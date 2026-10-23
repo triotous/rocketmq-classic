@@ -13,6 +13,8 @@ use rocketmq_classic_remoting::client::RemotingClient;
 use serde::de::DeserializeOwned;
 use tokio::time::Instant;
 
+const JAVA_CLIENT_API_VERSION_5_5_1: i32 = 515;
+
 #[derive(Clone)]
 pub struct MQClientApi {
     remoting: RemotingClient,
@@ -76,6 +78,7 @@ impl MQClientApi {
         remoting: RemotingClient,
         language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
     ) -> Self {
+        RemotingCommand::initialize_client_api_version(JAVA_CLIENT_API_VERSION_5_5_1);
         producer::initialize_java_send_smart_msg();
         Self {
             remoting,
@@ -85,6 +88,7 @@ impl MQClientApi {
     }
 
     pub(crate) fn with_config(remoting: RemotingClient, config: SharedClientConfig) -> Self {
+        RemotingCommand::initialize_client_api_version(JAVA_CLIENT_API_VERSION_5_5_1);
         producer::initialize_java_send_smart_msg();
         Self {
             remoting,
@@ -128,7 +132,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             body,
-            ..Default::default()
+            ..java_client_request_command(code)?
         };
         Ok(self.remoting.invoke(addr, command, deadline).await?)
     }
@@ -144,7 +148,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             body,
-            ..Default::default()
+            ..java_client_request_command(code)?
         };
         Ok(self
             .remoting
@@ -192,7 +196,7 @@ impl MQClientApi {
             },
             ext_fields: Some(fields.into()),
             body,
-            ..Default::default()
+            ..java_client_request_command(code)?
         };
         Ok(if sync {
             self.remoting
@@ -239,7 +243,7 @@ impl MQClientApi {
             },
             ext_fields: Some(fields.into()),
             body,
-            ..Default::default()
+            ..java_client_request_command(code)?
         };
         Ok(self
             .remoting
@@ -273,12 +277,23 @@ impl MQClientApi {
                 },
                 ext_fields: Some(fields.into()),
                 body,
-                ..RemotingCommand::default()
+                ..java_client_request_command(code)?
             },
             deadline,
         )?;
         Ok(())
     }
+}
+
+pub(crate) fn java_client_request_command(code: i32) -> Result<RemotingCommand, RpcError> {
+    RemotingCommand::create_request_command(code).map_err(|reason| {
+        RpcError::Transport(rocketmq_classic_remoting::TransportError::InvalidConfiguration(reason))
+    })
+}
+
+pub(crate) fn java_client_response_command(code: i32, remark: Option<String>) -> RemotingCommand {
+    RemotingCommand::create_response_command(code, remark)
+        .expect("MQClientAPIImpl initializes a valid Java client command version")
 }
 
 fn classify(reply: RemotingCommand, code: i32, peer: &str) -> Result<RemotingCommand, RpcError> {

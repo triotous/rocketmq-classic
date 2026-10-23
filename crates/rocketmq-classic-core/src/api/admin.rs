@@ -327,7 +327,7 @@ impl MQClientApi {
                         code,
                         language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                         body: Some(body.clone()),
-                        ..RemotingCommand::default()
+                        ..super::java_client_request_command(code)?
                     },
                     deadline,
                 )
@@ -370,7 +370,7 @@ impl MQClientApi {
                     RemotingCommand {
                         code,
                         language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                        ..RemotingCommand::default()
+                        ..super::java_client_request_command(code)?
                     },
                     deadline,
                 )
@@ -415,7 +415,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -485,7 +485,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -521,7 +521,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -562,7 +562,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -745,7 +745,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             ext_fields: Some(fields.into()),
-            ..RemotingCommand::default()
+            ..super::java_client_request_command(code)?
         };
         let mut last_error = None;
         for address in self.name_server_addresses(None) {
@@ -829,7 +829,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 Instant::now() + Duration::from_millis(3000),
             )
@@ -910,7 +910,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -945,7 +945,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -1035,7 +1035,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     ext_fields: Some(fields.into()),
-                    ..Default::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -1071,7 +1071,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..Default::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -1106,7 +1106,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..Default::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -2351,7 +2351,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     body,
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -2389,7 +2389,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     body: Some(body),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -2457,7 +2457,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     body: Some(body),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -2511,7 +2511,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             body: Some(body),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2534,7 +2534,7 @@ impl MQClientApi {
         let command = RemotingCommand {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2583,7 +2583,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             body: Some(body.into_bytes()),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2617,7 +2617,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             body: Some(consumer_group.as_bytes().to_vec()),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2640,7 +2640,7 @@ impl MQClientApi {
         let command = RemotingCommand {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2674,7 +2674,7 @@ impl MQClientApi {
                 RemotingCommand {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
@@ -2711,7 +2711,7 @@ impl MQClientApi {
             code,
             language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
             ext_fields: mode.map(|mode| [("READ_AHEAD_MODE".to_owned(), mode.to_owned())].into()),
-            ..Default::default()
+            ..super::java_client_request_command(code)?
         };
         let reply = self
             .remoting
@@ -2864,7 +2864,7 @@ impl MQClientApi {
                     code,
                     language: Some(rocketmq_classic_protocol::codes::LanguageCode::Java),
                     body: Some(body),
-                    ..RemotingCommand::default()
+                    ..super::java_client_request_command(code)?
                 },
                 deadline,
             )
