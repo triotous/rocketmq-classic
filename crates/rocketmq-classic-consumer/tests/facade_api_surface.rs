@@ -1121,6 +1121,27 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut null_remove_message = MessageExt::new();
+    null_remove_message.set_queue_offset(230);
+    null_remove_message.set_body(vec![2, 3, 0]);
+    let null_remove_message_queue = ProcessQueue::new();
+    null_remove_message_queue
+        .put_message(&[null_remove_message])
+        .expect("valid message before null remove list");
+    null_remove_message_queue.set_last_consume_timestamp(777);
+    let null_remove_message_next_offset = null_remove_message_queue.remove_message_nullable(None);
+    let null_remove_message_result = serde_json::json!({
+        "nextOffset": null_remove_message_next_offset,
+        "timestampUpdated": null_remove_message_queue.get_last_consume_timestamp() > 777,
+        "count": null_remove_message_queue.get_msg_count().get(),
+        "size": null_remove_message_queue.get_msg_size().get(),
+        "treeKeys": null_remove_message_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1187,6 +1208,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "sizeMiBNarrowing": size_narrowing_info.get_cached_msg_size_in_mib(),
         "negativeBatchSize": negative_batch_result,
         "nullMessageList": null_message_list_result,
+        "nullRemoveMessage": null_remove_message_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

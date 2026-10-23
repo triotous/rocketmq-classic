@@ -827,6 +827,21 @@ impl ProcessQueue {
         result
     }
 
+    /// Matches Java's caught null-list failure after it updates the consume timestamp.
+    pub fn remove_message_nullable(&self, messages: Option<&[Arc<MessageExt>]>) -> i64 {
+        let Some(messages) = messages else {
+            let now = epoch_millis();
+            let mut state = self.lock_state();
+            state.last_consume_timestamp_millis = now;
+            return if has_ready_messages(&state) {
+                state.queue_offset_max.wrapping_add(1)
+            } else {
+                -1
+            };
+        };
+        self.remove_message(messages)
+    }
+
     pub fn rollback(&self) {
         let mut state = self.lock_state();
         let in_flight_offsets = state

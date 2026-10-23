@@ -288,6 +288,19 @@ public final class ConsumerFacadeApiFixtures {
         nullMessageList.put("treeKeys", new ArrayList<>(nullMessageListQueue.getMsgTreeMap().keySet()));
         result.put("nullMessageList", nullMessageList);
 
+        ProcessQueue nullRemoveMessageQueue = new ProcessQueue();
+        nullRemoveMessageQueue.putMessage(
+            List.of(processQueueMessage(230L, new byte[] {2, 3, 0})));
+        nullRemoveMessageQueue.setLastConsumeTimestamp(777L);
+        long nullRemoveMessageNextOffset = nullRemoveMessageQueue.removeMessage(null);
+        Map<String, Object> nullRemoveMessage = new TreeMap<>();
+        nullRemoveMessage.put("nextOffset", nullRemoveMessageNextOffset);
+        nullRemoveMessage.put("timestampUpdated", nullRemoveMessageQueue.getLastConsumeTimestamp() > 777L);
+        nullRemoveMessage.put("count", nullRemoveMessageQueue.getMsgCount().get());
+        nullRemoveMessage.put("size", nullRemoveMessageQueue.getMsgSize().get());
+        nullRemoveMessage.put("treeKeys", new ArrayList<>(nullRemoveMessageQueue.getMsgTreeMap().keySet()));
+        result.put("nullRemoveMessage", nullRemoveMessage);
+
         ProcessQueue negativeBatchQueue = new ProcessQueue();
         negativeBatchQueue.setLastConsumeTimestamp(777L);
         Map<String, Object> negativeBatchResult = new TreeMap<>();
