@@ -38,3 +38,8 @@ P18-V04 Phase 19 handoff registration check:
 - Re-read the source-ID collection in `tests/differential/compare.py`: it scans pending live gates in Phase 0–17 plans and rejects any manifest that omits a source ID or assigns it to the wrong phase.
 - The current manifest passes self-test and coverage validation. It contains 37 live scenario rows (7 archived PASS, 30 PENDING_PHASE_19) and covers every one of the 17 pending source gate IDs collected from Phase 0–17 plans.
 - Local offline workspace gates pass without Docker or a Broker. Current-revision remote Ubuntu CI was not run under the user's constraint; native Windows runtime remains unverified. P18-V04 therefore remains open despite the handoff-registration subcriterion passing.
+
+P18-V01 Cargo feature-flag reverse scan on code revision `ea17b8fc`:
+- `CARGO_NET_OFFLINE=true cargo metadata --offline --format-version 1 --no-deps` reports an empty `features` map for all eight workspace packages (six libraries, facade, integration runner).
+- No workspace-defined Cargo feature matrix or optional feature branch adds a Rust-only client capability; `--all-features` selects no extra workspace feature set.
+- Added the narrow feature-flag disposition to the Phase 6 API/config map and requirement audit. Broad P18-V01 remains PARTIAL.

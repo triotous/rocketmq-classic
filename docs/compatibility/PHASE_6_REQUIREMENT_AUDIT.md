@@ -4771,3 +4771,13 @@ replacement, fault selection, and detector tests pass in the full current-tree
 default/all-feature workspace runs. This closes the reverse-export disposition
 for these two cross-crate helpers only; broad P18-V01 source/API/settings/input/
 error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 Cargo feature-flag reverse scan — 2026-10-23 (`ea17b8fc`)
+
+`cargo metadata --offline --format-version 1 --no-deps` reports an empty
+`features` map for each of the eight workspace packages. There are no
+workspace-defined Cargo feature flags or optional feature branches that add a
+Rust-only client capability; the `--all-features` test configuration selects
+no additional workspace feature set. This closes the Cargo feature-flag
+inventory only; broad P18-V01 settings, public API, input, error, control-flow,
+and reverse-export reconciliation remains PARTIAL.

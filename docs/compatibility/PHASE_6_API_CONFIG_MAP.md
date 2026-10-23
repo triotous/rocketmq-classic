@@ -3307,3 +3307,13 @@ identity test, Consumer shared-owner/runtime-change test, and Producer
 fault-selector test cover their only in-tree use. Broad P18-V01 public
 API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
+
+## P18-V01 Cargo feature-flag reverse scan — 2026-10-23 (`ea17b8fc`)
+
+Offline Cargo metadata reports an empty `features` map for all eight workspace
+packages: Common, Consumer, Core, Protocol, Remoting, Producer, the facade, and
+the integration runner. No workspace-defined Cargo feature or default/optional
+feature branch adds a Rust-only client capability; `--all-features` does not
+select an additional workspace configuration. This closes the Cargo
+feature-flag inventory only. Broad P18-V01 settings, public APIs, inputs,
+errors, control flow, and reverse-export reconciliation remain open.
