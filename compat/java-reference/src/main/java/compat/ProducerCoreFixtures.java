@@ -6744,6 +6744,18 @@ public final class ProducerCoreFixtures {
         result.put("producerConnectionDefaultJson", JSON.toJSONString(
             new org.apache.rocketmq.remoting.protocol.body.ProducerConnection()));
         Map<String, Object> producerConnectionSetSemantics = new TreeMap<>();
+        java.util.HashSet<org.apache.rocketmq.remoting.protocol.body.Connection> assignedConnectionSet =
+            new java.util.HashSet<>(List.of(connection));
+        org.apache.rocketmq.remoting.protocol.body.ProducerConnection aliasProbe =
+            new org.apache.rocketmq.remoting.protocol.body.ProducerConnection();
+        aliasProbe.setConnectionSet(assignedConnectionSet);
+        producerConnectionSetSemantics.put("dtoGetterReturnsAssignedSet",
+            aliasProbe.getConnectionSet() == assignedConnectionSet);
+        org.apache.rocketmq.remoting.protocol.body.Connection addedThroughGetter =
+            new org.apache.rocketmq.remoting.protocol.body.Connection();
+        producerConnectionSetSemantics.put("dtoGetterMutationVisibleInAssignedSet",
+            aliasProbe.getConnectionSet().add(addedThroughGetter)
+                && assignedConnectionSet.contains(addedThroughGetter));
         java.util.HashSet<org.apache.rocketmq.remoting.protocol.body.Connection> identitySet =
             new java.util.HashSet<>();
         producerConnectionSetSemantics.put("firstSameReferenceAdd", identitySet.add(connection));

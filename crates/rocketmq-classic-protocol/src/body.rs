@@ -13508,6 +13508,11 @@ mod tests {
 
         let operations = &fixture["producerDiagnosticsOperations"];
         let producer_set_semantics = &operations["producerConnectionSetSemantics"];
+        assert_eq!(producer_set_semantics["dtoGetterReturnsAssignedSet"], true);
+        assert_eq!(
+            producer_set_semantics["dtoGetterMutationVisibleInAssignedSet"],
+            true
+        );
         assert_eq!(producer_set_semantics["firstSameReferenceAdd"], true);
         assert_eq!(producer_set_semantics["secondSameReferenceAdd"], false);
         assert_eq!(producer_set_semantics["differentReferenceAdd"], true);
@@ -13530,6 +13535,21 @@ mod tests {
             decoded_producer_set
                 .with(|values| values.iter().filter(|value| value.is_some()).count()),
             2
+        );
+        let assigned_connection = SharedValue::new(Connection::default());
+        let assigned_connection_set =
+            SharedValue::new(HashSet::from([Some(assigned_connection.clone())]));
+        let mut assigned_producer_connection = ProducerConnection::default();
+        assigned_producer_connection.set_connection_set(Some(assigned_connection_set.clone()));
+        let returned_connection_set = assigned_producer_connection.get_connection_set().unwrap();
+        assert!(returned_connection_set.ptr_eq(&assigned_connection_set));
+        let added_connection = SharedValue::new(Connection::default());
+        assert!(
+            returned_connection_set
+                .with_mut(|values| values.insert(Some(added_connection.clone())))
+        );
+        assert!(
+            assigned_connection_set.with(|values| { values.contains(&Some(added_connection)) })
         );
         let default_connection = ProducerConnection::default();
         assert_eq!(
