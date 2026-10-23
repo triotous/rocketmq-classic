@@ -564,6 +564,19 @@ checks, and full offline Maven `verify` passed. This closes the per-client
 refresh scheduling slice only; broad P18-V01 reconciliation and the platform/
 Phase 19 evidence listed above remain open.
 
+### P18-V01 factory refresh-registration failure order — 2026-10-23
+
+Pinned Java `createAndStart` registers each domain refresh after constructing
+and initially discovering its API client, but before `MQClientAPIExt.start()`
+and before the factory stores the returned client in its array. Rust now
+performs that sequence per slot. An injected scheduler rejection leaves the
+failing and later slots null, while earlier clients already returned from
+`createAndStart` remain active. The Java fixture records the rejection type,
+registration count and slot state; the Rust regression compares those values
+and verifies the remoting creator ran before registration. The Tokio default
+also schedules each slot before starting it, and its refresh callback retains
+that slot's remoting client.
+
 ### P18-V01 factory null client-array slots — 2026-10-23 (`1b1d4e2a`)
 
 Java's public `getClients()` exposes a mutable array. Its address-change

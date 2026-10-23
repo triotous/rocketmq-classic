@@ -2565,8 +2565,10 @@ equivalent scheduler injection point. Core now exports `FactoryRefreshFuture`,
 NameServer discovery is configured, `start` registers one callback per client
 with Java's 10-second initial delay and 120-second fixed rate. A rejected
 registration becomes `MQClientApiFactoryError::RefreshScheduleFailed`; clients
-already started remain visible, matching Java's creation and registration
-order. The default paths still use factory-owned Tokio refresh workers.
+from earlier successful slots remain visible; the rejected slot remains null
+and its remoting client is not started, matching Java's creation and
+registration order. The default paths still use factory-owned Tokio refresh
+workers.
 
 The fresh all-feature Rustdoc scan counts Common 439, Consumer 460, Core 744,
 Producer 362, Protocol 1,524, and Remoting 337 public names. Against the
@@ -3096,3 +3098,15 @@ construction and lifecycle behavior plus its remoting-creator and scheduler
 dependencies remain mapped. Third-party Java subclass source compatibility
 is outside this public API parity scope; see the runtime inventory for the
 source scan and full disposition.
+
+## P18-V01 `MQClientAPIFactory` refresh-registration failure ordering — 2026-10-23
+
+Pinned `createAndStart` constructs the API client, performs initial discovery,
+registers that client's fixed-rate refresh, then starts it; the factory stores
+the returned client in its array only after the method succeeds. Rust now uses
+the same per-slot sequence. If registration fails, earlier completed slots
+remain started and the failing and later slots remain null. The invoked Java
+fixture records a `RejectedExecutionException`, one registration attempt, and
+the null first slot; the Core regression compares the same slot state and
+checks the Rust creator ran before registration. Refresh callbacks retain the
+corresponding remoting client, matching Java's per-instance callback target.

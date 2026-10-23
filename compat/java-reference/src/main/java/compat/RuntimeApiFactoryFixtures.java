@@ -17,8 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.ClientConfig;
@@ -299,6 +303,73 @@ public final class RuntimeApiFactoryFixtures {
             }
             if (discoveryFailure.get() != null) {
                 throw new IllegalStateException("NameServer discovery fixture failed", discoveryFailure.get());
+            }
+
+            AtomicInteger rejectedScheduleCalls = new AtomicInteger();
+            ScheduledThreadPoolExecutor rejectingScheduler = new ScheduledThreadPoolExecutor(1) {
+                @Override
+                public ScheduledFuture<?> scheduleAtFixedRate(
+                    Runnable command, long initialDelay, long period, TimeUnit unit
+                ) {
+                    rejectedScheduleCalls.incrementAndGet();
+                    throw new RejectedExecutionException("fixture rejection");
+                }
+            };
+            ServerSocket rejectedDiscoveryServer = new ServerSocket(0);
+            rejectedDiscoveryServer.setSoTimeout(5000);
+            AtomicReference<Throwable> rejectedDiscoveryFailure = new AtomicReference<>();
+            Thread rejectedDiscoveryResponder = new Thread(() -> {
+                try (Socket socket = rejectedDiscoveryServer.accept()) {
+                    socket.setSoTimeout(5000);
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        socket.getInputStream(), StandardCharsets.UTF_8));
+                    while (true) {
+                        String line = reader.readLine();
+                        if (line == null || line.isEmpty()) {
+                            break;
+                        }
+                    }
+                    byte[] body = "127.0.0.14:9876".getBytes(StandardCharsets.UTF_8);
+                    OutputStream output = socket.getOutputStream();
+                    output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+                        + "Content-Length: " + body.length + "\r\nConnection: close\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                    output.write(body);
+                    output.flush();
+                } catch (Throwable error) {
+                    rejectedDiscoveryFailure.set(error);
+                }
+            }, "api-factory-rejected-discovery-fixture");
+            rejectedDiscoveryResponder.setDaemon(true);
+            rejectedDiscoveryResponder.start();
+            MQClientAPIFactory rejectedFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig(null,
+                    "127.0.0.1:" + rejectedDiscoveryServer.getLocalPort(), "factory-fixture"),
+                "domain-rejected-", 1, null, null, rejectingScheduler);
+            try {
+                String rejectedStartError;
+                try {
+                    rejectedFactory.start();
+                    rejectedStartError = "NONE";
+                } catch (Throwable error) {
+                    rejectedStartError = error.getClass().getSimpleName();
+                }
+                fixture.put("domainRefreshRejectedStartError", rejectedStartError);
+                fixture.put("domainRefreshRejectedScheduleCalls", rejectedScheduleCalls.get());
+                fixture.put("domainRefreshRejectedClientSlots", Arrays.stream(rejectedFactory.getClients())
+                    .map(client -> client == null ? null : "started")
+                    .collect(Collectors.toList()));
+            } finally {
+                rejectingScheduler.shutdownNow();
+                rejectedDiscoveryServer.close();
+            }
+            rejectedDiscoveryResponder.join(5000);
+            if (rejectedDiscoveryResponder.isAlive()) {
+                throw new IllegalStateException("Rejected NameServer discovery fixture did not finish");
+            }
+            if (rejectedDiscoveryFailure.get() != null) {
+                throw new IllegalStateException("Rejected NameServer discovery fixture failed",
+                    rejectedDiscoveryFailure.get());
             }
 
             List<String> constructors = new ArrayList<>();

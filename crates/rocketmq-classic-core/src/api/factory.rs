@@ -291,6 +291,34 @@ impl FactoryAddressState {
             addresses.filter(|addresses| !java_util_blank(addresses)),
         )
     }
+
+    fn update_from_discovery_with_client(
+        &self,
+        index: usize,
+        addresses: Option<&str>,
+        remoting: &RemotingClient,
+    ) -> Option<String> {
+        let Some(addresses) = addresses.filter(|addresses| !java_util_blank(addresses)) else {
+            return self.current(index);
+        };
+        let changed = {
+            let mut current = self
+                .current
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let current = current.get_mut(index)?;
+            if current.as_deref() == Some(addresses) {
+                false
+            } else {
+                *current = Some(addresses.to_owned());
+                true
+            }
+        };
+        if changed {
+            remoting.update_name_server_address_list(split_addresses(addresses));
+        }
+        self.current(index)
+    }
 }
 
 fn java_process_properties() -> HashMap<String, String> {
@@ -310,11 +338,13 @@ fn java_process_properties() -> HashMap<String, String> {
     properties
 }
 
-struct FactoryAddressCallback(Weak<FactoryAddressState>, usize);
+struct FactoryAddressCallback(Weak<FactoryAddressState>, usize, RemotingClient);
 
 impl NameServerUpdateCallback for FactoryAddressCallback {
     fn on_name_server_address_change(&self, addresses: Option<&str>) -> Option<String> {
-        self.0.upgrade()?.update_slot(self.1, addresses)
+        self.0
+            .upgrade()?
+            .update_from_discovery_with_client(self.1, addresses, &self.2)
     }
 }
 
@@ -511,11 +541,16 @@ impl MQClientApiFactory {
         Ok(self)
     }
 
-    fn register_address_callback(&self, index: usize) -> Result<(), MQClientApiFactoryError> {
+    fn register_address_callback(
+        &self,
+        index: usize,
+        remoting: RemotingClient,
+    ) -> Result<(), MQClientApiFactoryError> {
         if let Some(provider) = &self.top_addressing {
             let callback: Arc<dyn NameServerUpdateCallback> = Arc::new(FactoryAddressCallback(
                 Arc::downgrade(&self.address_state),
                 index,
+                remoting,
             ));
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 provider.register_change_callback(callback)
@@ -557,13 +592,13 @@ impl MQClientApiFactory {
             return Ok(());
         }
 
+        let default_refresh_shutdown = self.top_addressing.as_ref().and_then(|_| {
+            self.refresh_scheduler
+                .is_none()
+                .then(|| self.begin_refresh())
+        });
+
         for index in 0..client_count {
-            if let Some(provider) = &self.top_addressing {
-                self.register_address_callback(index)?;
-                let addresses = provider.fetch_ns_addr().await;
-                self.address_state
-                    .update_from_discovery(index, addresses.as_deref());
-            }
             let instance_name = format!("{}N_{index}", self.name_prefix);
             let mut client_config = self.client_config.clone();
             client_config.set_instance_name(Some(instance_name.clone()));
@@ -581,18 +616,39 @@ impl MQClientApiFactory {
                 remoting.register_default_processor(Some(processor.clone()));
             }
             let api = MQClientApi::with_config(remoting.clone(), shared_config);
+
+            if let Some(provider) = &self.top_addressing {
+                self.register_address_callback(index, remoting.clone())?;
+                let addresses = provider.fetch_ns_addr().await;
+                self.address_state
+                    .update_from_discovery(index, addresses.as_deref());
+            }
+            if let Some(address) = self.address_state.current(index) {
+                remoting.update_name_server_address_list(split_addresses(&address));
+            }
+
+            if let Some(provider) = &self.top_addressing {
+                if let Some(scheduler) = &self.refresh_scheduler {
+                    self.start_refresh_with_scheduler(
+                        provider.clone(),
+                        index,
+                        scheduler.as_ref(),
+                        remoting.clone(),
+                    )?;
+                } else if let Some(shutdown) = &default_refresh_shutdown {
+                    self.start_refresh_task(
+                        provider.clone(),
+                        index,
+                        remoting.clone(),
+                        shutdown.clone(),
+                    );
+                }
+            }
+
             remoting.start()?;
             clients
                 .set(index, Some(Arc::new(api)))
                 .map_err(|error| MQClientApiFactoryError::StartupTask(error.to_string()))?;
-        }
-
-        if let Some(provider) = self.top_addressing.clone() {
-            if let Some(scheduler) = &self.refresh_scheduler {
-                self.start_refresh_with_scheduler(provider, client_count, scheduler.as_ref())?;
-            } else {
-                self.start_refresh(provider, client_count);
-            }
         }
         Ok(())
     }
@@ -645,82 +701,91 @@ impl MQClientApiFactory {
         Ok(())
     }
 
-    fn start_refresh(&self, provider: Arc<dyn TopAddressing>, client_count: usize) {
+    fn begin_refresh(&self) -> tokio::sync::watch::Sender<bool> {
         let (shutdown, _) = tokio::sync::watch::channel(false);
         *self
             .refresh_shutdown
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(shutdown.clone());
-        let mut tasks = Vec::with_capacity(client_count);
-        for index in 0..client_count {
-            let provider = provider.clone();
-            let mut stop = shutdown.subscribe();
-            let state = Arc::downgrade(&self.address_state);
-            tasks.push(tokio::spawn(async move {
-                let mut ticks = tokio::time::interval_at(
-                    Instant::now() + Duration::from_secs(10),
-                    Duration::from_secs(120),
-                );
-                ticks.set_missed_tick_behavior(MissedTickBehavior::Burst);
-                loop {
-                    tokio::select! {
-                        _ = ticks.tick() => {
-                            let addresses = tokio::select! {
-                                addresses = provider.fetch_ns_addr() => addresses,
-                                changed = stop.changed() => {
-                                    if changed.is_err() || *stop.borrow() {
-                                        return;
-                                    }
-                                    continue;
-                                }
-                            };
-                            if let Some(addresses) = addresses {
-                                if let Some(state) = state.upgrade() {
-                                    state.update_from_discovery(index, Some(&addresses));
-                                } else {
+        shutdown
+    }
+
+    fn start_refresh_task(
+        &self,
+        provider: Arc<dyn TopAddressing>,
+        index: usize,
+        remoting: RemotingClient,
+        shutdown: tokio::sync::watch::Sender<bool>,
+    ) {
+        let mut stop = shutdown.subscribe();
+        let state = Arc::downgrade(&self.address_state);
+        let task = tokio::spawn(async move {
+            let mut ticks = tokio::time::interval_at(
+                Instant::now() + Duration::from_secs(10),
+                Duration::from_secs(120),
+            );
+            ticks.set_missed_tick_behavior(MissedTickBehavior::Burst);
+            loop {
+                tokio::select! {
+                    _ = ticks.tick() => {
+                        let addresses = tokio::select! {
+                            addresses = provider.fetch_ns_addr() => addresses,
+                            changed = stop.changed() => {
+                                if changed.is_err() || *stop.borrow() {
                                     return;
                                 }
+                                continue;
                             }
-                        }
-                        changed = stop.changed() => {
-                            if changed.is_err() || *stop.borrow() {
+                        };
+                        if let Some(addresses) = addresses {
+                            if let Some(state) = state.upgrade() {
+                                state.update_from_discovery_with_client(
+                                    index,
+                                    Some(&addresses),
+                                    &remoting,
+                                );
+                            } else {
                                 return;
                             }
                         }
                     }
+                    changed = stop.changed() => {
+                        if changed.is_err() || *stop.borrow() {
+                            return;
+                        }
+                    }
                 }
-            }));
-        }
-        *self
-            .refresh_tasks
+            }
+        });
+        self.refresh_tasks
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = tasks;
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(task);
     }
 
     fn start_refresh_with_scheduler(
         &self,
         provider: Arc<dyn TopAddressing>,
-        client_count: usize,
+        index: usize,
         scheduler: &dyn FactoryRefreshScheduler,
+        remoting: RemotingClient,
     ) -> Result<(), MQClientApiFactoryError> {
-        for index in 0..client_count {
+        let state = Arc::downgrade(&self.address_state);
+        let task: FactoryRefreshTask = Arc::new(move || {
             let provider = provider.clone();
-            let state = Arc::downgrade(&self.address_state);
-            let task: FactoryRefreshTask = Arc::new(move || {
-                let provider = provider.clone();
-                let state = state.clone();
-                Box::pin(async move {
-                    if let Some(addresses) = provider.fetch_ns_addr().await {
-                        if let Some(state) = state.upgrade() {
-                            state.update_from_discovery(index, Some(&addresses));
-                        }
+            let state = state.clone();
+            let remoting = remoting.clone();
+            Box::pin(async move {
+                if let Some(addresses) = provider.fetch_ns_addr().await {
+                    if let Some(state) = state.upgrade() {
+                        state.update_from_discovery_with_client(index, Some(&addresses), &remoting);
                     }
-                })
-            });
-            scheduler
-                .schedule_at_fixed_rate(Duration::from_secs(10), Duration::from_secs(120), task)
-                .map_err(MQClientApiFactoryError::RefreshScheduleFailed)?;
-        }
+                }
+            })
+        });
+        scheduler
+            .schedule_at_fixed_rate(Duration::from_secs(10), Duration::from_secs(120), task)
+            .map_err(MQClientApiFactoryError::RefreshScheduleFailed)?;
         Ok(())
     }
 
@@ -1354,18 +1419,56 @@ mod tests {
             Some("factory-domain.example".into()),
             Some("factory-subgroup".into()),
         );
-        let factory = MQClientApiFactory::new(access, "rejected-schedule-", 1, None, None)
-            .unwrap()
-            .with_refresh_scheduler(Arc::new(RejectingRefreshScheduler))
-            .with_top_addressing(Arc::new(StaticProvider))
-            .unwrap();
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        let creator_calls = Arc::new(AtomicUsize::new(0));
+        let observed_creator_calls = creator_calls.clone();
+        let factory = MQClientApiFactory::with_remoting_client_creator(
+            access,
+            "rejected-schedule-",
+            1,
+            None,
+            None,
+            move |_, mut config| {
+                observed_creator_calls.fetch_add(1, Ordering::SeqCst);
+                config.transport = TransportMode::Plain;
+                RemotingClient::with_config(config)
+            },
+        )
+        .unwrap()
+        .with_refresh_scheduler(Arc::new(RejectingRefreshScheduler))
+        .with_top_addressing(Arc::new(StaticProvider))
+        .unwrap();
 
         assert!(matches!(
             factory.start().await,
             Err(MQClientApiFactoryError::RefreshScheduleFailed(message))
                 if message == "executor is shut down"
         ));
-        assert_eq!(factory.get_clients().unwrap().len(), 1);
+        assert_eq!(
+            java["domainRefreshRejectedStartError"],
+            "RejectedExecutionException"
+        );
+        assert_eq!(
+            creator_calls.load(Ordering::SeqCst),
+            java["domainRefreshRejectedScheduleCalls"].as_u64().unwrap() as usize
+        );
+        let rust_slots = factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| client.map(|_| "started"))
+            .collect::<Vec<_>>();
+        let java_slots = java["domainRefreshRejectedClientSlots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(serde_json::Value::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(rust_slots, java_slots);
         factory.shutdown().await.unwrap();
     }
 

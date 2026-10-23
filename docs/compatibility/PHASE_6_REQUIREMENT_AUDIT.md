@@ -4109,3 +4109,20 @@ surfaces remain mapped. The source/scope record is in
 [`PHASE_6_RUNTIME_INVENTORY.md`](PHASE_6_RUNTIME_INVENTORY.md) and the
 [`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md). Broad P18-V01
 reconciliation remains PARTIAL.
+
+## P18-V01 `MQClientAPIFactory` refresh rejection order — 2026-10-23
+
+The pinned `createAndStart` order is API-client construction, callback
+registration, initial NameServer discovery, refresh scheduling, API start,
+then assignment into the factory array. Rust previously started and stored
+every client before attempting refresh registration. It now performs that
+sequence per slot, preserving Java's partial state when registration rejects.
+The invoked Java fixture records `RejectedExecutionException`, one schedule
+attempt, and a null slot; the Core regression compares the slot and verifies
+the remoting creator ran before scheduling. Refresh callbacks retain the
+client remoting object and update only that slot. The focused Core factory
+suite (9), locked default/all-feature workspace suites, strict workspace
+Clippy, offline Maven verify, differential self-test/37-scenario manifest,
+metadata checks, race/leak smoke (17 × 3), fuzz smoke, examples, benchmark,
+Windows GNU cross-check, formatting and diff checks pass. This closes the
+factory schedule-rejection ordering gap only; broad P18-V01 remains PARTIAL.

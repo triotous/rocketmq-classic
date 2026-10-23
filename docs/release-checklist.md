@@ -8661,3 +8661,24 @@ owner-specific checks belong in the manual handoff.
   execution remain open. Phase 19 Broker/Docker validation is outside this
   local gate. No push or remote CI was run. Run record:
   `rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.
+
+## P18-V01 factory refresh rejection ordering and P18-V02 local refresh — 2026-10-23
+
+- [x] Corrected factory startup to register each domain refresh callback after
+  its client is constructed and discovered, before starting the client and
+  assigning the returned instance into that slot. A rejected schedule now
+  leaves the failing slot null and preserves earlier completed slots, matching
+  pinned Java `createAndStart` ordering.
+- [x] Added an invoked Java rejection case and Rust differential for the
+  exception type, registration count, remoting-creator order and null slot.
+- [x] Locked default/all-feature workspace tests and doctests, strict workspace
+  Clippy, pinned Maven `verify` (37 scenarios), the factory-fixture verifier,
+  differential self-test/37-scenario manifest, workspace metadata, 17 race/
+  leak cases × 3, fuzz smoke, release examples, benchmark, Windows GNU
+  cross-check, formatting and diff checks passed.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow and
+  reverse-export reconciliation remains PARTIAL. Native Windows runtime and
+  current-revision remote Ubuntu evidence were not run. Phase 19 Broker/Docker
+  validation remains separate. No push or remote CI was run; the four
+  user-owned Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-factory-refresh-rejection-order__20261023T121346Z.rlog`.
