@@ -82,8 +82,12 @@ one log event per set and avoids fivefold callback fan-out. The day window
 samples hourly and keeps 25 samples. Subscriber-provided timestamp, thread, and
 formatting decorations remain backend-specific. Commit `b0189bd3` closes the
 callback identity and fan-out discrepancy with focused Rust regressions.
-Commit `3b9d9473` maps the public Java constructor for standalone managers to
-`with_scheduler`, with a regression that verifies the extra 30 jobs. The
+Both the runtime-owned queue and public standalone-manager constructor now
+consume the same `stats_schedule_specs()` definition for job order, cadence,
+and local-boundary delays. Commit `3b9d9473` maps the public Java constructor
+for standalone managers to `with_scheduler`, with a regression that verifies
+the extra 30 jobs. Commit `4d32bc97` centralizes schedule specifications so
+those two registration paths cannot drift independently. The
 `scheduled-executor-shutdown` fixture and Rust scheduler regression verify the
 same 32 returned entries in the pre-start client case with two submitted calls.
 Core tests use deterministic timestamps, while consumer-flow tests wait for

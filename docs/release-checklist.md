@@ -9235,9 +9235,37 @@ owner-specific checks belong in the manual handoff.
   checks, and direct Java fixture verification pass. The full offline Maven
   `verify` also passes with 37 scenarios, 11 message fixtures, 106 typed
   headers, 19 typed bodies, and Rust/Java cross-decodes.
-- [ ] Rust consumer statistics use lazy sampling, so the 30 constructor-owned
-  Java `StatsItemSet` scheduler entries are not present in the Rust client
-  scheduler's returned list. This queue-content delta remains open, along with
-  broad P18-V01 reconciliation. No plan was edited, no remote CI or push was
-  run, and the four Phase 19 worktree paths remain untouched and unstaged. Run
-  record: `rlogs/2026/10/23-phase-18-scheduler-shutdown-return-list__20261023T200933Z.rlog`.
+- [x] At this revision, Java's 30 `StatsItemSet` jobs were missing from the
+  Rust client scheduler's `shutdownNow()` returned list. The runtime scheduler
+  now returns all 30 manager jobs alongside the two submitted futures, and the
+  standalone constructor schedules the same 30 jobs on a supplied scheduler.
+  The queue-content delta was closed by commits `3b9d9473` and `4d32bc97`, as
+  recorded in the later stats schedule entry. Broad P18-V01 reconciliation
+  remains PARTIAL. No plan was edited, no remote CI or push was run, and the
+  four Phase 19 worktree paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-scheduler-shutdown-return-list__20261023T200933Z.rlog`.
+
+## P18-V01 stats schedule single source and P18-V02 current-tree gates — 2026-10-23 (`2598c76f`)
+
+- [x] Built-in runtime scheduling and public standalone
+  `ConsumerStatsManager::with_scheduler` construction now use the same
+  `stats_schedule_specs()` source for the 30 jobs, their order, cadence, and
+  local-boundary delays. The schedule identity regression checks each set's
+  three sampler periods and three print windows. Commit `4d32bc97` contains
+  this refactor.
+- [x] Full default workspace tests/doctests passed after the scheduler-spec
+  refactor. The complete all-features workspace suite/doctests passed on the
+  current tree. The all-features run initially exposed a process-global
+  `TopicConfig` default mutation race in its API fixture; three tests that read
+  or mutate those defaults now share a test mutex (`2598c76f`). The focused
+  all-features protocol fixture passed.
+- [x] Strict all-target/all-feature workspace Clippy, Windows GNU all-target/
+  all-feature check and strict Clippy, formatting/diff checks, and offline
+  Maven `verify` passed. Maven validated 37 scenarios, 11 message fixtures,
+  106 typed headers, 19 typed bodies, and Java/Rust cross-decodes.
+- [ ] Broad P18-V01 bidirectional API/settings/input/error/control-flow and
+  reverse-export reconciliation remains PARTIAL. Native Windows runtime and
+  current-revision remote CI remain open; Phase 19 Broker/Docker work remains
+  out of scope. No plan was edited, no push or remote CI was run, and the four
+  pre-existing Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-stats-schedule-single-source__20261023T212953Z.rlog`.
