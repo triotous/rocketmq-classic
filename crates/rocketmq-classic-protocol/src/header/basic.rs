@@ -8399,7 +8399,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 46);
+        assert_eq!(cases.len(), 49);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -8470,6 +8470,50 @@ mod tests {
             broker_name,
             |_| {},
             |_: &mut LiteSubscriptionCtlRequestHeader| {}
+        );
+        check_rpc_request_header!(
+            CloneGroupOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut CloneGroupOffsetRequestHeader| {
+                header.src_group = Some("payload".into())
+            }
+        );
+        check_rpc_request_header!(
+            GetSubscriptionGroupConfigRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut GetSubscriptionGroupConfigRequestHeader| {
+                header.group = Some("payload".into())
+            }
+        );
+        check_rpc_request_header!(
+            GetTopicConfigRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut GetTopicConfigRequestHeader| header.topic = Some("payload".into())
+        );
+        check_rpc_request_header!(
+            QueryConsumeQueueRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut QueryConsumeQueueRequestHeader| { header.topic = Some("payload".into()) }
+        );
+        check_rpc_request_header!(
+            QueryCorrectionOffsetRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut QueryCorrectionOffsetRequestHeader| {
+                header.topic = Some("payload".into())
+            }
+        );
+        check_rpc_request_header!(
+            UpdateGroupForbiddenRequestHeader,
+            broker_name,
+            |_| {},
+            |header: &mut UpdateGroupForbiddenRequestHeader| {
+                header.group = Some("payload".into())
+            }
         );
         check_rpc_request_header!(
             UpdateConsumerOffsetRequestHeader,
