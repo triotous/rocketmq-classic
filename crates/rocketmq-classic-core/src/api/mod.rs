@@ -28,6 +28,18 @@ impl MQClientApi {
         )
     }
 
+    /// Returns the NameServer list owned by the underlying remoting client,
+    /// matching `MQClientAPIImpl.getNameServerAddressList`.
+    pub fn get_name_server_address_list(&self) -> Option<Vec<String>> {
+        self.remoting.get_name_server_address_list()
+    }
+
+    /// Returns a handle to the same remoting client, matching
+    /// `MQClientAPIImpl.getRemotingClient`.
+    pub fn remoting_client(&self) -> RemotingClient {
+        self.remoting.clone()
+    }
+
     /// Forwards a caller-built remoting command and preserves the raw Broker
     /// response, matching `MQClientAPIExt.invoke`.
     pub async fn invoke(
@@ -398,5 +410,25 @@ mod enum_tests {
         assert_status_cases!(PopStatus, &groups["PopStatus"]);
         assert_status_cases!(AckStatus, &groups["AckStatus"]);
         assert_status_cases!(SendStatus, &groups["SendStatus"]);
+    }
+}
+
+#[cfg(test)]
+mod api_surface_tests {
+    use super::MQClientApi;
+    use rocketmq_classic_remoting::client::{RemotingClient, TransportMode};
+
+    #[test]
+    fn remoting_and_nameserver_getters_preserve_shared_client_state() {
+        let remoting = RemotingClient::new(TransportMode::Plain);
+        let api = MQClientApi::new(remoting);
+        assert_eq!(api.get_name_server_address_list(), None);
+
+        api.remoting_client()
+            .update_name_server_address_list(vec!["127.0.0.1:9876".into()]);
+        assert_eq!(
+            api.get_name_server_address_list(),
+            Some(vec!["127.0.0.1:9876".into()])
+        );
     }
 }
