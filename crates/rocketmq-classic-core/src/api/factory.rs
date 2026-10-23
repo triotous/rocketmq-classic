@@ -876,6 +876,7 @@ mod tests {
         let factory =
             MQClientApiFactory::new(static_access("ns:9876"), "zero-", 0, None, None).unwrap();
         factory.start().await.unwrap();
+        assert_eq!(java["zeroClientGetClientError"], "IllegalArgumentException");
         assert!(matches!(
             factory.get_client(),
             Err(MQClientApiFactoryError::EmptyClientArray)

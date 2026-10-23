@@ -168,6 +168,14 @@ public final class RuntimeApiFactoryFixtures {
                 "empty-", 0, null, null, emptyScheduler);
             try {
                 emptyFactory.start();
+                String emptyGetClientError;
+                try {
+                    emptyFactory.getClient();
+                    emptyGetClientError = "NONE";
+                } catch (Throwable error) {
+                    emptyGetClientError = error.getClass().getSimpleName();
+                }
+                fixture.put("zeroClientGetClientError", emptyGetClientError);
                 String emptyShutdownError;
                 try {
                     emptyFactory.shutdown();
