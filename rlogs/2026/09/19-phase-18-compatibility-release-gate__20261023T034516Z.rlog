@@ -206,3 +206,28 @@ the newly exported service handle. These checks add cross-compilation and
 targeted documentation evidence only. Native Windows execution and
 current-revision remote Ubuntu CI remain pending; no external CI or push was
 run, and the four protected Phase 19 paths remain unchanged and unstaged.
+
+## Service handle strong owner retention — 2026-10-23T05:51:23Z
+
+Code commit `1f6cd086` changes `RuntimeServiceThread` from a weak to a strong
+client-runtime reference. The pinned `PullMessageService` and `RebalanceService`
+each retain their `MQClientInstance`; the regression
+`pull_service_handle_retains_its_client_runtime_owner` drops the manager/runtime
+variables and then starts and shuts down the retained PullMessageService.
+
+Current-tree checks passed: default and all-feature locked workspace tests,
+strict all-target/all-feature workspace Clippy, format and diff checks, offline
+Maven `verify` (37 scenarios, 106 typed headers and 19 typed bodies),
+differential self-test and 37-scenario manifest validation, metadata, fuzz
+smoke (163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes,
+192 message decodes), deterministic race/leak smoke (17 cases × 3), release
+examples, offline benchmark, Windows GNU all-target/all-feature cross-check,
+and targeted warning-free Core rustdoc. The current benchmark sample is in
+`docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+
+This closes the service-handle owner-retention slice only. Broad P18-V01
+Java/Rust source/API/settings/input/error/control-flow and reverse-export
+reconciliation remains PARTIAL. Remote Ubuntu CI, native Windows runtime, and
+Phase 19 Broker/Docker validation remain open. No external CI, push, Broker,
+or Docker action was performed; protected Phase 19 paths remain unchanged and
+unstaged.

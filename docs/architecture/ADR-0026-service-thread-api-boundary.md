@@ -29,11 +29,16 @@ worker loop or contact a Broker.
 Runtime-wide `ClientRuntime::start/shutdown` continues to start and stop all
 client-owned workers.
 
+Each handle retains a strong `Arc<ClientRuntime>`. This matches the Java
+service object's strong `MQClientInstance` field: retaining the service handle
+keeps its client owner available for lifecycle calls.
+
 The handle exposes `service_name`, `join_time_millis`, `is_stopped`,
 `make_stop`, `wakeup`, `is_daemon`, and `set_daemon`. Initial stopped/daemon
-values, pre-start stop/shutdown behavior, repeated start, daemon changes, and
-restart after a full runtime shutdown are covered by the runtime integration
-tests. `make_stop()` only sets the worker flag and never wakes or joins. The
+values, pre-start stop/shutdown behavior, repeated start, daemon changes,
+restart after a full runtime shutdown, and retained-owner behavior are covered
+by the runtime integration tests. `make_stop()` only sets the worker flag and
+never wakes or joins. The
 rebalance worker observes the flag after its current wait/run cycle. The pull
 worker waits for its queue; a queue item that wakes an already-blocked pull
 worker is processed before the stop flag takes effect.

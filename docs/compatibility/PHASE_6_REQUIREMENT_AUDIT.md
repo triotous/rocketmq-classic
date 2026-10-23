@@ -3789,3 +3789,27 @@ Java source/API/settings/input/error/control-flow and Rust reverse-export
 reconciliation remains PARTIAL. Current-revision remote Ubuntu CI, native
 Windows runtime execution, and Phase 19 Broker/Docker evidence also remain
 open.
+
+## P18-V01 retained service-owner lifetime — 2026-10-23 (`1f6cd086`)
+
+Pinned Java `PullMessageService` and `RebalanceService` each hold a strong
+reference to their `MQClientInstance`. Rust's `RuntimeServiceThread` previously
+held only a `Weak<ClientRuntime>`, so retaining the Java-equivalent service
+handle did not retain its owner. The handle now stores a strong `Arc` and
+continues to share the same per-service lifecycle state. The regression
+`pull_service_handle_retains_its_client_runtime_owner` drops the manager and
+runtime variables before starting and shutting down the retained service.
+
+At code revision `1f6cd086`, the default and all-feature workspace suites,
+strict all-target/all-feature workspace Clippy, format/diff checks, offline
+Maven `verify` (37 scenarios, 106 typed headers and 19 typed bodies),
+differential comparator self-test and 37-scenario manifest validation,
+workspace metadata, bounded fuzz smoke (163 frame seeds, 11 message seeds,
+2,784 mutations), race/leak smoke (17 cases × 3), release examples, the offline
+benchmark, Windows GNU all-target/all-feature cross-check, and targeted
+warning-free Core rustdoc pass.
+
+This closes the service-handle owner-retention slice only. Broad P18-V01 Java
+source/API/settings/input/error/control-flow and Rust reverse-export
+reconciliation remains PARTIAL; remote Ubuntu CI and native Windows runtime
+execution remain open. Phase 19 Broker/Docker validation is not claimed.

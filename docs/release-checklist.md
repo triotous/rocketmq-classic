@@ -8269,3 +8269,21 @@ owner-specific checks belong in the manual handoff.
   native Windows runtime and current-revision remote Ubuntu CI remain pending.
   No external CI or push was run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 strong service-owner retention — 2026-10-23 (`1f6cd086`)
+
+- [x] `RuntimeServiceThread` now retains `Arc<ClientRuntime>`, matching the
+  strong `MQClientInstance` field in pinned Java service instances. A regression
+  verifies that the PullMessageService handle remains usable after its manager
+  and runtime variables leave scope.
+- [x] Default/all-feature workspace tests, strict workspace Clippy, pinned
+  Maven verification, differential self-test/37-row manifest, workspace
+  metadata, fuzz, 17-case × 3 race/leak smoke, release examples, benchmark,
+  Windows GNU cross-check, targeted Core rustdoc, formatting, and diff checks
+  passed on this code revision.
+- [ ] This closes the service-handle lifetime slice only. Broad P18-V01
+  bidirectional reconciliation remains open, as do remote Ubuntu CI and native
+  Windows runtime execution. Phase 19 Broker/Docker evidence is not claimed.
+  No external CI or push was run. Protected Phase 19 worktree files remain
+  untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
