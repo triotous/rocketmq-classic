@@ -8924,3 +8924,30 @@ owner-specific checks belong in the manual handoff.
   outside scope. No push or remote CI was run. The four existing user-owned
   Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-response-header-api-inventory__20261023T145913Z.rlog`.
+
+## P18-V02 current-tree server-free gate — 2026-10-23 (`98457158`)
+
+- [x] On a clean temporary Cargo target directory, default and all-feature
+  locked workspace tests/doctests and strict all-target/all-feature workspace
+  Clippy passed. Offline Maven `verify` passed 37 scenarios, fixture drift,
+  and Java/Rust cross-decodes of 11 message fixtures, 106 typed headers, and
+  19 typed bodies. Differential self-test and 37-scenario manifest validation,
+  workspace metadata/dependency checks, all seven product package listings
+  with `LICENSE`/`NOTICE`, 17 race/leak cases × 3, and bounded fuzz smoke (163
+  frame seeds, 11 message seeds, 2,784 mutations) passed. Release examples,
+  the offline benchmark, formatting, and diff checks passed.
+- [x] Full-workspace all-target/all-feature Windows GNU check and strict
+  Clippy passed as cross-compilation evidence. Rustdoc JSON export counts are
+  Common 439, Consumer 460, Core 747, Producer 361, Protocol 1,524, and
+  Remoting 337. Benchmark observations were appended to
+  `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; no performance threshold is set.
+- [ ] One earlier default run encountered a single transient
+  `LocalFileOffsetStore` `AlreadyOpen` failure when reopening after drop. The
+  full default rerun, all-feature rerun, three complete Consumer unit runs,
+  and ten concurrent offset-store test-group runs all passed without a code
+  change. Retain this as a test observation for follow-up. Broad P18-V01 remains
+  PARTIAL; native Windows runtime, current-revision remote Ubuntu CI, and
+  Phase 19 Broker/Docker evidence remain open. No push or remote CI was run;
+  the four existing user-owned Phase 19 paths remain untouched and unstaged.
+  Run record:
+  `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T152405Z.rlog`.

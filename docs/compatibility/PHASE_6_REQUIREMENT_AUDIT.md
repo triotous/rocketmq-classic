@@ -4280,6 +4280,30 @@ changed. This closes the request-header identity/API inventory gap only; broad
 P18-V01 remains PARTIAL, with native Windows runtime and current-revision
 remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
 
+## P18-V02 current-tree server-free gate — 2026-10-23 (`98457158`)
+
+On a clean temporary Cargo target directory, default and all-feature locked
+workspace tests/doctests, strict all-target/all-feature workspace Clippy,
+formatting, and diff checks passed. Offline Maven `verify` passed 37 scenarios
+and fixture drift/cross-decode checks; the Java oracle decoded 11 message
+fixtures, 106 typed headers, and 19 typed bodies. The differential comparator
+self-test and 37-scenario manifest, workspace metadata/dependency checks,
+seven package listings with `LICENSE`/`NOTICE`, 17 deterministic race/leak
+cases × 3, and bounded fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+mutations) passed. Release examples and the offline benchmark passed.
+
+All-target/all-feature Windows GNU `cargo check` and strict Clippy passed for
+the complete workspace; this is compile-only evidence. Current Rustdoc counts
+are Common 439, Consumer 460, Core 747, Producer 361, Protocol 1,524, and
+Remoting 337. One earlier default workspace run saw a single
+`LocalFileOffsetStore` `AlreadyOpen` test failure on reopen. A full default
+rerun, the all-feature run, three complete Consumer unit runs, and ten
+concurrent offset-store test-group runs passed without a code change. This is
+recorded as a transient test observation, not suppressed. Native Windows
+execution, current-revision remote Ubuntu CI, broad P18-V01 reconciliation,
+and Phase 19 Broker/Docker evidence remain open. No push or remote CI was run;
+the four user-owned Phase 19 paths remain untouched and unstaged.
+
 ## P18-V01 response-header identity and API inventory — 2026-10-23
 
 The Java 5.5.1 response-header fixture previously inventoried 16 Rust

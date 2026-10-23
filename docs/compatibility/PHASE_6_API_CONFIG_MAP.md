@@ -3193,3 +3193,13 @@ The focused Protocol test, all-feature Protocol suite (including 166
 doctests), strict Protocol Clippy, formatting/diff checks, and offline Maven
 verification pass. This closes this null-input branch only; broad P18-V01
 reconciliation remains open.
+
+## P18-V01 current-tree Rustdoc export counts — 2026-10-23 (`98457158`)
+
+Regenerated all-feature Rustdoc JSON after the response-header fixture
+expansion. Distinct public item names, excluding each crate-root marker, are
+Common 439, Consumer 460, Core 747, Producer 361, Protocol 1,524, and Remoting
+337. The Protocol change was test/fixture-only and did not add public names.
+This confirms the current export counts; counts do not establish behavior
+coverage. Broad P18-V01 source/API/settings/input/error/control-flow and
+reverse-export reconciliation remains open.
