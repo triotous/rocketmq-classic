@@ -111,6 +111,7 @@ pub struct ClientRuntime {
     pub(super) inbound: Arc<super::inbound::RuntimeProcessor>,
     pub(super) rebalance: Arc<super::rebalance::RebalanceSignal>,
     pub(super) task_scheduler_changed: Arc<tokio::sync::Notify>,
+    pub(super) task_scheduler_status: Arc<super::tasks::SchedulerStatus>,
     pub(super) pull: Arc<super::pull::PullService>,
     manager: Mutex<Vec<ManagerLink>>,
     reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -155,6 +156,9 @@ impl ClientRuntime {
         self: &Arc<Self>,
         schedule: super::tasks::UserSchedule,
     ) -> Result<(), RuntimeError> {
+        if self.task_scheduler_status.is_shutdown() {
+            return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
+        }
         let state = self.state();
         if !matches!(
             state,
@@ -168,12 +172,45 @@ impl ClientRuntime {
             .map_err(|_| RuntimeError::ControlTaskFailed)
     }
 
+    pub(super) async fn shutdown_task_scheduler(
+        self: &Arc<Self>,
+        immediate: bool,
+    ) -> Result<usize, RuntimeError> {
+        if self.task_scheduler_status.is_terminated() {
+            return Ok(0);
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::ShutdownRuntimeScheduler { immediate, reply })
+            .map_err(|_| RuntimeError::ControlTaskFailed)?;
+        receive.await.map_err(|_| RuntimeError::ControlTaskFailed)?
+    }
+
     pub(super) fn enqueue_pull_scheduled_task(
         self: &Arc<Self>,
         schedule: super::tasks::UserSchedule,
     ) -> Result<(), RuntimeError> {
+        if self.pull.is_scheduler_shutdown() {
+            return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
+        }
         self.ensure_pull_scheduler()?;
         self.pull.schedule_user_task(schedule)
+    }
+
+    pub(super) async fn shutdown_pull_task_scheduler(
+        self: &Arc<Self>,
+        immediate: bool,
+    ) -> Result<usize, RuntimeError> {
+        if self.pull.is_scheduler_terminated() {
+            return Ok(0);
+        }
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::ShutdownPullTaskScheduler { immediate, reply })
+            .map_err(|_| RuntimeError::ControlTaskFailed)?;
+        receive.await.map_err(|_| RuntimeError::ControlTaskFailed)?
     }
 
     /// Returns the shared consumer statistics manager for this client runtime.
@@ -312,6 +349,7 @@ impl ClientRuntime {
             inbound: Arc::default(),
             rebalance,
             task_scheduler_changed: Arc::new(tokio::sync::Notify::new()),
+            task_scheduler_status: Arc::default(),
             pull: Arc::default(),
             manager: Mutex::new(Vec::new()),
             reply_timeout_task: tokio::sync::Mutex::new(None),

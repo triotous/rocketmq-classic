@@ -73,6 +73,14 @@ pub(super) enum Command {
     },
     StartPullScheduler,
     ScheduleRuntimeTask(super::tasks::UserSchedule),
+    ShutdownRuntimeScheduler {
+        immediate: bool,
+        reply: oneshot::Sender<Result<usize, RuntimeError>>,
+    },
+    ShutdownPullTaskScheduler {
+        immediate: bool,
+        reply: oneshot::Sender<Result<usize, RuntimeError>>,
+    },
     Shutdown {
         reply: oneshot::Sender<Result<bool, RuntimeError>>,
     },
@@ -337,7 +345,8 @@ async fn run(
                 if matches!(
                     state,
                     RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
-                ) && pull_workers[1].is_none()
+                ) && !runtime.pull.is_scheduler_shutdown()
+                    && pull_workers[1].is_none()
                 {
                     let worker = super::pull::OwnedPullWorker::new(
                         Arc::downgrade(&runtime),
@@ -350,12 +359,17 @@ async fn run(
                 }
             }
             Command::ScheduleRuntimeTask(schedule) => {
-                if matches!(
-                    state,
-                    RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
-                ) {
+                if !runtime.task_scheduler_status.is_shutdown()
+                    && matches!(
+                        state,
+                        RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
+                    )
+                {
                     if periodic.is_none() {
-                        periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                        periodic = Some(super::tasks::OwnedTasks::new(
+                            Arc::downgrade(&runtime),
+                            runtime.task_scheduler_status.clone(),
+                        ));
                     }
                     let result = periodic
                         .as_mut()
@@ -372,6 +386,42 @@ async fn run(
                 } else {
                     schedule.reject();
                 }
+            }
+            Command::ShutdownRuntimeScheduler { immediate, reply } => {
+                let result = if immediate {
+                    if let Some(tasks) = periodic.as_mut() {
+                        tasks.shutdown_now().await
+                    } else {
+                        runtime.task_scheduler_status.shutdown();
+                        runtime.task_scheduler_status.terminate();
+                        Ok(0)
+                    }
+                } else if let Some(tasks) = periodic.as_mut() {
+                    tasks.shutdown_gracefully().map(|()| 0)
+                } else {
+                    runtime.task_scheduler_status.shutdown();
+                    runtime.task_scheduler_status.terminate();
+                    Ok(0)
+                };
+                let _ = reply.send(result);
+            }
+            Command::ShutdownPullTaskScheduler { immediate, reply } => {
+                let result = match runtime.pull.shutdown_scheduler(immediate) {
+                    Ok(cancelled) => {
+                        if immediate {
+                            if let Some(worker) = pull_workers[1].as_mut() {
+                                worker.request_stop();
+                            } else {
+                                runtime.pull.mark_scheduler_terminated();
+                            }
+                        } else if pull_workers[1].is_none() {
+                            runtime.pull.mark_scheduler_terminated();
+                        }
+                        Ok(cancelled)
+                    }
+                    Err(error) => Err(error),
+                };
+                let _ = reply.send(result);
             }
             Command::RegisterProducer {
                 group,
@@ -481,7 +531,10 @@ async fn run(
                     let config = runtime.config_snapshot();
                     let specs = super::tasks::schedules(&config)?;
                     if periodic.is_none() {
-                        periodic = Some(super::tasks::OwnedTasks::new(Arc::downgrade(&runtime)));
+                        periodic = Some(super::tasks::OwnedTasks::new(
+                            Arc::downgrade(&runtime),
+                            runtime.task_scheduler_status.clone(),
+                        ));
                     }
                     for (index, schedule) in specs.into_iter().enumerate() {
                         if let Some(tasks) = periodic.as_mut() {
@@ -490,6 +543,10 @@ async fn run(
                         runtime.control.checkpoint(3 + index as u8)?;
                     }
                     for (scheduled, checkpoint) in [(false, 21), (true, 22)] {
+                        if scheduled && runtime.pull.is_scheduler_shutdown() {
+                            runtime.control.checkpoint(checkpoint)?;
+                            continue;
+                        }
                         let slot = &mut pull_workers[usize::from(scheduled)];
                         if slot.is_none() {
                             *slot = Some(super::pull::OwnedPullWorker::new(
@@ -535,6 +592,7 @@ async fn run(
                                 worker.stop().await;
                             }
                         }
+                        runtime.pull.mark_scheduler_terminated();
                         if let Some(tasks) = periodic.as_mut() {
                             tasks.stop().await;
                         }
@@ -577,6 +635,7 @@ async fn run(
                     }
                 }
                 runtime.pull.close();
+                runtime.pull.mark_scheduler_terminated();
                 if let Some(tasks) = periodic.as_mut() {
                     tasks.stop().await;
                 }

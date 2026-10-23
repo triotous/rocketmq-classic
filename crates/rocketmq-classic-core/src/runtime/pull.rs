@@ -6,7 +6,10 @@ use std::{
     collections::{BTreeMap, VecDeque},
     future::Future,
     pin::Pin,
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     task::Poll,
 };
 use tokio::{
@@ -31,6 +34,14 @@ impl Drop for ScheduledTaskGuard {
         }
     }
 }
+struct PullSchedulerTerminationGuard(Arc<PullService>);
+impl Drop for PullSchedulerTerminationGuard {
+    fn drop(&mut self) {
+        if self.0.is_scheduler_shutdown() {
+            self.0.mark_scheduler_terminated();
+        }
+    }
+}
 enum Job {
     Request(Arc<dyn MessageRequest>),
     Task(Task),
@@ -39,19 +50,104 @@ enum Job {
 #[derive(Default)]
 struct Queues {
     stopped: bool,
+    scheduler_closed: bool,
     immediate: VecDeque<Arc<dyn MessageRequest>>,
     scheduled: BTreeMap<(Instant, u64), Job>,
     sequence: u64,
 }
-#[derive(Default)]
 pub(super) struct PullService {
     queues: Mutex<Queues>,
     immediate: Notify,
     scheduled: Arc<Notify>,
+    scheduler_terminated: AtomicBool,
+    scheduler_terminated_watch: watch::Sender<bool>,
 }
+
+impl Default for PullService {
+    fn default() -> Self {
+        let (scheduler_terminated_watch, _) = watch::channel(false);
+        Self {
+            queues: Mutex::new(Queues::default()),
+            immediate: Notify::new(),
+            scheduled: Arc::default(),
+            scheduler_terminated: AtomicBool::new(false),
+            scheduler_terminated_watch,
+        }
+    }
+}
+
 impl PullService {
     pub fn scheduled_notifier(&self) -> Arc<Notify> {
         self.scheduled.clone()
+    }
+
+    pub fn is_scheduler_shutdown(&self) -> bool {
+        self.queues
+            .lock()
+            .map_or(true, |queues| queues.scheduler_closed)
+    }
+
+    pub fn is_scheduler_terminated(&self) -> bool {
+        self.scheduler_terminated.load(Ordering::Acquire)
+    }
+
+    pub async fn await_scheduler_termination(&self, timeout: Duration) -> bool {
+        let mut terminated = self.scheduler_terminated_watch.subscribe();
+        if self.is_scheduler_terminated() {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                if terminated.changed().await.is_err() {
+                    return;
+                }
+                if self.is_scheduler_terminated() {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok()
+    }
+
+    pub fn mark_scheduler_terminated(&self) {
+        self.scheduler_terminated.store(true, Ordering::Release);
+        self.scheduler_terminated_watch.send_replace(true);
+    }
+
+    pub fn shutdown_scheduler(&self, immediate: bool) -> Result<usize, RuntimeError> {
+        let (cancelled, jobs) = {
+            let mut queues = self
+                .queues
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            queues.scheduler_closed = true;
+            if immediate {
+                let jobs = std::mem::take(&mut queues.scheduled);
+                (jobs.len(), jobs.into_values().collect::<Vec<_>>())
+            } else {
+                let keys = queues
+                    .scheduled
+                    .iter()
+                    .filter_map(|(key, job)| {
+                        matches!(job, Job::ScheduledTask(task) if task.period.is_some())
+                            .then_some(*key)
+                    })
+                    .collect::<Vec<_>>();
+                let jobs = keys
+                    .into_iter()
+                    .filter_map(|key| queues.scheduled.remove(&key))
+                    .collect::<Vec<_>>();
+                (jobs.len(), jobs)
+            }
+        };
+        for job in jobs {
+            if let Job::ScheduledTask(task) = job {
+                task.reject();
+            }
+        }
+        self.scheduled.notify_one();
+        Ok(cancelled)
     }
 
     fn discard_cancelled_user_tasks(&self) {
@@ -93,7 +189,7 @@ impl PullService {
             .queues
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        if queues.stopped {
+        if queues.stopped || queues.scheduler_closed {
             return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
         }
         let key = (
@@ -120,7 +216,7 @@ impl PullService {
             .queues
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        if queues.stopped {
+        if queues.stopped || queues.scheduler_closed {
             return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
         }
         let due = Instant::now() + task.delay;
@@ -139,6 +235,7 @@ impl PullService {
                 &mut *queues,
                 Queues {
                     stopped: true,
+                    scheduler_closed: true,
                     ..Queues::default()
                 },
             )
@@ -155,6 +252,7 @@ impl PullService {
     pub fn stop_accepting(&self) {
         let pending = self.queues.lock().ok().map(|mut queues| {
             queues.stopped = true;
+            queues.scheduler_closed = true;
             let pending = std::mem::take(&mut queues.immediate);
             let repeating_keys = queues
                 .scheduled
@@ -206,15 +304,14 @@ impl OwnedPullWorker {
         let task = tokio::spawn(async move {
             #[cfg(test)]
             let _live = live;
+            let _termination = scheduled.then(|| PullSchedulerTerminationGuard(service.clone()));
             tokio::select! { biased; _ = cancellation.changed() => return, _ = activation.changed() => {}, }
             loop {
                 service.discard_cancelled_user_tasks();
                 if scheduled
-                    && service
-                        .queues
-                        .lock()
-                        .ok()
-                        .is_some_and(|queues| queues.stopped && queues.scheduled.is_empty())
+                    && service.queues.lock().ok().is_some_and(|queues| {
+                        queues.scheduler_closed && queues.scheduled.is_empty()
+                    })
                 {
                     return;
                 }
@@ -303,7 +400,7 @@ impl OwnedPullWorker {
                                     };
                                     let task = task;
                                     match service.queues.lock() {
-                                        Ok(mut queues) if !queues.stopped => {
+                                        Ok(mut queues) if !queues.scheduler_closed => {
                                             queues.scheduled.insert(
                                                 (
                                                     due,
@@ -361,8 +458,11 @@ impl OwnedPullWorker {
     pub fn activate(&self) {
         self.active.send_replace(true);
     }
-    pub async fn stop(&mut self) {
+    pub fn request_stop(&self) {
         self.cancel.send_replace(true);
+    }
+    pub async fn stop(&mut self) {
+        self.request_stop();
         if let Some(task) = self.task.take() {
             let _ = task.await;
         }

@@ -56,6 +56,76 @@ const TASK_RUNNING: u8 = 1;
 const TASK_FINISHED: u8 = 2;
 const TASK_CANCELLED: u8 = 3;
 
+const SCHEDULER_OPEN: u8 = 0;
+const SCHEDULER_SHUTDOWN: u8 = 1;
+const SCHEDULER_TERMINATED: u8 = 2;
+
+pub(super) struct SchedulerStatus {
+    state: AtomicU8,
+    terminated: watch::Sender<bool>,
+}
+
+impl Default for SchedulerStatus {
+    fn default() -> Self {
+        let (terminated, _) = watch::channel(false);
+        Self {
+            state: AtomicU8::new(SCHEDULER_OPEN),
+            terminated,
+        }
+    }
+}
+
+impl SchedulerStatus {
+    pub(super) fn is_shutdown(&self) -> bool {
+        self.state.load(Ordering::Acquire) != SCHEDULER_OPEN
+    }
+
+    pub(super) fn is_terminated(&self) -> bool {
+        self.state.load(Ordering::Acquire) == SCHEDULER_TERMINATED
+    }
+
+    pub(super) fn shutdown(&self) {
+        let _ = self.state.compare_exchange(
+            SCHEDULER_OPEN,
+            SCHEDULER_SHUTDOWN,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
+    pub(super) fn terminate(&self) {
+        self.state.store(SCHEDULER_TERMINATED, Ordering::Release);
+        self.terminated.send_replace(true);
+    }
+
+    pub(super) async fn await_termination(&self, timeout: Duration) -> bool {
+        let mut terminated = self.terminated.subscribe();
+        if self.is_terminated() {
+            return true;
+        }
+        tokio::time::timeout(timeout, async {
+            loop {
+                if terminated.changed().await.is_err() {
+                    return;
+                }
+                if self.is_terminated() {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok()
+    }
+}
+
+struct SchedulerTerminationGuard(Arc<SchedulerStatus>);
+
+impl Drop for SchedulerTerminationGuard {
+    fn drop(&mut self) {
+        self.0.terminate();
+    }
+}
+
 /// A handle to one task accepted by a runtime's client scheduler.
 ///
 /// Dropping the handle leaves the scheduled task running. Call [`cancel`](Self::cancel)
@@ -228,6 +298,84 @@ impl RuntimeScheduler {
         Self { runtime, owner }
     }
 
+    /// Stops admission and lets already queued one-shot work drain.
+    pub async fn shutdown(&self) -> Result<(), RuntimeError> {
+        match self.owner {
+            RuntimeSchedulerOwner::Client => self
+                .runtime
+                .upgrade()
+                .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?
+                .shutdown_task_scheduler(false)
+                .await
+                .map(|_| ()),
+            RuntimeSchedulerOwner::Pull => self
+                .runtime
+                .upgrade()
+                .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?
+                .shutdown_pull_task_scheduler(false)
+                .await
+                .map(|_| ()),
+        }
+    }
+
+    /// Stops admission, cancels queued work, and returns its queued task count.
+    /// Running work is cancelled without waiting for this worker to finish.
+    pub async fn shutdown_now(&self) -> Result<usize, RuntimeError> {
+        match self.owner {
+            RuntimeSchedulerOwner::Client => {
+                self.runtime
+                    .upgrade()
+                    .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?
+                    .shutdown_task_scheduler(true)
+                    .await
+            }
+            RuntimeSchedulerOwner::Pull => {
+                self.runtime
+                    .upgrade()
+                    .ok_or(RuntimeError::InvalidState(RuntimeState::Stopped))?
+                    .shutdown_pull_task_scheduler(true)
+                    .await
+            }
+        }
+    }
+
+    /// Returns whether this scheduler has stopped accepting new work.
+    pub fn is_shutdown(&self) -> bool {
+        self.runtime
+            .upgrade()
+            .is_none_or(|runtime| match self.owner {
+                RuntimeSchedulerOwner::Client => runtime.task_scheduler_status.is_shutdown(),
+                RuntimeSchedulerOwner::Pull => runtime.pull.is_scheduler_shutdown(),
+            })
+    }
+
+    /// Returns whether this scheduler has finished all accepted work.
+    pub fn is_terminated(&self) -> bool {
+        self.runtime
+            .upgrade()
+            .is_none_or(|runtime| match self.owner {
+                RuntimeSchedulerOwner::Client => runtime.task_scheduler_status.is_terminated(),
+                RuntimeSchedulerOwner::Pull => runtime.pull.is_scheduler_terminated(),
+            })
+    }
+
+    /// Waits asynchronously for termination, returning false when the timeout
+    /// expires first.
+    pub async fn await_termination(&self, timeout: Duration) -> bool {
+        let Some(runtime) = self.runtime.upgrade() else {
+            return true;
+        };
+        match self.owner {
+            RuntimeSchedulerOwner::Client => {
+                runtime
+                    .task_scheduler_status
+                    .await_termination(timeout)
+                    .await
+            }
+            RuntimeSchedulerOwner::Pull => runtime.pull.await_scheduler_termination(timeout).await,
+        }
+    }
+
     /// Queues a task for immediate execution on the client scheduler.
     pub fn execute(
         &self,
@@ -371,6 +519,7 @@ enum ScheduledJob {
 struct SchedulerQueue {
     jobs: BTreeMap<(Instant, u64), ScheduledJob>,
     next_order: u64,
+    closed: bool,
 }
 
 impl SchedulerQueue {
@@ -426,13 +575,14 @@ pub(super) fn schedules(
 pub(super) struct OwnedTasks {
     schedules: Arc<Mutex<SchedulerQueue>>,
     changed: Arc<Notify>,
+    status: Arc<SchedulerStatus>,
     active: watch::Sender<bool>,
     cancel: watch::Sender<bool>,
     task: Option<JoinHandle<()>>,
 }
 
 impl OwnedTasks {
-    pub fn new(runtime: Weak<ClientRuntime>) -> Self {
+    pub fn new(runtime: Weak<ClientRuntime>, status: Arc<SchedulerStatus>) -> Self {
         #[cfg(test)]
         let live = runtime.upgrade().map(|runtime| {
             let probe = runtime.periodic_probe.clone();
@@ -444,16 +594,21 @@ impl OwnedTasks {
         });
         let (active, mut activation) = watch::channel(false);
         let (cancel, mut cancellation) = watch::channel(false);
-        let schedules = Arc::new(Mutex::new(SchedulerQueue::default()));
+        let schedules = Arc::new(Mutex::new(SchedulerQueue {
+            closed: status.is_shutdown(),
+            ..SchedulerQueue::default()
+        }));
         let changed = runtime
             .upgrade()
             .map(|runtime| runtime.task_scheduler_changed.clone())
             .unwrap_or_else(|| Arc::new(Notify::new()));
         let worker_schedules = schedules.clone();
         let worker_changed = changed.clone();
+        let worker_status = status.clone();
         let task = tokio::spawn(async move {
             #[cfg(test)]
             let _live = live;
+            let _termination = SchedulerTerminationGuard(worker_status.clone());
             let Some(rebalance) = runtime.upgrade().map(|runtime| runtime.rebalance.clone()) else {
                 return;
             };
@@ -465,6 +620,9 @@ impl OwnedTasks {
                 let next = match worker_schedules.lock() {
                     Ok(mut queue) => {
                         queue.remove_cancelled_users();
+                        if queue.closed && queue.jobs.is_empty() {
+                            return;
+                        }
                         queue.jobs.first_key_value().map(|(key, _)| key.0)
                     }
                     Err(_) => return,
@@ -529,10 +687,12 @@ impl OwnedTasks {
                             _ = caught => {},
                         }
                         if let Ok(mut queue) = worker_schedules.lock() {
-                            queue.jobs.insert(
-                                ((key.0 + schedule.period), key.1),
-                                ScheduledJob::Periodic(schedule),
-                            );
+                            if !queue.closed {
+                                queue.jobs.insert(
+                                    ((key.0 + schedule.period), key.1),
+                                    ScheduledJob::Periodic(schedule),
+                                );
+                            }
                         } else {
                             return;
                         }
@@ -606,15 +766,20 @@ impl OwnedTasks {
                         {
                             if let Some(period) = schedule.period {
                                 if let Ok(mut queue) = worker_schedules.lock() {
-                                    let next_due = if schedule.fixed_rate {
-                                        key.0 + period
+                                    if queue.closed {
+                                        schedule.reject();
                                     } else {
-                                        Instant::now() + period
-                                    };
-                                    queue
-                                        .jobs
-                                        .insert((next_due, key.1), ScheduledJob::User(schedule));
-                                    worker_changed.notify_one();
+                                        let next_due = if schedule.fixed_rate {
+                                            key.0 + period
+                                        } else {
+                                            Instant::now() + period
+                                        };
+                                        queue.jobs.insert(
+                                            (next_due, key.1),
+                                            ScheduledJob::User(schedule),
+                                        );
+                                        worker_changed.notify_one();
+                                    }
                                 } else {
                                     return;
                                 }
@@ -631,6 +796,7 @@ impl OwnedTasks {
         Self {
             schedules,
             changed,
+            status,
             active,
             cancel,
             task: Some(task),
@@ -638,25 +804,92 @@ impl OwnedTasks {
     }
 
     pub fn register(&mut self, schedule: Schedule) -> Result<(), RuntimeError> {
-        self.schedules
+        let mut queue = self
+            .schedules
             .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?
-            .insert(
-                Instant::now() + schedule.delay,
-                ScheduledJob::Periodic(schedule),
-            );
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if queue.closed {
+            return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
+        }
+        queue.insert(
+            Instant::now() + schedule.delay,
+            ScheduledJob::Periodic(schedule),
+        );
+        drop(queue);
         self.changed.notify_one();
         Ok(())
     }
 
     pub fn register_user(&mut self, schedule: UserSchedule) -> Result<(), RuntimeError> {
         let due = Instant::now() + schedule.delay;
-        self.schedules
+        let mut queue = self
+            .schedules
             .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)?
-            .insert(due, ScheduledJob::User(schedule));
+            .map_err(|_| RuntimeError::RegistryPoisoned)?;
+        if queue.closed {
+            return Err(RuntimeError::InvalidState(RuntimeState::Stopped));
+        }
+        queue.insert(due, ScheduledJob::User(schedule));
+        drop(queue);
         self.changed.notify_one();
         Ok(())
+    }
+
+    pub fn shutdown_gracefully(&mut self) -> Result<(), RuntimeError> {
+        self.status.shutdown();
+        let removed = {
+            let mut queue = self
+                .schedules
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            queue.closed = true;
+            let keys = queue
+                .jobs
+                .iter()
+                .filter_map(|(key, job)| {
+                    matches!(
+                        job,
+                        ScheduledJob::Periodic(_)
+                            | ScheduledJob::User(UserSchedule {
+                                period: Some(_),
+                                ..
+                            })
+                    )
+                    .then_some(*key)
+                })
+                .collect::<Vec<_>>();
+            keys.into_iter()
+                .filter_map(|key| queue.jobs.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        for job in removed {
+            if let ScheduledJob::User(schedule) = job {
+                schedule.reject();
+            }
+        }
+        self.changed.notify_one();
+        Ok(())
+    }
+
+    pub async fn shutdown_now(&mut self) -> Result<usize, RuntimeError> {
+        self.status.shutdown();
+        let pending = {
+            let mut queue = self
+                .schedules
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)?;
+            queue.closed = true;
+            std::mem::take(&mut queue.jobs)
+        };
+        let cancelled = pending.len();
+        for (_, job) in pending {
+            if let ScheduledJob::User(schedule) = job {
+                schedule.reject();
+            }
+        }
+        self.changed.notify_one();
+        self.cancel.send_replace(true);
+        Ok(cancelled)
     }
 
     pub fn activate(&self) {
@@ -664,6 +897,11 @@ impl OwnedTasks {
     }
 
     pub async fn stop(&mut self) {
+        self.status.shutdown();
+        if let Ok(mut queue) = self.schedules.lock() {
+            queue.closed = true;
+        }
+        self.changed.notify_one();
         self.cancel.send_replace(true);
         if let Some(task) = self.task.take() {
             let _ = task.await;
@@ -680,6 +918,10 @@ impl OwnedTasks {
 
 impl Drop for OwnedTasks {
     fn drop(&mut self) {
+        self.status.shutdown();
+        if let Ok(mut queue) = self.schedules.lock() {
+            queue.closed = true;
+        }
         self.cancel.send_replace(true);
         if let Some(task) = self.task.take() {
             task.abort();
@@ -692,7 +934,7 @@ mod tests {
     use super::*;
     use crate::{
         config::ClientConfig,
-        runtime::{ConsumerRuntime, ProducerRuntime},
+        runtime::{ConsumerRuntime, MessageRequest, ProducerRuntime},
     };
     use rocketmq_classic_protocol::heartbeat::ConsumerData;
     use std::{
@@ -765,6 +1007,40 @@ mod tests {
         let mut config = ClientConfig::new("timer");
         config.namesrv_addr = Some(String::new());
         Arc::new(ClientRuntime::construct(config, &HashMap::new(), None).unwrap())
+    }
+
+    struct DispatchRequest(Arc<AtomicUsize>);
+    impl MessageRequest for DispatchRequest {
+        fn consumer_group(&self) -> &str {
+            "missing-dispatch-probe"
+        }
+        fn mode(&self) -> rocketmq_classic_protocol::body::MessageRequestMode {
+            rocketmq_classic_protocol::body::MessageRequestMode::Pull
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+    impl Drop for DispatchRequest {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    async fn assert_pull_dispatcher_remains_available(runtime: &Arc<ClientRuntime>) {
+        runtime.start().await.unwrap();
+        let dropped = Arc::new(AtomicUsize::new(0));
+        runtime
+            .execute_pull_request_immediately(Arc::new(DispatchRequest(dropped.clone())))
+            .unwrap();
+        for _ in 0..100 {
+            if dropped.load(Ordering::SeqCst) == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -944,8 +1220,168 @@ mod tests {
         runtime.shutdown().await.unwrap();
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn client_scheduler_graceful_shutdown_drains_one_shots_and_terminates() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let call = scheduler
+            .schedule_call_after(Duration::from_secs(2), async { 41_u8 })
+            .unwrap();
+        let repeating = scheduler
+            .schedule_at_fixed_rate(Duration::from_secs(60), Duration::from_secs(60), || async {
+            })
+            .unwrap();
+
+        scheduler.shutdown().await.unwrap();
+        assert!(scheduler.is_shutdown());
+        assert!(!scheduler.is_terminated());
+        assert!(!scheduler.await_termination(Duration::ZERO).await);
+        assert!(repeating.is_finished());
+        assert!(scheduler.execute(async {}).is_err());
+
+        advance(2_000).await;
+        assert_eq!(call.join().await.unwrap(), 41);
+        settle().await;
+        assert!(scheduler.is_terminated());
+        assert!(scheduler.await_termination(Duration::ZERO).await);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn client_scheduler_immediate_shutdown_cancels_queued_work() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let first = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 1_u8 })
+            .unwrap();
+        let second = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 2_u8 })
+            .unwrap();
+
+        assert_eq!(scheduler.shutdown_now().await.unwrap(), 2);
+        assert!(scheduler.is_shutdown());
+        settle().await;
+        assert!(scheduler.is_terminated());
+        assert!(first.is_finished());
+        assert!(second.is_finished());
+        assert!(first.join().await.is_err());
+        assert!(second.join().await.is_err());
+        assert!(scheduler.execute(async {}).is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_scheduler_graceful_shutdown_drains_one_shots_and_terminates() {
+        let runtime = runtime();
+        let scheduler = runtime.pull_scheduled_executor_service();
+        let call = scheduler
+            .schedule_call_after(Duration::from_secs(2), async { 17_u8 })
+            .unwrap();
+        let repeating = scheduler
+            .schedule_with_fixed_delay(Duration::from_secs(60), Duration::from_secs(60), || async {
+            })
+            .unwrap();
+
+        scheduler.shutdown().await.unwrap();
+        assert!(scheduler.is_shutdown());
+        assert!(!scheduler.is_terminated());
+        assert!(repeating.is_finished());
+        assert!(scheduler.execute(async {}).is_err());
+
+        advance(2_000).await;
+        assert_eq!(call.join().await.unwrap(), 17);
+        settle().await;
+        assert!(scheduler.is_terminated());
+        assert!(scheduler.await_termination(Duration::ZERO).await);
+        assert_pull_dispatcher_remains_available(&runtime).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_scheduler_immediate_shutdown_cancels_queued_work() {
+        let runtime = runtime();
+        let scheduler = runtime.pull_scheduled_executor_service();
+        let first = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 1_u8 })
+            .unwrap();
+        let second = scheduler
+            .schedule_call_after(Duration::from_secs(60), async { 2_u8 })
+            .unwrap();
+
+        assert_eq!(scheduler.shutdown_now().await.unwrap(), 2);
+        assert!(scheduler.is_shutdown());
+        settle().await;
+        assert!(scheduler.is_terminated());
+        assert!(first.is_finished());
+        assert!(second.is_finished());
+        assert!(first.join().await.is_err());
+        assert!(second.join().await.is_err());
+        assert!(scheduler.execute(async {}).is_err());
+        assert_pull_dispatcher_remains_available(&runtime).await;
+    }
+
+    #[tokio::test]
+    async fn client_scheduler_worker_can_request_immediate_shutdown() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let callback_runtime = runtime.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        scheduler
+            .execute(async move {
+                let _ = entered_tx.send(());
+                callback_runtime
+                    .scheduled_executor_service()
+                    .shutdown_now()
+                    .await
+                    .unwrap();
+            })
+            .unwrap();
+
+        entered_rx.await.unwrap();
+        assert!(scheduler.await_termination(Duration::from_secs(1)).await);
+    }
+
+    #[tokio::test]
+    async fn pull_scheduler_worker_can_request_immediate_shutdown() {
+        let runtime = runtime();
+        let scheduler = runtime.pull_scheduled_executor_service();
+        let callback_runtime = runtime.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        scheduler
+            .execute(async move {
+                let _ = entered_tx.send(());
+                callback_runtime
+                    .pull_scheduled_executor_service()
+                    .shutdown_now()
+                    .await
+                    .unwrap();
+            })
+            .unwrap();
+
+        entered_rx.await.unwrap();
+        assert!(scheduler.await_termination(Duration::from_secs(1)).await);
+    }
+
+    #[tokio::test]
+    async fn runtime_shutdown_terminates_both_owned_schedulers() {
+        let runtime = runtime();
+        let client_scheduler = runtime.scheduled_executor_service();
+        let pull_scheduler = runtime.pull_scheduled_executor_service();
+        runtime.start().await.unwrap();
+        assert!(!client_scheduler.is_shutdown());
+        assert!(!pull_scheduler.is_shutdown());
+
+        runtime.shutdown().await.unwrap();
+
+        for scheduler in [&client_scheduler, &pull_scheduler] {
+            assert!(scheduler.is_shutdown());
+            assert!(scheduler.is_terminated());
+            assert!(scheduler.await_termination(Duration::ZERO).await);
+        }
+    }
+
     fn tasks(runtime: &Arc<ClientRuntime>) -> OwnedTasks {
-        let mut tasks = OwnedTasks::new(Arc::downgrade(runtime));
+        let mut tasks = OwnedTasks::new(
+            Arc::downgrade(runtime),
+            runtime.task_scheduler_status.clone(),
+        );
         for schedule in schedules(&runtime.config_snapshot()).unwrap() {
             tasks.register(schedule).unwrap();
         }
