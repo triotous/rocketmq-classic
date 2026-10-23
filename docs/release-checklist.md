@@ -8106,3 +8106,21 @@ owner-specific checks belong in the manual handoff.
   remain open. No remote CI, push, Broker, or Docker action was performed. The
   protected Phase 19 worktree files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 result-bearing scheduled calls — 2026-10-23 (`235d05c9`)
+
+- [x] Both scheduler handles now expose `submit` and delayed result-bearing
+  calls. `RuntimeScheduledCall::join()` returns the callback value and reports
+  cancellation, panic, or runtime shutdown through a closed oneshot result.
+  Paused-time tests cover returned values and cancellation on both scheduler
+  owners.
+- [x] The Core library suite passed (220 tests), strict all-target/all-feature
+  Core Clippy passed, and formatting plus `git diff --check` passed on the code
+  change.
+- [ ] Executor-wide shutdown/status/termination APIs and final P18-V01 source,
+  settings, input, error, control-flow, and reverse-export reconciliation are
+  still open. Remote Ubuntu CI, native Windows execution, and Phase 19
+  Broker/Docker validation remain pending. No external CI, push, Broker, or
+  Docker action was performed; protected Phase 19 worktree files remain
+  untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
