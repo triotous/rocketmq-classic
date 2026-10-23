@@ -8547,3 +8547,22 @@ owner-specific checks belong in the manual handoff.
   Broker/Docker evidence remain open. No remote CI or push was run; existing
   Phase 19 worktree files remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T102257Z.rlog`.
+
+## P18-V01 MQClientAPIFactory shutdown parity — 2026-10-23
+
+- [x] `shutdown` skips null slots and still joins all non-null clients;
+  a started zero-client pool returns `EmptyClientArray`, matching Java's
+  `AsyncShutdownHelper.await` null-latch failure.
+- [x] The pinned Java fixture invokes both cases. Fixture hash:
+  `cf2dc5b293ea6620fe44732518e24ee97212b4584816083fe672223b4b7ff573`.
+  It explicitly shuts down the Java client removed from the public array
+  after recording factory behavior so the fixture process exits cleanly.
+- [x] All seven Core factory tests, strict Core all-target/all-feature
+  Clippy, direct Java fixture generation/verification, formatting, and diff
+  checks pass. A first fixture run exposed the removed client's still-live
+  Netty threads; fixture cleanup now closes it explicitly after observation.
+- [ ] This closes the factory shutdown slice only. Broad P18-V01 and the
+  final full-workspace P18-V02 gate remain open, as do native Windows runtime,
+  remote Ubuntu CI, and Phase 19 Broker/Docker evidence. No push or remote CI
+  was run; existing Phase 19 worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T103539Z.rlog`.

@@ -3988,3 +3988,18 @@ Core Clippy, all-feature workspace Rustdoc JSON, formatting, and diff checks
 passed. This closes the provider-injection reverse-export discrepancy only;
 the Phase 6 runtime row and broad P18-V01 source/API/settings/input/error/flow
 audit remain PARTIAL.
+
+## P18-V01 `MQClientAPIFactory.shutdown` null and empty-array behavior — 2026-10-23
+
+Pinned `AsyncShutdownHelper` starts one worker per array slot and catches a
+null target's `NullPointerException` inside that worker, so other clients still
+shut down and the factory call returns normally. With a started zero-client
+pool, the helper leaves its latch unset and `await` throws
+`NullPointerException`. Rust now shuts down every non-null slot and maps the
+empty-array case to `EmptyClientArray`. The invoked fixture records both Java
+outcomes in `fixtures/runtime/api-factory.json` (SHA-256
+`cf2dc5b293ea6620fe44732518e24ee97212b4584816083fe672223b4b7ff573`); its
+cleanup explicitly closes the Java client removed from the public array after
+the factory's behavior is captured. All seven Core factory tests and the
+direct Java fixture verification pass. This closes the factory shutdown
+failure-order slice only; broad P18-V01 remains PARTIAL.
