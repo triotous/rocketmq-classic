@@ -8031,3 +8031,29 @@ owner-specific checks belong in the manual handoff.
   compile-only. No push or external CI was run; the four protected Phase 19
   worktree paths remain unstaged. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261022T201155Z.rlog`.
+
+## P18 current-tree server-free verification — 2026-10-23 (`05e51237`)
+
+- [x] Default and all-feature locked workspace tests, strict workspace
+  all-target/all-feature Clippy, formatting, and `git diff --check` passed.
+  The first default workspace attempt encountered a test child stuck before
+  Rust test startup in macOS `dyld`; the isolated codec suite passed, and the
+  complete workspace rerun passed.
+- [x] Offline Maven `verify` passed with the pinned Java 5.5.1 source, including
+  37 Phase 19 scenarios, 73 ClientConfig identity/default/clone checks, runtime
+  fixtures, and Java decoding of Rust-generated typed headers and bodies.
+  Comparator self-test and 37-scenario manifest validation passed.
+- [x] Fixed-seed fuzz smoke passed with 163 frame seeds, 11 message seeds,
+  2,784 bounded mutations, 245 frame decodes, and 192 message decodes.
+  Deterministic race/leak smoke passed 17 cases × 3 repetitions. The pinned
+  Asia/Taipei Unique ID regression passed.
+- [x] Release facade examples, workspace metadata/license/dependency checks,
+  and the release offline benchmark passed. Current benchmark observations are
+  appended to `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`.
+- [ ] Broad P18-V01 Java source/API/settings/input/error/control-flow and Rust
+  reverse-export reconciliation remains open. Current-revision remote Ubuntu
+  CI and native Windows runtime execution remain pending. Phase 19 Broker/Docker
+  evidence remains in its own phase. No remote CI, Broker, Docker, publication,
+  or release action was performed; the four protected Phase 19 worktree paths
+  remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
