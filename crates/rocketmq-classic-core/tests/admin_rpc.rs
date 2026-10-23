@@ -4413,7 +4413,10 @@ async fn create_acl_honors_the_java_timeout_argument() {
         result,
         Err(RpcError::Transport(ref error)) if error.is_timeout()
     ));
-    peer.await.unwrap();
+    // A short timeout can expire before the local peer reads a complete frame;
+    // this test asserts the deadline result, so stop the peer before shutdown.
+    peer.abort();
+    let _ = peer.await;
     client.shutdown().await;
 }
 

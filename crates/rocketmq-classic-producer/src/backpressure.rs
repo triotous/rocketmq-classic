@@ -53,8 +53,12 @@ pub(crate) struct ReadWriteGate {
 /// Dropping this guard releases the lock.
 #[must_use]
 pub struct BackpressureReadGuard {
-    gate: Arc<ReadWriteGate>,
+    _lease: ReadLockLease,
     _not_send_or_sync: PhantomData<Rc<()>>,
+}
+
+struct ReadLockLease {
+    gate: Arc<ReadWriteGate>,
 }
 
 struct BackpressureWriteGuard<'a> {
@@ -127,6 +131,10 @@ impl AdjustableSemaphore {
             return Err(ProducerError::Timeout);
         }
 
+        // Java holds the producer's read lock across the blocking semaphore
+        // acquisition. Keep the equivalent lease while this async wait is
+        // pending so a runtime resize cannot change the permit limit midway.
+        let _reader = self.gate.read_lock_lease();
         let ticket = {
             let mut state = self.lock_state();
             let ticket = state.next_ticket;
@@ -146,7 +154,6 @@ impl AdjustableSemaphore {
             }
             let notified = notify.notified();
             let acquired = {
-                let _reader = self.gate.read_lock();
                 let mut state = self.lock_state();
                 let is_front = state
                     .waiters
@@ -232,7 +239,7 @@ impl AdjustableSemaphore {
 
 impl Drop for AdjustablePermit {
     fn drop(&mut self) {
-        let _reader = self.gate.read_lock();
+        let _reader = self.gate.read_lock_lease();
         self.semaphore.release(self.permits);
     }
 }
@@ -250,6 +257,13 @@ impl ReadWriteGate {
     }
 
     fn read_lock(self: &Arc<Self>) -> BackpressureReadGuard {
+        BackpressureReadGuard {
+            _lease: self.read_lock_lease(),
+            _not_send_or_sync: PhantomData,
+        }
+    }
+
+    fn read_lock_lease(self: &Arc<Self>) -> ReadLockLease {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         while state.writer_active || state.waiting_writers > 0 {
             state = self
@@ -259,10 +273,7 @@ impl ReadWriteGate {
         }
         state.readers += 1;
         drop(state);
-        BackpressureReadGuard {
-            gate: self.clone(),
-            _not_send_or_sync: PhantomData,
-        }
+        ReadLockLease { gate: self.clone() }
     }
 
     fn write_lock(&self) -> BackpressureWriteGuard<'_> {
@@ -281,7 +292,7 @@ impl ReadWriteGate {
     }
 }
 
-impl Drop for BackpressureReadGuard {
+impl Drop for ReadLockLease {
     fn drop(&mut self) {
         let mut state = self
             .gate
@@ -378,7 +389,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn resize_can_wake_an_async_waiter_without_blocking_the_executor() {
+    async fn runtime_resize_waits_for_a_pending_acquisition_like_java() {
         let semaphore = Arc::new(AdjustableSemaphore::new(1));
         let held = semaphore
             .acquire(1, Instant::now() + Duration::from_secs(10))
@@ -394,10 +405,40 @@ mod tests {
         };
         tokio::task::yield_now().await;
 
-        semaphore.resize(2);
-        let acquired = waiting.await.unwrap().unwrap();
-        assert_eq!(semaphore.available_permits(), 0);
-        drop(acquired);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (resized_tx, resized_rx) = mpsc::channel();
+        let setter = {
+            let semaphore = semaphore.clone();
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                semaphore.resize_and(2, || {});
+                resized_tx.send(()).unwrap();
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let writer_wait_deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            let waiting_writers = semaphore
+                .gate
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .waiting_writers;
+            if waiting_writers > 0 {
+                break;
+            }
+            assert!(std::time::Instant::now() < writer_wait_deadline);
+            std::thread::yield_now();
+        }
+        assert!(resized_rx.recv_timeout(Duration::from_millis(10)).is_err());
+
+        assert!(matches!(
+            waiting.await.unwrap(),
+            Err(ProducerError::Timeout)
+        ));
+        resized_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        setter.join().unwrap();
+        assert_eq!(semaphore.capacity(), 2);
         drop(held);
         assert_eq!(semaphore.available_permits(), 2);
     }
