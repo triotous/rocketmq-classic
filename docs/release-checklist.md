@@ -8441,3 +8441,25 @@ owner-specific checks belong in the manual handoff.
   remain open. Rustdoc emitted the existing workspace-manifest and Consumer
   `fetch_update` warnings. No external CI or push was run. Run record:
   `rlogs/2026/10/23-phase-18-rustdoc-export-refresh__20261023T091621Z.rlog`.
+
+## P18-V02 current-tree server-free refresh after factory parity — 2026-10-23 (`e8066804`)
+
+- [x] Default and all-feature locked workspace tests, strict all-target/
+  all-feature workspace Clippy, formatter, and diff checks passed. Offline
+  Maven `verify` passed, including 37 scenarios and the expanded invoked
+  `MQClientAPIFactory` fixture; differential self-test and 37-scenario manifest
+  validation passed.
+- [x] Workspace metadata and all seven product package listings passed with
+  `LICENSE`/`NOTICE`; bounded fuzz smoke passed with 163 frame seeds, 11
+  message seeds, 2,784 mutations, 245 frame decodes, and 192 message decodes;
+  deterministic race/leak smoke passed 17 cases × 3 repetitions.
+- [x] Release examples and offline benchmark passed. The current benchmark
+  sample is recorded in
+  `compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. Current all-target,
+  all-feature Windows GNU cross-compilation passed.
+- [ ] Broad P18-V01 bidirectional source/API/settings/input/error/control-flow
+  and reverse-export reconciliation remains open. Native Windows runtime,
+  current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence remain
+  pending. No external CI, push, Broker, or Docker action was performed; the
+  existing Phase 19 worktree files remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T092907Z.rlog`.
