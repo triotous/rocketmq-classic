@@ -34,6 +34,15 @@ impl MQClientApi {
         self.remoting.get_name_server_address_list()
     }
 
+    /// Provides lock-scoped access to the live NameServer list returned by
+    /// `MQClientAPIImpl.getNameServerAddressList`.
+    pub fn with_name_server_address_list<R>(
+        &self,
+        operation: impl FnOnce(Option<&mut Vec<String>>) -> R,
+    ) -> R {
+        self.remoting.with_name_server_address_list(operation)
+    }
+
     /// Returns a handle to the same remoting client, matching
     /// `MQClientAPIImpl.getRemotingClient`.
     pub fn remoting_client(&self) -> RemotingClient {
@@ -430,5 +439,9 @@ mod api_surface_tests {
             api.get_name_server_address_list(),
             Some(vec!["127.0.0.1:9876".into()])
         );
+        api.with_name_server_address_list(|nameservers| {
+            nameservers.unwrap().clear();
+        });
+        assert_eq!(api.get_name_server_address_list(), Some(Vec::new()));
     }
 }
