@@ -636,13 +636,10 @@ impl ClientRuntime {
         else {
             return Ok(None);
         };
+        let timeout_millis = self.config_read().mq_client_api_timeout;
         Ok(self
             .api
-            .get_consumer_list_by_group_nullable(
-                &address,
-                group,
-                tokio::time::Instant::now() + self.rpc_timeout(),
-            )
+            .get_consumer_list_by_group_with_timeout_millis(&address, group, timeout_millis)
             .await
             .unwrap_or(None))
     }
@@ -703,11 +700,9 @@ impl ClientRuntime {
         body.set_client_id(Some(self.client_id.clone()));
         body.set_strategy_name(strategy_name.map(str::to_owned));
         body.set_message_model(message_model);
-        let deadline = tokio::time::Instant::now()
-            + tokio::time::Duration::from_millis(timeout_millis.max(0) as u64);
         Ok(self
             .api
-            .query_assignment(&address, &body, deadline)
+            .query_assignment_with_timeout_millis(&address, &body, timeout_millis)
             .await?
             .get_message_queue_assignments()
             .map(|assignments| {

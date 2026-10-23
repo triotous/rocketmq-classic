@@ -10,7 +10,9 @@ use rocketmq_classic_protocol::{
     codes::request,
     heartbeat::MessageModel,
 };
-use rocketmq_classic_remoting::{RemotingCommand, codec::frame};
+use rocketmq_classic_remoting::{
+    RemotingCommand, TransportError, codec::frame, error::TimeoutPhase,
+};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -860,7 +862,7 @@ async fn consumer_lookup_uses_timeout_mutated_after_runtime_construction() {
 }
 
 #[tokio::test]
-async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
+async fn missing_broker_returns_none_and_nonpositive_timeouts_connect_without_frames() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("../../../fixtures/runtime/lookup.json")).unwrap();
     let java_lookup = fixture["runtimeLookupInvocation"].clone();
@@ -940,15 +942,44 @@ async fn missing_broker_returns_none_and_expired_assignment_emits_no_frame() {
                     timeout
                 )
                 .await,
-            Err(RuntimeError::Rpc(_))
+            Err(RuntimeError::Rpc(RpcError::Transport(
+                TransportError::TimeoutWithContext {
+                    phase: TimeoutPhase::Operation,
+                    ..
+                }
+            )))
         ));
     }
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(1), broker.accept())
+        .await
+        .expect("Java invokeSync creates the channel before checking the timeout")
+        .unwrap();
+    let mut byte = [0];
     assert!(
-        tokio::time::timeout(Duration::from_millis(30), broker.accept())
+        tokio::time::timeout(Duration::from_millis(30), socket.read(&mut byte))
+            .await
+            .is_err()
+    );
+
+    runtime
+        .config()
+        .write()
+        .unwrap()
+        .set_mq_client_api_timeout(-1);
+    assert!(
+        runtime
+            .find_consumer_id_list("topic", "consumer")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(30), socket.read(&mut byte))
             .await
             .is_err()
     );
     runtime.remoting().shutdown().await;
+    assert_eq!(socket.read(&mut byte).await.unwrap(), 0);
     name_peer.await.unwrap();
 }
 

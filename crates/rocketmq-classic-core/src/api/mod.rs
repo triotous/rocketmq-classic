@@ -182,6 +182,50 @@ impl MQClientApi {
         })
     }
 
+    async fn request_with_timeout_millis<H: CommandHeader>(
+        &self,
+        addr: &str,
+        code: i32,
+        header: &H,
+        body: Option<Vec<u8>>,
+        timeout_millis: i64,
+    ) -> Result<RemotingCommand, RpcError> {
+        let mut fields = HeaderMap::new();
+        header.encode_fields(&mut fields);
+        self.request_fields_with_timeout_millis(addr, code, fields, body, timeout_millis)
+            .await
+    }
+
+    async fn request_fields_with_timeout_millis(
+        &self,
+        addr: &str,
+        code: i32,
+        fields: HeaderMap,
+        body: Option<Vec<u8>>,
+        timeout_millis: i64,
+    ) -> Result<RemotingCommand, RpcError> {
+        let heartbeat_language = self
+            .config
+            .as_ref()
+            .map(|config| read_shared_client_config(config).language)
+            .unwrap_or(self.language);
+        let command = RemotingCommand {
+            code,
+            language: if code == rocketmq_classic_protocol::codes::request::HEART_BEAT {
+                heartbeat_language
+            } else {
+                Some(rocketmq_classic_protocol::codes::LanguageCode::Java)
+            },
+            ext_fields: Some(fields.into()),
+            body,
+            ..Default::default()
+        };
+        Ok(self
+            .remoting
+            .invoke_sync_with_timeout_millis(addr, command, timeout_millis)
+            .await?)
+    }
+
     async fn oneway<H: CommandHeader>(
         &self,
         addr: &str,

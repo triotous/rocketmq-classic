@@ -603,6 +603,30 @@ impl MQClientApi {
         decode_body(&reply, request::QUERY_ASSIGNMENT, addr)
     }
 
+    /// Uses the signed timeout passed by `MQClientInstance.queryAssignment`.
+    /// Channel acquisition precedes timeout expiry, as in Java's
+    /// `NettyRemotingClient.invokeSync`.
+    pub(crate) async fn query_assignment_with_timeout_millis(
+        &self,
+        addr: &str,
+        body: &QueryAssignmentRequestBody,
+        timeout_millis: i32,
+    ) -> Result<QueryAssignmentResponseBody, RpcError> {
+        let reply = classify(
+            self.request_with_timeout_millis(
+                addr,
+                request::QUERY_ASSIGNMENT,
+                &LiteSubscriptionCtlRequestHeader,
+                Some(json_body(body, request::QUERY_ASSIGNMENT)?),
+                i64::from(timeout_millis),
+            )
+            .await?,
+            request::QUERY_ASSIGNMENT,
+            addr,
+        )?;
+        decode_body(&reply, request::QUERY_ASSIGNMENT, addr)
+    }
+
     pub async fn set_message_request_mode(
         &self,
         addr: &str,

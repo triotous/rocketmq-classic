@@ -502,6 +502,38 @@ impl MQClientApi {
             .map(|consumer_ids| consumer_ids.snapshot()))
     }
 
+    /// Uses the signed `MQClientAPIImpl.getConsumerIdListByGroup` timeout.
+    /// The transport acquires the channel before expiring a non-positive
+    /// request budget, matching Java's synchronous invocation order.
+    pub(crate) async fn get_consumer_list_by_group_with_timeout_millis(
+        &self,
+        addr: &str,
+        consumer_group: Option<&str>,
+        timeout_millis: i32,
+    ) -> Result<Option<Vec<Option<String>>>, RpcError> {
+        let code = request::GET_CONSUMER_LIST_BY_GROUP;
+        let mut fields = HeaderMap::new();
+        if let Some(consumer_group) = consumer_group {
+            fields.insert("consumerGroup".into(), consumer_group.to_owned());
+        }
+        let reply = self
+            .request_fields_with_timeout_millis(addr, code, fields, None, i64::from(timeout_millis))
+            .await?;
+        let reply = classify(reply, code, addr)?;
+        if reply.body.is_none() {
+            return Err(RpcError::Response {
+                request_code: code,
+                peer: addr.to_owned(),
+                code: reply.code,
+                remark: reply.remark,
+            });
+        }
+        let body: ConsumerListByGroupResponseBody = decode_body(&reply, code, addr)?;
+        Ok(body
+            .get_consumer_id_list()
+            .map(|consumer_ids| consumer_ids.snapshot()))
+    }
+
     /// Future-based `MQClientAPIExt.getConsumerListByGroupAsync`. Java treats
     /// `SYSTEM_ERROR` as an empty list because the Broker uses that status when
     /// the group has no consumers.

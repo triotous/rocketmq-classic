@@ -1906,6 +1906,60 @@ impl RemotingClient {
             .await
     }
 
+    /// Synchronous Java-compatible call with a signed millisecond timeout.
+    ///
+    /// Java's `NettyRemotingClient.invokeSync` acquires or creates the channel
+    /// before it checks whether the request timeout has elapsed. This preserves
+    /// that ordering for RocketMQ client methods which receive a signed timeout
+    /// value directly. A non-positive timeout can therefore establish a channel,
+    /// but it never sends a request frame.
+    #[doc(hidden)]
+    pub async fn invoke_sync_with_timeout_millis(
+        &self,
+        addr: &str,
+        command: RemotingCommand,
+        timeout_millis: i64,
+    ) -> Result<RemotingCommand, TransportError> {
+        if !self.inner.started.load(Ordering::Acquire) {
+            return Err(TransportError::NotStarted);
+        }
+        if self.inner.closed.load(Ordering::Acquire) {
+            return Err(TransportError::Shutdown);
+        }
+
+        let begin = Instant::now();
+        self.inner
+            .connection_for_scan(addr)
+            .await
+            .map_err(|error| match error {
+                TransportError::Timeout => TransportError::ConnectRequest {
+                    remote_addr: addr.to_owned(),
+                    cause: None,
+                },
+                error => classify_connection_error(addr, error),
+            })?;
+
+        // Java subtracts whole elapsed milliseconds from its signed long
+        // timeout after the channel future completes.
+        let elapsed_millis = begin.elapsed().as_millis().min(i64::MAX as u128) as i64;
+        let remaining_millis = timeout_millis.saturating_sub(elapsed_millis);
+        if remaining_millis <= 0 {
+            return Err(TransportError::timeout(
+                crate::error::TimeoutPhase::Operation,
+                Some(addr.to_owned()),
+                (timeout_millis > 0)
+                    .then(|| std::time::Duration::from_millis(timeout_millis as u64)),
+            ));
+        }
+
+        self.invoke_sync(
+            addr,
+            command,
+            std::time::Duration::from_millis(remaining_millis as u64),
+        )
+        .await
+    }
+
     async fn invoke_sync_deadline_inner(
         &self,
         addr: &str,
