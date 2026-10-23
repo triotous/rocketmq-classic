@@ -3737,3 +3737,21 @@ Broad P18-V01 Java source/API/settings/input/error/control-flow and Rust
 reverse-export reconciliation remains PARTIAL. Current-revision remote Ubuntu
 CI, native Windows runtime execution, and Phase 19 Broker/Docker evidence
 remain open.
+
+## P18-V02 supplementary Windows cross-target and rustdoc checks — 2026-10-23 (`9fdea903`)
+
+With the installed MinGW cross-compiler selected through
+`CC_x86_64_pc_windows_gnu`,
+`cargo check --offline --workspace --all-features --locked --target
+x86_64-pc-windows-gnu` passes on the current Phase 18 code. The native Windows
+runtime check remains a separate requirement and is still open. A Windows
+MSVC cross-check could not start because the host clang invocation lacks the
+Windows C runtime headers (`stdlib.h`); this is an environment limitation.
+
+The targeted public API documentation command
+`RUSTDOCFLAGS='-D warnings' cargo doc --offline -p rocketmq-classic-core -p
+rocketmq-classic-consumer --all-features --locked --no-deps` passes. The wider
+workspace documentation command reaches the integration crate, then triggers
+a rustdoc metadata-decoder compiler ICE in Rust 1.85.0 while indexing an opaque
+`Message::body` return type; this toolchain failure does not occur in the
+targeted Core and Consumer documentation run.
