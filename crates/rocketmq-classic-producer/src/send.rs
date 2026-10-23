@@ -10,7 +10,7 @@ use rocketmq_classic_common::{
     sysflag::message,
 };
 use rocketmq_classic_core::{
-    api::producer::{SendKind, SendMode, SendResult, SendStatus},
+    api::producer::{SendMode, SendResult, SendStatus},
     error::RpcError,
     route::{TopicSnapshot, broker_vip_channel},
     runtime::ClientRuntime,
@@ -41,6 +41,7 @@ struct PreparedMessage {
     reconsume_times: Option<i32>,
     max_reconsume_times: Option<i32>,
     batch: bool,
+    is_reply: bool,
 }
 
 struct SendAttempt<'a> {
@@ -1650,6 +1651,11 @@ impl Producer {
             __phase18_header_0.set_batch(Some(attempt.prepared.batch));
             __phase18_header_0
         };
+        let send_kind = rocketmq_classic_core::api::MQClientApi::send_kind_for_message(
+            attempt.prepared.batch,
+            attempt.prepared.is_reply,
+        );
+
         #[cfg(test)]
         {
             let mut scripted = self
@@ -1670,17 +1676,12 @@ impl Producer {
                 unique_id: attempt.prepared.unique_id.clone(),
                 mode: attempt.mode,
                 batch: attempt.prepared.batch,
+                send_kind,
             });
             if let Some(result) = scripted.responses.pop_front() {
                 return result;
             }
         }
-        let kind = if attempt.prepared.batch {
-            SendKind::Batch
-        } else {
-            // Java 5.5.1's `sendSmartMsg` defaults to true.
-            SendKind::V2
-        };
         Ok(attempt
             .runtime
             .api()
@@ -1690,7 +1691,7 @@ impl Producer {
                 &header,
                 attempt.prepared.body.clone(),
                 &attempt.prepared.unique_id,
-                kind,
+                send_kind,
                 attempt.mode,
                 attempt.deadline,
             )
@@ -1941,6 +1942,9 @@ impl Producer {
         let mut copy = message.clone();
         let unique_id = self.ids.set_if_missing(&mut copy);
         let mut properties: BTreeMap<String, String> = copy.properties().clone();
+        let is_reply = properties
+            .get(PROPERTY_MESSAGE_TYPE)
+            .is_some_and(|value| value == REPLY_MESSAGE_FLAG);
         let retry_group = copy.topic().starts_with("%RETRY%");
         let reconsume_times = if retry_group {
             properties
@@ -1996,6 +2000,7 @@ impl Producer {
             reconsume_times,
             max_reconsume_times,
             batch,
+            is_reply,
         })
     }
 
@@ -2135,7 +2140,7 @@ mod tests {
         SendMessageHook,
     };
     use rocketmq_classic_common::message::decode_properties;
-    use rocketmq_classic_core::api::producer::SendStatus;
+    use rocketmq_classic_core::api::producer::{SendKind, SendStatus};
     use rocketmq_classic_core::error::RpcError;
     use rocketmq_classic_protocol::codes::response;
     use rocketmq_classic_remoting::TransportError;
@@ -4065,6 +4070,96 @@ mod tests {
             assert!(transport.attempts[0].batch);
         }
         producer.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn producer_send_uses_java_send_smart_and_reply_request_code_selection() {
+        const CHILD_PROPERTY: &str = "ROCKETMQ_TEST_SEND_SMART_PROPERTY_CHILD";
+        const SEND_SMART_PROPERTY: &str = "org.apache.rocketmq.client.sendSmartMsg";
+
+        match std::env::var(CHILD_PROPERTY).as_deref() {
+            Ok("false") | Ok("TRUE") => {
+                let smart = std::env::var(CHILD_PROPERTY).unwrap() == "TRUE";
+                let (producer, queues) = scripted_producer(
+                    crate::ProducerConfig::new("send-smart-request-code").unwrap(),
+                )
+                .await;
+                producer
+                    .scripted_transport
+                    .lock()
+                    .unwrap()
+                    .responses
+                    .extend([
+                        Ok(Some(scripted_result("normal", "normal-offset", 1))),
+                        Ok(Some(scripted_result("reply", "reply-offset", 2))),
+                        Ok(Some(scripted_result(
+                            "batch-a,batch-b",
+                            "batch-offset-a,batch-offset-b",
+                            3,
+                        ))),
+                    ]);
+
+                let mut normal = Message::new("orders", b"normal".to_vec());
+                producer
+                    .send_to_queue(&mut normal, &queues[0])
+                    .await
+                    .unwrap();
+                let mut reply = Message::new("orders", b"reply".to_vec());
+                reply
+                    .set_system_property(PROPERTY_MESSAGE_TYPE, REPLY_MESSAGE_FLAG)
+                    .unwrap();
+                producer
+                    .send_to_queue(&mut reply, &queues[0])
+                    .await
+                    .unwrap();
+                let mut batch = [
+                    Message::new("orders", b"batch-a".to_vec()),
+                    Message::new("orders", b"batch-b".to_vec()),
+                ];
+                producer.send_batch(&mut batch).await.unwrap();
+
+                let attempts = producer.scripted_transport.lock().unwrap().attempts.clone();
+                assert_eq!(attempts.len(), 3);
+                assert_eq!(
+                    attempts
+                        .iter()
+                        .map(|attempt| attempt.send_kind)
+                        .collect::<Vec<_>>(),
+                    if smart {
+                        vec![SendKind::V2, SendKind::ReplyV2, SendKind::Batch]
+                    } else {
+                        vec![SendKind::V1, SendKind::ReplyV1, SendKind::Batch]
+                    }
+                );
+                assert_eq!(
+                    decode_properties(attempts[1].properties.as_deref().unwrap())
+                        .get(PROPERTY_MESSAGE_TYPE)
+                        .map(String::as_str),
+                    Some(REPLY_MESSAGE_FLAG)
+                );
+                producer.shutdown().await.unwrap();
+            }
+            _ => {
+                for value in ["false", "TRUE"] {
+                    let output = std::process::Command::new(std::env::current_exe().unwrap())
+                        .args([
+                            "--exact",
+                            "send::tests::producer_send_uses_java_send_smart_and_reply_request_code_selection",
+                            "--nocapture",
+                        ])
+                        .env(CHILD_PROPERTY, value)
+                        .env(SEND_SMART_PROPERTY, value)
+                        .output()
+                        .expect("spawn isolated producer send test process");
+                    assert!(
+                        output.status.success(),
+                        "{value} child test failed:\n{}\n{}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+            }
+        }
     }
 
     #[tokio::test]

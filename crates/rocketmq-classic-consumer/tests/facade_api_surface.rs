@@ -821,6 +821,8 @@ fn every_process_queue_rust_only_surface_has_java_disposition() {
     );
     let adapters = [
         "new",
+        "rebalance_lock_max_live_time_millis",
+        "rebalance_lock_interval_millis",
         "contains_message_nullable",
         "put_message_nullable",
         "put_message_items_nullable",

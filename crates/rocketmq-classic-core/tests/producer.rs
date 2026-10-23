@@ -23,6 +23,66 @@ use tokio::{
     time::Instant,
 };
 
+#[test]
+fn send_smart_switch_reads_java_boolean_property_and_selects_request_codes() {
+    const CHILD_PROPERTY: &str = "ROCKETMQ_TEST_SEND_SMART_BOOLEAN_CHILD";
+    const SEND_SMART_PROPERTY: &str = "org.apache.rocketmq.client.sendSmartMsg";
+
+    if let Ok(value) = std::env::var(CHILD_PROPERTY) {
+        let smart = value == "missing" || value.eq_ignore_ascii_case("true");
+        let _api = MQClientApi::new(RemotingClient::new(TransportMode::Plain));
+        assert_eq!(
+            MQClientApi::send_kind_for_message(false, false),
+            if smart { SendKind::V2 } else { SendKind::V1 }
+        );
+        assert_eq!(
+            MQClientApi::send_kind_for_message(false, true),
+            if smart {
+                SendKind::ReplyV2
+            } else {
+                SendKind::ReplyV1
+            }
+        );
+        assert_eq!(
+            MQClientApi::send_kind_for_message(true, false),
+            SendKind::Batch
+        );
+        assert_eq!(
+            MQClientApi::send_kind_for_message(true, true),
+            if smart {
+                SendKind::ReplyV2
+            } else {
+                SendKind::ReplyV1
+            }
+        );
+        return;
+    }
+
+    for value in ["missing", "false", "TRUE", " true ", "not-a-boolean"] {
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.args([
+            "--exact",
+            "send_smart_switch_reads_java_boolean_property_and_selects_request_codes",
+            "--nocapture",
+        ]);
+        command.env(CHILD_PROPERTY, value);
+        if value == "missing" {
+            command.env_remove(SEND_SMART_PROPERTY);
+        } else {
+            command.env(SEND_SMART_PROPERTY, value);
+        }
+        let output = command
+            .output()
+            .expect("spawn isolated sendSmart property test process");
+        assert!(
+            output.status.success(),
+            "{value} child test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 async fn peer(
     code: i32,
     reply_fields: bool,

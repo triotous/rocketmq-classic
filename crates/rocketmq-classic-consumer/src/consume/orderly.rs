@@ -18,14 +18,11 @@ use crate::{
     push::{ConsumeOrderlyStatus, MessageListenerOrderly, PushConsumer},
 };
 
-pub(crate) const ORDERLY_LOCK_MAX_LIVE_TIME_PROPERTY: &str =
-    "rocketmq.client.rebalance.lockMaxLiveTime";
-pub(crate) const ORDERLY_LOCK_INTERVAL_PROPERTY: &str = "rocketmq.client.rebalance.lockInterval";
+pub(crate) const ORDERLY_LOCK_INTERVAL_PROPERTY: &str =
+    crate::process_queue::REBALANCE_LOCK_INTERVAL_PROPERTY;
 pub(crate) const ORDERLY_UNLOCK_DELAY_PROPERTY: &str = "rocketmq.client.unlockDelayTimeMills";
 pub(crate) const ORDERLY_MAX_CONTINUOUS_CONSUME_PROPERTY: &str =
     "rocketmq.client.maxTimeConsumeContinuously";
-pub(crate) const ORDERLY_LOCK_MAX_LIVE_TIME_MILLIS: i64 = 30_000;
-pub(crate) const ORDERLY_LOCK_INTERVAL_MILLIS: i64 = 20_000;
 pub(crate) const ORDERLY_UNLOCK_DELAY_MILLIS: i64 = 20_000;
 pub(crate) const ORDERLY_MAX_CONTINUOUS_CONSUME_MILLIS: i64 = 60_000;
 pub(crate) const ORDERLY_LOCK_INITIAL_DELAY_MILLIS: u64 = 1_000;
@@ -90,18 +87,8 @@ pub(crate) struct OrderlyLockSettings {
 
 impl OrderlyLockSettings {
     pub(crate) fn from_java_properties() -> Result<Self, String> {
-        let max_live_time = env::var(ORDERLY_LOCK_MAX_LIVE_TIME_PROPERTY);
-        let interval = env::var(ORDERLY_LOCK_INTERVAL_PROPERTY);
-        let max_live_time_millis = property_result(
-            ORDERLY_LOCK_MAX_LIVE_TIME_PROPERTY,
-            ORDERLY_LOCK_MAX_LIVE_TIME_MILLIS,
-            max_live_time,
-        )?;
-        let interval_millis = property_result(
-            ORDERLY_LOCK_INTERVAL_PROPERTY,
-            ORDERLY_LOCK_INTERVAL_MILLIS,
-            interval,
-        )?;
+        let max_live_time_millis = ProcessQueue::rebalance_lock_max_live_time_millis()?;
+        let interval_millis = ProcessQueue::rebalance_lock_interval_millis()?;
         let unlock_delay_millis = property_result(
             ORDERLY_UNLOCK_DELAY_PROPERTY,
             ORDERLY_UNLOCK_DELAY_MILLIS,
@@ -171,9 +158,8 @@ fn property_result(
     value: Result<String, env::VarError>,
 ) -> Result<i64, String> {
     match value {
-        Ok(value) => value
-            .parse::<i64>()
-            .map_err(|_| format!("invalid Java-compatible long property {name}={value:?}")),
+        Ok(value) => crate::process_queue::parse_java_long(&value)
+            .ok_or_else(|| format!("invalid Java-compatible long property {name}={value:?}")),
         Err(env::VarError::NotPresent) => Ok(default),
         Err(env::VarError::NotUnicode(value)) => Err(format!(
             "non-Unicode Java-compatible long property {name}={value:?}"
@@ -465,8 +451,11 @@ mod tests {
 
     #[test]
     fn default_lock_properties_match_java_551_values() {
-        assert_eq!(ORDERLY_LOCK_MAX_LIVE_TIME_MILLIS, 30_000);
-        assert_eq!(ORDERLY_LOCK_INTERVAL_MILLIS, 20_000);
+        assert_eq!(
+            crate::process_queue::REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS,
+            30_000
+        );
+        assert_eq!(crate::process_queue::REBALANCE_LOCK_INTERVAL_MILLIS, 20_000);
         assert_eq!(ORDERLY_UNLOCK_DELAY_MILLIS, 20_000);
         assert_eq!(ORDERLY_MAX_CONTINUOUS_CONSUME_MILLIS, 60_000);
         assert_eq!(ORDERLY_LOCK_INITIAL_DELAY_MILLIS, 1_000);
@@ -527,6 +516,15 @@ mod tests {
                 Ok("9223372036854775808".to_owned())
             )
             .is_err()
+        );
+        assert_eq!(
+            property_result(
+                ORDERLY_LOCK_INTERVAL_PROPERTY,
+                20_000,
+                Ok("١٢٣٤".to_owned())
+            )
+            .unwrap(),
+            1_234
         );
         assert_eq!(
             property_result(

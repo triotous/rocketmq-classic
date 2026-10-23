@@ -1,5 +1,7 @@
 use rocketmq_classic_common::message::MessageQueue;
-use rocketmq_classic_consumer::{ConsumeOrderlyContext, ConsumeOrderlyStatus, PushConsumerConfig};
+use rocketmq_classic_consumer::{
+    ConsumeOrderlyContext, ConsumeOrderlyStatus, ProcessQueue, PushConsumerConfig,
+};
 
 #[test]
 fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
@@ -7,6 +9,16 @@ fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
         "../../../fixtures/consumer/orderly-settings.json"
     ))
     .expect("Java orderly fixture is valid JSON");
+
+    let lock_constants = &fixture["lockConstants"];
+    assert_eq!(
+        ProcessQueue::rebalance_lock_max_live_time_millis().unwrap(),
+        lock_constants["maxLiveTimeMillis"]
+    );
+    assert_eq!(
+        ProcessQueue::rebalance_lock_interval_millis().unwrap(),
+        lock_constants["intervalMillis"]
+    );
 
     let config = PushConsumerConfig::new("orderly-fixture").unwrap();
     let defaults = &fixture["pushConsumerDefaults"];
@@ -104,5 +116,58 @@ fn public_orderly_settings_context_and_statuses_match_java_551_fixture() {
     assert_eq!(
         fixture["orderlyRuntimeProperties"]["maxContinuousConsumeMillis"],
         60_000
+    );
+}
+
+#[test]
+fn process_queue_rebalance_lock_properties_follow_java_static_initialization() {
+    const CHILD_MARKER: &str = "ROCKETMQ_TEST_REBALANCE_LOCK_SETTINGS_CHILD";
+    const MAX_LIVE_TIME_PROPERTY: &str = "rocketmq.client.rebalance.lockMaxLiveTime";
+    const INTERVAL_PROPERTY: &str = "rocketmq.client.rebalance.lockInterval";
+
+    if std::env::var_os(CHILD_MARKER).is_some() {
+        assert_eq!(
+            ProcessQueue::rebalance_lock_max_live_time_millis().unwrap(),
+            45_123
+        );
+        assert_eq!(
+            ProcessQueue::rebalance_lock_interval_millis().unwrap(),
+            23_456
+        );
+
+        // Java reads both System properties into static fields once, when the
+        // class initializes. Changing the Rust process environment after the
+        // first accessor call must leave both captured values unchanged.
+        unsafe {
+            std::env::set_var(MAX_LIVE_TIME_PROPERTY, "10");
+            std::env::set_var(INTERVAL_PROPERTY, "20");
+        }
+        assert_eq!(
+            ProcessQueue::rebalance_lock_max_live_time_millis().unwrap(),
+            45_123
+        );
+        assert_eq!(
+            ProcessQueue::rebalance_lock_interval_millis().unwrap(),
+            23_456
+        );
+        return;
+    }
+
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "process_queue_rebalance_lock_properties_follow_java_static_initialization",
+            "--nocapture",
+        ])
+        .env(CHILD_MARKER, "1")
+        .env(MAX_LIVE_TIME_PROPERTY, "45123")
+        .env(INTERVAL_PROPERTY, "23456")
+        .output()
+        .expect("spawn isolated lock-property test process");
+    assert!(
+        output.status.success(),
+        "child test failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }

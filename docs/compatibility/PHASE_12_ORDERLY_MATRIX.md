@@ -13,7 +13,7 @@ results without requiring a Broker.
 | `ConsumeOrderlyContext` defaults, getters/setters, and `MessageQueue` | `ConsumeOrderlyContext` | Java fixture and `tests/orderly.rs` |
 | `MessageListenerOrderly.consumeMessage(List<MessageExt>, ConsumeOrderlyContext)`; inherited marker `MessageListener` has no methods | `MessageListenerOrderly::consume_message(Vec<MessageExt>, ConsumeOrderlyContext) -> OrderlyListenerFuture`; the returned status and owned context drive queue commit/suspend behavior | SOURCE_RECONCILED — pinned Java's `ConsumeRequest.run` passes an unmodifiable list and catches `Throwable`; Rust preserves the assigned queue through its owned snapshot, maps absent status and callback panic to suspension, and applies auto-commit/rollback/commit rules in the same queue owner. `tests/orderly.rs` pins all four Java status names and the context fixture; `orderly_success_holds_until_commit_and_rollback_replays_in_order` verifies returned context mutation and commit/rollback behavior, while same-queue serialization and lock-loss tests cover callback lifecycle. |
 | `ConsumeOrderlyStatus.SUCCESS`, `ROLLBACK`, `COMMIT`, `SUSPEND_CURRENT_QUEUE_A_MOMENT`; nullable listener result | `ConsumeOrderlyStatus`, `OrderlyListenerFuture` | Java fixture, listener-result table tests |
-| `ProcessQueue.REBALANCE_LOCK_MAX_LIVE_TIME`, `REBALANCE_LOCK_INTERVAL`, `isLockExpired` | private `OrderlyLockSettings` and monotonic `ProcessQueue` lock state | Java fixture; exact-boundary paused-time test |
+| `ProcessQueue.REBALANCE_LOCK_MAX_LIVE_TIME`, `REBALANCE_LOCK_INTERVAL`, `isLockExpired` | `ProcessQueue::{rebalance_lock_max_live_time_millis, rebalance_lock_interval_millis}` plus internal `OrderlyLockSettings` and monotonic lock state | Public accessors expose the Java static-field values; the pinned fixture and exact-boundary paused-time test cover defaults and expiry. Both properties are captured together on first ProcessQueue access, matching Java class initialization. |
 | `ConsumeMessageOrderlyService.MAX_TIME_CONSUME_CONTINUOUSLY`; `RebalancePushImpl.UNLOCK_DELAY_TIME_MILLS` | private `OrderlyLockSettings` and dropped-queue cleanup | Java fixture reflects the pinned static values; strict-boundary and slow-callback cleanup tests |
 | `RebalanceImpl.lock`, `lockAll`, `unlock`, `unlockAll` | `PushConsumer::{lock_orderly_queues_raw, lock_orderly_process_queues, unlock_orderly_queues_raw, unlock_orderly_process_queues}` | Scripted batch-lock, partial-result, error-preservation, stale-response, and per-Broker response-time tests |
 | `ConsumeMessageOrderlyService.start`, lock renewal, `tryLockLaterAndReconsume`, bounded queue retry | `OrderlyConsumeService` and PushConsumer-owned retry tasks | Initial-delay/interval constants; scripted renewal and retry tests |
@@ -32,13 +32,15 @@ results without requiring a Broker.
   interval; clustering renewal starts after `1000ms`. Expiry is strict: a lock
   is valid at exactly the maximum age and expires after it. Batch lock/unlock
   RPC timeout is `1000ms`.
-- Java defaults `maxTimeConsumeContinuously` to `60000ms` and
-  `unlockDelayTimeMills` to `20000ms`; both affect the orderly consume loop and
-  dropped-queue cleanup. Rust reads these and the lock properties
+- Java defaults `rocketmq.client.maxTimeConsumeContinuously` to `60000ms` and
+  `rocketmq.client.unlockDelayTimeMills` to `20000ms`; both affect the orderly
+  consume loop and dropped-queue cleanup. Rust reads these and the lock properties
   `rocketmq.client.rebalance.lockMaxLiveTime` and
   `rocketmq.client.rebalance.lockInterval` from process environment variables
   with the exact Java property names, because Rust has no JVM system-property
-  table. Values are captured when an orderly consumer starts.
+  table. The two public `ProcessQueue` lock values are captured together on
+  first ProcessQueue access; the other orderly runtime properties are captured
+  when an orderly consumer starts.
 - Only returned queue IDs from a successful lock response are activated. A
   transport error or nullable lock-set response does not overwrite an existing
   local lock result. RPC requests use the configured VIP-channel address.

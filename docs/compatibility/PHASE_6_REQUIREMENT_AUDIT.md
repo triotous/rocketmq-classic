@@ -3665,3 +3665,56 @@ features. Strict all-target/all-feature Consumer Clippy, workspace format
 check, and `git diff --check` pass. This closes the two queue `Default`
 dispositions only; broad P18-V01 source/API/settings/input/error/control-flow
 and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 Remoting `ResponseFuture` pinned-source reverse audit — 2026-10-23
+
+The exact Java source at pinned client commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` confirms the two declared
+`ResponseFuture` constructors and all 20 public methods recorded by
+`response-future-api.json`. The Rust constructor adapters collapse the
+request-optional overload into `Option<RemotingCommand>` and expose the nullable
+release-once helper separately; the transport-owned `OwnedSemaphorePermit`
+constructor remains private. Callback failure ordering, timeout comparison,
+response-latch mutation, release-once behavior, and interruption mapping are
+already covered by the response-future fixture/tests and compatibility tables.
+The only recorded differences remain JVM-thread interruption of
+`waitResponse` and diagnostic formatting of Java object identities. No
+unmapped Java capability or extra Rust transport capability was found in this
+slice; broad P18-V01 reconciliation remains PARTIAL.
+
+## P18-V01 `ProcessQueue` public lock fields — 2026-10-23
+
+Pinned Java `ProcessQueue` exposes `REBALANCE_LOCK_MAX_LIVE_TIME` and
+`REBALANCE_LOCK_INTERVAL` as public static fields. Rust previously consumed
+these settings internally but did not expose the public values. `ProcessQueue`
+now provides `rebalance_lock_max_live_time_millis()` and
+`rebalance_lock_interval_millis()` accessors. Both values are captured together
+on first ProcessQueue access and shared by orderly scheduling and lock-expiry
+checks, matching Java class initialization; malformed values return a Rust
+`Result` at the accessor boundary. The common property parser now accepts
+Unicode decimal digits as Java `Long.parseLong` does.
+
+The pinned orderly fixture comparison, reverse-surface crosswalk check, all
+260 Consumer library tests and 74 Consumer integration tests pass with all
+features. Strict all-target/all-feature Consumer Clippy, workspace formatting,
+and `git diff --check` pass. This closes the two `ProcessQueue` public-field
+mapping rows; broad P18-V01 remains PARTIAL.
+
+## P18-V01 `MQClientAPIImpl.sendSmartMsg` and Producer request-code selection — 2026-10-23
+
+Pinned-source settings reconciliation found that the private Java
+`sendSmartMsg` switch was not applied by the Rust Producer owner and that a
+reply message marked `MSG_TYPE=reply` still selected the ordinary send code.
+Rust now caches `org.apache.rocketmq.client.sendSmartMsg` when the Core API is
+constructed, defaults it to true, and follows Java `Boolean.parseBoolean`
+handling. The hidden Core selector maps normal, reply and batch code branches;
+Producer preparation recognizes Java's exact `reply` marker and uses that
+selector before invoking the typed RPC.
+
+The pinned Java `InvokedRpcOracle` directly exercises normal, reply and batch
+calls with the static switch false and true. Isolated Rust Core subprocesses
+cover missing, false, uppercase true, whitespace and malformed values; an
+isolated Producer subprocess verifies normal/reply/batch selection under both
+switch values. Focused Core and Producer tests pass. This closes the named
+setting and high-level request-code gap only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.

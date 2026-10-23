@@ -55,6 +55,7 @@ impl MQClientApi {
         remoting: RemotingClient,
         language: Option<rocketmq_classic_protocol::codes::LanguageCode>,
     ) -> Self {
+        producer::initialize_java_send_smart_msg();
         Self {
             remoting,
             language,
@@ -63,6 +64,7 @@ impl MQClientApi {
     }
 
     pub(crate) fn with_config(remoting: RemotingClient, config: SharedClientConfig) -> Self {
+        producer::initialize_java_send_smart_msg();
         Self {
             remoting,
             language: None,

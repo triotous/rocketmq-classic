@@ -7,11 +7,43 @@ use rocketmq_classic_protocol::{
     },
 };
 use rocketmq_classic_remoting::RemotingCommand;
+use std::sync::OnceLock;
 use tokio::time::Instant;
 
 use super::{MQClientApi, decode_header};
 use crate::config::read_shared_client_config;
 use crate::error::RpcError;
+
+const SEND_SMART_MSG_PROPERTY: &str = "org.apache.rocketmq.client.sendSmartMsg";
+
+fn java_send_smart_msg_enabled() -> bool {
+    static SEND_SMART_MSG_ENABLED: OnceLock<bool> = OnceLock::new();
+    *SEND_SMART_MSG_ENABLED.get_or_init(|| match std::env::var(SEND_SMART_MSG_PROPERTY) {
+        Ok(value) => value.eq_ignore_ascii_case("true"),
+        Err(std::env::VarError::NotPresent) => true,
+        Err(std::env::VarError::NotUnicode(_)) => false,
+    })
+}
+
+pub(crate) fn initialize_java_send_smart_msg() {
+    let _ = java_send_smart_msg_enabled();
+}
+
+fn send_kind_for_message(batch: bool, reply: bool, smart: bool) -> SendKind {
+    if reply {
+        if smart {
+            SendKind::ReplyV2
+        } else {
+            SendKind::ReplyV1
+        }
+    } else if batch {
+        SendKind::Batch
+    } else if smart {
+        SendKind::V2
+    } else {
+        SendKind::V1
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendKind {
@@ -124,6 +156,13 @@ pub struct SendResult {
 }
 
 impl MQClientApi {
+    /// Resolves the producer's Java `MQClientAPIImpl.sendSmartMsg` request
+    /// code selection for a prepared message.
+    #[doc(hidden)]
+    pub fn send_kind_for_message(batch: bool, reply: bool) -> SendKind {
+        send_kind_for_message(batch, reply, java_send_smart_msg_enabled())
+    }
+
     /// Calls Java's synchronous `MQClientAPIImpl.resumeCheckHalfMessage` operation.
     /// A non-success Broker response is reported as `false`, matching Java.
     pub async fn resume_check_half_message(
@@ -368,6 +407,24 @@ impl MQClientApi {
             deadline,
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod send_smart_tests {
+    use super::*;
+
+    #[test]
+    fn send_smart_switch_matches_java_message_reply_and_batch_branches() {
+        assert_eq!(send_kind_for_message(false, false, true), SendKind::V2);
+        assert_eq!(send_kind_for_message(false, true, true), SendKind::ReplyV2);
+        assert_eq!(send_kind_for_message(true, false, true), SendKind::Batch);
+        assert_eq!(send_kind_for_message(true, true, true), SendKind::ReplyV2);
+
+        assert_eq!(send_kind_for_message(false, false, false), SendKind::V1);
+        assert_eq!(send_kind_for_message(false, true, false), SendKind::ReplyV1);
+        assert_eq!(send_kind_for_message(true, false, false), SendKind::Batch);
+        assert_eq!(send_kind_for_message(true, true, false), SendKind::ReplyV1);
     }
 }
 

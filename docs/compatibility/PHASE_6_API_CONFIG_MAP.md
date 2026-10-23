@@ -983,7 +983,7 @@ The exact Rust variants are `AccessChannel::Local` → Java `LOCAL` and `AccessC
 | `api::extensions::AckStatusLookupError` | `NullName`; `UnknownName(String)` | Null and unknown Java enum lookups retain their exception category/message in the method oracle. |
 | `api::producer::SendStatus` | `SendOk` → `SEND_OK`; `FlushDiskTimeout` → `FLUSH_DISK_TIMEOUT`; `FlushSlaveTimeout` → `FLUSH_SLAVE_TIMEOUT`; `SlaveNotAvailable` → `SLAVE_NOT_AVAILABLE` | Direct API/status fixtures compare request results, enum declaration order and inherited enum methods. |
 | `api::producer::SendStatusLookupError` | `NullName`; `UnknownName(String)` | Null maps to Java `NullPointerException`; unknown names map to the exact `IllegalArgumentException` message. |
-| `api::producer::SendKind` | `V1` → `SEND_MESSAGE`; `V2` → `SEND_MESSAGE_V2`; `Batch` → `SEND_BATCH_MESSAGE`; `ReplyV1` → `SEND_REPLY_MESSAGE`; `ReplyV2` → `SEND_REPLY_MESSAGE_V2` | Rust request selector maps each public Java API method/request code; it is not a Java enum type. |
+| `api::producer::SendKind` | `V1` → `SEND_MESSAGE`; `V2` → `SEND_MESSAGE_V2`; `Batch` → `SEND_BATCH_MESSAGE`; `ReplyV1` → `SEND_REPLY_MESSAGE`; `ReplyV2` → `SEND_REPLY_MESSAGE_V2` | Rust's explicit low-level request selector maps the wire codes. Producer facade selection uses hidden `MQClientApi::send_kind_for_message` to match Java's private `MQClientAPIImpl.sendSmartMsg` switch and reply `MSG_TYPE`; the exact property and first-use semantics are recorded below. |
 | `api::producer::SendMode` | `Sync`; `Future`; `Oneway` | Rust invocation mode selects `invokeSync`, async/future and one-way transport behavior; Java exposes these operations as methods rather than this enum. |
 
 ### Runtime selectors and public result variants
@@ -2361,7 +2361,7 @@ adapters. The table groups the names by the Java owner whose API they expose.
 | `ProcessQueueAtomicLong` | Rust operation view for Java `ProcessQueue.getMsgCount()` / `getMsgSize()` `AtomicLong` values, including `get_and_add`, `add_and_get`, `get_and_set`, increment/decrement, and `compare_and_set` operations with Java wrapping arithmetic. |
 | `ProcessQueueMessageTreeMap`, `ProcessQueueMessageTreeReadGuard`, `ProcessQueueMessageTreeWriteGuard` | Lock-backed Rust views for Java `ProcessQueue.getMsgTreeMap()`'s live `TreeMap`. Read/write guards preserve direct map edits while keeping independent count and byte counters unchanged, matching Java's separate fields. |
 | `get_msg_tree_map`, `get_msg_count`, `get_msg_size`, `get_max_span`, `contains_message`, `contains_message_nullable`, `has_temp_message`, `put_message`, `put_message_nullable`, `put_message_items_nullable`, `take_messages`, `remove_message`, `remove_message_nullable`, `make_message_to_consume_again`, `make_message_to_consume_again_nullable`, `make_message_to_consume_again_items_nullable`, `clean_expired_msg`, `clean_expired_msg_nullable`, `fill_process_queue_info`, `fill_process_queue_info_nullable` | Java `ProcessQueue.getMsgTreeMap`, `getMsgCount`, `getMsgSize`, `getMaxSpan`, `containsMessage`, `hasTempMessage`, `putMessage`, `takeMessages`, `removeMessage`, `makeMessageToConsumeAgain`, `cleanExpiredMsg`, and `fillProcessQueueInfo`. The nullable adapters map Java's null-message `false`, null-list put/removal/requeue and null-consumer `NullPointerException` paths, null-element partial put/requeue mutation before `NullPointerException`, and null-info swallowed exception; Rust's queue owner adds generation-safe in-flight bookkeeping behind these same queue operations. |
-| `is_dropped`, `set_dropped`, `is_locked`, `set_locked`, `is_lock_expired`, `is_pull_expired`, `get_last_lock_timestamp`, `set_last_lock_timestamp`, `get_last_pull_timestamp`, `set_last_pull_timestamp`, `get_last_consume_timestamp`, `set_last_consume_timestamp`, `get_msg_acc_cnt`, `set_msg_acc_cnt`, `get_try_unlock_times`, `inc_try_unlock_times`, `get_consume_lock` | Java `ProcessQueue` state/accessor methods (`isDropped`, `setDropped`, lock/pull expiration, timestamp, accumulated-count, unlock-attempt, and orderly-consume lock accessors). `PopProcessQueue.is_pull_expired` maps to the corresponding Java POP queue check. |
+| `rebalance_lock_max_live_time_millis`, `rebalance_lock_interval_millis`, `is_dropped`, `set_dropped`, `is_locked`, `set_locked`, `is_lock_expired`, `is_pull_expired`, `get_last_lock_timestamp`, `set_last_lock_timestamp`, `get_last_pull_timestamp`, `set_last_pull_timestamp`, `get_last_consume_timestamp`, `set_last_consume_timestamp`, `get_msg_acc_cnt`, `set_msg_acc_cnt`, `get_try_unlock_times`, `inc_try_unlock_times`, `get_consume_lock` | Java `ProcessQueue` public static fields `REBALANCE_LOCK_MAX_LIVE_TIME` and `REBALANCE_LOCK_INTERVAL`, plus its state/accessor methods (`isDropped`, `setDropped`, lock/pull expiration, timestamp, accumulated-count, unlock-attempt, and orderly-consume lock accessors). Rust uses associated accessors to expose the Java field values and reuses their paired first-access snapshot in orderly lock scheduling and expiry checks. `PopProcessQueue.is_pull_expired` maps to the corresponding Java POP queue check. |
 | `get_and_add`, `add_and_get`, `get_and_set`, `get_and_increment`, `increment_and_get`, `get_and_decrement`, `decrement_and_get`, `compare_and_set` | Java `AtomicLong` methods returned from `ProcessQueue.getMsgCount()` / `getMsgSize()`; operations mutate the same cached counters. |
 | `get_last_pop_timestamp`, `set_last_pop_timestamp`, `get_wai_ack_msg_count`, `inc_found_msg`, `dec_found_msg`, `fill_pop_process_queue_info` | Java `PopProcessQueue` getters, setters, found-message counter methods, and `fillPopProcessQueueInfo`; the Rust spelling `wai` retains Java's declared `getWaiAckMsgCount` typo. |
 | `trace_context` | `ConsumeMessageContext.trace_context` maps Java `ConsumeMessageContext.traceContext` and carries hook-owned trace state between before/after callbacks. |
@@ -2851,6 +2851,37 @@ generic paths, subtype, body option, and strict errors. This closes the direct
 API/settings/source/input/error/control-flow/reverse-export reconciliation,
 current-revision remote Ubuntu CI, native Windows runtime, and Phase 19
 Broker/Docker evidence remain open.
+
+## P18-V01 `MQClientAPIImpl.sendSmartMsg` setting and reply request codes — 2026-10-23
+
+Pinned Java 5.5.1 initializes private static `sendSmartMsg` from
+`org.apache.rocketmq.client.sendSmartMsg` when the API implementation class is
+initialized. The default is `true`; Java `Boolean.parseBoolean` treats only
+case-insensitive `true` as true. Ordinary messages use V2 when enabled and V1
+when disabled. A message whose `MSG_TYPE` is exactly `reply` uses the matching
+reply request code; batch messages use `SEND_BATCH_MESSAGE`, unless the reply
+marker selects the reply branch first.
+
+Rust reads the same property name from the process environment and captures it
+when `MQClientApi` is constructed. The hidden cross-crate selector
+`MQClientApi::send_kind_for_message` applies it in the Producer owner.
+`Producer::prepare` records the exact reply marker; the send path selects
+V1/V2, ReplyV1/ReplyV2, or Batch with Java's branch order. The selector adds no
+user-facing Rust setting.
+
+Pinned Java `compat.InvokedRpcOracle` invokes normal, reply, and batch sends
+with the private switch toggled both ways. Rust's isolated Core property test
+covers unset, false, uppercase true, whitespace, and malformed property
+values; the Producer isolated-process regression checks normal, reply, and
+batch selection with the property both false and true. This closes the named
+system-setting and Producer request-code selection slice only; broad P18-V01
+source/API/settings/input/error/control-flow and reverse-export reconciliation
+remains PARTIAL.
+
+The same pinned-source property scan found `java.io.tmpdir` only in
+`remoting/.../TopicQueueMappingUtils.writeToTemp`. The pinned client has no
+call site for that remapping snapshot helper; it is not a client configuration
+or a client operation.
 
 ## P18-V01 `MessageDecoder` body-skip malformed-tail coverage — 2026-10-22 (`608fe801`)
 

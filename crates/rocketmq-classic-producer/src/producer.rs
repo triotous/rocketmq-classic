@@ -15,7 +15,7 @@ use rocketmq_classic_core::{
 use rocketmq_classic_remoting::client::{CallbackExecutor, RpcHook};
 
 #[cfg(test)]
-use rocketmq_classic_core::api::producer::{SendMode, SendResult};
+use rocketmq_classic_core::api::producer::{SendKind, SendMode, SendResult};
 
 use crate::request_reply::RequestFutureHolder;
 use crate::{
@@ -49,6 +49,7 @@ pub(crate) struct ScriptedSendAttempt {
     pub(crate) unique_id: String,
     pub(crate) mode: SendMode,
     pub(crate) batch: bool,
+    pub(crate) send_kind: SendKind,
 }
 
 #[cfg(test)]

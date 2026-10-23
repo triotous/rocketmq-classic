@@ -11,8 +11,17 @@ use std::{
 
 pub(crate) const PULL_MAX_IDLE_TIME_PROPERTY: &str = "rocketmq.client.pull.pullMaxIdleTime";
 pub(crate) const PULL_MAX_IDLE_TIME_MILLIS: i64 = 120_000;
-const REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY: &str = "rocketmq.client.rebalance.lockMaxLiveTime";
-const REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS: i64 = 30_000;
+pub(crate) const REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY: &str =
+    "rocketmq.client.rebalance.lockMaxLiveTime";
+pub(crate) const REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS: i64 = 30_000;
+pub(crate) const REBALANCE_LOCK_INTERVAL_PROPERTY: &str = "rocketmq.client.rebalance.lockInterval";
+pub(crate) const REBALANCE_LOCK_INTERVAL_MILLIS: i64 = 20_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct JavaRebalanceLockSettings {
+    max_live_time_millis: i64,
+    interval_millis: i64,
+}
 
 pub(crate) fn pull_idle_time_expired(
     now_millis: i64,
@@ -47,21 +56,31 @@ pub(crate) fn process_queue_pull_max_idle_time() -> Result<i64, String> {
     )
 }
 
-fn rebalance_lock_max_live_time_from_environment() -> i64 {
-    static MAX_LIVE_TIME_MILLIS: OnceLock<i64> = OnceLock::new();
-    *MAX_LIVE_TIME_MILLIS.get_or_init(|| {
-        match std::env::var(REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY) {
-            Ok(value) => parse_java_long(&value).unwrap_or_else(|| {
-                panic!(
-                    "invalid Java-compatible long property {REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY}={value:?}"
-                )
-            }),
-            Err(std::env::VarError::NotPresent) => REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS,
-            Err(std::env::VarError::NotUnicode(value)) => panic!(
-                "non-Unicode Java-compatible long property {REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY}={value:?}"
-            ),
-        }
+fn java_rebalance_lock_settings() -> Result<JavaRebalanceLockSettings, String> {
+    static SETTINGS: OnceLock<Result<JavaRebalanceLockSettings, String>> = OnceLock::new();
+    cached_java_property(&SETTINGS, || {
+        Ok(JavaRebalanceLockSettings {
+            max_live_time_millis: java_long_property(
+                REBALANCE_LOCK_MAX_LIVE_TIME_PROPERTY,
+                REBALANCE_LOCK_MAX_LIVE_TIME_MILLIS,
+            )?,
+            interval_millis: java_long_property(
+                REBALANCE_LOCK_INTERVAL_PROPERTY,
+                REBALANCE_LOCK_INTERVAL_MILLIS,
+            )?,
+        })
     })
+}
+
+fn java_long_property(name: &str, default: i64) -> Result<i64, String> {
+    match std::env::var(name) {
+        Ok(value) => parse_java_long(&value)
+            .ok_or_else(|| format!("invalid Java-compatible long property {name}={value:?}")),
+        Err(std::env::VarError::NotPresent) => Ok(default),
+        Err(std::env::VarError::NotUnicode(value)) => Err(format!(
+            "non-Unicode Java-compatible long property {name}={value:?}"
+        )),
+    }
 }
 
 fn parse_pull_max_idle_time(value: Option<&str>) -> Result<i64, String> {
@@ -73,7 +92,7 @@ fn parse_pull_max_idle_time(value: Option<&str>) -> Result<i64, String> {
     }
 }
 
-fn parse_java_long(value: &str) -> Option<i64> {
+pub(crate) fn parse_java_long(value: &str) -> Option<i64> {
     let mut units = value.encode_utf16().peekable();
     let negative = match units.peek().copied()? {
         0x002d => {
@@ -589,12 +608,33 @@ pub(crate) struct ProcessQueueSnapshot {
 }
 
 impl ProcessQueue {
+    /// Returns Java's `REBALANCE_LOCK_MAX_LIVE_TIME` field value.
+    ///
+    /// The paired Java `ProcessQueue` lock properties are captured on first
+    /// access, matching its class-initialized static fields. Invalid property
+    /// values are returned as errors instead of Java class-initialization
+    /// exceptions.
+    pub fn rebalance_lock_max_live_time_millis() -> Result<i64, String> {
+        java_rebalance_lock_settings().map(|settings| settings.max_live_time_millis)
+    }
+
+    /// Returns Java's `REBALANCE_LOCK_INTERVAL` field value.
+    ///
+    /// The paired Java `ProcessQueue` lock properties are captured on first
+    /// access, matching its class-initialized static fields. Invalid property
+    /// values are returned as errors instead of Java class-initialization
+    /// exceptions.
+    pub fn rebalance_lock_interval_millis() -> Result<i64, String> {
+        java_rebalance_lock_settings().map(|settings| settings.interval_millis)
+    }
+
     /// Creates a public process queue, matching Java's no-argument constructor.
     pub fn new() -> Self {
         Self::new_for_assignment(MessageQueue::default(), 0)
     }
 
     pub(crate) fn new_for_assignment(queue: MessageQueue, generation: u64) -> Self {
+        java_rebalance_lock_settings().unwrap_or_else(|error| panic!("{error}"));
         process_queue_pull_max_idle_time().unwrap_or_else(|error| panic!("{error}"));
         let now = epoch_millis();
         Self {
@@ -644,7 +684,7 @@ impl ProcessQueue {
     pub fn is_lock_expired(&self) -> bool {
         let state = self.lock_state();
         epoch_millis().wrapping_sub(state.last_lock_timestamp_millis)
-            > rebalance_lock_max_live_time_from_environment()
+            > Self::rebalance_lock_max_live_time_millis().unwrap_or_else(|error| panic!("{error}"))
     }
 
     pub fn is_pull_expired(&self) -> bool {
