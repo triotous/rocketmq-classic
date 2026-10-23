@@ -12,15 +12,16 @@ use std::{
 #[cfg(test)]
 use std::collections::VecDeque;
 
+#[cfg(test)]
+use rocketmq_classic_common::message::encode_nullable_property_entries;
 use rocketmq_classic_common::{
     message::{
         DecodeOptions, Message, MessageExt, MessageHostAddress, MessageQueue, constants::*,
-        decode_message_id, encode_nullable_property_entries,
+        decode_message_id,
     },
     sysflag::pull::{build_pull_sys_flag, clear_commit_offset_flag},
 };
 use rocketmq_classic_core::api::extensions::AckStatus;
-use rocketmq_classic_core::api::producer::{SendKind, SendMode};
 use rocketmq_classic_core::api::{
     admin::{AdminQueryRequest, QueryResult},
     consumer::PullStatus,
@@ -42,7 +43,7 @@ use rocketmq_classic_protocol::{
         BoundaryType, ConsumerSendMsgBackRequestHeader, GetEarliestMsgStoretimeRequestHeader,
         GetMaxOffsetRequestHeader, GetMinOffsetRequestHeader, PopMessageRequestHeader,
         PullMessageRequestHeader, QueryConsumeTimeSpanRequestHeader, SearchOffsetRequestHeader,
-        SendMessageRequestHeaderV1, ViewMessageRequestHeader,
+        ViewMessageRequestHeader,
     },
     heartbeat::{
         ConsumeFromWhere, ConsumeType, ConsumerData, ConsumerSubscriptionDataSet, SubscriptionData,
@@ -106,6 +107,7 @@ fn metric_count(count: usize) -> i64 {
     i64::try_from(count).unwrap_or(i64::MAX)
 }
 
+#[cfg(test)]
 fn retry_wire_properties(
     retry: &Message,
 ) -> (BTreeMap<String, String>, Option<i32>, Option<i32>, String) {
@@ -144,6 +146,7 @@ pub(crate) struct SendBackOptions<'a> {
     pub(crate) orderly: bool,
 }
 
+#[cfg(test)]
 fn retryable_inner_producer_send_error(error: &rocketmq_classic_core::error::RpcError) -> bool {
     match error {
         rocketmq_classic_core::error::RpcError::Response { code, .. } => matches!(
@@ -161,6 +164,7 @@ fn retryable_inner_producer_send_error(error: &rocketmq_classic_core::error::Rpc
     }
 }
 
+#[cfg(test)]
 fn select_retry_publish_queue<'a>(
     queues: &'a [MessageQueue],
     start_index: u64,
@@ -224,6 +228,7 @@ const CONSUMER_TIMEOUT_MILLIS_WHEN_SUSPEND: i64 = 30_000;
 const CONSUME_RETRY_DELAY_MILLIS: i64 = 5_000;
 const CONSUMER_SEND_BACK_TIMEOUT_MILLIS: u64 = 5_000;
 const INNER_PRODUCER_SEND_TIMEOUT_MILLIS: u64 = 3_000;
+#[cfg(test)]
 const INNER_PRODUCER_SYNC_ATTEMPTS: usize = 3;
 const CONSUME_TIME_SPAN_TIMEOUT: Duration = Duration::from_millis(3_000);
 const RESET_OFFSET_MAX_WAIT: Duration = Duration::from_secs(10);
@@ -588,6 +593,12 @@ pub struct PushConsumer {
     consume_message_service: RwLock<ConsumeMessageServiceBinding>,
     consume_stats_group: RwLock<Option<String>>,
     trace_dispatcher: OnceLock<Arc<rocketmq_classic_producer::TraceDispatcher>>,
+    inner_producer: RwLock<
+        Option<(
+            Weak<ClientRuntime>,
+            Arc<rocketmq_classic_producer::Producer>,
+        )>,
+    >,
     state: tokio::sync::Mutex<State>,
     implementation_client_factory: std::sync::Mutex<Option<Option<Arc<ClientRuntime>>>>,
     rebalance_client_factory: std::sync::Mutex<Option<Option<Arc<ClientRuntime>>>>,
@@ -611,7 +622,6 @@ pub struct PushConsumer {
     pop_consume_semaphore: Arc<tokio::sync::Semaphore>,
     next_generation: AtomicU64,
     next_retry_message_id: AtomicU64,
-    next_retry_queue_index: AtomicU64,
     pull_api: PullAPIWrapper,
     paused: AtomicBool,
     pull_time_delay_millis_when_exception: AtomicI64,
@@ -675,6 +685,7 @@ impl PushConsumer {
             consume_message_service: RwLock::new(ConsumeMessageServiceBinding::Unbound),
             consume_stats_group: RwLock::new(None),
             trace_dispatcher: OnceLock::new(),
+            inner_producer: RwLock::new(None),
             state: tokio::sync::Mutex::new(State::Created),
             implementation_client_factory: std::sync::Mutex::new(None),
             rebalance_client_factory: std::sync::Mutex::new(None),
@@ -698,7 +709,6 @@ impl PushConsumer {
             pop_consume_semaphore: Arc::new(tokio::sync::Semaphore::new(pop_consume_limit)),
             next_generation: AtomicU64::new(1),
             next_retry_message_id: AtomicU64::new(0),
-            next_retry_queue_index: AtomicU64::new(0),
             pull_api,
             paused: AtomicBool::new(false),
             pull_time_delay_millis_when_exception: AtomicI64::new(
@@ -4494,10 +4504,9 @@ impl PushConsumer {
         runtime: &Arc<ClientRuntime>,
         retry: &Message,
     ) -> Result<(), String> {
-        let (properties, reconsume_times, max_reconsume_times, encoded_properties) =
-            retry_wire_properties(retry);
         #[cfg(test)]
         {
+            let (_, _, _, encoded_properties) = retry_wire_properties(retry);
             let mut scripted = self
                 .scripted_retry_transport
                 .lock()
@@ -4529,133 +4538,52 @@ impl PushConsumer {
             }
         }
 
-        const DEFAULT_CREATE_TOPIC_KEY: &str = "TBW102";
-        const DEFAULT_TOPIC_QUEUE_COUNT: i32 = 4;
-        const DEFAULT_COMPRESS_THRESHOLD: usize = 4 * 1024;
-        const DEFAULT_MAX_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
-        const INNER_PRODUCER_GROUP: &str = "CLIENT_INNER_PRODUCER";
-
-        if retry.body().len() > DEFAULT_MAX_MESSAGE_SIZE {
-            return Err("retry message exceeds the default producer size limit".into());
-        }
-        let topic = retry.topic();
-        let deadline = Instant::now() + Duration::from_millis(INNER_PRODUCER_SEND_TIMEOUT_MILLIS);
-        let route = runtime
-            .route_snapshot()
-            .map_err(|error| error.to_string())?;
-        if !route.topics.contains_key(topic) {
-            runtime
-                .update_topic_route(topic, deadline)
-                .await
-                .map_err(|error| error.to_string())?;
-            let route = runtime
-                .route_snapshot()
-                .map_err(|error| error.to_string())?;
-            if !route.topics.contains_key(topic) {
-                runtime
-                    .update_topic_route_from_default(topic, DEFAULT_TOPIC_QUEUE_COUNT, deadline)
-                    .await
-                    .map_err(|error| error.to_string())?;
-            }
-        }
-        let route = runtime
-            .route_snapshot()
-            .map_err(|error| error.to_string())?;
-        let topic_snapshot = route
-            .topics
-            .get(topic)
-            .ok_or_else(|| format!("retry topic {topic} has no route"))?;
-        if topic_snapshot.publish_queues.is_empty() {
-            return Err(format!("retry topic {topic} has no writable queues"));
-        }
-
-        let mut body = retry.body().to_vec();
-        let mut sys_flag = 0;
-        if body.len() >= DEFAULT_COMPRESS_THRESHOLD {
-            if let Ok(compressed) = rocketmq_classic_common::compression::compress(
-                rocketmq_classic_common::sysflag::message::CompressionType::Zlib,
-                &body,
-                5,
-            ) {
-                body = compressed;
-                sys_flag |= rocketmq_classic_common::sysflag::message::COMPRESSED_FLAG
-                    | rocketmq_classic_common::sysflag::message::CompressionType::Zlib
-                        .get_compression_flag();
-            }
-        }
-        let unique_id = properties
-            .get(PROPERTY_UNIQ_CLIENT_MESSAGE_ID_KEYIDX)
-            .cloned()
-            .ok_or_else(|| "retry message has no unique id".to_owned())?;
-        let mut last_broker = None;
-        let mut last_error = None;
-        for attempt in 0..INNER_PRODUCER_SYNC_ATTEMPTS {
-            if Instant::now() >= deadline {
-                return Err(last_error.unwrap_or_else(|| {
-                    "retry-topic send exceeded the inner producer timeout".to_owned()
-                }));
-            }
-            let queue_index = self.next_retry_queue_index.fetch_add(1, Ordering::Relaxed);
-            let queue = select_retry_publish_queue(
-                &topic_snapshot.publish_queues,
-                queue_index,
-                last_broker.as_deref(),
+        let producer = self.inner_producer(runtime)?;
+        let mut retry = retry.clone_message();
+        producer
+            .send_internal_with_runtime(
+                runtime,
+                &mut retry,
+                Duration::from_millis(INNER_PRODUCER_SEND_TIMEOUT_MILLIS),
             )
-            .ok_or_else(|| format!("retry topic {topic} has no writable queues"))?;
-            let broker_name = queue
-                .broker_name()
-                .ok_or_else(|| "retry queue has no broker name".to_owned())?;
-            last_broker = Some(broker_name.to_owned());
-            let Some(address) = route.publish_address(broker_name) else {
-                last_error = Some(format!("retry broker {broker_name} has no master address"));
-                continue;
-            };
-            let address =
-                broker_vip_channel(self.config.client_config().vip_channel_enabled(), address)
-                    .map_err(|error| error.to_string())?;
-            let header = {
-                let mut __phase18_header_3 = SendMessageRequestHeaderV1::default();
-                __phase18_header_3.set_producer_group(Some(INNER_PRODUCER_GROUP.into()));
-                __phase18_header_3.set_topic(topic.to_owned());
-                __phase18_header_3.set_default_topic(DEFAULT_CREATE_TOPIC_KEY.into());
-                __phase18_header_3.set_default_topic_queue_nums(DEFAULT_TOPIC_QUEUE_COUNT);
-                __phase18_header_3.set_queue_id(queue.queue_id());
-                __phase18_header_3.set_sys_flag(sys_flag);
-                __phase18_header_3.set_born_timestamp(epoch_millis());
-                __phase18_header_3.set_flag(retry.flag());
-                __phase18_header_3.set_properties(Some(encoded_properties.clone()));
-                __phase18_header_3.set_reconsume_times(reconsume_times);
-                __phase18_header_3.set_unit_mode(Some(self.config.unit_mode()));
-                __phase18_header_3.set_batch(Some(false));
-                __phase18_header_3.set_max_reconsume_times(max_reconsume_times);
-                __phase18_header_3
-            };
-            match runtime
-                .api()
-                .send_message(
-                    &address,
-                    broker_name,
-                    &header,
-                    body.clone(),
-                    &unique_id,
-                    SendKind::V2,
-                    SendMode::Sync,
-                    deadline,
-                )
-                .await
-            {
-                Ok(Some(_)) => return Ok(()),
-                Ok(None) => return Err("retry-topic send returned no result".to_owned()),
-                Err(error) => {
-                    let retryable = retryable_inner_producer_send_error(&error);
-                    last_error = Some(error.to_string());
-                    if !retryable || attempt + 1 == INNER_PRODUCER_SYNC_ATTEMPTS {
-                        return Err(last_error.expect("send error was recorded"));
-                    }
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    fn inner_producer(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+    ) -> Result<Arc<rocketmq_classic_producer::Producer>, String> {
+        let matches_runtime = |owner: &Weak<ClientRuntime>| {
+            owner
+                .upgrade()
+                .is_some_and(|owner| Arc::ptr_eq(&owner, runtime))
+        };
+        {
+            let cached = read_lock(&self.inner_producer);
+            if let Some((owner, producer)) = cached.as_ref() {
+                if matches_runtime(owner) {
+                    return Ok(producer.clone());
                 }
             }
         }
-        Err(last_error.unwrap_or_else(|| "retry-topic send failed".to_owned()))
+
+        let mut cached = write_lock(&self.inner_producer);
+        if let Some((owner, producer)) = cached.as_ref() {
+            if matches_runtime(owner) {
+                return Ok(producer.clone());
+            }
+        }
+
+        let mut config = rocketmq_classic_producer::ProducerConfig::new("CLIENT_INNER_PRODUCER")
+            .map_err(|error| error.to_string())?;
+        *config.client_config_mut() = self.config.client_config().clone();
+        config.set_tls_config(self.config.tls_config().cloned());
+        let producer = runtime
+            .get_or_insert_extension(Arc::new(rocketmq_classic_producer::Producer::new(config)));
+        *cached = Some((Arc::downgrade(runtime), producer.clone()));
+        Ok(producer)
     }
 
     fn schedule_offset_recovery(

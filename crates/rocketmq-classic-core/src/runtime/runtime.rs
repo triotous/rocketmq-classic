@@ -1,4 +1,5 @@
 use std::{
+    any::{Any, TypeId},
     collections::HashMap,
     sync::{Arc, Mutex, RwLockReadGuard},
 };
@@ -114,6 +115,7 @@ pub struct ClientRuntime {
     pub(super) task_scheduler_status: Arc<super::tasks::SchedulerStatus>,
     pub(super) pull: Arc<super::pull::PullService>,
     manager: Mutex<Vec<ManagerLink>>,
+    extensions: Mutex<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
     reply_timeout_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     consumer_stats_manager: Arc<super::ConsumerStatsManager>,
     pub(super) sharing_properties: HashMap<String, String>,
@@ -266,6 +268,27 @@ impl ClientRuntime {
         self.consumer_stats_manager.clone()
     }
 
+    /// Stores one typed owner-scoped extension for each Rust type.
+    ///
+    /// This is used for Java `MQClientInstance` objects that are shared by all
+    /// owners of a `ClientRuntime`, including its internal producer.
+    #[doc(hidden)]
+    pub fn get_or_insert_extension<T>(&self, value: Arc<T>) -> Arc<T>
+    where
+        T: Any + Send + Sync,
+    {
+        let mut extensions = self
+            .extensions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let stored = extensions
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| value.clone());
+        Arc::clone(stored)
+            .downcast::<T>()
+            .unwrap_or_else(|_| unreachable!("runtime extension type ID must match its value"))
+    }
+
     /// Replaces the remoting client's NameServer address list using the same
     /// comma/semicolon/whitespace splitting used during client construction.
     pub fn update_name_server_address_list(&self, addresses: &str) {
@@ -397,6 +420,7 @@ impl ClientRuntime {
             task_scheduler_status: Arc::default(),
             pull: Arc::default(),
             manager: Mutex::new(Vec::new()),
+            extensions: Mutex::new(HashMap::new()),
             reply_timeout_task: tokio::sync::Mutex::new(None),
             consumer_stats_manager: Arc::new(super::ConsumerStatsManager::default()),
             sharing_properties: properties.clone(),

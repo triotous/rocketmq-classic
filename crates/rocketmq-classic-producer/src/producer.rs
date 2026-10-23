@@ -1333,6 +1333,23 @@ impl Producer {
         })
     }
 
+    pub(crate) async fn ensure_internal_detector_task(
+        self: &Arc<Self>,
+        runtime: &Arc<ClientRuntime>,
+    ) {
+        if !self.start_detector_enable() {
+            return;
+        }
+        let mut task = self.detector_task.lock().await;
+        if task.as_ref().is_some_and(|task| !task.is_finished()) {
+            return;
+        }
+        if let Some(finished) = task.take() {
+            let _ = finished.await;
+        }
+        *task = Some(self.spawn_detector_task(Arc::downgrade(runtime)));
+    }
+
     async fn stop_detector_task(&self) {
         if let Some(task) = self.detector_task.lock().await.take() {
             task.abort();

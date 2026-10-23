@@ -1043,10 +1043,62 @@ impl Producer {
             (false, None)
         };
         let runtime = self.started_runtime().await?;
+        self.send_default_on_runtime_until(
+            &runtime,
+            message,
+            wire_message,
+            batch,
+            mode,
+            deadline,
+            backpressure,
+            backpressure_enabled,
+        )
+        .await
+    }
+
+    /// Sends with the internal producer's default sync behavior through an
+    /// enclosing client runtime. This is used by Consumer retry-topic
+    /// publication, whose Java counterpart is `MQClientInstance`'s
+    /// `CLIENT_INNER_PRODUCER`.
+    #[doc(hidden)]
+    pub async fn send_internal_with_runtime(
+        self: &Arc<Self>,
+        runtime: &Arc<ClientRuntime>,
+        message: &mut Message,
+        timeout: Duration,
+    ) -> Result<SendResult, ProducerError> {
+        self.ensure_internal_detector_task(runtime).await;
+        let wire_message = self.message_with_namespace(message)?;
+        let deadline = deadline_after(timeout);
+        self.send_default_on_runtime_until(
+            runtime,
+            message,
+            wire_message,
+            false,
+            SendMode::Sync,
+            deadline,
+            None,
+            false,
+        )
+        .await?
+        .ok_or(ProducerError::Timeout)
+    }
+
+    async fn send_default_on_runtime_until(
+        &self,
+        runtime: &Arc<ClientRuntime>,
+        message: &mut Message,
+        wire_message: Message,
+        batch: bool,
+        mode: SendMode,
+        deadline: Instant,
+        backpressure: Option<AsyncBackpressurePermit>,
+        backpressure_enabled: bool,
+    ) -> Result<Option<SendResult>, ProducerError> {
         validation::validate_message(Some(&wire_message), &self.config)?;
         let send_started = StdInstant::now();
         let mut info = self
-            .acquire_publish_info(&runtime, wire_message.topic(), deadline)
+            .acquire_publish_info(runtime, wire_message.topic(), deadline)
             .await?;
         let mut hooked_message = wire_message;
         let mut caller_unique_id_set = false;
@@ -1070,7 +1122,7 @@ impl Producer {
             if attempt > 0 && latency_fault_enabled {
                 self.reset_publish_queue_index(&topic);
             }
-            if let Some(current_info) = self.current_publish_info(&runtime, &topic)? {
+            if let Some(current_info) = self.current_publish_info(runtime, &topic)? {
                 info = current_info;
             }
             if !info
@@ -1078,9 +1130,7 @@ impl Producer {
                 .iter()
                 .any(|queue| queue.topic() == Some(topic.as_str()))
             {
-                info = self
-                    .acquire_publish_info(&runtime, &topic, deadline)
-                    .await?;
+                info = self.acquire_publish_info(runtime, &topic, deadline).await?;
             }
             let selected = self.fault.select(
                 &info.publish_queues,
@@ -1103,7 +1153,7 @@ impl Producer {
             brokers_sent.push(Some(broker.clone()));
 
             let attempt_started = StdInstant::now();
-            let Some(address) = self.broker_address(&runtime, &info, &queue)? else {
+            let Some(address) = self.broker_address(runtime, &info, &queue)? else {
                 // Java sendKernelImpl rechecks its cached TopicPublishInfo and
                 // throws MQClientException when the selected Broker has no
                 // publish address. The default send loop retries that client
@@ -1141,7 +1191,7 @@ impl Producer {
             let mut check_forbidden_rejected = false;
             let result = self
                 .send_one_attempt_with_hooks(
-                    &runtime,
+                    runtime,
                     &mut queue,
                     &broker,
                     &address,
