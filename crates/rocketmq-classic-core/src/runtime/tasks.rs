@@ -1036,13 +1036,13 @@ pub(super) fn stats_schedules() -> Vec<Schedule> {
 }
 
 #[derive(Clone, Copy)]
-enum LocalBoundary {
+pub(super) enum LocalBoundary {
     Minute,
     Hour,
     Day,
 }
 
-fn next_local_boundary_delay(boundary: LocalBoundary) -> Duration {
+pub(super) fn next_local_boundary_delay(boundary: LocalBoundary) -> Duration {
     use time::{Duration as CalendarDuration, OffsetDateTime, Time};
 
     let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
@@ -2165,6 +2165,26 @@ mod tests {
         assert!(first.is_cancelled());
         assert!(second.is_cancelled());
         assert!(scheduler.await_termination(Duration::ZERO).await);
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn consumer_stats_manager_constructor_registers_java_jobs_with_scheduler() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let manager = crate::runtime::ConsumerStatsManager::with_scheduler(&scheduler).unwrap();
+
+        let returned = scheduler.shutdown_now().await.unwrap();
+        assert_eq!(stats_schedules().len(), 30);
+        assert_eq!(returned.len(), stats_schedules().len() * 2);
+        assert_eq!(
+            manager.consume_status("workers", "orders").get_pull_tps(),
+            0.0
+        );
+
+        for task in &returned {
+            assert!(task.cancel());
+        }
         runtime.shutdown().await.unwrap();
     }
 

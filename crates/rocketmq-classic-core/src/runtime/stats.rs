@@ -1,9 +1,11 @@
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
+use super::tasks::next_local_boundary_delay;
+use super::{RuntimeError, RuntimeScheduler, tasks::LocalBoundary};
 use rocketmq_classic_protocol::body::ConsumerConsumeStatus;
 
 const MINUTE_SAMPLE_INTERVAL: Duration = Duration::from_secs(10);
@@ -77,6 +79,51 @@ impl ConsumerStatsManager {
     /// Creates an empty manager for one client runtime.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a manager and registers its Java-compatible maintenance jobs
+    /// with the supplied client scheduler.
+    pub fn with_scheduler(scheduler: &RuntimeScheduler) -> Result<Arc<Self>, RuntimeError> {
+        let manager = Arc::new(Self::default());
+        for set in StatsItemSetKind::ALL {
+            for (delay, period) in [
+                (Duration::ZERO, Duration::from_secs(10)),
+                (Duration::ZERO, Duration::from_secs(10 * 60)),
+                (Duration::ZERO, Duration::from_secs(60 * 60)),
+            ] {
+                let manager = manager.clone();
+                scheduler.schedule_at_fixed_rate(delay, period, move || {
+                    let manager = manager.clone();
+                    async move { manager.sample(set) }
+                })?;
+            }
+
+            for (window, boundary, period) in [
+                (
+                    StatsLogWindow::Minute,
+                    LocalBoundary::Minute,
+                    Duration::from_secs(60),
+                ),
+                (
+                    StatsLogWindow::Hour,
+                    LocalBoundary::Hour,
+                    Duration::from_secs(60 * 60),
+                ),
+                (
+                    StatsLogWindow::Day,
+                    LocalBoundary::Day,
+                    Duration::from_secs(24 * 60 * 60),
+                ),
+            ] {
+                let delay = next_local_boundary_delay(boundary);
+                let manager = manager.clone();
+                scheduler.schedule_at_fixed_rate(delay, period, move || {
+                    let manager = manager.clone();
+                    async move { manager.log(set, window) }
+                })?;
+            }
+        }
+        Ok(manager)
     }
 
     fn with_sampling_origin(sampling_origin: Instant) -> Self {
