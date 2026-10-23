@@ -55,3 +55,12 @@ P18-V01 hidden-public Rust API reverse scan on code revision `ea17b8fc`:
 - Reviewed the hidden items as Rust `pub` surface, including runtime/property bridges, request/reply controls, internal-producer helpers, trace and unique-ID helpers, remoting command storage, decoder-mode adaptation, and the signed-millisecond sync invocation.
 - Added a Java owner/disposition crosswalk to `PHASE_6_API_CONFIG_MAP.md` and summarized the reverse scan in `PHASE_6_REQUIREMENT_AUDIT.md` and `docs/release-checklist.md`.
 - No extra client setting or wire operation was identified in this hidden-doc set. This is a bounded API inventory only; broad P18-V01 remains PARTIAL. Documentation only; no tests were run.
+
+P18-V01 ConsumerStatsManager public constructor parity on code revision `9c149d26`:
+- Pinned Java exposes a scheduler-taking `ConsumerStatsManager` constructor. Removed the Rust-only public `new()` and `Default` constructors; standalone construction uses `with_scheduler(&RuntimeScheduler)`, while Core/Consumer startup uses the Rustdoc-hidden `new_unscheduled_internal` bridge until runtime scheduler ownership is established.
+- Added compile-fail doctest guards for `new()` and `Default`, and updated Core/Consumer runtime construction plus facade API tests.
+- `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target CARGO_NET_OFFLINE=true cargo test --offline --locked -p rocketmq-classic-core -p rocketmq-classic-consumer -p rocketmq-classic` — pass, including integration targets and doctests.
+- The same affected-package test command with `--all-features` — pass.
+- `CARGO_TARGET_DIR=/tmp/rocketmq-phase18-target CARGO_NET_OFFLINE=true cargo clippy --offline --locked -p rocketmq-classic-core -p rocketmq-classic-consumer -p rocketmq-classic --all-targets --all-features -- -D warnings` — pass.
+- `cargo fmt --all -- --check` and `git diff --check` — pass. The hidden-public scan now finds 30 annotations across 15 source files; no remaining in-tree constructor use exists apart from the two compile-fail examples.
+- Updated the Phase 6 API/config crosswalk, Phase 6 requirement audit, Phase 10 method matrix, known differences, release checklist, and this run record. Broad P18-V01 remains PARTIAL; native Windows runtime and current-revision remote CI remain open. Pre-existing protected Phase 19 paths were left untouched and not staged; no plan files were changed.
