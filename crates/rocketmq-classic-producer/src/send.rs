@@ -56,6 +56,17 @@ struct SendAttempt<'a> {
 
 type AsyncBackpressurePermit = (AdjustablePermit, AdjustablePermit);
 
+struct DefaultSendRequest<'a> {
+    runtime: &'a Arc<ClientRuntime>,
+    message: &'a mut Message,
+    wire_message: Message,
+    batch: bool,
+    mode: SendMode,
+    deadline: Instant,
+    backpressure: Option<AsyncBackpressurePermit>,
+    backpressure_enabled: bool,
+}
+
 fn selector_panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<String>()
@@ -1043,8 +1054,8 @@ impl Producer {
             (false, None)
         };
         let runtime = self.started_runtime().await?;
-        self.send_default_on_runtime_until(
-            &runtime,
+        self.send_default_on_runtime_until(DefaultSendRequest {
+            runtime: &runtime,
             message,
             wire_message,
             batch,
@@ -1052,7 +1063,7 @@ impl Producer {
             deadline,
             backpressure,
             backpressure_enabled,
-        )
+        })
         .await
     }
 
@@ -1070,31 +1081,34 @@ impl Producer {
         self.ensure_internal_detector_task(runtime).await;
         let wire_message = self.message_with_namespace(message)?;
         let deadline = deadline_after(timeout);
-        self.send_default_on_runtime_until(
+        self.send_default_on_runtime_until(DefaultSendRequest {
             runtime,
             message,
             wire_message,
-            false,
-            SendMode::Sync,
+            batch: false,
+            mode: SendMode::Sync,
             deadline,
-            None,
-            false,
-        )
+            backpressure: None,
+            backpressure_enabled: false,
+        })
         .await?
         .ok_or(ProducerError::Timeout)
     }
 
     async fn send_default_on_runtime_until(
         &self,
-        runtime: &Arc<ClientRuntime>,
-        message: &mut Message,
-        wire_message: Message,
-        batch: bool,
-        mode: SendMode,
-        deadline: Instant,
-        backpressure: Option<AsyncBackpressurePermit>,
-        backpressure_enabled: bool,
+        request: DefaultSendRequest<'_>,
     ) -> Result<Option<SendResult>, ProducerError> {
+        let DefaultSendRequest {
+            runtime,
+            message,
+            wire_message,
+            batch,
+            mode,
+            deadline,
+            backpressure,
+            backpressure_enabled,
+        } = request;
         validation::validate_message(Some(&wire_message), &self.config)?;
         let send_started = StdInstant::now();
         let mut info = self
@@ -5480,6 +5494,64 @@ mod tests {
             producer.start_detector_enable(),
             runtime["startDetectorEnableAfterDisable"]
         );
+    }
+
+    #[tokio::test]
+    async fn internal_runtime_send_uses_the_latency_fault_selector() {
+        let mut config = crate::ProducerConfig::new("CLIENT_INNER_PRODUCER").unwrap();
+        config.set_send_latency_fault_enable(true);
+        config.set_start_detector_enable(true);
+        let producer = Arc::new(Producer::new(config.clone()));
+        let manager = rocketmq_classic_core::runtime::ClientRuntimeManager::new();
+        let runtime = manager.get_or_create(config.client_config()).await.unwrap();
+        let queues = [
+            MessageQueue::new("orders", "broker-a", 0),
+            MessageQueue::new("orders", "broker-b", 0),
+        ];
+        producer.cache_publish_info(
+            "orders",
+            Arc::new(TopicSnapshot {
+                route: Arc::new(
+                    serde_json::from_str::<rocketmq_classic_protocol::route::TopicRouteData>("{}")
+                        .unwrap(),
+                ),
+                publish_queues: queues.to_vec(),
+                subscribe_queues: Default::default(),
+                endpoints: BTreeMap::from([
+                    (queues[0].clone(), "10.0.0.1:10911".into()),
+                    (queues[1].clone(), "10.0.0.2:10911".into()),
+                ]),
+                order_topic: false,
+            }),
+        );
+        producer
+            .update_fault("broker-a", Duration::ZERO, true, true)
+            .unwrap();
+        producer
+            .scripted_transport
+            .lock()
+            .unwrap()
+            .responses
+            .push_back(Ok(Some(scripted_result(
+                "internal-send",
+                "internal-offset",
+                12,
+            ))));
+
+        let result = producer
+            .send_internal_with_runtime(
+                &runtime,
+                &mut Message::new("orders", b"retry body".to_vec()),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.msg_id, "internal-send");
+        assert!(producer.detector_task_running_for_test().await);
+        let attempts = producer.scripted_transport.lock().unwrap().attempts.clone();
+        assert_eq!(attempts.len(), 1);
+        assert_eq!(attempts[0].queue, queues[1]);
     }
 
     #[test]

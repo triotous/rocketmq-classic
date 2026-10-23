@@ -7588,6 +7588,30 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn inner_producer_is_shared_by_runtime_and_replaced_on_runtime_change() {
+        let config = PushConsumerConfig::new("inner-producer-owner-one").unwrap();
+        let runtime_config = config.client_config().clone();
+        let manager = ClientRuntimeManager::new();
+        let runtime = manager.get_or_create(&runtime_config).await.unwrap();
+        let first = PushConsumer::with_manager(config, manager.clone());
+        let second = PushConsumer::with_manager(
+            PushConsumerConfig::new("inner-producer-owner-two").unwrap(),
+            manager,
+        );
+
+        let first_producer = first.inner_producer(&runtime).unwrap();
+        let second_producer = second.inner_producer(&runtime).unwrap();
+        assert!(Arc::ptr_eq(&first_producer, &second_producer));
+
+        let other_manager = ClientRuntimeManager::new();
+        let other_runtime = other_manager.get_or_create(&runtime_config).await.unwrap();
+        let replacement = first.inner_producer(&other_runtime).unwrap();
+        let shared_replacement = second.inner_producer(&other_runtime).unwrap();
+        assert!(!Arc::ptr_eq(&first_producer, &replacement));
+        assert!(Arc::ptr_eq(&replacement, &shared_replacement));
+    }
+
     #[test]
     fn trace_dispatcher_accessor_is_empty_before_start() {
         let config = PushConsumerConfig::new("trace-dispatcher-accessor").unwrap();

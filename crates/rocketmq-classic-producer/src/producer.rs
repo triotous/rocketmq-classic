@@ -1357,6 +1357,15 @@ impl Producer {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) async fn detector_task_running_for_test(&self) -> bool {
+        self.detector_task
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
+    }
+
     async fn stop_auto_batch(&self) {
         self.auto_batch_accumulator.close().await;
         let mut tasks = self.auto_batch_tasks.lock().await;

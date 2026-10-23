@@ -61,6 +61,31 @@ fn rpc_timeout_reads_the_live_runtime_configuration() {
     assert_eq!(runtime.rpc_timeout(), tokio::time::Duration::ZERO);
 }
 
+#[test]
+fn runtime_extension_is_shared_by_type_and_isolated_between_runtimes() {
+    let first = ClientRuntime::construct(
+        ClientConfig::new("runtime-extension-first"),
+        &HashMap::new(),
+        None,
+    )
+    .unwrap();
+    let second = ClientRuntime::construct(
+        ClientConfig::new("runtime-extension-second"),
+        &HashMap::new(),
+        None,
+    )
+    .unwrap();
+
+    let first_value = first.get_or_insert_extension(Arc::new(String::from("first")));
+    let shared_value = first.get_or_insert_extension(Arc::new(String::from("ignored")));
+    let second_value = second.get_or_insert_extension(Arc::new(String::from("second")));
+
+    assert!(Arc::ptr_eq(&first_value, &shared_value));
+    assert!(!Arc::ptr_eq(&first_value, &second_value));
+    assert_eq!(first_value.as_str(), "first");
+    assert_eq!(second_value.as_str(), "second");
+}
+
 #[cfg(test)]
 #[test]
 fn nameserver_refresh_reads_the_current_nullable_config_value() {
