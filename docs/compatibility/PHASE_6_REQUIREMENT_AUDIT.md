@@ -34,6 +34,11 @@ Follow-up revision `e8a4811f` adds the `putMessage(null)` adapter. Its focused
 facade comparison, pinned Java facade fixture verification, strict Consumer
 Clippy, and formatting/diff checks pass.
 
+Follow-up revision `bb167942` models the caught `removeMessage(null)` path:
+consume timestamp update, return offset, and retained queue state. Its focused
+facade comparison, pinned Java facade fixture verification, strict Consumer
+Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3457,3 +3462,18 @@ The focused ProcessQueue facade test, targeted pinned Java facade fixture
 verification, strict Consumer Clippy, and formatting/diff checks pass. This
 closes the null-list input branch only; broad P18-V01 source/API/settings/input/
 error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `removeMessage` list — 2026-10-23
+
+Pinned Java catches the null-list exception after it updates
+`lastConsumeTimestamp`. With ready messages, it returns the precomputed
+`queueOffsetMax + 1` and preserves queue entries and counters. Rust adds
+`remove_message_nullable(None)` with the same result and state transition. The
+invoked Java fixture and Rust facade comparison check the return offset,
+timestamp update, count, size, and tree. Fixture SHA-256:
+`357c266f6bea2c4df5b066d334b75b28314202d1d198a34bd270115345b9096f`.
+
+The focused ProcessQueue facade test, targeted pinned Java facade fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-list removal branch only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.
