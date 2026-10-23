@@ -8496,3 +8496,18 @@ owner-specific checks belong in the manual handoff.
   evidence remain pending. No push or remote CI was run. Existing Phase 19
   worktree files remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-factory-refresh-schedules__20261023T095628Z.rlog`.
+
+## P18-V01 MQClientAPIFactory provider callbacks per client — 2026-10-23 (`88a9578e`)
+
+- [x] Domain provider callbacks register once per active API client before its
+  initial lookup and update only that client slot. Explicit factory address
+  changes continue to apply to all clients; zero-client starts register none.
+- [x] A Core regression checks per-slot callback registration, update/return
+  behavior, and zero-client behavior.
+- [x] Core all-feature library tests (240), strict all-target/all-feature Core
+  Clippy, formatting, and diff checks passed.
+- [ ] Broad P18-V01 and final reverse API review remain open. Native Windows
+  runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+  evidence remain pending. No push or remote CI was run. Existing Phase 19
+  worktree files remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-factory-per-client-callbacks__20261023T100045Z.rlog`.

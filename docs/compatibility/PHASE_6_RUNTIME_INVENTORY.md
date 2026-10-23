@@ -524,6 +524,24 @@ flow/reverse-export reconciliation remains open, as do native Windows
 execution, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
 evidence.
 
+### P18-V01 factory per-client provider callbacks — 2026-10-23 (`88a9578e`)
+
+Pinned `MQClientAPIImpl` constructs its own `DefaultTopAddressing` and
+registers itself as that provider's callback before the factory's initial
+domain fetch. Rust now registers a callback for each active pool slot at the
+same point in `start`; each callback updates and returns only its slot's
+current address. The explicit `MQClientAPIFactory.onNameServerAddressChange`
+method still updates the complete client pool. Zero-client starts register no
+callbacks.
+
+`factory_registers_and_dispatches_name_server_callbacks_per_client` verifies
+callback registration timing/count, isolated per-slot changes, per-slot null
+return values, and zero-client behavior. Core all-feature tests (240), strict
+all-target/all-feature Core Clippy, formatting and diff checks passed. This
+closes the provider callback ownership slice only; broad P18-V01
+source/API/input/error/control-flow/reverse-export reconciliation and the
+platform/Phase 19 evidence remain open.
+
 ### P18-V01 factory per-client refresh schedule — 2026-10-23 (`681a8acf`)
 
 Pinned Java `createAndStart` registers a fixed-rate NameServer lookup for each

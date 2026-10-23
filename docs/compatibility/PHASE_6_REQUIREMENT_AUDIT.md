@@ -3934,3 +3934,23 @@ closes the per-client refresh schedule slice only. Broad P18-V01 source/API/
 settings/input/error/control-flow and reverse-export reconciliation remains
 PARTIAL; native Windows runtime, current-revision remote Ubuntu CI, and Phase
 19 Broker/Docker evidence remain open.
+
+## P18-V01 `MQClientAPIFactory` provider callbacks per client — 2026-10-23 (`88a9578e`)
+
+Pinned `MQClientAPIImpl` constructs a `DefaultTopAddressing` instance and
+registers itself as that instance's change callback during API construction.
+The factory does this for each pool client before its initial domain lookup.
+Rust previously registered one callback during factory construction and
+broadcast provider callback events to the entire client pool. Rust now
+registers an indexed callback before each slot's first fetch and applies the
+event only to that slot. Direct factory address-change calls still broadcast
+to all slots, and zero-client starts register no callbacks.
+
+`factory_registers_and_dispatches_name_server_callbacks_per_client` checks
+callback count/timing, individual address updates and return values, and the
+zero-client path. Core all-feature tests (240), strict all-target/all-feature
+Core Clippy, formatting and diff checks pass. This closes the provider
+callback ownership slice only. Broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL; native
+Windows runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+evidence remain open.
