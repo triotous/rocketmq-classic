@@ -2,7 +2,7 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-23
 
-At code revision `8bf6ee40`, the server-free gates pass on macOS AArch64 with
+At code revision `85f210bd`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
 `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
@@ -100,6 +100,18 @@ and all-feature workspace tests, strict Clippy, pinned Maven verify, fuzz and
 race/leak smoke, release examples, and the offline benchmark pass. This closes
 these duplicate-offset flows only; broad P18-V01 reconciliation remains
 PARTIAL.
+
+P18-V01 `ProcessQueue.clear` dispatch-state parity (`85f210bd`): pinned Java
+clears both message maps, counters, and `queueOffsetMax` while leaving
+`consuming` unchanged. Rust now preserves that flag, so the next `putMessage`
+reports dispatch according to the pre-clear state. The invoked facade fixture
+checks the subsequent dispatch, empty-to-refilled tree, and reset count/size.
+Fixture SHA-256:
+`8ab5b2da6cd00449b2af89e5f4a3879608e00990cd2b5562cc2eef2dc23f18ff`. Default
+and all-feature workspace tests, strict Clippy, pinned Maven verify,
+differential self-test/manifest, fuzz and race/leak smoke, release examples,
+and the offline benchmark pass. This closes this clear-state input only; broad
+P18-V01 reconciliation remains PARTIAL.
 
 ## Direct runtime API reconciliation — 2026-10-20
 

@@ -817,3 +817,22 @@ operations and sets no performance threshold.
 
 Timing varies between runs and is not evidence of a regression or improvement;
 loopback time includes local TCP and Tokio scheduling.
+
+## ProcessQueue clear parity current-tree sample — 2026-10-23 (`85f210bd`)
+
+Captured with `cargo bench --offline -p rocketmq-classic --bench offline
+--locked` on code revision `85f210bd`, after preserving Java 5.5.1's
+`consuming` flag across `clear`. Environment: macOS AArch64, Apple M5 Max, 18
+logical CPUs, Rust 1.85.0. The benchmark does not isolate ProcessQueue
+operations and sets no performance threshold.
+
+| Operation | Input | Iterations | Time per iteration | Allocation calls per iteration | Allocated bytes per iteration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Remoting frame encode/decode | 427 encoded frame bytes | 20,000 | 1,689.7 ns | 40.00 (1,000 samples) | 4,676.0 (1,000 samples) |
+| Zstd message-record decode | 146 record bytes | 10,000 | 1,077.3 ns | 17.00 (1,000 samples) | 197,493.0 (1,000 samples) |
+| Producer send-request construction | 512-byte body | 20,000 | 1,192.2 ns | 54.00 (1,000 samples) | 3,665.0 (1,000 samples) |
+| Publish-address lookup | 10-byte key, 128 route entries | 100,000 | 16.8 ns | 0.00 (1,000 samples) | 0.0 (1,000 samples) |
+| Loopback pending-request completion | 128-byte body over local TCP | 500 | 61,103.2 ns | 81.00 (100 samples) | 9,546.0 (100 samples) |
+
+Timing varies between runs and is not evidence of a regression or improvement;
+loopback time includes local TCP and Tokio scheduling.
