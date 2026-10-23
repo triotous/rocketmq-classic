@@ -68,6 +68,12 @@ Maven validates 37 differential scenarios and Java cross-decodes all 106 typed
 headers and 19 typed bodies. Fuzz, race/leak, release-example, and offline
 benchmark results remain the recorded runs at `c3b53fcb`.
 
+Follow-up revision `0a88fcaa` maps Java's `PopProcessQueue.fillPopProcessQueueInfo(null)`
+failure and records the complete 11-method PopProcessQueue crosswalk. All 260
+Consumer library tests and 73 Consumer integration tests with all features,
+strict Consumer Clippy, formatting/diff checks, and full offline Maven `verify`
+pass. Maven revalidates 37 scenarios, 106 typed headers, and 19 typed bodies.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3600,7 +3606,7 @@ reverse-support-surface slice only; broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains PARTIAL.
 
-## P18-V01 PopProcessQueue null queue-info argument — 2026-10-23
+## P18-V01 PopProcessQueue null queue-info argument — 2026-10-23 (`0a88fcaa`)
 
 Pinned Java `fillPopProcessQueueInfo(null)` throws
 `java.lang.NullPointerException`. Rust now exposes
