@@ -9065,3 +9065,32 @@ owner-specific checks belong in the manual handoff.
   was run; the four existing Phase 19 worktree paths remain untouched and
   unstaged. Run record:
   `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T183115Z.rlog`.
+
+## P18-V02 current-tree server-free refresh after sustained offset persistence — 2026-10-23 (`d4e9c7ac`)
+
+- [x] Added a 128-round local-offset persistence regression over eight queues.
+  Each round verifies the atomic snapshot and restart recovery verifies the
+  final offsets. The deterministic race/leak runner passed 19 cases × 3.
+- [x] Sequential default and all-feature workspace tests/doctests passed at
+  this revision. Strict all-target/all-feature Clippy, formatting, diff check,
+  workspace metadata, fuzz smoke (163 frame seeds, 11 message seeds, 2,784
+  mutations), differential self-test and 37-scenario manifest, pinned offline
+  Maven `verify` (37 scenarios and Java cross-decodes of 11 messages, 106
+  typed headers, and 19 typed bodies), and Windows GNU all-target/all-feature
+  cross-check passed. Windows is compile evidence only.
+- [x] P18-04 start/stop coverage was audited: remoting start/shutdown ownership
+  is repeated by the stress runner, alongside concurrent runtime construction,
+  reconnect, callback shutdown, pending cleanup, producer sends, and consumer
+  ownership races. No additional producer lifecycle test was needed for that
+  plan item.
+- [ ] Running default and all-feature workspace suites concurrently again
+  caused two pull-consumer tests to fail with `OffsetStore(AlreadyOpen)`;
+  both suites passed sequentially with no code change. Broad P18-V01 Java
+  source/API/settings/input/error/control-flow and reverse-export audit
+  remains PARTIAL. Native Windows runtime, current-revision remote CI, and
+  Phase 19 live Broker/Docker scenarios remain open or out of scope. Release
+  examples and the offline benchmark retain their earlier results because
+  this revision changes only tests and stress documentation. No plan was
+  edited, no remote CI or push was run, and the four existing Phase 19 paths
+  remain untouched and unstaged. Run record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T184207Z.rlog`.
