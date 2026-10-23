@@ -1124,7 +1124,15 @@ impl ClientRuntime {
             TaskKind::StatsSampleSeconds
             | TaskKind::StatsSampleMinutes
             | TaskKind::StatsSampleHour => self.consumer_stats_manager.sample(),
-            TaskKind::StatsPrintMinutes | TaskKind::StatsPrintHour | TaskKind::StatsPrintDay => {}
+            TaskKind::StatsPrintMinutes => self
+                .consumer_stats_manager
+                .log(super::stats::StatsLogWindow::Minute),
+            TaskKind::StatsPrintHour => self
+                .consumer_stats_manager
+                .log(super::stats::StatsLogWindow::Hour),
+            TaskKind::StatsPrintDay => self
+                .consumer_stats_manager
+                .log(super::stats::StatsLogWindow::Day),
         }
         Ok(())
     }

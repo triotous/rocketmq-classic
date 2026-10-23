@@ -8,10 +8,29 @@ use rocketmq_classic_protocol::body::ConsumerConsumeStatus;
 
 const MINUTE_SAMPLE_INTERVAL: Duration = Duration::from_secs(10);
 const HOUR_SAMPLE_INTERVAL: Duration = Duration::from_secs(10 * 60);
+const DAY_SAMPLE_INTERVAL: Duration = Duration::from_secs(60 * 60);
 const MINUTE_SAMPLE_COUNT: usize = 7;
 const HOUR_SAMPLE_COUNT: usize = 7;
+const DAY_SAMPLE_COUNT: usize = 25;
 
 type StatsKey = String;
+
+#[derive(Clone, Copy)]
+pub(super) enum StatsLogWindow {
+    Minute,
+    Hour,
+    Day,
+}
+
+impl StatsLogWindow {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Minute => "One Minute",
+            Self::Hour => "One Hour",
+            Self::Day => "One Day",
+        }
+    }
+}
 
 /// Java 5.5.1 consumer metrics shared by one `MQClientInstance` equivalent.
 pub struct ConsumerStatsManager {
@@ -48,6 +67,12 @@ impl ConsumerStatsManager {
         let now = Instant::now();
         for stats in self.lock_topics().values_mut() {
             stats.advance(now);
+        }
+    }
+
+    pub(super) fn log(&self, window: StatsLogWindow) {
+        for (key, stats) in self.lock_topics().iter() {
+            stats.log(key, window);
         }
     }
 
@@ -169,29 +194,45 @@ impl TopicStats {
         self.consume_ok_tps.advance(now);
         self.consume_failed_tps.advance(now);
     }
+
+    fn log(&self, key: &str, window: StatsLogWindow) {
+        self.pull_rt.log("PULL_RT", key, window, true);
+        self.pull_tps.log("PULL_TPS", key, window, false);
+        self.consume_rt.log("CONSUME_RT", key, window, true);
+        self.consume_ok_tps
+            .log("CONSUME_OK_TPS", key, window, false);
+        self.consume_failed_tps
+            .log("CONSUME_FAILED_TPS", key, window, false);
+    }
 }
 
 struct MetricSeries {
+    initialized: bool,
     value: i64,
     calls: i64,
     minute: SampleWindow,
     hour: SampleWindow,
+    day: SampleWindow,
 }
 
 impl MetricSeries {
     fn new(sampling_origin: Instant) -> Self {
         Self {
+            initialized: false,
             value: 0,
             calls: 0,
             minute: SampleWindow::minute(sampling_origin),
             hour: SampleWindow::hour(sampling_origin),
+            day: SampleWindow::day(sampling_origin),
         }
     }
 
     fn record(&mut self, now: Instant, value: i64, calls: i64) {
+        self.initialized = true;
         self.advance(now);
         self.minute.schedule_after(now);
         self.hour.schedule_after(now);
+        self.day.schedule_after(now);
         self.value = self.value.wrapping_add(value);
         self.calls = self.calls.wrapping_add(calls);
     }
@@ -199,6 +240,41 @@ impl MetricSeries {
     fn advance(&mut self, now: Instant) {
         self.minute.sample_until(now, self.value, self.calls);
         self.hour.sample_until(now, self.value, self.calls);
+        self.day.sample_until(now, self.value, self.calls);
+    }
+
+    fn log(&self, name: &str, key: &str, window: StatsLogWindow, response_time: bool) {
+        if !self.initialized {
+            return;
+        }
+        let samples = match window {
+            StatsLogWindow::Minute => &self.minute,
+            StatsLogWindow::Hour => &self.hour,
+            StatsLogWindow::Day => &self.day,
+        };
+        let summary = samples.summary();
+        if response_time {
+            tracing::info!(
+                target: "org.apache.rocketmq.client.stat.ConsumerStatsManager",
+                "[{}] [{}] Stats In {}, TIMES: {} AVGRT: {:.2}",
+                name,
+                key,
+                window.label(),
+                summary.times,
+                summary.average,
+            );
+        } else {
+            tracing::info!(
+                target: "org.apache.rocketmq.client.stat.ConsumerStatsManager",
+                "[{}] [{}] Stats In {}, SUM: {} TPS: {:.2} AVGPT: {:.2}",
+                name,
+                key,
+                window.label(),
+                summary.sum,
+                summary.tps,
+                summary.average,
+            );
+        }
     }
 }
 
@@ -217,6 +293,10 @@ impl SampleWindow {
 
     fn hour(sampling_origin: Instant) -> Self {
         Self::new(HOUR_SAMPLE_INTERVAL, HOUR_SAMPLE_COUNT, sampling_origin)
+    }
+
+    fn day(sampling_origin: Instant) -> Self {
+        Self::new(DAY_SAMPLE_INTERVAL, DAY_SAMPLE_COUNT, sampling_origin)
     }
 
     fn new(interval: Duration, capacity: usize, sampling_origin: Instant) -> Self {
@@ -328,6 +408,29 @@ impl SampleWindow {
         self.delta().map_or(0, |(value, _)| value)
     }
 
+    fn summary(&self) -> MetricSummary {
+        let Some((sum, times)) = self.delta() else {
+            return MetricSummary::default();
+        };
+        let first = self.samples.front().expect("delta requires two samples");
+        let last = self.samples.back().expect("delta requires two samples");
+        let elapsed = last.at.saturating_duration_since(first.at).as_secs_f64();
+        MetricSummary {
+            sum,
+            times,
+            tps: if elapsed == 0.0 {
+                0.0
+            } else {
+                sum as f64 / elapsed
+            },
+            average: if times <= 0 {
+                0.0
+            } else {
+                sum as f64 / times as f64
+            },
+        }
+    }
+
     fn delta(&self) -> Option<(i64, i64)> {
         let (Some(first), Some(last)) = (self.samples.front(), self.samples.back()) else {
             return None;
@@ -337,6 +440,14 @@ impl SampleWindow {
             last.calls.wrapping_sub(first.calls),
         ))
     }
+}
+
+#[derive(Default)]
+struct MetricSummary {
+    sum: i64,
+    times: i64,
+    tps: f64,
+    average: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -399,6 +510,19 @@ mod tests {
 
         series.advance(origin + Duration::from_secs(600));
         assert_eq!(series.hour.sum(), 25);
+    }
+
+    #[test]
+    fn daily_stats_window_uses_the_java_hour_sample_cadence() {
+        let origin = Instant::now();
+        let mut series = MetricSeries::new(origin);
+        series.record(origin + Duration::from_secs(1), 12, 3);
+
+        series.advance(origin + Duration::from_secs(60 * 60));
+
+        assert_eq!(series.day.average(), (4.0, 12));
+        assert!((series.day.rate() - (12.0 / 3600.0)).abs() < f64::EPSILON);
+        assert_eq!(series.day.summary().times, 3);
     }
 
     #[test]
