@@ -921,6 +921,51 @@ impl ProcessQueue {
         self.remove_message(messages)
     }
 
+    /// Preserves Java's caught removal failure and partial effects for null list elements.
+    pub fn remove_message_items_nullable(
+        &self,
+        messages: Option<&[Option<Arc<MessageExt>>]>,
+    ) -> i64 {
+        let Some(messages) = messages else {
+            return self.remove_message_nullable(None);
+        };
+        let Some(null_index) = messages.iter().position(Option::is_none) else {
+            let messages = messages
+                .iter()
+                .map(|message| message.as_ref().unwrap().clone())
+                .collect::<Vec<_>>();
+            return self.remove_message(&messages);
+        };
+
+        let now = epoch_millis();
+        let mut state = self.lock_state();
+        state.last_consume_timestamp_millis = now;
+        if !has_ready_messages(&state) {
+            return -1;
+        }
+        let result = state.queue_offset_max.wrapping_add(1);
+        for message in messages[..null_index].iter().flatten() {
+            let offset = message.queue_offset();
+            let removed_ready_duplicate = state.ready_duplicates.remove(&offset).is_some();
+            let removed_ready_message = if removed_ready_duplicate {
+                true
+            } else if state
+                .messages
+                .get(&offset)
+                .is_some_and(|entry| entry.state == MessageState::Ready)
+            {
+                state.messages.remove(&offset);
+                true
+            } else {
+                false
+            };
+            if removed_ready_message {
+                state.cached_bytes = state.cached_bytes.wrapping_sub(message.body().len() as i64);
+            }
+        }
+        result
+    }
+
     pub fn rollback(&self) {
         let mut state = self.lock_state();
         let in_flight_offsets = state

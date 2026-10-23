@@ -1251,6 +1251,50 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
             .copied()
             .collect::<Vec<_>>(),
     });
+    let mut null_remove_first = MessageExt::new();
+    null_remove_first.set_queue_offset(240);
+    null_remove_first.set_body(vec![1, 2]);
+    let mut null_remove_second = MessageExt::new();
+    null_remove_second.set_queue_offset(241);
+    null_remove_second.set_body(vec![3]);
+    let null_remove_element_queue = ProcessQueue::new();
+    null_remove_element_queue
+        .put_message(&[null_remove_first.clone(), null_remove_second])
+        .expect("valid messages before null removal element");
+    null_remove_element_queue.set_last_consume_timestamp(777);
+    let null_remove_element_next_offset = null_remove_element_queue
+        .remove_message_items_nullable(Some(&[Some(std::sync::Arc::new(null_remove_first)), None]));
+    let null_remove_element_count_after_error = null_remove_element_queue.get_msg_count().get();
+    let null_remove_element_size_after_error = null_remove_element_queue.get_msg_size().get();
+    let null_remove_element_tree_after_error = null_remove_element_queue
+        .get_msg_tree_map()
+        .read()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut after_null_remove_element = MessageExt::new();
+    after_null_remove_element.set_queue_offset(242);
+    after_null_remove_element.set_body(vec![4]);
+    let null_remove_element_next_dispatch = null_remove_element_queue
+        .put_message(&[after_null_remove_element])
+        .expect("valid message after null removal element");
+    let null_remove_element_result = serde_json::json!({
+        "returnedNormally": true,
+        "nextOffset": null_remove_element_next_offset,
+        "timestampUpdated": null_remove_element_queue.get_last_consume_timestamp() > 777,
+        "countAfterError": null_remove_element_count_after_error,
+        "sizeAfterError": null_remove_element_size_after_error,
+        "treeKeysAfterError": null_remove_element_tree_after_error,
+        "nextDispatch": null_remove_element_next_dispatch,
+        "finalCount": null_remove_element_queue.get_msg_count().get(),
+        "finalSize": null_remove_element_queue.get_msg_size().get(),
+        "finalTreeKeys": null_remove_element_queue
+            .get_msg_tree_map()
+            .read()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+    });
     let info_result = serde_json::json!({
         "cachedMsgCount": info.get_cached_msg_count(),
         "cachedMsgSizeInMiB": info.get_cached_msg_size_in_mib(),
@@ -1321,6 +1365,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "nullRequeueMessage": null_requeue_message_result,
         "nullMessageElement": null_message_element_result,
         "nullRequeueElement": null_requeue_element_result,
+        "nullRemoveElement": null_remove_element_result,
     });
     assert_eq!(&actual, expected);
     queue.clear();

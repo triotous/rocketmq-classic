@@ -366,6 +366,30 @@ public final class ConsumerFacadeApiFixtures {
             new ArrayList<>(nullRequeueElementQueue.getMsgTreeMap().keySet()));
         result.put("nullRequeueElement", nullRequeueElement);
 
+        ProcessQueue nullRemoveElementQueue = new ProcessQueue();
+        MessageExt nullRemoveFirst = processQueueMessage(240L, new byte[] {1, 2});
+        nullRemoveElementQueue.putMessage(Arrays.asList(
+            nullRemoveFirst, processQueueMessage(241L, new byte[] {3})));
+        nullRemoveElementQueue.setLastConsumeTimestamp(777L);
+        long nullRemoveElementNextOffset = nullRemoveElementQueue.removeMessage(
+            Arrays.asList(nullRemoveFirst, null));
+        Map<String, Object> nullRemoveElement = new TreeMap<>();
+        nullRemoveElement.put("returnedNormally", true);
+        nullRemoveElement.put("nextOffset", nullRemoveElementNextOffset);
+        nullRemoveElement.put("timestampUpdated", nullRemoveElementQueue.getLastConsumeTimestamp() > 777L);
+        nullRemoveElement.put("countAfterError", nullRemoveElementQueue.getMsgCount().get());
+        nullRemoveElement.put("sizeAfterError", nullRemoveElementQueue.getMsgSize().get());
+        nullRemoveElement.put("treeKeysAfterError",
+            new ArrayList<>(nullRemoveElementQueue.getMsgTreeMap().keySet()));
+        boolean nullRemoveElementNextDispatch = nullRemoveElementQueue.putMessage(
+            List.of(processQueueMessage(242L, new byte[] {4})));
+        nullRemoveElement.put("nextDispatch", nullRemoveElementNextDispatch);
+        nullRemoveElement.put("finalCount", nullRemoveElementQueue.getMsgCount().get());
+        nullRemoveElement.put("finalSize", nullRemoveElementQueue.getMsgSize().get());
+        nullRemoveElement.put("finalTreeKeys",
+            new ArrayList<>(nullRemoveElementQueue.getMsgTreeMap().keySet()));
+        result.put("nullRemoveElement", nullRemoveElement);
+
         ProcessQueue negativeBatchQueue = new ProcessQueue();
         negativeBatchQueue.setLastConsumeTimestamp(777L);
         Map<String, Object> negativeBatchResult = new TreeMap<>();
