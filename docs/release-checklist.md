@@ -9039,3 +9039,29 @@ owner-specific checks belong in the manual handoff.
   evidence remain open. Phase 19 is out of scope. No push or remote CI was run;
   the four protected Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T163451Z.rlog`.
+
+## P18-V02 current-tree server-free refresh after 2,000 concurrent sends — 2026-10-23 (`148b2528`)
+
+- [x] The producer loopback suite now starts 2,000 async sends concurrently
+  against a scripted Broker, checks all 2,000 unique bodies and message IDs,
+  and asserts no retry or duplicate request. The 18-case deterministic
+  race/leak runner passed three repetitions for every case.
+- [x] Current-tree default and all-feature workspace tests/doctests, strict
+  all-target/all-feature Clippy, formatting, diff checks, pinned offline Maven
+  `verify` (37 scenarios, 11 message fixtures, 106 typed headers, 19 typed
+  bodies and Rust/Java cross-decodes), differential self-test and 37-scenario
+  manifest, package metadata/license/dependency checks, fuzz smoke (163 frame
+  seeds, 11 message seeds, 2,784 mutations), release examples, offline
+  benchmark, Unique ID under `Asia/Taipei`, and workspace Windows GNU
+  all-target/all-feature cross-check passed.
+- [x] The benchmark observations are appended to
+  `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`; they set no performance threshold.
+  Native Windows runtime and remote CI are not claimed.
+- [ ] This closes the P18-04 thousands-of-concurrent-sends smoke item and
+  refreshes the local P18-V02 server-free gate only. Broad P18-V01 Java
+  source/API/settings/input/error/control-flow and reverse-export audit remains
+  PARTIAL. Native Windows runtime, current-revision remote Ubuntu CI, and
+  Phase 19 live Broker/Docker scenarios remain separate. No push or remote CI
+  was run; the four existing Phase 19 worktree paths remain untouched and
+  unstaged. Run record:
+  `rlogs/2026/09/phase-18-compatibility-release-gate__20261023T183115Z.rlog`.
