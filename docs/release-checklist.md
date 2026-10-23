@@ -8341,3 +8341,19 @@ owner-specific checks belong in the manual handoff.
   current-revision GitHub Ubuntu/native Windows P18-V04 evidence remain open.
   No push or remote run was performed. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 Remoting command version parity — 2026-10-23 (`838286ca`)
+
+- [x] Java and Rust request/response factories now apply the pinned 5.5.1
+  client API version (515) through the Java static-initialization behavior.
+  The Java oracle asserts all dispatched API request versions; Rust tests
+  cover wire version and static configuration ordering.
+- [x] Formatting, strict all-target/all-feature Clippy, default and
+  all-feature workspace tests, timezone fixture, differential validation,
+  fuzz and race/leak smokes, Maven verify, release examples, benchmark compile,
+  and workspace metadata passed.
+- [ ] This closes the command-version parity slice only. Broad P18-V01,
+  current-revision remote Ubuntu/native Windows evidence, and Phase 19
+  Broker/Docker validation remain open. No push or remote CI was run. Phase 19
+  user-owned worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

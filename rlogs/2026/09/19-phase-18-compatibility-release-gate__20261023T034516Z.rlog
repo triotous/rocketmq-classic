@@ -307,3 +307,35 @@ No push or remote run was performed. Broad P18-V01 source/API/settings/input/
 error/control-flow/reverse-export reconciliation and current-revision remote
 Ubuntu/native Windows evidence remain open. Protected Phase 19 user changes
 remain untouched and unstaged.
+
+## P18-V01 Remoting command version parity — 2026-10-23T08:08:24Z
+
+Implementation commit `838286ca` applies pinned Java 5.5.1 client command
+version 515 throughout the Core API request builders, Core and Consumer
+inbound response builders, and generic Remoting processor error responses.
+The hidden Remoting initializer maps Java `MQClientAPIImpl` static property
+setup and preserves already-cached `RemotingCommand.configVersion` ordering.
+The Java invoked RPC oracle asserts `MQVersion.CURRENT_VERSION` on every
+dispatched request; the Rust wire fixture asserts 515, and the command-factory
+subprocess regression covers request and response construction around API
+initialization and a cached property.
+
+Validation on the implementation tree: `cargo fmt --all -- --check` passed;
+`cargo clippy --workspace --all-targets --all-features --locked -- -D
+warnings` passed; `cargo test --workspace --locked` passed; and the reduced
+CI-profile `cargo test --workspace --all-features --locked --quiet` rerun
+passed with exit 0. The Asia/Taipei unique-ID fixture passed. Differential
+self-test and all 37 manifest scenarios passed. Fuzz smoke passed with 163
+frame seeds, 11 message seeds, 2,784 mutations, 245 frame decodes, and 192
+message decodes. Offline deterministic race/leak smoke passed all 17 cases ×
+3. Release examples built, the offline benchmark compiled, and workspace
+metadata validation passed. `mvn -o -f compat/java-reference/pom.xml verify`
+passed after the Java oracle version assertion was added: 37 scenarios, 106
+typed headers, and 19 typed bodies; no Java fixture changes followed that run.
+
+This closes the command-version parity slice only. Broad P18-V01
+source/API/settings/input/error/control-flow and Rust reverse-export
+reconciliation remains PARTIAL. Current-revision GitHub Ubuntu and native
+Windows evidence, plus Phase 19 Broker/Docker validation, remain open. No
+push, remote CI, Broker, or Docker action was performed. Protected Phase 19
+worktree files remain untouched and unstaged.

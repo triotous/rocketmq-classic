@@ -3869,3 +3869,28 @@ operation, persistent setting, or client capability was found in these names.
 This closes the reverse-name disposition for this scanned set only. Broad
 P18-V01 Java source/API/settings/input/error/control-flow and Rust
 reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 Remoting command version parity — 2026-10-23 (`838286ca`)
+
+Pinned Java 5.5.1 `MQClientAPIImpl` sets `RemotingCommand.REMOTING_VERSION_KEY`
+to `MQVersion.CURRENT_VERSION` (515). The Java command factories apply the
+cached `RemotingCommand.configVersion` to API requests and response commands.
+Rust now applies that version to every Core `MQClientApi` request builder and
+to Core runtime replies, Consumer admin processor replies, and generic
+Remoting processor errors. The hidden
+`RemotingCommand::initialize_client_api_version` hook maps the Java static
+initializer while preserving cached property and initialization order.
+`InvokedRpcOracle` asserts the Java version on each dispatched request, the
+Rust wire regression asserts version 515, and a subprocess regression covers
+request and response factory ordering.
+
+Verification on this revision: `cargo fmt --all -- --check`; strict
+all-target/all-feature workspace Clippy; locked default and all-feature
+workspace tests; the Asia/Taipei unique-ID fixture; differential self-test and
+37-scenario manifest validation; fuzz smoke (163 frame seeds, 11 message
+seeds, 2,784 mutations, 245 frame decodes, 192 message decodes); deterministic
+race/leak smoke (17 cases × 3); pinned offline Maven `verify` (37 scenarios,
+106 typed headers, 19 typed bodies); release examples; benchmark compilation;
+and workspace metadata all passed. This closes the command-version parity
+slice only. Broad P18-V01 reconciliation, current-revision remote Ubuntu and
+native Windows evidence, and Phase 19 Broker/Docker evidence remain open.

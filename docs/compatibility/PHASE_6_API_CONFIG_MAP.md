@@ -2419,7 +2419,7 @@ export names.
 | Rust export | Pinned Java counterpart / disposition |
 | --- | --- |
 | `ProcessTimerError`, `ProcessTimer::{new,started,is_running,elapsed,start,stop,reset}` | Java `RemotingCommand.processTimer` is a Guava `Stopwatch`; Rust supplies the same timer operations with `Result` for Guava's already-running/not-running exception cases. |
-| `REMOTING_VERSION_KEY`, `SERIALIZE_TYPE_PROPERTY`, `SERIALIZE_TYPE_ENV`, `get_header_length`, `create_new_request_id`, `create_request_command`, `create_request_command_with_header`, `create_response_command_for_header`, `create_response_command_with_default_header`, `build_error_response_with_default_header`, `get_callback_list`, `get_callback_list_mut`, `set_callback_list`, `get_process_timer`, `get_process_timer_mut`, `set_process_timer`, `get_protocol_type`, `get_serialize_type_config_in_this_server`, `mark_protocol_type` | Java `RemotingCommand` constants and public factory/accessor operations (`getHeaderLength`, `createNewRequestId`, `createRequestCommand`, `createResponseCommand*`, `buildErrorResponse`, `getCallbackList`, `setCallbackList`, `getProcessTimer`, protocol-type, and serialization-type operations). Rust returns an owned typed header view where Java returns its mutable object reference. |
+| `initialize_client_api_version`, `REMOTING_VERSION_KEY`, `SERIALIZE_TYPE_PROPERTY`, `SERIALIZE_TYPE_ENV`, `get_header_length`, `create_new_request_id`, `create_request_command`, `create_request_command_with_header`, `create_response_command_for_header`, `create_response_command_with_default_header`, `build_error_response_with_default_header`, `get_callback_list`, `get_callback_list_mut`, `set_callback_list`, `get_process_timer`, `get_process_timer_mut`, `set_process_timer`, `get_protocol_type`, `get_serialize_type_config_in_this_server`, `mark_protocol_type` | Java `MQClientAPIImpl`'s static initializer sets `RemotingCommand.REMOTING_VERSION_KEY` to `MQVersion.CURRENT_VERSION`; `initialize_client_api_version` is the hidden Rust cross-crate binding for that initialization. Java `RemotingCommand` request/response factories apply the cached `configVersion`. The remaining names map the Java `RemotingCommand` constants and factory/accessor operations (`getHeaderLength`, `createNewRequestId`, `createRequestCommand`, `createResponseCommand*`, `buildErrorResponse`, `getCallbackList`, `setCallbackList`, `getProcessTimer`, protocol-type, and serialization-type operations). Rust returns an owned typed header view where Java returns its mutable object reference. |
 | `event_type`, `get_remoting_metrics_manager`, `set_remoting_metrics_manager`, `register_processor` | `event_type` selects the corresponding Java `ChannelEventListener` callback (`onChannelConnect`, `onChannelClose`, `onChannelException`, `onChannelIdle`, or `onChannelActive`); metrics accessors map `NettyRemotingAbstract`, and `register_processor` maps `RemotingClient.registerProcessor` with the Java processor/executor pair. |
 | `is_active`, `is_open`, `is_writable` | Java `ResponseFuture.getChannel()` followed by the corresponding Netty `Channel` state methods; Rust exposes those channel queries through the response future's identity-preserving channel handle. |
 | `get_request_code_desc`, `get_response_code_desc`, `remoting_helper` | Java `RemotingHelper.getRequestCodeDesc` and `getResponseCodeDesc`; the module-level Rust function supplies the helper namespace. |
@@ -2446,6 +2446,19 @@ retry state; its text follows Java's GO_AWAY message shape and uses the peer
 address where Netty supplies a numeric channel ID. The crate-root marker is
 not a Java API surface. This name crosswalk covers exports; error paths,
 settings, and full control-flow remain part of the open P18-V01 audit.
+
+## P18-V01 Remoting command version initialization — 2026-10-23 (`838286ca`)
+
+Pinned Java 5.5.1 `MQClientAPIImpl` initializes
+`RemotingCommand.REMOTING_VERSION_KEY` with `MQVersion.CURRENT_VERSION` (515).
+Java request and response factories apply the `RemotingCommand.configVersion`
+cached at class initialization. Rust initializes the same client API version
+from `MQClientApi` construction and routes Core API requests, Core and Consumer
+inbound replies, and generic Remoting processor errors through the command
+factories. The invoked Java RPC oracle checks every dispatched request against
+`MQVersion.CURRENT_VERSION`; the Rust wire regression checks version 515.
+Subprocess coverage records command-before-client, client-before-command, and
+cached-property ordering.
 
 ## P18-V01 Protocol-export semantic crosswalk — 2026-10-22
 
