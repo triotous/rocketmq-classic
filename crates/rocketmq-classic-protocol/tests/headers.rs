@@ -3175,8 +3175,8 @@ fn header_validation_matrix() {
             "",
             "",
             "",
-            "",
-            ""
+            "ns bname",
+            "nsd oway"
         ),
         row!(
             GetLiteClientInfoRequestHeader,

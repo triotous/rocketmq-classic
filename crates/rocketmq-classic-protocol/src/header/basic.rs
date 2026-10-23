@@ -8345,7 +8345,7 @@ mod tests {
         );
         assert_eq!(fixture["serverContacted"], false);
         let cases = fixture["identityCases"].as_object().unwrap();
-        assert_eq!(cases.len(), 45);
+        assert_eq!(cases.len(), 46);
         for (rust_name, identity) in cases {
             let java_class = if rust_name == "GetRouteInfoRequestHeader" {
                 "org.apache.rocketmq.remoting.protocol.header.namesrv.GetRouteInfoRequestHeader"
@@ -8383,6 +8383,7 @@ mod tests {
                 !matches!(
                     rust_name.as_str(),
                     "LockBatchMqRequestHeader"
+                        | "LiteSubscriptionCtlRequestHeader"
                         | "UnlockBatchMqRequestHeader"
                         | "HeartbeatRequestHeader"
                 ),

@@ -53,6 +53,7 @@ public final class RequestHeaderIdentityFixtures {
         Map.entry("GetConsumerStatusRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetConsumerStatusRequestHeader"),
         Map.entry("GetEarliestMsgStoretimeRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetEarliestMsgStoretimeRequestHeader"),
         Map.entry("HeartbeatRequestHeader", "org.apache.rocketmq.remoting.protocol.header.HeartbeatRequestHeader"),
+        Map.entry("LiteSubscriptionCtlRequestHeader", "org.apache.rocketmq.remoting.protocol.header.LiteSubscriptionCtlRequestHeader"),
         Map.entry("GetMaxOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMaxOffsetRequestHeader"),
         Map.entry("GetMinOffsetRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetMinOffsetRequestHeader"),
         Map.entry("GetTopicStatsInfoRequestHeader", "org.apache.rocketmq.remoting.protocol.header.GetTopicStatsInfoRequestHeader"),
@@ -171,7 +172,8 @@ public final class RequestHeaderIdentityFixtures {
         result.put("distinctDefaultObjectsEquals", defaultsA.equals(defaultsB));
         result.put("equalBaseFieldsEquals", baseA.equals(baseB));
         result.put("equalBaseFieldsHashEqual", baseA.hashCode() == baseB.hashCode());
-        if ("HeartbeatRequestHeader".equals(type.getSimpleName())) {
+        if ("HeartbeatRequestHeader".equals(type.getSimpleName())
+            || "LiteSubscriptionCtlRequestHeader".equals(type.getSimpleName())) {
             result.put("defaultHashCode", defaultsA.hashCode());
             result.put("baseHashCode", baseA.hashCode());
             result.put("defaultToString", defaultsA.toString());
