@@ -944,6 +944,16 @@ impl ProcessQueue {
         info.set_last_consume_timestamp(state.last_consume_timestamp_millis);
     }
 
+    /// Matches Java's `fillProcessQueueInfo`, which swallows exceptions for a null info value.
+    pub fn fill_process_queue_info_nullable(
+        &self,
+        info: Option<&mut rocketmq_classic_protocol::body::ConsumerProcessQueueInfo>,
+    ) {
+        if let Some(info) = info {
+            self.fill_process_queue_info(info);
+        }
+    }
+
     pub async fn clean_expired_msg(
         &self,
         push_consumer: &crate::push::PushConsumer,

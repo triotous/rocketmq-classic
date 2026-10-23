@@ -219,6 +219,13 @@ public final class ConsumerFacadeApiFixtures {
         queue.incTryUnlockTimes();
         ProcessQueueInfo info = new ProcessQueueInfo();
         queue.fillProcessQueueInfo(info);
+        boolean nullInfoReturned;
+        try {
+            queue.fillProcessQueueInfo(null);
+            nullInfoReturned = true;
+        } catch (Throwable throwable) {
+            nullInfoReturned = false;
+        }
 
         Map<String, Object> infoResult = new TreeMap<>();
         infoResult.put("cachedMsgCount", info.getCachedMsgCount());
@@ -264,6 +271,7 @@ public final class ConsumerFacadeApiFixtures {
         result.put("locked", queue.isLocked());
         result.put("consumeLockPresent", queue.getConsumeLock() != null);
         result.put("info", infoResult);
+        result.put("nullInfoReturned", nullInfoReturned);
         result.put("sizeMiBNarrowing", sizeNarrowingInfo.getCachedMsgSizeInMiB());
 
         ProcessQueue negativeBatchQueue = new ProcessQueue();

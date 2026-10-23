@@ -663,6 +663,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
     queue.inc_try_unlock_times();
     let mut info = ConsumerProcessQueueInfo::default();
     queue.fill_process_queue_info(&mut info);
+    queue.fill_process_queue_info_nullable(None);
 
     let mut original = MessageExt::new();
     original.set_topic("orders");
@@ -1140,6 +1141,7 @@ fn process_queue_public_methods_match_pinned_java_behavior() {
         "locked": queue.is_locked(),
         "consumeLockPresent": true,
         "info": info_result,
+        "nullInfoReturned": true,
         "directMapKeys": direct_map_keys,
         "counterPrevious": counter_previous,
         "counterSizeAfterAdd": counter_size_after_add,
