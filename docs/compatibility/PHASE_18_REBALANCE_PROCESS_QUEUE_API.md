@@ -126,6 +126,17 @@ the public increment, queue-info value and generation-checked retry increment
 with that fixture. Fixture SHA-256:
 `9b14dc24b4f3214bfb9fab7d83ebe966083685c327409c7e76b1303de63d00db`.
 
+### Negative `takeMessages` batch size
+
+Java constructs `new ArrayList<>(batchSize)` before reading the clock or taking
+the queue lock. A negative batch size therefore throws
+`IllegalArgumentException` with `Illegal Capacity: -1` and leaves
+`lastConsumeTimestamp` unchanged. Rust's public `take_messages` now returns
+`ProcessQueueError::InvalidBatchSize` with the same exception text before
+mutating state. The invoked Java fixture and Rust facade comparison check the
+error text and a seeded timestamp. Fixture SHA-256:
+`63be1fa9e086d577e01c6a5ac1eba6089e30f237f9bf03b178832dc22496772d`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -256,6 +267,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `9b14dc24b4f3214bfb9fab7d83ebe966083685c327409c7e76b1303de63d00db`
+  `63be1fa9e086d577e01c6a5ac1eba6089e30f237f9bf03b178832dc22496772d`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`

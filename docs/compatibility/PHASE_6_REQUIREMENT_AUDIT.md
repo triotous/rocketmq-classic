@@ -2,7 +2,7 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-23
 
-At code revision `47cfbf13`, the server-free gates pass on macOS AArch64 with
+At code revision `c3b53fcb`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
 `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
@@ -3358,4 +3358,27 @@ decodes, and 192 message decodes; offline race/leak smoke passes 17 cases × 3.
 Release examples and the offline benchmark pass, with the benchmark observation
 recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This closes the
 try-unlock overflow path only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue negative batch-size error — 2026-10-23 (`c3b53fcb`)
+
+Pinned Java `ProcessQueue.takeMessages(int)` constructs an `ArrayList` with the
+requested capacity before reading the clock or locking the queue. A negative
+batch size throws `IllegalArgumentException: Illegal Capacity: -1` and leaves
+`lastConsumeTimestamp` unchanged. Rust previously asserted and panicked; the
+public `take_messages` now returns `ProcessQueueError::InvalidBatchSize` with
+the Java exception text before changing queue state. Its internal positive
+batch call site handles the typed result. The invoked Java fixture and Rust
+facade test compare the error text and seeded timestamp. Fixture SHA-256:
+`63be1fa9e086d577e01c6a5ac1eba6089e30f237f9bf03b178832dc22496772d`.
+
+Default and all-feature workspace tests, strict all-target/all-feature
+workspace Clippy, formatting, and diff checks pass. Pinned Maven verify passes
+37 differential scenarios and cross-decodes 106 typed headers and 19 typed
+bodies. Differential self-test and manifest validation pass for 37 scenarios;
+fuzz smoke passes 163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame
+decodes, and 192 message decodes; offline race/leak smoke passes 17 cases × 3.
+Release examples and the offline benchmark pass, with the current benchmark
+recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This closes the negative
+batch-size error path only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL.
