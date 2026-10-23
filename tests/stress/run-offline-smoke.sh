@@ -54,9 +54,11 @@ run_repeated consumer-offset-callback-fence \
     cargo test --locked -p rocketmq-classic-consumer --lib reset_offset_fences_a_slow_callback_and_persists_only_the_new_value
 run_repeated consumer-offset-late-pull-fence \
     cargo test --locked -p rocketmq-classic-consumer --lib reset_offset_fences_a_late_pull_response_before_persisting_the_new_value
+run_repeated consumer-long-offset-persistence \
+    cargo test --locked -p rocketmq-classic-consumer --lib offset::local::tests::repeated_offset_persistence_keeps_long_running_snapshot_restorable
 run_repeated consumer-stale-generation-fence \
     cargo test --locked -p rocketmq-classic-consumer --lib stale_and_dropped_lock_responses_cannot_restore_queue_ownership
 run_repeated orderly-slow-callback-shutdown \
     cargo test --locked -p rocketmq-classic-consumer --lib orderly_rebalance_bounds_slow_callback_wait_and_never_commits_dropped_work
 
-printf 'offline deterministic race/leak smoke passed: 18 cases x 3 repetitions\n'
+printf 'offline deterministic race/leak smoke passed: 19 cases x 3 repetitions\n'

@@ -987,6 +987,45 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[tokio::test]
+    async fn repeated_offset_persistence_keeps_long_running_snapshot_restorable() {
+        const PERSIST_ROUNDS: i64 = 128;
+        const QUEUE_COUNT: usize = 8;
+
+        let root = temporary_root();
+        let queues = (0..QUEUE_COUNT)
+            .map(|queue_id| MessageQueue::new("persistent", "broker", queue_id as i32))
+            .collect::<Vec<_>>();
+        let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+
+        for round in 0..PERSIST_ROUNDS {
+            let mut expected = HashMap::new();
+            for (queue_index, queue) in queues.iter().enumerate() {
+                let offset = round * QUEUE_COUNT as i64 + queue_index as i64;
+                store.update_offset(queue, offset, false);
+                expected.insert(queue.clone(), offset);
+            }
+            store.persist_all(&queues).await.unwrap();
+            assert_eq!(store.read_store().unwrap(), expected);
+        }
+
+        drop(store);
+        let restarted = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        restarted.load().await.unwrap();
+        for (queue_index, queue) in queues.iter().enumerate() {
+            let expected = (PERSIST_ROUNDS - 1) * QUEUE_COUNT as i64 + queue_index as i64;
+            assert_eq!(
+                restarted
+                    .read_offset(queue, ReadOffsetType::ReadFromMemory)
+                    .await
+                    .unwrap(),
+                OffsetRead::Found(expected)
+            );
+        }
+        drop(restarted);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn corrupt_primary_recovers_backup_and_both_corrupt_files_error() {
         let root = temporary_root();
