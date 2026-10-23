@@ -8057,3 +8057,13 @@ owner-specific checks belong in the manual handoff.
   or release action was performed; the four protected Phase 19 worktree paths
   remain untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V04 current-tree Windows GNU cross-compile — 2026-10-23 (`05e51237`)
+
+- [x] `cargo check --offline -p rocketmq-classic-core --all-targets --target
+  x86_64-pc-windows-gnu --locked` and the exact Consumer stack-capture test
+  binary build with `--no-run` passed on the current code revision.
+- [ ] These are compile checks only. Native Windows test execution and
+  current-revision remote Ubuntu CI remain pending. No external CI or push was
+  run. Follow-up record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

@@ -35,3 +35,11 @@ The following pre-existing Phase 19 user-owned paths remain unchanged and unstag
 - `tests/differential/run.sh`
 - `integration-tests/run-local.sh`
 - `rlogs/2026/09/20-phase-19-docker-local-validation__20261017T224455Z.rlog`
+
+## Windows cross-target follow-up — 2026-10-23T03:47:32Z
+
+On code revision `05e51237`, both current-tree compile checks passed:
+- `cargo check --offline -p rocketmq-classic-core --all-targets --target x86_64-pc-windows-gnu --locked`
+- `cargo test --offline --target x86_64-pc-windows-gnu -p rocketmq-classic-consumer --lib stack::tests::jstack_includes_current_and_other_named_threads --no-run --locked`
+
+The test binary was cross-compiled only; native Windows execution and remote Ubuntu CI remain pending. The results were added to `docs/release-checklist.md`.
