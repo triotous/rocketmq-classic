@@ -8951,3 +8951,32 @@ owner-specific checks belong in the manual handoff.
   the four existing user-owned Phase 19 paths remain untouched and unstaged.
   Run record:
   `rlogs/2026/10/23-phase-18-current-tree-server-free-gate__20261023T152405Z.rlog`.
+
+## P18-V01 complete CommandHeader API inventory and Notify RPC inheritance — 2026-10-23 (`e7d779af`)
+
+- [x] Added a pinned Java 5.5.1 API inventory for the 25 request-header
+  classes missing class-level API evidence. Constructor, public-field,
+  declared-method, and callable-method entries are recorded. The Rust parity
+  test now checks the five-fixture union against all 103 public
+  `CommandHeader` implementations, with an explicit NameServer `DeleteKV`
+  spelling map and the non-header `ExportRocksDBConfigType` excluded.
+- [x] The expanded request-header identity fixture now has 50 entries.
+  Inventory review also found that Java
+  `NotifyUnsubscribeLiteRequestHeader` inherits `RpcRequestHeader`; Rust now
+  models its nullable routing fields, accessors, codec mapping, and base-field
+  equality/hash behavior.
+- [x] Default and all-feature Protocol tests/doctests, strict all-target and
+  all-feature Protocol Clippy, format, and diff checks passed. Offline Maven
+  verify passed 37 scenarios, fixture drift, 11 message fixtures, 106 typed
+  headers, and 19 typed bodies. Fixture SHA-256 values:
+  `54df2a5effcb30ecdab9303c78d404a05916576bec60d1f33e540ec28ae6b688`
+  (`remaining-header-api.json`) and
+  `38c163fea5ca151b00c450e709cc7006cb442e39799c34b3eecde930d4eeb10d`
+  (`request-header-identity.json`).
+- [ ] This closes the public header API inventory gap and the identified
+  Notify Lite inherited-routing mismatch. Broad P18-V01 remains PARTIAL.
+  Native Windows runtime and current-revision remote Ubuntu CI remain open;
+  Phase 19 Broker/Docker validation remains out of scope. No push or remote CI
+  was run. The four existing user-owned Phase 19 paths remain untouched and
+  unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-complete-header-api-inventory__20261023T153747Z.rlog`.

@@ -4356,3 +4356,32 @@ The request-header equality/hash/codec test and strict Protocol Clippy passed,
 as did formatting and diff checks. This adds a coverage invariant only; broad
 P18-V01 remains PARTIAL, with native Windows runtime and current-revision
 remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.
+
+## P18-V01 complete CommandHeader API inventory and Notify RPC inheritance — 2026-10-23 (`e7d779af`)
+
+Added pinned Java 5.5.1 constructor, public-field, declared-method, and
+callable-method inventories for the 25 request-header classes that lacked
+class API evidence. A five-fixture parity check now requires exact coverage of
+all 103 public Rust `CommandHeader` implementations, accounting for the
+NameServer `DeleteKVConfigRequestHeader` spelling and excluding the unrelated
+`ExportRocksDBConfigType` enum. The updated request identity fixture covers
+50 headers. Fixture SHA-256 values are
+`54df2a5effcb30ecdab9303c78d404a05916576bec60d1f33e540ec28ae6b688` for
+`remaining-header-api.json` and
+`38c163fea5ca151b00c450e709cc7006cb442e39799c34b3eecde930d4eeb10d` for
+`request-header-identity.json`.
+
+The API check exposed that Java `NotifyUnsubscribeLiteRequestHeader` inherits
+`RpcRequestHeader`, while Rust had omitted the four inherited routing fields.
+Rust now provides their accessors and nullable wire mappings, and matches
+Java's base-only equality and hashing. Default and all-feature Protocol
+tests/doctests, strict all-target/all-feature Protocol Clippy, formatting,
+diff checks, and offline Maven `verify` passed. Maven verified 37 scenarios,
+fixture drift, 11 message fixtures, 106 typed headers, and 19 typed bodies.
+Run record:
+`rlogs/2026/10/23-phase-18-complete-header-api-inventory__20261023T153747Z.rlog`.
+
+This closes the public header API inventory gap and the identified
+`NotifyUnsubscribeLiteRequestHeader` inherited-routing mismatch. Broad P18-V01
+remains PARTIAL; native Windows runtime and current-revision remote Ubuntu CI
+remain open. Phase 19 Broker/Docker work remains out of scope.
