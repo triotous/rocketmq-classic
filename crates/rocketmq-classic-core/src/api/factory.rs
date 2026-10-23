@@ -27,7 +27,8 @@ use tokio::{
 use crate::{
     config::{ClientConfig, SharedClientConfig},
     namesrv::{
-        DefaultTopAddressing, NameServerUpdateCallback, TopAddressing, split_addresses, ws_addr,
+        DefaultTopAddressing, NameServerUpdateCallback, TopAddressing, java_util_blank,
+        split_addresses, ws_addr,
     },
 };
 
@@ -90,8 +91,6 @@ pub enum MQClientApiFactoryError {
     EmptyClientArray,
     #[error("MQClientAPIFactory client slot {0} is null")]
     NullClient(usize),
-    #[error("NameServer address is null")]
-    NullNameServerAddress,
     #[error("NameServer update callback registration failed")]
     AddressingCallbackFailed,
     #[error("client startup task failed: {0}")]
@@ -229,6 +228,10 @@ impl FactoryAddressState {
             }
         }
         self.current()
+    }
+
+    fn update_from_discovery(&self, addresses: Option<&str>) -> Option<String> {
+        self.update(addresses.filter(|addresses| !java_util_blank(addresses)))
     }
 }
 
@@ -439,7 +442,8 @@ impl MQClientApiFactory {
         for index in 0..client_count {
             if let Some(provider) = &self.top_addressing {
                 let addresses = provider.fetch_ns_addr().await;
-                self.address_state.update(addresses.as_deref());
+                self.address_state
+                    .update_from_discovery(addresses.as_deref());
             }
             let instance_name = format!("{}N_{index}", self.name_prefix);
             let mut client_config = self.client_config.clone();
@@ -471,16 +475,13 @@ impl MQClientApiFactory {
     }
 
     /// Propagates a NameServer list change to every currently installed API
-    /// client.
+    /// client. A `None` address is a Java-null no-op after start.
     pub fn on_name_server_address_change(
         &self,
         addresses: Option<&str>,
     ) -> Result<(), MQClientApiFactoryError> {
         if self.address_state.clients().is_none() {
             return Err(MQClientApiFactoryError::NotStarted);
-        }
-        if addresses.is_none() {
-            return Err(MQClientApiFactoryError::NullNameServerAddress);
         }
         self.address_state.update(addresses);
         Ok(())
@@ -536,7 +537,7 @@ impl MQClientApiFactory {
                             }
                             if let Some(addresses) = provider.fetch_ns_addr().await {
                                 if let Some(state) = state.upgrade() {
-                                    state.update(Some(&addresses));
+                                    state.update_from_discovery(Some(&addresses));
                                 } else {
                                     return;
                                 }
@@ -634,10 +635,16 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(java["getClientBeforeStartError"], "NullPointerException");
+        assert_eq!(java["nullAddressBeforeStartError"], "NullPointerException");
         assert!(factory.get_clients().is_none());
         assert!(!factory.client_config.vip_channel_enabled());
         assert!(factory.client_config.decode_read_body());
         assert!(!factory.client_config.decode_decompress_body());
+        assert!(matches!(
+            factory.on_name_server_address_change(None),
+            Err(MQClientApiFactoryError::NotStarted)
+        ));
         factory.pre_shutdown();
         factory.start().await.unwrap();
         assert_eq!(created.lock().unwrap().len(), 2);
@@ -697,6 +704,28 @@ mod tests {
                 ])
             );
         }
+        factory.on_name_server_address_change(None).unwrap();
+        assert_eq!(
+            clients
+                .snapshot()
+                .into_iter()
+                .flatten()
+                .map(|api| api.get_name_server_address_list())
+                .collect::<Vec<_>>(),
+            java["clientAddressesAfterNullChange"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|addresses| Some(
+                    addresses
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|address| address.as_str().unwrap().to_owned())
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>()
+        );
         assert_eq!(clients.set(0, None), Ok(()));
         assert!(matches!(factory.get_clients().unwrap().get(0), Some(None)));
         factory
@@ -773,6 +802,50 @@ mod tests {
                 .unwrap()
                 .get_name_server_address_list(),
             Some(vec!["domain-ns:9876".into()])
+        );
+        factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_ignores_java_blank_discovery_and_null_change_inputs() {
+        struct BlankProvider;
+        impl TopAddressing for BlankProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                Box::pin(async { Some(" \t".into()) })
+            }
+        }
+
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let factory = MQClientApiFactory::new(access, "blank-", 1, None, None)
+            .unwrap()
+            .with_top_addressing(Arc::new(BlankProvider))
+            .unwrap();
+        factory.start().await.unwrap();
+        let clients = factory.get_clients().unwrap();
+        assert!(clients.get(0).is_some_and(|client| client.is_some()));
+        assert_eq!(
+            clients
+                .get(0)
+                .unwrap()
+                .unwrap()
+                .get_name_server_address_list(),
+            None
+        );
+        factory.on_name_server_address_change(None).unwrap();
+        assert_eq!(
+            clients
+                .get(0)
+                .unwrap()
+                .unwrap()
+                .get_name_server_address_list(),
+            None
         );
         factory.shutdown().await.unwrap();
     }

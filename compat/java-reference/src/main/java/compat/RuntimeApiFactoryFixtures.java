@@ -73,6 +73,14 @@ public final class RuntimeApiFactoryFixtures {
                     beforeStartError = error.getClass().getSimpleName();
                 }
                 fixture.put("getClientBeforeStartError", beforeStartError);
+                String nullAddressBeforeStartError;
+                try {
+                    factory.onNameServerAddressChange(null);
+                    nullAddressBeforeStartError = "NONE";
+                } catch (Throwable error) {
+                    nullAddressBeforeStartError = error.getClass().getSimpleName();
+                }
+                fixture.put("nullAddressBeforeStartError", nullAddressBeforeStartError);
 
                 factory.start();
                 MQClientAPIExt[] clients = factory.getClients();
@@ -90,6 +98,9 @@ public final class RuntimeApiFactoryFixtures {
 
                 factory.onNameServerAddressChange("127.0.0.3:9876");
                 fixture.put("clientAddressesAfterChange", Arrays.stream(factory.getClients())
+                    .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
+                factory.onNameServerAddressChange(null);
+                fixture.put("clientAddressesAfterNullChange", Arrays.stream(factory.getClients())
                     .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
                 factory.shutdown();
                 fixture.put("clientArrayRetainedAfterShutdown", factory.getClients() == clients);
