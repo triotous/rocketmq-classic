@@ -43,7 +43,7 @@ pub use tables::{
     ConsumerValuesView, ProducerEntryHandle, ProducerEntrySetView, ProducerKeySetView,
     ProducerTable, ProducerValuesView,
 };
-pub use tasks::{RuntimeScheduledTaskHandle, RuntimeScheduler};
+pub use tasks::{RuntimeScheduledCall, RuntimeScheduledTaskHandle, RuntimeScheduler};
 
 /// Callback aliases used by nullable live runtime table adapters.
 pub type TableKeyViewPredicate<'a> = dyn FnMut(&str) -> bool + 'a;

@@ -67,6 +67,32 @@ pub struct RuntimeScheduledTaskHandle {
     changed: Arc<Notify>,
 }
 
+/// Result-bearing work submitted to a runtime-owned scheduler.
+pub struct RuntimeScheduledCall<T> {
+    task: RuntimeScheduledTaskHandle,
+    result: tokio::sync::oneshot::Receiver<T>,
+}
+
+impl<T> RuntimeScheduledCall<T> {
+    /// Cancels the scheduled call if it has not already completed.
+    pub fn cancel(&self) -> bool {
+        self.task.cancel()
+    }
+
+    /// Returns whether the call completed or was cancelled.
+    pub fn is_finished(&self) -> bool {
+        self.task.is_finished()
+    }
+
+    /// Waits asynchronously for the call's result.
+    ///
+    /// The receive error indicates cancellation, a panicking callback, or
+    /// runtime shutdown before the callback could return a value.
+    pub async fn join(self) -> Result<T, tokio::sync::oneshot::error::RecvError> {
+        self.result.await
+    }
+}
+
 impl RuntimeScheduledTaskHandle {
     /// Cancels a task that has not already finished or been cancelled.
     pub fn cancel(&self) -> bool {
@@ -229,6 +255,37 @@ impl RuntimeScheduler {
                     .expect("one-shot scheduled task future already consumed")
             }),
         )
+    }
+
+    /// Submits result-bearing work for immediate execution.
+    pub fn submit<T, Fut>(&self, task: Fut) -> Result<RuntimeScheduledCall<T>, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+    {
+        self.schedule_call_after(Duration::ZERO, task)
+    }
+
+    /// Schedules result-bearing work and returns a handle that can await its
+    /// result or cancel it before it completes.
+    pub fn schedule_call_after<T, Fut>(
+        &self,
+        delay: Duration,
+        task: Fut,
+    ) -> Result<RuntimeScheduledCall<T>, RuntimeError>
+    where
+        T: Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
+    {
+        let (result_tx, result) = tokio::sync::oneshot::channel();
+        let scheduled = self.schedule_after(delay, async move {
+            let value = task.await;
+            let _ = result_tx.send(value);
+        })?;
+        Ok(RuntimeScheduledCall {
+            task: scheduled,
+            result,
+        })
     }
 
     /// Queues a callback at a fixed rate. Calls run serially on the client
@@ -835,6 +892,32 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn scheduled_calls_return_values_and_report_cancellation() {
+        let runtime = runtime();
+        let scheduler = runtime.scheduled_executor_service();
+        let call = scheduler
+            .schedule_call_after(Duration::from_secs(2), async { 73_u64 })
+            .unwrap();
+
+        settle().await;
+        advance(1_999).await;
+        assert!(!call.is_finished());
+        advance(1).await;
+        assert_eq!(call.join().await.unwrap(), 73);
+
+        let cancelled = scheduler
+            .submit(async { String::from("unreachable") })
+            .unwrap();
+        assert!(cancelled.cancel());
+        settle().await;
+        assert!(cancelled.is_finished());
+        assert!(cancelled.join().await.is_err());
+
+        runtime.start().await.unwrap();
+        runtime.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn public_pull_scheduler_uses_its_own_pre_start_queue() {
         let runtime = runtime();
         let scheduler = runtime.pull_scheduled_executor_service();
@@ -846,20 +929,16 @@ mod tests {
         settle().await;
         assert!(runtime.pull.is_empty());
 
-        let (completed_tx, completed_rx) = tokio::sync::oneshot::channel();
         let task = scheduler
-            .schedule_after(Duration::from_secs(2), async move {
-                let _ = completed_tx.send(());
-            })
+            .schedule_call_after(Duration::from_secs(2), async { 29_u32 })
             .unwrap();
 
         settle().await;
         advance(1_999).await;
         assert!(!task.is_finished());
         advance(1).await;
-        completed_rx.await.unwrap();
+        assert_eq!(task.join().await.unwrap(), 29);
         settle().await;
-        assert!(task.is_finished());
 
         runtime.start().await.unwrap();
         runtime.shutdown().await.unwrap();
