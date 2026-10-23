@@ -8620,3 +8620,44 @@ owner-specific checks belong in the manual handoff.
   open. No push or remote CI was run. The four existing user-owned Phase 19
   worktree paths remain untouched and unstaged. Run record:
   `rlogs/2026/09/19-phase-18-factory-process-properties__20261023T111654Z.rlog`.
+
+## P18-V01 factory scheduler constructor parity — 2026-10-23 (`099fd61b`)
+
+- [x] Mapped the `ScheduledExecutorService` parameter accepted by both pinned
+  Java `MQClientAPIFactory` constructors. Rust now exposes
+  `FactoryRefreshScheduler` through `with_refresh_scheduler`; domain startup
+  registers one callback per client with the Java 10-second initial delay and
+  120-second fixed rate. The caller retains scheduler ownership.
+- [x] Factory regressions cover registration count, timing, slot-local address
+  updates and rejected schedule registration. The Rustdoc reverse-name audit
+  now maps 62 Core and 15 Consumer names added since `1dc3a7e2`, with no
+  removed names. Current counts: Common 439, Consumer 460, Core 744, Producer
+  362, Protocol 1,524, Remoting 337.
+- [x] Core all-feature tests (242), Core doctests (20), strict Core Clippy,
+  Rustdoc JSON, formatting and diff checks passed. Full default and all-feature
+  workspace tests/doctests, strict workspace Clippy, and offline Maven verify
+  also passed.
+- [ ] Broad P18-V01 source/API/settings/input/error/control-flow review remains
+  PARTIAL. Native Windows execution and current-revision remote Ubuntu CI were
+  not run. Phase 19 Broker/Docker validation remains separate. No push or
+  remote CI was run; user-owned Phase 19 worktree paths remain untouched.
+  Run record:
+  `rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.
+
+## P18-V02 current server-free workspace gate after scheduler API — 2026-10-23 (`099fd61b`)
+
+- [x] Locked default and all-feature workspace tests and doctests passed.
+- [x] Strict all-target/all-feature workspace Clippy, format/diff checks,
+  offline Java `verify` (37 scenarios), differential self-test and manifest
+  validation (37 scenarios), and workspace metadata/license/dependency checks
+  passed.
+- [x] Deterministic race/leak smoke passed 17 cases × 3; bounded fuzz smoke
+  passed 163 frame seeds, 11 message seeds and 2,784 mutations; release
+  examples and the fixed-input offline benchmark passed.
+- [x] All-target/all-feature Core Windows GNU cross-compilation passed. This
+  is compile evidence only, not native Windows runtime evidence.
+- [ ] This refresh closes the local P18-V02 server-free gate only. Broad
+  P18-V01 remains PARTIAL; current-revision remote Ubuntu CI and native Windows
+  execution remain open. Phase 19 Broker/Docker validation is outside this
+  local gate. No push or remote CI was run. Run record:
+  `rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.

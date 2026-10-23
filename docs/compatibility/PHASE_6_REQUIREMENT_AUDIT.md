@@ -4063,9 +4063,10 @@ The injected scheduler and registration-rejection regressions pass. The
 Rustdoc reverse scan now has 744 Core and 460 Consumer distinct public names,
 with all 62 Core and 15 Consumer additions since `1dc3a7e2` mapped to pinned
 Java behavior or explicit Rust ownership/error adaptations. Core all-feature
-tests, strict workspace Clippy, workspace all-feature tests/doctests, format,
-and diff checks pass. This closes the factory scheduler-injection gap and
-current reverse-name delta only; broad P18-V01 source/API/settings/input/error/
-control-flow review remains PARTIAL. Native Windows runtime, current-revision
+tests, default and all-feature workspace tests/doctests, strict workspace
+Clippy, formatting, and diff checks pass. This closes the factory
+scheduler-injection gap and current reverse-name delta only; broad P18-V01
+source/API/settings/input/error/control-flow review remains PARTIAL. Native
+Windows runtime, current-revision
 remote Ubuntu CI, and Phase 19 Broker/Docker validation remain open. Run record:
 `rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.
