@@ -142,7 +142,15 @@ impl RuntimeServiceThread {
         self.runtime.start_service_thread(self.kind).await
     }
 
-    pub async fn shutdown(&self, interrupt: bool) -> Result<(), RuntimeError> {
+    /// Shuts down without interrupting a queue wait, matching Java's
+    /// no-argument `ServiceThread.shutdown()` overload.
+    pub async fn shutdown(&self) -> Result<(), RuntimeError> {
+        self.shutdown_with_interrupt(false).await
+    }
+
+    /// Shuts down the service and optionally interrupts its blocking wait,
+    /// matching Java's `ServiceThread.shutdown(boolean)` overload.
+    pub async fn shutdown_with_interrupt(&self, interrupt: bool) -> Result<(), RuntimeError> {
         self.runtime
             .shutdown_service_thread(self.kind, interrupt)
             .await
@@ -212,6 +220,6 @@ mod tests {
         })
         .await
         .expect("make_stop did not wake the rebalance worker");
-        service.shutdown(false).await.unwrap();
+        service.shutdown().await.unwrap();
     }
 }

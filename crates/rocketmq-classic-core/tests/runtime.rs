@@ -141,6 +141,8 @@ async fn runtime_service_thread_handles_match_inherited_controls() {
     assert!(rebalance.is_daemon());
     rebalance.make_stop();
     assert!(!rebalance.is_stopped());
+    rebalance.shutdown().await.unwrap();
+    assert!(!rebalance.is_stopped());
     rebalance.set_daemon(false);
     rebalance.start().await.unwrap();
     assert!(!rebalance.is_stopped());
@@ -148,7 +150,7 @@ async fn runtime_service_thread_handles_match_inherited_controls() {
     assert!(rebalance.is_stopped());
     rebalance.start().await.unwrap();
     assert!(rebalance.is_stopped());
-    rebalance.shutdown(false).await.unwrap();
+    rebalance.shutdown().await.unwrap();
     assert!(rebalance.is_stopped());
 
     let pull = runtime.pull_message_service();
@@ -186,7 +188,7 @@ async fn runtime_service_thread_handles_match_inherited_controls() {
     assert_eq!(ignored_tasks.load(Ordering::SeqCst), 0);
     pull.start().await.unwrap();
     assert!(pull.is_stopped());
-    pull.shutdown(true).await.unwrap();
+    pull.shutdown_with_interrupt(true).await.unwrap();
     assert!(pull.is_stopped());
     assert!(runtime.pull_scheduled_executor_service().is_shutdown());
 }
@@ -203,7 +205,7 @@ async fn pull_service_prestart_shutdown_keeps_service_flag_and_closes_scheduler(
 
     pull.make_stop();
     assert!(!pull.is_stopped());
-    pull.shutdown(false).await.unwrap();
+    pull.shutdown().await.unwrap();
 
     assert!(!pull.is_stopped());
     assert!(runtime.pull_scheduled_executor_service().is_shutdown());
@@ -212,7 +214,7 @@ async fn pull_service_prestart_shutdown_keeps_service_flag_and_closes_scheduler(
     // when the inherited ServiceThread shutdown is a pre-start no-op.
     pull.start().await.unwrap();
     assert!(!pull.is_stopped());
-    pull.shutdown(true).await.unwrap();
+    pull.shutdown_with_interrupt(true).await.unwrap();
     assert!(pull.is_stopped());
 }
 
@@ -236,8 +238,8 @@ async fn service_threads_can_restart_after_client_runtime_shutdown() {
     pull.start().await.unwrap();
     assert!(!rebalance.is_stopped());
     assert!(!pull.is_stopped());
-    rebalance.shutdown(false).await.unwrap();
-    pull.shutdown(true).await.unwrap();
+    rebalance.shutdown().await.unwrap();
+    pull.shutdown_with_interrupt(true).await.unwrap();
     assert!(rebalance.is_stopped());
     assert!(pull.is_stopped());
 }
@@ -257,7 +259,7 @@ async fn pull_service_handle_retains_its_client_runtime_owner() {
     assert!(!pull.is_stopped());
     pull.start().await.unwrap();
     assert!(!pull.is_stopped());
-    pull.shutdown(true).await.unwrap();
+    pull.shutdown_with_interrupt(true).await.unwrap();
     assert!(pull.is_stopped());
 }
 
