@@ -8145,3 +8145,23 @@ owner-specific checks belong in the manual handoff.
   or Docker action was performed; protected Phase 19 worktree files remain
   untouched. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V02 current-tree server-free refresh — 2026-10-23 (`4c337b1e`)
+
+- [x] Default and all-feature locked workspace tests passed; strict
+  all-target/all-feature workspace Clippy passed. Pinned offline Maven verify
+  passed with all 37 scenarios, comparator self-test and manifest validation
+  passed, the 2,784-mutation fuzz smoke and 17-case × 3 repetition
+  race/leak smoke passed, and workspace metadata checks passed.
+- [x] Release example build, offline benchmark, formatting and diff checks
+  passed. The benchmark recorded 34.0 ns per 128-entry route lookup and
+  47,649.6 ns per loopback pending-request completion on the listed M5 Max /
+  Rust 1.85.0 environment; inputs, iterations, and allocation observations
+  are recorded in [the benchmark
+  baseline](compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md).
+- [ ] P18-V01 full bidirectional source/API/settings/control-flow
+  reconciliation remains open. Current-revision remote Ubuntu CI, native
+  Windows runtime, and Phase 19 Broker/Docker validation remain pending. No
+  remote CI, push, Broker, or Docker action was performed; protected Phase 19
+  worktree files remain untouched. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

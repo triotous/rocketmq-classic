@@ -69,3 +69,20 @@ Validation passed on `235d05c9`: `cargo test -p rocketmq-classic-core --lib` (22
 Pinned Java `efa1be59d6fc747ad220f036c86030f05f0419f9` confirms the client and PullMessageService getters return distinct `ScheduledExecutorService` instances. Commit `4c337b1e` adds Rust lifecycle controls to both `RuntimeScheduler` handles: graceful and immediate shutdown, shutdown/termination status, and async termination wait. Graceful shutdown retains queued one-shots while ending periodic registrations; immediate shutdown drops queued work, signals cancellation to the active Rust future, and reports the pending queue size without self-joining. Pull scheduler shutdown is independent from immediate FIFO pull dispatch. Regressions cover both owners, status/wait timeout and transitions, returned/cancelled work, full runtime shutdown, and worker-initiated immediate shutdown.
 
 Validation on `4c337b1e`: `cargo test --offline -p rocketmq-classic-core --lib --locked` (227 passed), `cargo clippy --offline -p rocketmq-classic-core --all-targets --all-features --locked -- -D warnings`, `cargo fmt --all -- --check`, and `git diff --check` passed. `docs/compatibility/PHASE_6_API_CONFIG_MAP.md`, `docs/compatibility/PHASE_6_RUNTIME_INVENTORY.md`, and `docs/release-checklist.md` record the scheduler closure. Broad P18-V01 source/API/settings/input/error/control-flow and reverse-export reconciliation, current-revision remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker validation remain open. No remote CI, push, Broker, or Docker action was performed; the four Phase 19 user-owned worktree paths remain untouched.
+
+## Current-tree P18-V02 server-free gate — 2026-10-23T04:30:57Z
+
+Code revision under validation: `4c337b1e`; documentation revision: `dbbf0663`; pinned Java source: `efa1be59d6fc747ad220f036c86030f05f0419f9`. Current-tree gates passed:
+- `cargo test --offline --workspace --locked`
+- `cargo test --offline --workspace --all-features --locked`
+- `cargo clippy --offline --workspace --all-targets --all-features --locked -- -D warnings`
+- `mvn -o -f compat/java-reference/pom.xml verify` (37 differential scenarios and generated Java decode checks, including 106 typed headers and 19 typed bodies)
+- `python3 tests/differential/compare.py --self-test`; `python3 tests/differential/compare.py --validate-manifest` (37 scenarios)
+- `python3 scripts/check-workspace-metadata.py`
+- `cargo run --offline -p rocketmq-classic-remoting --example fuzz_smoke --locked` (163 frame seeds, 11 message seeds, 2,784 bounded mutations)
+- `bash tests/stress/run-offline-smoke.sh` (17 deterministic cases × 3 repetitions)
+- `cargo build --offline -p rocketmq-classic --examples --release --locked`
+- `cargo bench --offline -p rocketmq-classic --bench offline --locked`
+- `cargo fmt --all -- --check`; `git diff --check`
+
+The benchmark current-tree sample is appended to `docs/compatibility/PHASE_18_OFFLINE_BENCHMARK_BASELINE.md` with environment, input sizes, iterations, timings, and allocator counts. Current remote Ubuntu CI, native Windows execution, and Phase 19 Broker/Docker validation remain pending. Broad P18-V01 bidirectional source/API/settings/input/error/control-flow/reverse-export reconciliation also remains open; V02 evidence does not close the phase. No push, remote CI, Broker, or Docker action was performed. The four Phase 19 user-owned paths remain untouched and unstaged.
