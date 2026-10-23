@@ -538,6 +538,8 @@ public final class ProducerCoreFixtures {
             .sorted()
             .collect(java.util.stream.Collectors.toList()));
         result.put("controllerAdminOperations", controllerAdminOperations());
+        result.put("controllerDtoApi", controllerDtoApi());
+        result.put("controllerDtoOperations", controllerDtoOperations());
         result.put("wipeWritePermOfBrokerApi", Arrays.stream(MQClientAPIImpl.class.getDeclaredMethods())
             .filter(method -> Modifier.isPublic(method.getModifiers()))
             .filter(method -> method.getName().equals("wipeWritePermOfBroker"))
@@ -6266,6 +6268,120 @@ public final class ProducerCoreFixtures {
             api.shutdown();
         }
         result.put("requests", requests);
+        return result;
+    }
+
+    private static Map<String, Object> controllerDtoApi() {
+        Map<String, Object> result = new TreeMap<>();
+        result.put("getMetaDataResponseHeader", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.controller.GetMetaDataResponseHeader.class));
+        result.put("electMasterResponseHeader", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.header.controller.ElectMasterResponseHeader.class));
+        result.put("brokerReplicasInfo", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.class));
+        result.put("replicasInfo", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo.class));
+        result.put("replicaIdentity", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity.class));
+        result.put("epochEntryCache", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.EpochEntryCache.class));
+        result.put("brokerMemberGroup", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup.class));
+        result.put("epochEntry", publicApiSurface(
+            org.apache.rocketmq.remoting.protocol.EpochEntry.class));
+        return result;
+    }
+
+    private static Map<String, Object> controllerDtoOperations() {
+        Map<String, Object> result = new TreeMap<>();
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity alive =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity(
+                "broker-a", 0L, "broker-a:10911", true);
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity dead =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicaIdentity(
+                "broker-a", 0L, "broker-a:10911", false);
+        result.put("replicaEqualsIgnoresAlive", alive.equals(dead));
+        result.put("replicaHashIgnoresAlive", alive.hashCode() == dead.hashCode());
+        result.put("replicaHashCode", alive.hashCode());
+        result.put("replicaToString", alive.toString());
+
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo replicas =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo(
+                0L, "broker-a:10911", 7, 8, List.of(dead), List.of());
+        result.put("isExistInSyncIgnoresAlive", replicas.isExistInSync(
+            "broker-a", 0L, "broker-a:10911"));
+        result.put("isExistInNotSync", replicas.isExistInNotSync(
+            "broker-a", 0L, "broker-a:10911"));
+        result.put("isExistInAllReplicas", replicas.isExistInAllReplicas(
+            "broker-a", 0L, "broker-a:10911"));
+        result.put("nullQueryAfterEmptyNameMismatch", replicas.isExistInSync(
+            "other", null, null));
+        result.put("nullQueryException", nullPointerClass(() -> replicas.isExistInSync(
+            null, 0L, "broker-a:10911")));
+
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo nullSync =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo(
+                0L, "broker-a:10911", 7, 8, null, List.of());
+        result.put("nullSyncListException", nullPointerClass(() -> nullSync.isExistInSync(
+            "broker-a", 0L, "broker-a:10911")));
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo shortCircuit =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo(
+                0L, "broker-a:10911", 7, 8, List.of(dead), null);
+        result.put("allReplicasShortCircuits", shortCircuit.isExistInAllReplicas(
+            "broker-a", 0L, "broker-a:10911"));
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo noMatch =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo.ReplicasInfo(
+                0L, "broker-a:10911", 7, 8, List.of(), null);
+        result.put("allReplicasSecondListException", nullPointerClass(() -> noMatch.isExistInAllReplicas(
+            "broker-a", 0L, "broker-a:10911")));
+
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo table =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo();
+        table.addReplicaInfo(null, null);
+        result.put("nullableReplicaMapEntry", table.getReplicasInfoTable().containsKey(null)
+            && table.getReplicasInfoTable().get(null) == null);
+        org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo nullTable =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerReplicasInfo();
+        nullTable.setReplicasInfoTable(null);
+        result.put("nullReplicaTableException", nullPointerClass(() -> nullTable.addReplicaInfo(
+            "broker-a", replicas)));
+
+        org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup emptyGroup =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup();
+        result.put("emptyMinimumBrokerId", emptyGroup.minimumBrokerId());
+        org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup nullAddresses =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup();
+        nullAddresses.setBrokerAddrs(null);
+        result.put("nullBrokerAddrsException", nullPointerClass(nullAddresses::minimumBrokerId));
+        org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup nullBrokerId =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup();
+        Map<Long, String> addresses = new HashMap<>();
+        addresses.put(null, "broker-null:10911");
+        nullBrokerId.setBrokerAddrs(addresses);
+        result.put("nullBrokerIdException", nullPointerClass(nullBrokerId::minimumBrokerId));
+        org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup members =
+            new org.apache.rocketmq.remoting.protocol.body.BrokerMemberGroup("cluster-a", "broker-a");
+        members.getBrokerAddrs().put(8L, "broker-8:10911");
+        members.getBrokerAddrs().put(2L, "broker-2:10911");
+        result.put("minimumBrokerId", members.minimumBrokerId());
+        result.put("brokerMemberGroupHashCode", members.hashCode());
+        result.put("brokerMemberGroupToString", members.toString());
+
+        org.apache.rocketmq.remoting.protocol.EpochEntry epoch =
+            new org.apache.rocketmq.remoting.protocol.EpochEntry(4, 10L);
+        result.put("epochEntryDefaultEnd", epoch.getEndOffset());
+        result.put("epochEntryHashCode", epoch.hashCode());
+        result.put("epochEntryToString", epoch.toString());
+        result.put("epochEntryCopyConstructor", new org.apache.rocketmq.remoting.protocol.EpochEntry(epoch).toString());
+        org.apache.rocketmq.remoting.protocol.body.EpochEntryCache epochCache =
+            new org.apache.rocketmq.remoting.protocol.body.EpochEntryCache(
+                "cluster-a", "broker-a", 2L, List.of(epoch), 20L);
+        result.put("epochEntryCacheToString", epochCache.toString());
+        result.put("metadataHeaderToString", new org.apache.rocketmq.remoting.protocol.header.controller
+            .GetMetaDataResponseHeader("cluster-a", "controller-1", "controller-a:9878", true, "c-1,c-2")
+            .toString());
+        result.put("electionHeaderToString", new org.apache.rocketmq.remoting.protocol.header.controller
+            .ElectMasterResponseHeader(7L, "broker-a:10911", 11, 12).toString());
         return result;
     }
 

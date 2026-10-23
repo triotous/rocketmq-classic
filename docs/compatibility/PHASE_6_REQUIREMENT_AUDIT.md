@@ -4826,3 +4826,35 @@ records the exported-name and source-surface audit only; no unit tests or
 behavioral controller DTO verification were run. Broad P18-V01 reconciliation
 remains PARTIAL, and native Windows runtime, current-revision remote Ubuntu
 CI, and Phase 19 Broker/Docker validation remain open.
+
+## P18-V01 Controller DTO behavior closure — 2026-10-23
+
+Pinned Java 5.5.1 `BrokerReplicasInfo`, `ReplicasInfo`, `ReplicaIdentity`,
+`BrokerMemberGroup`, `EpochEntry`, `EpochEntryCache`, and controller response
+headers were reverse-audited against the Rust controller module. Rust now
+preserves nullable map/list entries, maps `addReplicaInfo` and all three
+`isExistIn*` membership methods, reproduces Java equality/hash inputs for
+`ReplicaIdentity`, keeps Java's null-dereference and short-circuit paths
+through `ControllerDtoError`, maps `minimumBrokerId`, and implements the
+available Java hash/string methods and epoch copy constructor. Rust DTOs
+whose Java classes inherit identity equality no longer receive structural
+`PartialEq`/`Eq` derives.
+
+`fixtures/producer/core.json` now contains `controllerDtoApi` and
+`controllerDtoOperations`; its SHA-256 is
+`b45df3622bca04a1ea4ba93e5700abe235745908ea2342af4b6ad51ca75fdeb6`.
+The Java source artifact remains
+`ac2d2ad39cbe35e2125ce8cfdd2dd1c20ff7007f9960c1c4b597e292123a6bf6`.
+The fixture-backed `controller_api` integration test and direct controller
+unit tests cover constructor/method inventory, nullable serialization
+round-trips, membership short-circuits, null errors, equality/hash behavior,
+and Java display strings. The current Core Rustdoc JSON scan records 799
+distinct public names overall and 52 in `api/controller.rs`.
+
+Validation on the current source revision passes: full
+`cargo test --offline --locked -p rocketmq-classic-core` (including doctests),
+strict all-target/all-feature Core Clippy with `-D warnings`, and pinned
+offline Maven `verify` (including producer-core fixture verification). This
+closes the controller DTO gaps identified in the previous scan only; broad
+P18-V01 API/settings/flow and reverse-export reconciliation remains
+`PARTIAL`, and Phase 18 acceptance is not yet established.

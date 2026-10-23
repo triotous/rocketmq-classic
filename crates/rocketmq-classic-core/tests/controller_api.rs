@@ -182,6 +182,249 @@ fn controller_admin_surface_and_java_fixture_are_complete() {
     assert_eq!(fixture["controllerAdminOperations"]["electedBrokerId"], 7);
 }
 
+#[test]
+fn controller_dto_java_fixture_matches_rust_dto_methods_and_strings() {
+    use rocketmq_classic_core::api::controller::{
+        BrokerMemberGroup, BrokerReplicasInfo, ControllerDtoError, ElectMasterResponseHeader,
+        EpochEntry, EpochEntryCache, GetMetaDataResponseHeader, ReplicaIdentity, ReplicasInfo,
+    };
+
+    let fixture = java_controller_fixture();
+    let api = &fixture["controllerDtoApi"];
+    for class in [
+        "getMetaDataResponseHeader",
+        "electMasterResponseHeader",
+        "brokerReplicasInfo",
+        "replicasInfo",
+        "replicaIdentity",
+        "epochEntryCache",
+        "brokerMemberGroup",
+        "epochEntry",
+    ] {
+        assert!(api[class]["publicConstructors"].as_array().is_some());
+        assert!(api[class]["publicMethods"].as_array().is_some());
+    }
+    assert!(
+        api["brokerReplicasInfo"]["declaredPublicMethods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|method| method.as_str().unwrap().contains(".addReplicaInfo("))
+    );
+    for name in ["isExistInSync", "isExistInNotSync", "isExistInAllReplicas"] {
+        assert!(
+            api["replicasInfo"]["declaredPublicMethods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|method| method.as_str().unwrap().contains(&format!(".{name}(")))
+        );
+    }
+
+    let operations = &fixture["controllerDtoOperations"];
+    let alive = ReplicaIdentity::with_alive(
+        Some("broker-a".into()),
+        Some(0),
+        Some("broker-a:10911".into()),
+        Some(true),
+    );
+    let dead = ReplicaIdentity::with_alive(
+        Some("broker-a".into()),
+        Some(0),
+        Some("broker-a:10911".into()),
+        Some(false),
+    );
+    assert!(alive.java_equals(Some(&dead)).unwrap());
+    assert_eq!(alive.java_hash_code(), dead.java_hash_code());
+    assert_eq!(
+        alive.java_hash_code(),
+        operations["replicaHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        alive.to_string(),
+        operations["replicaToString"].as_str().unwrap()
+    );
+    assert_eq!(operations["replicaEqualsIgnoresAlive"], true);
+    assert_eq!(operations["replicaHashIgnoresAlive"], true);
+    assert_eq!(operations["nullQueryAfterEmptyNameMismatch"], false);
+    assert_eq!(operations["nullQueryException"], "NullPointerException");
+
+    let replicas = ReplicasInfo::new(
+        Some(0),
+        Some("broker-a:10911".into()),
+        7,
+        8,
+        Some(vec![Some(dead)]),
+        Some(vec![]),
+    );
+    assert_eq!(
+        replicas.is_exist_in_sync(Some("broker-a"), Some(0), Some("broker-a:10911")),
+        Ok(operations["isExistInSyncIgnoresAlive"].as_bool().unwrap())
+    );
+    assert_eq!(operations["isExistInNotSync"], false);
+    assert_eq!(operations["isExistInAllReplicas"], true);
+    let null_sync = ReplicasInfo::new(Some(0), None, 7, 8, None, Some(vec![]));
+    assert_eq!(operations["nullSyncListException"], "NullPointerException");
+    assert_eq!(
+        null_sync.is_exist_in_sync(Some("broker-a"), Some(0), None),
+        Err(ControllerDtoError::NullDereference {
+            operation: "ReplicasInfo.isExistIn*",
+            field: "inSyncReplicas",
+        })
+    );
+    let short_circuit = ReplicasInfo::new(
+        Some(0),
+        None,
+        7,
+        8,
+        Some(vec![Some(ReplicaIdentity::new(
+            Some("broker-a".into()),
+            Some(0),
+            Some("broker-a:10911".into()),
+        ))]),
+        None,
+    );
+    assert_eq!(operations["allReplicasShortCircuits"], true);
+    assert_eq!(
+        short_circuit.is_exist_in_all_replicas(Some("broker-a"), Some(0), Some("broker-a:10911")),
+        Ok(true)
+    );
+    let null_second = ReplicasInfo::new(Some(0), None, 7, 8, Some(vec![]), None);
+    assert_eq!(
+        operations["allReplicasSecondListException"],
+        "NullPointerException"
+    );
+    assert_eq!(
+        null_second.is_exist_in_all_replicas(Some("broker-a"), Some(0), Some("broker-a:10911")),
+        Err(ControllerDtoError::NullDereference {
+            operation: "ReplicasInfo.isExistIn*",
+            field: "notInSyncReplicas",
+        })
+    );
+
+    let mut table = BrokerReplicasInfo::default();
+    table.add_replica_info(None, None).unwrap();
+    assert_eq!(operations["nullableReplicaMapEntry"], true);
+    assert_eq!(
+        table.add_replica_info(Some("broker-a".into()), None),
+        Ok(())
+    );
+    let mut null_table = BrokerReplicasInfo {
+        replicas_info_table: None,
+    };
+    assert_eq!(
+        operations["nullReplicaTableException"],
+        "NullPointerException"
+    );
+    assert!(matches!(
+        null_table.add_replica_info(Some("broker-a".into()), None),
+        Err(ControllerDtoError::NullDereference {
+            operation: "BrokerReplicasInfo.addReplicaInfo",
+            field: "replicasInfoTable",
+        })
+    ));
+
+    let mut group = BrokerMemberGroup::new(Some("cluster-a".into()), Some("broker-a".into()));
+    group
+        .broker_addrs
+        .as_mut()
+        .unwrap()
+        .insert(Some(8), Some("broker-8:10911".into()));
+    group
+        .broker_addrs
+        .as_mut()
+        .unwrap()
+        .insert(Some(2), Some("broker-2:10911".into()));
+    assert_eq!(
+        group.minimum_broker_id(),
+        Ok(operations["minimumBrokerId"].as_i64().unwrap())
+    );
+    assert_eq!(
+        group.java_hash_code(),
+        operations["brokerMemberGroupHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        group.to_string(),
+        operations["brokerMemberGroupToString"].as_str().unwrap()
+    );
+    assert_eq!(
+        BrokerMemberGroup::default().minimum_broker_id(),
+        Ok(operations["emptyMinimumBrokerId"].as_i64().unwrap())
+    );
+    assert_eq!(
+        operations["nullBrokerAddrsException"],
+        "NullPointerException"
+    );
+    assert_eq!(operations["nullBrokerIdException"], "NullPointerException");
+    assert_eq!(
+        BrokerMemberGroup {
+            broker_addrs: None,
+            ..BrokerMemberGroup::default()
+        }
+        .minimum_broker_id(),
+        Err(ControllerDtoError::NullDereference {
+            operation: "BrokerMemberGroup.minimumBrokerId",
+            field: "brokerAddrs",
+        })
+    );
+    let null_key_group = BrokerMemberGroup {
+        broker_addrs: Some(HashMap::from([(None, Some("null-address".into()))])),
+        ..BrokerMemberGroup::default()
+    };
+    assert_eq!(
+        null_key_group.minimum_broker_id(),
+        Err(ControllerDtoError::NullDereference {
+            operation: "BrokerMemberGroup.minimumBrokerId",
+            field: "brokerAddrs key",
+        })
+    );
+
+    let epoch = EpochEntry::new(4, 10);
+    assert_eq!(
+        epoch.end_offset,
+        operations["epochEntryDefaultEnd"].as_i64().unwrap()
+    );
+    assert_eq!(
+        epoch.java_hash_code(),
+        operations["epochEntryHashCode"].as_i64().unwrap() as i32
+    );
+    assert_eq!(
+        epoch.to_string(),
+        operations["epochEntryToString"].as_str().unwrap()
+    );
+    assert_eq!(
+        EpochEntry::from_entry(&epoch).to_string(),
+        operations["epochEntryCopyConstructor"].as_str().unwrap()
+    );
+    let epoch_cache = EpochEntryCache::new(
+        Some("cluster-a".into()),
+        Some("broker-a".into()),
+        2,
+        Some(vec![Some(epoch)]),
+        20,
+    );
+    assert_eq!(
+        epoch_cache.to_string(),
+        operations["epochEntryCacheToString"].as_str().unwrap()
+    );
+    assert_eq!(
+        GetMetaDataResponseHeader::new(
+            Some("cluster-a".into()),
+            Some("controller-1".into()),
+            Some("controller-a:9878".into()),
+            true,
+            Some("c-1,c-2".into())
+        )
+        .to_string(),
+        operations["metadataHeaderToString"].as_str().unwrap()
+    );
+    assert_eq!(
+        ElectMasterResponseHeader::new(Some(7), Some("broker-a:10911".into()), Some(11), Some(12))
+            .to_string(),
+        operations["electionHeaderToString"].as_str().unwrap()
+    );
+}
+
 #[tokio::test]
 async fn controller_metadata_and_epoch_cache_decode_java_results() {
     let fixture = java_controller_fixture();
@@ -238,7 +481,7 @@ async fn controller_metadata_and_epoch_cache_decode_java_results() {
             .unwrap()
     );
     assert_eq!(
-        epoch.epoch_list.unwrap()[0].end_offset,
+        epoch.epoch_list.unwrap()[0].as_ref().unwrap().end_offset,
         fixture["controllerAdminOperations"]["epochEntryEndOffsetWhenMissing"]
             .as_i64()
             .unwrap()
@@ -288,9 +531,13 @@ async fn controller_sync_state_resolves_leader_and_encodes_nullable_broker_list(
         .unwrap()
         .unwrap();
     let replicas = state.replicas_info_table.unwrap();
-    assert_eq!(replicas["broker-a"].master_epoch, Some(9));
+    let replicas = replicas[&Some("broker-a".to_owned())].as_ref().unwrap();
+    assert_eq!(replicas.master_epoch, Some(9));
     assert_eq!(
-        replicas["broker-a"].in_sync_replicas.as_ref().unwrap()[0].alive,
+        replicas.in_sync_replicas.as_ref().unwrap()[0]
+            .as_ref()
+            .unwrap()
+            .alive,
         Some(true)
     );
 
@@ -368,7 +615,7 @@ async fn election_and_cleanup_use_controller_leader_and_encode_java_headers() {
         .unwrap();
     assert_eq!(header.master_broker_id, Some(7));
     assert_eq!(header.master_epoch, Some(11));
-    assert_eq!(members.unwrap().minimum_broker_id(), Some(7));
+    assert_eq!(members.unwrap().minimum_broker_id(), Ok(7));
     let metadata_request = controller_peer.await.unwrap().pop().unwrap();
     assert_java_request(
         &metadata_request,

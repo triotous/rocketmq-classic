@@ -2580,27 +2580,41 @@ This closes the controller/replica API slice only. Broad P18-V01 Java
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains open.
 
-The current Rustdoc JSON scan finds 41 distinct public names in
+The current Rustdoc JSON scan finds 52 distinct public names in
 `api/controller.rs`, including the module, seven RPC methods, DTO types and
-fields, and `BrokerMemberGroup::minimum_broker_id`. The RPC methods are listed
-above; the other names map to pinned Java 5.5.1 DTOs as follows:
+fields, DTO operation adapters, constructors, and typed null-dereference
+error. The RPC methods are listed above; the other names map to pinned Java
+5.5.1 DTOs as follows:
 
 | Rust public names | Java DTO and disposition |
 | --- | --- |
 | `controller` | Rust module grouping the controller client and DTO adapters; it adds no separate Java capability. |
+| `ControllerDtoError`; `new`; `with_alive`; `with_end_offset`; `EpochEntry::from_entry` | Rust typed error for Java null dereferences, no-argument/full-argument DTO constructors, both `ReplicaIdentity` constructors, both value constructors for `EpochEntry`, and Java's `EpochEntry(EpochEntry)` copy constructor. |
 | `GetMetaDataResponseHeader::{group,controller_leader_id,controller_leader_address,is_leader,peers}` | Java `GetMetaDataResponseHeader` custom header; direct Rust fields map the Java getter/setter values, and `CommandHeader` maps ext-field encoding/decoding. |
 | `ElectMasterResponseHeader::{master_broker_id,master_address,master_epoch,sync_state_set_epoch}` | Java `ElectMasterResponseHeader` custom header; direct Rust fields map its nullable values and `CommandHeader` maps ext-field encoding/decoding. |
-| `BrokerReplicasInfo::{replicas_info_table}`; `ReplicasInfo::{master_broker_id,master_address,master_epoch,sync_state_set_epoch,in_sync_replicas,not_in_sync_replicas}`; `ReplicaIdentity::{broker_name,broker_id,broker_address,alive}` | Java `BrokerReplicasInfo`, nested `ReplicasInfo`, and nested `ReplicaIdentity` JSON body fields. Rust serde uses Java camel-case property names while public Rust fields use snake case. |
+| `BrokerReplicasInfo::{replicas_info_table}`; `ReplicasInfo::{master_broker_id,master_address,master_epoch,sync_state_set_epoch,in_sync_replicas,not_in_sync_replicas}`; `ReplicaIdentity::{broker_name,broker_id,broker_address,alive}` | Java `BrokerReplicasInfo`, nested `ReplicasInfo`, and nested `ReplicaIdentity` JSON body fields. Rust serde uses Java camel-case property names while public Rust fields use snake case. Nested map keys/values and list entries retain Java nullable states. |
 | `EpochEntryCache::{cluster_name,broker_name,broker_id,epoch_list,max_offset}`; `EpochEntry::{epoch,start_offset,end_offset}` | Java `EpochEntryCache` and `EpochEntry` JSON body fields. Rust serde uses Java camel-case property names; the default end offset is `i64::MAX`, matching Java `Long.MAX_VALUE`. |
-| `BrokerMemberGroup::{cluster,broker_name,broker_addrs,minimum_broker_id}` | Java `BrokerMemberGroup` fields and `minimumBrokerId()`. Rust returns `None` when the nullable address map is absent, while Java dereferences the map and throws; null-map behavior remains an open input-parity case. |
+| `BrokerMemberGroup::{cluster,broker_name,broker_addrs,minimum_broker_id}` | Java `BrokerMemberGroup` fields and `minimumBrokerId()`. The Rust method returns `Result<i64, ControllerDtoError>`: empty maps return zero, while null maps/keys preserve Java's null-dereference path as a typed error. |
+| `BrokerReplicasInfo::add_replica_info`; `ReplicasInfo::{is_exist_in_sync,is_exist_in_not_sync,is_exist_in_all_replicas}`; `ReplicaIdentity::{java_equals,java_hash_code}` | Java `addReplicaInfo`, three `isExistIn*` methods, `equals`, and `hashCode`, with Rust snake-case names except explicit `java_*` semantic methods. `Display` maps Java `toString` for the DTOs that override it. |
 
-The DTO method audit remains open. Java `BrokerReplicasInfo.addReplicaInfo`
-and `ReplicasInfo.isExistInSync`, `isExistInNotSync`, and
-`isExistInAllReplicas` have no Rust counterparts. Rust's derived
-`ReplicaIdentity` equality includes `alive`, while Java `equals`/`hashCode`
-use only broker name, ID, and address. Java DTO `hashCode` and `toString`
-methods also need explicit Rust dispositions. These are unresolved
-P18-V01 source/API parity items, not exceptions to the compatibility rule.
+Controller DTO operation parity was added in `fix(compatibility): align
+controller replica DTO semantics`. `BrokerReplicasInfo::add_replica_info`
+maps `addReplicaInfo`, including initialized-map null keys/values and the
+null-table failure. `ReplicasInfo::is_exist_in_sync`,
+`is_exist_in_not_sync`, and `is_exist_in_all_replicas` map the three Java
+membership methods, including list-null errors, nullable query short-circuit
+order, `ArrayList.contains` equality behavior, and `||` short-circuiting.
+`ReplicaIdentity::java_equals` and `java_hash_code` compare/hash only broker
+name, ID, and address; no structural Rust equality/hash traits are added to
+this Java identity-equality DTO. Java `toString`/`hashCode` overrides are
+mapped by `Display` or explicit `java_hash_code` methods where present in
+Java; DTOs inheriting `Object.equals`/`hashCode` do not receive derived Rust
+value equality. `EpochEntry::from_entry` maps Java's copy constructor.
+Fixture `controllerDtoApi` inventories the Java constructors and methods;
+`controllerDtoOperations` records the observed membership, equality, hashes,
+display, and null-failure outcomes, and the Core fixture-backed test compares
+those cases. This closes the identified controller DTO behavior gaps only;
+the broad P18-V01 reconciliation remains open.
 The pinned `rocketmq-remoting-5.5.1-sources.jar` SHA-256 is
 `ac2d2ad39cbe35e2125ce8cfdd2dd1c20ff7007f9960c1c4b597e292123a6bf6`.
 

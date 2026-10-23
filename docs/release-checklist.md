@@ -9338,6 +9338,23 @@ owner-specific checks belong in the manual handoff.
   remain open. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T221410Z.rlog`.
 
+## P18-V01 Controller DTO behavior closure — 2026-10-23
+
+- [x] Rust Controller DTOs map `BrokerReplicasInfo.addReplicaInfo`, all three
+  `ReplicasInfo.isExistIn*` methods, Java nullable nested map/list state,
+  `ReplicaIdentity.equals`/`hashCode`, `BrokerMemberGroup.minimumBrokerId`,
+  Java-overridden DTO hash/string methods, and `EpochEntry` copy construction.
+- [x] The fixture-backed API and operation cases are recorded in
+  `fixtures/producer/core.json` (`controllerDtoApi` and
+  `controllerDtoOperations`; SHA-256
+  `b45df3622bca04a1ea4ba93e5700abe235745908ea2342af4b6ad51ca75fdeb6`).
+- [x] Full Core tests and doctests, strict all-target/all-feature Core Clippy,
+  and pinned offline Maven `verify` pass on the current source revision.
+- [ ] Broad P18-V01 reconciliation remains PARTIAL; native Windows runtime,
+  current-revision remote Ubuntu CI, and Phase 19 Broker/Docker validation
+  remain open. This DTO slice does not establish Phase 18 acceptance. Run log:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T231037Z.rlog`.
+
 ## P18-V01 Rustdoc export and controller DTO reverse scan — 2026-10-23 (`df5c3c59`)
 
 - [x] Current all-feature Rustdoc JSON generation passes. Distinct public name
