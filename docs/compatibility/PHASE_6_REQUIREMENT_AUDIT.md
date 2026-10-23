@@ -44,6 +44,11 @@ uncaught Java null-list failure. Its focused facade comparison, pinned Java
 facade fixture verification, strict Consumer Clippy, and formatting/diff checks
 pass.
 
+Follow-up revision `68f554e3` preserves the valid-prefix mutations from
+`putMessage([message, null])` before Java's `NullPointerException`. Its focused
+facade comparison, pinned Java facade fixture verification, strict Consumer
+Clippy, and formatting/diff checks pass.
+
 Locked Cargo metadata, workspace metadata/license/dependency checks, seven
 package-content listings with `LICENSE`/`NOTICE`, and UTC plus Asia/Taipei
 Unique ID fixtures passed at revision `60238931`. At that revision the Consumer
@@ -3495,4 +3500,20 @@ comparison check exception class, count, size, and tree. Fixture SHA-256:
 The focused ProcessQueue facade test, targeted pinned Java facade fixture
 verification, strict Consumer Clippy, and formatting/diff checks pass. This
 closes the null-list requeue branch only; broad P18-V01 source/API/settings/
+input/error/control-flow and reverse-export reconciliation remains PARTIAL.
+
+## P18-V01 ProcessQueue null `putMessage` element and partial state — 2026-10-23
+
+Pinned Java inserts valid prefix messages and updates `msgSize` immediately,
+then a null element throws before `msgCount.addAndGet`, dispatch-state update,
+or final `MAX_OFFSET` parsing. Rust adds `put_message_items_nullable` and
+preserves those prefix mutations while returning a typed null-element error.
+The invoked Java fixture and Rust facade comparison check the immediate
+count/size/tree state and the subsequent valid insertion's dispatch outcome.
+Fixture SHA-256:
+`01133da592b2f5c73b5fb379e14626651887cf8c0543875b928f266f02221aa1`.
+
+The focused ProcessQueue facade test, targeted pinned Java facade fixture
+verification, strict Consumer Clippy, and formatting/diff checks pass. This
+closes the null-element prefix branch only; broad P18-V01 source/API/settings/
 input/error/control-flow and reverse-export reconciliation remains PARTIAL.
