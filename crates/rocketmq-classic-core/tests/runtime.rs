@@ -111,6 +111,128 @@ fn inherited_service_thread_oracle_records_java_start_stop_contract() {
     );
 }
 
+#[tokio::test]
+async fn runtime_service_thread_handles_match_inherited_controls() {
+    let mut config = ClientConfig::new("service-thread-controls");
+    config.set_namesrv_addr(Some(String::new()));
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+
+    let rebalance = runtime.rebalance_service();
+    assert_eq!(rebalance.service_name(), REBALANCE_SERVICE_NAME);
+    assert_eq!(
+        rebalance.join_time_millis(),
+        SERVICE_THREAD_JOIN_TIME_MILLIS
+    );
+    assert!(!rebalance.is_stopped());
+    assert!(!rebalance.is_daemon());
+    rebalance.set_daemon(true);
+    assert!(rebalance.is_daemon());
+    rebalance.make_stop();
+    assert!(!rebalance.is_stopped());
+    rebalance.set_daemon(false);
+    rebalance.start().await.unwrap();
+    assert!(!rebalance.is_stopped());
+    rebalance.make_stop();
+    assert!(rebalance.is_stopped());
+    rebalance.start().await.unwrap();
+    assert!(rebalance.is_stopped());
+    rebalance.shutdown(false).await.unwrap();
+    assert!(rebalance.is_stopped());
+
+    let pull = runtime.pull_message_service();
+    assert_eq!(pull.service_name(), PULL_MESSAGE_SERVICE_NAME);
+    assert_eq!(pull.join_time_millis(), SERVICE_THREAD_JOIN_TIME_MILLIS);
+    assert!(!pull.is_stopped());
+    assert!(!pull.is_daemon());
+    pull.set_daemon(true);
+    assert!(pull.is_daemon());
+    pull.make_stop();
+    assert!(!pull.is_stopped());
+    pull.set_daemon(false);
+    pull.start().await.unwrap();
+    pull.make_stop();
+    assert!(pull.is_stopped());
+    let ignored_tasks = Arc::new(AtomicUsize::new(0));
+    let immediate = ignored_tasks.clone();
+    runtime
+        .execute_task(async move {
+            immediate.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+    let delayed = ignored_tasks.clone();
+    runtime
+        .execute_task_later(
+            async move {
+                delayed.fetch_add(1, Ordering::SeqCst);
+            },
+            0,
+        )
+        .unwrap();
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(ignored_tasks.load(Ordering::SeqCst), 0);
+    pull.start().await.unwrap();
+    assert!(pull.is_stopped());
+    pull.shutdown(true).await.unwrap();
+    assert!(pull.is_stopped());
+    assert!(runtime.pull_scheduled_executor_service().is_shutdown());
+}
+
+#[tokio::test]
+async fn pull_service_prestart_shutdown_keeps_service_flag_and_closes_scheduler() {
+    let mut config = ClientConfig::new("pull-service-prestart-shutdown");
+    config.set_namesrv_addr(Some(String::new()));
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    let pull = runtime.pull_message_service();
+
+    pull.make_stop();
+    assert!(!pull.is_stopped());
+    pull.shutdown(false).await.unwrap();
+
+    assert!(!pull.is_stopped());
+    assert!(runtime.pull_scheduled_executor_service().is_shutdown());
+
+    // Java's PullMessageService shutdown override closes its executor even
+    // when the inherited ServiceThread shutdown is a pre-start no-op.
+    pull.start().await.unwrap();
+    assert!(!pull.is_stopped());
+    pull.shutdown(true).await.unwrap();
+    assert!(pull.is_stopped());
+}
+
+#[tokio::test]
+async fn service_threads_can_restart_after_client_runtime_shutdown() {
+    let mut config = ClientConfig::new("service-thread-restart-after-runtime-shutdown");
+    config.set_namesrv_addr(Some(String::new()));
+    let runtime = ClientRuntimeManager::new()
+        .get_or_create(&config)
+        .await
+        .unwrap();
+    runtime.start().await.unwrap();
+    assert!(runtime.shutdown().await.unwrap());
+
+    let rebalance = runtime.rebalance_service();
+    let pull = runtime.pull_message_service();
+    assert!(rebalance.is_stopped());
+    assert!(pull.is_stopped());
+
+    rebalance.start().await.unwrap();
+    pull.start().await.unwrap();
+    assert!(!rebalance.is_stopped());
+    assert!(!pull.is_stopped());
+    rebalance.shutdown(false).await.unwrap();
+    pull.shutdown(true).await.unwrap();
+    assert!(rebalance.is_stopped());
+    assert!(pull.is_stopped());
+}
+
 struct RouteObserver {
     runtime: Weak<ClientRuntime>,
     updates: AtomicUsize,

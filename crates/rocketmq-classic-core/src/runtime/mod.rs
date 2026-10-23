@@ -10,6 +10,7 @@ mod pull;
 mod rebalance;
 mod registry;
 mod request_future;
+pub(super) mod service_thread;
 pub mod stats;
 mod tables;
 mod tasks;
@@ -37,6 +38,7 @@ pub use request_future::{
     RequestFutureError, RequestFutureLatch, RequestResponseCallback, RequestResponseFuture,
     RequestSendFailureCause, RequestTimeoutCause,
 };
+pub use service_thread::RuntimeServiceThread;
 pub use stats::ConsumerStatsManager;
 pub use tables::{
     ConsumerEntryHandle, ConsumerEntrySetView, ConsumerKeySetView, ConsumerTable,

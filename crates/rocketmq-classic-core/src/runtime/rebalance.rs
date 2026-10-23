@@ -14,6 +14,7 @@ pub(super) const WAIT_PROPERTY: &str = "rocketmq.client.rebalance.waitInterval";
 pub(super) const MIN_PROPERTY: &str = "rocketmq.client.rebalance.minInterval";
 
 pub(super) struct RebalanceSignal {
+    pub thread: super::service_thread::ServiceThreadControl,
     wake: Notify,
     wait: Duration,
     minimum: Duration,
@@ -40,6 +41,7 @@ impl RebalanceSignal {
             Ok(Duration::from_millis(value.max(0) as u64))
         }
         Ok(Self {
+            thread: super::service_thread::ServiceThreadControl::default(),
             wake: Notify::new(),
             wait: interval(properties, WAIT_PROPERTY, 20_000)?,
             minimum: interval(properties, MIN_PROPERTY, 1_000)?,
@@ -111,6 +113,9 @@ impl OwnedRebalance {
             let mut last = signal.constructed;
             let mut wait = signal.wait;
             loop {
+                if signal.thread.is_stopped() {
+                    return;
+                }
                 tokio::select! { biased;
                     _ = cancellation.changed() => return,
                     _ = signal.wake.notified() => {},
@@ -151,6 +156,17 @@ impl OwnedRebalance {
         self.cancel.send_replace(true);
         if let Some(task) = self.task.take() {
             let _ = task.await;
+        }
+    }
+    pub async fn join_with_timeout(&mut self, timeout: Duration) -> bool {
+        let Some(task) = self.task.as_mut() else {
+            return true;
+        };
+        if tokio::time::timeout(timeout, task).await.is_ok() {
+            self.task.take();
+            true
+        } else {
+            false
         }
     }
 }

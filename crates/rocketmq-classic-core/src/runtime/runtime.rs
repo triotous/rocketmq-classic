@@ -152,6 +152,51 @@ impl ClientRuntime {
         )
     }
 
+    pub(super) fn service_thread_control(
+        &self,
+        kind: super::service_thread::RuntimeServiceKind,
+    ) -> &super::service_thread::ServiceThreadControl {
+        match kind {
+            super::service_thread::RuntimeServiceKind::Rebalance => &self.rebalance.thread,
+            super::service_thread::RuntimeServiceKind::PullMessage => &self.pull.thread,
+        }
+    }
+
+    pub(super) fn wakeup_service_thread(&self, kind: super::service_thread::RuntimeServiceKind) {
+        if kind == super::service_thread::RuntimeServiceKind::Rebalance {
+            self.rebalance.wakeup();
+        }
+    }
+
+    pub(super) async fn start_service_thread(
+        self: &Arc<Self>,
+        kind: super::service_thread::RuntimeServiceKind,
+    ) -> Result<(), RuntimeError> {
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::StartServiceThread { kind, reply })
+            .map_err(|_| RuntimeError::ControlTaskFailed)?;
+        receive.await.map_err(|_| RuntimeError::ControlTaskFailed)?
+    }
+
+    pub(super) async fn shutdown_service_thread(
+        self: &Arc<Self>,
+        kind: super::service_thread::RuntimeServiceKind,
+        interrupt: bool,
+    ) -> Result<(), RuntimeError> {
+        let (reply, receive) = tokio::sync::oneshot::channel();
+        self.control
+            .sender(self)?
+            .send(Command::ShutdownServiceThread {
+                kind,
+                interrupt,
+                reply,
+            })
+            .map_err(|_| RuntimeError::ControlTaskFailed)?;
+        receive.await.map_err(|_| RuntimeError::ControlTaskFailed)?
+    }
+
     pub(super) fn enqueue_scheduled_task(
         self: &Arc<Self>,
         schedule: super::tasks::UserSchedule,
@@ -475,6 +520,9 @@ impl ClientRuntime {
         request: Arc<dyn super::MessageRequest>,
         delay: i64,
     ) -> Result<(), RuntimeError> {
+        if self.pull.thread.is_stopped() {
+            return Ok(());
+        }
         self.ensure_pull_scheduler()?;
         self.pull.request_later(request, delay)
     }
@@ -483,6 +531,9 @@ impl ClientRuntime {
         request: Arc<dyn super::MessageRequest>,
         delay: i64,
     ) -> Result<(), RuntimeError> {
+        if self.pull.thread.is_stopped() {
+            return Ok(());
+        }
         self.ensure_pull_scheduler()?;
         self.pull.request_later(request, delay)
     }
@@ -490,6 +541,9 @@ impl ClientRuntime {
         self: &Arc<Self>,
         task: impl std::future::Future<Output = ()> + Send + 'static,
     ) -> Result<(), RuntimeError> {
+        if self.pull.thread.is_stopped() {
+            return Ok(());
+        }
         self.ensure_pull_scheduler()?;
         self.pull.task_later(Box::pin(task), 0)
     }
@@ -498,6 +552,9 @@ impl ClientRuntime {
         task: impl std::future::Future<Output = ()> + Send + 'static,
         delay: i64,
     ) -> Result<(), RuntimeError> {
+        if self.pull.thread.is_stopped() {
+            return Ok(());
+        }
         self.ensure_pull_scheduler()?;
         self.pull.task_later(Box::pin(task), delay)
     }

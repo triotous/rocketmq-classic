@@ -313,7 +313,7 @@ async fn shutdown_cancels_both_inflight_workers_and_drops_pending_work() {
     assert!(runtime.shutdown().await.unwrap());
     assert_eq!(active.load(Ordering::SeqCst), 0);
     assert_eq!(dropped.load(Ordering::SeqCst), 0);
-    assert!(runtime.execute_task(async {}).is_err());
+    assert!(runtime.execute_task(async {}).is_ok()); // Stopped PullMessageService ignores the task.
     tokio::time::advance(tokio::time::Duration::from_millis(120_000)).await;
     settle().await;
     assert_eq!(consumer.calls.load(Ordering::SeqCst), 2);

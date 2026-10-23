@@ -56,8 +56,10 @@ struct Queues {
     sequence: u64,
 }
 pub(super) struct PullService {
+    pub thread: super::service_thread::ServiceThreadControl,
     queues: Mutex<Queues>,
     immediate: Notify,
+    pub(super) interrupt_wait: Notify,
     scheduled: Arc<Notify>,
     scheduler_terminated: AtomicBool,
     scheduler_terminated_watch: watch::Sender<bool>,
@@ -67,8 +69,10 @@ impl Default for PullService {
     fn default() -> Self {
         let (scheduler_terminated_watch, _) = watch::channel(false);
         Self {
+            thread: super::service_thread::ServiceThreadControl::default(),
             queues: Mutex::new(Queues::default()),
             immediate: Notify::new(),
+            interrupt_wait: Notify::new(),
             scheduled: Arc::default(),
             scheduler_terminated: AtomicBool::new(false),
             scheduler_terminated_watch,
@@ -77,6 +81,12 @@ impl Default for PullService {
 }
 
 impl PullService {
+    pub fn open_dispatch(&self) {
+        if let Ok(mut queues) = self.queues.lock() {
+            queues.stopped = false;
+        }
+    }
+
     pub fn scheduled_notifier(&self) -> Arc<Notify> {
         self.scheduled.clone()
     }
@@ -284,6 +294,7 @@ impl PullService {
     }
 }
 pub(super) struct OwnedPullWorker {
+    scheduled: bool,
     active: watch::Sender<bool>,
     cancel: watch::Sender<bool>,
     task: Option<JoinHandle<()>>,
@@ -306,7 +317,12 @@ impl OwnedPullWorker {
             let _live = live;
             let _termination = scheduled.then(|| PullSchedulerTerminationGuard(service.clone()));
             tokio::select! { biased; _ = cancellation.changed() => return, _ = activation.changed() => {}, }
+            let mut pull_take_woken = false;
             loop {
+                if !scheduled && !pull_take_woken && service.thread.is_stopped() {
+                    return;
+                }
+                pull_take_woken = false;
                 service.discard_cancelled_user_tasks();
                 if scheduled
                     && service.queues.lock().ok().is_some_and(|queues| {
@@ -345,7 +361,21 @@ impl OwnedPullWorker {
                         .ok()
                         .and_then(|mut queues| queues.immediate.pop_front());
                     if request.is_none() {
-                        tokio::select! { biased; _ = cancellation.changed() => return, _ = service.immediate.notified() => continue, }
+                        tokio::select! { biased;
+                            _ = cancellation.changed() => return,
+                            _ = service.interrupt_wait.notified() => {
+                                if service.thread.is_stopped() {
+                                    return;
+                                }
+                            },
+                            _ = service.immediate.notified() => {
+                                // A queue wake that races `makeStop()` is like
+                                // Java's already-blocked `take()`: process the
+                                // one item it yields, then observe the stop flag.
+                                pull_take_woken = true;
+                                continue;
+                            },
+                        }
                     }
                     request.map(|request| (None, Job::Request(request)))
                 };
@@ -450,10 +480,14 @@ impl OwnedPullWorker {
                     .unwrap_or(Poll::Ready(()))
                 });
                 tokio::select! { biased; _ = cancellation.changed() => return, _ = caught => {}, }
+                if !scheduled && service.thread.is_stopped() {
+                    return;
+                }
                 tokio::task::yield_now().await;
             }
         });
         Self {
+            scheduled,
             active,
             cancel,
             task: Some(task),
@@ -464,6 +498,20 @@ impl OwnedPullWorker {
     }
     pub fn request_stop(&self) {
         self.cancel.send_replace(true);
+    }
+    pub fn is_scheduled(&self) -> bool {
+        self.scheduled
+    }
+    pub async fn join_with_timeout(&mut self, timeout: Duration) -> bool {
+        let Some(task) = self.task.as_mut() else {
+            return true;
+        };
+        if tokio::time::timeout(timeout, task).await.is_ok() {
+            self.task.take();
+            true
+        } else {
+            false
+        }
     }
     pub async fn stop(&mut self) {
         self.request_stop();

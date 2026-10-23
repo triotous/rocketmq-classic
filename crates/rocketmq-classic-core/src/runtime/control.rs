@@ -71,6 +71,15 @@ pub(super) enum Command {
     Start {
         reply: oneshot::Sender<Result<(), RuntimeError>>,
     },
+    StartServiceThread {
+        kind: super::service_thread::RuntimeServiceKind,
+        reply: oneshot::Sender<Result<(), RuntimeError>>,
+    },
+    ShutdownServiceThread {
+        kind: super::service_thread::RuntimeServiceKind,
+        interrupt: bool,
+        reply: oneshot::Sender<Result<(), RuntimeError>>,
+    },
     StartPullScheduler,
     ScheduleRuntimeTask(super::tasks::UserSchedule),
     ShutdownRuntimeScheduler {
@@ -242,9 +251,13 @@ impl ControlPlane {
             .sender
             .lock()
             .map_err(|_| RuntimeError::RegistryPoisoned)?;
-        if let Some(sender) = sender.as_ref() {
-            return Ok(sender.clone());
+        if sender.as_ref().is_some_and(|sender| !sender.is_closed()) {
+            return Ok(sender
+                .as_ref()
+                .expect("checked live control sender")
+                .clone());
         }
+        *sender = None;
         let handle = tokio::runtime::Handle::try_current().map_err(|_| {
             rocketmq_classic_remoting::TransportError::InvalidConfiguration(
                 "runtime lifecycle requires an active Tokio runtime".into(),
@@ -252,10 +265,12 @@ impl ControlPlane {
         })?;
         let (tx, rx) = mpsc::unbounded_channel();
         let worker = handle.spawn(run(Arc::downgrade(runtime), tx.downgrade(), rx));
-        *self
-            .task
-            .lock()
-            .map_err(|_| RuntimeError::RegistryPoisoned)? = Some(worker);
+        if !matches!(self.state(), RuntimeState::Stopped | RuntimeState::Failed) {
+            *self
+                .task
+                .lock()
+                .map_err(|_| RuntimeError::RegistryPoisoned)? = Some(worker);
+        }
         *sender = Some(tx.clone());
         Ok(tx)
     }
@@ -318,9 +333,8 @@ async fn run(
     let mut inner_lease: Option<GroupLease> = None;
     let mut periodic: Option<super::tasks::OwnedTasks> = None;
     let mut inbound = Vec::new();
-    let mut rebalance: Option<super::rebalance::OwnedRebalance> = None;
-    let mut pull_workers: [Option<super::pull::OwnedPullWorker>; 2] = [None, None];
-    let mut pull_order = Vec::new();
+    let mut rebalance: Vec<super::rebalance::OwnedRebalance> = Vec::new();
+    let mut pull_workers: Vec<super::pull::OwnedPullWorker> = Vec::new();
     while let Some(command) = receiver.recv().await {
         // The command owns admission through completion, even when its caller
         // cancels the reply future while an unregister RPC remains in flight.
@@ -332,6 +346,94 @@ async fn run(
         let allowed = matches!(state, RuntimeState::Created | RuntimeState::Running);
         match command {
             Command::Monitored { .. } => unreachable!("monitor envelopes are never nested"),
+            Command::StartServiceThread { kind, reply } => {
+                let service_start_allowed =
+                    allowed || matches!(state, RuntimeState::Stopped | RuntimeState::Failed);
+                let result = if !service_start_allowed {
+                    Err(RuntimeError::InvalidState(state))
+                } else {
+                    let control = runtime.service_thread_control(kind);
+                    if control.start() {
+                        match kind {
+                            super::service_thread::RuntimeServiceKind::Rebalance => {
+                                let worker = super::rebalance::OwnedRebalance::new(
+                                    Arc::downgrade(&runtime),
+                                    runtime.rebalance.clone(),
+                                );
+                                worker.activate();
+                                rebalance.push(worker);
+                            }
+                            super::service_thread::RuntimeServiceKind::PullMessage => {
+                                runtime.pull.open_dispatch();
+                                let worker = super::pull::OwnedPullWorker::new(
+                                    Arc::downgrade(&runtime),
+                                    runtime.pull.clone(),
+                                    false,
+                                );
+                                worker.activate();
+                                pull_workers.push(worker);
+                            }
+                        }
+                    }
+                    Ok(())
+                };
+                let _ = reply.send(result);
+            }
+            Command::ShutdownServiceThread {
+                kind,
+                interrupt,
+                reply,
+            } => {
+                let control = runtime.service_thread_control(kind);
+                let was_started = control.shutdown();
+                let daemon = control.thread_is_daemon();
+                let result = match kind {
+                    super::service_thread::RuntimeServiceKind::Rebalance => {
+                        if was_started {
+                            runtime.rebalance.wakeup();
+                            if !daemon {
+                                if let Some(worker) = rebalance.last_mut() {
+                                    let _ = worker
+                                        .join_with_timeout(Duration::from_millis(
+                                            super::SERVICE_THREAD_JOIN_TIME_MILLIS,
+                                        ))
+                                        .await;
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
+                    super::service_thread::RuntimeServiceKind::PullMessage => {
+                        if was_started && interrupt {
+                            runtime.pull.interrupt_wait.notify_one();
+                        }
+                        if was_started && !daemon {
+                            if let Some(worker) = pull_workers
+                                .iter_mut()
+                                .rfind(|worker| !worker.is_scheduled())
+                            {
+                                let _ = worker
+                                    .join_with_timeout(Duration::from_millis(
+                                        super::SERVICE_THREAD_JOIN_TIME_MILLIS,
+                                    ))
+                                    .await;
+                            }
+                        }
+                        let scheduler_result = runtime.pull.shutdown_scheduler(false);
+                        if scheduler_result.is_ok() {
+                            if let Some(worker) =
+                                pull_workers.iter_mut().find(|worker| worker.is_scheduled())
+                            {
+                                worker.finish_gracefully().await;
+                            } else if !runtime.pull.is_scheduler_terminated() {
+                                runtime.pull.mark_scheduler_terminated();
+                            }
+                        }
+                        scheduler_result.map(|_| ())
+                    }
+                };
+                let _ = reply.send(result);
+            }
             Command::MutateTable {
                 kind,
                 mutation,
@@ -346,7 +448,7 @@ async fn run(
                     state,
                     RuntimeState::Created | RuntimeState::Starting | RuntimeState::Running
                 ) && !runtime.pull.is_scheduler_shutdown()
-                    && pull_workers[1].is_none()
+                    && !pull_workers.iter().any(|worker| worker.is_scheduled())
                 {
                     let worker = super::pull::OwnedPullWorker::new(
                         Arc::downgrade(&runtime),
@@ -354,8 +456,7 @@ async fn run(
                         true,
                     );
                     worker.activate();
-                    pull_workers[1] = Some(worker);
-                    pull_order.push(1);
+                    pull_workers.push(worker);
                 }
             }
             Command::ScheduleRuntimeTask(schedule) => {
@@ -409,12 +510,14 @@ async fn run(
                 let result = match runtime.pull.shutdown_scheduler(immediate) {
                     Ok(cancelled) => {
                         if immediate {
-                            if let Some(worker) = pull_workers[1].as_mut() {
+                            if let Some(worker) =
+                                pull_workers.iter().find(|worker| worker.is_scheduled())
+                            {
                                 worker.request_stop();
                             } else {
                                 runtime.pull.mark_scheduler_terminated();
                             }
-                        } else if pull_workers[1].is_none() {
+                        } else if !pull_workers.iter().any(|worker| worker.is_scheduled()) {
                             runtime.pull.mark_scheduler_terminated();
                         }
                         Ok(cancelled)
@@ -542,26 +645,34 @@ async fn run(
                         }
                         runtime.control.checkpoint(3 + index as u8)?;
                     }
+                    let start_pull_service = runtime.pull.thread.start();
+                    let start_rebalance_service = runtime.rebalance.thread.start();
                     for (scheduled, checkpoint) in [(false, 21), (true, 22)] {
                         if scheduled && runtime.pull.is_scheduler_shutdown() {
                             runtime.control.checkpoint(checkpoint)?;
                             continue;
                         }
-                        let slot = &mut pull_workers[usize::from(scheduled)];
-                        if slot.is_none() {
-                            *slot = Some(super::pull::OwnedPullWorker::new(
+                        let should_start = if scheduled {
+                            !pull_workers.iter().any(|worker| worker.is_scheduled())
+                        } else {
+                            start_pull_service
+                        };
+                        if should_start {
+                            let worker = super::pull::OwnedPullWorker::new(
                                 Arc::downgrade(&runtime),
                                 runtime.pull.clone(),
                                 scheduled,
-                            ));
-                            pull_order.push(usize::from(scheduled));
+                            );
+                            pull_workers.push(worker);
                         }
                         runtime.control.checkpoint(checkpoint)?;
                     }
-                    rebalance = Some(super::rebalance::OwnedRebalance::new(
-                        Arc::downgrade(&runtime),
-                        runtime.rebalance.clone(),
-                    ));
+                    if start_rebalance_service {
+                        rebalance.push(super::rebalance::OwnedRebalance::new(
+                            Arc::downgrade(&runtime),
+                            runtime.rebalance.clone(),
+                        ));
+                    }
                     runtime.control.checkpoint(20)?;
                     Ok(())
                 }
@@ -573,10 +684,10 @@ async fn run(
                         if let Some(tasks) = periodic.as_ref() {
                             tasks.activate();
                         }
-                        if let Some(worker) = rebalance.as_ref() {
+                        for worker in &rebalance {
                             worker.activate();
                         }
-                        for worker in pull_workers.iter().flatten() {
+                        for worker in &pull_workers {
                             worker.activate();
                         }
                         let _ = reply.send(Ok(()));
@@ -584,13 +695,13 @@ async fn run(
                     Err(error) => {
                         runtime.pull.close();
                         runtime.rebalance.close_delayed();
-                        if let Some(worker) = rebalance.as_mut() {
+                        runtime.pull.thread.shutdown();
+                        runtime.rebalance.thread.shutdown();
+                        for worker in rebalance.iter_mut().rev() {
                             worker.stop().await;
                         }
-                        for index in pull_order.iter().rev() {
-                            if let Some(worker) = pull_workers[*index].as_mut() {
-                                worker.stop().await;
-                            }
+                        for worker in pull_workers.iter_mut().rev() {
+                            worker.stop().await;
                         }
                         runtime.pull.mark_scheduler_terminated();
                         if let Some(tasks) = periodic.as_mut() {
@@ -621,17 +732,16 @@ async fn run(
                 runtime.control.set_state(RuntimeState::ShuttingDown);
                 runtime.rebalance.close_delayed();
                 runtime.pull.stop_accepting();
-                if let Some(worker) = rebalance.as_mut() {
+                runtime.rebalance.thread.shutdown();
+                runtime.pull.thread.shutdown();
+                for worker in rebalance.iter_mut().rev() {
                     worker.stop().await;
                 }
-                for (index, worker) in pull_workers.iter_mut().enumerate() {
-                    let Some(worker) = worker else {
-                        continue;
-                    };
-                    if index == 0 {
-                        worker.stop().await;
-                    } else {
+                for worker in pull_workers.iter_mut().rev() {
+                    if worker.is_scheduled() {
                         worker.finish_gracefully().await;
+                    } else {
+                        worker.stop().await;
                     }
                 }
                 runtime.pull.close();
