@@ -2,7 +2,7 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-22
 
-At code revision `e1b8ffdb`, the server-free gates pass on macOS AArch64 with
+At code revision `2ce652e7`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
 `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
@@ -73,6 +73,19 @@ class and unchanged queue state. Fixture SHA-256:
 and all-feature workspace tests, strict Clippy, pinned Maven verify, and the
 focused facade comparison pass. This closes the empty-commit input only; broad
 P18-V01 reconciliation remains PARTIAL.
+
+P18-V01 `ProcessQueue` dispatch and timestamp transitions (`2ce652e7`): pinned
+Java changes `consuming` in `putMessage` when scheduling and clears it only
+when `takeMessages` returns empty. Nonempty takes, `commit`, `rollback`, and
+`makeMessageToConsumeAgain` preserve the current value; `commit` also leaves
+`lastConsumeTimestamp` unchanged. Rust now follows these public transitions.
+The invoked fixture checks subsequent dispatch after commit, rollback, and
+requeue, including a nonempty take while `consuming` is false, plus timestamp
+preservation. Fixture SHA-256:
+`2e43cc737fa784cdaec0488252000e82360ccd0a4b121e6ee28d2dccf704791e`. Default
+and all-feature workspace tests, strict Clippy, pinned Maven verify, and the
+focused facade comparison pass. This closes these named state transitions
+only; broad P18-V01 reconciliation remains PARTIAL.
 
 ## Direct runtime API reconciliation — 2026-10-20
 
