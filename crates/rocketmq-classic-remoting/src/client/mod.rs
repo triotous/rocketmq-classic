@@ -2833,19 +2833,57 @@ fn start_callback_workers(
     vec![worker]
 }
 
-fn name_server_scan_batch(
-    mut configured: Vec<String>,
-    cursor: &mut usize,
-    available_slots: usize,
-) -> Vec<String> {
+fn name_server_scan_batch(configured: Vec<String>, available_slots: usize) -> Vec<String> {
     if configured.is_empty() || available_slots == 0 {
         return Vec::new();
     }
-    let start = *cursor % configured.len();
-    configured.rotate_left(start);
-    let scheduled = configured.len().min(available_slots);
-    *cursor = cursor.wrapping_add(scheduled);
-    configured.into_iter().take(scheduled).collect()
+    // Java submits addresses in configured order to a bounded executor with
+    // AbortPolicy. Once its 42 active/queued slots fill, the next submission
+    // aborts that scan. Later ticks begin at the start of the configured list.
+    configured.into_iter().take(available_slots).collect()
+}
+
+fn apply_name_server_scan_result(
+    inner: &ClientInner,
+    address: String,
+    connection: Result<Arc<connection::Connection>, TransportError>,
+) {
+    if inner.closed.load(Ordering::Acquire) {
+        return;
+    }
+    let address_is_configured = inner
+        .nameservers
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|configured| configured.iter().any(|entry| entry == &address));
+    if !address_is_configured {
+        return;
+    }
+    let current_generation = inner
+        .connections
+        .lock()
+        .unwrap()
+        .get(&address)
+        .filter(|current| !current.is_closed())
+        .map(|current| current.generation);
+    let probe_generation =
+        connection.map(|connection| (!connection.is_closed()).then_some(connection.generation));
+    let nameservers = inner.nameservers.lock().unwrap();
+    if nameservers
+        .as_ref()
+        .is_some_and(|configured| configured.iter().any(|entry| entry == &address))
+    {
+        match name_server_probe_availability(probe_generation, current_generation) {
+            Some(true) => {
+                inner.available_nameservers.lock().unwrap().insert(address);
+            }
+            Some(false) => {
+                inner.available_nameservers.lock().unwrap().remove(&address);
+            }
+            None => {}
+        }
+    }
 }
 
 async fn scan_available_name_servers(
@@ -2859,11 +2897,19 @@ async fn scan_available_name_servers(
     let mut interval = time::interval(interval_duration);
     interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     let mut scans = tokio::task::JoinSet::new();
-    let mut scan_cursor = 0;
     let scan_workers = Arc::new(tokio::sync::Semaphore::new(10));
     loop {
         tokio::select! {
             _ = interval.tick() => {
+                // Join completed probes before measuring capacity. Java's
+                // executor releases a worker/queue slot as soon as a task
+                // completes, without waiting for a later scan tick.
+                while let Some(result) = scans.try_join_next() {
+                    if let Ok(Some((address, connection))) = result {
+                        let Some(inner) = inner.upgrade() else { break };
+                        apply_name_server_scan_result(&inner, address, connection);
+                    }
+                }
                 let Some(inner) = inner.upgrade() else { break };
                 let configured = inner
                     .nameservers
@@ -2879,11 +2925,10 @@ async fn scan_available_name_servers(
                         configured.contains(address)
                     });
                 if configured.is_empty() {
-                    scan_cursor = 0;
                     continue;
                 }
                 let available_slots = NAME_SERVER_SCAN_MAX_IN_FLIGHT.saturating_sub(scans.len());
-                let batch = name_server_scan_batch(configured, &mut scan_cursor, available_slots);
+                let batch = name_server_scan_batch(configured, available_slots);
                 for address in batch {
                     let inner = inner.clone();
                     let scan_workers = scan_workers.clone();
@@ -2897,45 +2942,7 @@ async fn scan_available_name_servers(
             result = scans.join_next(), if !scans.is_empty() => {
                 if let Some(Ok(Some((address, connection)))) = result {
                     if let Some(inner) = inner.upgrade() {
-                        if inner.closed.load(Ordering::Acquire) {
-                            continue;
-                        }
-                        let address_is_configured = inner
-                            .nameservers
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .is_some_and(|configured| {
-                                configured.iter().any(|entry| entry == &address)
-                            });
-                        if !address_is_configured {
-                            continue;
-                        }
-                        let current_generation = inner
-                            .connections
-                            .lock()
-                            .unwrap()
-                            .get(&address)
-                            .filter(|current| !current.is_closed())
-                            .map(|current| current.generation);
-                        let probe_generation = connection
-                            .map(|connection| {
-                                (!connection.is_closed()).then_some(connection.generation)
-                            });
-                        let nameservers = inner.nameservers.lock().unwrap();
-                        if nameservers.as_ref().is_some_and(|configured| {
-                            configured.iter().any(|entry| entry == &address)
-                        }) {
-                            match name_server_probe_availability(probe_generation, current_generation) {
-                                Some(true) => {
-                                    inner.available_nameservers.lock().unwrap().insert(address);
-                                }
-                                Some(false) => {
-                                    inner.available_nameservers.lock().unwrap().remove(&address);
-                                }
-                                None => {}
-                            }
-                        }
+                        apply_name_server_scan_result(&inner, address, connection);
                     } else {
                         break;
                     }
@@ -3357,26 +3364,21 @@ mod tests {
     }
 
     #[test]
-    fn name_server_scan_batch_bounds_work_and_rotates_fairly() {
+    fn name_server_scan_batch_matches_java_abort_policy_submission_order() {
         let addresses: Vec<_> = (0..50).map(|index| format!("address-{index}")).collect();
-        let mut cursor = 0;
-        let first = name_server_scan_batch(addresses.clone(), &mut cursor, 42);
+        let first = name_server_scan_batch(addresses.clone(), 42);
         assert_eq!(first.len(), 42);
         assert_eq!(first.first().unwrap(), "address-0");
-        let second = name_server_scan_batch(addresses, &mut cursor, 42);
-        assert_eq!(second.len(), 42);
-        assert_eq!(second.first().unwrap(), "address-42");
-        assert!(second.contains(&"address-49".to_owned()));
-        assert!(second.contains(&"address-0".to_owned()));
+        assert_eq!(first.last().unwrap(), "address-41");
 
-        let mut cursor = 7;
-        let batch = name_server_scan_batch(
-            (0..50).map(|index| format!("address-{index}")).collect(),
-            &mut cursor,
-            0,
-        );
-        assert!(batch.is_empty());
-        assert_eq!(cursor, 7);
+        // The rejected submission aborts that Java scan loop. A later tick
+        // begins at the first configured address instead of rotating skipped
+        // entries ahead of previously submitted ones.
+        let second = name_server_scan_batch(addresses.clone(), 5);
+        assert_eq!(second, addresses[..5]);
+        assert!(!second.contains(&"address-42".to_owned()));
+        assert!(name_server_scan_batch(addresses.clone(), 0).is_empty());
+        assert_eq!(name_server_scan_batch(addresses, 42)[0], "address-0");
     }
 
     use std::sync::atomic::AtomicUsize;

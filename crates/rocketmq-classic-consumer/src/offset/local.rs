@@ -97,7 +97,12 @@ struct StoreWriterLease {
 
 impl Drop for StoreWriterLease {
     fn drop(&mut self) {
-        #[cfg(any(unix, windows))]
+        #[cfg(unix)]
+        if let Some(file) = self.lock_file.take() {
+            release_process_lock(&file);
+            drop(file);
+        }
+        #[cfg(windows)]
         drop(self.lock_file.take());
         let paths = ACTIVE_STORE_PATHS.get_or_init(Default::default);
         paths
@@ -351,18 +356,35 @@ fn acquire_process_lock(path: &Path) -> Result<File, OffsetStoreError> {
         .create(true)
         .truncate(false)
         .open(lock_path)?;
-    // Keep this lock file in place after unlock. Unlinking it could let another
-    // process acquire a new inode while a third process still owns the old one.
-    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    // POSIX record locks are not inherited across fork, unlike flock locks.
+    // Keep the lock file in place after unlock so another process cannot lock
+    // a replacement inode while an existing owner still holds this inode.
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = libc::F_WRLCK as _;
+    lock.l_whence = libc::SEEK_SET as _;
+    let result = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) };
     if result == 0 {
         return Ok(file);
     }
     let error = std::io::Error::last_os_error();
-    if error.kind() == std::io::ErrorKind::WouldBlock {
+    if matches!(
+        error.raw_os_error(),
+        Some(libc::EACCES) | Some(libc::EAGAIN)
+    ) {
         Err(OffsetStoreError::AlreadyOpen)
     } else {
         Err(error.into())
     }
+}
+
+#[cfg(unix)]
+fn release_process_lock(file: &File) {
+    use std::os::fd::AsRawFd;
+
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = libc::F_UNLCK as _;
+    lock.l_whence = libc::SEEK_SET as _;
+    let _ = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) };
 }
 
 #[cfg(windows)]
@@ -814,6 +836,58 @@ mod tests {
         );
     }
 
+    fn run_store_lock_child(root: &Path, should_open: bool) {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        let output = command
+            .args([
+                "--exact",
+                "offset::local::tests::process_lock_child_probe",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("ROCKETMQ_CLASSIC_OFFSET_LOCK_CHILD_ROOT", root)
+            .env(
+                "ROCKETMQ_CLASSIC_OFFSET_LOCK_CHILD_OPEN",
+                should_open.to_string(),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "offset lock child (should_open={should_open}) failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn process_lock_child_probe() {
+        let Some(root) = std::env::var_os("ROCKETMQ_CLASSIC_OFFSET_LOCK_CHILD_ROOT") else {
+            return;
+        };
+        let should_open = std::env::var("ROCKETMQ_CLASSIC_OFFSET_LOCK_CHILD_OPEN").unwrap();
+        let result = LocalFileOffsetStore::with_root(root, "client", "group");
+        match (should_open.as_str(), result) {
+            ("true", Ok(store)) => drop(store),
+            ("false", Err(OffsetStoreError::AlreadyOpen)) => {}
+            (_, Ok(store)) => {
+                drop(store);
+                panic!("unexpectedly acquired the cross-process offset lock");
+            }
+            (_, Err(error)) => panic!("cross-process offset lock failed: {error:?}"),
+        }
+    }
+
+    #[test]
+    fn process_lock_excludes_another_process_until_the_owner_drops() {
+        let root = temporary_root();
+        let store = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        run_store_lock_child(&root, false);
+        drop(store);
+        run_store_lock_child(&root, true);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn local_offset_store_dir_snapshots_like_java() {
         if let Some(mode) = std::env::var_os("ROCKETMQ_CLASSIC_OFFSET_ROOT_CHILD") {
@@ -932,8 +1006,19 @@ mod tests {
         );
         store.update_offset(&orders, 42, false);
         store.persist(&orders).await.unwrap();
+        let persisted_path = store.path.clone();
         drop(store);
-        let restarted = LocalFileOffsetStore::with_root(&root, "client", "group").unwrap();
+        let restarted = LocalFileOffsetStore::with_root(&root, "client", "group")
+            .unwrap_or_else(|error| {
+                let active = ACTIVE_STORE_PATHS
+                    .get()
+                    .and_then(|paths| paths.lock().ok())
+                    .is_some_and(|paths| paths.contains(&persisted_path));
+                panic!(
+                    "failed to reopen {:?} after dropping its owner (same-process owner still registered: {active}): {error:?}",
+                    persisted_path,
+                );
+            });
         assert_eq!(
             restarted
                 .read_offset(&orders, ReadOffsetType::ReadFromStore)
