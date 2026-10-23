@@ -34,9 +34,10 @@ use rocketmq_classic_core::runtime::{
 use rocketmq_classic_protocol::{
     SharedValue,
     body::{
-        ConsumeMessageDirectlyResult, ConsumeMessageResult, ConsumerPopProcessQueueInfo,
-        ConsumerProcessQueueInfo, ConsumerRunningInfoBody, LockBatchRequestBody,
-        MessageQueueAssignment, MessageRequestMode, QueueTimeSpan, UnlockBatchRequestBody,
+        ConsumeMessageDirectlyResult, ConsumeMessageResult, ConsumerConsumeStatus,
+        ConsumerPopProcessQueueInfo, ConsumerProcessQueueInfo, ConsumerRunningInfoBody,
+        LockBatchRequestBody, MessageQueueAssignment, MessageRequestMode, QueueTimeSpan,
+        UnlockBatchRequestBody,
     },
     codes::{request, response},
     header::{
@@ -588,7 +589,6 @@ pub struct PushConsumer {
     manager: ClientRuntimeManager,
     rpc_hook: Option<Arc<dyn RpcHook>>,
     consume_message_hooks: ConsumeMessageHookRegistry,
-    stats: Arc<ConsumerStatsManager>,
     runtime_stats: RwLock<StatsManagerBinding>,
     consume_message_service: RwLock<ConsumeMessageServiceBinding>,
     consume_stats_group: RwLock<Option<String>>,
@@ -680,7 +680,6 @@ impl PushConsumer {
             manager,
             rpc_hook,
             consume_message_hooks: ConsumeMessageHookRegistry::default(),
-            stats: Arc::new(ConsumerStatsManager::new_unscheduled_internal()),
             runtime_stats: RwLock::new(StatsManagerBinding::Unbound),
             consume_message_service: RwLock::new(ConsumeMessageServiceBinding::Unbound),
             consume_stats_group: RwLock::new(None),
@@ -759,10 +758,10 @@ impl PushConsumer {
             .unwrap_or_else(|| self.config.consumer_group().unwrap_or_default())
     }
 
-    fn stats_manager(&self) -> Arc<ConsumerStatsManager> {
+    fn stats_manager(&self) -> Option<Arc<ConsumerStatsManager>> {
         match &*read_lock(&self.runtime_stats) {
-            StatsManagerBinding::Unbound => self.stats.clone(),
-            StatsManagerBinding::Runtime(manager) => manager.clone(),
+            StatsManagerBinding::Unbound => None,
+            StatsManagerBinding::Runtime(manager) => Some(manager.clone()),
             StatsManagerBinding::Null => {
                 panic!("consumer stats manager is unavailable without a client runtime")
             }
@@ -2448,9 +2447,14 @@ impl PushConsumer {
                 subscription.topic.as_ref().map(|topic| {
                     (
                         topic.clone(),
-                        self.stats_manager().consume_status(
-                            &self.config.consumer_group().unwrap_or_default(),
-                            topic,
+                        self.stats_manager().map_or_else(
+                            ConsumerConsumeStatus::default,
+                            |manager| {
+                                manager.consume_status(
+                                    &self.config.consumer_group().unwrap_or_default(),
+                                    topic,
+                                )
+                            },
                         ),
                     )
                 })
@@ -3314,7 +3318,9 @@ impl PushConsumer {
         elapsed: Duration,
         message_count: usize,
     ) {
-        let stats = self.stats_manager();
+        let Some(stats) = self.stats_manager() else {
+            return;
+        };
         stats.inc_pull_rt(request.consumer_group(), topic, elapsed_millis(elapsed));
         if message_count > 0 {
             stats.inc_pull_tps(request.consumer_group(), topic, metric_count(message_count));
@@ -3724,8 +3730,8 @@ impl PushConsumer {
         consume_context.access_channel = self.config.client_config().access_channel();
         self.consume_message_hooks
             .execute_after(&mut consume_context);
-        if let Some(topic) = request.batch.queue().topic() {
-            self.stats_manager().inc_consume_rt(
+        if let (Some(topic), Some(stats)) = (request.batch.queue().topic(), self.stats_manager()) {
+            stats.inc_consume_rt(
                 &self.consume_stats_group(),
                 topic,
                 elapsed_millis(callback_started.elapsed()),
@@ -3882,8 +3888,8 @@ impl PushConsumer {
             consume_context.access_channel = self.config.client_config().access_channel();
             self.consume_message_hooks
                 .execute_after(&mut consume_context);
-            if let Some(topic) = queue.topic() {
-                self.stats_manager().inc_consume_rt(
+            if let (Some(topic), Some(stats)) = (queue.topic(), self.stats_manager()) {
+                stats.inc_consume_rt(
                     &self.consume_stats_group(),
                     topic,
                     elapsed_millis(callback_started.elapsed()),
@@ -3944,13 +3950,18 @@ impl PushConsumer {
                         }
                     }
                 };
-                let stats = self.stats_manager();
-                let consumer_group = self.consume_stats_group();
-                if let Some(acknowledged) = acknowledged {
-                    stats.inc_consume_ok_tps(&consumer_group, topic, metric_count(acknowledged));
-                }
-                if let Some(failed) = failed {
-                    stats.inc_consume_failed_tps(&consumer_group, topic, metric_count(failed));
+                if let Some(stats) = self.stats_manager() {
+                    let consumer_group = self.consume_stats_group();
+                    if let Some(acknowledged) = acknowledged {
+                        stats.inc_consume_ok_tps(
+                            &consumer_group,
+                            topic,
+                            metric_count(acknowledged),
+                        );
+                    }
+                    if let Some(failed) = failed {
+                        stats.inc_consume_failed_tps(&consumer_group, topic, metric_count(failed));
+                    }
                 }
             }
             let retry_required = if status == ConsumeOrderlyStatus::SuspendCurrentQueueAMoment {
@@ -4182,16 +4193,17 @@ impl PushConsumer {
         let acknowledged = (ack_index + 1).max(0) as usize;
         if let Some(topic) = queue.topic() {
             let successful_result = status == Some(ConsumeConcurrentlyStatus::ConsumeSuccess);
-            let stats = self.stats_manager();
-            let consumer_group = self.consume_stats_group();
-            if successful_result {
-                stats.inc_consume_ok_tps(&consumer_group, topic, metric_count(acknowledged));
+            if let Some(stats) = self.stats_manager() {
+                let consumer_group = self.consume_stats_group();
+                if successful_result {
+                    stats.inc_consume_ok_tps(&consumer_group, topic, metric_count(acknowledged));
+                }
+                stats.inc_consume_failed_tps(
+                    &consumer_group,
+                    topic,
+                    metric_count(batch_len.saturating_sub(acknowledged)),
+                );
             }
-            stats.inc_consume_failed_tps(
-                &consumer_group,
-                topic,
-                metric_count(batch_len.saturating_sub(acknowledged)),
-            );
         }
         let mut terminal_offsets = batch.offsets()[..acknowledged].to_vec();
         let mut local_retry_needed = false;
@@ -5236,14 +5248,15 @@ impl PushConsumer {
                 continue;
             }
             let messages = result.messages().unwrap_or_default().to_vec();
-            let stats = self.stats_manager();
-            stats.inc_pull_rt(
-                &consumer_group,
-                &topic,
-                elapsed_millis(pop_started.elapsed()),
-            );
-            if !messages.is_empty() {
-                stats.inc_pull_tps(&consumer_group, &topic, metric_count(messages.len()));
+            if let Some(stats) = self.stats_manager() {
+                stats.inc_pull_rt(
+                    &consumer_group,
+                    &topic,
+                    elapsed_millis(pop_started.elapsed()),
+                );
+                if !messages.is_empty() {
+                    stats.inc_pull_tps(&consumer_group, &topic, metric_count(messages.len()));
+                }
             }
             let (messages, discarded) = self.filter_pop_messages(&subscription, messages);
             for message in discarded {
@@ -5571,8 +5584,7 @@ impl PushConsumer {
 
         let message_count = messages.len();
         if record_consume_stats {
-            if let Some(topic) = queue.topic() {
-                let stats = self.stats_manager();
+            if let (Some(topic), Some(stats)) = (queue.topic(), self.stats_manager()) {
                 stats.inc_consume_rt(
                     &stats_consumer_group,
                     topic,
@@ -9173,6 +9185,7 @@ mod tests {
             .get_or_create(consumer.config.client_config())
             .await
             .unwrap();
+        consumer.bind_stats_manager(runtime.consumer_stats_manager());
         let queue = MessageQueue::new("orders", "broker-a", 0);
         let process_queue = Arc::new(PopProcessQueue::new_for_assignment(queue.clone(), 2));
         process_queue.inc_found_messages(1);
@@ -9201,6 +9214,7 @@ mod tests {
 
         let status = consumer
             .stats_manager()
+            .unwrap()
             .consume_status("pop-orderly-stats-group", "orders");
         assert_eq!(status.get_consume_rt(), 0.0);
         assert_eq!(status.get_consume_ok_tps(), 0.0);
@@ -9328,6 +9342,7 @@ mod tests {
             .get_or_create(consumer.config.client_config())
             .await
             .unwrap();
+        consumer.bind_stats_manager(runtime.consumer_stats_manager());
         runtime.remoting().start().unwrap();
         runtime
             .update_topic_route("orders", Instant::now() + Duration::from_secs(3))
@@ -9369,6 +9384,7 @@ mod tests {
         assert!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("pop-lifecycle-group", "orders")
                 .get_consume_ok_tps()
                 > 0.0
@@ -9376,6 +9392,7 @@ mod tests {
         assert_eq!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("pop-lifecycle-live-group", "orders")
                 .get_consume_ok_tps(),
             0.0
@@ -9609,6 +9626,7 @@ mod tests {
         timeout(Duration::from_secs(12), async {
             while consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("pop-assignment-flow", "orders")
                 .get_pull_rt()
                 <= 0.0
@@ -9620,6 +9638,7 @@ mod tests {
         .expect("POP_FOUND must record pull latency in consumer statistics");
         let status = consumer
             .stats_manager()
+            .unwrap()
             .consume_status("pop-assignment-flow", "orders");
         assert!(
             status.get_pull_rt() > 0.0,
@@ -12637,6 +12656,7 @@ mod tests {
         assert!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("consume-stats-snapshot-group", "orders")
                 .get_consume_ok_tps()
                 > 0.0
@@ -12644,6 +12664,7 @@ mod tests {
         assert_eq!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("consume-stats-live-group", "orders")
                 .get_consume_ok_tps(),
             0.0
@@ -12950,6 +12971,7 @@ mod tests {
         assert!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("orderly-stats-snapshot-group", "orders")
                 .get_consume_ok_tps()
                 > 0.0
@@ -12957,6 +12979,7 @@ mod tests {
         assert_eq!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("orderly-stats-live-group", "orders")
                 .get_consume_ok_tps(),
             0.0
@@ -13026,7 +13049,7 @@ mod tests {
         consumer
             .consumer_start_timestamp
             .store(1_700_000_000_000, Ordering::Release);
-        let stats = consumer.stats_manager();
+        let stats = consumer.stats_manager().unwrap();
         stats.inc_pull_rt("running-info-snapshot", "orders", 500);
         stats.inc_pull_tps("running-info-snapshot", "orders", 2);
         stats.inc_consume_rt("running-info-snapshot", "orders", 8);
@@ -13863,9 +13886,16 @@ mod tests {
         runtime.shutdown().await.unwrap();
     }
 
-    #[test]
-    fn pull_result_stats_use_the_request_group_snapshot() {
-        let consumer = PushConsumer::new(PushConsumerConfig::new("pull-stats-live-group").unwrap());
+    #[tokio::test]
+    async fn pull_result_stats_use_the_request_group_snapshot() {
+        let config = PushConsumerConfig::new("pull-stats-live-group").unwrap();
+        let manager = ClientRuntimeManager::new();
+        let consumer = PushConsumer::with_manager(config, manager.clone());
+        let runtime = manager
+            .get_or_create(consumer.config.client_config())
+            .await
+            .unwrap();
+        consumer.bind_stats_manager(runtime.consumer_stats_manager());
         let request_group = "pull-stats-request-group";
         let request = PullRequest::new(
             request_group,
@@ -13882,6 +13912,7 @@ mod tests {
         assert!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status(request_group, "orders")
                 .get_pull_tps()
                 > 0.0
@@ -13889,10 +13920,12 @@ mod tests {
         assert_eq!(
             consumer
                 .stats_manager()
+                .unwrap()
                 .consume_status("pull-stats-mutated-group", "orders")
                 .get_pull_tps(),
             0.0
         );
+        runtime.shutdown().await.unwrap();
     }
 
     #[tokio::test]

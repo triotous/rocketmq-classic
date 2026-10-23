@@ -447,9 +447,7 @@ impl ClientRuntime {
             manager: Mutex::new(Vec::new()),
             extensions: Mutex::new(HashMap::new()),
             reply_timeout_task: tokio::sync::Mutex::new(None),
-            consumer_stats_manager: Arc::new(
-                super::ConsumerStatsManager::new_unscheduled_internal(),
-            ),
+            consumer_stats_manager: Arc::new(super::ConsumerStatsManager::new_for_runtime()),
             sharing_properties: properties.clone(),
             sharing_hook,
             sharing_tls_config: tls_config,
