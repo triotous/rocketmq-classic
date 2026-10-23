@@ -3060,6 +3060,23 @@ TopicConfig attribute-order slice. Broad P18-V01 reconciliation, current
 Ubuntu/native Windows P18-V04 evidence, and Phase 19 Broker/Docker validation
 remain open.
 
+## P18-V01 `TopicConfig.attributes` nullable map keys — 2026-10-23
+
+The Java setter accepts and retains a map containing a null key; the getter
+returns that same map. The direct fixture verifies the null key separately from
+the literal string key `"null"`, bidirectional mutation visibility, Fastjson
+encoding, `toString()`, and decode semantics. Fastjson renders the null key as
+`"null"`, allowing it and the string key to produce duplicate JSON property
+names; it omits null-valued entries from JSON but retains them in the map and
+string representation. A decoded JSON key `"null"` is an ordinary Java string
+key. Rust's `TopicConfigAttributeMap` represents keys as `Option<String>` and
+uses the same Java HashMap bucket order. The focused Protocol API test, full
+Protocol package suite, and pinned Java fixture verification pass. Fixture
+SHA-256: `d166aa9c873ed7f2ccf26a25dc5d43850e10b7eabcc15a62535c9d265fd9b237`.
+
+This closes the direct nullable-attribute-key gap only; broad P18-V01 remains
+PARTIAL, Phase 6 remains PARTIAL, and P6-V04 remains `PENDING_PHASE_19`.
+
 ## P18-V01 `MessageDecoder.decodeProperties(ByteBuffer)` input boundary — 2026-10-22 (`67d0d049`)
 
 Pinned Java extracts properties using record offsets and ignores the declared
