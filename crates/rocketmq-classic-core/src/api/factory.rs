@@ -169,22 +169,34 @@ impl SharedClientApiArray {
 
 struct FactoryAddressState {
     clients: RwLock<Option<SharedClientApiArray>>,
-    current: Mutex<Option<String>>,
+    initial: Option<String>,
+    current: Mutex<Vec<Option<String>>>,
 }
 
 impl FactoryAddressState {
     fn new(address: Option<String>) -> Self {
         Self {
             clients: RwLock::new(None),
-            current: Mutex::new(address),
+            initial: address,
+            current: Mutex::new(Vec::new()),
         }
     }
 
-    fn current(&self) -> Option<String> {
+    fn reset(&self, client_count: usize) {
+        *self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            vec![self.initial.clone(); client_count];
+    }
+
+    fn current(&self, index: usize) -> Option<String> {
         self.current
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+            .get(index)
+            .cloned()
+            .flatten()
     }
 
     fn publish_clients(&self, clients: SharedClientApiArray) {
@@ -201,15 +213,16 @@ impl FactoryAddressState {
             .clone()
     }
 
-    fn update(&self, addresses: Option<&str>) -> Option<String> {
+    fn update_slot(&self, index: usize, addresses: Option<&str>) -> Option<String> {
         let Some(addresses) = addresses else {
-            return self.current();
+            return self.current(index);
         };
         let changed = {
             let mut current = self
                 .current
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let current = current.get_mut(index)?;
             if current.as_deref() == Some(addresses) {
                 false
             } else {
@@ -220,18 +233,35 @@ impl FactoryAddressState {
         if changed {
             if let Some(clients) = self.clients() {
                 let addresses = split_addresses(addresses);
-                for client in clients.snapshot().into_iter().flatten() {
+                if let Some(Some(client)) = clients.get(index) {
                     client
                         .remoting_client()
-                        .update_name_server_address_list(addresses.clone());
+                        .update_name_server_address_list(addresses);
                 }
             }
         }
-        self.current()
+        self.current(index)
     }
 
-    fn update_from_discovery(&self, addresses: Option<&str>) -> Option<String> {
-        self.update(addresses.filter(|addresses| !java_util_blank(addresses)))
+    fn update_all(&self, addresses: Option<&str>) -> Option<String> {
+        let count = self
+            .current
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len();
+        for index in 0..count {
+            self.update_slot(index, addresses);
+        }
+        addresses
+            .map(str::to_owned)
+            .or_else(|| (0..count).find_map(|index| self.current(index)))
+    }
+
+    fn update_from_discovery(&self, index: usize, addresses: Option<&str>) -> Option<String> {
+        self.update_slot(
+            index,
+            addresses.filter(|addresses| !java_util_blank(addresses)),
+        )
     }
 }
 
@@ -245,7 +275,7 @@ struct FactoryAddressCallback(Weak<FactoryAddressState>);
 
 impl NameServerUpdateCallback for FactoryAddressCallback {
     fn on_name_server_address_change(&self, addresses: Option<&str>) -> Option<String> {
-        self.0.upgrade()?.update(addresses)
+        self.0.upgrade()?.update_all(addresses)
     }
 }
 
@@ -434,6 +464,7 @@ impl MQClientApiFactory {
         let client_count = usize::try_from(self.client_num)
             .map_err(|_| MQClientApiFactoryError::NegativeClientCount(self.client_num))?;
         let clients = SharedClientApiArray::new(client_count);
+        self.address_state.reset(client_count);
         self.address_state.publish_clients(clients.clone());
         if client_count == 0 {
             return Ok(());
@@ -443,7 +474,7 @@ impl MQClientApiFactory {
             if let Some(provider) = &self.top_addressing {
                 let addresses = provider.fetch_ns_addr().await;
                 self.address_state
-                    .update_from_discovery(addresses.as_deref());
+                    .update_from_discovery(index, addresses.as_deref());
             }
             let instance_name = format!("{}N_{index}", self.name_prefix);
             let mut client_config = self.client_config.clone();
@@ -452,7 +483,7 @@ impl MQClientApiFactory {
             let mut remoting_config = self.remoting_config.clone();
             remoting_config.disable_callback_executor = true;
             let remoting = (self.remoting_client_creator)(&instance_name, remoting_config)?;
-            if let Some(address) = self.address_state.current() {
+            if let Some(address) = self.address_state.current(index) {
                 remoting.update_name_server_address_list(split_addresses(&address));
             }
             if let Some(hook) = &self.rpc_hook {
@@ -483,7 +514,7 @@ impl MQClientApiFactory {
         if self.address_state.clients().is_none() {
             return Err(MQClientApiFactoryError::NotStarted);
         }
-        self.address_state.update(addresses);
+        self.address_state.update_all(addresses);
         Ok(())
     }
 
@@ -531,13 +562,13 @@ impl MQClientApiFactory {
             loop {
                 tokio::select! {
                     _ = ticks.tick() => {
-                        for _ in 0..client_count {
+                        for index in 0..client_count {
                             if *stop.borrow() {
                                 return;
                             }
                             if let Some(addresses) = provider.fetch_ns_addr().await {
                                 if let Some(state) = state.upgrade() {
-                                    state.update_from_discovery(Some(&addresses));
+                                    state.update_from_discovery(index, Some(&addresses));
                                 } else {
                                     return;
                                 }
@@ -803,6 +834,70 @@ mod tests {
                 .get_name_server_address_list(),
             Some(vec!["domain-ns:9876".into()])
         );
+        factory.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn factory_domain_discovery_keeps_each_clients_address_independent() {
+        let java: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/runtime/api-factory.json"
+        ))
+        .unwrap();
+        struct SequenceProvider(Mutex<std::collections::VecDeque<String>>);
+        impl TopAddressing for SequenceProvider {
+            fn fetch_ns_addr(
+                &self,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send + '_>>
+            {
+                let address = self.0.lock().unwrap().pop_front();
+                Box::pin(async move { address })
+            }
+        }
+
+        let expected = java["domainClientAddressesAfterStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|addresses| {
+                addresses
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|address| address.as_str().unwrap().to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let provider = Arc::new(SequenceProvider(Mutex::new(
+            expected
+                .iter()
+                .map(|addresses| addresses[0].clone())
+                .collect(),
+        )));
+        let access = NameserverAccessConfig::new(
+            None,
+            Some("factory-domain.example".into()),
+            Some("factory-subgroup".into()),
+        );
+        let factory = MQClientApiFactory::new(
+            access,
+            "domain-independent-",
+            expected.len() as i32,
+            None,
+            None,
+        )
+        .unwrap()
+        .with_top_addressing(provider)
+        .unwrap();
+
+        factory.start().await.unwrap();
+        let actual = factory
+            .get_clients()
+            .unwrap()
+            .snapshot()
+            .into_iter()
+            .map(|client| client.unwrap().get_name_server_address_list().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
         factory.shutdown().await.unwrap();
     }
 

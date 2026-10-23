@@ -1,8 +1,14 @@
 package compat;
 
 import com.alibaba.fastjson2.JSON;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -12,6 +18,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.rocketmq.client.ClientConfig;
 import org.apache.rocketmq.client.common.NameserverAccessConfig;
@@ -123,6 +130,64 @@ public final class RuntimeApiFactoryFixtures {
                 fixture.put("domainSubgroupPropertyAfterInit", System.getProperty(subgroupProperty));
             } finally {
                 domainScheduler.shutdownNow();
+            }
+
+            String[] discoveredAddresses = {"127.0.0.11:9876", "127.0.0.12:9876"};
+            ServerSocket discoveryServer = new ServerSocket(0);
+            discoveryServer.setSoTimeout(5000);
+            AtomicReference<Throwable> discoveryFailure = new AtomicReference<>();
+            Thread discoveryResponder = new Thread(() -> {
+                try {
+                    for (String address : discoveredAddresses) {
+                        try (Socket socket = discoveryServer.accept()) {
+                            socket.setSoTimeout(5000);
+                            BufferedReader reader = new BufferedReader(new InputStreamReader(
+                                socket.getInputStream(), StandardCharsets.UTF_8));
+                            while (true) {
+                                String line = reader.readLine();
+                                if (line == null || line.isEmpty()) {
+                                    break;
+                                }
+                            }
+                            byte[] body = address.getBytes(StandardCharsets.UTF_8);
+                            OutputStream output = socket.getOutputStream();
+                            output.write(("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+                                + "Content-Length: " + body.length + "\r\nConnection: close\r\n\r\n")
+                                .getBytes(StandardCharsets.US_ASCII));
+                            output.write(body);
+                            output.flush();
+                        }
+                    }
+                } catch (Throwable error) {
+                    discoveryFailure.set(error);
+                }
+            }, "api-factory-discovery-fixture");
+            discoveryResponder.setDaemon(true);
+            discoveryResponder.start();
+            ScheduledExecutorService discoveryScheduler = Executors.newSingleThreadScheduledExecutor();
+            MQClientAPIFactory discoveryFactory = new MQClientAPIFactory(
+                new NameserverAccessConfig(null, "127.0.0.1:" + discoveryServer.getLocalPort(),
+                    "factory-fixture"), "domain-discovery-", 2, null, null, discoveryScheduler);
+            try {
+                discoveryFactory.start();
+                fixture.put("domainClientAddressesAfterStart", Arrays.stream(discoveryFactory.getClients())
+                    .map(client -> sorted(client.getNameServerAddressList())).collect(Collectors.toList()));
+                discoveryFactory.shutdown();
+            } finally {
+                try {
+                    discoveryFactory.shutdown();
+                } catch (Throwable ignored) {
+                    // The active path has already shut down; cleanup is best effort.
+                }
+                discoveryScheduler.shutdownNow();
+                discoveryServer.close();
+            }
+            discoveryResponder.join(5000);
+            if (discoveryResponder.isAlive()) {
+                throw new IllegalStateException("NameServer discovery fixture did not finish");
+            }
+            if (discoveryFailure.get() != null) {
+                throw new IllegalStateException("NameServer discovery fixture failed", discoveryFailure.get());
             }
 
             List<String> constructors = new ArrayList<>();
