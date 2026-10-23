@@ -4655,3 +4655,28 @@ changed, so Maven fixture verification was not rerun. Broad P18-V01
 source/API/settings/input/error/control-flow and reverse-export reconciliation
 remains PARTIAL. Native Windows runtime and current-revision remote CI remain
 separate; Phase 19 Broker/Docker work is outside this slice.
+
+## P18-V01 `MQClientInstance.getDefaultMQProducer()` source/API disposition — 2026-10-23
+
+The pinned Java 5.5.1 source declares public
+`MQClientInstance.getDefaultMQProducer()` on the implementation class in
+`client.impl.factory`; its getter returns the internal producer registered as
+`CLIENT_INNER_PRODUCER`. Source SHA-256:
+`55619893df475f32332d4a49787ac4a8add0d881de76922d528ba6eb7f3e267d`.
+`git grep` across pinned `client/src/main/java` found the getter used by the
+four consumer retry/send-back paths in `ConsumeMessageOrderlyService`,
+`ConsumeMessagePopOrderlyService`, `DefaultMQPullConsumerImpl`, and
+`DefaultMQPushConsumerImpl`. Factory start and shutdown invoke the same inner
+producer's implementation lifecycle. No user-facing producer/consumer facade
+uses this getter.
+
+The Rust crosswalk now has a distinct row for this getter, separate from
+`DefaultMQProducer.getDefaultMQProducerImpl()` and
+`DefaultMQProducerImpl.getDefaultMQProducer()`. Rust keeps the inner group as
+an internal Core registration and exposes the in-tree send/lifecycle behavior
+through Producer, Consumer, and ClientRuntime owner operations; it does not
+expose a mutable raw inner-producer wrapper or claim Java object-identity
+parity. This records the getter as an implementation-accessor disposition,
+while its default retry-topic flow is covered by the preceding retry-fallback
+slice. The source-private/configurable latency-fault branch remains open in the
+broader P18-V01 audit.
