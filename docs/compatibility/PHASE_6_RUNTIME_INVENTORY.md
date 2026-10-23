@@ -524,6 +524,20 @@ flow/reverse-export reconciliation remains open, as do native Windows
 execution, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
 evidence.
 
+### P18-V01 factory per-client refresh schedule — 2026-10-23 (`681a8acf`)
+
+Pinned Java `createAndStart` registers a fixed-rate NameServer lookup for each
+API client with a 10-second initial delay and 120-second period. Rust now owns
+one Tokio refresh task per pool slot, applies each result to that slot, and
+cancels and joins all tasks through the factory lifecycle. The invoked Java
+fixture captures two scheduled registrations for two domain clients; a
+paused-time Rust test compares its task count with that fixture and confirms
+separate refreshed addresses. All-feature workspace tests (239 Core unit
+tests), strict all-target/all-feature workspace Clippy, formatting, diff
+checks, and full offline Maven `verify` passed. This closes the per-client
+refresh scheduling slice only; broad P18-V01 reconciliation and the platform/
+Phase 19 evidence listed above remain open.
+
 The plan's blank-local-serve phrase is now resolved to upstream `00e45b8a6db23efbe756d0306f10716156cfd4dd` (issue10025/PR10663), an ancestor of pinned5.5.1. Its diff and pinned source/test affect only `proxy/.../config/ProxyConfig.initData/localServeAddr` and `ProxyConfigTest.initDataShouldResolveBlankLocalServeAddr`, not the client. The [requirement audit](PHASE_6_REQUIREMENT_AUDIT.md) records exact source branches, ancestor/exact-word checks and read-not-run upstream test evidence. Proxy server implementation is explicitly outside the plan's client-only contract; no new client setting or proxy dependency is invented. Actual client IP initialization is `common/.../utils/NetworkUtil.getLocalAddress` and explicit `ClientConfig.setClientIP`; empty explicit client IP remains the actual Java identity behavior, not a substitute for Proxy config.
 
 Runtime ownership will be an explicit shareable manager, not a process singleton. Runtime-affecting transport/NameServer/security incompatibility is rejected as required by the plan; producer/consumer-specific settings are not silently promoted into manager keys. Private failure-injection seams must not enter the public API.

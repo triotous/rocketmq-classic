@@ -8479,3 +8479,20 @@ owner-specific checks belong in the manual handoff.
   evidence remain pending. No push or remote CI was run. Existing Phase 19
   worktree files remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-factory-per-client-discovery__20261023T093842Z.rlog`.
+
+## P18-V01 MQClientAPIFactory per-client refresh schedules — 2026-10-23 (`681a8acf`)
+
+- [x] Rust starts one cancellable refresh worker per pool slot with the
+  Java-matched 10-second initial delay and 120-second fixed rate. Shutdown
+  signals and joins all factory-owned refresh tasks.
+- [x] The invoked Java fixture records two schedule registrations for two
+  domain clients; the paused-time Rust test checks task count and distinct
+  per-client refreshed addresses.
+- [x] All-feature workspace tests passed (239 Core unit tests); strict
+  all-target/all-feature workspace Clippy, format/diff checks, and full offline
+  Maven `verify` passed (37 scenarios, including the schedule-count fixture).
+- [ ] Broad P18-V01 and final reverse API review remain open. Native Windows
+  runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+  evidence remain pending. No push or remote CI was run. Existing Phase 19
+  worktree files remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-factory-refresh-schedules__20261023T095628Z.rlog`.

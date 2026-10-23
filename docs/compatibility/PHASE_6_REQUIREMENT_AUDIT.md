@@ -3915,3 +3915,22 @@ discovery behavior slice only; broad P18-V01 source/API/settings/input/error/
 control-flow and reverse-export reconciliation remains PARTIAL. Native
 Windows runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
 evidence remain open.
+
+## P18-V01 `MQClientAPIFactory` per-client refresh scheduling — 2026-10-23 (`681a8acf`)
+
+Pinned Java creates a `ScheduledExecutorService.scheduleAtFixedRate` task for
+each API client, with a 10-second initial delay and 120-second period. Rust
+previously used one timer worker to fetch all pool slots sequentially. Core now
+owns one cancellable Tokio worker per pool slot; each applies discovery only
+to its own client address, and shutdown signals and joins every worker.
+
+The invoked Java factory fixture records two scheduled tasks after starting
+two domain clients. A paused-time Core regression compares the Rust per-slot
+task count with that fixture, advances through the first refresh, and checks
+that the clients keep distinct results. All-feature workspace tests (239 Core
+unit tests), strict all-target/all-feature workspace Clippy, formatter and
+diff checks, and pinned offline Maven `verify` (37 scenarios) pass. This
+closes the per-client refresh schedule slice only. Broad P18-V01 source/API/
+settings/input/error/control-flow and reverse-export reconciliation remains
+PARTIAL; native Windows runtime, current-revision remote Ubuntu CI, and Phase
+19 Broker/Docker evidence remain open.
