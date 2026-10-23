@@ -1,6 +1,6 @@
 # Phase 18 Java 5.5.1 provenance and package review
 
-Rechecked 2026-10-22 on current revision `782a9cdb`.
+Rechecked 2026-10-23 on current revision `644fff21`.
 
 ## Maven reference artifacts
 
@@ -52,23 +52,32 @@ assert verification of the tag signer.
 
 ## ConsumerStatsManager scheduled sampling
 
-Pinned `ConsumerStatsManager` delegates each metric family to its own
-`StatsItemSet`. Each set registers 10-second and 10-minute fixed-rate sample
-tasks. `getAndCreateItem` does not initialize a new item, so its minute/hour
-snapshots are empty until those shared tasks sample it. Java's `consumeStatus`
-therefore returns zero before the first sample; after a sample, TPS is derived
-from the sampled value delta and elapsed time. Failed-message totals use the
-hour window and stay zero until its first 10-minute sample.
+Pinned `ConsumerStatsManager` creates five `StatsItemSet`s, one for each
+consume-success TPS, consume response time, consume-failure TPS, pull TPS, and
+pull response-time metric. Each set registers six fixed-rate jobs on the shared
+client executor: sampling after zero delay and then every 10 seconds, 10
+minutes, and hour; plus logging at the next local minute, hour, and midnight.
+`getAndCreateItem` does not call the available `StatsItem.init()` method, so
+these are manager-wide jobs rather than additional per-key jobs. A new item's
+minute/hour snapshots are empty until the shared sampling jobs sample it.
+Java's `consumeStatus` therefore returns zero before the first sample; after a
+sample, TPS is derived from the sampled value delta and elapsed time.
+Failed-message totals use the hour window and stay zero until its first
+10-minute sample. The day window feeds daily statistics logs.
 
 The invoked fixture uses a `ScheduledExecutorService` proxy to retain the five
 10-second samplers. It records pull TPS as `0.0` before the first sample,
 `2.0` after sampling an increment of 20, and `2.0` after a later increment of
 5 that has not yet been sampled. Fixture SHA-256:
 `57b6f19d68fb3460e7fa86bd6b08bf16f43a03d28cce2558716f88c110ccb369`.
-Rust evaluates manager-aligned 10-second and 10-minute ticks lazily; it does
-not expose a Rust-only scheduler API. Core tests use deterministic timestamps,
-while consumer-flow tests wait for their first real sample when they assert
-positive TPS/RT values.
+Rust's client scheduler now queues the same 30 manager-wide jobs before
+runtime start. Sampling jobs advance the Rust metric windows, with status reads
+also advancing them lazily for deterministic snapshots. Log jobs occupy their
+Java-matching cadence but do not yet emit statistics log lines. The
+`scheduled-executor-shutdown` fixture and Rust scheduler regression verify the
+same 32 returned entries in the pre-start case with two submitted calls. Core
+tests use deterministic timestamps, while consumer-flow tests wait for their
+first real sample when they assert positive TPS/RT values.
 
 ## Rust package graph
 

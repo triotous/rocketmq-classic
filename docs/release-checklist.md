@@ -77,6 +77,18 @@ Java client baseline is RocketMQ 5.5.1; the Phase 19 Broker baseline is 5.3.4.
   Native Windows execution, current-revision remote Ubuntu CI, Phase 19 Broker/
   Docker evidence, and broad P18-V01 source/API/settings/input/error/control-
   flow and reverse-export reconciliation remain open.
+- P18-V01 client stats scheduler queue (`644fff21`, 2026-10-23): Rust now
+  creates the 30 Java `StatsItemSet` maintenance jobs in the client scheduler
+  queue before runtime start. Sampling jobs advance metric windows; the minute,
+  hour, and day log jobs are queued but do not yet emit Java's statistics log
+  lines. The Rust pre-start `shutdownNow` regression reads the Java fixture and
+  returns the same 32 pending entries with two submitted futures. Default and
+  all-feature workspace tests/doctests, strict all-target Clippy, Windows GNU
+  workspace check/Clippy, offline Maven `verify` (37 scenarios, including both
+  scheduler shutdown fixtures), formatting, and diff checks pass. This closes
+  the constructor-queue count delta only; statistics log output and broad
+  P18-V01 reconciliation remain open. Native Windows runtime and
+  current-revision remote CI were not run.
 - [ ] Close P18-V01: complete bidirectional Java source/API/input reconciliation
   and reverse-audit all Rust public APIs and settings. Remoting after-response
   hooks now mutate request/response commands on outbound and inbound paths;
