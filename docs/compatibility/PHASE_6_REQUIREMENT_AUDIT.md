@@ -2,7 +2,7 @@
 
 ## Current Phase 18 server-free rerun — 2026-10-23
 
-At code revision `85f210bd`, the server-free gates pass on macOS AArch64 with
+At code revision `47cfbf13`, the server-free gates pass on macOS AArch64 with
 Rust 1.85.0 and pinned Java 5.5.1. Default and all-feature locked workspace
 tests, strict all-target/all-feature workspace Clippy,
 `cargo fmt --all -- --check`, and `git diff --check` pass. Offline Maven
@@ -3335,3 +3335,27 @@ strict Clippy, formatting and diff checks pass. This closes the accepted
 message dropped-queue guard for this POP removal path only; broad P18-V01,
 current-revision remote Ubuntu CI, native Windows execution, and Phase 19 live
 Broker/Docker evidence remain open.
+
+## P18-V01 ProcessQueue try-unlock AtomicLong overflow — 2026-10-23 (`47cfbf13`)
+
+Pinned Java stores `tryUnlockTimes` in an `AtomicLong` and calls
+`incrementAndGet()` from the public `incTryUnlockTimes()` method and the Push
+rebalance retry path. The increment wraps from `Long.MAX_VALUE` to
+`Long.MIN_VALUE`. Rust now uses signed `i64` state with wrapping increments in
+both public and generation-checked paths; getters, snapshots, and
+`ConsumerProcessQueueInfo` retain the signed value. The invoked Java fixture
+seeds the atomic counter at `Long.MAX_VALUE` and records the public increment
+result. The Rust unit regression compares the Java result across the public
+increment, queue-info fill, internal retry increment, and snapshot. Fixture
+SHA-256: `9b14dc24b4f3214bfb9fab7d83ebe966083685c327409c7e76b1303de63d00db`.
+
+Default and all-feature workspace tests, strict all-target/all-feature
+workspace Clippy, formatting, and diff checks pass. Pinned Maven verify passes
+37 differential scenarios and cross-decodes 106 typed headers and 19 typed
+bodies. Differential self-test and 37-scenario manifest validation pass; fuzz
+smoke passes 163 frame seeds, 11 message seeds, 2,784 mutations, 245 frame
+decodes, and 192 message decodes; offline race/leak smoke passes 17 cases × 3.
+Release examples and the offline benchmark pass, with the benchmark observation
+recorded in `PHASE_18_OFFLINE_BENCHMARK_BASELINE.md`. This closes the
+try-unlock overflow path only; broad P18-V01 source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL.

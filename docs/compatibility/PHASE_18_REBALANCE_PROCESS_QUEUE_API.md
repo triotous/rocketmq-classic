@@ -114,6 +114,18 @@ integer cast. The invoked facade fixture sets a byte count whose MiB value is
 one above `i32::MAX` and compares the resulting info field. Fixture SHA-256:
 `afb517bc5c6ce78f7f0d4afa0bd31f22d6fba586c8b37a3616a5b27fbf7a29de`.
 
+### Try-unlock counter signed overflow
+
+Java stores `tryUnlockTimes` in an `AtomicLong`; both public
+`incTryUnlockTimes()` and the rebalance retry path use signed wrapping
+increments. Rust now stores the value as `i64`, wraps both increment paths, and
+passes the signed value through its getter, snapshot and queue-info reporting.
+The isolated Java fixture seeds the counter at `Long.MAX_VALUE`, calls the
+public increment, and records `Long.MIN_VALUE`; a Rust unit regression compares
+the public increment, queue-info value and generation-checked retry increment
+with that fixture. Fixture SHA-256:
+`9b14dc24b4f3214bfb9fab7d83ebe966083685c327409c7e76b1303de63d00db`.
+
 ### POP assignment retention
 
 The invoked Java `RebalanceImpl.updateMessageQueueAssignment` runtime fixture
@@ -244,6 +256,6 @@ client source/configuration/flow row and the reverse Rust API audit.
 Fixture SHA-256 values:
 
 - `fixtures/consumer/facade-api.json` —
-  `afb517bc5c6ce78f7f0d4afa0bd31f22d6fba586c8b37a3616a5b27fbf7a29de`
+  `9b14dc24b4f3214bfb9fab7d83ebe966083685c327409c7e76b1303de63d00db`
 - `fixtures/consumer/expired-messages.json` —
   `0ecf6ca6795174a96a90123cebb5415c2108cc81842ce84469e721d599f90d01`
