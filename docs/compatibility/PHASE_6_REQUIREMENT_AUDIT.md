@@ -4294,3 +4294,17 @@ site updates, as did formatting and diff checks. This closes the downstream
 construction fallout from the Lite header mapping only; broad P18-V01 remains
 PARTIAL, and native Windows runtime and current-revision remote Ubuntu CI
 remain open. Phase 19 Broker/Docker work remains outside scope.
+
+## P18-V01 RPC request-header source/fixture parity guard — 2026-10-23 (`7885fbe5`)
+
+The 49-entry Java fixture and Rust equality tests now remain tied to the Rust
+`impl_rpc_request_header_semantics!` list: the test compares both name sets,
+with `ConsumeMessageDirectlyResultRequestHeader` handled by its separate
+custom implementation. Adding an RPC-equality header without its pinned Java
+identity/API entry now fails the test instead of silently leaving an
+unexercised type.
+
+The request-header equality/hash/codec test and strict Protocol Clippy passed,
+as did formatting and diff checks. This adds a coverage invariant only; broad
+P18-V01 remains PARTIAL, with native Windows runtime and current-revision
+remote Ubuntu CI open. Phase 19 Broker/Docker work remains outside scope.

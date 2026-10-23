@@ -8868,11 +8868,27 @@ owner-specific checks belong in the manual handoff.
 - [x] Updated all six Core uses of `LiteSubscriptionCtlRequestHeader` to pass
   `Default`; the empty default header emits no ext fields and preserves the
   existing request wire shape.
-- [x] Full workspace all-feature tests and doctests passed after the changes.
-  `cargo fmt --all -- --check` and `git diff --check` passed.
+- [x] Full workspace all-feature tests/doctests and strict workspace Clippy
+  passed after the changes. `cargo fmt --all -- --check` and `git diff --check`
+  passed.
 - [ ] This closes downstream call-site fallout from the Lite header mapping
   only. Broad P18-V01 remains open; native Windows runtime and current-revision
   remote Ubuntu CI remain pending. Phase 19 Broker/Docker validation remains
   outside scope. No push or remote CI was run; the four existing user-owned
   Phase 19 paths remain untouched and unstaged. Run record:
   `rlogs/2026/10/23-phase-18-lite-core-header-call-sites__20261023T144643Z.rlog`.
+
+## P18-V01 RPC request-header source/fixture parity guard — 2026-10-23 (`7885fbe5`)
+
+- [x] Added a set-parity assertion between the Java request-header identity
+  fixture and Rust's `RpcRequestHeader` equality mapping list. The existing
+  separately implemented `ConsumeMessageDirectlyResultRequestHeader` remains
+  explicitly excluded from the macro comparison.
+- [x] The request-header equality/hash/codec test, strict all-target/all-feature
+  Protocol Clippy, formatting, and diff checks passed.
+- [ ] This prevents future inventory omissions but closes no additional runtime
+  behavior. Broad P18-V01 remains open; native Windows runtime and
+  current-revision remote Ubuntu CI remain pending. Phase 19 Broker/Docker
+  validation remains outside scope. No push or remote CI was run; the four
+  existing user-owned Phase 19 paths remain untouched and unstaged. Run record:
+  `rlogs/2026/10/23-phase-18-rpc-header-parity-guard__20261023T145016Z.rlog`.
