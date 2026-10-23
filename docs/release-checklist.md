@@ -8412,3 +8412,18 @@ owner-specific checks belong in the manual handoff.
   and Phase 19 Broker/Docker evidence remain pending. No push or remote CI was
   run. Run record:
   `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.
+
+## P18-V01 MQClientAPIFactory nullable callback and discovery parity — 2026-10-23 (`805619a9`)
+
+- [x] `onNameServerAddressChange(null)` now preserves the current address list
+  after startup; before startup, the Java fixture records its null-client
+  failure. Discovery ignores Java-blank address results before publishing
+  them to the client pool.
+- [x] The expanded invoked Java fixture and Core differential cover both
+  boundaries. Core library all-feature tests (237), strict Core Clippy,
+  formatting, diff checks, focused Java fixture verification, and full offline
+  Maven `verify` passed (exit 0).
+- [ ] Broad P18-V01 and final reverse API review remain open. Native Windows
+  runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker
+  evidence remain pending. No push or remote CI was run. Run record:
+  `rlogs/2026/09/19-phase-18-compatibility-release-gate__20261023T034516Z.rlog`.

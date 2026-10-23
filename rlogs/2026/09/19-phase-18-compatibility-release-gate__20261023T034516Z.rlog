@@ -448,3 +448,24 @@ Protected subclass hooks remain a separate inventory item; final reverse API
 reconciliation, native Windows runtime, current-revision remote Ubuntu CI, and
 Phase 19 Broker/Docker evidence remain open. No push or remote CI was run.
 Protected Phase 19 worktree files remain unstaged and untouched.
+
+## P18-V01 MQClientAPIFactory nullable callback and discovery parity — 2026-10-23T09:13:51Z
+
+Pinned Java `MQClientAPIFactory.onNameServerAddressChange(null)` delegates to
+each API client, where null leaves the current address unchanged. Before
+startup, the same call fails because the factory client array is null. Rust
+now preserves both boundaries with its typed not-started error and Java-null
+no-op. The factory also ignores blank `TopAddressing` results like Java's
+`MQClientAPIImpl.fetchNameServerAddr`/`UtilAll.isBlank`; direct callback strings
+remain unfiltered. Commit `805619a9` records the code and expanded fixture.
+
+The invoked Java fixture verifies pre-start null failure and the unchanged
+address list after a null update. Rust coverage consumes those cases and adds
+a whitespace-only discovery provider regression. Core all-feature library
+tests passed (237), strict all-target/all-feature Core Clippy passed, and
+format/diff checks passed. The focused Java fixture verification and full
+offline Maven `verify` both completed with exit code 0. Broad P18-V01 remains
+PARTIAL; protected hooks/final reverse API reconciliation, native Windows
+runtime, current-revision remote Ubuntu CI, and Phase 19 Broker/Docker evidence
+remain open. No push or remote CI was run; protected Phase 19 files remain
+untouched and unstaged.

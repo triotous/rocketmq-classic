@@ -487,13 +487,16 @@ process environment.
 The invoked fixture in `fixtures/runtime/api-factory.json` records both Java
 constructors and all six public methods, pre-start selection failure, client
 names/count/address lists, selection membership, mutable-array identity,
-address changes, property initialization, and shutdown retention. Rust factory
-tests consume this fixture and cover static and domain configuration, creator
-injection, and lifecycle. Implementation commit `ac3a8ed5` adds the Rust API
-and invoked Java oracle. Full workspace all-feature tests, strict
-all-target/all-feature workspace Clippy, pinned offline Maven `verify` (exit
-0), formatting, and diff checks pass. This closes the direct factory public
-API slice only; protected Java subclass hooks and broad P18-V01
+address changes (including Java-null no-op), property initialization, and
+shutdown retention. Rust factory tests consume this fixture and cover static
+and domain configuration, creator injection, lifecycle, and Java-blank
+discovery results. Implementation commits `ac3a8ed5` and `805619a9` add the
+Rust API and correct nullable callback/discovery behavior. Full workspace
+all-feature tests and strict all-target/all-feature workspace Clippy passed
+after the API implementation; after the callback correction, Core library
+tests (237), strict Core Clippy, focused Java fixture verify, and full offline
+Maven `verify` (exit 0) passed. This closes the direct factory public API
+slice only; protected Java subclass hooks and broad P18-V01
 source/API/input/error/control-flow/reverse-export reconciliation remain
 review items.
 
