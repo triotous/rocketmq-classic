@@ -4070,3 +4070,23 @@ source/API/settings/input/error/control-flow review remains PARTIAL. Native
 Windows runtime, current-revision
 remote Ubuntu CI, and Phase 19 Broker/Docker validation remain open. Run record:
 `rlogs/2026/10/23-phase-18-factory-scheduler-injection__20261023T114031Z.rlog`.
+
+## P18-V01 Common topic and Producer topic-list Rust-name disposition — 2026-10-23
+
+A compatibility-document token scan flagged five Common names
+(`TOPIC_MESSAGE_TYPE_ATTRIBUTE`, `LITE_EXPIRATION_ATTRIBUTE`,
+`topic_message_type_set`, `parse_from_message_property`, and `metrics_value`)
+and Producer's `with_read`. Review against pinned Java commit
+`efa1be59d6fc747ad220f036c86030f05f0419f9` found direct counterparts in
+`TopicAttributes`, `TopicMessageType`, and `DefaultMQProducer.getTopics()` /
+`setTopics(List<String>)`. The current Common topic crosswalk now names the
+Rust identifiers explicitly. The Producer `with_read` and `with_mut` methods
+are lock-scoped accessors over the same aliased list retained by the producer;
+they adapt Java's live `List<String>` reference to the synchronized Rust
+handle. `snapshot` is the owned point-in-time read form. No uncovered Java
+capability or Rust-only Producer operation was found in these names. Mapping:
+[`PHASE_6_API_CONFIG_MAP.md`](PHASE_6_API_CONFIG_MAP.md).
+
+This closes only this reverse-name disposition. The token scan is not a
+semantic API proof; broad P18-V01 Java source/API/settings/input/error/
+control-flow and reverse-export reconciliation remains PARTIAL.
