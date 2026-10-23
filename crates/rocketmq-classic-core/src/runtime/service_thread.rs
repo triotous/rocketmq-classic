@@ -1,6 +1,6 @@
 use super::{ClientRuntime, RuntimeError};
 use std::sync::{
-    Arc, Weak,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -81,17 +81,19 @@ impl ServiceThreadControl {
 }
 
 /// Rust handle for a runtime-owned Java `ServiceThread` worker.
+/// The handle retains the client runtime, matching each Java service's strong
+/// reference to its `MQClientInstance` owner.
 ///
 /// Start and shutdown are asynchronous because the runtime owns and joins the
 /// worker task. `shutdown` follows the source's 90-second join window; a daemon
 /// setting applies to the next worker start, as in Java.
 pub struct RuntimeServiceThread {
-    runtime: Weak<ClientRuntime>,
+    runtime: Arc<ClientRuntime>,
     kind: RuntimeServiceKind,
 }
 
 impl RuntimeServiceThread {
-    pub(super) fn new(runtime: Weak<ClientRuntime>, kind: RuntimeServiceKind) -> Self {
+    pub(super) fn new(runtime: Arc<ClientRuntime>, kind: RuntimeServiceKind) -> Self {
         Self { runtime, kind }
     }
 
@@ -107,52 +109,38 @@ impl RuntimeServiceThread {
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.runtime
-            .upgrade()
-            .is_none_or(|runtime| runtime.service_thread_control(self.kind).is_stopped())
+        self.runtime.service_thread_control(self.kind).is_stopped()
     }
 
     pub fn is_daemon(&self) -> bool {
-        self.runtime
-            .upgrade()
-            .is_some_and(|runtime| runtime.service_thread_control(self.kind).is_daemon())
+        self.runtime.service_thread_control(self.kind).is_daemon()
     }
 
     pub fn set_daemon(&self, daemon: bool) {
-        if let Some(runtime) = self.runtime.upgrade() {
-            runtime.service_thread_control(self.kind).set_daemon(daemon);
-        }
+        self.runtime
+            .service_thread_control(self.kind)
+            .set_daemon(daemon);
     }
 
     /// Sets the worker's stop flag without waking or joining it.
     pub fn make_stop(&self) {
-        if let Some(runtime) = self.runtime.upgrade() {
-            runtime.service_thread_control(self.kind).make_stop();
-        }
+        self.runtime.service_thread_control(self.kind).make_stop();
     }
 
     /// Wakes a rebalance worker. Pull dispatch waits for queued work and has no
     /// wait-point to unpark, matching `PullMessageService`'s run loop.
     pub fn wakeup(&self) {
-        if let Some(runtime) = self.runtime.upgrade() {
-            runtime.wakeup_service_thread(self.kind);
-        }
+        self.runtime.wakeup_service_thread(self.kind);
     }
 
     pub async fn start(&self) -> Result<(), RuntimeError> {
-        let runtime = self
-            .runtime
-            .upgrade()
-            .ok_or(RuntimeError::ControlTaskFailed)?;
-        runtime.start_service_thread(self.kind).await
+        self.runtime.start_service_thread(self.kind).await
     }
 
     pub async fn shutdown(&self, interrupt: bool) -> Result<(), RuntimeError> {
-        let runtime = self
-            .runtime
-            .upgrade()
-            .ok_or(RuntimeError::ControlTaskFailed)?;
-        runtime.shutdown_service_thread(self.kind, interrupt).await
+        self.runtime
+            .shutdown_service_thread(self.kind, interrupt)
+            .await
     }
 }
 
@@ -167,12 +155,12 @@ impl Clone for RuntimeServiceThread {
 
 impl ClientRuntime {
     pub fn rebalance_service(self: &Arc<Self>) -> RuntimeServiceThread {
-        RuntimeServiceThread::new(Arc::downgrade(self), RuntimeServiceKind::Rebalance)
+        RuntimeServiceThread::new(self.clone(), RuntimeServiceKind::Rebalance)
     }
 
     /// Returns the runtime-owned counterpart to
     /// `MQClientInstance.getPullMessageService()`.
     pub fn pull_message_service(self: &Arc<Self>) -> RuntimeServiceThread {
-        RuntimeServiceThread::new(Arc::downgrade(self), RuntimeServiceKind::PullMessage)
+        RuntimeServiceThread::new(self.clone(), RuntimeServiceKind::PullMessage)
     }
 }

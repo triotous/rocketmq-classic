@@ -233,6 +233,25 @@ async fn service_threads_can_restart_after_client_runtime_shutdown() {
     assert!(pull.is_stopped());
 }
 
+#[tokio::test]
+async fn pull_service_handle_retains_its_client_runtime_owner() {
+    let pull = {
+        let mut config = ClientConfig::new("pull-service-retained-owner");
+        config.set_namesrv_addr(Some(String::new()));
+        let manager = ClientRuntimeManager::new();
+        let runtime = manager.get_or_create(&config).await.unwrap();
+        runtime.pull_message_service()
+    };
+
+    // Java's PullMessageService retains its MQClientInstance field. Keeping
+    // the service reference therefore keeps its client owner reachable too.
+    assert!(!pull.is_stopped());
+    pull.start().await.unwrap();
+    assert!(!pull.is_stopped());
+    pull.shutdown(true).await.unwrap();
+    assert!(pull.is_stopped());
+}
+
 struct RouteObserver {
     runtime: Weak<ClientRuntime>,
     updates: AtomicUsize,
